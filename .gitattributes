@@ -1,0 +1,16 @@
+# Normalize line endings to LF on commit so Mac and PC checkouts stay consistent.
+* text=auto eol=lf
+
+# Treat common binary asset types as binary (no line-ending conversion, no diff).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.svg  text
+*.pdf  binary
+*.docx binary
+*.xlsx binary
+*.woff  binary
+*.woff2 binary
