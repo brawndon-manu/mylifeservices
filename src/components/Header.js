@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PhoneIcon } from "@/components/Icons";
 
 const navLinks = [
   { href: "/about", label: "About" },
@@ -12,11 +13,11 @@ const PHONE_HREF = "tel:+19098370907";
 
 export default function Header() {
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4">
         <Link
           href="/"
-          className="text-lg font-semibold tracking-tight text-slate-900 hover:text-slate-700"
+          className="text-lg font-semibold tracking-tight text-slate-900 transition hover:text-brand-dark"
         >
           My Life Services
         </Link>
@@ -27,7 +28,7 @@ export default function Header() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="rounded px-1 py-1 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+                    className="rounded px-1 py-1 transition hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                   >
                     {link.label}
                   </Link>
@@ -38,9 +39,10 @@ export default function Header() {
           <a
             href={PHONE_HREF}
             aria-label={`Call My Life Services at ${PHONE_DISPLAY}`}
-            className="inline-flex items-center rounded-md border border-slate-900 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-900 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+            className="inline-flex items-center gap-2 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
-            {PHONE_DISPLAY}
+            <PhoneIcon className="h-4 w-4" />
+            <span>{PHONE_DISPLAY}</span>
           </a>
         </div>
       </div>

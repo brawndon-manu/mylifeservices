@@ -1,3 +1,5 @@
+import PageHeader from "@/components/PageHeader";
+
 export const metadata = {
   title: "Careers",
   description:
@@ -6,13 +8,24 @@ export const metadata = {
 
 export default function CareersPage() {
   return (
-    <section className="mx-auto max-w-5xl px-6 py-16">
-      <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-        Careers
-      </h1>
-      <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-700">
-        Careers content coming soon.
-      </p>
-    </section>
+    <>
+      <PageHeader
+        eyebrow="Join our team"
+        title="Careers at My Life Services"
+        intro="We hire compassionate, dependable people to support adults with intellectual and developmental disabilities across five program areas."
+      />
+      <section className="mx-auto max-w-3xl px-6 py-16">
+        <p className="text-base leading-relaxed text-slate-700">
+          Our online application is coming soon. In the meantime, please{" "}
+          <a
+            href="mailto:support@mylifeservices.net"
+            className="font-medium text-brand-dark underline underline-offset-2 hover:text-brand"
+          >
+            email us
+          </a>{" "}
+          to inquire about open positions.
+        </p>
+      </section>
+    </>
   );
 }

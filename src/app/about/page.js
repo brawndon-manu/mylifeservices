@@ -1,3 +1,5 @@
+import PageHeader from "@/components/PageHeader";
+
 export const metadata = {
   title: "About",
   description:
@@ -6,13 +8,32 @@ export const metadata = {
 
 export default function AboutPage() {
   return (
-    <section className="mx-auto max-w-5xl px-6 py-16">
-      <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-        About
-      </h1>
-      <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-700">
-        About content coming soon.
-      </p>
-    </section>
+    <>
+      <PageHeader
+        eyebrow="Get to know us"
+        title="About My Life Services"
+        intro="Our story, our approach, and the people behind the programs."
+      />
+      <section className="mx-auto max-w-3xl px-6 py-16">
+        <p className="text-base leading-relaxed text-slate-700">
+          We&apos;re putting the finishing touches on this page. In the meantime, please
+          {" "}
+          <a
+            href="tel:+19098370907"
+            className="font-medium text-brand-dark underline underline-offset-2 hover:text-brand"
+          >
+            call us
+          </a>{" "}
+          or{" "}
+          <a
+            href="mailto:support@mylifeservices.net"
+            className="font-medium text-brand-dark underline underline-offset-2 hover:text-brand"
+          >
+            send us an email
+          </a>{" "}
+          with any questions about My Life Services.
+        </p>
+      </section>
+    </>
   );
 }

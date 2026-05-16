@@ -1,27 +1,83 @@
+import {
+  PhoneIcon,
+  EnvelopeIcon,
+  MapPinIcon,
+  ClockIcon,
+} from "@/components/Icons";
+
 export default function Footer() {
   const year = new Date().getFullYear();
   return (
-    <footer className="border-t border-slate-200 bg-slate-50">
-      <div className="mx-auto flex max-w-5xl flex-col gap-2 px-6 py-8 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-        <p>&copy; {year} My Life Services. All rights reserved.</p>
-        <ul className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-6">
-          <li>
-            <a
-              href="tel:+19098370907"
-              className="underline underline-offset-2 hover:text-slate-900"
-            >
-              (909) 837-0907
-            </a>
-          </li>
-          <li>
-            <a
-              href="mailto:office.mylifeservices@gmail.com"
-              className="underline underline-offset-2 hover:text-slate-900"
-            >
-              office.mylifeservices@gmail.com
-            </a>
-          </li>
-        </ul>
+    <footer>
+      <div className="bg-brand text-white">
+        <div className="mx-auto grid max-w-5xl gap-10 px-6 py-14 sm:py-16 md:grid-cols-2 md:gap-16">
+          <div>
+            <h2 className="text-3xl font-semibold tracking-tight">
+              Get in touch
+            </h2>
+            <p className="mt-4 max-w-md text-base leading-relaxed text-white/90">
+              Call, email, or visit. We&apos;re here to answer questions about
+              services, careers, or partnerships.
+            </p>
+          </div>
+          <dl className="grid gap-5 text-sm sm:text-base">
+            <div className="flex items-start gap-4">
+              <PhoneIcon className="mt-0.5 h-5 w-5 flex-none text-white/80" />
+              <div>
+                <dt className="sr-only">Phone</dt>
+                <dd>
+                  <a
+                    href="tel:+19098370907"
+                    className="underline-offset-2 hover:underline"
+                  >
+                    (909) 837-0907
+                  </a>
+                </dd>
+              </div>
+            </div>
+            <div className="flex items-start gap-4">
+              <EnvelopeIcon className="mt-0.5 h-5 w-5 flex-none text-white/80" />
+              <div>
+                <dt className="sr-only">Email</dt>
+                <dd>
+                  <a
+                    href="mailto:support@mylifeservices.net"
+                    className="underline-offset-2 hover:underline"
+                  >
+                    support@mylifeservices.net
+                  </a>
+                </dd>
+              </div>
+            </div>
+            <div className="flex items-start gap-4">
+              <MapPinIcon className="mt-0.5 h-5 w-5 flex-none text-white/80" />
+              <div>
+                <dt className="sr-only">Address</dt>
+                <dd className="leading-relaxed">
+                  2230 W. Chapman Ave, Suite&nbsp;#161
+                  <br />
+                  Orange, CA 92868
+                </dd>
+              </div>
+            </div>
+            <div className="flex items-start gap-4">
+              <ClockIcon className="mt-0.5 h-5 w-5 flex-none text-white/80" />
+              <div>
+                <dt className="sr-only">Hours</dt>
+                <dd className="leading-relaxed">
+                  Mon&ndash;Fri: 8am &ndash; 8pm
+                  <br />
+                  Sat&ndash;Sun: Closed
+                </dd>
+              </div>
+            </div>
+          </dl>
+        </div>
+      </div>
+      <div className="border-t border-slate-200 bg-white">
+        <div className="mx-auto max-w-5xl px-6 py-5 text-sm text-slate-600">
+          &copy; {year} My Life Services. All rights reserved.
+        </div>
       </div>
     </footer>
   );

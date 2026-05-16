@@ -10,6 +10,8 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-brand: #4fb3d9;
+  --color-brand-dark: #3a90b3;
 }
 
 body {
