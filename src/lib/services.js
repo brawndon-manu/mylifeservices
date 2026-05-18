@@ -172,6 +172,8 @@ export const services = [
       buttonLabel: "Contact us about Independent Living",
       buttonHref: "/contact",
     },
+    roleDescription:
+      "Support individuals in building independence through goal-based coaching and daily living skill development.",
   },
   {
     slug: "supported-living",
@@ -249,6 +251,38 @@ export const services = [
       buttonLabel: "Contact us about Supported Living",
       buttonHref: "/contact",
     },
+    // NOTE: On the live Wix careers page, this description appears swapped
+    // with the Self-Determination role description. Mirrored as-is — when
+    // user confirms, swap with Self-Determination's roleDescription below.
+    roleDescription:
+      "Support participants who direct their own services by assisting with coordination and budgeting oversight.",
+    role: {
+      title: "Supported Living Staff",
+      intro:
+        "Supported Living roles involve providing ongoing, hands-on support to individuals in their own homes. Staff assist with daily living tasks while promoting independence, stability, and a safe, supportive environment tailored to each participant’s needs and goals.",
+      whatYoullDo:
+        "Working in Supported Living Services means supporting individuals in their home environment with day-to-day routines and responsibilities. Staff provide consistent, personalized support while encouraging independence, skill development, and a high quality of life.",
+      responsibilities: [
+        "Assist individuals with daily living activities such as cooking, cleaning, and personal care",
+        "Support medication routines and health-related needs as required",
+        "Help maintain a safe, organized, and comfortable home environment",
+        "Assist with grocery shopping, meal planning, and household management",
+        "Provide transportation support and accompany individuals to appointments or community activities",
+        "Encourage independence while offering appropriate levels of support",
+        "Document daily activities and communicate with the support team as needed",
+      ],
+      dayToDay: [
+        "Supporting individuals in their home on a consistent schedule",
+        "Assisting with routines such as meals, hygiene, and household upkeep",
+        "Adapting support based on individual needs and preferences",
+        "Building strong, supportive relationships with participants",
+        "Responding to challenges calmly while maintaining a structured environment",
+      ],
+      whyWork: {
+        heading: "Why Work in Supported Living?",
+        body: "Working in Supported Living Services offers the opportunity to provide consistent, meaningful support in a person’s home environment. Staff play an important role in helping individuals maintain stability, build independence, and feel comfortable in their daily lives. This role is well-suited for those who value routine, relationship-building, and making a direct impact through hands-on support.",
+      },
+    },
   },
   {
     slug: "day-program",
@@ -308,6 +342,35 @@ export const services = [
       body: "Our team works closely with individuals and families to determine how the Day Program can best support personal goals and daily structure. We are committed to creating a safe, engaging environment where participants can grow, connect, and thrive.",
       buttonLabel: "Contact us about the Day Program",
       buttonHref: "/contact",
+    },
+    roleDescription:
+      "Facilitate structured group activities that support skill-building, engagement, and community participation.",
+    role: {
+      title: "Day Program Services",
+      intro:
+        "Day Program roles focus on supporting individuals in a structured, group-based environment during daytime hours. Staff facilitate activities that promote skill development, social interaction, and community engagement while helping participants build confidence and maintain a consistent daily routine.",
+      whatYoullDo:
+        "Working in a Day Program involves leading and supporting group activities that encourage participation, learning, and social connection. Staff create a positive, engaging environment while helping individuals develop practical skills and enjoy meaningful experiences throughout the day.",
+      responsibilities: [
+        "Facilitate group activities focused on skill-building, recreation, and social engagement",
+        "Support participants in following daily schedules and structured routines",
+        "Encourage participation, communication, and peer interaction",
+        "Assist with personal care needs when required",
+        "Help coordinate and supervise community outings and activities",
+        "Maintain a safe, inclusive, and supportive group environment",
+        "Document participation and communicate with the support team as needed",
+      ],
+      dayToDay: [
+        "Leading or assisting with group activities throughout the day",
+        "Supporting participants during transitions between activities",
+        "Encouraging social interaction and teamwork",
+        "Supervising outings in the community",
+        "Creating a positive and engaging atmosphere for all participants",
+      ],
+      whyWork: {
+        heading: "Why Work in The Day Program",
+        body: "Working in a Day Program offers a dynamic and engaging environment where staff can make a meaningful impact through group interaction and activity-based support. This role is ideal for individuals who enjoy working with others, leading activities, and creating a positive, structured space where participants can grow, connect, and thrive.",
+      },
     },
   },
   {
@@ -373,6 +436,11 @@ export const services = [
       buttonLabel: "Contact us about Self-Determination",
       buttonHref: "/contact",
     },
+    // NOTE: On the live Wix careers page, this description appears swapped
+    // with the Supported Living role description. Mirrored as-is — when
+    // user confirms, swap with Supported Living's roleDescription above.
+    roleDescription:
+      "Provide ongoing, hands-on support in residential settings tailored to individual needs.",
   },
   {
     slug: "crisis-support",
@@ -436,6 +504,37 @@ export const services = [
       body: "If you or someone you support is facing a crisis or difficult transition, our team is available to help stabilize the situation and connect you with the right next steps. Reaching us by phone is the fastest way to get support.",
       buttonLabel: "Call (909) 837-0907",
       buttonHref: "tel:+19098370907",
+    },
+    roleDescription:
+      "Provide short-term, responsive support to help stabilize individuals and connect them with appropriate resources.",
+    role: {
+      title: "Crisis Support Staff",
+      intro: [
+        "Crisis Support staff provide immediate, short-term assistance to individuals experiencing behavioral or situational challenges.",
+        "This role focuses on stabilizing situations, ensuring safety, and helping participants transition back to their regular supports with appropriate guidance and care.",
+      ],
+      whatYoullDo:
+        "Working in Crisis Support involves responding to urgent situations with professionalism, patience, and clear decision-making. Staff provide direct support during times of need while helping individuals regain stability and connect with ongoing services and supports.",
+      responsibilities: [
+        "Respond to crisis situations in a calm and professional manner",
+        "Provide immediate support to ensure safety and stabilization",
+        "Assist individuals in de-escalating behavioral or emotional challenges",
+        "Follow individualized support or crisis intervention plans",
+        "Communicate with supervisors and support teams during incidents",
+        "Document events accurately and in a timely manner",
+        "Support transition back to regular services after stabilization",
+      ],
+      dayToDay: [
+        "Responding to calls or assigned crisis support situations",
+        "Providing one-on-one support in the home or community",
+        "Using de-escalation techniques to support individuals in distress",
+        "Monitoring safety and adjusting support based on the situation",
+        "Coordinating with team members and documenting outcomes",
+      ],
+      whyWork: {
+        heading: "Why Work in Crisis Support",
+        body: "Working in Crisis Support offers the opportunity to make a meaningful impact during critical moments. This role is well-suited for individuals who remain calm under pressure, communicate effectively, and are committed to supporting others through challenging situations with professionalism and care.",
+      },
     },
   },
 ];

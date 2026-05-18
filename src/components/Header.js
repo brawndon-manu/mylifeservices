@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { PhoneIcon } from "@/components/Icons";
 
 const navLinks = [
@@ -14,12 +15,22 @@ const PHONE_HREF = "tel:+19098370907";
 export default function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-3">
         <Link
           href="/"
-          className="text-lg font-semibold tracking-tight text-slate-900 transition hover:text-brand-dark"
+          className="flex items-center gap-3 rounded text-slate-900 transition hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
-          My Life Services
+          <Image
+            src="/logo/treelogov2.png"
+            alt=""
+            width={2428}
+            height={1820}
+            priority
+            className="h-10 w-auto rounded-md"
+          />
+          <span className="text-lg font-semibold tracking-tight">
+            My Life Services
+          </span>
         </Link>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <nav aria-label="Primary">

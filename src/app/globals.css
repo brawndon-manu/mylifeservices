@@ -10,8 +10,13 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-brand: #4fb3d9;
-  --color-brand-dark: #3a90b3;
+  /* Brand blues sampled from MLSlogo.png. The logo background is a vertical
+     gradient from #2cc4f3 (top) to #196e93 (bottom). We use the darker
+     bottom-of-gradient shade as the primary so white text passes WCAG AA
+     contrast on solid-fill buttons. --color-brand-dark deepens it further
+     for hover/active states. */
+  --color-brand: #196e93;
+  --color-brand-dark: #0e5379;
 }
 
 body {
