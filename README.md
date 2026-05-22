@@ -1,16 +1,28 @@
-# MLS Website
+# My Life Services
 
-The marketing site for My Life Services, built with Next.js 16, React 19, and Tailwind CSS 4. Deployed on Vercel.
+The website for My Life Services — a provider of person-centered support programs for adults with intellectual and developmental disabilities. We partner with individuals, families, and Regional Center consumers across Independent Living, Day Program, Supported Living, Self-Determination, and Crisis Support.
+
+I'm an Independent Living instructor at MLS and also handle IT — this site is something I built and maintain in-house.
+
+Live site: deployed on Vercel.
+Phone: (909) 837-0907
+Email: support@mylifeservices.net
 
 ## Pages
 
 - `/` — home
 - `/about`
-- `/services` and `/services/[slug]` — service detail pages
-- `/careers`, `/careers/[slug]`, `/careers/apply` — role listings and application form
+- `/services` and `/services/[slug]` — overview and per-service detail pages
+- `/careers`, `/careers/[slug]`, `/careers/apply` — open roles and the application form
 - `/contact`
 
-The apply form is wired up through EmailJS (`@emailjs/browser`).
+The careers application form submits through EmailJS (`@emailjs/browser`).
+
+## Stack
+
+- Next.js 16 (App Router) with React 19
+- Tailwind CSS 4
+- Deployed on Vercel
 
 ## Local development
 
