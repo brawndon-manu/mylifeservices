@@ -398,7 +398,15 @@ function SectionHeading({ children }) {
 const fieldInputClass =
   "mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 
-function Field({ label, name, type = "text", required = false, ...rest }) {
+// default length caps. these are soft client-side guards - emailjs has
+// its own server-side limits too. mostly here so someone pasting a 5mb
+// novel into the first-name field doesnt break the form submission.
+// override per-field with maxLength={...} when needed (state code = 2,
+// zip = 10, etc - already done where it matters).
+const FIELD_MAX_LEN = 200;
+const TEXTAREA_MAX_LEN = 2000;
+
+function Field({ label, name, type = "text", required = false, maxLength = FIELD_MAX_LEN, ...rest }) {
   return (
     <label className="block">
       <span className="block text-xs font-semibold text-slate-700">
@@ -409,6 +417,7 @@ function Field({ label, name, type = "text", required = false, ...rest }) {
         type={type}
         name={name}
         required={required}
+        maxLength={maxLength}
         className={fieldInputClass}
         {...rest}
       />
@@ -416,7 +425,7 @@ function Field({ label, name, type = "text", required = false, ...rest }) {
   );
 }
 
-function TextArea({ label, name, rows = 3, required = false, ...rest }) {
+function TextArea({ label, name, rows = 3, required = false, maxLength = TEXTAREA_MAX_LEN, ...rest }) {
   return (
     <label className="block">
       <span className="block text-xs font-semibold text-slate-700">
@@ -427,6 +436,7 @@ function TextArea({ label, name, rows = 3, required = false, ...rest }) {
         name={name}
         rows={rows}
         required={required}
+        maxLength={maxLength}
         className={`${fieldInputClass} resize-y`}
         {...rest}
       />

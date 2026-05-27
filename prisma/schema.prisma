@@ -1,0 +1,83 @@
+// Prisma schema for MLS Employee Portal.
+// Standard Auth.js tables (User, Account, Session, VerificationToken)
+// plus a Role enum for RBAC.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  // privilege roles (controls what they can DO in the portal). split
+  // into two tiers right now:
+  //   ELEVATED:  IT_ADMIN, ADMIN, MANAGER  (can manage users + content)
+  //   STANDARD:  HR, SUPERVISOR, STAFF      (read-only access)
+  // we may split the two ELEVATED levels apart later - for now all three
+  // map to the same permission set. see src/lib/roles.js for the helper.
+  IT_ADMIN
+  ADMIN
+  MANAGER
+  HR
+  SUPERVISOR
+  STAFF
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(STAFF)
+  // job title separate from privilege role. free-form string so we can
+  // add new ones without a schema migration. examples: "Owner/Director",
+  // "Program Manager", "Field Supervisor", "HR Administrator", "ILS",
+  // "Day Program", "Supported Living", etc.
+  title         String?
+  // soft delete - when set, this user cant sign in anymore. preserves
+  // history (audit trails, role at time of action, etc.) rather than
+  // hard deleting the row. set back to null to reactivate.
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
