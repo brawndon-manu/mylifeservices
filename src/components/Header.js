@@ -8,6 +8,7 @@ const navLinks = [
   { href: "/stories", label: "Stories" },
   { href: "/contact", label: "Contact" },
   { href: "/careers", label: "Careers" },
+  { href: "/portal", label: "Employee portal" },
 ];
 
 const PHONE_DISPLAY = "(909) 837-0907";

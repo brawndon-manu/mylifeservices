@@ -1,0 +1,54 @@
+import Link from "next/link";
+import { auth, signOut } from "@/auth";
+
+async function handleSignOut() {
+  "use server";
+  await signOut({ redirectTo: "/" });
+}
+
+export default async function PortalLayout({ children }) {
+  const session = await auth();
+  const role = session?.user?.role;
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+          <nav className="flex items-center gap-6 text-sm font-medium text-slate-700">
+            <Link
+              href="/portal"
+              className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              Dashboard
+            </Link>
+            {role === "IT_ADMIN" && (
+              <Link
+                href="/portal/admin"
+                className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Admin
+              </Link>
+            )}
+          </nav>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-slate-600">
+              {session?.user?.email}{" "}
+              <span className="ml-1 rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-brand">
+                {role}
+              </span>
+            </span>
+            <form action={handleSignOut}>
+              <button
+                type="submit"
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
