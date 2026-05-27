@@ -9,17 +9,88 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
+// map of url-friendly sort keys -> { prisma field, nullable }. only keys
+// in this map are accepted - anything else falls back to default sort.
+// keeps an attacker from passing weird strings into orderBy.
+const SORTABLE_COLUMNS = {
+  email: { field: "email", nullable: false },
+  name: { field: "name", nullable: true },
+  title: { field: "title", nullable: true },
+  role: { field: "role", nullable: false },
+  status: { field: "deactivatedAt", nullable: true },
+  created: { field: "createdAt", nullable: false },
+};
+
+// custom role priority. when sorting by role we want Admin first then
+// Manager etc - NOT alphabetical (which would put ADMIN, HR, IT_ADMIN,
+// MANAGER, STAFF, SUPERVISOR which makes no sense in an org-chart sort).
+// lower number = comes first when sorting asc.
+const ROLE_SORT_ORDER = {
+  ADMIN: 1,
+  MANAGER: 2,
+  SUPERVISOR: 3,
+  IT_ADMIN: 4,
+  HR: 5,
+  STAFF: 6,
+};
+
+// build the prisma orderBy clause based on the url's sort + dir params.
+// falls back to "active first, then newest" if no valid sort is requested.
+function buildOrderBy(sort, dir) {
+  if (!sort || !SORTABLE_COLUMNS[sort]) {
+    return [
+      { deactivatedAt: { sort: "asc", nulls: "first" } },
+      { createdAt: "desc" },
+    ];
+  }
+  // role uses a custom priority sort done in js after fetch (prisma
+  // cant do org-chart-order natively). here we just give a stable
+  // tiebreaker so the within-role ordering is alphabetical.
+  if (sort === "role") {
+    return [{ name: { sort: "asc", nulls: "last" } }];
+  }
+  const { field, nullable } = SORTABLE_COLUMNS[sort];
+  const direction = dir === "desc" ? "desc" : "asc";
+  // for nullable fields, push nulls to the bottom regardless of
+  // direction so real data is always on top.
+  if (nullable) {
+    return [{ [field]: { sort: direction, nulls: "last" } }];
+  }
+  return [{ [field]: direction }];
+}
+
+// js-side sort for the role column. uses the org-chart priority order
+// defined above. when desc, reverses (Staff first, then HR, etc).
+// within-role order is preserved from whatever order they came in
+// (we ask prisma to order by name asc for stability).
+function sortByRolePriority(users, dir) {
+  const reverse = dir === "desc";
+  return [...users].sort((a, b) => {
+    const aRank = ROLE_SORT_ORDER[a.role] ?? 99;
+    const bRank = ROLE_SORT_ORDER[b.role] ?? 99;
+    if (aRank === bRank) return 0; // keep prisma's within-role order
+    return reverse ? bRank - aRank : aRank - bRank;
+  });
+}
+
+// build the href for a sortable header. clicking toggles direction if
+// you're already sorted by that column, otherwise switches to that
+// column starting at asc.
+function sortHref(column, currentSort, currentDir) {
+  let nextDir = "asc";
+  if (currentSort === column) {
+    nextDir = currentDir === "asc" ? "desc" : "asc";
+  }
+  const params = new URLSearchParams({ sort: column, dir: nextDir });
+  return `/portal/admin?${params.toString()}`;
+}
+
 export default async function AdminPage({ searchParams }) {
-  // fresh role check from db - so if someone gets demoted mid-session,
-  // they cant just keep an old jwt and stay on this page. proxy.js still
-  // gates first based on the jwt, this is the secondary defense.
   const current = await getCurrentUser();
   if (!isElevated(current?.role)) {
     redirect("/portal");
   }
 
-  // success/error flags from invite/edit/deactivate flows. each redirect
-  // sets a different param so we can show a specific banner.
   const params = await searchParams;
   const justInvited = typeof params?.invited === "string" ? params.invited : null;
   const justUpdated = typeof params?.updated === "string" ? params.updated : null;
@@ -27,13 +98,14 @@ export default async function AdminPage({ searchParams }) {
   const justReactivated = typeof params?.reactivated === "string" ? params.reactivated : null;
   const adminError = typeof params?.error === "string" ? params.error : null;
 
-  const users = await prisma.user.findMany({
-    // active users at top, then deactivated at bottom. newest first
-    // within each tier so freshly-added folks are easy to find.
-    orderBy: [
-      { deactivatedAt: { sort: "asc", nulls: "first" } },
-      { createdAt: "desc" },
-    ],
+  // sort state from url (validated against the allowlist above)
+  const rawSort = typeof params?.sort === "string" ? params.sort : null;
+  const rawDir = typeof params?.dir === "string" ? params.dir : null;
+  const sort = rawSort && SORTABLE_COLUMNS[rawSort] ? rawSort : null;
+  const dir = rawDir === "desc" ? "desc" : "asc";
+
+  let users = await prisma.user.findMany({
+    orderBy: buildOrderBy(sort, dir),
     select: {
       id: true,
       email: true,
@@ -45,11 +117,18 @@ export default async function AdminPage({ searchParams }) {
     },
   });
 
+  // role gets a special in-js sort using the org-chart priority order.
+  // prisma cant do this natively for an enum field, so we sort after
+  // fetching. dataset is small (~100 users) - no perf concern.
+  if (sort === "role") {
+    users = sortByRolePriority(users, dir);
+  }
+
   const activeCount = users.filter((u) => !u.deactivatedAt).length;
   const deactivatedCount = users.length - activeCount;
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
         IT Admin
       </p>
@@ -113,16 +192,32 @@ export default async function AdminPage({ searchParams }) {
         </Banner>
       )}
 
-      <div className="mt-10 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-left text-sm">
+      {/* overflow-x-auto so the table can scroll horizontally on narrower
+          screens (and when the user has long emails). overflow-hidden
+          would just clip the rightmost column off, which is what was
+          happening to the Edit arrow. */}
+      <div className="mt-10 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
             <tr>
-              <th className="px-6 py-3 font-semibold">Email</th>
-              <th className="px-6 py-3 font-semibold">Name</th>
-              <th className="px-6 py-3 font-semibold">Title</th>
-              <th className="px-6 py-3 font-semibold">Role</th>
-              <th className="px-6 py-3 font-semibold">Status</th>
-              <th className="px-6 py-3 font-semibold">Created</th>
+              <SortableHeader column="email" sort={sort} dir={dir}>
+                Email
+              </SortableHeader>
+              <SortableHeader column="name" sort={sort} dir={dir}>
+                Name
+              </SortableHeader>
+              <SortableHeader column="title" sort={sort} dir={dir}>
+                Title
+              </SortableHeader>
+              <SortableHeader column="role" sort={sort} dir={dir}>
+                Role
+              </SortableHeader>
+              <SortableHeader column="status" sort={sort} dir={dir}>
+                Status
+              </SortableHeader>
+              <SortableHeader column="created" sort={sort} dir={dir}>
+                Created
+              </SortableHeader>
               <th className="px-6 py-3 font-semibold text-right">Actions</th>
             </tr>
           </thead>
@@ -135,7 +230,7 @@ export default async function AdminPage({ searchParams }) {
                   key={u.id}
                   className={isDeactivated ? "bg-slate-50 text-slate-400" : ""}
                 >
-                  <td className="px-6 py-3">
+                  <td className="whitespace-nowrap px-6 py-3">
                     <span className={isDeactivated ? "line-through" : ""}>
                       {u.email}
                     </span>
@@ -145,11 +240,11 @@ export default async function AdminPage({ searchParams }) {
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-3">{u.name ?? "—"}</td>
-                  <td className="px-6 py-3 text-slate-600">
+                  <td className="whitespace-nowrap px-6 py-3">{u.name ?? "—"}</td>
+                  <td className="whitespace-nowrap px-6 py-3 text-slate-600">
                     {u.title ?? <span className="text-slate-400">—</span>}
                   </td>
-                  <td className="px-6 py-3">
+                  <td className="whitespace-nowrap px-6 py-3">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
                         isDeactivated
@@ -160,7 +255,7 @@ export default async function AdminPage({ searchParams }) {
                       {ROLE_LABELS[u.role] ?? u.role}
                     </span>
                   </td>
-                  <td className="px-6 py-3">
+                  <td className="whitespace-nowrap px-6 py-3">
                     {isDeactivated ? (
                       <span className="rounded bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
                         Deactivated
@@ -171,10 +266,10 @@ export default async function AdminPage({ searchParams }) {
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-3 text-slate-500">
+                  <td className="whitespace-nowrap px-6 py-3 text-slate-500">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-3 text-right">
+                  <td className="whitespace-nowrap px-6 py-3 text-right">
                     {isSelf ? (
                       <span className="text-xs text-slate-400">
                         Use Settings
@@ -195,6 +290,33 @@ export default async function AdminPage({ searchParams }) {
         </table>
       </div>
     </section>
+  );
+}
+
+// clickable column header. shows arrow when its the active sort column,
+// toggles direction on each click.
+function SortableHeader({ column, sort, dir, children }) {
+  const isActive = sort === column;
+  const arrow = isActive ? (dir === "desc" ? "↓" : "↑") : null;
+  return (
+    <th className="px-6 py-3 font-semibold">
+      <Link
+        href={sortHref(column, sort, dir)}
+        className={`inline-flex items-center gap-1 rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+          isActive ? "text-brand" : ""
+        }`}
+      >
+        <span>{children}</span>
+        {/* invisible placeholder when not active so column widths don't
+            jump around as you sort. keeps the layout stable. */}
+        <span
+          aria-hidden="true"
+          className={`text-[10px] ${isActive ? "" : "opacity-0"}`}
+        >
+          {arrow ?? "↑"}
+        </span>
+      </Link>
+    </th>
   );
 }
 
