@@ -26,7 +26,7 @@ export default function ServicesOverview() {
                 <p className="mt-2 flex-1 text-sm leading-relaxed text-slate-700">
                   {service.short}
                 </p>
-                <p className="mt-5 text-sm font-medium text-brand-dark">
+                <p className="mt-5 text-sm font-medium text-brand-light group-hover:text-brand">
                   Learn more{" "}
                   <span
                     aria-hidden="true"

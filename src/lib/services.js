@@ -174,6 +174,35 @@ export const services = [
     },
     roleDescription:
       "Support individuals in building independence through goal-based coaching and daily living skill development.",
+    role: {
+      title: "Independent Living Services (ILS)",
+      intro: [
+        "Independent Living Services (ILS) staff provide one-on-one support to adults with intellectual and developmental disabilities in building the skills needed for greater independence.",
+        "This role focuses on real-world skill development, community engagement, and supporting individuals in achieving their personal goals in daily life.",
+      ],
+      whatYoullDo:
+        "Working in ILS involves providing individualized support in a variety of real-life settings. Staff help participants develop practical skills while encouraging independence, confidence, and meaningful community involvement.",
+      responsibilities: [
+        "Support individuals with daily living skills such as cooking, cleaning, and personal organization",
+        "Assist with budgeting, shopping, and money management",
+        "Provide guidance with scheduling, appointments, and time management",
+        "Support community integration, including outings and social activities",
+        "Assist with transportation training and navigation",
+        "Encourage communication, decision-making, and problem-solving skills",
+        "Document progress and communicate with the support team as needed",
+      ],
+      dayToDay: [
+        "Working one-on-one with participants in their home and community",
+        "Following individualized support plans",
+        "Adapting support based on each person's goals and needs",
+        "Building consistent, supportive relationships",
+        "Promoting independence while providing appropriate guidance",
+      ],
+      whyWork: {
+        heading: "Why Work in ILS",
+        body: "Working in Independent Living Services offers the opportunity to make a meaningful, direct impact in someone's daily life. Staff build strong, supportive relationships while helping individuals grow their independence and confidence over time. This role is ideal for those who value one-on-one support, flexibility, and seeing real progress in the people they work with.",
+      },
+    },
   },
   {
     slug: "supported-living",
@@ -214,13 +243,11 @@ export const services = [
         ],
       },
       {
-        // NOTE: On the live Wix site, this section's bullets are accidentally
-        // duplicated from "Community Integration" above. Mirroring as-is for now —
-        // replace with real Financial Oversight & Budgeting copy when available.
         name: "Financial Oversight & Budgeting",
         items: [
-          "We encourage meaningful community involvement through recreation, volunteering, employment, education, and social activities.",
-          "Staff support participants in building relationships and navigating community resources confidently.",
+          "Staff support participants with everyday money management tasks such as tracking spending, planning purchases, and preparing for recurring bills.",
+          "Guidance is offered around budgeting decisions, identifying financial risks, and using available benefits and resources effectively.",
+          "We work alongside families, representative payees, and other supports to ensure financial decisions reflect each participant's preferences and long-term stability.",
         ],
       },
       {
@@ -251,11 +278,8 @@ export const services = [
       buttonLabel: "Contact us about Supported Living",
       buttonHref: "/contact",
     },
-    // NOTE: On the live Wix careers page, this description appears swapped
-    // with the Self-Determination role description. Mirrored as-is — when
-    // user confirms, swap with Self-Determination's roleDescription below.
     roleDescription:
-      "Support participants who direct their own services by assisting with coordination and budgeting oversight.",
+      "Provide ongoing, hands-on support in residential settings tailored to individual needs.",
     role: {
       title: "Supported Living Staff",
       intro:
@@ -436,11 +460,38 @@ export const services = [
       buttonLabel: "Contact us about Self-Determination",
       buttonHref: "/contact",
     },
-    // NOTE: On the live Wix careers page, this description appears swapped
-    // with the Supported Living role description. Mirrored as-is — when
-    // user confirms, swap with Supported Living's roleDescription above.
     roleDescription:
-      "Provide ongoing, hands-on support in residential settings tailored to individual needs.",
+      "Support participants who direct their own services by assisting with coordination and budgeting oversight.",
+    role: {
+      title: "Self-Determination",
+      intro: [
+        "Self-Determination staff guide participants who choose to direct their own services, budgets, and life plans. The role centers on coordination, education, and advocacy rather than hands-on residential support.",
+        "Staff help participants understand their options, manage individualized budgets, and build plans that reflect their personal goals and values.",
+      ],
+      whatYoullDo:
+        "Working in Self-Determination involves walking alongside participants as they shape the supports they receive. Staff explain how the model works, help track and plan spending, coordinate with providers, and support participants during planning meetings — always centering each person's choices and priorities.",
+      responsibilities: [
+        "Explain how the Self-Determination model works and how it differs from traditional services",
+        "Help participants understand allocated funds and develop spending plans",
+        "Assist with tracking expenses and coordinating with fiscal management services",
+        "Support participants in identifying, evaluating, and coordinating preferred service providers",
+        "Facilitate person-centered planning sessions and document measurable goals",
+        "Provide guidance during planning meetings and help participants advocate for their needs",
+        "Adjust supports as participant needs and priorities evolve",
+        "Document progress and communicate with the support team as needed",
+      ],
+      dayToDay: [
+        "Meeting with participants and families to review goals and spending plans",
+        "Coordinating with providers, regional centers, and fiscal management services",
+        "Preparing for and attending person-centered planning meetings",
+        "Helping participants weigh options and make informed decisions",
+        "Reviewing progress and updating plans as priorities change",
+      ],
+      whyWork: {
+        heading: "Why Work in Self-Determination",
+        body: "Working in Self-Determination offers the opportunity to support participants as they take active control of their own lives. This role is well-suited for those who enjoy coordination, advocacy, and helping people navigate complex systems with confidence. Staff play a key role in empowering individuals to design services that truly fit their goals and values.",
+      },
+    },
   },
   {
     slug: "crisis-support",

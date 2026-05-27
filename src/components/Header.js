@@ -5,6 +5,7 @@ import { PhoneIcon } from "@/components/Icons";
 const navLinks = [
   { href: "/about", label: "About" },
   { href: "/services", label: "Services" },
+  { href: "/stories", label: "Stories" },
   { href: "/contact", label: "Contact" },
   { href: "/careers", label: "Careers" },
 ];
@@ -50,7 +51,7 @@ export default function Header() {
           <a
             href={PHONE_HREF}
             aria-label={`Call My Life Services at ${PHONE_DISPLAY}`}
-            className="inline-flex items-center gap-2 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="inline-flex items-center gap-2 rounded-md bg-brand-light px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             <PhoneIcon className="h-4 w-4" />
             <span>{PHONE_DISPLAY}</span>

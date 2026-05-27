@@ -17,6 +17,10 @@
      for hover/active states. */
   --color-brand: #196e93;
   --color-brand-dark: #0e5379;
+  /* Lighter sky-blue accent sampled from the top of the logo gradient.
+     Use for outlined buttons, links, and accent surfaces — NOT for solid
+     buttons with white text (fails WCAG AA contrast). */
+  --color-brand-light: #29abe2;
 }
 
 body {

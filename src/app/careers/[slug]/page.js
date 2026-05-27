@@ -154,7 +154,7 @@ function ApplyCta({ baseName, slug }) {
         <div className="mt-8 flex justify-center">
           <Link
             href={`/careers/apply?program=${slug}`}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-brand px-6 py-3 text-base font-medium text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-light px-6 py-3 text-base font-medium text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             Apply for {baseName}
           </Link>

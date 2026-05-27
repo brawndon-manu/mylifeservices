@@ -364,7 +364,7 @@ export default function ApplyForm() {
         <button
           type="submit"
           disabled={status.state === "submitting"}
-          className="w-full rounded-md bg-brand px-6 py-3 text-base font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="w-full rounded-md bg-brand-light px-6 py-3 text-base font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {status.state === "submitting" ? "Submitting…" : "Submit application"}
         </button>

@@ -38,6 +38,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# client photos — never commit until written consent is on file
+/public/clients/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
