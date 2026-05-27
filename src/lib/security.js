@@ -29,6 +29,36 @@ export function cleanEmail(raw) {
   return email;
 }
 
+// --- display name cleaner ------------------------------------------
+
+// for /portal/settings and anywhere else we accept a human-typed name.
+// trims whitespace, strips control chars (anything below ascii 32 plus
+// the delete char), and enforces a length cap. returns null if the
+// result is empty or too long.
+//
+// react auto-escapes when we render {name} in jsx so xss isn't a risk
+// at display time, but stripping control chars keeps the db clean and
+// prevents weird rendering bugs from zero-width / direction-override
+// characters that could be used to spoof names.
+
+// default cap if caller doesn't specify - keeps single source of truth
+// for "what counts as a reasonable name length"
+const NAME_DEFAULT_MAX = 30;
+
+export function cleanDisplayName(raw, maxLen = NAME_DEFAULT_MAX) {
+  if (typeof raw !== "string") return null;
+
+  // strip ascii control chars (0-31) and DEL (127). leaves regular
+  // unicode alone so accented characters (Mánu), emoji-free names in
+  // other scripts, etc. all work fine.
+  // eslint-disable-next-line no-control-regex
+  const stripped = raw.replace(/[\x00-\x1F\x7F]/g, "");
+
+  const name = stripped.trim();
+  if (name.length === 0 || name.length > maxLen) return null;
+  return name;
+}
+
 // --- callback url whitelist ----------------------------------------
 
 // after sign-in we redirect to whatever url they had before. an attacker

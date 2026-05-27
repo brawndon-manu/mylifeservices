@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { auth, signOut } from "@/auth";
+import { signOut } from "@/auth";
+import { getCurrentUser } from "@/lib/current-user";
+import { isElevated, ROLE_LABELS } from "@/lib/roles";
 
 async function handleSignOut() {
   "use server";
@@ -7,8 +9,11 @@ async function handleSignOut() {
 }
 
 export default async function PortalLayout({ children }) {
-  const session = await auth();
-  const role = session?.user?.role;
+  // pull fresh user from db instead of trusting the jwt - means changes
+  // via /portal/settings (display name etc.) show up immediately without
+  // needing a sign-out/sign-in dance.
+  const user = await getCurrentUser();
+  const role = user?.role;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -21,7 +26,13 @@ export default async function PortalLayout({ children }) {
             >
               Dashboard
             </Link>
-            {role === "IT_ADMIN" && (
+            <Link
+              href="/portal/settings"
+              className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              Settings
+            </Link>
+            {isElevated(role) && (
               <Link
                 href="/portal/admin"
                 className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
@@ -32,9 +43,9 @@ export default async function PortalLayout({ children }) {
           </nav>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-slate-600">
-              {session?.user?.email}{" "}
+              {user?.email}{" "}
               <span className="ml-1 rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-brand">
-                {role}
+                {ROLE_LABELS[role] ?? role}
               </span>
             </span>
             <form action={handleSignOut}>

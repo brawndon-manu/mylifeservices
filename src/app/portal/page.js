@@ -1,4 +1,5 @@
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/current-user";
+import { ROLE_LABELS } from "@/lib/roles";
 
 export const metadata = {
   title: "Portal",
@@ -8,15 +9,21 @@ export const metadata = {
 
 const ROLE_GREETING = {
   IT_ADMIN: "You have full access — including the Admin area.",
+  ADMIN: "You have full access — including the Admin area.",
   MANAGER:
-    "You can post announcements and view internal resources from here.",
+    "You can manage users and post announcements from the Admin area.",
+  HR:
+    "Check here for announcements and internal resources.",
+  SUPERVISOR:
+    "Check here for announcements and internal resources.",
   STAFF:
     "Check here for announcements, internal forms, and team resources.",
 };
 
 export default async function PortalDashboard() {
-  const session = await auth();
-  const user = session?.user;
+  // fresh user from db - so display name + role reflect any changes
+  // since they signed in (Settings page, role bumps, etc.).
+  const user = await getCurrentUser();
   const role = user?.role ?? "STAFF";
 
   return (
@@ -25,8 +32,24 @@ export default async function PortalDashboard() {
         Welcome back
       </p>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-        {user?.name ? `Hi, ${user.name}` : "Employee dashboard"}
+        {user?.name ? (
+          <>
+            Hi, {user.name}
+            {/* small role chip next to the name - same style as the
+                admin user list so the visual language stays consistent.
+                align-middle keeps it sitting nicely against the big
+                heading text instead of dropping to the baseline. */}
+            <span className="ml-3 inline-block align-middle rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-brand">
+              {ROLE_LABELS[role] ?? role}
+            </span>
+          </>
+        ) : (
+          "Employee dashboard"
+        )}
       </h1>
+      {user?.title && (
+        <p className="mt-2 text-base text-slate-600">{user.title}</p>
+      )}
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
         {ROLE_GREETING[role]}
       </p>

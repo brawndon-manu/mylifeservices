@@ -8,10 +8,12 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "./auth.config";
+import { isElevated } from "./lib/roles";
 
 const { auth } = NextAuth(authConfig);
 
-// admin-only routes. anything matching this pattern needs role IT_ADMIN.
+// admin-only routes. anything matching this pattern needs an elevated
+// privilege role (IT_ADMIN / ADMIN / MANAGER per src/lib/roles.js).
 const ADMIN_ONLY = /^\/portal\/admin(\/.*)?$/;
 
 export default auth((req) => {
@@ -25,10 +27,10 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  // signed in but not an admin -> bounce them back to the regular
-  // dashboard. the admin page itself also checks this (defense-in-depth)
-  // in case someone bypasses the proxy.
-  if (ADMIN_ONLY.test(pathname) && req.auth.user?.role !== "IT_ADMIN") {
+  // signed in but role doesnt have elevated access -> bounce to the
+  // regular dashboard. the admin pages also check this (defense-in-depth)
+  // in case someone bypasses the proxy somehow.
+  if (ADMIN_ONLY.test(pathname) && !isElevated(req.auth.user?.role)) {
     return NextResponse.redirect(new URL("/portal", req.url));
   }
 });

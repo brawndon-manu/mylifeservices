@@ -37,15 +37,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     ...authConfig.callbacks,
-    // gatekeeper - only emails already in the User table can sign in.
-    // even if the form-level pre-check gets bypassed somehow (someone
-    // hitting /api/auth/signin directly), this stops them here.
+    // gatekeeper - only ACTIVE emails already in the User table can
+    // sign in. blocks unknown emails AND deactivated users.
     async signIn({ user, account }) {
       if (account?.provider === "resend") {
         const existing = await prisma.user.findUnique({
           where: { email: user.email },
         });
         if (!existing) return false;
+        if (existing.deactivatedAt) return false; // soft-deleted, no entry
       }
       return true;
     },

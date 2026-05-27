@@ -41,6 +41,15 @@ yarn-error.log*
 # client photos — never commit until written consent is on file
 /public/clients/
 
+# personal task tracker — local working doc, not for the public repo
+/TASKS.md
+
+# staff email list for the bulk-import script — sensitive employee data
+/prisma/staff-emails.txt
+
+# one-off scripts with email → name mappings or other employee data
+/prisma/update-names-add-david.js
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

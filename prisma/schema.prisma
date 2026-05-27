@@ -12,8 +12,17 @@ datasource db {
 }
 
 enum Role {
+  // privilege roles (controls what they can DO in the portal). split
+  // into two tiers right now:
+  //   ELEVATED:  IT_ADMIN, ADMIN, MANAGER  (can manage users + content)
+  //   STANDARD:  HR, SUPERVISOR, STAFF      (read-only access)
+  // we may split the two ELEVATED levels apart later - for now all three
+  // map to the same permission set. see src/lib/roles.js for the helper.
   IT_ADMIN
+  ADMIN
   MANAGER
+  HR
+  SUPERVISOR
   STAFF
 }
 
@@ -24,6 +33,15 @@ model User {
   emailVerified DateTime?
   image         String?
   role          Role      @default(STAFF)
+  // job title separate from privilege role. free-form string so we can
+  // add new ones without a schema migration. examples: "Owner/Director",
+  // "Program Manager", "Field Supervisor", "HR Administrator", "ILS",
+  // "Day Program", "Supported Living", etc.
+  title         String?
+  // soft delete - when set, this user cant sign in anymore. preserves
+  // history (audit trails, role at time of action, etc.) rather than
+  // hard deleting the row. set back to null to reactivate.
+  deactivatedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
