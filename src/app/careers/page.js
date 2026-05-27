@@ -69,7 +69,7 @@ export default function CareersPage() {
                 <div className="sm:col-span-5 sm:flex sm:justify-end">
                   <Link
                     href={`/careers/${service.slug}`}
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-brand px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-brand px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:w-72"
                   >
                     Apply for {service.name.split(" (")[0]}
                     <ArrowRightIcon className="h-4 w-4" />
