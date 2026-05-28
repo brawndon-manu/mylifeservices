@@ -11,6 +11,7 @@ import {
   COMMENT_CONTENT_MAX,
 } from "@/lib/hub";
 import AuthorChip from "../_components/AuthorChip";
+import ConfirmButton from "@/components/ConfirmButton";
 import {
   toggleLike,
   togglePin,
@@ -169,12 +170,12 @@ export default async function PostDetailPage({ params, searchParams }) {
             )}
             {canDeletePost && (
               <form action={deletePost.bind(null, post.id)}>
-                <button
-                  type="submit"
+                <ConfirmButton
+                  message="Delete this post? This can't be undone."
                   className="rounded-md px-2 py-1 font-medium text-rose-600 transition hover:bg-rose-50"
                 >
                   Delete
-                </button>
+                </ConfirmButton>
               </form>
             )}
           </div>
@@ -207,12 +208,12 @@ export default async function PostDetailPage({ params, searchParams }) {
                   </div>
                   {canDeleteThis && (
                     <form action={deleteComment.bind(null, c.id)}>
-                      <button
-                        type="submit"
+                      <ConfirmButton
+                        message="Delete this comment?"
                         className="text-xs font-medium text-rose-600 transition hover:text-rose-700"
                       >
                         Delete
-                      </button>
+                      </ConfirmButton>
                     </form>
                   )}
                 </div>

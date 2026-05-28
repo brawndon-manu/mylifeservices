@@ -12,6 +12,7 @@ import {
   NL_NOTE_MAX,
   formatDate,
 } from "@/lib/newsletter";
+import ConfirmButton from "@/components/ConfirmButton";
 import {
   approveItem,
   rejectItem,
@@ -189,12 +190,12 @@ export default async function NewsletterReviewPage() {
                 )}
 
                 <form action={deleteItem.bind(null, item.id)} className="ml-auto">
-                  <button
-                    type="submit"
+                  <ConfirmButton
+                    message="Delete this item? This can't be undone."
                     className="rounded-md px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
                   >
                     Delete
-                  </button>
+                  </ConfirmButton>
                 </form>
               </div>
             </article>

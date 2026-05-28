@@ -14,6 +14,7 @@ import {
   isExpired,
 } from "@/lib/hub";
 import AuthorChip from "./_components/AuthorChip";
+import ConfirmButton from "@/components/ConfirmButton";
 import { toggleLike, togglePin, deletePost } from "./actions";
 
 export const metadata = {
@@ -283,12 +284,12 @@ function PostCard({ post, currentUser }) {
           )}
           {canDelete && (
             <form action={deletePost.bind(null, post.id)}>
-              <button
-                type="submit"
+              <ConfirmButton
+                message="Delete this post? This can't be undone."
                 className="rounded-md px-2 py-1 font-medium text-rose-600 transition hover:bg-rose-50"
               >
                 Delete
-              </button>
+              </ConfirmButton>
             </form>
           )}
         </div>

@@ -9,6 +9,7 @@ import {
   NL_STATUS_CHIP,
   formatDate,
 } from "@/lib/newsletter";
+import ConfirmButton from "@/components/ConfirmButton";
 import { deleteItem } from "./actions";
 
 export const metadata = {
@@ -145,12 +146,12 @@ export default async function NewsletterPortalPage({ searchParams }) {
                 </div>
                 {(item.status !== "PUBLISHED" || elevated) && (
                   <form action={deleteItem.bind(null, item.id)}>
-                    <button
-                      type="submit"
+                    <ConfirmButton
+                      message="Delete this submission? This can't be undone."
                       className="rounded-md px-2 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
                     >
                       Delete
-                    </button>
+                    </ConfirmButton>
                   </form>
                 )}
               </div>
