@@ -10,6 +10,21 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
+// --- locked superusers ---------------------------------------------
+
+// emails whose SUPER role is permanent and can't be removed/demoted via
+// the admin UI. read from the LOCKED_SUPER_EMAILS env var (comma-
+// separated) so the actual addresses stay out of the public repo.
+// e.g. LOCKED_SUPER_EMAILS="me@example.com,me@work.com"
+export function isLockedSuperEmail(email) {
+  if (typeof email !== "string" || !email) return false;
+  const locked = (process.env.LOCKED_SUPER_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return locked.includes(email.toLowerCase());
+}
+
 // --- email cleanup -------------------------------------------------
 
 // rfc-ish max email length. anything longer is almost certainly garbage

@@ -2,6 +2,11 @@
 // kept here so both forms stay in sync. excludes the one-off real-world
 // constants (Owner/Director, Program Manager, IT roles) since those rows
 // dont change and dont need a button.
+//
+// a person can hold MORE THAN ONE position (e.g. "Independent Living
+// Instructor" + "IT / Web Developer"). positions are stored in the
+// single User.title string, joined with " / " - display code shows the
+// string as-is, no schema change needed.
 export const POSITIONS = [
   "Field Supervisor",
   "HR Administrator",
@@ -17,35 +22,55 @@ export const POSITIONS = [
   "Quality Assurance Specialist",
 ];
 
-// sentinel values for the radio group. the form sends one of:
-//   __none__   -> title becomes null in db
-//   __custom__ -> title is taken from the accompanying text input
-//   <any POSITIONS string> -> title is that string
-export const POSITION_NONE = "__none__";
-export const POSITION_CUSTOM = "__custom__";
+// separator used to join multiple positions into the title string. none
+// of our position names contain this, so we can split on it cleanly.
+export const POSITION_SEP = " / ";
 
-export const TITLE_MAX_LEN = 60;
+// per-position max + overall title cap.
+export const TITLE_MAX_LEN = 120;
 
-// helper: figure out which radio should be pre-selected for an existing
-// user. returns one of: POSITION_NONE, POSITION_CUSTOM, or a preset.
-export function radioForTitle(title) {
-  if (!title) return POSITION_NONE;
-  if (POSITIONS.includes(title)) return title;
-  return POSITION_CUSTOM;
+// split an existing title back into { selected, custom }:
+//   selected = the preset positions that are checked
+//   custom   = any leftover parts that arent presets (free text), rejoined
+export function parseTitle(title) {
+  if (!title || typeof title !== "string") {
+    return { selected: [], custom: "" };
+  }
+  const parts = title
+    .split(POSITION_SEP)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const selected = parts.filter((p) => POSITIONS.includes(p));
+  const custom = parts.filter((p) => !POSITIONS.includes(p)).join(POSITION_SEP);
+  return { selected, custom };
 }
 
-// helper used in server actions to turn form fields into the final
-// title string (or null). pass in the radio value + custom text value.
-export function resolveTitle(radioValue, customText) {
-  if (radioValue === POSITION_NONE) return null;
-  if (radioValue === POSITION_CUSTOM) {
-    if (typeof customText !== "string") return null;
-    const trimmed = customText.trim();
-    if (!trimmed) return null;
-    return trimmed.slice(0, TITLE_MAX_LEN);
+// turn the form fields into the final title string (or null). takes the
+// array of checked preset positions + the optional custom text, dedupes,
+// joins with " / ", caps length.
+export function resolveTitle(selectedValues, customText) {
+  const parts = [];
+  const seen = new Set();
+
+  const list = Array.isArray(selectedValues)
+    ? selectedValues
+    : selectedValues
+      ? [selectedValues]
+      : [];
+  for (const v of list) {
+    if (POSITIONS.includes(v) && !seen.has(v)) {
+      seen.add(v);
+      parts.push(v);
+    }
   }
-  if (POSITIONS.includes(radioValue)) return radioValue;
-  // fallthrough: unknown radio value -> null. server should also reject
-  // before getting here, this is just defensive.
-  return null;
+
+  if (typeof customText === "string") {
+    const trimmed = customText.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      parts.push(trimmed);
+    }
+  }
+
+  if (parts.length === 0) return null;
+  return parts.join(POSITION_SEP).slice(0, TITLE_MAX_LEN);
 }

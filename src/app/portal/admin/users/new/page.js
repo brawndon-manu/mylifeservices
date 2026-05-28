@@ -11,14 +11,8 @@ import {
   isValidRole,
   isIT,
 } from "@/lib/roles";
-import {
-  POSITIONS,
-  POSITION_NONE,
-  POSITION_CUSTOM,
-  TITLE_MAX_LEN,
-  radioForTitle,
-  resolveTitle,
-} from "@/lib/positions";
+import { resolveTitle } from "@/lib/positions";
+import PositionPicker from "../_components/PositionPicker";
 
 export const metadata = {
   title: "Invite user",
@@ -61,10 +55,10 @@ async function inviteUser(formData) {
     name = email.split("@")[0];
   }
 
-  // title comes from the radio group. blank = null. preset = preset
-  // string. custom = whatever is typed in the accompanying text input.
+  // positions come from the checkbox group (can be multiple) + an
+  // optional custom text field. joined into the title string.
   const title = resolveTitle(
-    formData.get("titleRadio"),
+    formData.getAll("titlePositions"),
     formData.get("titleCustom"),
   );
 
@@ -213,8 +207,8 @@ export default async function NewUserPage({ searchParams }) {
               Position at MLS. Separate from the portal privilege role
               below. Pick one or use Custom.
             </p>
-            <PositionRadios
-              fieldName="titleRadio"
+            <PositionPicker
+              fieldName="titlePositions"
               customFieldName="titleCustom"
             />
           </fieldset>
@@ -299,57 +293,6 @@ export default async function NewUserPage({ searchParams }) {
         </form>
       </div>
     </section>
-  );
-}
-
-// position radios — shared shape with the edit page. always renders the
-// custom text input under the Custom option so no client-side JS is
-// needed. server only reads the text when the Custom radio is selected.
-function PositionRadios({ currentTitle, fieldName, customFieldName }) {
-  const selected = radioForTitle(currentTitle ?? null);
-  const customDefault =
-    selected === POSITION_CUSTOM ? currentTitle ?? "" : "";
-
-  const options = [
-    { value: POSITION_NONE, label: "(No title)" },
-    ...POSITIONS.map((p) => ({ value: p, label: p })),
-    { value: POSITION_CUSTOM, label: "Custom" },
-  ];
-
-  return (
-    <div className="mt-3 space-y-2">
-      {options.map((opt) => (
-        <label
-          key={opt.value}
-          className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 transition hover:border-brand-light hover:bg-sky-50"
-        >
-          <input
-            type="radio"
-            name={fieldName}
-            value={opt.value}
-            defaultChecked={selected === opt.value}
-            required
-            className="mt-1 h-4 w-4 accent-brand"
-          />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-slate-900">
-              {opt.label}
-            </div>
-            {opt.value === POSITION_CUSTOM && (
-              <input
-                type="text"
-                name={customFieldName}
-                maxLength={TITLE_MAX_LEN}
-                defaultValue={customDefault}
-                autoComplete="off"
-                placeholder="Type a custom title"
-                className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-            )}
-          </div>
-        </label>
-      ))}
-    </div>
   );
 }
 

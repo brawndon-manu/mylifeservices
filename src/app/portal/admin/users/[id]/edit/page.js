@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { cleanDisplayName } from "@/lib/security";
+import { cleanDisplayName, isLockedSuperEmail } from "@/lib/security";
 import {
   ROLE_LABELS,
   ROLE_DESCRIPTIONS,
@@ -10,14 +10,8 @@ import {
   isValidRole,
   isIT,
 } from "@/lib/roles";
-import {
-  POSITIONS,
-  POSITION_NONE,
-  POSITION_CUSTOM,
-  TITLE_MAX_LEN,
-  radioForTitle,
-  resolveTitle,
-} from "@/lib/positions";
+import { resolveTitle } from "@/lib/positions";
+import PositionPicker from "../../_components/PositionPicker";
 import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
 import { WORKING_HOURS_MAX } from "@/lib/clients";
 
@@ -80,10 +74,10 @@ async function updateUser(userId, formData) {
     redirect(`/portal/admin/users/${userId}/edit?error=name`);
   }
 
-  // title comes from the radio group. blank = null. preset = preset
-  // string. custom = whatever is typed in the accompanying text input.
+  // positions come from the checkbox group (can be multiple) + an
+  // optional custom text field. joined into the title string.
   const title = resolveTitle(
-    formData.get("titleRadio"),
+    formData.getAll("titlePositions"),
     formData.get("titleCustom"),
   );
 
@@ -98,7 +92,7 @@ async function updateUser(userId, formData) {
     }
   }
 
-  const role = formData.get("role");
+  let role = formData.get("role");
   if (!isValidRole(role)) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
   }
@@ -106,6 +100,11 @@ async function updateUser(userId, formData) {
   // even if they craft the request directly.
   if (role === "SUPER" && !isIT(current.role)) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
+  }
+  // locked superusers (env LOCKED_SUPER_EMAILS) always stay SUPER - their
+  // role can't be changed away, no matter what was submitted.
+  if (isLockedSuperEmail(target.email)) {
+    role = "SUPER";
   }
 
   // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
@@ -132,6 +131,12 @@ async function updateUser(userId, formData) {
 async function deactivateUser(userId) {
   "use server";
   const { target } = await loadActionTarget(userId);
+
+  // locked superusers can't be deactivated - prevents locking out the
+  // permanent owner/IT accounts.
+  if (isLockedSuperEmail(target.email)) {
+    redirect(`/portal/admin/users/${userId}/edit?error=locked`);
+  }
 
   // already deactivated? no-op, just bounce.
   if (target.deactivatedAt) {
@@ -174,6 +179,8 @@ export default async function EditUserPage({ params, searchParams }) {
   const errorMessages = {
     name: `Display name must be 1-${NAME_MAX_LEN} characters.`,
     role: "Please pick a role.",
+    locked:
+      "This is a permanent superuser account — its role can't be changed and it can't be deactivated.",
   };
   const errorMessage = error ? errorMessages[error] : null;
 
@@ -283,9 +290,9 @@ export default async function EditUserPage({ params, searchParams }) {
               Position at MLS. Separate from the portal privilege role
               below.
             </p>
-            <PositionRadios
+            <PositionPicker
               currentTitle={target.title}
-              fieldName="titleRadio"
+              fieldName="titlePositions"
               customFieldName="titleCustom"
             />
           </fieldset>
@@ -478,58 +485,6 @@ export default async function EditUserPage({ params, searchParams }) {
         )}
       </div>
     </section>
-  );
-}
-
-// position radios — shared shape between edit + new pages. always shows
-// the custom text input under the Custom radio so we dont need any
-// client-side JS for the toggle. server only reads the text when the
-// Custom radio is the one submitted.
-function PositionRadios({ currentTitle, fieldName, customFieldName }) {
-  const selected = radioForTitle(currentTitle ?? null);
-  const customDefault =
-    selected === POSITION_CUSTOM ? currentTitle ?? "" : "";
-
-  const options = [
-    { value: POSITION_NONE, label: "(No title)" },
-    ...POSITIONS.map((p) => ({ value: p, label: p })),
-    { value: POSITION_CUSTOM, label: "Custom" },
-  ];
-
-  return (
-    <div className="mt-3 space-y-2">
-      {options.map((opt) => (
-        <label
-          key={opt.value}
-          className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 transition hover:border-brand-light hover:bg-sky-50"
-        >
-          <input
-            type="radio"
-            name={fieldName}
-            value={opt.value}
-            defaultChecked={selected === opt.value}
-            required
-            className="mt-1 h-4 w-4 accent-brand"
-          />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-slate-900">
-              {opt.label}
-            </div>
-            {opt.value === POSITION_CUSTOM && (
-              <input
-                type="text"
-                name={customFieldName}
-                maxLength={TITLE_MAX_LEN}
-                defaultValue={customDefault}
-                autoComplete="off"
-                placeholder="Type a custom title"
-                className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-            )}
-          </div>
-        </label>
-      ))}
-    </div>
   );
 }
 
