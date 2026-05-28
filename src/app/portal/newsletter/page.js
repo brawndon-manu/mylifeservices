@@ -143,7 +143,7 @@ export default async function NewsletterPortalPage({ searchParams }) {
                     </p>
                   )}
                 </div>
-                {item.status !== "PUBLISHED" && (
+                {(item.status !== "PUBLISHED" || elevated) && (
                   <form action={deleteItem.bind(null, item.id)}>
                     <button
                       type="submit"
