@@ -64,10 +64,26 @@ export default async function PortalDashboard() {
           title="Forms & resources"
           body="Internal forms staff can fill out or download. Coming soon."
         />
-        <Card
-          title="Team contacts"
-          body="Quick reference for who to reach out to. Coming soon."
-        />
+        <Link
+          href="/portal/contacts"
+          className="group rounded-xl border border-slate-200 bg-white p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+              Team contacts
+            </h2>
+            <span
+              aria-hidden="true"
+              className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-brand"
+            >
+              →
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-slate-700">
+            Directory of the team — names, roles, photos, email, phone — plus
+            community resources.
+          </p>
+        </Link>
       </div>
 
       {/* utility board - amber so it reads as a working/temporary area

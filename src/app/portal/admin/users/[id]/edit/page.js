@@ -17,6 +17,7 @@ import {
   radioForTitle,
   resolveTitle,
 } from "@/lib/positions";
+import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
 
 export const metadata = {
   title: "Edit user",
@@ -54,6 +55,7 @@ async function loadActionTarget(userId) {
       role: true,
       title: true,
       hireDate: true,
+      phone: true,
       deactivatedAt: true,
     },
   });
@@ -96,9 +98,12 @@ async function updateUser(userId, formData) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
   }
 
+  // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
+  const phone = formatUSPhone(formData.get("phone"));
+
   await prisma.user.update({
     where: { id: userId },
-    data: { name, title, hireDate, role },
+    data: { name, title, hireDate, phone, role },
   });
 
   redirect(`/portal/admin?updated=${encodeURIComponent(userId)}`);
@@ -279,6 +284,29 @@ export default async function EditUserPage({ params, searchParams }) {
             <p className="mt-1 text-xs text-slate-500">
               Start date at MLS. Displayed on the admin list with tenure
               (e.g. &quot;3y 2mo&quot;).
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="phone"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Phone <span className="text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              maxLength={PHONE_MAX}
+              defaultValue={target.phone ?? ""}
+              autoComplete="off"
+              placeholder="(909) 555-0123"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Shows on the Team Contacts directory. They can also set this
+              themselves in Settings.
             </p>
           </div>
 

@@ -24,6 +24,9 @@ export async function getCurrentUser() {
       email: true,
       name: true,
       role: true,
+      title: true,
+      phone: true,
+      image: true,
       deactivatedAt: true,
     },
   });
@@ -48,6 +51,9 @@ export async function getCurrentUserIncludingDeactivated() {
       email: true,
       name: true,
       role: true,
+      title: true,
+      phone: true,
+      image: true,
       deactivatedAt: true,
     },
   });

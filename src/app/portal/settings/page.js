@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
+import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { cleanDisplayName } from "@/lib/security";
+import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
+import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
+import Avatar from "@/components/Avatar";
 
 export const metadata = {
   title: "Settings",
@@ -13,7 +17,7 @@ export const metadata = {
 // cleanDisplayName below also strips control chars + zero-width junk.
 const NAME_MAX_LEN = 30;
 
-async function updateDisplayName(formData) {
+async function updateProfile(formData) {
   "use server";
 
   const user = await getCurrentUser();
@@ -23,22 +27,66 @@ async function updateDisplayName(formData) {
   }
 
   // cleanDisplayName handles: type check, trim, strip control chars,
-  // length cap. returns null on garbage input. shared with any other
-  // place that accepts a name in the future.
+  // length cap. returns null on garbage input.
   const name = cleanDisplayName(formData.get("name"), NAME_MAX_LEN);
   if (!name) {
-    redirect("/portal/settings?error=1");
+    redirect("/portal/settings?error=name");
+  }
+
+  // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
+  const phone = formatUSPhone(formData.get("phone"));
+
+  // photo: optional upload, or a "remove" checkbox. only touch the
+  // image column when one of those is set so a plain name/phone save
+  // doesnt wipe an existing photo.
+  let imageUpdate = {};
+  const removePhoto = formData.get("removePhoto") === "on";
+  const file = formData.get("photo");
+  const hasFile =
+    file && typeof file === "object" && "size" in file && file.size > 0;
+
+  if (hasFile) {
+    if (!IMAGE_ACCEPT.includes(file.type)) {
+      redirect("/portal/settings?error=photoType");
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      redirect("/portal/settings?error=photoSize");
+    }
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      redirect("/portal/settings?error=photoUpload");
+    }
+    try {
+      const ext = (file.name?.split(".").pop() || "jpg").toLowerCase().slice(0, 8);
+      const key = `avatars/${user.id}-${Date.now()}.${ext}`;
+      const blob = await put(key, file, { access: "public", contentType: file.type });
+      imageUpdate = { image: blob.url };
+    } catch {
+      redirect("/portal/settings?error=photoUpload");
+    }
+    // best-effort cleanup of the previous avatar blob
+    if (user.image?.includes("blob.vercel-storage.com")) {
+      try {
+        await del(user.image);
+      } catch {
+        // ignore
+      }
+    }
+  } else if (removePhoto) {
+    if (user.image?.includes("blob.vercel-storage.com")) {
+      try {
+        await del(user.image);
+      } catch {
+        // ignore
+      }
+    }
+    imageUpdate = { image: null };
   }
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { name },
+    data: { name, phone, ...imageUpdate },
   });
 
-  // back to /portal/settings?saved=1 - the layout re-fetches the user
-  // fresh from db so the new name shows in the header immediately, and
-  // the query param triggers the green "Saved" banner so the user
-  // actually knows the change went through.
   redirect("/portal/settings?saved=1");
 }
 
@@ -50,7 +98,13 @@ export default async function SettingsPage({ searchParams }) {
   // the page server-rendered (no client js for flash messages).
   const params = await searchParams;
   const justSaved = params?.saved === "1";
-  const hadError = params?.error === "1";
+  const errorMessages = {
+    name: `Display name must be between 1 and ${NAME_MAX_LEN} characters.`,
+    photoType: "Photo must be a JPG, PNG, WebP, or GIF.",
+    photoSize: `Photo must be under ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.`,
+    photoUpload: "Photo upload failed. Try again.",
+  };
+  const errorMessage = params?.error ? errorMessages[params.error] : null;
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
@@ -61,8 +115,9 @@ export default async function SettingsPage({ searchParams }) {
         Your account
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700">
-        Update how your name appears in the portal. Your email and role
-        are managed by IT and can&apos;t be edited here.
+        Update how you appear in the portal — your name, photo, and phone
+        show on the Team Contacts directory. Your email and role are
+        managed by IT and can&apos;t be edited here.
       </p>
 
       {justSaved && (
@@ -74,13 +129,13 @@ export default async function SettingsPage({ searchParams }) {
           <div>
             <p className="font-semibold">Saved</p>
             <p className="mt-0.5 text-emerald-800">
-              Your display name has been updated.
+              Your profile has been updated.
             </p>
           </div>
         </div>
       )}
 
-      {hadError && (
+      {errorMessage && (
         <div
           role="alert"
           className="mt-6 flex items-start gap-3 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
@@ -88,15 +143,13 @@ export default async function SettingsPage({ searchParams }) {
           <ExclamationIcon className="mt-0.5 h-5 w-5 flex-none text-rose-600" />
           <div>
             <p className="font-semibold">Didn&apos;t save</p>
-            <p className="mt-0.5 text-rose-800">
-              Display name must be between 1 and {NAME_MAX_LEN} characters.
-            </p>
+            <p className="mt-0.5 text-rose-800">{errorMessage}</p>
           </div>
         </div>
       )}
 
       <div className="mt-10 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
-        <form action={updateDisplayName} className="space-y-6">
+        <form action={updateProfile} className="space-y-6">
           <div>
             <label
               htmlFor="email"
@@ -150,6 +203,69 @@ export default async function SettingsPage({ searchParams }) {
             <p className="mt-1 text-xs text-slate-500">
               Up to {NAME_MAX_LEN} characters. Shows on the dashboard
               greeting and in the admin user list.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="phone"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Phone <span className="text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              maxLength={PHONE_MAX}
+              defaultValue={user.phone ?? ""}
+              autoComplete="tel"
+              placeholder="(909) 555-0123"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Shows on the Team Contacts directory. Leave blank to keep it
+              private.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="photo"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Photo <span className="text-slate-400">(optional)</span>
+            </label>
+            <div className="mt-2 flex items-center gap-4">
+              <Avatar
+                name={user.name}
+                email={user.email}
+                image={user.image}
+                size={64}
+              />
+              <div className="flex-1">
+                <input
+                  id="photo"
+                  name="photo"
+                  type="file"
+                  accept={IMAGE_ACCEPT.join(",")}
+                  className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
+                />
+                {user.image && (
+                  <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      name="removePhoto"
+                      className="h-3.5 w-3.5 accent-brand"
+                    />
+                    Remove current photo
+                  </label>
+                )}
+              </div>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              A headshot helps coworkers put a face to your name. JPG, PNG,
+              WebP, or GIF, up to {Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.
             </p>
           </div>
 

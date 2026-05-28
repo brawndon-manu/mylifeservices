@@ -1,0 +1,262 @@
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
+import { isElevated, ROLE_LABELS } from "@/lib/roles";
+import {
+  CONTACT_CATEGORIES,
+  isValidCategory,
+  rolesForCategory,
+} from "@/lib/contacts";
+import Avatar from "@/components/Avatar";
+import ConfirmButton from "@/components/ConfirmButton";
+import { deleteResource } from "./actions";
+
+export const metadata = {
+  title: "Team Contacts · MLS Portal",
+  robots: { index: false, follow: false },
+};
+
+export default async function ContactsPage({ searchParams }) {
+  const user = await getCurrentUser();
+  const params = await searchParams;
+  const elevated = isElevated(user.role);
+
+  const cat = isValidCategory(params?.cat) ? params.cat : null;
+  const roleFilter = cat ? rolesForCategory(cat) : null;
+
+  const people = await prisma.user.findMany({
+    where: {
+      deactivatedAt: null,
+      ...(roleFilter ? { role: { in: roleFilter } } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      title: true,
+      phone: true,
+      image: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const resources = await prisma.resource.findMany({
+    where: { status: "APPROVED" },
+    orderBy: { name: "asc" },
+  });
+  const pendingResources = elevated
+    ? await prisma.resource.count({ where: { status: "PENDING" } })
+    : 0;
+
+  const banner =
+    params?.added === "1"
+      ? "Resource added."
+      : params?.submitted === "1"
+        ? "Thanks! Your resource was sent for approval."
+        : params?.deleted === "1"
+          ? "Resource removed."
+          : null;
+
+  return (
+    <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
+      <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+        Portal
+      </p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+        Team Contacts
+      </h1>
+      <p className="mt-2 text-sm text-slate-600">
+        Find a coworker, put a face to a name, or look up a community
+        resource. Update your own photo and phone in{" "}
+        <Link href="/portal/settings" className="text-brand underline-offset-2 hover:underline">
+          Settings
+        </Link>
+        .
+      </p>
+
+      {banner && (
+        <div className="mt-6 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          {banner}
+        </div>
+      )}
+
+      <div className="mt-8 grid gap-8 lg:grid-cols-[260px_1fr]">
+        {/* left rail: filters + community resources */}
+        <aside className="space-y-8 lg:sticky lg:top-24 lg:self-start">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Filter
+            </p>
+            <nav className="mt-3 flex flex-wrap gap-2 lg:flex-col">
+              <FilterCard href="/portal/contacts" label="Everyone" active={!cat} />
+              {CONTACT_CATEGORIES.map((c) => (
+                <FilterCard
+                  key={c.value}
+                  href={`/portal/contacts?cat=${c.value}`}
+                  label={c.label}
+                  active={cat === c.value}
+                />
+              ))}
+            </nav>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Resources
+              </p>
+              {elevated && pendingResources > 0 && (
+                <Link
+                  href="/portal/contacts/resources/review"
+                  className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                >
+                  {pendingResources} to review
+                </Link>
+              )}
+            </div>
+
+            <div className="mt-3 space-y-3">
+              {resources.length === 0 ? (
+                <p className="text-sm text-slate-500">No resources yet.</p>
+              ) : (
+                resources.map((r) => (
+                  <div
+                    key={r.id}
+                    className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold text-slate-900">
+                        {r.name}
+                      </span>
+                      {r.category && (
+                        <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-800">
+                          {r.category}
+                        </span>
+                      )}
+                    </div>
+                    {r.notes && (
+                      <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                        {r.notes}
+                      </p>
+                    )}
+                    <div className="mt-1.5 space-y-0.5">
+                      {r.phone && (
+                        <a
+                          href={`tel:${r.phone.replace(/[^\d+]/g, "")}`}
+                          className="block text-slate-700 underline-offset-2 hover:underline"
+                        >
+                          {r.phone}
+                        </a>
+                      )}
+                      {r.email && (
+                        <a
+                          href={`mailto:${r.email}`}
+                          className="block truncate text-brand underline-offset-2 hover:underline"
+                        >
+                          {r.email}
+                        </a>
+                      )}
+                      {r.website && (
+                        <a
+                          href={r.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate text-brand underline-offset-2 hover:underline"
+                        >
+                          {r.website.replace(/^https?:\/\//, "")}
+                        </a>
+                      )}
+                    </div>
+                    {elevated && (
+                      <form action={deleteResource.bind(null, r.id)} className="mt-2">
+                        <ConfirmButton
+                          message="Remove this resource?"
+                          className="text-[11px] font-medium text-rose-600 transition hover:text-rose-700"
+                        >
+                          Remove
+                        </ConfirmButton>
+                      </form>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <Link
+              href="/portal/contacts/resources/new"
+              className="mt-3 block rounded-md border border-brand-light bg-sky-50 px-3 py-2 text-center text-sm font-semibold text-brand transition hover:bg-sky-100"
+            >
+              + Add resource
+            </Link>
+          </div>
+        </aside>
+
+        {/* directory grid */}
+        <div>
+          {people.length === 0 ? (
+            <p className="text-sm text-slate-600">No one in this group.</p>
+          ) : (
+            <ul className="grid gap-4 sm:grid-cols-2">
+              {people.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <Avatar
+                    name={p.name}
+                    email={p.email}
+                    image={p.image}
+                    size={56}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-slate-900">
+                        {p.name || p.email}
+                      </span>
+                      <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-brand">
+                        {ROLE_LABELS[p.role] ?? p.role}
+                      </span>
+                    </div>
+                    {p.title && (
+                      <p className="text-sm text-slate-600">{p.title}</p>
+                    )}
+                    <a
+                      href={`mailto:${p.email}`}
+                      className="mt-1 block truncate text-sm text-brand underline-offset-2 hover:underline"
+                    >
+                      {p.email}
+                    </a>
+                    {p.phone && (
+                      <a
+                        href={`tel:${p.phone.replace(/[^\d+]/g, "")}`}
+                        className="block text-sm text-slate-700 underline-offset-2 hover:underline"
+                      >
+                        {p.phone}
+                      </a>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FilterCard({ href, label, active }) {
+  return (
+    <Link
+      href={href}
+      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+        active
+          ? "border-brand-light bg-sky-50 text-brand"
+          : "border-slate-200 bg-white text-slate-700 hover:border-brand-light hover:text-brand"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+}

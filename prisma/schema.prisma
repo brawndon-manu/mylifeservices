@@ -46,6 +46,9 @@ model User {
   // separate from createdAt which is just when their row was added to
   // our portal db. used for tenure displays + sorting in the admin list.
   hireDate      DateTime?
+  // contact phone for the team directory. self-editable in Settings,
+  // admins can also set it. stored as the raw string the user typed.
+  phone         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -59,6 +62,39 @@ model User {
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
   feedbackAuthored FeedbackItem[] @relation("FeedbackAuthor")
   feedbackResolved FeedbackItem[] @relation("FeedbackResolvedBy")
+  resourcesSubmitted Resource[]   @relation("ResourceSubmittedBy")
+  resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
+}
+
+// external partners / community resources for the team contacts page
+// (e.g. Integrity Cottages, food banks, clinics). staff submit, IT or
+// management approve before they show on the directory.
+enum ResourceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Resource {
+  id          String         @id @default(cuid())
+  name        String
+  // free-text grouping shown as a chip, e.g. "Housing", "Health".
+  category    String?
+  phone       String?
+  email       String?
+  website     String?
+  notes       String?
+  status      ResourceStatus @default(PENDING)
+  submittedById String
+  submittedBy   User         @relation("ResourceSubmittedBy", fields: [submittedById], references: [id])
+  approvedById  String?
+  approvedBy    User?        @relation("ResourceApprovedBy", fields: [approvedById], references: [id])
+  approvedAt    DateTime?
+  reviewNote    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status])
 }
 
 // MLS Hub - internal feed for posts (flyers, helpful info) + comments.
