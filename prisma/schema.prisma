@@ -49,6 +49,9 @@ model User {
   // contact phone for the team directory. self-editable in Settings,
   // admins can also set it. stored as the raw string the user typed.
   phone         String?
+  // free-text working hours shown on their contact detail page, e.g.
+  // "Mon-Fri 9am-5pm". self-editable in Settings, admins too.
+  workingHours  String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -64,6 +67,29 @@ model User {
   feedbackResolved FeedbackItem[] @relation("FeedbackResolvedBy")
   resourcesSubmitted Resource[]   @relation("ResourceSubmittedBy")
   resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
+  clients            Client[]     @relation("ClientAssignedTo")
+}
+
+// a person supported by MLS, tracked as a staff member's caseload. kept
+// deliberately minimal for privacy: first name + last initial only, no
+// full names / addresses / dob. caseloads are gated to supervisor+ and
+// the assigned staffer (see src/lib/roles.js isSupervisorPlus). see also
+// the privacy notes in the contacts feature.
+model Client {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastInitial  String   // single letter
+  notes        String?
+  active       Boolean  @default(true)
+  // the staff member who currently carries this client. null = unassigned.
+  assignedToId String?
+  assignedTo   User?    @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
+  // who created the record (no relation - just an audit breadcrumb).
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([assignedToId])
 }
 
 // external partners / community resources for the team contacts page

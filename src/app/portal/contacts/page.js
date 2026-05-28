@@ -175,43 +175,37 @@ export default async function ContactsPage({ searchParams }) {
           ) : (
             <ul className="grid gap-4 sm:grid-cols-2">
               {people.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <Avatar
-                    name={p.name}
-                    email={p.email}
-                    image={p.image}
-                    size={56}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-slate-900">
-                        {p.name || p.email}
-                      </span>
-                      <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-brand">
-                        {ROLE_LABELS[p.role] ?? p.role}
-                      </span>
+                <li key={p.id}>
+                  <Link
+                    href={`/portal/contacts/${p.id}`}
+                    className="flex h-full gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  >
+                    <Avatar
+                      name={p.name}
+                      email={p.email}
+                      image={p.image}
+                      size={56}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-900">
+                          {p.name || p.email}
+                        </span>
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-brand">
+                          {ROLE_LABELS[p.role] ?? p.role}
+                        </span>
+                      </div>
+                      {p.title && (
+                        <p className="text-sm text-slate-600">{p.title}</p>
+                      )}
+                      <p className="mt-1 truncate text-sm text-brand">
+                        {p.email}
+                      </p>
+                      {p.phone && (
+                        <p className="text-sm text-slate-700">{p.phone}</p>
+                      )}
                     </div>
-                    {p.title && (
-                      <p className="text-sm text-slate-600">{p.title}</p>
-                    )}
-                    <a
-                      href={`mailto:${p.email}`}
-                      className="mt-1 block truncate text-sm text-brand underline-offset-2 hover:underline"
-                    >
-                      {p.email}
-                    </a>
-                    {p.phone && (
-                      <a
-                        href={`tel:${p.phone.replace(/[^\d+]/g, "")}`}
-                        className="block text-sm text-slate-700 underline-offset-2 hover:underline"
-                      >
-                        {p.phone}
-                      </a>
-                    )}
-                  </div>
+                  </Link>
                 </li>
               ))}
             </ul>

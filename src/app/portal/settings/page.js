@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { cleanDisplayName } from "@/lib/security";
 import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
+import { WORKING_HOURS_MAX } from "@/lib/clients";
 import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
 import Avatar from "@/components/Avatar";
 
@@ -35,6 +36,13 @@ async function updateProfile(formData) {
 
   // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
   const phone = formatUSPhone(formData.get("phone"));
+
+  // working hours: optional free text. cleanDisplayName trims + strips
+  // control chars + caps length; returns null when blank, which clears it.
+  const workingHours = cleanDisplayName(
+    formData.get("workingHours"),
+    WORKING_HOURS_MAX,
+  );
 
   // photo: optional upload, or a "remove" checkbox. only touch the
   // image column when one of those is set so a plain name/phone save
@@ -84,7 +92,7 @@ async function updateProfile(formData) {
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { name, phone, ...imageUpdate },
+    data: { name, phone, workingHours, ...imageUpdate },
   });
 
   redirect("/portal/settings?saved=1");
@@ -226,6 +234,28 @@ export default async function SettingsPage({ searchParams }) {
             <p className="mt-1 text-xs text-slate-500">
               Shows on the Team Contacts directory. Leave blank to keep it
               private.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="workingHours"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Working hours <span className="text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="workingHours"
+              name="workingHours"
+              type="text"
+              maxLength={WORKING_HOURS_MAX}
+              defaultValue={user.workingHours ?? ""}
+              autoComplete="off"
+              placeholder="e.g. Mon–Fri 9am–5pm"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Shows on your contact page so coworkers know when to reach you.
             </p>
           </div>
 

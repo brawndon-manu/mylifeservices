@@ -18,6 +18,7 @@ import {
   resolveTitle,
 } from "@/lib/positions";
 import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
+import { WORKING_HOURS_MAX } from "@/lib/clients";
 
 export const metadata = {
   title: "Edit user",
@@ -56,6 +57,7 @@ async function loadActionTarget(userId) {
       title: true,
       hireDate: true,
       phone: true,
+      workingHours: true,
       deactivatedAt: true,
     },
   });
@@ -101,9 +103,15 @@ async function updateUser(userId, formData) {
   // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
   const phone = formatUSPhone(formData.get("phone"));
 
+  // working hours: optional free text, trimmed + capped.
+  const workingHours = cleanDisplayName(
+    formData.get("workingHours"),
+    WORKING_HOURS_MAX,
+  );
+
   await prisma.user.update({
     where: { id: userId },
-    data: { name, title, hireDate, phone, role },
+    data: { name, title, hireDate, phone, workingHours, role },
   });
 
   redirect(`/portal/admin?updated=${encodeURIComponent(userId)}`);
@@ -307,6 +315,28 @@ export default async function EditUserPage({ params, searchParams }) {
             <p className="mt-1 text-xs text-slate-500">
               Shows on the Team Contacts directory. They can also set this
               themselves in Settings.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="workingHours"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Working hours <span className="text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="workingHours"
+              name="workingHours"
+              type="text"
+              maxLength={WORKING_HOURS_MAX}
+              defaultValue={target.workingHours ?? ""}
+              autoComplete="off"
+              placeholder="e.g. Mon–Fri 9am–5pm"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Shown on their contact page. They can also set this in Settings.
             </p>
           </div>
 
