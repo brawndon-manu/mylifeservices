@@ -39,14 +39,15 @@ export default async function PostDetailPage({ params, searchParams }) {
   const post = await prisma.post.findUnique({
     where: { id },
     include: {
-      author: { select: { id: true, name: true, role: true } },
+      author: { select: { id: true, name: true, role: true, email: true } },
+      postedBy: { select: { id: true, name: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       _count: { select: { likes: true } },
       comments: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
         include: {
-          author: { select: { id: true, name: true, role: true } },
+          author: { select: { id: true, name: true, role: true, email: true } },
         },
       },
     },
@@ -87,6 +88,11 @@ export default async function PostDetailPage({ params, searchParams }) {
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{timeAgo(post.createdAt)}</span>
               {post.editedAt && <span>· edited</span>}
+              {post.postedBy && (
+                <span className="italic">
+                  · posted on their behalf by {post.postedBy.name || "staff"}
+                </span>
+              )}
               {post.pinnedAt && (
                 <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
                   Pinned

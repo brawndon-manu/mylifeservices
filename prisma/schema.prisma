@@ -50,7 +50,8 @@ model User {
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
   sessions      Session[]
-  posts         Post[]
+  posts         Post[]     @relation("PostAuthor")
+  postedPosts   Post[]     @relation("PostPostedBy")
   comments      Comment[]
   likes         PostLike[]
 }
@@ -60,9 +61,14 @@ model User {
 model Post {
   id         String     @id @default(cuid())
   authorId   String
-  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author     User       @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   content    String
   imageUrl   String?
+  // when an IT/admin posts on behalf of someone else, authorId is the
+  // person being credited and postedById is who actually hit submit.
+  // null when the author posted it themselves. kept for the audit trail.
+  postedById String?
+  postedBy   User?      @relation("PostPostedBy", fields: [postedById], references: [id])
   // tag string is validated against the list in src/lib/hub.js. kept as
   // free string so we can add new tags without a migration.
   tag        String

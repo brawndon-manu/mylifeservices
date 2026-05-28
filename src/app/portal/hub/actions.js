@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator } from "@/lib/roles";
+import { isModerator, isElevated } from "@/lib/roles";
 import {
   cleanBody,
   isValidTag,
@@ -81,6 +81,30 @@ export async function createPost(formData) {
 
   const expiresAt = parseDateField(formData.get("expiresAt"));
 
+  // proxy posting: an IT/admin can post on behalf of another employee.
+  // authorId becomes the credited person, postedById records who actually
+  // submitted it. only elevated roles may do this, and only for a real,
+  // active user. everyone else (and the default) posts as themselves.
+  let authorId = user.id;
+  let postedById = null;
+  const postAs = formData.get("postAs");
+  if (
+    typeof postAs === "string" &&
+    postAs &&
+    postAs !== user.id &&
+    isElevated(user.role)
+  ) {
+    const target = await prisma.user.findFirst({
+      where: { id: postAs, deactivatedAt: null },
+      select: { id: true },
+    });
+    if (!target) {
+      redirect("/portal/hub/new?error=postAs");
+    }
+    authorId = target.id;
+    postedById = user.id;
+  }
+
   // optional image. File object from FormData. size 0 = no file picked.
   let imageUrl = null;
   const file = formData.get("image");
@@ -100,7 +124,8 @@ export async function createPost(formData) {
 
   const post = await prisma.post.create({
     data: {
-      authorId: user.id,
+      authorId,
+      postedById,
       content,
       tag,
       expiresAt,

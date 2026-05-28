@@ -54,7 +54,8 @@ export default async function HubPage({ searchParams }) {
       { createdAt: "desc" },
     ],
     include: {
-      author: { select: { id: true, name: true, role: true } },
+      author: { select: { id: true, name: true, role: true, email: true } },
+      postedBy: { select: { id: true, name: true } },
       _count: { select: { comments: true, likes: true } },
       likes: {
         where: { userId: user.id },
@@ -192,6 +193,11 @@ function PostCard({ post, currentUser }) {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>{timeAgo(post.createdAt)}</span>
             {post.editedAt && <span>· edited</span>}
+            {post.postedBy && (
+              <span className="italic">
+                · posted on their behalf by {post.postedBy.name || "staff"}
+              </span>
+            )}
             {post.pinnedAt && (
               <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
                 Pinned

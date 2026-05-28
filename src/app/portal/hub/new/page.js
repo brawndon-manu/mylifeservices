@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
+import { isElevated, ROLE_LABELS } from "@/lib/roles";
 import { POST_TAGS, POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
 import { createPost } from "../actions";
 
@@ -13,11 +16,26 @@ const ERRORS = {
   imageType: "Image must be JPG, PNG, WebP, or GIF.",
   imageSize: `Image must be under ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.`,
   imageUpload: "Image upload failed. Try again or post without an image.",
+  postAs: "That person isnt a valid active user. Pick someone else.",
 };
 
 export default async function NewPostPage({ searchParams }) {
   const params = await searchParams;
   const errorMessage = params?.error ? ERRORS[params.error] : null;
+
+  const user = await getCurrentUser();
+
+  // proxy posting is IT/admin-only. fetch the active-user list for the
+  // "Post as" picker only when the current user is allowed to use it.
+  const canProxyPost = isElevated(user.role);
+  let people = [];
+  if (canProxyPost) {
+    people = await prisma.user.findMany({
+      where: { deactivatedAt: null },
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { name: "asc" },
+    });
+  }
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
@@ -63,6 +81,40 @@ export default async function NewPostPage({ searchParams }) {
               Up to {POST_CONTENT_MAX} characters.
             </p>
           </div>
+
+          {canProxyPost && (
+            <div>
+              <label
+                htmlFor="postAs"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Post as <span className="text-slate-400">(IT / admin)</span>
+              </label>
+              <select
+                id="postAs"
+                name="postAs"
+                defaultValue={user.id}
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              >
+                <option value={user.id}>
+                  Myself ({user.name || user.email})
+                </option>
+                {people
+                  .filter((p) => p.id !== user.id)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name || p.email} — {ROLE_LABELS[p.role] ?? p.role} —{" "}
+                      {p.email}
+                    </option>
+                  ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Posting for someone who isn&apos;t tech-savvy? Pick them
+                here and the post will be credited to their name. A record
+                of who actually posted it is kept.
+              </p>
+            </div>
+          )}
 
           <div>
             <label
