@@ -13,8 +13,11 @@ const prisma = new PrismaClient({
 // example: SEED_ADMIN_EMAILS="me@example.com,boss@example.com"
 //
 // name defaults to the email's local part (everything before @) - the
-// settings page lets people change it later. role is always IT_ADMIN for
-// seeded users since this is the bootstrap admin list.
+// settings page lets people change it later. role is SUPER for seeded
+// users - these are the bootstrap owner/IT accounts, so they get full
+// access (incl. device management) by default. SUPER can't be
+// self-assigned through the UI (self-protection), so the seed is how
+// these accounts get it.
 const rawEmails = process.env.SEED_ADMIN_EMAILS || "";
 const ADMIN_EMAILS = rawEmails
   .split(",")
@@ -42,8 +45,8 @@ async function main() {
       // user has updated their name via /portal/settings, we'd be
       // stomping it on every seed. fresh users get the email-derived
       // default and can change it themselves.
-      update: { role: "IT_ADMIN" },
-      create: { email, name, role: "IT_ADMIN" },
+      update: { role: "SUPER" },
+      create: { email, name, role: "SUPER" },
     });
     console.log(`Seeded admin: ${admin.email} (${admin.name}, ${admin.role})`);
   }
