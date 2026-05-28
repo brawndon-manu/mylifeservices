@@ -182,6 +182,55 @@ export async function addClient(staffId, formData) {
   revalidatePath(`/portal/contacts/${staffId}`);
 }
 
+// edit a client: name + notes (owner or supervisor+), and reassignment
+// (supervisor+ only). bound: clientId.
+export async function editClient(clientId, formData) {
+  const user = await requireUser();
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { id: true, assignedToId: true },
+  });
+  if (!client) redirect("/portal/contacts");
+
+  const elevated = isSupervisorPlus(user.role);
+  const owns = client.assignedToId === user.id;
+  if (!elevated && !owns) {
+    redirect("/portal/contacts?error=forbidden");
+  }
+
+  const firstName = cleanFirstName(formData.get("firstName"));
+  const lastInitial = cleanLastInitial(formData.get("lastInitial"));
+  if (!firstName || !lastInitial) {
+    redirect(`/portal/contacts/clients/${clientId}/edit?error=clientName`);
+  }
+  const notes = cleanBody(formData.get("notes"), CLIENT_NOTES_MAX);
+
+  // reassignment is supervisor+ only. non-elevated owners keep the
+  // current assignee no matter what's posted.
+  let assignedToId = client.assignedToId;
+  if (elevated) {
+    const rawTarget = formData.get("assignedToId");
+    if (typeof rawTarget === "string" && rawTarget) {
+      const staff = await prisma.user.findFirst({
+        where: { id: rawTarget, deactivatedAt: null },
+        select: { id: true },
+      });
+      assignedToId = staff ? staff.id : null;
+    } else {
+      assignedToId = null;
+    }
+  }
+
+  await prisma.client.update({
+    where: { id: clientId },
+    data: { firstName, lastInitial, notes, assignedToId },
+  });
+
+  if (client.assignedToId) revalidatePath(`/portal/contacts/${client.assignedToId}`);
+  if (assignedToId) revalidatePath(`/portal/contacts/${assignedToId}`);
+  redirect(assignedToId ? `/portal/contacts/${assignedToId}` : "/portal/contacts");
+}
+
 // move a client to a different staffer (or unassign). bound: clientId.
 export async function reassignClient(clientId, formData) {
   await requireSupervisorPlus();

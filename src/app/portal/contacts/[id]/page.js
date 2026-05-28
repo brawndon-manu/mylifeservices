@@ -5,8 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isSupervisorPlus, ROLE_LABELS } from "@/lib/roles";
 import { clientDisplayName, CLIENT_FIRST_MAX } from "@/lib/clients";
 import Avatar from "@/components/Avatar";
-import ConfirmButton from "@/components/ConfirmButton";
-import { addClient, reassignClient, deleteClient } from "../actions";
+import { addClient } from "../actions";
 
 export const metadata = {
   title: "Contact · MLS Portal",
@@ -42,19 +41,10 @@ export default async function ContactDetailPage({ params, searchParams }) {
   const canEditCaseload = canManage || isOwn;
 
   let clients = [];
-  let staffOptions = [];
   if (canSeeCaseload) {
     clients = await prisma.client.findMany({
       where: { assignedToId: person.id },
       orderBy: [{ firstName: "asc" }],
-    });
-  }
-  if (canManage) {
-    // active staff for the reassign dropdown
-    staffOptions = await prisma.user.findMany({
-      where: { deactivatedAt: null },
-      select: { id: true, name: true, email: true },
-      orderBy: { name: "asc" },
     });
   }
 
@@ -154,46 +144,16 @@ export default async function ContactDetailPage({ params, searchParams }) {
                       {clientDisplayName(c)}
                     </p>
                     {canEditCaseload && (
-                      <form action={deleteClient.bind(null, c.id)}>
-                        <ConfirmButton
-                          message={`Remove ${clientDisplayName(c)} from the caseload?`}
-                          className="text-xs font-medium text-rose-600 transition hover:text-rose-700"
-                        >
-                          Remove
-                        </ConfirmButton>
-                      </form>
+                      <Link
+                        href={`/portal/contacts/clients/${c.id}/edit`}
+                        className="flex-none text-sm font-medium text-brand-light transition hover:text-brand"
+                      >
+                        Edit →
+                      </Link>
                     )}
                   </div>
                   {c.notes && (
                     <p className="mt-1 text-sm text-slate-600">{c.notes}</p>
-                  )}
-                  {canManage && (
-                    <form
-                      action={reassignClient.bind(null, c.id)}
-                      className="mt-2 flex items-center gap-2"
-                    >
-                      <label className="text-xs text-slate-500">
-                        Reassign:
-                      </label>
-                      <select
-                        name="assignedToId"
-                        defaultValue={person.id}
-                        className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                      >
-                        <option value="">Unassigned</option>
-                        {staffOptions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name || s.email}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="submit"
-                        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:border-brand hover:text-brand"
-                      >
-                        Move
-                      </button>
-                    </form>
                   )}
                 </li>
               ))
