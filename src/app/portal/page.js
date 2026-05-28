@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
-import { ROLE_LABELS } from "@/lib/roles";
+import { isSuper, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 
 export const metadata = {
   title: "Portal",
@@ -9,6 +9,7 @@ export const metadata = {
 };
 
 const ROLE_GREETING = {
+  SUPER: "Superuser — you have full access to everything.",
   IT_ADMIN: "You have full access — including the Admin area.",
   ADMIN: "You have full access — including the Admin area.",
   MANAGER:
@@ -40,7 +41,7 @@ export default async function PortalDashboard() {
                 admin user list so the visual language stays consistent.
                 align-middle keeps it sitting nicely against the big
                 heading text instead of dropping to the baseline. */}
-            <span className="ml-3 inline-block align-middle rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-brand">
+            <span className={`ml-3 inline-block align-middle rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(role)}`}>
               {ROLE_LABELS[role] ?? role}
             </span>
           </>
@@ -111,7 +112,7 @@ export default async function PortalDashboard() {
         </Link>
       </div>
 
-      {user?.deviceManager && (
+      {(user?.deviceManager || isSuper(role)) && (
         <div className="mt-6">
           <Link
             href="/portal/devices"

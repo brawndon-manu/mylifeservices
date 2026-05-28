@@ -12,12 +12,13 @@ datasource db {
 }
 
 enum Role {
-  // privilege roles (controls what they can DO in the portal). split
-  // into two tiers right now:
+  // privilege roles (controls what they can DO in the portal).
+  //   SUPER:     full access to everything. hidden role - only IT can
+  //              see/assign it. red badge. used for top-level superusers.
   //   ELEVATED:  IT_ADMIN, ADMIN, MANAGER  (can manage users + content)
   //   STANDARD:  HR, SUPERVISOR, STAFF      (read-only access)
-  // we may split the two ELEVATED levels apart later - for now all three
-  // map to the same permission set. see src/lib/roles.js for the helper.
+  // see src/lib/roles.js for the permission helpers.
+  SUPER
   IT_ADMIN
   ADMIN
   MANAGER

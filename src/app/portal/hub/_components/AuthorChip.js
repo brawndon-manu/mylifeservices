@@ -1,4 +1,4 @@
-import { ROLE_LABELS } from "@/lib/roles";
+import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 
 // renders an author's display name with a small role badge next to it,
 // plus a muted email badge so duplicate names (e.g. three "Brandon"s)
@@ -14,9 +14,9 @@ export default function AuthorChip({ author, size = "md" }) {
   const nameClass = isSm
     ? "text-sm font-medium text-slate-900"
     : "text-base font-semibold text-slate-900";
-  const roleBadgeClass = isSm
-    ? "ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-brand"
-    : "ml-2 rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-brand";
+  const roleBadge = isSm
+    ? `ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass(author.role)}`
+    : `ml-2 rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(author.role)}`;
   const emailBadgeClass = isSm
     ? "ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
     : "ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500";
@@ -24,7 +24,7 @@ export default function AuthorChip({ author, size = "md" }) {
   return (
     <span className="inline-flex flex-wrap items-center">
       <span className={nameClass}>{author.name || "—"}</span>
-      <span className={roleBadgeClass}>
+      <span className={roleBadge}>
         {ROLE_LABELS[author.role] ?? author.role}
       </span>
       {author.email && (

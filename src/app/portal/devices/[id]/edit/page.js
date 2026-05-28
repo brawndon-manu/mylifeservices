@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { isSuper } from "@/lib/roles";
 import DeviceForm from "../../_components/DeviceForm";
 import ConfirmButton from "@/components/ConfirmButton";
 import { updateDevice, deleteDevice } from "../../actions";
@@ -13,7 +14,7 @@ export const metadata = {
 
 export default async function EditDevicePage({ params, searchParams }) {
   const user = await getCurrentUser();
-  if (!user.deviceManager) redirect("/portal");
+  if (!user.deviceManager && !isSuper(user.role)) redirect("/portal");
 
   const { id } = await params;
   const sp = await searchParams;

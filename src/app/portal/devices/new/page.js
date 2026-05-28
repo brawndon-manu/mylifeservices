@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
+import { isSuper } from "@/lib/roles";
 import DeviceForm from "../_components/DeviceForm";
 import { addDevice } from "../actions";
 
@@ -11,7 +12,7 @@ export const metadata = {
 
 export default async function NewDevicePage({ searchParams }) {
   const user = await getCurrentUser();
-  if (!user.deviceManager) redirect("/portal");
+  if (!user.deviceManager && !isSuper(user.role)) redirect("/portal");
 
   const params = await searchParams;
   const nameError = params?.error === "name";

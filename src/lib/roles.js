@@ -10,6 +10,7 @@
 // in prisma/schema.prisma. keeping this here so we have a JS-side list
 // for validation, dropdowns, etc.
 export const ROLES = [
+  "SUPER",
   "IT_ADMIN",
   "ADMIN",
   "MANAGER",
@@ -21,6 +22,7 @@ export const ROLES = [
 // human-readable labels for the UI. we keep the underlying enum names
 // stable for the db but display friendlier strings.
 export const ROLE_LABELS = {
+  SUPER: "Super",
   IT_ADMIN: "IT",
   ADMIN: "Admin",
   MANAGER: "Manager",
@@ -29,9 +31,19 @@ export const ROLE_LABELS = {
   STAFF: "Staff",
 };
 
+// tailwind classes for a role badge/chip. SUPER stands out in red; every
+// other role uses the standard sky-blue chip. use roleBadgeClass(role)
+// anywhere a role chip is rendered so SUPER is visually distinct.
+export function roleBadgeClass(role) {
+  return role === "SUPER"
+    ? "bg-rose-100 text-rose-700"
+    : "bg-sky-100 text-brand";
+}
+
 // short descriptions shown next to each radio button on the invite +
 // edit user forms. helps the admin pick the right role.
 export const ROLE_DESCRIPTIONS = {
+  SUPER: "Superuser — full access to everything, including device management. IT-only, top-level.",
   IT_ADMIN: "Technical admin with full access to the portal and user management.",
   ADMIN: "Top-level oversight. Owner/Director-style role with full management access.",
   MANAGER: "Program management — can manage users + post announcements.",
@@ -48,7 +60,13 @@ export const ROLE_DESCRIPTIONS = {
 // per current owner spec, IT_ADMIN + ADMIN + MANAGER all have the same
 // permissions. if we ever need to split them (e.g. MANAGER posts
 // announcements but cant manage users) we just adjust this set.
-const ELEVATED_ROLES = new Set(["IT_ADMIN", "ADMIN", "MANAGER"]);
+// the top superuser role. has every privilege below - included in all
+// the permission sets so a single check covers it.
+export function isSuper(role) {
+  return role === "SUPER";
+}
+
+const ELEVATED_ROLES = new Set(["SUPER", "IT_ADMIN", "ADMIN", "MANAGER"]);
 
 // returns true if the role has elevated (admin-level) permissions in
 // the portal. use this anywhere you'd previously check role === "IT_ADMIN".
@@ -59,16 +77,17 @@ export function isElevated(role) {
 // MODERATOR tier - can delete other peoples Hub posts/comments. broader
 // than ELEVATED because HR is included (they need to moderate the staff
 // feed even if they cant manage user accounts).
-const MODERATOR_ROLES = new Set(["IT_ADMIN", "ADMIN", "MANAGER", "HR"]);
+const MODERATOR_ROLES = new Set(["SUPER", "IT_ADMIN", "ADMIN", "MANAGER", "HR"]);
 
 export function isModerator(role) {
   return MODERATOR_ROLES.has(role);
 }
 
-// strict IT-only check. use for things only the IT team should touch
-// (e.g. triaging the Suggestions & Bugs board) vs. general management.
+// IT-tier check. true for the IT team AND superusers (who have all
+// access). use for things only IT should touch (Suggestions & Bugs
+// discard, device management, assigning the SUPER role).
 export function isIT(role) {
-  return role === "IT_ADMIN";
+  return role === "IT_ADMIN" || role === "SUPER";
 }
 
 // supervisor-and-up tier - the roles allowed to view + manage client
@@ -76,6 +95,7 @@ export function isIT(role) {
 // direct-support staff and need caseload visibility, even though they
 // cant manage user accounts.
 const SUPERVISOR_PLUS_ROLES = new Set([
+  "SUPER",
   "IT_ADMIN",
   "ADMIN",
   "MANAGER",

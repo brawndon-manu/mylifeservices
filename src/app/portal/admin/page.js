@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 
 export const metadata = {
   title: "Admin",
@@ -27,6 +27,7 @@ const SORTABLE_COLUMNS = {
 // MANAGER, STAFF, SUPERVISOR which makes no sense in an org-chart sort).
 // lower number = comes first when sorting asc.
 const ROLE_SORT_ORDER = {
+  SUPER: 0,
   ADMIN: 1,
   MANAGER: 2,
   SUPERVISOR: 3,
@@ -291,7 +292,7 @@ export default async function AdminPage({ searchParams }) {
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
                         isDeactivated
                           ? "bg-slate-200 text-slate-500"
-                          : "bg-sky-100 text-brand"
+                          : roleBadgeClass(u.role)
                       }`}
                     >
                       {ROLE_LABELS[u.role] ?? u.role}

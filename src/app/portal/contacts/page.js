@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 import {
   CONTACT_CATEGORIES,
   isValidCategory,
@@ -191,7 +191,7 @@ export default async function ContactsPage({ searchParams }) {
                         <span className="font-semibold text-slate-900">
                           {p.name || p.email}
                         </span>
-                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-brand">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass(p.role)}`}>
                           {ROLE_LABELS[p.role] ?? p.role}
                         </span>
                       </div>

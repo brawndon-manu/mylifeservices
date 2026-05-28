@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { isSuper } from "@/lib/roles";
 import {
   deviceTypeLabel,
   deviceStatusLabel,
@@ -16,8 +17,8 @@ export const metadata = {
 
 export default async function DevicesPage({ searchParams }) {
   const user = await getCurrentUser();
-  // gated to the per-user deviceManager flag (top management only)
-  if (!user.deviceManager) redirect("/portal");
+  // gated to the per-user deviceManager flag OR the SUPER role
+  if (!user.deviceManager && !isSuper(user.role)) redirect("/portal");
 
   const params = await searchParams;
   const devices = await prisma.device.findMany({

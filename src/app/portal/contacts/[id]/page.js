@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isSupervisorPlus, ROLE_LABELS } from "@/lib/roles";
+import { isSupervisorPlus, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 import { clientDisplayName, CLIENT_FIRST_MAX } from "@/lib/clients";
 import Avatar from "@/components/Avatar";
 import { addClient } from "../actions";
@@ -72,7 +72,7 @@ export default async function ContactDetailPage({ params, searchParams }) {
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               {person.name || person.email}
             </h1>
-            <span className="rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-brand">
+            <span className={`rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(person.role)}`}>
               {ROLE_LABELS[person.role] ?? person.role}
             </span>
           </div>

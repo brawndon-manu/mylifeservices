@@ -8,6 +8,7 @@ import {
   ROLE_DESCRIPTIONS,
   isElevated,
   isValidRole,
+  isIT,
 } from "@/lib/roles";
 import {
   POSITIONS,
@@ -25,7 +26,8 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-// same order as the invite page for muscle-memory consistency
+// same order as the invite page for muscle-memory consistency. SUPER is
+// appended at runtime only for IT viewers (hidden role).
 const ROLE_RADIO_ORDER = ["STAFF", "SUPERVISOR", "HR", "MANAGER", "ADMIN", "IT_ADMIN"];
 
 const NAME_MAX_LEN = 30;
@@ -100,6 +102,11 @@ async function updateUser(userId, formData) {
   if (!isValidRole(role)) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
   }
+  // the SUPER role is IT-only. block any non-IT admin from assigning it
+  // even if they craft the request directly.
+  if (role === "SUPER" && !isIT(current.role)) {
+    redirect(`/portal/admin/users/${userId}/edit?error=role`);
+  }
 
   // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
   const phone = formatUSPhone(formData.get("phone"));
@@ -153,7 +160,14 @@ async function reactivateUser(userId) {
 
 export default async function EditUserPage({ params, searchParams }) {
   const { id } = await params;
-  const { target } = await loadActionTarget(id);
+  const { current, target } = await loadActionTarget(id);
+
+  // SUPER is a hidden role - only IT viewers see it as an option. if the
+  // target is already SUPER we always show it so the radio reflects reality.
+  const roleOptions =
+    isIT(current.role) || target.role === "SUPER"
+      ? [...ROLE_RADIO_ORDER, "SUPER"]
+      : ROLE_RADIO_ORDER;
 
   const queryParams = await searchParams;
   const error = queryParams?.error;
@@ -354,10 +368,14 @@ export default async function EditUserPage({ params, searchParams }) {
               Manager) can manage users and post announcements.
             </p>
             <div className="mt-3 space-y-2">
-              {ROLE_RADIO_ORDER.map((value) => (
+              {roleOptions.map((value) => (
                 <label
                   key={value}
-                  className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 transition hover:border-brand-light hover:bg-sky-50"
+                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
+                    value === "SUPER"
+                      ? "border-rose-200 bg-rose-50 hover:border-rose-300"
+                      : "border-slate-200 bg-slate-50 hover:border-brand-light hover:bg-sky-50"
+                  }`}
                 >
                   <input
                     type="radio"
@@ -368,7 +386,11 @@ export default async function EditUserPage({ params, searchParams }) {
                     className="mt-1 h-4 w-4 accent-brand"
                   />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-900">
+                    <div
+                      className={`text-sm font-medium ${
+                        value === "SUPER" ? "text-rose-700" : "text-slate-900"
+                      }`}
+                    >
                       {ROLE_LABELS[value]}
                     </div>
                     <div className="mt-0.5 text-xs text-slate-600">

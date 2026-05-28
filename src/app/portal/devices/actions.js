@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { isSuper } from "@/lib/roles";
 import { cleanBody } from "@/lib/hub";
 import {
   isValidDeviceType,
@@ -20,7 +21,9 @@ import {
 async function requireDeviceManager() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!user.deviceManager) redirect("/portal?error=forbidden");
+  if (!user.deviceManager && !isSuper(user.role)) {
+    redirect("/portal?error=forbidden");
+  }
   return user;
 }
 

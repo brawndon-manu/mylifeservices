@@ -9,6 +9,7 @@ import {
   ROLE_DESCRIPTIONS,
   isElevated,
   isValidRole,
+  isIT,
 } from "@/lib/roles";
 import {
   POSITIONS,
@@ -85,6 +86,10 @@ async function inviteUser(formData) {
   if (!isValidRole(role)) {
     redirect("/portal/admin/users/new?error=role");
   }
+  // SUPER is IT-only - block non-IT admins from assigning it.
+  if (role === "SUPER" && !isIT(current.role)) {
+    redirect("/portal/admin/users/new?error=role");
+  }
 
   // check for duplicate. if the email is already in the db, redirect
   // back with a specific error so the admin knows to update the role
@@ -107,6 +112,11 @@ export default async function NewUserPage({ searchParams }) {
   if (!isElevated(current?.role)) {
     redirect("/portal");
   }
+
+  // SUPER is a hidden role - only IT viewers get it as an option.
+  const roleOptions = isIT(current.role)
+    ? [...ROLE_RADIO_ORDER, "SUPER"]
+    : ROLE_RADIO_ORDER;
 
   const params = await searchParams;
   const error = params?.error;
@@ -238,10 +248,14 @@ export default async function NewUserPage({ searchParams }) {
               access.
             </p>
             <div className="mt-3 space-y-2">
-              {ROLE_RADIO_ORDER.map((value, i) => (
+              {roleOptions.map((value, i) => (
                 <label
                   key={value}
-                  className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 transition hover:border-brand-light hover:bg-sky-50"
+                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
+                    value === "SUPER"
+                      ? "border-rose-200 bg-rose-50 hover:border-rose-300"
+                      : "border-slate-200 bg-slate-50 hover:border-brand-light hover:bg-sky-50"
+                  }`}
                 >
                   <input
                     type="radio"
@@ -252,7 +266,11 @@ export default async function NewUserPage({ searchParams }) {
                     className="mt-1 h-4 w-4 accent-brand"
                   />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-900">
+                    <div
+                      className={`text-sm font-medium ${
+                        value === "SUPER" ? "text-rose-700" : "text-slate-900"
+                      }`}
+                    >
                       {ROLE_LABELS[value]}
                     </div>
                     <div className="mt-0.5 text-xs text-slate-600">
