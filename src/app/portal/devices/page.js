@@ -1,0 +1,144 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
+import {
+  deviceTypeLabel,
+  deviceStatusLabel,
+  deviceStatusChip,
+  formatCents,
+} from "@/lib/devices";
+
+export const metadata = {
+  title: "Device Management · MLS Portal",
+  robots: { index: false, follow: false },
+};
+
+export default async function DevicesPage({ searchParams }) {
+  const user = await getCurrentUser();
+  // gated to the per-user deviceManager flag (top management only)
+  if (!user.deviceManager) redirect("/portal");
+
+  const params = await searchParams;
+  const devices = await prisma.device.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+
+  const total = devices.reduce((sum, d) => sum + (d.priceCents ?? 0), 0);
+
+  const banner =
+    params?.added === "1"
+      ? "Device added."
+      : params?.updated === "1"
+        ? "Device updated."
+        : params?.deleted === "1"
+          ? "Device removed."
+          : null;
+
+  return (
+    <section className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+            Management
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+            Device Management
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Log of company hardware — what we own, who has it, and what it
+            cost.
+          </p>
+        </div>
+        <Link
+          href="/portal/devices/new"
+          className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+        >
+          + Add device
+        </Link>
+      </div>
+
+      {banner && (
+        <div className="mt-6 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          {banner}
+        </div>
+      )}
+
+      {devices.length > 0 && (
+        <div className="mt-6 flex flex-wrap gap-6 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">
+              Devices
+            </p>
+            <p className="mt-0.5 text-lg font-semibold text-slate-900">
+              {devices.length}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">
+              Total value
+            </p>
+            <p className="mt-0.5 text-lg font-semibold text-slate-900">
+              {formatCents(total) ?? "—"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 space-y-3">
+        {devices.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-600">
+            No devices logged yet. Add the first one.
+          </div>
+        ) : (
+          devices.map((d) => (
+            <Link
+              key={d.id}
+              href={`/portal/devices/${d.id}/edit`}
+              className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-900">
+                      {d.name}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      {deviceTypeLabel(d.type)}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${deviceStatusChip(d.status)}`}
+                    >
+                      {deviceStatusLabel(d.status)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-600">
+                    {d.assignedTo && <span>{d.assignedTo}</span>}
+                    {d.serialNumber && (
+                      <span className="font-mono text-xs text-slate-500">
+                        SN: {d.serialNumber}
+                      </span>
+                    )}
+                  </div>
+                  {d.notes && (
+                    <p className="mt-1 text-sm text-slate-600">{d.notes}</p>
+                  )}
+                </div>
+                <div className="text-right">
+                  {d.priceCents != null && (
+                    <p className="font-semibold text-slate-900">
+                      {formatCents(d.priceCents)}
+                    </p>
+                  )}
+                  <span className="text-xs font-medium text-brand-light">
+                    Edit →
+                  </span>
+                </div>
+              </div>
+            </Link>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}

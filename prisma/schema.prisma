@@ -52,6 +52,11 @@ model User {
   // free-text working hours shown on their contact detail page, e.g.
   // "Mon-Fri 9am-5pm". self-editable in Settings, admins too.
   workingHours  String?
+  // grants access to the Device Management page. NOT a role - a per-user
+  // flag so access is exactly the few people management designates
+  // (currently April, David, Monica) rather than a whole role tier.
+  // toggled from the admin edit-user page.
+  deviceManager Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -68,6 +73,42 @@ model User {
   resourcesSubmitted Resource[]   @relation("ResourceSubmittedBy")
   resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
   clients            Client[]     @relation("ClientAssignedTo")
+}
+
+// company device / asset log. restricted to users with the deviceManager
+// flag (top management). tracks Apple + other hardware David purchases.
+enum DeviceType {
+  LAPTOP
+  DESKTOP
+  TABLET
+  PHONE
+  OTHER
+}
+
+enum DeviceStatus {
+  IN_USE
+  STORAGE
+  REPAIR
+  RETIRED
+}
+
+model Device {
+  id           String       @id @default(cuid())
+  name         String       // e.g. "David's MacBook Pro 16"
+  type         DeviceType   @default(LAPTOP)
+  serialNumber String?
+  // purchase price stored in whole cents to avoid float rounding.
+  priceCents   Int?
+  purchaseDate DateTime?
+  // free text: who has it / where it lives, e.g. "David - home office".
+  assignedTo   String?
+  status       DeviceStatus @default(IN_USE)
+  notes        String?
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([status])
 }
 
 // a person supported by MLS, tracked as a staff member's caseload. kept

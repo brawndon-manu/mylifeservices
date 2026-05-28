@@ -58,6 +58,7 @@ async function loadActionTarget(userId) {
       hireDate: true,
       phone: true,
       workingHours: true,
+      deviceManager: true,
       deactivatedAt: true,
     },
   });
@@ -109,9 +110,13 @@ async function updateUser(userId, formData) {
     WORKING_HOURS_MAX,
   );
 
+  // device management access - a checkbox. only the few people management
+  // designates get the Device Management page.
+  const deviceManager = formData.get("deviceManager") === "on";
+
   await prisma.user.update({
     where: { id: userId },
-    data: { name, title, hireDate, phone, workingHours, role },
+    data: { name, title, hireDate, phone, workingHours, role, deviceManager },
   });
 
   redirect(`/portal/admin?updated=${encodeURIComponent(userId)}`);
@@ -374,6 +379,26 @@ export default async function EditUserPage({ params, searchParams }) {
               ))}
             </div>
           </fieldset>
+
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                name="deviceManager"
+                defaultChecked={target.deviceManager}
+                className="mt-0.5 h-4 w-4 flex-none accent-brand"
+              />
+              <span className="text-sm text-slate-700">
+                <span className="font-medium text-slate-900">
+                  Device Management access
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Grants access to the Device Management log. Reserve for top
+                  management (e.g. April, David, Monica).
+                </span>
+              </span>
+            </label>
+          </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-6">
             <Link

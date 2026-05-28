@@ -110,6 +110,31 @@ export default async function PortalDashboard() {
           </p>
         </Link>
       </div>
+
+      {user?.deviceManager && (
+        <div className="mt-6">
+          <Link
+            href="/portal/devices"
+            className="group block rounded-xl border border-slate-300 bg-slate-900 p-6 transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold tracking-tight text-white">
+                Device Management
+              </h2>
+              <span
+                aria-hidden="true"
+                className="text-slate-300 transition-transform group-hover:translate-x-0.5"
+              >
+                →
+              </span>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              Company hardware log — what we own, who has it, and what it
+              cost. Management only.
+            </p>
+          </Link>
+        </div>
+      )}
     </section>
   );
 }

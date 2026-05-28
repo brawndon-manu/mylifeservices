@@ -56,6 +56,14 @@ export default async function PortalLayout({ children }) {
             >
               Settings
             </Link>
+            {user?.deviceManager && (
+              <Link
+                href="/portal/devices"
+                className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Devices
+              </Link>
+            )}
             {isElevated(role) && (
               <Link
                 href="/portal/admin"

@@ -28,6 +28,7 @@ export async function getCurrentUser() {
       phone: true,
       image: true,
       workingHours: true,
+      deviceManager: true,
       deactivatedAt: true,
     },
   });
@@ -56,6 +57,7 @@ export async function getCurrentUserIncludingDeactivated() {
       phone: true,
       image: true,
       workingHours: true,
+      deviceManager: true,
       deactivatedAt: true,
     },
   });
