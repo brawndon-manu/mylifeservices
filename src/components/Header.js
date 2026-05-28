@@ -8,6 +8,7 @@ import { PhoneIcon } from "@/components/Icons";
 const aboutLinks = [
   { href: "/about", label: "About us" },
   { href: "/stories", label: "Stories" },
+  { href: "/this-week", label: "This Week" },
 ];
 
 const navLinks = [

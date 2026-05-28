@@ -175,6 +175,32 @@ export default function HomePage() {
           </ul>
         </div>
       </section>
+      <section className="border-t border-slate-200 bg-gradient-to-b from-sky-50 to-white">
+        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+          <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
+            <div className="max-w-2xl">
+              <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+                This Week in My Life Services
+              </p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+                See what our community is up to
+              </h2>
+              <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+                Highlights from the people we support and the team behind
+                them — plus a look at what&apos;s coming up. Updated as our
+                community shares.
+              </p>
+            </div>
+            <Link
+              href="/this-week"
+              className="inline-flex flex-none items-center gap-2 rounded-md bg-brand-light px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              See This Week
+              <span aria-hidden="true">→</span>
+            </Link>
+          </div>
+        </div>
+      </section>
     </>
   );
 }
