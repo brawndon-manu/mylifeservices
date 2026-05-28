@@ -149,8 +149,12 @@ async function requireSupervisorPlus() {
 
 // add a client to a staff member's caseload. first name + last initial
 // only (privacy). bound: the staff member id this client is assigned to.
+// allowed for supervisor+ (any caseload) OR a staffer adding to their own.
 export async function addClient(staffId, formData) {
-  const user = await requireSupervisorPlus();
+  const user = await requireUser();
+  if (!isSupervisorPlus(user.role) && user.id !== staffId) {
+    redirect("/portal/contacts?error=forbidden");
+  }
 
   const firstName = cleanFirstName(formData.get("firstName"));
   if (!firstName) redirect(`/portal/contacts/${staffId}?error=clientName`);
@@ -207,14 +211,18 @@ export async function reassignClient(clientId, formData) {
   if (assignedToId) revalidatePath(`/portal/contacts/${assignedToId}`);
 }
 
-// remove a client record entirely. bound: clientId.
+// remove a client record entirely. bound: clientId. allowed for
+// supervisor+ OR the staffer the client is assigned to (their own).
 export async function deleteClient(clientId) {
-  await requireSupervisorPlus();
+  const user = await requireUser();
   const client = await prisma.client.findUnique({
     where: { id: clientId },
     select: { id: true, assignedToId: true },
   });
   if (!client) redirect("/portal/contacts");
+  if (!isSupervisorPlus(user.role) && client.assignedToId !== user.id) {
+    redirect("/portal/contacts?error=forbidden");
+  }
   await prisma.client.delete({ where: { id: clientId } });
   if (client.assignedToId) {
     revalidatePath(`/portal/contacts/${client.assignedToId}`);

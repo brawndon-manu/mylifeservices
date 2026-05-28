@@ -35,7 +35,11 @@ export default async function ContactDetailPage({ params, searchParams }) {
 
   // caseload is need-to-know: supervisor+ OR the person viewing their own.
   const canManage = isSupervisorPlus(viewer.role);
-  const canSeeCaseload = canManage || viewer.id === person.id;
+  const isOwn = viewer.id === person.id;
+  const canSeeCaseload = canManage || isOwn;
+  // staff can add/remove clients on their OWN caseload; reassigning to a
+  // different staffer stays a supervisor+ action.
+  const canEditCaseload = canManage || isOwn;
 
   let clients = [];
   let staffOptions = [];
@@ -149,7 +153,7 @@ export default async function ContactDetailPage({ params, searchParams }) {
                     <p className="font-medium text-slate-900">
                       {clientDisplayName(c)}
                     </p>
-                    {canManage && (
+                    {canEditCaseload && (
                       <form action={deleteClient.bind(null, c.id)}>
                         <ConfirmButton
                           message={`Remove ${clientDisplayName(c)} from the caseload?`}
@@ -196,14 +200,17 @@ export default async function ContactDetailPage({ params, searchParams }) {
             )}
           </ul>
 
-          {/* add client - supervisor+ */}
-          {canManage && (
+          {/* add client - supervisor+ on any caseload, or the person on
+              their own */}
+          {canEditCaseload && (
             <form
               action={addClient.bind(null, person.id)}
               className="mt-4 rounded-xl border border-slate-200 bg-white p-4"
             >
               <p className="text-sm font-medium text-slate-700">
-                Add a client to this caseload
+                {isOwn && !canManage
+                  ? "Add a client to your caseload"
+                  : "Add a client to this caseload"}
               </p>
               {clientNameError && (
                 <p className="mt-1 text-xs text-rose-700">

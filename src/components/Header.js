@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { PhoneIcon } from "@/components/Icons";
 import NavDropdown from "@/components/NavDropdown";
+import AuthBadge from "@/components/AuthBadge";
 
 // "About" is a dropdown that groups the company-story pages so the top
 // nav stays lean. the rest are plain top-level links. Employee portal
@@ -41,6 +42,7 @@ export default function Header() {
             My Life Services
           </span>
         </Link>
+        <AuthBadge />
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <nav aria-label="Primary">
             <ul className="flex items-center gap-6 text-sm font-medium text-slate-700">
