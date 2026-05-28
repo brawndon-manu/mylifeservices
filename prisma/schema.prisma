@@ -42,6 +42,10 @@ model User {
   // history (audit trails, role at time of action, etc.) rather than
   // hard deleting the row. set back to null to reactivate.
   deactivatedAt DateTime?
+  // their actual employment start date with MLS (per HR records).
+  // separate from createdAt which is just when their row was added to
+  // our portal db. used for tenure displays + sorting in the admin list.
+  hireDate      DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]

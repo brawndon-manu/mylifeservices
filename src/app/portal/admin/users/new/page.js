@@ -31,11 +31,16 @@ const TITLE_SUGGESTIONS = [
   "Program Manager",
   "Field Supervisor",
   "HR Administrator",
-  "ILS",
+  "Independent Living Instructor",
   "Day Program",
   "Supported Living",
   "Self-Determination",
   "Crisis Support",
+  "Attendant",
+  "Lead Staff",
+  "Case Manager",
+  "Resources Specialist",
+  "Quality Assurance Specialist",
 ];
 
 async function inviteUser(formData) {
@@ -75,6 +80,17 @@ async function inviteUser(formData) {
     title = rawTitle.trim().slice(0, TITLE_MAX_LEN);
   }
 
+  // hire date is optional. <input type="date"> returns YYYY-MM-DD which
+  // new Date() parses as UTC midnight.
+  const rawHireDate = formData.get("hireDate");
+  let hireDate = null;
+  if (typeof rawHireDate === "string" && rawHireDate.length > 0) {
+    const parsed = new Date(rawHireDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      hireDate = parsed;
+    }
+  }
+
   // validate role - has to be one of our allowed enum values. dont
   // trust the radio value blindly, someone could craft a request with
   // a bogus role string.
@@ -92,7 +108,7 @@ async function inviteUser(formData) {
   }
 
   await prisma.user.create({
-    data: { email, name, role, title },
+    data: { email, name, role, title, hireDate },
   });
 
   // back to the admin user list with a success flag.
@@ -217,6 +233,25 @@ export default async function NewUserPage({ searchParams }) {
             <p className="mt-1 text-xs text-slate-500">
               Their actual job title at MLS. Separate from their portal
               privilege role below. Pick from suggestions or type your own.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="hireDate"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Hire date <span className="text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="hireDate"
+              name="hireDate"
+              type="date"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              When they started at MLS. Used on the admin list to show
+              tenure. Leave blank if unknown.
             </p>
           </div>
 

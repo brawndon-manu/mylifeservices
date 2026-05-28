@@ -16,6 +16,7 @@ const SORTABLE_COLUMNS = {
   email: { field: "email", nullable: false },
   name: { field: "name", nullable: true },
   title: { field: "title", nullable: true },
+  hired: { field: "hireDate", nullable: true },
   role: { field: "role", nullable: false },
   status: { field: "deactivatedAt", nullable: true },
   created: { field: "createdAt", nullable: false },
@@ -57,6 +58,29 @@ function buildOrderBy(sort, dir) {
     return [{ [field]: { sort: direction, nulls: "last" } }];
   }
   return [{ [field]: direction }];
+}
+
+// format hire date as "Mar 15, 2024" - more readable than 3/15/2024
+// in a wide table. consistent en-US locale so dev/prod look the same.
+const DATE_FMT = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+// turn hire date into a human tenure string: "3y 2m", "8m", etc.
+// shown as a small subtitle under the formatted date.
+function tenureLabel(hireDate, now = new Date()) {
+  const months =
+    (now.getFullYear() - hireDate.getFullYear()) * 12 +
+    (now.getMonth() - hireDate.getMonth());
+  if (months < 0) return "starts soon"; // hire date in the future
+  if (months === 0) return "<1mo";
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  if (y === 0) return `${m}mo`;
+  if (m === 0) return `${y}y`;
+  return `${y}y ${m}mo`;
 }
 
 // js-side sort for the role column. uses the org-chart priority order
@@ -112,6 +136,7 @@ export default async function AdminPage({ searchParams }) {
       name: true,
       role: true,
       title: true,
+      hireDate: true,
       createdAt: true,
       deactivatedAt: true,
     },
@@ -209,6 +234,9 @@ export default async function AdminPage({ searchParams }) {
               <SortableHeader column="title" sort={sort} dir={dir}>
                 Title
               </SortableHeader>
+              <SortableHeader column="hired" sort={sort} dir={dir}>
+                Hired
+              </SortableHeader>
               <SortableHeader column="role" sort={sort} dir={dir}>
                 Role
               </SortableHeader>
@@ -243,6 +271,20 @@ export default async function AdminPage({ searchParams }) {
                   <td className="whitespace-nowrap px-6 py-3">{u.name ?? "—"}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-slate-600">
                     {u.title ?? <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="whitespace-nowrap px-6 py-3">
+                    {u.hireDate ? (
+                      <div>
+                        <div className="text-slate-700">
+                          {DATE_FMT.format(u.hireDate)}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {tenureLabel(u.hireDate)}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-6 py-3">
                     <span

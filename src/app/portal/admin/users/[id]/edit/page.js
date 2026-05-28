@@ -26,11 +26,16 @@ const TITLE_SUGGESTIONS = [
   "Program Manager",
   "Field Supervisor",
   "HR Administrator",
-  "ILS",
+  "Independent Living Instructor",
   "Day Program",
   "Supported Living",
   "Self-Determination",
   "Crisis Support",
+  "Attendant",
+  "Lead Staff",
+  "Case Manager",
+  "Resources Specialist",
+  "Quality Assurance Specialist",
 ];
 
 // shared helper: gate the action behind IT_ADMIN + load the target user
@@ -58,6 +63,7 @@ async function loadActionTarget(userId) {
       name: true,
       role: true,
       title: true,
+      hireDate: true,
       deactivatedAt: true,
     },
   });
@@ -84,6 +90,17 @@ async function updateUser(userId, formData) {
     title = rawTitle.trim().slice(0, TITLE_MAX_LEN);
   }
 
+  // hire date is optional. <input type="date"> gives us YYYY-MM-DD which
+  // new Date() parses as UTC midnight - safe to compare across timezones.
+  const rawHireDate = formData.get("hireDate");
+  let hireDate = null;
+  if (typeof rawHireDate === "string" && rawHireDate.length > 0) {
+    const parsed = new Date(rawHireDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      hireDate = parsed;
+    }
+  }
+
   const role = formData.get("role");
   if (!isValidRole(role)) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
@@ -91,7 +108,7 @@ async function updateUser(userId, formData) {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { name, title, role },
+    data: { name, title, hireDate, role },
   });
 
   redirect(`/portal/admin?updated=${encodeURIComponent(userId)}`);
@@ -262,6 +279,30 @@ export default async function EditUserPage({ params, searchParams }) {
             <p className="mt-1 text-xs text-slate-500">
               Their actual job at MLS. Separate from their portal
               privilege role below.
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="hireDate"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Hire date <span className="text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="hireDate"
+              name="hireDate"
+              type="date"
+              defaultValue={
+                target.hireDate
+                  ? target.hireDate.toISOString().split("T")[0]
+                  : ""
+              }
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              When they started at MLS. Shown on the admin list with
+              their tenure (e.g. &quot;3y 2mo&quot;).
             </p>
           </div>
 
