@@ -65,6 +65,12 @@ export function isModerator(role) {
   return MODERATOR_ROLES.has(role);
 }
 
+// strict IT-only check. use for things only the IT team should touch
+// (e.g. triaging the Suggestions & Bugs board) vs. general management.
+export function isIT(role) {
+  return role === "IT_ADMIN";
+}
+
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {

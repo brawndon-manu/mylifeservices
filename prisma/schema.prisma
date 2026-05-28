@@ -57,6 +57,8 @@ model User {
   nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
   nlApproved    NewsletterItem[] @relation("NLApprovedBy")
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
+  feedbackAuthored FeedbackItem[] @relation("FeedbackAuthor")
+  feedbackResolved FeedbackItem[] @relation("FeedbackResolvedBy")
 }
 
 // MLS Hub - internal feed for posts (flyers, helpful info) + comments.
@@ -137,6 +139,42 @@ enum NewsletterStatus {
 enum NewsletterCategory {
   PAST_WEEK
   UPCOMING
+}
+
+// internal suggestions + bug reports board. staff post recommendations
+// or bugs they spot (blog-post style, optional screenshot). IT/management
+// triage status so items get closed out - they're not meant to live
+// forever like the newsletter.
+enum FeedbackType {
+  SUGGESTION
+  BUG
+}
+
+enum FeedbackStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DECLINED
+}
+
+model FeedbackItem {
+  id           String         @id @default(cuid())
+  type         FeedbackType
+  title        String
+  body         String
+  imageUrl     String?
+  status       FeedbackStatus @default(OPEN)
+  authorId     String
+  author       User           @relation("FeedbackAuthor", fields: [authorId], references: [id])
+  // who marked it resolved/declined + when. null while still open.
+  resolvedById String?
+  resolvedBy   User?          @relation("FeedbackResolvedBy", fields: [resolvedById], references: [id])
+  resolvedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model NewsletterItem {

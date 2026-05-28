@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { ROLE_LABELS } from "@/lib/roles";
 
@@ -67,6 +68,31 @@ export default async function PortalDashboard() {
           title="Team contacts"
           body="Quick reference for who to reach out to. Coming soon."
         />
+      </div>
+
+      {/* utility board - amber so it reads as a working/temporary area
+          rather than permanent content. links straight to the board. */}
+      <div className="mt-6">
+        <Link
+          href="/portal/feedback"
+          className="group block rounded-xl border border-amber-200 bg-amber-50 p-6 transition hover:border-amber-300 hover:bg-amber-100/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold tracking-tight text-amber-900">
+              Suggestions &amp; Bugs
+            </h2>
+            <span
+              aria-hidden="true"
+              className="text-amber-700 transition-transform group-hover:translate-x-0.5"
+            >
+              →
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-amber-900/80">
+            Spot a bug or have an idea to improve things? Post it here — IT
+            and management track each item until it&apos;s resolved.
+          </p>
+        </Link>
       </div>
     </section>
   );

@@ -39,6 +39,12 @@ export default async function PortalLayout({ children }) {
               Newsletter
             </Link>
             <Link
+              href="/portal/feedback"
+              className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              Suggestions
+            </Link>
+            <Link
               href="/portal/settings"
               className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
