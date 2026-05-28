@@ -9,6 +9,14 @@ import {
   isElevated,
   isValidRole,
 } from "@/lib/roles";
+import {
+  POSITIONS,
+  POSITION_NONE,
+  POSITION_CUSTOM,
+  TITLE_MAX_LEN,
+  radioForTitle,
+  resolveTitle,
+} from "@/lib/positions";
 
 export const metadata = {
   title: "Edit user",
@@ -19,24 +27,6 @@ export const metadata = {
 const ROLE_RADIO_ORDER = ["STAFF", "SUPERVISOR", "HR", "MANAGER", "ADMIN", "IT_ADMIN"];
 
 const NAME_MAX_LEN = 30;
-const TITLE_MAX_LEN = 60;
-
-const TITLE_SUGGESTIONS = [
-  "Owner/Director",
-  "Program Manager",
-  "Field Supervisor",
-  "HR Administrator",
-  "Independent Living Instructor",
-  "Day Program",
-  "Supported Living",
-  "Self-Determination",
-  "Crisis Support",
-  "Attendant",
-  "Lead Staff",
-  "Case Manager",
-  "Resources Specialist",
-  "Quality Assurance Specialist",
-];
 
 // shared helper: gate the action behind IT_ADMIN + load the target user
 // + enforce "can't act on yourself" rule. returns { current, target }
@@ -83,12 +73,12 @@ async function updateUser(userId, formData) {
     redirect(`/portal/admin/users/${userId}/edit?error=name`);
   }
 
-  // title is optional - blank = null in db
-  const rawTitle = formData.get("title");
-  let title = null;
-  if (typeof rawTitle === "string" && rawTitle.trim().length > 0) {
-    title = rawTitle.trim().slice(0, TITLE_MAX_LEN);
-  }
+  // title comes from the radio group. blank = null. preset = preset
+  // string. custom = whatever is typed in the accompanying text input.
+  const title = resolveTitle(
+    formData.get("titleRadio"),
+    formData.get("titleCustom"),
+  );
 
   // hire date is optional. <input type="date"> gives us YYYY-MM-DD which
   // new Date() parses as UTC midnight - safe to compare across timezones.
@@ -227,7 +217,7 @@ export default async function EditUserPage({ params, searchParams }) {
               className="mt-1 block w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-500 shadow-sm"
             />
             <p className="mt-1 text-xs text-slate-500">
-              Email is permanent identity — can&apos;t be changed.
+              Permanent sign-in identity. Cannot be changed.
             </p>
           </div>
 
@@ -248,39 +238,25 @@ export default async function EditUserPage({ params, searchParams }) {
               className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <p className="mt-1 text-xs text-slate-500">
-              Up to {NAME_MAX_LEN} characters. Users can also change this
-              themselves in Settings.
+              Up to {NAME_MAX_LEN} characters. Editable by the user in
+              Settings.
             </p>
           </div>
 
-          <div>
-            <label
-              htmlFor="title"
-              className="block text-sm font-medium text-slate-700"
-            >
+          <fieldset>
+            <legend className="block text-sm font-medium text-slate-700">
               Job title <span className="text-slate-400">(optional)</span>
-            </label>
-            <input
-              id="title"
-              name="title"
-              type="text"
-              list="title-suggestions"
-              maxLength={TITLE_MAX_LEN}
-              defaultValue={target.title ?? ""}
-              autoComplete="off"
-              placeholder="e.g. Program Manager, ILS, Field Supervisor"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            />
-            <datalist id="title-suggestions">
-              {TITLE_SUGGESTIONS.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
+            </legend>
             <p className="mt-1 text-xs text-slate-500">
-              Their actual job at MLS. Separate from their portal
-              privilege role below.
+              Position at MLS. Separate from the portal privilege role
+              below.
             </p>
-          </div>
+            <PositionRadios
+              currentTitle={target.title}
+              fieldName="titleRadio"
+              customFieldName="titleCustom"
+            />
+          </fieldset>
 
           <div>
             <label
@@ -301,8 +277,8 @@ export default async function EditUserPage({ params, searchParams }) {
               className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <p className="mt-1 text-xs text-slate-500">
-              When they started at MLS. Shown on the admin list with
-              their tenure (e.g. &quot;3y 2mo&quot;).
+              Start date at MLS. Displayed on the admin list with tenure
+              (e.g. &quot;3y 2mo&quot;).
             </p>
           </div>
 
@@ -311,8 +287,8 @@ export default async function EditUserPage({ params, searchParams }) {
               Privilege role <span className="text-rose-600">*</span>
             </legend>
             <p className="mt-1 text-xs text-slate-500">
-              Controls what they can do in the portal. Elevated roles
-              (IT, Admin, Manager) can manage users + post announcements.
+              Controls portal permissions. Elevated roles (IT, Admin,
+              Manager) can manage users and post announcements.
             </p>
             <div className="mt-3 space-y-2">
               {ROLE_RADIO_ORDER.map((value) => (
@@ -397,6 +373,58 @@ export default async function EditUserPage({ params, searchParams }) {
         )}
       </div>
     </section>
+  );
+}
+
+// position radios — shared shape between edit + new pages. always shows
+// the custom text input under the Custom radio so we dont need any
+// client-side JS for the toggle. server only reads the text when the
+// Custom radio is the one submitted.
+function PositionRadios({ currentTitle, fieldName, customFieldName }) {
+  const selected = radioForTitle(currentTitle ?? null);
+  const customDefault =
+    selected === POSITION_CUSTOM ? currentTitle ?? "" : "";
+
+  const options = [
+    { value: POSITION_NONE, label: "(No title)" },
+    ...POSITIONS.map((p) => ({ value: p, label: p })),
+    { value: POSITION_CUSTOM, label: "Custom" },
+  ];
+
+  return (
+    <div className="mt-3 space-y-2">
+      {options.map((opt) => (
+        <label
+          key={opt.value}
+          className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 transition hover:border-brand-light hover:bg-sky-50"
+        >
+          <input
+            type="radio"
+            name={fieldName}
+            value={opt.value}
+            defaultChecked={selected === opt.value}
+            required
+            className="mt-1 h-4 w-4 accent-brand"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-slate-900">
+              {opt.label}
+            </div>
+            {opt.value === POSITION_CUSTOM && (
+              <input
+                type="text"
+                name={customFieldName}
+                maxLength={TITLE_MAX_LEN}
+                defaultValue={customDefault}
+                autoComplete="off"
+                placeholder="Type a custom title"
+                className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            )}
+          </div>
+        </label>
+      ))}
+    </div>
   );
 }
 
