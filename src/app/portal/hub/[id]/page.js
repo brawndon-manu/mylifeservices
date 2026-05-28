@@ -3,7 +3,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator } from "@/lib/roles";
+import { isModerator, isElevated } from "@/lib/roles";
 import {
   TAG_STYLES,
   timeAgo,
@@ -88,7 +88,7 @@ export default async function PostDetailPage({ params, searchParams }) {
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{timeAgo(post.createdAt)}</span>
               {post.editedAt && <span>· edited</span>}
-              {post.postedBy && (
+              {post.postedBy && isElevated(user.role) && (
                 <span className="italic">
                   · posted on their behalf by {post.postedBy.name || "staff"}
                 </span>

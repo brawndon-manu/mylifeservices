@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator } from "@/lib/roles";
+import { isModerator, isElevated } from "@/lib/roles";
 import {
   POST_TAGS,
   TAG_STYLES,
@@ -193,7 +193,7 @@ function PostCard({ post, currentUser }) {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>{timeAgo(post.createdAt)}</span>
             {post.editedAt && <span>· edited</span>}
-            {post.postedBy && (
+            {post.postedBy && isElevated(currentUser.role) && (
               <span className="italic">
                 · posted on their behalf by {post.postedBy.name || "staff"}
               </span>
