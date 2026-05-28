@@ -23,6 +23,24 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  // bump server action body size so hub post images (up to ~4MB) fit.
+  // vercel hobby caps payloads at 4.5mb so this is the practical ceiling.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "5mb",
+    },
+  },
+  // allow rendering remote images from Vercel Blob (hub post images).
+  // host pattern matches any blob store — Vercel doesnt pin a fixed
+  // subdomain so we use a wildcard.
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "*.public.blob.vercel-storage.com",
+      },
+    ],
+  },
   async headers() {
     return [
       {

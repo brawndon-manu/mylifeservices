@@ -56,6 +56,15 @@ export function isElevated(role) {
   return ELEVATED_ROLES.has(role);
 }
 
+// MODERATOR tier - can delete other peoples Hub posts/comments. broader
+// than ELEVATED because HR is included (they need to moderate the staff
+// feed even if they cant manage user accounts).
+const MODERATOR_ROLES = new Set(["IT_ADMIN", "ADMIN", "MANAGER", "HR"]);
+
+export function isModerator(role) {
+  return MODERATOR_ROLES.has(role);
+}
+
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {

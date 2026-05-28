@@ -50,6 +50,67 @@ model User {
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
   sessions      Session[]
+  posts         Post[]
+  comments      Comment[]
+  likes         PostLike[]
+}
+
+// MLS Hub - internal feed for posts (flyers, helpful info) + comments.
+// soft-deleted via deletedAt so threads dont collapse if an author leaves.
+model Post {
+  id         String     @id @default(cuid())
+  authorId   String
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content    String
+  imageUrl   String?
+  // tag string is validated against the list in src/lib/hub.js. kept as
+  // free string so we can add new tags without a migration.
+  tag        String
+  // optional expiration. once past, the post shows an "Expired" badge
+  // and drops below active posts in the feed.
+  expiresAt  DateTime?
+  // pinning is admin-only. null = not pinned. when set, post floats to
+  // top of the feed.
+  pinnedAt   DateTime?
+  pinnedById String?
+  // edit tracking. null = never edited. set explicitly by edit action.
+  editedAt   DateTime?
+  // soft delete. set to a timestamp by the delete action.
+  deletedAt  DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  comments   Comment[]
+  likes      PostLike[]
+
+  @@index([createdAt])
+  @@index([pinnedAt])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  postId    String
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  editedAt  DateTime?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([postId, createdAt])
+}
+
+// PostLike is the join table for the heart/like reaction. composite PK
+// so each user can only like a post once. removing the row = unlike.
+model PostLike {
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
 }
 
 model Account {

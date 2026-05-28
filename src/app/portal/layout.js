@@ -27,6 +27,12 @@ export default async function PortalLayout({ children }) {
               Dashboard
             </Link>
             <Link
+              href="/portal/hub"
+              className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            >
+              Hub
+            </Link>
+            <Link
               href="/portal/settings"
               className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
