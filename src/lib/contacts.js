@@ -36,6 +36,27 @@ export function initialsFor(name, email) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// predefined resource categories for the contacts page. tuned for IDD /
+// disability-services work. "Other" is the catch-all. used both for the
+// submit dropdown and for grouping resources into collapsible sections.
+export const RESOURCE_CATEGORIES = [
+  "Housing",
+  "Food banks",
+  "Crisis support",
+  "Health & medical",
+  "Mental & behavioral health",
+  "Employment & day programs",
+  "Transportation",
+  "Benefits & advocacy",
+  "Education & training",
+  "Recreation & community",
+  "Other",
+];
+
+export function isValidResourceCategory(value) {
+  return typeof value === "string" && RESOURCE_CATEGORIES.includes(value);
+}
+
 // length caps for resource fields + phone.
 export const PHONE_MAX = 30;
 export const RESOURCE_NAME_MAX = 80;

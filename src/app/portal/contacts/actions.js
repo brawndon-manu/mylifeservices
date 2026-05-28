@@ -7,9 +7,9 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
 import { cleanBody } from "@/lib/hub";
 import {
-  cleanPhone,
+  formatUSPhone,
+  isValidResourceCategory,
   RESOURCE_NAME_MAX,
-  RESOURCE_CATEGORY_MAX,
   RESOURCE_NOTES_MAX,
   RESOURCE_URL_MAX,
 } from "@/lib/contacts";
@@ -44,13 +44,13 @@ export async function submitResource(formData) {
   const name = cleanBody(formData.get("name"), RESOURCE_NAME_MAX);
   if (!name) redirect("/portal/contacts/resources/new?error=name");
 
+  // category must be one of the predefined buckets; anything else falls
+  // back to "Other" so every resource groups cleanly.
   const rawCategory = formData.get("category");
-  let category = null;
-  if (typeof rawCategory === "string" && rawCategory.trim()) {
-    category = rawCategory.trim().slice(0, RESOURCE_CATEGORY_MAX);
-  }
+  const category = isValidResourceCategory(rawCategory) ? rawCategory : "Other";
 
-  const phone = cleanPhone(formData.get("phone"));
+  // org phone auto-formats too, e.g. +17149952542 -> +1 (714) 995-2542
+  const phone = formatUSPhone(formData.get("phone"));
   const emailRaw = formData.get("email");
   const email =
     typeof emailRaw === "string" && emailRaw.trim()

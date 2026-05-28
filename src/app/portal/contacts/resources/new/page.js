@@ -3,8 +3,8 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
 import {
   RESOURCE_NAME_MAX,
-  RESOURCE_CATEGORY_MAX,
   RESOURCE_NOTES_MAX,
+  RESOURCE_CATEGORIES,
 } from "@/lib/contacts";
 import { submitResource } from "../../actions";
 
@@ -60,13 +60,29 @@ export default async function NewResourcePage({ searchParams }) {
             maxLength={RESOURCE_NAME_MAX}
             placeholder="e.g. Integrity Cottages"
           />
-          <Field
-            id="category"
-            label="Category"
-            optional
-            maxLength={RESOURCE_CATEGORY_MAX}
-            placeholder="e.g. Housing, Health, Food"
-          />
+          <div>
+            <label
+              htmlFor="category"
+              className="block text-sm font-medium text-slate-700"
+            >
+              Category <span className="text-rose-600">*</span>
+            </label>
+            <select
+              id="category"
+              name="category"
+              defaultValue="Housing"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            >
+              {RESOURCE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Groups the resource on the contacts page.
+            </p>
+          </div>
           <Field
             id="phone"
             label="Phone"
