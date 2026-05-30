@@ -38,21 +38,14 @@ yarn-error.log*
 # vercel
 .vercel
 
-# client photos — never commit until written consent is on file
+# local image uploads
 /public/clients/
 
-# personal task tracker — local working doc, not for the public repo
-/TASKS.md
+# local working notes
+/local-docs/
 
-# handoff notes between Claude sessions — local working doc
-/leftoff.md
-
-# staff email list for the bulk-import script — sensitive employee data
-/prisma/staff-emails.txt
-
-# one-off scripts with email → name mappings or other employee data
-/prisma/update-names-add-david.js
-/prisma/update-from-hr-csv.js
+# local-only files
+/prisma/local/
 
 # typescript
 *.tsbuildinfo
