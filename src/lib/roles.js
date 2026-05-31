@@ -90,22 +90,6 @@ export function isIT(role) {
   return role === "IT_ADMIN" || role === "SUPER";
 }
 
-// supervisor-and-up tier - the roles allowed to view + manage client
-// caseloads. broader than ELEVATED because field SUPERVISORs oversee
-// direct-support staff and need caseload visibility, even though they
-// cant manage user accounts.
-const SUPERVISOR_PLUS_ROLES = new Set([
-  "SUPER",
-  "IT_ADMIN",
-  "ADMIN",
-  "MANAGER",
-  "SUPERVISOR",
-]);
-
-export function isSupervisorPlus(role) {
-  return SUPERVISOR_PLUS_ROLES.has(role);
-}
-
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {

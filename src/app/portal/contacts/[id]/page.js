@@ -2,19 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isSupervisorPlus, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
-import { clientDisplayName, CLIENT_FIRST_MAX } from "@/lib/clients";
+import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 import Avatar from "@/components/Avatar";
-import { addClient } from "../actions";
 
 export const metadata = {
   title: "Contact · MLS Portal",
   robots: { index: false, follow: false },
 };
 
-export default async function ContactDetailPage({ params, searchParams }) {
+export default async function ContactDetailPage({ params }) {
   const { id } = await params;
-  const sp = await searchParams;
   const viewer = await getCurrentUser();
 
   const person = await prisma.user.findFirst({
@@ -31,24 +28,6 @@ export default async function ContactDetailPage({ params, searchParams }) {
     },
   });
   if (!person) notFound();
-
-  // caseload is need-to-know: supervisor+ OR the person viewing their own.
-  const canManage = isSupervisorPlus(viewer.role);
-  const isOwn = viewer.id === person.id;
-  const canSeeCaseload = canManage || isOwn;
-  // staff can add/remove clients on their OWN caseload; reassigning to a
-  // different staffer stays a supervisor+ action.
-  const canEditCaseload = canManage || isOwn;
-
-  let clients = [];
-  if (canSeeCaseload) {
-    clients = await prisma.client.findMany({
-      where: { assignedToId: person.id },
-      orderBy: [{ firstName: "asc" }],
-    });
-  }
-
-  const clientNameError = sp?.error === "clientName";
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
@@ -111,112 +90,6 @@ export default async function ContactDetailPage({ params, searchParams }) {
           )}
         </div>
       </div>
-
-      {/* caseload - need-to-know only */}
-      {canSeeCaseload && (
-        <div className="mt-8">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-              Caseload
-            </h2>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-              {clients.length}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">
-            Clients {viewer.id === person.id ? "you support" : "this person supports"}.
-            Visible only to supervisors, management, and the person themselves.
-          </p>
-
-          <ul className="mt-4 space-y-2">
-            {clients.length === 0 ? (
-              <li className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
-                No clients assigned.
-              </li>
-            ) : (
-              clients.map((c) => (
-                <li
-                  key={c.id}
-                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium text-slate-900">
-                      {clientDisplayName(c)}
-                    </p>
-                    {canEditCaseload && (
-                      <Link
-                        href={`/portal/contacts/clients/${c.id}/edit`}
-                        className="flex-none text-sm font-medium text-brand-light transition hover:text-brand"
-                      >
-                        Edit →
-                      </Link>
-                    )}
-                  </div>
-                  {c.notes && (
-                    <p className="mt-1 text-sm text-slate-600">{c.notes}</p>
-                  )}
-                </li>
-              ))
-            )}
-          </ul>
-
-          {/* add client - supervisor+ on any caseload, or the person on
-              their own */}
-          {canEditCaseload && (
-            <form
-              action={addClient.bind(null, person.id)}
-              className="mt-4 rounded-xl border border-slate-200 bg-white p-4"
-            >
-              <p className="text-sm font-medium text-slate-700">
-                {isOwn && !canManage
-                  ? "Add a client to your caseload"
-                  : "Add a client to this caseload"}
-              </p>
-              {clientNameError && (
-                <p className="mt-1 text-xs text-rose-700">
-                  First name and a last initial are required.
-                </p>
-              )}
-              <div className="mt-2 flex flex-wrap gap-2">
-                <input
-                  type="text"
-                  name="firstName"
-                  required
-                  maxLength={CLIENT_FIRST_MAX}
-                  placeholder="First name"
-                  className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                />
-                <input
-                  type="text"
-                  name="lastInitial"
-                  required
-                  maxLength={1}
-                  placeholder="Last initial"
-                  className="w-28 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                />
-              </div>
-              <input
-                type="text"
-                name="notes"
-                placeholder="Notes (optional)"
-                className="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-              <div className="mt-2 flex justify-end">
-                <button
-                  type="submit"
-                  className="rounded-md bg-brand-light px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-brand"
-                >
-                  Add client
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Privacy: first name + last initial only. No full names,
-                addresses, or DOB.
-              </p>
-            </form>
-          )}
-        </div>
-      )}
     </section>
   );
 }

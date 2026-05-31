@@ -3,8 +3,7 @@ import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { cleanDisplayName } from "@/lib/security";
-import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
-import { WORKING_HOURS_MAX } from "@/lib/clients";
+import { formatUSPhone, PHONE_MAX, WORKING_HOURS_MAX } from "@/lib/contacts";
 import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
 import Avatar from "@/components/Avatar";
 

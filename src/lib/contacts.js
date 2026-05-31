@@ -1,5 +1,9 @@
 // Team contacts directory - shared constants + helpers. pure (no db).
 
+// max length for a staff member's working-hours blurb (employee profile
+// field, edited in settings + admin).
+export const WORKING_HOURS_MAX = 120;
+
 // category buckets for the side filter. each maps a set of privilege
 // roles to a friendly grouping so "just management" is one click. value
 // goes in the URL as ?cat=...

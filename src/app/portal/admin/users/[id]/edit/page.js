@@ -12,8 +12,7 @@ import {
 } from "@/lib/roles";
 import { resolveTitle } from "@/lib/positions";
 import PositionPicker from "../../_components/PositionPicker";
-import { formatUSPhone, PHONE_MAX } from "@/lib/contacts";
-import { WORKING_HOURS_MAX } from "@/lib/clients";
+import { formatUSPhone, PHONE_MAX, WORKING_HOURS_MAX } from "@/lib/contacts";
 
 export const metadata = {
   title: "Edit user",
