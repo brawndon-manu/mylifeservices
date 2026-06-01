@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isIT } from "@/lib/roles";
+import { isElevated, isIT, canSeeRoles } from "@/lib/roles";
 import {
   typeLabel,
   typeChip,
@@ -131,7 +131,7 @@ export default async function FeedbackPage({ searchParams }) {
                 )}
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <AuthorChip author={item.author} size="sm" />
+                  <AuthorChip author={item.author} size="sm" showRole={canSeeRoles(user.role)} />
                   <span>· {timeAgo(item.createdAt)}</span>
                   {closed && item.resolvedBy && (
                     <span>· closed by {item.resolvedBy.name}</span>

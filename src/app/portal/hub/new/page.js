@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, canSeeRoles, ROLE_LABELS } from "@/lib/roles";
 import { POST_TAGS, POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
 import { createPost } from "../actions";
 
@@ -28,6 +28,8 @@ export default async function NewPostPage({ searchParams }) {
   // proxy posting is IT/admin-only. fetch the active-user list for the
   // "Post as" picker only when the current user is allowed to use it.
   const canProxyPost = isElevated(user.role);
+  // only ADMIN/IT see privilege roles; managers proxy-posting just see name + email
+  const showRoles = canSeeRoles(user.role);
   let people = [];
   if (canProxyPost) {
     people = await prisma.user.findMany({
@@ -103,7 +105,8 @@ export default async function NewPostPage({ searchParams }) {
                   .filter((p) => p.id !== user.id)
                   .map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name || p.email} — {ROLE_LABELS[p.role] ?? p.role} —{" "}
+                      {p.name || p.email}
+                      {showRoles ? ` — ${ROLE_LABELS[p.role] ?? p.role}` : ""} —{" "}
                       {p.email}
                     </option>
                   ))}

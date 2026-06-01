@@ -90,6 +90,15 @@ export function isIT(role) {
   return role === "IT_ADMIN" || role === "SUPER";
 }
 
+// who can SEE other people's privilege role (the access tier, e.g. the
+// role badge). regular staff / supervisors / HR only see job titles;
+// ADMIN + IT (+ SUPER) see roles. this is what keeps SUPER discreet -
+// staff never see it. a user always sees their OWN role (gated at the
+// call site, not here).
+export function canSeeRoles(role) {
+  return role === "ADMIN" || isIT(role);
+}
+
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {

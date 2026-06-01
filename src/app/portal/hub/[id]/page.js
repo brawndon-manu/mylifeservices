@@ -3,7 +3,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated } from "@/lib/roles";
+import { isModerator, isElevated, canSeeRoles } from "@/lib/roles";
 import {
   TAG_STYLES,
   timeAgo,
@@ -85,7 +85,7 @@ export default async function PostDetailPage({ params, searchParams }) {
       <article className="mt-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <header className="flex items-start justify-between gap-3">
           <div>
-            <AuthorChip author={post.author} size="md" />
+            <AuthorChip author={post.author} size="md" showRole={canSeeRoles(user.role)} />
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{timeAgo(post.createdAt)}</span>
               {post.editedAt && <span>· edited</span>}
@@ -200,7 +200,7 @@ export default async function PostDetailPage({ params, searchParams }) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <AuthorChip author={c.author} size="sm" />
+                    <AuthorChip author={c.author} size="sm" showRole={canSeeRoles(user.role)} />
                     <div className="mt-0.5 text-xs text-slate-500">
                       {timeAgo(c.createdAt)}
                       {c.editedAt && <span> · edited</span>}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
+import { isElevated, canSeeRoles, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 import {
   CONTACT_CATEGORIES,
   isValidCategory,
@@ -22,6 +22,9 @@ export default async function ContactsPage({ searchParams }) {
   const user = await getCurrentUser();
   const params = await searchParams;
   const elevated = isElevated(user.role);
+  // only ADMIN/IT see other people's privilege role; everyone else just
+  // sees titles. keeps SUPER discreet.
+  const showRoles = canSeeRoles(user.role);
 
   const cat = isValidCategory(params?.cat) ? params.cat : null;
   const roleFilter = cat ? rolesForCategory(cat) : null;
@@ -191,9 +194,11 @@ export default async function ContactsPage({ searchParams }) {
                         <span className="font-semibold text-slate-900">
                           {p.name || p.email}
                         </span>
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass(p.role)}`}>
-                          {ROLE_LABELS[p.role] ?? p.role}
-                        </span>
+                        {showRoles && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass(p.role)}`}>
+                            {ROLE_LABELS[p.role] ?? p.role}
+                          </span>
+                        )}
                       </div>
                       {p.title && (
                         <p className="text-sm text-slate-600">{p.title}</p>

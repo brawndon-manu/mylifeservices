@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated } from "@/lib/roles";
+import { isModerator, isElevated, canSeeRoles } from "@/lib/roles";
 import {
   POST_TAGS,
   TAG_STYLES,
@@ -190,7 +190,7 @@ function PostCard({ post, currentUser }) {
     <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <AuthorChip author={post.author} size="md" />
+          <AuthorChip author={post.author} size="md" showRole={canSeeRoles(currentUser.role)} />
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>{timeAgo(post.createdAt)}</span>
             {post.editedAt && <span>· edited</span>}

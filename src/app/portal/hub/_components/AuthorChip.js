@@ -6,9 +6,13 @@ import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 // dashboard greeting so the visual language is consistent.
 //
 // props:
-//   - author: { name, role, email } — pulled from prisma
-//   - size:   "sm" | "md"           — md for posts, sm for comments
-export default function AuthorChip({ author, size = "md" }) {
+//   - author:   { name, role, email } — pulled from prisma
+//   - size:     "sm" | "md"           — md for posts, sm for comments
+//   - showRole: only render the privilege-role badge when true. off by
+//               default so roles never leak - the caller passes
+//               canSeeRoles(viewer.role) (ADMIN/IT only). staff just see
+//               the name.
+export default function AuthorChip({ author, size = "md", showRole = false }) {
   if (!author) return null;
   const isSm = size === "sm";
   const nameClass = isSm
@@ -24,9 +28,11 @@ export default function AuthorChip({ author, size = "md" }) {
   return (
     <span className="inline-flex flex-wrap items-center">
       <span className={nameClass}>{author.name || "—"}</span>
-      <span className={roleBadge}>
-        {ROLE_LABELS[author.role] ?? author.role}
-      </span>
+      {showRole && author.role && (
+        <span className={roleBadge}>
+          {ROLE_LABELS[author.role] ?? author.role}
+        </span>
+      )}
       {author.email && (
         <span className={emailBadgeClass}>{author.email}</span>
       )}

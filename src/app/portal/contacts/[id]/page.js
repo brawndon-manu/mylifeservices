@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
+import { ROLE_LABELS, roleBadgeClass, canSeeRoles } from "@/lib/roles";
 import Avatar from "@/components/Avatar";
 
 export const metadata = {
@@ -29,6 +29,10 @@ export default async function ContactDetailPage({ params }) {
   });
   if (!person) notFound();
 
+  // privilege role shows only to ADMIN/IT, or when you're viewing your
+  // own profile. everyone else just sees the title.
+  const showRole = canSeeRoles(viewer.role) || viewer.id === person.id;
+
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
       <Link
@@ -51,9 +55,11 @@ export default async function ContactDetailPage({ params }) {
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               {person.name || person.email}
             </h1>
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(person.role)}`}>
-              {ROLE_LABELS[person.role] ?? person.role}
-            </span>
+            {showRole && (
+              <span className={`rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(person.role)}`}>
+                {ROLE_LABELS[person.role] ?? person.role}
+              </span>
+            )}
           </div>
           {person.title && (
             <p className="text-sm text-slate-600">{person.title}</p>
