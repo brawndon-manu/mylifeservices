@@ -8,7 +8,7 @@ import {
   ROLE_DESCRIPTIONS,
   isElevated,
   isValidRole,
-  isIT,
+  canAssignRole,
 } from "@/lib/roles";
 import { resolveTitle } from "@/lib/positions";
 import PositionPicker from "../../_components/PositionPicker";
@@ -53,7 +53,6 @@ async function loadActionTarget(userId) {
       hireDate: true,
       phone: true,
       workingHours: true,
-      deviceManager: true,
       deactivatedAt: true,
     },
   });
@@ -61,12 +60,18 @@ async function loadActionTarget(userId) {
     redirect("/portal/admin?error=notfound");
   }
 
+  // authority guard: you can only manage a user whose role you're allowed
+  // to assign. stops e.g. a Manager from editing an Admin/IT/Super account.
+  if (!canAssignRole(current.role, target.role)) {
+    redirect("/portal/admin?error=forbidden");
+  }
+
   return { current, target };
 }
 
 async function updateUser(userId, formData) {
   "use server";
-  await loadActionTarget(userId);
+  const { current, target } = await loadActionTarget(userId);
 
   const name = cleanDisplayName(formData.get("name"), NAME_MAX_LEN);
   if (!name) {
@@ -95,9 +100,9 @@ async function updateUser(userId, formData) {
   if (!isValidRole(role)) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
   }
-  // the SUPER role is IT-only. block any non-IT admin from assigning it
-  // even if they craft the request directly.
-  if (role === "SUPER" && !isIT(current.role)) {
+  // role caps: Super only assigns Super; Admin/IT only by Admin-and-up;
+  // everything else by any oversight role. blocks crafted requests too.
+  if (!canAssignRole(current.role, role)) {
     redirect(`/portal/admin/users/${userId}/edit?error=role`);
   }
   // locked superusers (env LOCKED_SUPER_EMAILS) always stay SUPER - their
@@ -115,13 +120,9 @@ async function updateUser(userId, formData) {
     WORKING_HOURS_MAX,
   );
 
-  // device management access - a checkbox. only the few people management
-  // designates get the Device Management page.
-  const deviceManager = formData.get("deviceManager") === "on";
-
   await prisma.user.update({
     where: { id: userId },
-    data: { name, title, hireDate, phone, workingHours, role, deviceManager },
+    data: { name, title, hireDate, phone, workingHours, role },
   });
 
   redirect(`/portal/admin?updated=${encodeURIComponent(userId)}`);
@@ -166,12 +167,13 @@ export default async function EditUserPage({ params, searchParams }) {
   const { id } = await params;
   const { current, target } = await loadActionTarget(id);
 
-  // SUPER is a hidden role - only IT viewers see it as an option. if the
-  // target is already SUPER we always show it so the radio reflects reality.
-  const roleOptions =
-    isIT(current.role) || target.role === "SUPER"
-      ? [...ROLE_RADIO_ORDER, "SUPER"]
-      : ROLE_RADIO_ORDER;
+  // show only the roles this admin is allowed to assign, plus the target's
+  // current role (so the radio always reflects reality). hides SUPER from
+  // everyone but Super, and Admin/IT from HR/Manager.
+  const ALL_ROLES = [...ROLE_RADIO_ORDER, "SUPER"];
+  const roleOptions = ALL_ROLES.filter(
+    (r) => canAssignRole(current.role, r) || r === target.role,
+  );
 
   const queryParams = await searchParams;
   const error = queryParams?.error;
@@ -407,26 +409,6 @@ export default async function EditUserPage({ params, searchParams }) {
               ))}
             </div>
           </fieldset>
-
-          <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                name="deviceManager"
-                defaultChecked={target.deviceManager}
-                className="mt-0.5 h-4 w-4 flex-none accent-brand"
-              />
-              <span className="text-sm text-slate-700">
-                <span className="font-medium text-slate-900">
-                  Device Management access
-                </span>
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  Grants access to the Device Management log. Reserve for top
-                  management (e.g. April, David, Monica).
-                </span>
-              </span>
-            </label>
-          </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-6">
             <Link

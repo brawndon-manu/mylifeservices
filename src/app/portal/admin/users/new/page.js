@@ -4,12 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { cleanEmail, cleanDisplayName } from "@/lib/security";
 import {
-  ROLES,
   ROLE_LABELS,
   ROLE_DESCRIPTIONS,
   isElevated,
   isValidRole,
-  isIT,
+  canAssignRole,
 } from "@/lib/roles";
 import { resolveTitle } from "@/lib/positions";
 import PositionPicker from "../_components/PositionPicker";
@@ -28,8 +27,8 @@ const NAME_MAX_LEN = 30;
 async function inviteUser(formData) {
   "use server";
 
-  // gatekeep: only elevated roles can invite. proxy.js gates
-  // /portal/admin/* but check again here for defense-in-depth.
+  // gatekeep: the oversight tier (HR/Manager/Admin/IT/Super) can invite.
+  // proxy.js gates /portal/admin/* but check again here for defense-in-depth.
   const current = await getCurrentUser();
   if (!isElevated(current?.role)) {
     redirect("/portal");
@@ -80,8 +79,9 @@ async function inviteUser(formData) {
   if (!isValidRole(role)) {
     redirect("/portal/admin/users/new?error=role");
   }
-  // SUPER is IT-only - block non-IT admins from assigning it.
-  if (role === "SUPER" && !isIT(current.role)) {
+  // role caps: you can only assign a role within your authority - Super
+  // for Super, Admin/IT for Admin-and-up, the rest for any oversight role.
+  if (!canAssignRole(current.role, role)) {
     redirect("/portal/admin/users/new?error=role");
   }
 
@@ -107,10 +107,10 @@ export default async function NewUserPage({ searchParams }) {
     redirect("/portal");
   }
 
-  // SUPER is a hidden role - only IT viewers get it as an option.
-  const roleOptions = isIT(current.role)
-    ? [...ROLE_RADIO_ORDER, "SUPER"]
-    : ROLE_RADIO_ORDER;
+  // show only the roles this admin is allowed to assign (HR/Manager cap at
+  // Manager; Admin/IT for Admin-and-up; SUPER only for Super).
+  const ALL_ROLES = [...ROLE_RADIO_ORDER, "SUPER"];
+  const roleOptions = ALL_ROLES.filter((r) => canAssignRole(current.role, r));
 
   const params = await searchParams;
   const error = params?.error;

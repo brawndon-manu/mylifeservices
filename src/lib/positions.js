@@ -1,25 +1,24 @@
 // shared list of MLS job positions for the user invite + edit forms.
-// kept here so both forms stay in sync. excludes the one-off real-world
-// constants (Owner/Director, Program Manager, IT roles) since those rows
-// dont change and dont need a button.
+// kept here so both forms stay in sync.
 //
 // a person can hold MORE THAN ONE position (e.g. "Independent Living
-// Instructor" + "IT / Web Developer"). positions are stored in the
-// single User.title string, joined with " / " - display code shows the
-// string as-is, no schema change needed.
+// Instructor / Day Program"). positions are stored in the single
+// User.title string, joined with " / " - display code shows the string
+// as-is, no schema change needed.
+//
+// note: these are job TITLES, separate from privilege roles (Staff,
+// Supervisor, Manager, Admin, etc.). "Super" is a role, not a position,
+// so it doesn't belong here.
 export const POSITIONS = [
-  "Field Supervisor",
+  "Owner / Director",
+  "Program Manager",
   "HR Administrator",
+  "Field Supervisor",
+  "Quality Assurance Specialist",
   "Independent Living Instructor",
   "Day Program",
-  "Supported Living",
-  "Self-Determination",
-  "Crisis Support",
-  "Attendant",
-  "Lead Staff",
-  "Case Manager",
   "Resources Specialist",
-  "Quality Assurance Specialist",
+  "IT / Web Developer",
 ];
 
 // separator used to join multiple positions into the title string. none

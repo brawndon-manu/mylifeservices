@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isSuper } from "@/lib/roles";
+import { isAdminUp } from "@/lib/roles";
 import { cleanBody } from "@/lib/hub";
 import {
   isValidDeviceType,
@@ -16,12 +16,12 @@ import {
   DEVICE_NOTES_MAX,
 } from "@/lib/devices";
 
-// device management is gated on the per-user deviceManager flag, not a
-// role. every action re-checks it.
+// adding/editing/deleting devices is Admin-and-up (Admin/IT/Super).
+// viewing the list is broader (oversight tier) - that's gated on the page.
 async function requireDeviceManager() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!user.deviceManager && !isSuper(user.role)) {
+  if (!isAdminUp(user.role)) {
     redirect("/portal?error=forbidden");
   }
   return user;

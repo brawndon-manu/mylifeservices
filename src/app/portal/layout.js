@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isSuper, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 
 async function handleSignOut() {
   "use server";
@@ -56,7 +56,7 @@ export default async function PortalLayout({ children }) {
             >
               Settings
             </Link>
-            {(user?.deviceManager || isSuper(role)) && (
+            {isElevated(role) && (
               <Link
                 href="/portal/devices"
                 className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
-import { isSuper, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 
 export const metadata = {
   title: "Portal",
@@ -112,7 +112,7 @@ export default async function PortalDashboard() {
         </Link>
       </div>
 
-      {(user?.deviceManager || isSuper(role)) && (
+      {isElevated(role) && (
         <div className="mt-6">
           <Link
             href="/portal/devices"

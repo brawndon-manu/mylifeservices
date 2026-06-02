@@ -53,11 +53,6 @@ model User {
   // free-text working hours shown on their contact detail page, e.g.
   // "Mon-Fri 9am-5pm". self-editable in Settings, admins too.
   workingHours  String?
-  // grants access to the Device Management page. NOT a role - a per-user
-  // flag so access is exactly the few people management designates
-  // (currently April, David, Monica) rather than a whole role tier.
-  // toggled from the admin edit-user page.
-  deviceManager Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -75,8 +70,9 @@ model User {
   resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
 }
 
-// company device / asset log. restricted to users with the deviceManager
-// flag (top management). tracks Apple + other hardware David purchases.
+// company device / asset log. viewable by the oversight tier; editing is
+// Admin and up (role-based, see src/lib/roles.js). tracks Apple + other
+// hardware David purchases.
 enum DeviceType {
   LAPTOP
   DESKTOP

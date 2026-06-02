@@ -66,7 +66,11 @@ export function isSuper(role) {
   return role === "SUPER";
 }
 
-const ELEVATED_ROLES = new Set(["SUPER", "IT_ADMIN", "ADMIN", "MANAGER"]);
+// the oversight tier - HR, Manager, Admin, IT, Super. these can manage
+// users, edit positions, moderate + approve content, and view the device
+// log. (HR + Manager can't assign the powerful roles or invite new
+// users - see canAssignRole + isSuper.)
+const ELEVATED_ROLES = new Set(["SUPER", "IT_ADMIN", "ADMIN", "MANAGER", "HR"]);
 
 // returns true if the role has elevated (admin-level) permissions in
 // the portal. use this anywhere you'd previously check role === "IT_ADMIN".
@@ -90,13 +94,32 @@ export function isIT(role) {
   return role === "IT_ADMIN" || role === "SUPER";
 }
 
-// who can SEE other people's privilege role (the access tier, e.g. the
-// role badge). regular staff / supervisors / HR only see job titles;
-// ADMIN + IT (+ SUPER) see roles. this is what keeps SUPER discreet -
-// staff never see it. a user always sees their OWN role (gated at the
-// call site, not here).
-export function canSeeRoles(role) {
+// "Admin and up" - ADMIN, IT_ADMIN, SUPER. these can assign the powerful
+// roles (Admin/IT) and add/edit/delete devices. HR + Manager cannot.
+export function isAdminUp(role) {
   return role === "ADMIN" || isIT(role);
+}
+
+// can `actorRole` assign - or manage a user who currently holds -
+// `targetRole`? SUPER -> Super only; ADMIN/IT -> Admin and up; anything
+// else -> any oversight role. used to filter the role picker AND guard
+// the edit-user action, so e.g. a Manager can't grant or even touch an
+// Admin/IT/Super account.
+export function canAssignRole(actorRole, targetRole) {
+  if (targetRole === "SUPER") return isSuper(actorRole);
+  if (targetRole === "ADMIN" || targetRole === "IT_ADMIN") {
+    return isAdminUp(actorRole);
+  }
+  return isElevated(actorRole);
+}
+
+// who can SEE other people's privilege role (the access tier, e.g. the
+// role badge). the oversight tier (HR / Manager / Admin / IT / Super)
+// sees them; Staff + Supervisor only see job titles. keeps roles - esp.
+// SUPER - off the staff-facing surfaces. a user always sees their OWN
+// role (gated at the call site, not here).
+export function canSeeRoles(role) {
+  return isElevated(role);
 }
 
 // returns true if `role` is a valid Role enum value. use for form
