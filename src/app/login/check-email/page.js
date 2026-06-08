@@ -6,7 +6,7 @@ export const metadata = {
 export default function CheckEmailPage() {
   return (
     <section className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-6 py-16 text-center">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Almost in
       </p>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

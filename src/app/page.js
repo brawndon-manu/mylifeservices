@@ -85,7 +85,7 @@ export default function HomePage() {
       <section className="border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+            <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
               How we work
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
@@ -118,7 +118,7 @@ export default function HomePage() {
       <section className="border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <header className="mb-12 max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+            <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
               Real stories
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
@@ -179,7 +179,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+              <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
                 This Week in My Life Services
               </p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

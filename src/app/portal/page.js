@@ -30,7 +30,7 @@ export default async function PortalDashboard() {
 
   return (
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Welcome back
       </p>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

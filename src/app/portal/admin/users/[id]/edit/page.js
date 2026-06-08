@@ -196,7 +196,7 @@ export default async function EditUserPage({ params, searchParams }) {
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-12 sm:py-16">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         IT Admin
       </p>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

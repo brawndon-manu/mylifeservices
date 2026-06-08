@@ -45,7 +45,7 @@ export default async function NewsletterPortalPage({ searchParams }) {
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             This Week in My Life Services
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

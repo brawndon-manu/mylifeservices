@@ -41,7 +41,7 @@ export default async function NewPostPage({ searchParams }) {
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         MLS Hub
       </p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

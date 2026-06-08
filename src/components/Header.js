@@ -6,17 +6,21 @@ import AuthBadge from "@/components/AuthBadge";
 
 // "About" is a dropdown that groups the company-story pages so the top
 // nav stays lean. the rest are plain top-level links. Employee portal
-// lives in the footer now (staff-only, doesnt belong in the public nav).
+// is an outline button next to the phone (the inverse style) so staff
+// can find it easily without it crowding the main nav.
 const aboutLinks = [
   { href: "/about", label: "About us" },
   { href: "/stories", label: "Stories" },
   { href: "/this-week", label: "This Week" },
 ];
 
+// plain top-level links. "Apply" is a direct link for now - if we add
+// more quick actions later, group them back into a "Quicklinks" dropdown.
 const navLinks = [
   { href: "/services", label: "Services" },
   { href: "/careers", label: "Careers" },
   { href: "/contact", label: "Contact" },
+  { href: "/careers/apply", label: "Apply" },
 ];
 
 const PHONE_DISPLAY = "(909) 837-0907";
@@ -73,36 +77,22 @@ export default function Header() {
               ))}
             </ul>
           </nav>
-          <div className="flex items-center gap-4">
-            {/* Quicklinks - tucks the staff portal + quick actions away
-                from the main nav. closes on outside click / nav / Escape. */}
-            <NavDropdown
-              label="Quicklinks"
-              align="right"
-              triggerClassName="text-sm font-medium text-slate-500"
+          <div className="flex items-center gap-2.5">
+            {/* Employee portal - outline button, the inverse of the phone
+                button so staff can spot it without it crowding the nav. */}
+            <Link
+              href="/portal"
+              className="inline-flex items-center gap-2 rounded-md border border-brand-light px-3 py-1.5 text-sm font-medium text-brand-dark transition hover:bg-brand-light hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
-              <Link
-                href="/portal"
-                role="menuitem"
-                className="flex items-center gap-2 rounded px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-              >
-                <LockIcon className="h-3.5 w-3.5 flex-none text-slate-400" />
-                <span>Employee portal</span>
-              </Link>
-              <Link
-                href="/careers/apply"
-                role="menuitem"
-                className="flex items-center gap-2 rounded px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-              >
-                <span>Apply for a job</span>
-              </Link>
-            </NavDropdown>
+              <LockIcon className="h-3.5 w-3.5 flex-none" />
+              <span>Employee portal</span>
+            </Link>
             <a
               href={PHONE_HREF}
               aria-label={`Call My Life Services at ${PHONE_DISPLAY}`}
-              className="inline-flex items-center gap-2 rounded-md bg-brand-light px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-light px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
-              <PhoneIcon className="h-4 w-4" />
+              <PhoneIcon className="h-3.5 w-3.5" />
               <span>{PHONE_DISPLAY}</span>
             </a>
           </div>

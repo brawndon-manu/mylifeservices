@@ -8,8 +8,6 @@ export const metadata = {
     "Independent Living, Day Program, Supported Living, Self-Determination, and Crisis Support — services from My Life Services.",
 };
 
-const totalLabel = String(services.length).padStart(2, "0");
-
 export default function ServicesPage() {
   return (
     <>
@@ -32,10 +30,10 @@ export default function ServicesPage() {
               <li key={service.slug}>
                 <a
                   href={`#${service.slug}`}
-                  className="group flex items-baseline gap-3 rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
+                  className="group flex h-full items-baseline gap-2 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm transition hover:border-brand hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
-                  <span className="font-mono text-base text-brand-dark">
-                    {String(i + 1).padStart(2, "0")}
+                  <span className="font-mono text-sm text-brand-dark">
+                    {i + 1}
                   </span>
                   <span className="font-medium text-slate-900 group-hover:text-brand-dark">
                     {service.name}
@@ -57,10 +55,7 @@ export default function ServicesPage() {
             <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
               <div className="grid gap-8 sm:grid-cols-12 sm:gap-12">
                 <div className="sm:col-span-5">
-                  <p className="font-mono text-xl font-semibold text-brand-dark">
-                    {String(i + 1).padStart(2, "0")} / {totalLabel}
-                  </p>
-                  <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                  <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
                     {service.name}
                   </h2>
                 </div>

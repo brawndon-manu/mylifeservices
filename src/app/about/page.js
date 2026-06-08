@@ -32,7 +32,7 @@ export default function AboutPage() {
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid items-center gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-7">
-              <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+              <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
                 Get to know us
               </p>
               <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-5xl">
@@ -62,7 +62,7 @@ export default function AboutPage() {
       {/* Our Approach — values card */}
       <Section bg="slate">
         <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm sm:p-10">
-          <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             How we work
           </p>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">

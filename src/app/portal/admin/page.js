@@ -155,7 +155,7 @@ export default async function AdminPage({ searchParams }) {
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
+      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         IT Admin
       </p>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
