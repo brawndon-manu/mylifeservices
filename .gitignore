@@ -43,6 +43,7 @@ yarn-error.log*
 
 # local working notes
 /local-docs/
+/docs/
 
 # local-only files
 /prisma/local/
