@@ -113,3 +113,20 @@ export function formatUSPhone(raw) {
   // partial / unusual - keep it as typed
   return trimmed.slice(0, PHONE_MAX);
 }
+
+// live "as you type" formatter for phone inputs. progressively builds
+// (xxx) xxx-xxxx as digits come in, so the user sees the parens + dash
+// appear while typing. caps at a US 10-digit number (drops a leading 1
+// if they type the country code). returns "" for no digits so the field
+// can start empty. formatUSPhone above is still the source of truth on
+// save - this is purely a typing nicety.
+export function formatPhoneLive(raw) {
+  if (typeof raw !== "string") return "";
+  let d = raw.replace(/\D/g, "");
+  if (d.length === 11 && d[0] === "1") d = d.slice(1); // drop country code
+  d = d.slice(0, 10);
+  if (d.length === 0) return "";
+  if (d.length <= 3) return `(${d}`;
+  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}

@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import emailjs from "@emailjs/browser";
+import { submitApplication } from "./actions";
+import { formatPhoneLive } from "@/lib/contacts";
 
-// EmailJS credentials — public-key model, safe to commit per EmailJS docs.
-// Remember to enforce allowed-domains in the EmailJS dashboard before launch.
-const EMAILJS_PUBLIC_KEY = "yu_iQHPcq3JegCHEA";
-const EMAILJS_SERVICE_ID = "service_g9l4ocj";
-const EMAILJS_TEMPLATE_ID = "template_rnnyp59";
-
-const MAX_RESUME_BYTES = 5 * 1024 * 1024;
+// keep under Vercel Hobby's ~4.5MB request cap (resume + the text fields).
+const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 
 // Positions map: slug used in the ?program= query param ↔ form input name ↔ display label
 const POSITIONS = [
@@ -30,7 +26,6 @@ const EMPLOYMENT_TYPES = [
 const SHIFTS = [
   { name: "shift_am", label: "Morning (6am–2pm)" },
   { name: "shift_pm", label: "Afternoon (2pm–10pm)" },
-  { name: "shift_on", label: "Overnight (10pm–6am)" },
   { name: "shift_we", label: "Weekends" },
 ];
 
@@ -53,16 +48,22 @@ const QUESTIONS = [
   { name: "q_dsp", label: "Received any DSP training?" },
 ];
 
+const initialState = { ok: false, error: null };
+
 export default function ApplyForm() {
   const searchParams = useSearchParams();
   const preselectedSlug = searchParams.get("program");
   const [resumeFileName, setResumeFileName] = useState("");
-  const [status, setStatus] = useState({ state: "idle", message: "" });
   const fileInputRef = useRef(null);
+  const [state, formAction, isPending] = useActionState(
+    submitApplication,
+    initialState,
+  );
 
+  // bring the confirmation into view once it submits successfully
   useEffect(() => {
-    emailjs.init(EMAILJS_PUBLIC_KEY);
-  }, []);
+    if (state.ok) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [state.ok]);
 
   function handleFileChange(e) {
     const file = e.target.files?.[0];
@@ -71,7 +72,7 @@ export default function ApplyForm() {
       return;
     }
     if (file.size > MAX_RESUME_BYTES) {
-      alert("That file is over 5MB. Please choose a smaller file.");
+      alert("That file is over 4MB. Please choose a smaller file.");
       e.target.value = "";
       setResumeFileName("");
       return;
@@ -79,64 +80,31 @@ export default function ApplyForm() {
     setResumeFileName(file.name);
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const data = new FormData(form);
-
-    const firstName = (data.get("first_name") || "").toString().trim();
-    const lastName = (data.get("last_name") || "").toString().trim();
-    const positionLabels = POSITIONS
-      .filter((p) => data.get(p.name))
-      .map((p) => p.label);
-    const positionsField = positionLabels.length
-      ? positionLabels.join(", ")
-      : "None selected";
-
-    const messageBody = buildMessage(data, resumeFileName);
-
-    setStatus({ state: "submitting", message: "" });
-
-    try {
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        applicant_name: `${firstName} ${lastName}`.trim(),
-        position: positionsField,
-        message: messageBody,
-      });
-      setStatus({
-        state: "success",
-        message: `Thank you, ${firstName}! Your application has been received. Our team will be in touch soon.`,
-      });
-      form.reset();
-      setResumeFileName("");
-      // Bring the confirmation into view in case the form was long.
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (err) {
-      console.error("EmailJS error:", err);
-      setStatus({
-        state: "error",
-        message:
-          "Something went wrong while submitting. Please try again, or call us at (909) 837-0907.",
-      });
-    }
-  }
-
-  if (status.state === "success") {
+  if (state.ok) {
     return (
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 text-center">
         <h2 className="text-2xl font-semibold text-emerald-900">
           Application received
         </h2>
-        <p className="mt-3 text-base text-emerald-900">{status.message}</p>
-        <p className="mt-4 text-sm text-emerald-900/80">
-          We&apos;ll follow up by email if a resume attachment is needed.
+        <p className="mt-3 text-base text-emerald-900">
+          Thank you{state.firstName ? `, ${state.firstName}` : ""}! Your
+          application has been received. Our team will be in touch soon.
         </p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-12" noValidate>
+    <form action={formAction} className="space-y-12">
+      {/* honeypot - hidden from people, catches dumb bots */}
+      <input
+        type="text"
+        name="company"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="hidden"
+      />
       {/* --- Position Applied For --- */}
       <section>
         <SectionHeading>Position applied for</SectionHeading>
@@ -181,6 +149,20 @@ export default function ApplyForm() {
         </div>
         <div className="mt-4">
           <Field label="Email address" name="email" type="email" required />
+        </div>
+      </section>
+
+      {/* --- Referral --- */}
+      <section>
+        <SectionHeading>Referral</SectionHeading>
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 sm:px-5">
+          <YesNoRow
+            name="q_referral"
+            label="Did a My Life Services employee refer you?"
+          />
+        </div>
+        <div className="mt-5">
+          <Field label="If yes, who referred you?" name="referral_name" />
         </div>
       </section>
 
@@ -315,7 +297,7 @@ export default function ApplyForm() {
             {resumeFileName ? "Change file" : "Click to attach your resume"}
           </p>
           <p className="mt-1 text-xs text-slate-600">
-            PDF or Word document — max 5MB
+            PDF or Word document — max 4MB
           </p>
           {resumeFileName && (
             <p className="mt-3 text-sm font-medium text-slate-800">
@@ -325,16 +307,15 @@ export default function ApplyForm() {
         </div>
         <input
           ref={fileInputRef}
+          name="resume"
           type="file"
           accept=".pdf,.doc,.docx"
           className="sr-only"
           onChange={handleFileChange}
         />
-        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-          <strong>Heads up:</strong> Our form captures the resume filename only —
-          the file itself is not transmitted with this submission. After you
-          submit, our team will reply by email to request your resume
-          attachment.
+        <p className="mt-3 text-xs leading-relaxed text-slate-500">
+          Your resume is attached to your application automatically — no separate
+          email needed. PDF or Word, up to 4MB.
         </p>
       </section>
 
@@ -363,17 +344,17 @@ export default function ApplyForm() {
       <div>
         <button
           type="submit"
-          disabled={status.state === "submitting"}
+          disabled={isPending}
           className="w-full rounded-md bg-brand-light px-6 py-3 text-base font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          {status.state === "submitting" ? "Submitting…" : "Submit application"}
+          {isPending ? "Submitting…" : "Submit application"}
         </button>
-        {status.state === "error" && (
+        {state.error && (
           <p
             role="alert"
             className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
           >
-            {status.message}
+            {state.error}
           </p>
         )}
       </div>
@@ -398,8 +379,8 @@ function SectionHeading({ children }) {
 const fieldInputClass =
   "mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 
-// default length caps. these are soft client-side guards - emailjs has
-// its own server-side limits too. mostly here so someone pasting a 5mb
+// default length caps. these are soft client-side guards - the server
+// action validates + caps too. mostly here so someone pasting a 5mb
 // novel into the first-name field doesnt break the form submission.
 // override per-field with maxLength={...} when needed (state code = 2,
 // zip = 10, etc - already done where it matters).
@@ -407,6 +388,16 @@ const FIELD_MAX_LEN = 200;
 const TEXTAREA_MAX_LEN = 2000;
 
 function Field({ label, name, type = "text", required = false, maxLength = FIELD_MAX_LEN, ...rest }) {
+  // phone fields format live as you type: (xxx) xxx-xxxx
+  const telProps =
+    type === "tel"
+      ? {
+          inputMode: "tel",
+          onInput: (e) => {
+            e.currentTarget.value = formatPhoneLive(e.currentTarget.value);
+          },
+        }
+      : {};
   return (
     <label className="block">
       <span className="block text-xs font-semibold text-slate-700">
@@ -419,6 +410,7 @@ function Field({ label, name, type = "text", required = false, maxLength = FIELD
         required={required}
         maxLength={maxLength}
         className={fieldInputClass}
+        {...telProps}
         {...rest}
       />
     </label>
@@ -543,94 +535,4 @@ function ReferenceBlock({ index }) {
       </div>
     </div>
   );
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Email body builder                                                        */
-/* -------------------------------------------------------------------------- */
-
-function buildMessage(data, resumeFileName) {
-  const v = (name) => {
-    const value = data.get(name);
-    if (value === null || value === undefined) return "—";
-    const s = value.toString().trim();
-    return s || "—";
-  };
-  const checkedAny = (names) => {
-    const vals = [];
-    for (const n of names) {
-      const val = data.get(n);
-      if (val) vals.push(val);
-    }
-    return vals.length ? vals.join(", ") : "None selected";
-  };
-
-  const positions = checkedAny(POSITIONS.map((p) => p.name));
-  const empTypes = checkedAny(EMPLOYMENT_TYPES.map((t) => t.name));
-  const shifts = checkedAny(SHIFTS.map((s) => s.name));
-  const certs = checkedAny(CERTIFICATIONS.map((c) => c.name));
-
-  const lines = [];
-  lines.push("=== MY LIFE SERVICES – EMPLOYMENT APPLICATION ===\n");
-  lines.push("POSITION(S) APPLIED FOR: " + positions);
-  lines.push(`Application Date: ${v("app_date")}  |  Available Start Date: ${v("start_date")}`);
-
-  lines.push("\n--- PERSONAL INFORMATION ---");
-  lines.push(`Name: ${v("first_name")} ${v("last_name")}`);
-  lines.push(`Address: ${v("address")}, ${v("city")}, ${v("state")} ${v("zip")}`);
-  lines.push(`Primary Phone: ${v("phone_primary")}  |  Secondary: ${v("phone_secondary")}`);
-  lines.push(`Email: ${v("email")}`);
-
-  lines.push("\n--- AVAILABILITY ---");
-  lines.push(`Employment Type: ${empTypes}`);
-  lines.push(`Shifts: ${shifts}`);
-  lines.push(`Desired Pay: ${v("pay_rate")}  |  Hours/Week: ${v("hours_week")}`);
-
-  lines.push("\n--- EDUCATION ---");
-  lines.push(`Education: ${v("education")}`);
-  lines.push(`Field of Study: ${v("field_of_study")}  |  School: ${v("school")}`);
-  lines.push(`Certifications: ${certs}`);
-
-  lines.push("\n--- WORK EXPERIENCE ---");
-  for (let i = 1; i <= 3; i++) {
-    lines.push(
-      `Employer ${i}: ${v(`emp${i}_name`)} | Title: ${v(`emp${i}_title`)} | Supervisor: ${v(`emp${i}_supervisor`)} | Phone: ${v(`emp${i}_phone`)}`,
-    );
-    lines.push(
-      `  Dates: ${v(`emp${i}_from`)} to ${v(`emp${i}_to`)} | Reason for Leaving: ${v(`emp${i}_reason`)}`,
-    );
-    lines.push(`  Duties: ${v(`emp${i}_duties`)}`);
-  }
-
-  lines.push("\n--- QUALIFICATIONS ---");
-  lines.push(
-    `Disability experience: ${v("q_disability")}  |  BSP experience: ${v("q_bsp")}  |  Bilingual: ${v("q_bilingual")}`,
-  );
-  lines.push(
-    `CA Driver's License: ${v("q_license")}  |  Vehicle: ${v("q_vehicle")}  |  Auto Insurance: ${v("q_insurance")}`,
-  );
-  lines.push(
-    `Willing to transport clients: ${v("q_transport")}  |  DSP Training: ${v("q_dsp")}`,
-  );
-  lines.push(`Additional Skills: ${v("additional_skills")}`);
-
-  lines.push("\n--- REFERENCES ---");
-  for (let i = 1; i <= 3; i++) {
-    lines.push(
-      `Ref ${i}: ${v(`ref${i}_name`)} | ${v(`ref${i}_relationship`)} | ${v(`ref${i}_org`)} | ${v(`ref${i}_phone`)}`,
-    );
-  }
-
-  lines.push("\n--- BACKGROUND CHECK ---");
-  lines.push(`Prior Conviction: ${v("q_conviction")}`);
-  lines.push(`Explanation: ${v("conviction_explain")}`);
-
-  lines.push("\n--- RESUME ---");
-  lines.push(`Resume File: ${resumeFileName || "Not attached"}`);
-
-  lines.push("\n--- SIGNATURE ---");
-  lines.push(`Signed by: ${v("signature")}  |  Date: ${v("sign_date")}`);
-
-  lines.push("\n=== END OF APPLICATION ===");
-  return lines.join("\n");
 }

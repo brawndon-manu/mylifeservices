@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PhoneInput from "@/components/PhoneInput";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
 import {
@@ -148,16 +149,28 @@ function Field({ id, label, optional, required, type = "text", maxLength, placeh
         {required && <span className="text-rose-600">*</span>}
         {optional && <span className="text-slate-400">(optional)</span>}
       </label>
-      <input
-        id={id}
-        name={id}
-        type={type}
-        required={required}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        autoComplete="off"
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-      />
+      {type === "tel" ? (
+        <PhoneInput
+          id={id}
+          name={id}
+          required={required}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          autoComplete="off"
+          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+      ) : (
+        <input
+          id={id}
+          name={id}
+          type={type}
+          required={required}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          autoComplete="off"
+          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+      )}
     </div>
   );
 }

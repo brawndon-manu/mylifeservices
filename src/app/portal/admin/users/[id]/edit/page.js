@@ -12,6 +12,7 @@ import {
 } from "@/lib/roles";
 import { resolveTitle } from "@/lib/positions";
 import PositionPicker from "../../_components/PositionPicker";
+import PhoneInput from "@/components/PhoneInput";
 import { formatUSPhone, PHONE_MAX, WORKING_HOURS_MAX } from "@/lib/contacts";
 
 export const metadata = {
@@ -329,10 +330,9 @@ export default async function EditUserPage({ params, searchParams }) {
             >
               Phone <span className="text-slate-400">(optional)</span>
             </label>
-            <input
+            <PhoneInput
               id="phone"
               name="phone"
-              type="tel"
               maxLength={PHONE_MAX}
               defaultValue={target.phone ?? ""}
               autoComplete="off"

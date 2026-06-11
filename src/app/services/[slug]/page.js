@@ -169,7 +169,7 @@ function ComingSoon() {
         </a>{" "}
         or{" "}
         <a
-          href="mailto:support@mylifeservices.net"
+          href="mailto:contact@mylifeservicesinc.com"
           className="font-medium text-brand-dark underline underline-offset-2 hover:text-brand"
         >
           email us

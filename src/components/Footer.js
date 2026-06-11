@@ -41,10 +41,10 @@ export default function Footer() {
                 <dt className="sr-only">Email</dt>
                 <dd>
                   <a
-                    href="mailto:support@mylifeservices.net"
+                    href="mailto:contact@mylifeservicesinc.com"
                     className="underline-offset-2 hover:underline"
                   >
-                    support@mylifeservices.net
+                    contact@mylifeservicesinc.com
                   </a>
                 </dd>
               </div>

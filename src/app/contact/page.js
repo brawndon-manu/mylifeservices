@@ -1,4 +1,5 @@
 import PageHeader from "@/components/PageHeader";
+import ContactForm from "./_components/ContactForm";
 import {
   PhoneIcon,
   EnvelopeIcon,
@@ -22,8 +23,8 @@ const methods = [
   {
     Icon: EnvelopeIcon,
     label: "Email",
-    value: "support@mylifeservices.net",
-    href: "mailto:support@mylifeservices.net",
+    value: "contact@mylifeservicesinc.com",
+    href: "mailto:contact@mylifeservicesinc.com",
   },
   {
     Icon: MapPinIcon,
@@ -59,7 +60,26 @@ export default function ContactPage() {
         title="Contact us"
         intro="Reach out about service inquiries, employment opportunities, or community partnerships."
       />
+
+      <section className="mx-auto max-w-5xl px-6 pt-16">
+        <div className="mx-auto max-w-2xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            Send us a message
+          </h2>
+          <p className="mt-3 text-base leading-relaxed text-slate-700">
+            Fill out the form and we&apos;ll get back to you. Prefer to reach us
+            directly? Our details are just below.
+          </p>
+          <div className="mt-8">
+            <ContactForm />
+          </div>
+        </div>
+      </section>
+
       <section className="mx-auto max-w-5xl px-6 py-16">
+        <h2 className="mb-8 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          Or reach us directly
+        </h2>
         <div className="grid gap-8 lg:grid-cols-2 lg:items-stretch">
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 lg:content-start">
           {methods.map(({ Icon, label, value, href }) => {
@@ -140,7 +160,7 @@ export default function ContactPage() {
                 (909) 837-0907
               </a>
               <a
-                href="mailto:support@mylifeservices.net"
+                href="mailto:contact@mylifeservicesinc.com"
                 className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-white px-6 py-3 text-base font-medium text-white transition hover:bg-white hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <EnvelopeIcon className="h-5 w-5" />

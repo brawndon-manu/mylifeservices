@@ -6,6 +6,7 @@ import { cleanDisplayName } from "@/lib/security";
 import { formatUSPhone, PHONE_MAX, WORKING_HOURS_MAX } from "@/lib/contacts";
 import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
 import Avatar from "@/components/Avatar";
+import PhoneInput from "@/components/PhoneInput";
 
 export const metadata = {
   title: "Settings",
@@ -220,10 +221,9 @@ export default async function SettingsPage({ searchParams }) {
             >
               Phone <span className="text-slate-400">(optional)</span>
             </label>
-            <input
+            <PhoneInput
               id="phone"
               name="phone"
-              type="tel"
               maxLength={PHONE_MAX}
               defaultValue={user.phone ?? ""}
               autoComplete="tel"

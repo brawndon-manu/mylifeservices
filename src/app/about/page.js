@@ -155,7 +155,7 @@ export default function AboutPage() {
                 (909) 837-0907
               </a>
               <a
-                href="mailto:support@mylifeservices.net"
+                href="mailto:contact@mylifeservicesinc.com"
                 className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-white px-5 py-3 text-base font-medium text-white transition hover:bg-white hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <EnvelopeIcon className="h-5 w-5" />
