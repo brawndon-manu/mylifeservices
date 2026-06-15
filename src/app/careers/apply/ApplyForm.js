@@ -44,6 +44,7 @@ const QUESTIONS = [
   { name: "q_license", label: "Valid California Driver’s License?" },
   { name: "q_vehicle", label: "Reliable personal vehicle?" },
   { name: "q_insurance", label: "Current auto insurance?" },
+  { name: "q_registration", label: "Current vehicle registration?" },
   { name: "q_transport", label: "Willing to provide transportation to clients?" },
   { name: "q_dsp", label: "Received any DSP training?" },
 ];
@@ -54,6 +55,7 @@ export default function ApplyForm() {
   const searchParams = useSearchParams();
   const preselectedSlug = searchParams.get("program");
   const [resumeFileName, setResumeFileName] = useState("");
+  const [expOnResume, setExpOnResume] = useState(false);
   const fileInputRef = useRef(null);
   const [state, formAction, isPending] = useActionState(
     submitApplication,
@@ -220,14 +222,35 @@ export default function ApplyForm() {
       {/* --- Work Experience --- */}
       <section>
         <SectionHeading>Work experience</SectionHeading>
-        <p className="mb-4 text-xs text-slate-500">
-          List most recent employer first.
-        </p>
-        <div className="space-y-5">
-          {[1, 2, 3].map((i) => (
-            <EmployerBlock key={i} index={i} />
-          ))}
-        </div>
+        <label className="mb-4 flex items-center gap-2 text-sm text-slate-800">
+          <input
+            type="checkbox"
+            name="exp_on_resume"
+            value="Yes"
+            checked={expOnResume}
+            onChange={(e) => setExpOnResume(e.target.checked)}
+            className="h-4 w-4 accent-brand"
+          />
+          <span>My work history is included in my attached resume</span>
+        </label>
+        {expOnResume ? (
+          <p className="rounded-md border border-brand-light/40 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-slate-700">
+            Got it — we&apos;ll use your resume for your work history. Just make
+            sure to attach it in the Resume section below (it&apos;s required
+            when this box is checked).
+          </p>
+        ) : (
+          <>
+            <p className="mb-4 text-xs text-slate-500">
+              List most recent employer first.
+            </p>
+            <div className="space-y-5">
+              {[1, 2, 3].map((i) => (
+                <EmployerBlock key={i} index={i} />
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* --- Qualifications --- */}
@@ -235,7 +258,7 @@ export default function ApplyForm() {
         <SectionHeading>Qualifications & skills</SectionHeading>
         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 sm:px-5">
           {QUESTIONS.map((q) => (
-            <YesNoRow key={q.name} name={q.name} label={q.label} />
+            <YesNoRow key={q.name} name={q.name} label={q.label} required />
           ))}
         </div>
         <div className="mt-5">
@@ -267,6 +290,7 @@ export default function ApplyForm() {
           <YesNoRow
             name="q_conviction"
             label="Have you ever been convicted of a felony or misdemeanor (excluding minor traffic violations)?"
+            required
           />
         </div>
         <div className="mt-5">
@@ -465,16 +489,20 @@ function Checkbox({ name, value, label, defaultChecked = false }) {
   );
 }
 
-function YesNoRow({ name, label }) {
+function YesNoRow({ name, label, required = false }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 py-3 last:border-b-0">
-      <span className="flex-1 text-sm text-slate-800">{label}</span>
+      <span className="flex-1 text-sm text-slate-800">
+        {label}
+        {required && <span className="ml-0.5 text-red-600">*</span>}
+      </span>
       <div className="flex gap-4">
         <label className="flex items-center gap-1.5 text-sm text-slate-800">
           <input
             type="radio"
             name={name}
             value="Yes"
+            required={required}
             className="h-4 w-4 accent-brand"
           />
           Yes
@@ -484,6 +512,7 @@ function YesNoRow({ name, label }) {
             type="radio"
             name={name}
             value="No"
+            required={required}
             className="h-4 w-4 accent-brand"
           />
           No
