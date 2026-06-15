@@ -134,7 +134,7 @@ export default function DeviceForm({ action, device = null, submitLabel }) {
             type="text"
             maxLength={DEVICE_ASSIGNED_MAX}
             defaultValue={device?.assignedTo ?? ""}
-            placeholder="e.g. David — home office"
+            placeholder="e.g. David, home office"
             className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>

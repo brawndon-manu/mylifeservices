@@ -14,7 +14,7 @@ export async function generateMetadata({ params }) {
   const baseName = service.name.split(" (")[0];
   const roleTitle = service.role?.title || `${baseName} roles`;
   return {
-    title: `${roleTitle} — Careers`,
+    title: roleTitle,
     description:
       service.role?.intro ||
       `Apply for roles in ${baseName} at My Life Services.`,
@@ -148,7 +148,7 @@ function ApplyCta({ baseName, slug }) {
           Ready to apply?
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
-          Submit our online application — {baseName} will be pre-selected on the
+          Submit our online application. {baseName} will be pre-selected on the
           form so you can focus on the rest of the details.
         </p>
         <div className="mt-8 flex justify-center">

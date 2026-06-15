@@ -106,7 +106,7 @@ export default async function NewPostPage({ searchParams }) {
                   .map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name || p.email}
-                      {showRoles ? ` — ${ROLE_LABELS[p.role] ?? p.role}` : ""} —{" "}
+                      {showRoles ? ` · ${ROLE_LABELS[p.role] ?? p.role}` : ""} ·{" "}
                       {p.email}
                     </option>
                   ))}

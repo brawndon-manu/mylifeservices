@@ -182,7 +182,7 @@ export default async function EditUserPage({ params, searchParams }) {
     name: `Display name must be 1-${NAME_MAX_LEN} characters.`,
     role: "Please pick a role.",
     locked:
-      "This is a permanent superuser account — its role can't be changed and it can't be deactivated.",
+      "This is a permanent superuser account: its role can't be changed and it can't be deactivated.",
   };
   const errorMessage = error ? errorMessages[error] : null;
 
@@ -230,7 +230,7 @@ export default async function EditUserPage({ params, searchParams }) {
           <div>
             <p className="font-semibold">This user is deactivated</p>
             <p className="mt-0.5 text-amber-800">
-              They can&apos;t sign in. Their data is preserved — reactivate
+              They can&apos;t sign in. Their data is preserved; reactivate
               below to restore access.
             </p>
           </div>
@@ -451,7 +451,7 @@ export default async function EditUserPage({ params, searchParams }) {
           <>
             <p className="mt-3 text-sm leading-relaxed text-slate-700">
               Block this user from signing in. Their account stays in the
-              database with all data intact — you can reactivate at any
+              database with all data intact; you can reactivate at any
               time. Use this when someone leaves the company.
             </p>
             <form action={deactivateBound} className="mt-5">

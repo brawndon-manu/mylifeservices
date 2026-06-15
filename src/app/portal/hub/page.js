@@ -230,7 +230,7 @@ function PostCard({ post, currentUser }) {
         {post.imageUrl && (
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
             {/* unoptimized so Vercel Blob URLs work without an Image
-                optimization round-trip — saves bandwidth quota. */}
+                optimization round-trip - saves bandwidth quota. */}
             <Image
               src={post.imageUrl}
               alt=""

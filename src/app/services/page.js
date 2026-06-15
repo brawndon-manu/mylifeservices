@@ -5,7 +5,7 @@ import { services } from "@/lib/services";
 export const metadata = {
   title: "Services",
   description:
-    "Independent Living, Day Program, Supported Living, Self-Determination, and Crisis Support — services from My Life Services.",
+    "Independent Living, Day Program, Supported Living, Self-Determination, and Crisis Support: services from My Life Services.",
 };
 
 export default function ServicesPage() {

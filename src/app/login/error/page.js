@@ -7,7 +7,7 @@ export default async function LoginErrorPage({ searchParams }) {
   const params = await searchParams;
   const error = params?.error;
 
-  // Intentionally generic — don't reveal whether the email exists, whether
+  // Intentionally generic: don't reveal whether the email exists, whether
   // the link expired, or whether the user lacks access.
   const message =
     "Something went wrong signing you in. Try again, or contact IT if the problem continues.";

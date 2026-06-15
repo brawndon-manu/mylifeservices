@@ -156,7 +156,7 @@ export default async function NewNewsletterItemPage({ searchParams }) {
             </p>
           </div>
 
-          {/* consent gate — required whenever a photo is attached. this is
+          {/* consent gate - required whenever a photo is attached. this is
               a PUBLIC page so client imagery needs written consent on file. */}
           <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
             <label className="flex items-start gap-3">

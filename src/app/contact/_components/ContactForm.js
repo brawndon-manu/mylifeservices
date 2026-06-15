@@ -33,7 +33,7 @@ export default function ContactForm() {
           </svg>
         </div>
         <h3 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">
-          Thanks — your message is on its way.
+          Thanks, your message is on its way.
         </h3>
         <p className="mt-2 text-base leading-relaxed text-slate-700">
           We&apos;ll get back to you as soon as we can. If it&apos;s urgent,

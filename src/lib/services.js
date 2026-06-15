@@ -469,7 +469,7 @@ export const services = [
         "Staff help participants understand their options, manage individualized budgets, and build plans that reflect their personal goals and values.",
       ],
       whatYoullDo:
-        "Working in Self-Determination involves walking alongside participants as they shape the supports they receive. Staff explain how the model works, help track and plan spending, coordinate with providers, and support participants during planning meetings — always centering each person's choices and priorities.",
+        "Working in Self-Determination involves walking alongside participants as they shape the supports they receive. Staff explain how the model works, help track and plan spending, coordinate with providers, and support participants during planning meetings, always centering each person's choices and priorities.",
       responsibilities: [
         "Explain how the Self-Determination model works and how it differs from traditional services",
         "Help participants understand allocated funds and develop spending plans",

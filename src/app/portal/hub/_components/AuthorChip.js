@@ -6,8 +6,8 @@ import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 // dashboard greeting so the visual language is consistent.
 //
 // props:
-//   - author:   { name, role, email } — pulled from prisma
-//   - size:     "sm" | "md"           — md for posts, sm for comments
+//   - author:   { name, role, email } - pulled from prisma
+//   - size:     "sm" | "md"           - md for posts, sm for comments
 //   - showRole: only render the privilege-role badge when true. off by
 //               default so roles never leak - the caller passes
 //               canSeeRoles(viewer.role) (ADMIN/IT only). staff just see

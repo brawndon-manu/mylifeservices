@@ -9,19 +9,19 @@ import { PhoneIcon, EnvelopeIcon } from "@/components/Icons";
 //   {
 //     src: "/clients/first-keys.jpg",
 //     alt: "...",
-//     caption: "Move-in day — receiving the keys to a first studio apartment, in partnership with Integrity Cottages.",
+//     caption: "Move-in day: receiving the keys to a first studio apartment, in partnership with Integrity Cottages.",
 //   },
 //   {
 //     src: "/clients/disney.jpg",
 //     alt: "...",
-//     caption: "A community outing — building friendships and shared experiences.",
+//     caption: "A community outing, building friendships and shared experiences.",
 //   },
 // ];
 
 export const metadata = {
   title: "About",
   description:
-    "Learn about My Life Services — our history, growth, person-centered approach, team, and partnerships.",
+    "Learn about My Life Services: our history, growth, person-centered approach, team, and partnerships.",
 };
 
 export default function AboutPage() {
@@ -59,7 +59,7 @@ export default function AboutPage() {
         />
       </Section>
 
-      {/* Our Approach — values card */}
+      {/* Our Approach - values card */}
       <Section bg="slate">
         <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm sm:p-10">
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">

@@ -73,7 +73,7 @@ export async function submitApplication(_prevState, formData) {
     return {
       ok: false,
       error:
-        "You checked that your work history is on your resume — please attach your resume below, or uncheck that box and fill in your work experience.",
+        "You checked that your work history is on your resume. Please attach it below, or uncheck that box and fill in your work experience.",
     };
   }
 
@@ -105,7 +105,7 @@ export async function submitApplication(_prevState, formData) {
       from,
       to,
       replyTo: email,
-      subject: `New job application — ${firstName} ${lastName}`,
+      subject: `New job application from ${firstName} ${lastName}`,
       text: buildText(app),
       html: buildHtml(app),
       attachments,
@@ -296,7 +296,7 @@ function buildHtml(a) {
     .map((r) => {
       const empty = [r.name, r.relationship, r.org, r.phone].every((x) => x === "—");
       if (empty) return "";
-      return `<tr><td style="padding:4px 0;font-size:14px;color:#1c1c1c;"><strong>${val(r.name)}</strong> <span style="color:${MUTED};">— ${val(r.relationship)}, ${val(r.org)} · ${val(r.phone)}</span></td></tr>`;
+      return `<tr><td style="padding:4px 0;font-size:14px;color:#1c1c1c;"><strong>${val(r.name)}:</strong> <span style="color:${MUTED};">${val(r.relationship)}, ${val(r.org)} · ${val(r.phone)}</span></td></tr>`;
     })
     .join("");
   const refsInner = refBlocks || `<tr><td style="font-size:14px;">${dash}</td></tr>`;

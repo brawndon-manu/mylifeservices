@@ -34,7 +34,7 @@ async function withPreview(user) {
 
 // fetch the signed-in user's FRESH record straight from the database.
 // use this in portal pages instead of reading session.user.name/.role
-// directly — the JWT caches those values from when you signed in, so
+// directly: the JWT caches those values from when you signed in, so
 // they go stale the second you change your name in /portal/settings
 // or get your role updated by another admin.
 //

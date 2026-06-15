@@ -48,7 +48,7 @@ export default async function DevicesPage({ searchParams }) {
             Device Management
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Log of company hardware — what we own, who has it, and what it
+            Log of company hardware: what we own, who has it, and what it
             cost.
           </p>
         </div>

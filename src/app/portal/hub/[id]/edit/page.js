@@ -85,7 +85,7 @@ export default async function EditPostPage({ params, searchParams }) {
             />
             <p className="mt-1 text-xs text-slate-500">
               Up to {POST_CONTENT_MAX} characters. Image cant be changed
-              after posting — delete and repost if you need to swap it.
+              after posting. Delete and repost if you need to swap it.
             </p>
           </div>
 

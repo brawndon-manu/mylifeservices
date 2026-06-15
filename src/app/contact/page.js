@@ -148,7 +148,7 @@ export default function ContactPage() {
               Prefer to talk it through?
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed text-white/90 sm:text-lg">
-              Not sure where to start? Give us a call or send a note — we&apos;ll
+              Not sure where to start? Give us a call or send a note, and we&apos;ll
               help you find the right service, role, or next step.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">

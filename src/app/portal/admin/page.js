@@ -171,7 +171,7 @@ export default async function AdminPage({ searchParams }) {
                 · <span className="text-slate-500">{deactivatedCount} deactivated</span>
               </>
             )}
-            . Sign-in is invite-only — only active emails in this list can log in.
+            . Sign-in is invite-only: only active emails in this list can log in.
           </p>
         </div>
         <Link
@@ -183,7 +183,7 @@ export default async function AdminPage({ searchParams }) {
         </Link>
       </div>
 
-      {/* Banners — only one shows at a time depending on what just happened */}
+      {/* Banners - only one shows at a time depending on what just happened */}
       {justInvited && (
         <Banner kind="success" title="User added">
           <span className="font-mono">{justInvited}</span> can now sign

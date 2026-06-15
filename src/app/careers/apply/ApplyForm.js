@@ -235,7 +235,7 @@ export default function ApplyForm() {
         </label>
         {expOnResume ? (
           <p className="rounded-md border border-brand-light/40 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-slate-700">
-            Got it — we&apos;ll use your resume for your work history. Just make
+            Got it, we&apos;ll use your resume for your work history. Just make
             sure to attach it in the Resume section below (it&apos;s required
             when this box is checked).
           </p>
@@ -321,7 +321,7 @@ export default function ApplyForm() {
             {resumeFileName ? "Change file" : "Click to attach your resume"}
           </p>
           <p className="mt-1 text-xs text-slate-600">
-            PDF or Word document — max 4MB
+            PDF or Word document (max 4MB)
           </p>
           {resumeFileName && (
             <p className="mt-3 text-sm font-medium text-slate-800">
@@ -338,7 +338,7 @@ export default function ApplyForm() {
           onChange={handleFileChange}
         />
         <p className="mt-3 text-xs leading-relaxed text-slate-500">
-          Your resume is attached to your application automatically — no separate
+          Your resume is attached to your application automatically, no separate
           email needed. PDF or Word, up to 4MB.
         </p>
       </section>

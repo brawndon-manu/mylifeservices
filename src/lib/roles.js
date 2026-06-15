@@ -43,12 +43,12 @@ export function roleBadgeClass(role) {
 // short descriptions shown next to each radio button on the invite +
 // edit user forms. helps the admin pick the right role.
 export const ROLE_DESCRIPTIONS = {
-  SUPER: "Superuser — full access to everything, including device management. IT-only, top-level.",
+  SUPER: "Superuser with full access to everything, including device management. IT-only, top-level.",
   IT_ADMIN: "Technical admin with full access to the portal and user management.",
   ADMIN: "Top-level oversight. Owner/Director-style role with full management access.",
-  MANAGER: "Program management — can manage users + post announcements.",
+  MANAGER: "Program management. Can manage users + post announcements.",
   HR: "Human resources. Standard access for now (will gain HR-specific tools later).",
-  SUPERVISOR: "Field supervisor. Standard access — oversees on-the-ground staff.",
+  SUPERVISOR: "Field supervisor. Standard access; oversees on-the-ground staff.",
   STAFF: "Standard staff member. Read announcements + access resources.",
 };
 

@@ -8,7 +8,7 @@ const storyPreviews = [
     since: "With MLS since 2020",
     title: "RO's first place",
     teaser:
-      "Years of unstable housing, then his own studio — supported by MLS and our partner Integrity Cottages.",
+      "Years of unstable housing, then his own studio, supported by MLS and our partner Integrity Cottages.",
     href: "/stories#ro",
   },
   {
@@ -24,7 +24,7 @@ const storyPreviews = [
 const values = [
   {
     title: "Person-Centered",
-    body: "Every plan starts with the participant — their goals, their pace, their priorities. We adapt to the person, not the other way around.",
+    body: "Every plan starts with the participant: their goals, their pace, their priorities. We adapt to the person, not the other way around.",
   },
   {
     title: "Community-Based",
@@ -32,7 +32,7 @@ const values = [
   },
   {
     title: "Goal-Driven",
-    body: "Progress is measured by outcomes that matter to the participant — more independence, more confidence, more of the life they want.",
+    body: "Progress is measured by outcomes that matter to the participant: more independence, more confidence, more of the life they want.",
   },
 ];
 
@@ -93,7 +93,7 @@ export default function HomePage() {
             </h2>
             <p className="mt-5 text-base leading-relaxed text-slate-700 sm:text-lg">
               Every participant comes to us with their own goals, routines, and
-              vision for their life. Our job is to build supports that fit —
+              vision for their life. Our job is to build supports that fit,
               not the other way around.
             </p>
           </div>
@@ -187,7 +187,7 @@ export default function HomePage() {
               </h2>
               <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
                 Highlights from the people we support and the team behind
-                them — plus a look at what&apos;s coming up. Updated as our
+                them, plus a look at what&apos;s coming up. Updated as our
                 community shares.
               </p>
             </div>

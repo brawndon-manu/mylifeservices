@@ -123,7 +123,7 @@ export default async function SettingsPage({ searchParams }) {
         Your account
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700">
-        Update how you appear in the portal — your name, photo, and phone
+        Update how you appear in the portal: your name, photo, and phone
         show on the Team Contacts directory. Your email and role are
         managed by IT and can&apos;t be edited here.
       </p>

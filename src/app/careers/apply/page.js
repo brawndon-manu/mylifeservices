@@ -3,7 +3,7 @@ import PageHeader from "@/components/PageHeader";
 import ApplyForm from "./ApplyForm";
 
 export const metadata = {
-  title: "Apply — Careers",
+  title: "Apply",
   description:
     "Apply for a position at My Life Services. Submit your employment application online.",
 };

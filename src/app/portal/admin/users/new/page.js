@@ -135,7 +135,7 @@ export default async function NewUserPage({ searchParams }) {
       <p className="mt-4 text-base leading-relaxed text-slate-700">
         Add someone to the portal. After saving, they can sign in by
         visiting <span className="font-mono text-sm">/login</span> and
-        entering their email — they&apos;ll get a magic-link sign-in
+        entering their email. They&apos;ll get a magic-link sign-in
         email. No password to share.
       </p>
 

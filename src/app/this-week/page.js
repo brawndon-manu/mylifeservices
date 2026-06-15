@@ -6,7 +6,7 @@ import { categoryLabel, categoryChip, formatDate } from "@/lib/newsletter";
 export const metadata = {
   title: "This Week",
   description:
-    "Highlights and what's coming up at My Life Services — moments from our community, shared with permission.",
+    "Highlights and what's coming up at My Life Services: moments from our community, shared with permission.",
 };
 
 // always render fresh so a newly-published item shows up immediately.
@@ -32,7 +32,7 @@ export default async function ThisWeekPage() {
           {items.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
               <p className="text-base text-slate-600">
-                Nothing posted yet — check back soon.
+                Nothing posted yet. Check back soon.
               </p>
             </div>
           ) : (

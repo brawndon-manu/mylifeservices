@@ -36,7 +36,7 @@ export default async function NewResourcePage({ searchParams }) {
         Add a resource
       </h1>
       <p className="mt-2 text-sm text-slate-600">
-        A community partner or service the team uses — like a housing
+        A community partner or service the team uses, like a housing
         provider, food bank, or clinic.{" "}
         {elevated
           ? "As management, yours is added right away."

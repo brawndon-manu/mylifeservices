@@ -5,7 +5,7 @@ import { PhoneIcon, EnvelopeIcon } from "@/components/Icons";
 export const metadata = {
   title: "Stories",
   description:
-    "Real stories from people supported by My Life Services — shared with their permission.",
+    "Real stories from people supported by My Life Services, shared with their permission.",
 };
 
 export default function StoriesPage() {
@@ -14,10 +14,10 @@ export default function StoriesPage() {
       <PageHeader
         eyebrow="Real stories"
         title="What independence looks like"
-        intro="Behind every program is a person working toward a life they choose. These are some of their stories — shared with their permission."
+        intro="Behind every program is a person working toward a life they choose. These are some of their stories, shared with their permission."
       />
 
-      {/* RO — Integrity Cottages */}
+      {/* RO - Integrity Cottages */}
       <section id="ro" className="scroll-mt-20 border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
@@ -33,26 +33,26 @@ export default function StoriesPage() {
               </h2>
               <p className="mt-4 text-lg leading-relaxed text-slate-700">
                 After years of unstable housing, RO moved into his first
-                studio apartment — supported by MLS and our partner
+                studio apartment, supported by MLS and our partner
                 Integrity Cottages.
               </p>
               <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-700">
                 <p>
                   RO joined My Life Services in 2020 with a clear long-term
                   goal: a place of his own. Before MLS, he didn&apos;t have a
-                  stable place to live — making it hard to build the daily
+                  stable place to live, making it hard to build the daily
                   routines that turn a space into a home.
                 </p>
                 <p>
                   Independence takes time. Over the next several years, RO
                   and his MLS team worked on the day-to-day skills that
-                  lead to stable housing — cooking, budgeting, household
+                  lead to stable housing: cooking, budgeting, household
                   management, and the confidence that comes with making
                   decisions about your own life.
                 </p>
                 <p>
                   When the right opportunity came through Integrity
-                  Cottages — a Project-Based Voucher community — RO was
+                  Cottages (a Project-Based Voucher community), RO was
                   ready. The photo below captures the day he received the
                   keys to his first studio.
                 </p>
@@ -63,7 +63,7 @@ export default function StoriesPage() {
           <figure className="mt-12">
             <MilestonePhotoPlaceholder />
             <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-slate-600">
-              Move-in day photo coming soon — once RO&apos;s consent is on
+              Move-in day photo coming soon, once RO&apos;s consent is on
               file.
             </figcaption>
           </figure>
@@ -76,7 +76,7 @@ export default function StoriesPage() {
         </div>
       </section>
 
-      {/* RR — PBV voucher */}
+      {/* RR - PBV voucher */}
       <section id="rr" className="scroll-mt-20 border-t border-slate-200 bg-slate-50">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
@@ -85,13 +85,13 @@ export default function StoriesPage() {
                 RR&apos;s own front door
               </h2>
               <p className="mt-4 text-lg leading-relaxed text-slate-700">
-                RR moved into his own one-bedroom apartment — paying just
+                RR moved into his own one-bedroom apartment, paying just
                 30% of his income in rent through a Project-Based Voucher.
               </p>
               <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-700">
                 <p>
                   RR joined My Life Services in 2022. Before MLS, he
-                  didn&apos;t have a place of his own — moving between
+                  didn&apos;t have a place of his own, moving between
                   temporary arrangements made it hard to plan a life on
                   his own terms.
                 </p>
@@ -99,7 +99,7 @@ export default function StoriesPage() {
                   Working with our team, RR set a clear goal: housing on
                   his own terms. That work paid off when he used a
                   Project-Based Voucher to move into a full one-bedroom
-                  apartment, where he now pays 30% of his income in rent —
+                  apartment, where he now pays 30% of his income in rent,
                   making independence financially sustainable for the long
                   term.
                 </p>
@@ -120,7 +120,7 @@ export default function StoriesPage() {
           <figure className="mt-12">
             <VideoPlaceholder />
             <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-slate-600">
-              RR shares his story — video coming soon.
+              RR shares his story. Video coming soon.
             </figcaption>
           </figure>
         </div>

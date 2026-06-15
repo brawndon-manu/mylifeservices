@@ -9,9 +9,9 @@ export const metadata = {
 };
 
 const ROLE_GREETING = {
-  SUPER: "Superuser — you have full access to everything.",
-  IT_ADMIN: "You have full access — including the Admin area.",
-  ADMIN: "You have full access — including the Admin area.",
+  SUPER: "Superuser. You have full access to everything.",
+  IT_ADMIN: "You have full access, including the Admin area.",
+  ADMIN: "You have full access, including the Admin area.",
   MANAGER:
     "You can manage users and post announcements from the Admin area.",
   HR:
@@ -59,7 +59,7 @@ export default async function PortalDashboard() {
       <div className="mt-12 grid gap-6 sm:grid-cols-3">
         <Card
           title="Announcements"
-          body="Updates from upper management — job fairs, food banks, training, events."
+          body="Updates from upper management: job fairs, food banks, training, events."
         />
         <Card
           title="Forms & resources"
@@ -81,7 +81,7 @@ export default async function PortalDashboard() {
             </span>
           </div>
           <p className="mt-3 text-sm leading-relaxed text-slate-700">
-            Directory of the team — names, roles, photos, email, phone — plus
+            Directory of the team (names, roles, photos, email, phone) plus
             community resources.
           </p>
         </Link>
@@ -106,7 +106,7 @@ export default async function PortalDashboard() {
             </span>
           </div>
           <p className="mt-3 text-sm leading-relaxed text-amber-900/80">
-            Spot a bug or have an idea to improve things? Post it here — IT
+            Spot a bug or have an idea to improve things? Post it here; IT
             and management track each item until it&apos;s resolved.
           </p>
         </Link>
@@ -130,7 +130,7 @@ export default async function PortalDashboard() {
               </span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-slate-300">
-              Company hardware log — what we own, who has it, and what it
+              Company hardware log: what we own, who has it, and what it
               cost. Management only.
             </p>
           </Link>

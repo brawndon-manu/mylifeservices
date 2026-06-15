@@ -119,7 +119,7 @@ export default async function NewsletterReviewPage() {
                   <p className="bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {item.consentConfirmed
                       ? "✓ Submitter confirmed written consent is on file for anyone pictured."
-                      : "⚠ No consent confirmation on file — verify before publishing."}
+                      : "⚠ No consent confirmation on file: verify before publishing."}
                   </p>
                 </div>
               )}
@@ -160,7 +160,7 @@ export default async function NewsletterReviewPage() {
                         type="submit"
                         className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
                       >
-                        Publish — push live
+                        Publish to push live
                       </button>
                     </form>
                     <RejectForm itemId={item.id} label="Send back / reject" />
@@ -184,7 +184,7 @@ export default async function NewsletterReviewPage() {
                       type="submit"
                       className="rounded-md border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                     >
-                      Reconsider — approve
+                      Reconsider and approve
                     </button>
                   </form>
                 )}
