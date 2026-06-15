@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, isIT, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
+import PreviewBar from "./_components/PreviewBar";
 
 async function handleSignOut() {
   "use server";
@@ -17,6 +18,13 @@ export default async function PortalLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {user && isIT(user.realRole) && (
+        <PreviewBar
+          realRole={user.realRole}
+          effectiveRole={role}
+          previewing={user.previewing}
+        />
+      )}
       <div className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <nav className="flex items-center gap-6 text-sm font-medium text-slate-700">

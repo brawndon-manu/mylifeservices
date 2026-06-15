@@ -127,3 +127,12 @@ export function canSeeRoles(role) {
 export function isValidRole(role) {
   return typeof role === "string" && ROLES.includes(role);
 }
+
+// privilege rank by position in ROLES: lower number = higher privilege
+// (SUPER = 0 ... STAFF = 6). unknown roles rank lowest. used by the
+// "view as role" preview to guarantee it can only ever step DOWN to a
+// lower-or-equal role, never escalate.
+export function roleRank(role) {
+  const i = ROLES.indexOf(role);
+  return i === -1 ? ROLES.length : i;
+}
