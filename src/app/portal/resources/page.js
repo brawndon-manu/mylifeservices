@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated, isAdminUp, isIT } from "@/lib/roles";
+import { isValidResourceCategory } from "@/lib/contacts";
 import ResourceBrowser from "./ResourceBrowser";
 
 export const metadata = {
@@ -101,6 +102,7 @@ export default async function ResourcesPage({ searchParams }) {
         resources={resources}
         canManage={canManage}
         canPick={canPick}
+        initialCategory={isValidResourceCategory(params?.cat) ? params.cat : ""}
       />
     </section>
   );

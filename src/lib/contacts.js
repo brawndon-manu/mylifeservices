@@ -45,6 +45,7 @@ export function initialsFor(name, email) {
 // submit dropdown and for grouping resources into collapsible sections.
 export const RESOURCE_CATEGORIES = [
   "Housing",
+  "Homeless shelters",
   "Food banks",
   "Crisis support",
   "Health & medical",
@@ -68,7 +69,12 @@ export function isValidResourceCategory(value) {
 // only the keys that differ from the lean default need to be set. to tailor
 // a new category, add its fields here - the form reads this, no new plumbing.
 export const CATEGORY_FORMS = {
-  Housing: { description: "Shelters, transitional and supportive housing, rent help." },
+  Housing: { description: "Transitional and supportive housing, rent help." },
+  "Homeless shelters": {
+    description: "Emergency, overnight, and temporary shelters and beds.",
+    // show this card on the Resources landing even before it has resources.
+    pinned: true,
+  },
   "Food banks": {
     description: "Pantries, meal sites, grocery and mobile food distribution.",
     subtypes: [
@@ -113,6 +119,32 @@ export function categoryHasBlock(category, block) {
 // helper since several places check it; now backed by the block config.
 export function isDetailedCategory(category) {
   return categoryHasBlock(category, "food");
+}
+
+// categories that always show as a card on the Resources landing, even with
+// zero resources yet (so a new section is visible before it's populated).
+export function pinnedCategories() {
+  return RESOURCE_CATEGORIES.filter((c) => CATEGORY_FORMS[c]?.pinned);
+}
+
+// one color per label, so the overview map pins are color-coded by category.
+export const CATEGORY_COLORS = {
+  Housing: "#2563eb",
+  "Homeless shelters": "#7c3aed",
+  "Food banks": "#16a34a",
+  "Crisis support": "#dc2626",
+  "Health & medical": "#0891b2",
+  "Mental & behavioral health": "#db2777",
+  "Employment & day programs": "#ea580c",
+  Transportation: "#ca8a04",
+  "Benefits & advocacy": "#4f46e5",
+  "Education & training": "#0d9488",
+  "Recreation & community": "#65a30d",
+  Other: "#64748b",
+};
+
+export function categoryColor(category) {
+  return CATEGORY_COLORS[category] || CATEGORY_COLORS.Other;
 }
 
 // populations a resource serves. multi-select, filterable.

@@ -73,6 +73,11 @@ export default async function PortalDashboard() {
           body="Community resources: housing, food banks, clinics, and more, with a map and details."
         />
         <LinkCard
+          href={`/portal/resources?cat=${encodeURIComponent("Homeless shelters")}`}
+          title="Homeless shelters"
+          body="Emergency, overnight, and temporary shelters and beds across the area."
+        />
+        <LinkCard
           href="/portal/contacts"
           title="Team contacts"
           body="Directory of the team: names, roles, photos, email, and phone."

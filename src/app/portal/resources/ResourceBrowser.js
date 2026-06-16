@@ -13,11 +13,14 @@ import {
   WHO_IT_SERVES_OPTIONS,
   OP_STATUS_LABELS,
   categoryDescription,
+  categoryColor,
+  pinnedCategories,
   formatUSPhone,
   formatScheduleRow,
 } from "@/lib/contacts";
 import { deleteResource, toggleStaffPick } from "../contacts/actions";
 import ResourceMap from "./ResourceMap";
+import CategoryInfo from "./CategoryInfo";
 
 const SELECT_CLASS =
   "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
@@ -37,10 +40,10 @@ const OP_CHIP = {
   CLOSED: "bg-rose-100 text-rose-700",
 };
 
-export default function ResourceBrowser({ resources, canManage, canPick }) {
+export default function ResourceBrowser({ resources, canManage, canPick, initialCategory = "" }) {
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(initialCategory);
   const [serves, setServes] = useState("");
   const [status, setStatus] = useState("");
   const [picksOnly, setPicksOnly] = useState(false);
@@ -114,6 +117,18 @@ export default function ResourceBrowser({ resources, canManage, canPick }) {
     return ordered.map((c) => [c, byCategory.get(c)]);
   }, [filtered]);
 
+  // landing cards: categories present in the data, plus any pinned category
+  // (e.g. Homeless shelters) so it shows even before it has resources.
+  const cardCategories = useMemo(() => {
+    const counts = new Map(grouped.map(([c, items]) => [c, items.length]));
+    for (const c of pinnedCategories()) if (!counts.has(c)) counts.set(c, 0);
+    const ordered = [
+      ...RESOURCE_CATEGORIES.filter((c) => counts.has(c)),
+      ...[...counts.keys()].filter((c) => !RESOURCE_CATEGORIES.includes(c)),
+    ];
+    return ordered.map((c) => [c, counts.get(c)]);
+  }, [grouped]);
+
   const mapPoints = useMemo(
     () =>
       filtered
@@ -129,6 +144,12 @@ export default function ResourceBrowser({ resources, canManage, canPick }) {
         })),
     [filtered],
   );
+
+  // categories actually shown on the map, for the color legend.
+  const mapLegend = useMemo(() => {
+    const present = new Set(mapPoints.map((p) => p.category).filter(Boolean));
+    return RESOURCE_CATEGORIES.filter((c) => present.has(c));
+  }, [mapPoints]);
 
   // clicking a pin or a card name opens the inline detail panel (no redirect).
   const selected = useMemo(
@@ -243,6 +264,16 @@ export default function ResourceBrowser({ resources, canManage, canPick }) {
       {mapPoints.length > 0 && (
         <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
           <ResourceMap points={mapPoints} onSelect={setSelectedId} selectedId={selectedId} />
+          {mapLegend.length > 1 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 bg-white px-4 py-2.5">
+              {mapLegend.map((c) => (
+                <span key={c} className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: categoryColor(c) }} />
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -273,34 +304,29 @@ export default function ResourceBrowser({ resources, canManage, canPick }) {
 
       {browsing ? (
         /* category cards landing: pick a label to drill in */
-        grouped.length === 0 ? (
-          <p className="mt-10 text-sm text-slate-600">
-            {resources.length === 0
-              ? "No resources yet. Add the first one."
-              : "No resources match these filters."}
-          </p>
-        ) : (
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            {grouped.map(([cat, items]) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategory(cat)}
-                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-brand-light hover:shadow"
-              >
+        <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          {cardCategories.map(([cat, count]) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setCategory(cat)}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-brand-light hover:shadow"
+            >
+              <div className="flex items-center gap-3">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: categoryColor(cat) }} />
                 <div>
                   <p className="font-semibold text-slate-900">{cat}</p>
                   {categoryDescription(cat) && (
                     <p className="mt-0.5 text-sm text-slate-500">{categoryDescription(cat)}</p>
                   )}
                 </div>
-                <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-sm font-semibold text-brand">
-                  {items.length}
-                </span>
-              </button>
-            ))}
-          </div>
-        )
+              </div>
+              <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-sm font-semibold text-brand">
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
       ) : (
         <>
           {category && (
@@ -312,6 +338,7 @@ export default function ResourceBrowser({ resources, canManage, canPick }) {
               ← All categories
             </button>
           )}
+          {category && <CategoryInfo category={category} />}
           {filtered.length === 0 ? (
             <p className="mt-6 text-sm text-slate-600">No resources match these filters.</p>
           ) : (
