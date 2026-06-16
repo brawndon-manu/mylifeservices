@@ -186,7 +186,7 @@ export default function ApplyForm() {
           ))}
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Field label="Desired pay rate" name="pay_rate" placeholder="e.g. $18/hr" />
+          <PayRateField />
           <Field label="Hours available per week" name="hours_week" placeholder="e.g. 32" />
         </div>
       </section>
@@ -441,6 +441,40 @@ function Field({ label, name, type = "text", required = false, maxLength = FIELD
   );
 }
 
+// pay-rate field: shows a "$" prefix and a "per hour" suffix; the applicant
+// types only the number. submits as e.g. "$18/hr" via the hidden input.
+function PayRateField() {
+  const [val, setVal] = useState("");
+  return (
+    <label className="block">
+      <span className="block text-xs font-semibold text-slate-700">
+        Desired pay rate
+      </span>
+      <div className="relative mt-1">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+          $
+        </span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={val}
+          onChange={(e) =>
+            setVal(
+              e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1"),
+            )
+          }
+          placeholder="18"
+          className="block w-full rounded-md border border-slate-300 bg-white py-2 pl-6 pr-20 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+          per hour
+        </span>
+      </div>
+      <input type="hidden" name="pay_rate" value={val ? `$${val}/hr` : ""} />
+    </label>
+  );
+}
+
 function TextArea({ label, name, rows = 3, required = false, maxLength = TEXTAREA_MAX_LEN, ...rest }) {
   return (
     <label className="block">
@@ -533,8 +567,12 @@ function EmployerBlock({ index }) {
         <Field label="Phone" name={`emp${index}_phone`} type="tel" />
         <Field label="Job title" name={`emp${index}_title`} />
         <Field label="Supervisor" name={`emp${index}_supervisor`} />
-        <Field label="From" name={`emp${index}_from`} type="month" />
-        <Field label="To" name={`emp${index}_to`} type="month" />
+        <Field label="From" name={`emp${index}_from`} placeholder="mm/yyyy" />
+        <Field
+          label="To"
+          name={`emp${index}_to`}
+          placeholder="mm/yyyy or Present"
+        />
       </div>
       <div className="mt-4">
         <Field label="Reason for leaving" name={`emp${index}_reason`} />
