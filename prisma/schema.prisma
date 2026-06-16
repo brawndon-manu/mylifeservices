@@ -68,6 +68,7 @@ model User {
   feedbackResolved FeedbackItem[] @relation("FeedbackResolvedBy")
   resourcesSubmitted Resource[]   @relation("ResourceSubmittedBy")
   resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
+  resourcesVerified  Resource[]   @relation("ResourceVerifiedBy")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -116,16 +117,64 @@ enum ResourceStatus {
   REJECTED
 }
 
+// operational state - is the place actually running. distinct from the
+// ResourceStatus above, which is the moderation/approval workflow.
+enum ResourceOpStatus {
+  ACTIVE
+  TEMPORARILY_UNAVAILABLE
+  NEEDS_VERIFICATION
+  CLOSED
+}
+
 model Resource {
   id          String         @id @default(cuid())
   name        String
-  // free-text grouping shown as a chip, e.g. "Housing", "Health".
+  // top-level bucket shown as a chip, e.g. "Housing", "Food banks".
   category    String?
+  // finer type within the category, e.g. "Food pantry", "Mobile food
+  // distribution". options are per-category (see src/lib/contacts.js).
+  subtype     String?
+  // organization behind the location, if different from the resource name.
+  orgName     String?
   phone       String?
   email       String?
   website     String?
+  // direct link to book/schedule, if they take appointments online.
+  appointmentLink String?
+  // free text, e.g. "Call before visiting" or "Text to schedule".
+  contactInstructions String?
   address     String?
+  city        String?
+  state       String?
+  zip         String?
+  // who the service covers, e.g. "Anaheim residents only". free text.
+  serviceArea String?
+  lat         Float?
+  lng         Float?
+  // legacy free-text hours. superseded by `schedule` for new entries but
+  // kept so the imported food-bank hours still show.
+  hours       String?
+  // structured recurring schedule rows: [{ day, frequency, start, end }]
+  schedule    Json?
+  // populations served (multi). filterable. see WHO_IT_SERVES_OPTIONS.
+  whoItServes String[]       @default([])
+  appointmentRequired Boolean @default(false)
+  // category-specific answers (eligibility + food details). see
+  // buildDetails in src/lib/contacts.js for the shape.
+  details     Json?
+  // short public-facing description / what they do.
   notes       String?
+  // staff-only notes, never shown to clients.
+  internalNotes String?
+  // where this info came from (url, person, flyer).
+  source      String?
+  operationalStatus ResourceOpStatus @default(ACTIVE)
+  // featured by management - surfaces in a "Staff picks" row up top.
+  staffPick   Boolean        @default(false)
+  // verification trail so the directory doesn't go stale.
+  lastVerifiedAt DateTime?
+  verifiedById   String?
+  verifiedBy     User?        @relation("ResourceVerifiedBy", fields: [verifiedById], references: [id])
   status      ResourceStatus @default(PENDING)
   submittedById String
   submittedBy   User         @relation("ResourceSubmittedBy", fields: [submittedById], references: [id])
