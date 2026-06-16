@@ -12,6 +12,7 @@ import {
   RESOURCE_NAME_MAX,
   RESOURCE_NOTES_MAX,
   RESOURCE_URL_MAX,
+  RESOURCE_ADDRESS_MAX,
 } from "@/lib/contacts";
 import { cleanEmail } from "@/lib/security";
 
@@ -57,6 +58,7 @@ export async function submitResource(formData) {
       ? cleanEmail(emailRaw) || null
       : null;
   const website = cleanUrl(formData.get("website"));
+  const address = cleanBody(formData.get("address"), RESOURCE_ADDRESS_MAX);
   const notes = cleanBody(formData.get("notes"), RESOURCE_NOTES_MAX);
 
   // elevated submissions are auto-approved (they're the approvers
@@ -70,6 +72,7 @@ export async function submitResource(formData) {
       phone,
       email,
       website,
+      address,
       notes,
       submittedById: user.id,
       status: elevated ? "APPROVED" : "PENDING",

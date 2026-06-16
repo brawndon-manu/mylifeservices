@@ -67,6 +67,7 @@ export const RESOURCE_NAME_MAX = 80;
 export const RESOURCE_CATEGORY_MAX = 40;
 export const RESOURCE_NOTES_MAX = 1000;
 export const RESOURCE_URL_MAX = 200;
+export const RESOURCE_ADDRESS_MAX = 200;
 
 // light phone cleaner: keep digits, spaces, and common punctuation,
 // trim + cap length. we store what the user typed, no strict format.

@@ -101,7 +101,7 @@ export default async function ContactsPage({ searchParams }) {
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[260px_1fr]">
         {/* left rail: filters + community resources */}
-        <aside className="space-y-8 lg:sticky lg:top-24 lg:self-start">
+        <aside className="space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
               Filter
@@ -171,8 +171,8 @@ export default async function ContactsPage({ searchParams }) {
           </div>
         </aside>
 
-        {/* directory grid */}
-        <div>
+        {/* directory grid - own scroll on desktop so the left rail stays put */}
+        <div className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           {people.length === 0 ? (
             <p className="text-sm text-slate-600">No one in this group.</p>
           ) : (

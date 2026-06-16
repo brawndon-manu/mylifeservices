@@ -5,6 +5,7 @@ import { isElevated } from "@/lib/roles";
 import {
   RESOURCE_NAME_MAX,
   RESOURCE_NOTES_MAX,
+  RESOURCE_ADDRESS_MAX,
   RESOURCE_CATEGORIES,
 } from "@/lib/contacts";
 import { submitResource } from "../../actions";
@@ -103,6 +104,13 @@ export default async function NewResourcePage({ searchParams }) {
             label="Website"
             optional
             placeholder="example.org"
+          />
+          <Field
+            id="address"
+            label="Address"
+            optional
+            maxLength={RESOURCE_ADDRESS_MAX}
+            placeholder="123 Main St, Orange, CA 92868"
           />
           <div>
             <label
