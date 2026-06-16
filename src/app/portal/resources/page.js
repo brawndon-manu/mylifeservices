@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isAdminUp } from "@/lib/roles";
+import { isElevated, isAdminUp, isIT } from "@/lib/roles";
 import ResourceBrowser from "./ResourceBrowser";
 
 export const metadata = {
@@ -13,6 +13,7 @@ export default async function ResourcesPage({ searchParams }) {
   const user = await getCurrentUser();
   const elevated = isElevated(user.role);
   const canPick = isAdminUp(user.role);
+  const canManage = isIT(user.role); // edit + remove are IT/Super only
   const params = await searchParams;
 
   const resources = await prisma.resource.findMany({
@@ -25,15 +26,19 @@ export default async function ResourcesPage({ searchParams }) {
       subtype: true,
       orgName: true,
       phone: true,
+      email: true,
       website: true,
+      appointmentLink: true,
       address: true,
       city: true,
+      serviceArea: true,
       lat: true,
       lng: true,
       hours: true,
       schedule: true,
       whoItServes: true,
       appointmentRequired: true,
+      details: true,
       operationalStatus: true,
       staffPick: true,
       lastVerifiedAt: true,
@@ -94,7 +99,7 @@ export default async function ResourcesPage({ searchParams }) {
 
       <ResourceBrowser
         resources={resources}
-        elevated={elevated}
+        canManage={canManage}
         canPick={canPick}
       />
     </section>

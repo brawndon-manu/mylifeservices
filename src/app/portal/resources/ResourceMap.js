@@ -4,25 +4,20 @@
 // Leaflet + free OpenStreetMap tiles (no API key). Leaflet itself is imported
 // inside the effect so it never runs during SSR (it touches `window`).
 //
-// clicking a pin opens a popup with the place name (a highlighted link) and
-// its location below. clicking the name calls onSelect(id) so the parent can
-// scroll to + highlight that resource's card.
+// clicking a pin calls onSelect(id) so the parent can open the inline detail
+// panel. hovering a pin shows its name. when selectedId changes the map pans
+// to that pin and opens its tooltip.
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-export default function ResourceMap({ points, onSelect }) {
+export default function ResourceMap({ points, onSelect, selectedId }) {
   const ref = useRef(null);
-  // keep the latest onSelect in a ref so popups always call the current one
-  // without forcing the map to rebuild when the callback identity changes.
+  // keep the latest onSelect in a ref so markers always call the current one
+  // without rebuilding the map when the callback identity changes.
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
+  const mapRef = useRef(null);
+  const markersRef = useRef({});
 
   useEffect(() => {
     let map;
@@ -41,31 +36,20 @@ export default function ResourceMap({ points, onSelect }) {
       });
 
       map = L.map(ref.current, { scrollWheelZoom: false });
+      mapRef.current = map;
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
         maxZoom: 19,
       }).addTo(map);
 
       const markers = [];
+      markersRef.current = {};
       for (const p of points) {
         if (typeof p.lat !== "number" || typeof p.lng !== "number") continue;
         const m = L.marker([p.lat, p.lng]).addTo(map);
-
-        // build the popup as a real DOM node so we can wire a click handler
-        // straight onto the name link.
-        const el = document.createElement("div");
-        el.className = "rmap-popup";
-        const loc = p.address || p.city || "";
-        el.innerHTML =
-          (p.category
-            ? `<span class="rmap-chip">${escapeHtml(p.category)}</span>`
-            : "") +
-          `<button type="button" class="rmap-name">${escapeHtml(p.name)}</button>` +
-          (loc ? `<div class="rmap-loc">${escapeHtml(loc)}</div>` : "");
-        el.querySelector(".rmap-name").addEventListener("click", () => {
-          selectRef.current?.(p.id);
-        });
-        m.bindPopup(el);
+        m.bindTooltip(p.name);
+        m.on("click", () => selectRef.current?.(p.id));
+        markersRef.current[p.id] = m;
         markers.push(m);
       }
 
@@ -79,8 +63,20 @@ export default function ResourceMap({ points, onSelect }) {
     return () => {
       cancelled = true;
       if (map) map.remove();
+      mapRef.current = null;
+      markersRef.current = {};
     };
   }, [points]);
+
+  // pan to + flag the selected pin when the selection changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    const m = selectedId && markersRef.current[selectedId];
+    if (map && m) {
+      map.panTo(m.getLatLng());
+      m.openTooltip();
+    }
+  }, [selectedId]);
 
   return <div ref={ref} className="h-80 w-full" />;
 }

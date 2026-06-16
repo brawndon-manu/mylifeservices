@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated } from "@/lib/roles";
-import { updateResource } from "@/app/portal/contacts/actions";
+import { isIT } from "@/lib/roles";
+import { updateResource, deleteResource } from "@/app/portal/contacts/actions";
+import ConfirmButton from "@/components/ConfirmButton";
 import ResourceForm from "../../ResourceForm";
 
 export const metadata = {
@@ -19,7 +20,7 @@ export default async function EditResourcePage({ params, searchParams }) {
   const { id } = await params;
   const sp = await searchParams;
   const user = await getCurrentUser();
-  if (!isElevated(user.role)) redirect("/portal/resources?error=forbidden");
+  if (!isIT(user.role)) redirect("/portal/resources?error=forbidden");
 
   const resource = await prisma.resource.findUnique({ where: { id } });
   if (!resource) notFound();
@@ -55,6 +56,22 @@ export default async function EditResourcePage({ params, searchParams }) {
           defaults={resource}
           submitLabel="Save changes"
         />
+      </div>
+
+      {/* danger zone: remove this resource entirely */}
+      <div className="mt-6 flex items-center justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50 p-4">
+        <div>
+          <p className="text-sm font-semibold text-rose-900">Remove this resource</p>
+          <p className="text-xs text-rose-700">This deletes it from the directory and the map. Can&rsquo;t be undone.</p>
+        </div>
+        <form action={deleteResource.bind(null, id)}>
+          <ConfirmButton
+            message="Remove this resource? This can't be undone."
+            className="rounded-md border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+          >
+            Remove
+          </ConfirmButton>
+        </form>
       </div>
     </section>
   );

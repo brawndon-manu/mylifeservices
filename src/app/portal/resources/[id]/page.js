@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated } from "@/lib/roles";
+import { isElevated, isIT } from "@/lib/roles";
 import {
   formatUSPhone,
   formatScheduleRow,
@@ -46,6 +46,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
   const sp = await searchParams;
   const user = await getCurrentUser();
   const elevated = isElevated(user.role);
+  const canEdit = isIT(user.role); // edit + verify are IT/Super only
 
   const r = await prisma.resource.findUnique({
     where: { id },
@@ -113,7 +114,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
             Book appointment
           </a>
         )}
-        {elevated && (
+        {canEdit && (
           <Link href={`/portal/resources/${id}/edit`} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
             Edit resource
           </Link>
@@ -208,7 +209,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
               ? `Last verified ${fmtDate(r.lastVerifiedAt)}${r.verifiedBy?.name ? ` by ${r.verifiedBy.name}` : ""}.`
               : "Not yet verified."}
           </p>
-          {elevated && (
+          {canEdit && (
             <form action={markVerified.bind(null, id)} className="mt-2">
               <button type="submit" className="text-sm font-semibold text-brand transition hover:text-brand-dark">
                 Mark verified today

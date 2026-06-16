@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isAdminUp } from "@/lib/roles";
+import { isElevated, isAdminUp, isIT } from "@/lib/roles";
 import { cleanBody } from "@/lib/hub";
 import {
   formatUSPhone,
@@ -37,6 +37,16 @@ async function requireElevated() {
   const user = await requireUser();
   if (!isElevated(user.role)) {
     redirect("/portal/contacts?error=forbidden");
+  }
+  return user;
+}
+
+// editing + removing existing resources is restricted to IT/Super (tighter
+// than the oversight tier that can submit/approve them).
+async function requireIT() {
+  const user = await requireUser();
+  if (!isIT(user.role)) {
+    redirect("/portal/resources?error=forbidden");
   }
   return user;
 }
@@ -189,7 +199,7 @@ export async function submitResource(formData) {
 // edit an existing resource. elevated-only. optionally stamps verification
 // when the "mark verified" box is checked.
 export async function updateResource(resourceId, formData) {
-  const user = await requireElevated();
+  const user = await requireIT();
 
   const existing = await prisma.resource.findUnique({
     where: { id: resourceId },
@@ -234,7 +244,7 @@ export async function updateResource(resourceId, formData) {
 
 // one-click "I checked this, it's current" from the card / detail page.
 export async function markVerified(resourceId) {
-  const user = await requireElevated();
+  const user = await requireIT();
   const r = await prisma.resource.findUnique({
     where: { id: resourceId },
     select: { id: true },
@@ -287,10 +297,10 @@ export async function deleteResource(resourceId) {
   });
   if (!r) redirect("/portal/resources");
 
-  // submitter can delete their own while it's still pending; elevated
-  // can delete anything.
+  // submitter can retract their own while it's still pending; otherwise
+  // removing a resource is IT/Super only.
   const ownPending = r.submittedById === user.id && r.status === "PENDING";
-  if (!ownPending && !isElevated(user.role)) {
+  if (!ownPending && !isIT(user.role)) {
     redirect("/portal/resources?error=forbidden");
   }
   await prisma.resource.delete({ where: { id: resourceId } });

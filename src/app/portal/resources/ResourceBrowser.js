@@ -2,9 +2,9 @@
 
 // the interactive guts of the Resources page: filter bar (city / label / who
 // it serves / staff picks), the overview pin map, a featured "Staff picks"
-// row, and the category-grouped resource cards. kept client-side so the map
-// and the list can talk to each other (clicking a pin scrolls to + flashes
-// the matching card).
+// row, and the category cards / resource cards. clicking a pin or a card name
+// opens an inline detail panel between the map and the cards (no page
+// redirect); "View full details" goes to the resource's own page.
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -12,6 +12,7 @@ import {
   RESOURCE_CATEGORIES,
   WHO_IT_SERVES_OPTIONS,
   OP_STATUS_LABELS,
+  categoryDescription,
   formatUSPhone,
   formatScheduleRow,
 } from "@/lib/contacts";
@@ -21,6 +22,14 @@ import ResourceMap from "./ResourceMap";
 const SELECT_CLASS =
   "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 
+// per-resource Google embed (free Embed API), built from the address. no key
+// or no address -> no embed, just the directions link.
+const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY;
+function mapSrc(address) {
+  if (!MAPS_KEY || !address) return null;
+  return `https://www.google.com/maps/embed/v1/place?key=${MAPS_KEY}&q=${encodeURIComponent(address)}`;
+}
+
 const OP_CHIP = {
   ACTIVE: "bg-emerald-100 text-emerald-800",
   TEMPORARILY_UNAVAILABLE: "bg-amber-100 text-amber-800",
@@ -28,14 +37,14 @@ const OP_CHIP = {
   CLOSED: "bg-rose-100 text-rose-700",
 };
 
-export default function ResourceBrowser({ resources, elevated, canPick }) {
+export default function ResourceBrowser({ resources, canManage, canPick }) {
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("");
   const [category, setCategory] = useState("");
   const [serves, setServes] = useState("");
   const [status, setStatus] = useState("");
   const [picksOnly, setPicksOnly] = useState(false);
-  const [activeId, setActiveId] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
 
   // distinct filter options pulled from the data we actually have, in a
   // sensible order (predefined lists first, then any extras).
@@ -121,18 +130,22 @@ export default function ResourceBrowser({ resources, elevated, canPick }) {
     [filtered],
   );
 
-  // when a pin is clicked, scroll its card into view and flash a highlight.
-  const clearTimer = useRef(null);
+  // clicking a pin or a card name opens the inline detail panel (no redirect).
+  const selected = useMemo(
+    () => resources.find((r) => r.id === selectedId) || null,
+    [resources, selectedId],
+  );
+  // bring the panel into view when something is selected.
+  const panelRef = useRef(null);
   useEffect(() => {
-    if (!activeId) return;
-    const el = document.getElementById(`resource-${activeId}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    clearTimeout(clearTimer.current);
-    clearTimer.current = setTimeout(() => setActiveId(null), 2500);
-    return () => clearTimeout(clearTimer.current);
-  }, [activeId]);
+    if (selected && panelRef.current) {
+      panelRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selected]);
 
   const hasFilters = city || category || serves || status || picksOnly || query.trim();
+  // landing on the category cards when nothing has been chosen or searched.
+  const browsing = !category && !query.trim();
 
   function clearAll() {
     setQuery("");
@@ -159,7 +172,7 @@ export default function ResourceBrowser({ resources, elevated, canPick }) {
 
       {/* filters */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {elevated && needsVerifying > 0 && (
+        {canManage && needsVerifying > 0 && (
           <button
             type="button"
             onClick={() =>
@@ -229,7 +242,18 @@ export default function ResourceBrowser({ resources, elevated, canPick }) {
 
       {mapPoints.length > 0 && (
         <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
-          <ResourceMap points={mapPoints} onSelect={setActiveId} />
+          <ResourceMap points={mapPoints} onSelect={setSelectedId} selectedId={selectedId} />
+        </div>
+      )}
+
+      {/* inline detail panel for the selected pin / card */}
+      {selected && (
+        <div ref={panelRef} className="mt-6">
+          <ResourcePanel
+            r={selected}
+            canManage={canManage}
+            onClose={() => setSelectedId(null)}
+          />
         </div>
       )}
 
@@ -241,41 +265,80 @@ export default function ResourceBrowser({ resources, elevated, canPick }) {
           </h2>
           <ul className="mt-4 grid gap-4 sm:grid-cols-2">
             {picks.map((r) => (
-              <ResourceCard key={r.id} r={r} elevated={elevated} canPick={canPick} activeId={activeId} />
+              <ResourceCard key={r.id} r={r} canManage={canManage} canPick={canPick} selectedId={selectedId} onOpen={setSelectedId} />
             ))}
           </ul>
         </div>
       )}
 
-      {filtered.length === 0 ? (
-        <p className="mt-10 text-sm text-slate-600">
-          {resources.length === 0
-            ? "No resources yet. Add the first one."
-            : "No resources match these filters."}
-        </p>
+      {browsing ? (
+        /* category cards landing: pick a label to drill in */
+        grouped.length === 0 ? (
+          <p className="mt-10 text-sm text-slate-600">
+            {resources.length === 0
+              ? "No resources yet. Add the first one."
+              : "No resources match these filters."}
+          </p>
+        ) : (
+          <div className="mt-10 grid gap-4 sm:grid-cols-2">
+            {grouped.map(([cat, items]) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategory(cat)}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-brand-light hover:shadow"
+              >
+                <div>
+                  <p className="font-semibold text-slate-900">{cat}</p>
+                  {categoryDescription(cat) && (
+                    <p className="mt-0.5 text-sm text-slate-500">{categoryDescription(cat)}</p>
+                  )}
+                </div>
+                <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-1 text-sm font-semibold text-brand">
+                  {items.length}
+                </span>
+              </button>
+            ))}
+          </div>
+        )
       ) : (
-        <div className="mt-10 space-y-12">
-          {grouped.map(([cat, items]) => (
-            <div key={cat}>
-              <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-                {cat} <span className="ml-1 text-sm font-normal text-slate-400">({items.length})</span>
-              </h2>
-              <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-                {items.map((r) => (
-                  <ResourceCard key={r.id} r={r} elevated={elevated} canPick={canPick} activeId={activeId} />
-                ))}
-              </ul>
+        <>
+          {category && (
+            <button
+              type="button"
+              onClick={() => setCategory("")}
+              className="mt-8 text-sm font-medium text-brand transition hover:text-brand-dark"
+            >
+              ← All categories
+            </button>
+          )}
+          {filtered.length === 0 ? (
+            <p className="mt-6 text-sm text-slate-600">No resources match these filters.</p>
+          ) : (
+            <div className="mt-6 space-y-12">
+              {grouped.map(([cat, items]) => (
+                <div key={cat}>
+                  <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+                    {cat} <span className="ml-1 text-sm font-normal text-slate-400">({items.length})</span>
+                  </h2>
+                  <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                    {items.map((r) => (
+                      <ResourceCard key={r.id} r={r} canManage={canManage} canPick={canPick} selectedId={selectedId} onOpen={setSelectedId} />
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </>
   );
 }
 
-function ResourceCard({ r, elevated, canPick, activeId }) {
+function ResourceCard({ r, canManage, canPick, selectedId, onOpen }) {
   const phone = formatUSPhone(r.phone);
-  const active = activeId === r.id;
+  const active = selectedId === r.id;
   const subtitle = [r.subtype, (r.whoItServes || []).join(", ")].filter(Boolean).join(" • ");
   const schedule = Array.isArray(r.schedule) ? r.schedule : [];
   const scheduleLines = schedule.map(formatScheduleRow).filter(Boolean);
@@ -305,9 +368,13 @@ function ResourceCard({ r, elevated, canPick, activeId }) {
           )}
         </div>
 
-        <Link href={`/portal/resources/${r.id}`} className="mt-1.5 block font-semibold text-slate-900 hover:text-brand">
+        <button
+          type="button"
+          onClick={() => onOpen(r.id)}
+          className="mt-1.5 block text-left font-semibold text-slate-900 transition hover:text-brand"
+        >
           {r.name}
-        </Link>
+        </button>
         {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
         {r.notes && <p className="mt-1 text-sm leading-relaxed text-slate-600">{r.notes}</p>}
 
@@ -338,14 +405,18 @@ function ResourceCard({ r, elevated, canPick, activeId }) {
         </div>
 
         <div className="mt-3 flex items-center justify-between">
-          <Link href={`/portal/resources/${r.id}`} className="text-sm font-semibold text-brand transition hover:text-brand-dark">
+          <button
+            type="button"
+            onClick={() => onOpen(r.id)}
+            className="text-sm font-semibold text-brand transition hover:text-brand-dark"
+          >
             View details →
-          </Link>
+          </button>
           {verified && <span className="text-[11px] text-slate-400">Verified {verified}</span>}
         </div>
       </div>
 
-      {(canPick || elevated) && (
+      {(canPick || canManage) && (
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2">
           {canPick ? (
             <form action={toggleStaffPick.bind(null, r.id)}>
@@ -356,7 +427,7 @@ function ResourceCard({ r, elevated, canPick, activeId }) {
           ) : (
             <span />
           )}
-          {elevated && (
+          {canManage && (
             <form action={deleteResource.bind(null, r.id)}>
               <ConfirmButton message="Remove this resource?" className="text-[11px] font-medium text-rose-600 transition hover:text-rose-700">
                 Remove
@@ -366,5 +437,136 @@ function ResourceCard({ r, elevated, canPick, activeId }) {
         </div>
       )}
     </li>
+  );
+}
+
+// inline detail panel shown between the map and the cards when a pin or card
+// name is clicked. a concise, pretty summary; "View full details" goes to the
+// resource's own page for the deep stuff (internal notes, embedded map, etc.).
+function ResourcePanel({ r, canManage, onClose }) {
+  const phone = formatUSPhone(r.phone);
+  const det = r.details || {};
+  const subtitle = [r.subtype, (r.whoItServes || []).join(", ")].filter(Boolean).join(" • ");
+  const scheduleLines = (Array.isArray(r.schedule) ? r.schedule : [])
+    .map(formatScheduleRow)
+    .filter(Boolean);
+  const requirements = [
+    r.appointmentRequired && "Appointment required",
+    det.referralRequired && "Referral required",
+    det.idRequired && "ID required",
+    det.proofOfIncomeRequired && "Proof of income required",
+  ].filter(Boolean);
+  const directions = r.address
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(r.address)}`
+    : null;
+  const src = mapSrc(r.address);
+
+  return (
+    <div className="relative rounded-2xl border border-brand-light bg-white p-5 shadow-md ring-1 ring-brand-light/40 sm:p-6">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+      >
+        ×
+      </button>
+
+      <div className="flex flex-wrap items-center gap-1.5 pr-8">
+        {r.category && (
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-brand">{r.category}</span>
+        )}
+        {r.operationalStatus && r.operationalStatus !== "ACTIVE" && (
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${OP_CHIP[r.operationalStatus] || "bg-slate-100 text-slate-600"}`}>
+            {OP_STATUS_LABELS[r.operationalStatus] || r.operationalStatus}
+          </span>
+        )}
+        {r.staffPick && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">★ Staff pick</span>
+        )}
+      </div>
+
+      <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-900">{r.name}</h3>
+      {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+      {r.orgName && <p className="text-xs text-slate-400">{r.orgName}</p>}
+      {r.notes && <p className="mt-3 text-sm leading-relaxed text-slate-700">{r.notes}</p>}
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {scheduleLines.length > 0 && (
+          <PanelBlock title="Hours">
+            <ul className="space-y-0.5 text-sm text-slate-700">
+              {scheduleLines.map((line, i) => <li key={i}>{line}</li>)}
+            </ul>
+          </PanelBlock>
+        )}
+        {(r.whoItServes?.length > 0 || requirements.length > 0) && (
+          <PanelBlock title="Who it serves">
+            {r.whoItServes?.length > 0 && (
+              <p className="text-sm text-slate-700">{r.whoItServes.join(", ")}</p>
+            )}
+            {requirements.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {requirements.map((x) => (
+                  <span key={x} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{x}</span>
+                ))}
+              </div>
+            )}
+          </PanelBlock>
+        )}
+        {(r.address || phone || r.website) && (
+          <PanelBlock title="Contact">
+            <div className="space-y-0.5 text-sm">
+              {r.address && <p className="text-slate-700">{r.address}</p>}
+              {phone && (
+                <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="block text-slate-700 underline-offset-2 hover:underline">{phone}</a>
+              )}
+              {r.website && (
+                <a href={r.website} target="_blank" rel="noopener noreferrer" className="block truncate text-brand underline-offset-2 hover:underline">
+                  {r.website.replace(/^https?:\/\//, "")}
+                </a>
+              )}
+            </div>
+          </PanelBlock>
+        )}
+      </div>
+
+      {src && (
+        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+          <iframe
+            title={`Map of ${r.name}`}
+            src={src}
+            className="block aspect-[16/9] w-full"
+            style={{ border: 0 }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+        {directions && (
+          <a href={directions} target="_blank" rel="noopener noreferrer" className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand">
+            Get directions
+          </a>
+        )}
+        <Link href={`/portal/resources/${r.id}`} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+          View full details
+        </Link>
+        {canManage && (
+          <Link href={`/portal/resources/${r.id}/edit`} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+            Edit
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PanelBlock({ title, children }) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{title}</p>
+      <div className="mt-1">{children}</div>
+    </div>
   );
 }
