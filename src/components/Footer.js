@@ -74,8 +74,8 @@ export default function Footer() {
           </dl>
         </div>
       </div>
-      <div className="border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-5xl px-6 py-5 text-sm text-slate-600">
+      <div className="border-t border-border bg-surface">
+        <div className="mx-auto max-w-5xl px-6 py-5 text-sm text-muted">
           &copy; {year} My Life Services. All rights reserved.
         </div>
       </div>

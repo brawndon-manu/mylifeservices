@@ -17,7 +17,7 @@ export default async function PortalLayout({ children }) {
   const role = user?.role;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       {user && isIT(user.realRole) && (
         <PreviewBar
           realRole={user.realRole}
@@ -25,9 +25,9 @@ export default async function PortalLayout({ children }) {
           previewing={user.previewing}
         />
       )}
-      <div className="border-b border-slate-200 bg-white">
+      <div className="border-b border-border bg-background">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <nav className="flex items-center gap-6 text-sm font-medium text-slate-700">
+          <nav className="flex items-center gap-6 text-sm font-medium text-muted">
             <Link
               href="/portal"
               className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
@@ -82,7 +82,7 @@ export default async function PortalLayout({ children }) {
             )}
           </nav>
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-slate-600">
+            <span className="text-muted">
               {user?.email}{" "}
               <span className={`ml-1 rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(role)}`}>
                 {ROLE_LABELS[role] ?? role}
@@ -91,7 +91,7 @@ export default async function PortalLayout({ children }) {
             <form action={handleSignOut}>
               <button
                 type="submit"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               >
                 Sign out
               </button>

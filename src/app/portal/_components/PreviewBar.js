@@ -16,7 +16,7 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
   const label = ROLE_LABELS[effectiveRole] ?? effectiveRole;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 print:hidden">
+    <div className="fixed bottom-20 right-4 z-50 print:hidden">
       {open ? (
         <div className="w-64 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between">

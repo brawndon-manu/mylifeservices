@@ -1,25 +1,59 @@
 @import "tailwindcss";
 
+/* enable class-based dark mode: the `dark:` variant and our token overrides
+   key off a `.dark` class on <html> (toggled by the accessibility menu). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* semantic theme tokens. components use these (bg-surface, text-foreground,
+   border-border, etc.) instead of hardcoded slate/white, so the whole site
+   re-themes by swapping these values. light is the default; .dark overrides. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #ffffff;   /* page background */
+  --surface: #ffffff;      /* cards, panels */
+  --surface-2: #f8fafc;    /* raised / inset areas, subtle fills (slate-50) */
+  --surface-3: #f1f5f9;    /* deeper inset (slate-100) */
+  --border: #e2e8f0;       /* hairlines (slate-200) */
+  --border-strong: #cbd5e1;/* stronger dividers (slate-300) */
+  --foreground: #0f172a;   /* primary text (slate-900) */
+  --muted: #475569;        /* secondary text (slate-600) */
+  --faint: #94a3b8;        /* tertiary / labels (slate-400) */
+  --accent: #196e93;       /* links + accent text */
+  --accent-strong: #0e5379;
+}
+
+/* OLED dark: true black page with layered near-black surfaces. */
+.dark {
+  --background: #000000;
+  --surface: #0d0d0f;
+  --surface-2: #161619;
+  --surface-3: #1e1e22;
+  --border: #262629;
+  --border-strong: #34343a;
+  --foreground: #e8e8ea;
+  --muted: #a1a1ab;
+  --faint: #6b6b73;
+  --accent: #38b6ef;       /* lightened so links read on black */
+  --accent-strong: #7dd3fc;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  /* Brand blues sampled from MLSlogo.png. The logo background is a vertical
-     gradient from #2cc4f3 (top) to #196e93 (bottom). We use the darker
-     bottom-of-gradient shade as the primary so white text passes WCAG AA
-     contrast on solid-fill buttons. --color-brand-dark deepens it further
-     for hover/active states. */
+  /* Brand blues sampled from the logo gradient. Used for solid accents and
+     buttons in both themes. */
   --color-brand: #196e93;
   --color-brand-dark: #0e5379;
-  /* Lighter sky-blue accent sampled from the top of the logo gradient.
-     Use for outlined buttons, links, and accent surfaces, NOT for solid
-     buttons with white text (fails WCAG AA contrast). */
   --color-brand-light: #29abe2;
 }
 
