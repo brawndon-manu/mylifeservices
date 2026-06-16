@@ -2,6 +2,14 @@ import Link from "next/link";
 import Image from "next/image";
 import ServicesOverview from "@/components/ServicesOverview";
 
+// Orange County service-area map. Uses the same env-driven Google Maps Embed
+// key as the contact page, with an OpenStreetMap fallback (OC bbox) if it's
+// unset so the map always renders.
+const OC_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY;
+const OC_MAP_SRC = OC_MAPS_KEY
+  ? `https://www.google.com/maps/embed/v1/place?key=${OC_MAPS_KEY}&q=Orange+County,+CA&zoom=9`
+  : "https://www.openstreetmap.org/export/embed.html?bbox=-118.13%2C33.38%2C-117.41%2C33.95&layer=mapnik";
+
 const storyPreviews = [
   {
     initials: "RO",
@@ -62,10 +70,10 @@ export default function HomePage() {
                   View our services
                 </Link>
                 <a
-                  href="tel:+19098370907"
+                  href="tel:+15626862548"
                   className="inline-flex items-center justify-center rounded-md border-2 border-brand-light px-6 py-3 text-base font-medium text-brand-dark transition hover:bg-brand hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
-                  Call (909) 837-0907
+                  Call (562) 686-2548
                 </a>
               </div>
             </div>
@@ -112,6 +120,35 @@ export default function HomePage() {
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+      <section className="border-t border-slate-200 bg-slate-50">
+        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-12">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
+                Our service area
+              </p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+                Proudly serving Orange County
+              </h2>
+              <p className="mt-5 text-base leading-relaxed text-slate-700 sm:text-lg">
+                My Life Services supports individuals and families across Orange
+                County, in coordination with the Regional Center of Orange
+                County.
+              </p>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+              <iframe
+                title="Map of Orange County, California"
+                src={OC_MAP_SRC}
+                className="block aspect-[4/3] w-full"
+                style={{ border: 0 }}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+          </div>
         </div>
       </section>
       <ServicesOverview />
