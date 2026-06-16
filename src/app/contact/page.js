@@ -17,8 +17,8 @@ const methods = [
   {
     Icon: PhoneIcon,
     label: "Phone",
-    value: "(909) 837-0907",
-    href: "tel:+19098370907",
+    value: "(562) 686-2548",
+    href: "tel:+15626862548",
   },
   {
     Icon: EnvelopeIcon,
@@ -153,11 +153,11 @@ export default function ContactPage() {
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
-                href="tel:+19098370907"
+                href="tel:+15626862548"
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-6 py-3 text-base font-medium text-brand-dark shadow-sm transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <PhoneIcon className="h-5 w-5" />
-                (909) 837-0907
+                (562) 686-2548
               </a>
               <a
                 href="mailto:contact@mylifeservicesinc.com"

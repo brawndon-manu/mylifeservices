@@ -93,7 +93,7 @@ export async function submitApplication(_prevState, formData) {
     );
     return {
       ok: false,
-      error: "Something went wrong on our end. Please try again, or call us at (909) 837-0907.",
+      error: "Something went wrong on our end. Please try again, or call us at (562) 686-2548.",
     };
   }
 
@@ -114,14 +114,14 @@ export async function submitApplication(_prevState, formData) {
       console.error("resend application send error:", error);
       return {
         ok: false,
-        error: "We couldn't submit your application. Please try again, or call us at (909) 837-0907.",
+        error: "We couldn't submit your application. Please try again, or call us at (562) 686-2548.",
       };
     }
   } catch (err) {
     console.error("application send threw:", err);
     return {
       ok: false,
-      error: "We couldn't submit your application. Please try again, or call us at (909) 837-0907.",
+      error: "We couldn't submit your application. Please try again, or call us at (562) 686-2548.",
     };
   }
 

@@ -162,7 +162,7 @@ function ComingSoon() {
         Detailed information about this service is being added. In the meantime,
         please{" "}
         <a
-          href="tel:+19098370907"
+          href="tel:+15626862548"
           className="font-medium text-brand-dark underline underline-offset-2 hover:text-brand"
         >
           call us

@@ -553,8 +553,8 @@ export const services = [
     cta: {
       title: "Reach us for crisis support",
       body: "If you or someone you support is facing a crisis or difficult transition, our team is available to help stabilize the situation and connect you with the right next steps. Reaching us by phone is the fastest way to get support.",
-      buttonLabel: "Call (909) 837-0907",
-      buttonHref: "tel:+19098370907",
+      buttonLabel: "Call (562) 686-2548",
+      buttonHref: "tel:+15626862548",
     },
     roleDescription:
       "Provide short-term, responsive support to help stabilize individuals and connect them with appropriate resources.",

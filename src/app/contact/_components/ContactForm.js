@@ -37,7 +37,7 @@ export default function ContactForm() {
         </h3>
         <p className="mt-2 text-base leading-relaxed text-slate-700">
           We&apos;ll get back to you as soon as we can. If it&apos;s urgent,
-          feel free to call us at (909) 837-0907.
+          feel free to call us at (562) 686-2548.
         </p>
       </div>
     );

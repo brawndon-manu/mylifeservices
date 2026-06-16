@@ -23,8 +23,8 @@ const navLinks = [
   { href: "/careers/apply", label: "Apply" },
 ];
 
-const PHONE_DISPLAY = "(909) 837-0907";
-const PHONE_HREF = "tel:+19098370907";
+const PHONE_DISPLAY = "(562) 686-2548";
+const PHONE_HREF = "tel:+15626862548";
 
 export default function Header() {
   return (

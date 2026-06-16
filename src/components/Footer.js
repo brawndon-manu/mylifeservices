@@ -27,10 +27,10 @@ export default function Footer() {
                 <dt className="sr-only">Phone</dt>
                 <dd>
                   <a
-                    href="tel:+19098370907"
+                    href="tel:+15626862548"
                     className="underline-offset-2 hover:underline"
                   >
-                    (909) 837-0907
+                    (562) 686-2548
                   </a>
                 </dd>
               </div>

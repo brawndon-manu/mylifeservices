@@ -148,11 +148,11 @@ export default function AboutPage() {
             </div>
             <div className="flex flex-col gap-3 sm:col-span-5 sm:items-end">
               <a
-                href="tel:+19098370907"
+                href="tel:+15626862548"
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-5 py-3 text-base font-medium text-brand transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <PhoneIcon className="h-5 w-5" />
-                (909) 837-0907
+                (562) 686-2548
               </a>
               <a
                 href="mailto:contact@mylifeservicesinc.com"
