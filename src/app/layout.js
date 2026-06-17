@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AccessibilityMenu from "@/components/AccessibilityMenu";
@@ -58,6 +59,7 @@ export default function RootLayout({ children }) {
         <div className="fixed bottom-4 right-4 z-50 print:hidden">
           <AccessibilityMenu variant="fab" openUp align="right" />
         </div>
+        <Analytics />
       </body>
     </html>
   );

@@ -4,6 +4,11 @@
    key off a `.dark` class on <html> (toggled by the accessibility menu). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* night-only variant. lets us flatten full-bleed section backgrounds to true
+   OLED black in Night without touching cards (which keep their surface token).
+   only matches when the .night class is on <html>. */
+@custom-variant night (&:where(.night, .night *));
+
 /* semantic theme tokens. components use these (bg-surface, text-foreground,
    border-border, etc.) instead of hardcoded slate/white, so the whole site
    re-themes by swapping these values. light is the default; .dark overrides. */

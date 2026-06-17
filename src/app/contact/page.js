@@ -142,7 +142,7 @@ export default function ContactPage() {
       {/* Closing CTA - gradient card on white so it doesn't blend into the
           brand-light footer band right below it. */}
       <section className="bg-surface">
-        <div className="mx-auto max-w-5xl px-6 pb-16">
+        <div className="mx-auto max-w-5xl px-6 py-16">
           <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-dark to-brand px-8 py-12 text-center text-white sm:px-12 sm:py-14">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               Prefer to talk it through?

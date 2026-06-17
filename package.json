@@ -16,6 +16,7 @@
     "@turbodocx/html-to-docx": "^1.21.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.4.0",
     "html-to-docx": "^1.8.0",
     "leaflet": "^1.9.4",

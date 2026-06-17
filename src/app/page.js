@@ -90,7 +90,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-      <section className="border-t border-border bg-surface">
+      <section className="border-t border-border bg-surface night:!bg-background">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
@@ -122,7 +122,7 @@ export default function HomePage() {
           </ul>
         </div>
       </section>
-      <section className="border-t border-border bg-surface-2">
+      <section className="border-t border-border bg-surface-2 night:!bg-background">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-12">
             <div>
@@ -152,7 +152,7 @@ export default function HomePage() {
         </div>
       </section>
       <ServicesOverview />
-      <section className="border-t border-border bg-surface">
+      <section className="border-t border-border bg-surface night:!bg-background">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <header className="mb-12 max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">

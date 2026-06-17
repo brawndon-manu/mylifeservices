@@ -70,8 +70,11 @@ export default async function ResourceDetailPage({ params, searchParams }) {
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
-      <Link href="/portal/resources" className="text-sm font-medium text-muted transition hover:text-brand">
-        ← Back to Resources
+      <Link
+        href={r.category ? `/portal/resources?cat=${encodeURIComponent(r.category)}` : "/portal/resources"}
+        className="text-sm font-medium text-muted transition hover:text-brand"
+      >
+        ← Back to {r.category || "Resources"}
       </Link>
 
       {sp?.saved === "1" && (
