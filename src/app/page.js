@@ -1,6 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import ServicesOverview from "@/components/ServicesOverview";
+import { prisma } from "@/lib/prisma";
+
+// read fresh so story photos added in the portal show right away.
+export const dynamic = "force-dynamic";
 
 // Orange County service-area map. Uses the same env-driven Google Maps Embed
 // key as the contact page, with an OpenStreetMap fallback (OC bbox) if it's
@@ -18,6 +22,9 @@ const storyPreviews = [
     teaser:
       "Years of unstable housing, then his own studio, supported by MLS and our partner Integrity Cottages.",
     href: "/stories#ro",
+    // shares the managed Stories photos: prefer a portrait if uploaded,
+    // otherwise show the move-in photo.
+    photoSections: ["story-ro-portrait", "story-ro-milestone"],
   },
   {
     initials: "RR",
@@ -26,6 +33,7 @@ const storyPreviews = [
     teaser:
       "Now in his own one-bedroom apartment, paying just 30% of his income through a Project-Based Voucher.",
     href: "/stories#rr",
+    photoSections: ["story-rr-portrait"],
   },
 ];
 
@@ -44,7 +52,18 @@ const values = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  // managed story portraits (shared with the Stories page) for the cards.
+  const storyPhotos = await prisma.sitePhoto.findMany({ where: { active: true } });
+  // pick the first available photo from a person's preferred sections.
+  const photoFor = (sections) => {
+    for (const s of sections) {
+      const p = storyPhotos.find((x) => x.section === s);
+      if (p) return p;
+    }
+    return null;
+  };
+
   return (
     <>
       <section className="bg-gradient-to-b from-surface-2 to-background">
@@ -167,17 +186,31 @@ export default function HomePage() {
             </p>
           </header>
           <ul className="grid gap-6 sm:grid-cols-3">
-            {storyPreviews.map(({ initials, title, teaser, since, href }) => (
+            {storyPreviews.map(({ initials, title, teaser, since, href, photoSections }) => {
+              const photo = photoFor(photoSections);
+              return (
               <li key={initials}>
                 <Link
                   href={href}
                   className="group flex h-full flex-col rounded-xl border border-border bg-surface-2 p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
+                  {photo ? (
+                    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-surface-3">
+                      <Image
+                        src={photo.url}
+                        alt={photo.alt || `${initials} portrait`}
+                        fill
+                        sizes="(min-width: 640px) 30vw, 100vw"
+                        className="object-cover"
+                      />
+                    </div>
+                  ) : (
                   <div className="flex aspect-square w-full items-center justify-center rounded-lg border-2 border-dashed border-brand-light bg-sky-50">
                     <p className="text-3xl font-semibold tracking-tight text-brand">
                       {initials}
                     </p>
                   </div>
+                  )}
                   <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">
                     {since}
                   </p>
@@ -198,7 +231,8 @@ export default function HomePage() {
                   </p>
                 </Link>
               </li>
-            ))}
+              );
+            })}
             <li>
               <div className="flex h-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-brand-light bg-sky-50 p-6 text-center">
                 <p className="text-lg font-semibold tracking-tight text-brand">

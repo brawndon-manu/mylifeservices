@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, isAdminUp, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 
 export const metadata = {
   title: "Portal",
@@ -103,6 +103,16 @@ export default async function PortalDashboard() {
           </p>
         </Link>
       </div>
+
+      {isAdminUp(role) && (
+        <div className="mt-6 grid">
+          <LinkCard
+            href="/portal/site-photos"
+            title="Site photos"
+            body="Manage the photos on the public About page: upload, caption, reorder, show or hide. Admin only."
+          />
+        </div>
+      )}
 
       {isElevated(role) && (
         <div className="mt-6">

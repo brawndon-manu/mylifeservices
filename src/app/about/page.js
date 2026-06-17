@@ -1,22 +1,7 @@
 import Image from "next/image";
 import { PhoneIcon, EnvelopeIcon } from "@/components/Icons";
-// NOTE: Photo slideshow + community photos are wired but disabled until
-// written consent forms are on file. Re-enable by swapping the
-// <ConsentPending /> placeholders for <PhotoSlideshow /> / <Image />.
-// import PhotoSlideshow from "@/components/PhotoSlideshow";
-
-// const communityPhotos = [
-//   {
-//     src: "/clients/first-keys.jpg",
-//     alt: "...",
-//     caption: "Move-in day: receiving the keys to a first studio apartment, in partnership with Integrity Cottages.",
-//   },
-//   {
-//     src: "/clients/disney.jpg",
-//     alt: "...",
-//     caption: "A community outing, building friendships and shared experiences.",
-//   },
-// ];
+import PhotoSlideshow from "@/components/PhotoSlideshow";
+import { prisma } from "@/lib/prisma";
 
 export const metadata = {
   title: "About",
@@ -24,7 +9,26 @@ export const metadata = {
     "Learn about My Life Services: our history, growth, person-centered approach, team, and partnerships.",
 };
 
-export default function AboutPage() {
+// read fresh so photos added/removed in the portal show right away.
+export const dynamic = "force-dynamic";
+
+export default async function AboutPage() {
+  // photos are managed from the portal (Site Photos). only active ones
+  // render, ordered within their section.
+  const sitePhotos = await prisma.sitePhoto.findMany({
+    where: { active: true },
+    orderBy: [{ section: "asc" }, { sortOrder: "asc" }],
+  });
+  const photosFor = (section) =>
+    sitePhotos
+      .filter((p) => p.section === section)
+      .map((p) => ({ src: p.url, alt: p.alt || "", caption: p.caption || "" }));
+
+  const heroPhoto = photosFor("about-hero")[0];
+  const overviewPhotos = photosFor("agency-overview");
+  const partnershipPhoto = photosFor("partnership")[0];
+  const teamPhoto = photosFor("about-team")[0];
+
   return (
     <>
       {/* Hero */}
@@ -43,7 +47,11 @@ export default function AboutPage() {
               </p>
             </div>
             <div className="sm:col-span-5">
-              <ConsentPending ratio="aspect-[4/5]" />
+              {heroPhoto ? (
+                <SinglePhoto photo={heroPhoto} ratio="aspect-[4/5]" />
+              ) : (
+                <ConsentPending ratio="aspect-[4/5]" />
+              )}
             </div>
           </div>
         </div>
@@ -53,7 +61,13 @@ export default function AboutPage() {
       <Section bg="white">
         <SplitContent
           reverse
-          photo={<ConsentPending ratio="aspect-[4/3]" />}
+          photo={
+            overviewPhotos.length > 0 ? (
+              <PhotoSlideshow photos={overviewPhotos} ratio="aspect-[4/3]" />
+            ) : (
+              <ConsentPending ratio="aspect-[4/3]" />
+            )
+          }
           heading="Agency Overview"
           body="My Life Services began by providing Independent Living Services (ILS) to support adults with intellectual and developmental disabilities. As needs changed and families requested additional options, MLS expanded its programs to offer more service pathways. Today, MLS provides multiple community-based services in coordination with the Regional Center of Orange County."
         />
@@ -82,13 +96,17 @@ export default function AboutPage() {
       <Section bg="white">
         <SplitContent
           photo={
-            <Image
-              src="/about/partnership.jpg"
-              alt="Puzzle pieces fitting together, representing collaboration"
-              width={800}
-              height={600}
-              className="aspect-[4/3] w-full rounded-2xl object-cover shadow-sm"
-            />
+            partnershipPhoto ? (
+              <SinglePhoto photo={partnershipPhoto} ratio="aspect-[4/3]" />
+            ) : (
+              <Image
+                src="/about/partnership.jpg"
+                alt="Puzzle pieces fitting together, representing collaboration"
+                width={800}
+                height={600}
+                className="aspect-[4/3] w-full rounded-2xl object-cover shadow-sm"
+              />
+            )
           }
           heading="Partnership & Community Collaboration"
           body="MLS works closely with the Regional Center of Orange County, families, and community partners to coordinate services. Collaboration helps ensure individuals have access to appropriate supports, resources, and opportunities. Partnerships are focused on long-term stability and community integration."
@@ -117,16 +135,20 @@ export default function AboutPage() {
         <SplitContent
           reverse
           photo={
-            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border-2 border-dashed border-brand-light bg-sky-50 px-6 text-center">
-              <div>
-                <p className="text-2xl font-semibold tracking-tight text-brand">
-                  Pic coming soon!
-                </p>
-                <p className="mt-2 text-sm text-muted">
-                  Our team is camera-shy. For now.
-                </p>
+            teamPhoto ? (
+              <SinglePhoto photo={teamPhoto} ratio="aspect-[4/3]" />
+            ) : (
+              <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border-2 border-dashed border-brand-light bg-sky-50 px-6 text-center">
+                <div>
+                  <p className="text-2xl font-semibold tracking-tight text-brand">
+                    Pic coming soon!
+                  </p>
+                  <p className="mt-2 text-sm text-muted">
+                    Our team is camera-shy. For now.
+                  </p>
+                </div>
               </div>
-            </div>
+            )
           }
           heading="Our Team"
           body="My Life Services is supported by a team of trained professionals who deliver services across multiple programs. Staff receive ongoing training and supervision to ensure quality and compliance. The agency emphasizes respectful, ethical, and consistent support."
@@ -195,6 +217,29 @@ function SplitContent({ photo, heading, body, reverse = false }) {
         </p>
       </div>
     </div>
+  );
+}
+
+// renders one managed site photo (hero / partnership) at the given ratio,
+// with its caption underneath if there is one.
+function SinglePhoto({ photo, ratio }) {
+  return (
+    <figure className="w-full">
+      <div className={`relative ${ratio} w-full overflow-hidden rounded-2xl bg-surface-3 shadow-sm`}>
+        <Image
+          src={photo.src}
+          alt={photo.alt || photo.caption || ""}
+          fill
+          sizes="(min-width: 640px) 40vw, 100vw"
+          className="object-cover"
+        />
+      </div>
+      {photo.caption && (
+        <figcaption className="mt-3 text-sm leading-relaxed text-muted">
+          {photo.caption}
+        </figcaption>
+      )}
+    </figure>
   );
 }
 

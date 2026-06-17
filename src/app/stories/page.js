@@ -1,6 +1,8 @@
 import Link from "next/link";
+import Image from "next/image";
 import PageHeader from "@/components/PageHeader";
 import { PhoneIcon, EnvelopeIcon } from "@/components/Icons";
+import { prisma } from "@/lib/prisma";
 
 export const metadata = {
   title: "Stories",
@@ -8,7 +10,23 @@ export const metadata = {
     "Real stories from people supported by My Life Services, shared with their permission.",
 };
 
-export default function StoriesPage() {
+// read fresh so photos added/removed in the portal show right away.
+export const dynamic = "force-dynamic";
+
+export default async function StoriesPage() {
+  // story photos are managed from the portal (Site Photos). only active ones.
+  const sitePhotos = await prisma.sitePhoto.findMany({
+    where: { active: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  const photoFor = (section) => {
+    const p = sitePhotos.find((x) => x.section === section);
+    return p ? { src: p.url, alt: p.alt || "", caption: p.caption || "" } : null;
+  };
+  const roPortrait = photoFor("story-ro-portrait");
+  const roMilestone = photoFor("story-ro-milestone");
+  const rrPortrait = photoFor("story-rr-portrait");
+
   return (
     <>
       <PageHeader
@@ -22,7 +40,7 @@ export default function StoriesPage() {
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-5">
-              <PortraitPlaceholder initials="RO" />
+              <StoryPortrait photo={roPortrait} initials="RO" />
               <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">
                 With MLS since 2020
               </p>
@@ -61,11 +79,32 @@ export default function StoriesPage() {
           </div>
 
           <figure className="mt-12">
-            <MilestonePhotoPlaceholder />
-            <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-muted">
-              Move-in day photo coming soon, once RO&apos;s consent is on
-              file.
-            </figcaption>
+            {roMilestone ? (
+              <>
+                <div className="relative mx-auto aspect-[4/3] w-full max-w-3xl overflow-hidden rounded-2xl bg-surface-3 shadow-sm">
+                  <Image
+                    src={roMilestone.src}
+                    alt={roMilestone.alt || "RO on move-in day"}
+                    fill
+                    sizes="(min-width: 640px) 768px, 100vw"
+                    className="object-cover"
+                  />
+                </div>
+                {roMilestone.caption && (
+                  <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-muted">
+                    {roMilestone.caption}
+                  </figcaption>
+                )}
+              </>
+            ) : (
+              <>
+                <MilestonePhotoPlaceholder />
+                <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-muted">
+                  Move-in day photo coming soon, once RO&apos;s consent is on
+                  file.
+                </figcaption>
+              </>
+            )}
           </figure>
 
           <p className="mx-auto mt-12 max-w-3xl text-base leading-relaxed text-muted sm:text-lg">
@@ -110,7 +149,7 @@ export default function StoriesPage() {
               </div>
             </div>
             <div className="sm:col-span-5">
-              <PortraitPlaceholder initials="RR" />
+              <StoryPortrait photo={rrPortrait} initials="RR" />
               <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">
                 With MLS since 2022
               </p>
@@ -158,6 +197,23 @@ export default function StoriesPage() {
         </div>
       </section>
     </>
+  );
+}
+
+// a managed story portrait (square), or the initials placeholder if none
+// has been uploaded yet. the same photo also appears on the home page card.
+function StoryPortrait({ photo, initials }) {
+  if (!photo) return <PortraitPlaceholder initials={initials} />;
+  return (
+    <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-surface-3 shadow-sm">
+      <Image
+        src={photo.src}
+        alt={photo.alt || `${initials} portrait`}
+        fill
+        sizes="(min-width: 640px) 40vw, 100vw"
+        className="object-cover"
+      />
+    </div>
   );
 }
 
