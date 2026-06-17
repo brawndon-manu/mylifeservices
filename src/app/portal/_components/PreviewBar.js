@@ -18,9 +18,9 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
   return (
     <div className="fixed bottom-20 right-4 z-50 print:hidden">
       {open ? (
-        <div className="w-64 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+        <div className="w-64 rounded-xl border border-border bg-surface p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <EyeIcon className="h-4 w-4 text-brand-dark" />
               Preview mode
             </span>
@@ -28,7 +28,7 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Collapse"
-              className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="rounded p-1 text-faint transition hover:bg-surface-3 hover:text-muted"
             >
               <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <path d="M6 6l8 8M14 6l-8 8" />
@@ -43,7 +43,7 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
           )}
 
           <form action={setPreviewRole} className="space-y-2">
-            <label htmlFor="preview-role" className="block text-xs font-medium text-slate-600">
+            <label htmlFor="preview-role" className="block text-xs font-medium text-muted">
               View as
             </label>
             <select
@@ -51,7 +51,7 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
               name="role"
               key={effectiveRole}
               defaultValue={effectiveRole}
-              className="block w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900 shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="block w-full rounded-md border border-border-strong bg-surface px-2.5 py-2 text-sm text-foreground shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             >
               {options.map((r) => (
                 <option key={r} value={r}>
@@ -71,14 +71,14 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
             <form action={clearPreviewRole} className="mt-2">
               <button
                 type="submit"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                className="w-full rounded-md border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-border-strong hover:bg-surface-2"
               >
                 Exit preview
               </button>
             </form>
           )}
 
-          <p className="mt-3 text-[11px] leading-snug text-slate-400">
+          <p className="mt-3 text-[11px] leading-snug text-faint">
             IT / Super tool. Your real access is unchanged.
           </p>
         </div>

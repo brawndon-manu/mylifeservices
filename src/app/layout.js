@@ -27,6 +27,10 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
+      // the no-flash theme script below sets classes/attrs on <html> before
+      // hydration, so its attributes intentionally differ from the server
+      // render. suppress the resulting hydration warning for this element.
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
@@ -35,7 +39,7 @@ export default function RootLayout({ children }) {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();",
+              "(function(){try{var d=document.documentElement,c=d.classList;var t=localStorage.getItem('theme');if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dim':'light';}if(t==='dim'||t==='night'){c.add('dark');}if(t==='night'){c.add('night');}var ts=localStorage.getItem('a11y-textsize');if(ts){d.dataset.textsize=ts;}['a11y-reduce-motion','a11y-underline-links','a11y-readable-font','a11y-line-spacing','a11y-large-cursor','a11y-high-contrast'].forEach(function(k){if(localStorage.getItem(k)==='1'){c.add(k);}});}catch(e){}})();",
           }}
         />
         <a

@@ -60,10 +60,10 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
     <>
       <nav
         aria-label="Sections on this page"
-        className="hidden border-b border-slate-200 bg-white/95 backdrop-blur lg:sticky lg:top-16 lg:z-30 lg:block"
+        className="hidden border-b border-border bg-surface/95 backdrop-blur lg:sticky lg:top-16 lg:z-30 lg:block"
       >
         <div className="mx-auto max-w-5xl px-6 py-3">
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
+          <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted">
             {categories.map((cat) => (
               <li key={cat.name}>
                 <a
@@ -79,13 +79,13 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
       </nav>
 
       {intro && (
-        <section className="border-b border-slate-200 bg-white">
+        <section className="border-b border-border bg-surface">
           <div className="mx-auto max-w-5xl px-6 py-10 sm:py-12">
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               {intro.title}
             </h2>
             {intro.body && (
-              <p className="mt-4 max-w-3xl text-base leading-relaxed text-slate-700 sm:text-lg">
+              <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted sm:text-lg">
                 {intro.body}
               </p>
             )}
@@ -98,10 +98,10 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
           <section
             key={category.name}
             id={categorySlug(category.name)}
-            className={`scroll-mt-32 ${i % 2 === 0 ? "bg-white" : "bg-slate-50"}`}
+            className={`scroll-mt-32 ${i % 2 === 0 ? "bg-surface" : "bg-surface-2"}`}
           >
             <div className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
-              <h3 className="border-l-2 border-brand pl-3 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+              <h3 className="border-l-2 border-brand pl-3 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                 {category.name}
               </h3>
               <ul
@@ -114,7 +114,7 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
                 {category.items.map((item) => (
                   <li
                     key={item}
-                    className="flex items-start gap-3 text-base leading-relaxed text-slate-700"
+                    className="flex items-start gap-3 text-base leading-relaxed text-muted"
                   >
                     <span
                       aria-hidden="true"
@@ -134,12 +134,12 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
 
 function ServiceCta({ cta }) {
   return (
-    <section className="border-t border-slate-200 bg-slate-50">
+    <section className="border-t border-border bg-surface-2">
       <div className="mx-auto max-w-3xl px-6 py-16 text-center sm:py-20">
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           {cta.title}
         </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
           {cta.body}
         </p>
         <div className="mt-8 flex justify-center">
@@ -158,7 +158,7 @@ function ServiceCta({ cta }) {
 function ComingSoon() {
   return (
     <section className="mx-auto max-w-3xl px-6 py-16">
-      <p className="text-base leading-relaxed text-slate-700">
+      <p className="text-base leading-relaxed text-muted">
         Detailed information about this service is being added. In the meantime,
         please{" "}
         <a

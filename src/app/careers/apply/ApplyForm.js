@@ -110,7 +110,7 @@ export default function ApplyForm() {
       {/* --- Position Applied For --- */}
       <section>
         <SectionHeading>Position applied for</SectionHeading>
-        <p className="mb-4 text-sm font-medium text-slate-700">
+        <p className="mb-4 text-sm font-medium text-muted">
           Select all that apply:
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-3">
@@ -157,7 +157,7 @@ export default function ApplyForm() {
       {/* --- Referral --- */}
       <section>
         <SectionHeading>Referral</SectionHeading>
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 sm:px-5">
+        <div className="rounded-md border border-border bg-surface-2 px-4 sm:px-5">
           <YesNoRow
             name="q_referral"
             label="Did a My Life Services employee refer you?"
@@ -171,13 +171,13 @@ export default function ApplyForm() {
       {/* --- Availability --- */}
       <section>
         <SectionHeading>Availability</SectionHeading>
-        <p className="mb-3 text-sm font-medium text-slate-700">Employment type:</p>
+        <p className="mb-3 text-sm font-medium text-muted">Employment type:</p>
         <div className="flex flex-wrap gap-x-6 gap-y-3">
           {EMPLOYMENT_TYPES.map((t) => (
             <Checkbox key={t.name} name={t.name} value={t.label} label={t.label} />
           ))}
         </div>
-        <p className="mt-6 mb-3 text-sm font-medium text-slate-700">
+        <p className="mt-6 mb-3 text-sm font-medium text-muted">
           Shift availability (check all that apply):
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-3">
@@ -209,7 +209,7 @@ export default function ApplyForm() {
         <div className="mt-4">
           <Field label="School / institution" name="school" />
         </div>
-        <p className="mt-6 mb-3 text-sm font-medium text-slate-700">
+        <p className="mt-6 mb-3 text-sm font-medium text-muted">
           Certifications / licenses (check all that apply):
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-3">
@@ -222,7 +222,7 @@ export default function ApplyForm() {
       {/* --- Work Experience --- */}
       <section>
         <SectionHeading>Work experience</SectionHeading>
-        <label className="mb-4 flex items-center gap-2 text-sm text-slate-800">
+        <label className="mb-4 flex items-center gap-2 text-sm text-foreground">
           <input
             type="checkbox"
             name="exp_on_resume"
@@ -234,14 +234,14 @@ export default function ApplyForm() {
           <span>My work history is included in my attached resume</span>
         </label>
         {expOnResume ? (
-          <p className="rounded-md border border-brand-light/40 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-slate-700">
+          <p className="rounded-md border border-brand-light/40 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-muted">
             Got it, we&apos;ll use your resume for your work history. Just make
             sure to attach it in the Resume section below (it&apos;s required
             when this box is checked).
           </p>
         ) : (
           <>
-            <p className="mb-4 text-xs text-slate-500">
+            <p className="mb-4 text-xs text-muted">
               List most recent employer first.
             </p>
             <div className="space-y-5">
@@ -256,7 +256,7 @@ export default function ApplyForm() {
       {/* --- Qualifications --- */}
       <section>
         <SectionHeading>Qualifications & skills</SectionHeading>
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 sm:px-5">
+        <div className="rounded-md border border-border bg-surface-2 px-4 sm:px-5">
           {QUESTIONS.map((q) => (
             <YesNoRow key={q.name} name={q.name} label={q.label} required />
           ))}
@@ -273,7 +273,7 @@ export default function ApplyForm() {
       {/* --- References --- */}
       <section>
         <SectionHeading>Professional references</SectionHeading>
-        <p className="mb-4 text-xs text-slate-500">
+        <p className="mb-4 text-xs text-muted">
           Please provide three professional references (not family members).
         </p>
         <div className="space-y-5">
@@ -286,7 +286,7 @@ export default function ApplyForm() {
       {/* --- Background Check --- */}
       <section>
         <SectionHeading>Background check</SectionHeading>
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 sm:px-5">
+        <div className="rounded-md border border-border bg-surface-2 px-4 sm:px-5">
           <YesNoRow
             name="q_conviction"
             label="Have you ever been convicted of a felony or misdemeanor (excluding minor traffic violations)?"
@@ -315,16 +315,16 @@ export default function ApplyForm() {
           }}
           role="button"
           tabIndex={0}
-          className="cursor-pointer rounded-lg border-2 border-dashed border-brand bg-slate-50 px-6 py-8 text-center transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="cursor-pointer rounded-lg border-2 border-dashed border-brand bg-surface-2 px-6 py-8 text-center transition hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           <p className="text-base font-semibold text-brand-dark">
             {resumeFileName ? "Change file" : "Click to attach your resume"}
           </p>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 text-xs text-muted">
             PDF or Word document (max 4MB)
           </p>
           {resumeFileName && (
-            <p className="mt-3 text-sm font-medium text-slate-800">
+            <p className="mt-3 text-sm font-medium text-foreground">
               Selected: {resumeFileName}
             </p>
           )}
@@ -337,7 +337,7 @@ export default function ApplyForm() {
           className="sr-only"
           onChange={handleFileChange}
         />
-        <p className="mt-3 text-xs leading-relaxed text-slate-500">
+        <p className="mt-3 text-xs leading-relaxed text-muted">
           Your resume is attached to your application automatically, no separate
           email needed. PDF or Word, up to 4MB.
         </p>
@@ -346,7 +346,7 @@ export default function ApplyForm() {
       {/* --- Signature --- */}
       <section>
         <SectionHeading>Certification & signature</SectionHeading>
-        <p className="mb-5 text-sm leading-relaxed text-slate-700">
+        <p className="mb-5 text-sm leading-relaxed text-muted">
           I certify that all information provided in this application is true,
           correct, and complete to the best of my knowledge. I understand that
           any misrepresentation or omission of facts may result in
@@ -392,7 +392,7 @@ export default function ApplyForm() {
 
 function SectionHeading({ children }) {
   return (
-    <div className="mb-5 border-b border-slate-200 pb-3">
+    <div className="mb-5 border-b border-border pb-3">
       <h2 className="text-sm font-bold uppercase tracking-wider text-brand-dark">
         {children}
       </h2>
@@ -401,7 +401,7 @@ function SectionHeading({ children }) {
 }
 
 const fieldInputClass =
-  "mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
+  "mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 
 // default length caps. these are soft client-side guards - the server
 // action validates + caps too. mostly here so someone pasting a 5mb
@@ -424,7 +424,7 @@ function Field({ label, name, type = "text", required = false, maxLength = FIELD
       : {};
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-700">
+      <span className="block text-xs font-semibold text-muted">
         {label}
         {required && <span className="ml-0.5 text-red-600">*</span>}
       </span>
@@ -447,11 +447,11 @@ function PayRateField() {
   const [val, setVal] = useState("");
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-700">
+      <span className="block text-xs font-semibold text-muted">
         Desired pay rate
       </span>
       <div className="relative mt-1">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">
           $
         </span>
         <input
@@ -464,9 +464,9 @@ function PayRateField() {
             )
           }
           placeholder="18"
-          className="block w-full rounded-md border border-slate-300 bg-white py-2 pl-6 pr-20 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          className="block w-full rounded-md border border-border-strong bg-surface py-2 pl-6 pr-20 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted">
           per hour
         </span>
       </div>
@@ -478,7 +478,7 @@ function PayRateField() {
 function TextArea({ label, name, rows = 3, required = false, maxLength = TEXTAREA_MAX_LEN, ...rest }) {
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-700">
+      <span className="block text-xs font-semibold text-muted">
         {label}
         {required && <span className="ml-0.5 text-red-600">*</span>}
       </span>
@@ -497,7 +497,7 @@ function TextArea({ label, name, rows = 3, required = false, maxLength = TEXTARE
 function Select({ label, name, children, required = false }) {
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-700">
+      <span className="block text-xs font-semibold text-muted">
         {label}
         {required && <span className="ml-0.5 text-red-600">*</span>}
       </span>
@@ -510,7 +510,7 @@ function Select({ label, name, children, required = false }) {
 
 function Checkbox({ name, value, label, defaultChecked = false }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-800">
+    <label className="flex items-center gap-2 text-sm text-foreground">
       <input
         type="checkbox"
         name={name}
@@ -525,13 +525,13 @@ function Checkbox({ name, value, label, defaultChecked = false }) {
 
 function YesNoRow({ name, label, required = false }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 py-3 last:border-b-0">
-      <span className="flex-1 text-sm text-slate-800">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-b-0">
+      <span className="flex-1 text-sm text-foreground">
         {label}
         {required && <span className="ml-0.5 text-red-600">*</span>}
       </span>
       <div className="flex gap-4">
-        <label className="flex items-center gap-1.5 text-sm text-slate-800">
+        <label className="flex items-center gap-1.5 text-sm text-foreground">
           <input
             type="radio"
             name={name}
@@ -541,7 +541,7 @@ function YesNoRow({ name, label, required = false }) {
           />
           Yes
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-slate-800">
+        <label className="flex items-center gap-1.5 text-sm text-foreground">
           <input
             type="radio"
             name={name}
@@ -558,7 +558,7 @@ function YesNoRow({ name, label, required = false }) {
 
 function EmployerBlock({ index }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-5">
+    <div className="rounded-md border border-border bg-surface-2 p-5">
       <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-brand-dark">
         Employer {index}
       </h3>
@@ -590,7 +590,7 @@ function EmployerBlock({ index }) {
 
 function ReferenceBlock({ index }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-5">
+    <div className="rounded-md border border-border bg-surface-2 p-5">
       <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-brand-dark">
         Reference {index}
       </h3>

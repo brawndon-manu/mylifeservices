@@ -18,25 +18,25 @@ export default function StoriesPage() {
       />
 
       {/* RO - Integrity Cottages */}
-      <section id="ro" className="scroll-mt-20 border-t border-slate-200 bg-white">
+      <section id="ro" className="scroll-mt-20 border-t border-border bg-surface">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-5">
               <PortraitPlaceholder initials="RO" />
-              <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">
                 With MLS since 2020
               </p>
             </div>
             <div className="sm:col-span-7">
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 RO&apos;s first place
               </h2>
-              <p className="mt-4 text-lg leading-relaxed text-slate-700">
+              <p className="mt-4 text-lg leading-relaxed text-muted">
                 After years of unstable housing, RO moved into his first
                 studio apartment, supported by MLS and our partner
                 Integrity Cottages.
               </p>
-              <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-700">
+              <div className="mt-6 space-y-4 text-base leading-relaxed text-muted">
                 <p>
                   RO joined My Life Services in 2020 with a clear long-term
                   goal: a place of his own. Before MLS, he didn&apos;t have a
@@ -62,13 +62,13 @@ export default function StoriesPage() {
 
           <figure className="mt-12">
             <MilestonePhotoPlaceholder />
-            <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-slate-600">
+            <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-muted">
               Move-in day photo coming soon, once RO&apos;s consent is on
               file.
             </figcaption>
           </figure>
 
-          <p className="mx-auto mt-12 max-w-3xl text-base leading-relaxed text-slate-700 sm:text-lg">
+          <p className="mx-auto mt-12 max-w-3xl text-base leading-relaxed text-muted sm:text-lg">
             Today, RO lives independently in his studio. MLS staff continue
             to support him with the routines and goals that matter most to
             him.
@@ -77,18 +77,18 @@ export default function StoriesPage() {
       </section>
 
       {/* RR - PBV voucher */}
-      <section id="rr" className="scroll-mt-20 border-t border-slate-200 bg-slate-50">
+      <section id="rr" className="scroll-mt-20 border-t border-border bg-surface-2">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-7">
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 RR&apos;s own front door
               </h2>
-              <p className="mt-4 text-lg leading-relaxed text-slate-700">
+              <p className="mt-4 text-lg leading-relaxed text-muted">
                 RR moved into his own one-bedroom apartment, paying just
                 30% of his income in rent through a Project-Based Voucher.
               </p>
-              <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-700">
+              <div className="mt-6 space-y-4 text-base leading-relaxed text-muted">
                 <p>
                   RR joined My Life Services in 2022. Before MLS, he
                   didn&apos;t have a place of his own, moving between
@@ -111,7 +111,7 @@ export default function StoriesPage() {
             </div>
             <div className="sm:col-span-5">
               <PortraitPlaceholder initials="RR" />
-              <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">
                 With MLS since 2022
               </p>
             </div>
@@ -119,7 +119,7 @@ export default function StoriesPage() {
 
           <figure className="mt-12">
             <VideoPlaceholder />
-            <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-slate-600">
+            <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-muted">
               RR shares his story. Video coming soon.
             </figcaption>
           </figure>
@@ -142,14 +142,14 @@ export default function StoriesPage() {
             <div className="flex flex-col gap-3 sm:col-span-5 sm:items-end">
               <a
                 href="tel:+15626862548"
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-5 py-3 text-base font-medium text-brand transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-surface px-5 py-3 text-base font-medium text-brand transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <PhoneIcon className="h-5 w-5" />
                 (562) 686-2548
               </a>
               <Link
                 href="/services"
-                className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-white px-5 py-3 text-base font-medium text-white transition hover:bg-white hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-white px-5 py-3 text-base font-medium text-white transition hover:bg-surface hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 Explore our services
               </Link>
@@ -168,7 +168,7 @@ function PortraitPlaceholder({ initials }) {
         <p className="text-5xl font-semibold tracking-tight text-brand">
           {initials}
         </p>
-        <p className="mt-3 text-sm text-slate-600">Portrait coming soon</p>
+        <p className="mt-3 text-sm text-muted">Portrait coming soon</p>
       </div>
     </div>
   );
@@ -181,7 +181,7 @@ function MilestonePhotoPlaceholder() {
         <p className="text-xl font-semibold tracking-tight text-brand">
           Photo coming soon
         </p>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm text-muted">
           Finalizing photo releases with our community.
         </p>
       </div>
@@ -196,7 +196,7 @@ function VideoPlaceholder() {
         <p className="text-xl font-semibold tracking-tight text-brand">
           Video coming soon
         </p>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm text-muted">
           Hear the story in RR&apos;s own words.
         </p>
       </div>

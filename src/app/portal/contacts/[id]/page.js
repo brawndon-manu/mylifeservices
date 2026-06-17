@@ -37,13 +37,13 @@ export default async function ContactDetailPage({ params }) {
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
       <Link
         href="/portal/contacts"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to Team Contacts
       </Link>
 
       {/* profile header */}
-      <div className="mt-4 flex items-start gap-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mt-4 flex items-start gap-5 rounded-xl border border-border bg-surface p-6 shadow-sm">
         <Avatar
           name={person.name}
           email={person.email}
@@ -52,7 +52,7 @@ export default async function ContactDetailPage({ params }) {
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               {person.name || person.email}
             </h1>
             {showRole && (
@@ -62,7 +62,7 @@ export default async function ContactDetailPage({ params }) {
             )}
           </div>
           {person.title && (
-            <p className="text-sm text-slate-600">{person.title}</p>
+            <p className="text-sm text-muted">{person.title}</p>
           )}
           <div className="mt-3 space-y-1 text-sm">
             <a
@@ -74,14 +74,14 @@ export default async function ContactDetailPage({ params }) {
             {person.phone && (
               <a
                 href={`tel:${person.phone.replace(/[^\d+]/g, "")}`}
-                className="block text-slate-700 underline-offset-2 hover:underline"
+                className="block text-muted underline-offset-2 hover:underline"
               >
                 {person.phone}
               </a>
             )}
             {person.workingHours && (
-              <p className="text-slate-700">
-                <span className="font-medium text-slate-500">Hours:</span>{" "}
+              <p className="text-muted">
+                <span className="font-medium text-muted">Hours:</span>{" "}
                 {person.workingHours}
               </p>
             )}
@@ -89,7 +89,7 @@ export default async function ContactDetailPage({ params }) {
           {viewer.id === person.id && (
             <Link
               href="/portal/settings"
-              className="mt-3 inline-block text-xs font-medium text-slate-500 underline-offset-2 hover:text-brand hover:underline"
+              className="mt-3 inline-block text-xs font-medium text-muted underline-offset-2 hover:text-brand hover:underline"
             >
               Edit your photo, phone &amp; hours in Settings →
             </Link>

@@ -47,17 +47,17 @@ const values = [
 export default function HomePage() {
   return (
     <>
-      <section className="bg-gradient-to-b from-slate-50 to-white">
+      <section className="bg-gradient-to-b from-surface-2 to-background">
         <div className="mx-auto max-w-5xl px-6 py-20 sm:py-28">
           <div className="grid items-center gap-12 sm:grid-cols-12 sm:gap-16">
             <div className="sm:col-span-7">
               <p className="text-sm font-semibold uppercase tracking-wider text-brand-light">
                 My Life. My Way.
               </p>
-              <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+              <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl">
                 Providing individualized support to adults with intellectual and developmental disabilities.
               </h1>
-              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-700">
+              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted">
                 My Life Services partners with individuals, families, and Regional Center
                 consumers to deliver respectful, person-centered programs that support
                 independence and well-being.
@@ -90,16 +90,16 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-      <section className="border-t border-slate-200 bg-white">
+      <section className="border-t border-border bg-surface">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
               How we work
             </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
               Built around the person, not the program
             </h2>
-            <p className="mt-5 text-base leading-relaxed text-slate-700 sm:text-lg">
+            <p className="mt-5 text-base leading-relaxed text-muted sm:text-lg">
               Every participant comes to us with their own goals, routines, and
               vision for their life. Our job is to build supports that fit,
               not the other way around.
@@ -109,12 +109,12 @@ export default function HomePage() {
             {values.map(({ title, body }) => (
               <li
                 key={title}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-6"
+                className="rounded-xl border border-border bg-surface-2 p-6"
               >
-                <h3 className="text-lg font-semibold tracking-tight text-slate-900">
+                <h3 className="text-lg font-semibold tracking-tight text-foreground">
                   {title}
                 </h3>
-                <p className="mt-3 text-sm leading-relaxed text-slate-700">
+                <p className="mt-3 text-sm leading-relaxed text-muted">
                   {body}
                 </p>
               </li>
@@ -122,23 +122,23 @@ export default function HomePage() {
           </ul>
         </div>
       </section>
-      <section className="border-t border-slate-200 bg-slate-50">
+      <section className="border-t border-border bg-surface-2">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-12">
             <div>
               <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
                 Our service area
               </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 Proudly serving Orange County
               </h2>
-              <p className="mt-5 text-base leading-relaxed text-slate-700 sm:text-lg">
+              <p className="mt-5 text-base leading-relaxed text-muted sm:text-lg">
                 My Life Services supports individuals and families across Orange
                 County, in coordination with the Regional Center of Orange
                 County.
               </p>
             </div>
-            <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+            <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
               <iframe
                 title="Map of Orange County, California"
                 src={OC_MAP_SRC}
@@ -152,16 +152,16 @@ export default function HomePage() {
         </div>
       </section>
       <ServicesOverview />
-      <section className="border-t border-slate-200 bg-white">
+      <section className="border-t border-border bg-surface">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <header className="mb-12 max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
               Real stories
             </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
               What independence looks like
             </h2>
-            <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+            <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">
               Every participant&apos;s path is their own. Here are a few of
               the stories behind the work.
             </p>
@@ -171,20 +171,20 @@ export default function HomePage() {
               <li key={initials}>
                 <Link
                   href={href}
-                  className="group flex h-full flex-col rounded-xl border border-slate-200 bg-slate-50 p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  className="group flex h-full flex-col rounded-xl border border-border bg-surface-2 p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
                   <div className="flex aspect-square w-full items-center justify-center rounded-lg border-2 border-dashed border-brand-light bg-sky-50">
                     <p className="text-3xl font-semibold tracking-tight text-brand">
                       {initials}
                     </p>
                   </div>
-                  <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">
                     {since}
                   </p>
-                  <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">
+                  <h3 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
                     {title}
                   </h3>
-                  <p className="mt-2 flex-1 text-sm leading-relaxed text-slate-700">
+                  <p className="mt-2 flex-1 text-sm leading-relaxed text-muted">
                     {teaser}
                   </p>
                   <p className="mt-5 text-sm font-medium text-brand-light group-hover:text-brand">
@@ -204,7 +204,7 @@ export default function HomePage() {
                 <p className="text-lg font-semibold tracking-tight text-brand">
                   This space reserved for someone&apos;s story.
                 </p>
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-sm text-muted">
                   More coming as our community shares.
                 </p>
               </div>
@@ -212,17 +212,17 @@ export default function HomePage() {
           </ul>
         </div>
       </section>
-      <section className="border-t border-slate-200 bg-gradient-to-b from-sky-50 to-white">
+      <section className="border-t border-border bg-gradient-to-b from-surface-2 to-background">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <div className="max-w-2xl">
               <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
                 This Week in My Life Services
               </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 See what our community is up to
               </h2>
-              <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+              <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">
                 Highlights from the people we support and the team behind
                 them, plus a look at what&apos;s coming up. Updated as our
                 community shares.

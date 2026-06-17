@@ -21,19 +21,31 @@
   --accent-strong: #0e5379;
 }
 
-/* OLED dark: true black page with layered near-black surfaces. */
+/* Dim: soft, layered dark grays. the default dark appearance, surfaces step
+   up like the light theme's white -> slate-50 -> slate-100 do. */
 .dark {
-  --background: #000000;
-  --surface: #0d0d0f;
-  --surface-2: #161619;
-  --surface-3: #1e1e22;
-  --border: #262629;
-  --border-strong: #34343a;
-  --foreground: #e8e8ea;
-  --muted: #a1a1ab;
-  --faint: #6b6b73;
-  --accent: #38b6ef;       /* lightened so links read on black */
+  --background: #14161b;
+  --surface: #1b1e25;
+  --surface-2: #22262e;
+  --surface-3: #2a2f38;
+  --border: #313742;
+  --border-strong: #3f4654;
+  --foreground: #e7e8ec;
+  --muted: #a3a8b3;
+  --faint: #6f7682;
+  --accent: #38b6ef;       /* lightened so links read on dark */
   --accent-strong: #7dd3fc;
+}
+
+/* Night: pure OLED black. layered on top of .dark, overriding just the
+   background/surface/border tokens to true black + near-black. */
+.dark.night {
+  --background: #000000;
+  --surface: #0b0b0d;
+  --surface-2: #131316;
+  --surface-3: #1a1a1f;
+  --border: #232327;
+  --border-strong: #303036;
 }
 
 @theme inline {
@@ -62,3 +74,55 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* accent tints in dark. the colored chips / callouts / badges across the site
+   use light Tailwind tints (bg-amber-50, text-rose-700, etc.); rather than add
+   dark: variants to ~150 scattered usages (many in lib constant strings), this
+   centralized layer remaps those accent utilities to soft, translucent dark
+   versions when a dark theme is active. neutrals stay on the tokens above. */
+.dark .bg-sky-50,
+.dark .bg-sky-100 { background-color: color-mix(in srgb, #0ea5e9 15%, transparent); }
+.dark .bg-sky-200 { background-color: color-mix(in srgb, #0ea5e9 24%, transparent); }
+.dark .bg-amber-50,
+.dark .bg-amber-100 { background-color: color-mix(in srgb, #f59e0b 15%, transparent); }
+.dark .bg-amber-200,
+.dark .bg-amber-300 { background-color: color-mix(in srgb, #f59e0b 24%, transparent); }
+.dark .bg-emerald-50,
+.dark .bg-emerald-100 { background-color: color-mix(in srgb, #10b981 15%, transparent); }
+.dark .bg-emerald-200 { background-color: color-mix(in srgb, #10b981 24%, transparent); }
+.dark .bg-rose-50,
+.dark .bg-rose-100 { background-color: color-mix(in srgb, #f43f5e 15%, transparent); }
+.dark .bg-rose-200 { background-color: color-mix(in srgb, #f43f5e 24%, transparent); }
+.dark .bg-red-50,
+.dark .bg-red-100 { background-color: color-mix(in srgb, #ef4444 15%, transparent); }
+.dark .bg-violet-100 { background-color: color-mix(in srgb, #8b5cf6 18%, transparent); }
+.dark .bg-teal-100 { background-color: color-mix(in srgb, #14b8a6 18%, transparent); }
+
+.dark .border-sky-200 { border-color: color-mix(in srgb, #0ea5e9 35%, transparent); }
+.dark .border-amber-200,
+.dark .border-amber-300 { border-color: color-mix(in srgb, #f59e0b 35%, transparent); }
+.dark .border-emerald-200 { border-color: color-mix(in srgb, #10b981 35%, transparent); }
+.dark .border-rose-200,
+.dark .border-rose-300 { border-color: color-mix(in srgb, #f43f5e 35%, transparent); }
+.dark .border-red-200 { border-color: color-mix(in srgb, #ef4444 35%, transparent); }
+
+.dark .text-sky-700,
+.dark .text-sky-800 { color: #7dd3fc; }
+.dark .text-amber-700,
+.dark .text-amber-800,
+.dark .text-amber-900 { color: #fcd34d; }
+.dark .text-emerald-700,
+.dark .text-emerald-800,
+.dark .text-emerald-900 { color: #6ee7b7; }
+.dark .text-rose-700,
+.dark .text-rose-800,
+.dark .text-rose-900 { color: #fda4af; }
+.dark .text-red-700,
+.dark .text-red-900 { color: #fca5a5; }
+.dark .text-violet-800 { color: #c4b5fd; }
+.dark .text-teal-800 { color: #5eead4; }
+
+/* brand-colored text/links read low-contrast on dark; lift them to the
+   lighter accent token so they stay legible. */
+.dark .text-brand { color: var(--accent); }
+.dark .text-brand-dark { color: var(--accent-strong); }

@@ -81,10 +81,10 @@ export default async function ContactsPage({ searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Portal
       </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Team Contacts
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted">
         Find a coworker, put a face to a name, or look up a community
         resource. Update your own photo and phone in{" "}
         <Link href="/portal/settings" className="text-brand underline-offset-2 hover:underline">
@@ -103,7 +103,7 @@ export default async function ContactsPage({ searchParams }) {
         {/* left rail: filters + community resources */}
         <aside className="space-y-8 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
               Filter
             </p>
             <nav className="mt-3 flex flex-wrap gap-2 lg:flex-col">
@@ -121,7 +121,7 @@ export default async function ContactsPage({ searchParams }) {
 
           <div>
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 Resources
               </p>
               {elevated && pendingResources > 0 && (
@@ -136,23 +136,23 @@ export default async function ContactsPage({ searchParams }) {
 
             <div className="mt-3 space-y-2">
               {resources.length === 0 ? (
-                <p className="text-sm text-slate-500">No resources yet.</p>
+                <p className="text-sm text-muted">No resources yet.</p>
               ) : (
                 orderedCategories.map((cat) => (
                   <details
                     key={cat}
-                    className="group rounded-lg border border-slate-200 bg-white"
+                    className="group rounded-lg border border-border bg-surface"
                   >
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
                       <span>{cat}</span>
                       <span className="flex items-center gap-2">
-                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        <span className="rounded-full bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-muted">
                           {byCategory.get(cat).length}
                         </span>
-                        <ChevronIcon className="h-3.5 w-3.5 text-slate-400 transition-transform group-open:rotate-180" />
+                        <ChevronIcon className="h-3.5 w-3.5 text-faint transition-transform group-open:rotate-180" />
                       </span>
                     </summary>
-                    <div className="space-y-2 border-t border-slate-100 p-2">
+                    <div className="space-y-2 border-t border-border p-2">
                       {byCategory.get(cat).map((r) => (
                         <ResourceCard key={r.id} r={r} elevated={elevated} />
                       ))}
@@ -174,14 +174,14 @@ export default async function ContactsPage({ searchParams }) {
         {/* directory grid - own scroll on desktop so the left rail stays put */}
         <div className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           {people.length === 0 ? (
-            <p className="text-sm text-slate-600">No one in this group.</p>
+            <p className="text-sm text-muted">No one in this group.</p>
           ) : (
             <ul className="grid gap-4 sm:grid-cols-2">
               {people.map((p) => (
                 <li key={p.id}>
                   <Link
                     href={`/portal/contacts/${p.id}`}
-                    className="flex h-full gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                    className="flex h-full gap-4 rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                   >
                     <Avatar
                       name={p.name}
@@ -191,7 +191,7 @@ export default async function ContactsPage({ searchParams }) {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900">
+                        <span className="font-semibold text-foreground">
                           {p.name || p.email}
                         </span>
                         {showRoles && (
@@ -201,13 +201,13 @@ export default async function ContactsPage({ searchParams }) {
                         )}
                       </div>
                       {p.title && (
-                        <p className="text-sm text-slate-600">{p.title}</p>
+                        <p className="text-sm text-muted">{p.title}</p>
                       )}
                       <p className="mt-1 truncate text-sm text-brand">
                         {p.email}
                       </p>
                       {p.phone && (
-                        <p className="text-sm text-slate-700">{p.phone}</p>
+                        <p className="text-sm text-muted">{p.phone}</p>
                       )}
                     </div>
                   </Link>
@@ -224,16 +224,16 @@ export default async function ContactsPage({ searchParams }) {
 function ResourceCard({ r, elevated }) {
   const phone = formatUSPhone(r.phone);
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
-      <p className="font-semibold text-slate-900">{r.name}</p>
+    <div className="rounded-lg border border-border bg-surface p-3 text-sm shadow-sm">
+      <p className="font-semibold text-foreground">{r.name}</p>
       {r.notes && (
-        <p className="mt-1 text-xs leading-relaxed text-slate-600">{r.notes}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">{r.notes}</p>
       )}
       <div className="mt-1.5 space-y-0.5">
         {phone && (
           <a
             href={`tel:${phone.replace(/[^\d+]/g, "")}`}
-            className="block text-slate-700 underline-offset-2 hover:underline"
+            className="block text-muted underline-offset-2 hover:underline"
           >
             {phone}
           </a>
@@ -295,7 +295,7 @@ function FilterCard({ href, label, active }) {
       className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
         active
           ? "border-brand-light bg-sky-50 text-brand"
-          : "border-slate-200 bg-white text-slate-700 hover:border-brand-light hover:text-brand"
+          : "border-border bg-surface text-muted hover:border-brand-light hover:text-brand"
       }`}
     >
       {label}

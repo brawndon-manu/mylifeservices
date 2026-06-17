@@ -26,30 +26,30 @@ export default async function ResourceReviewPage() {
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
       <Link
         href="/portal/contacts"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to Team Contacts
       </Link>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Resource review
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted">
         Approve a resource to add it to the directory, or reject it.
       </p>
 
       <div className="mt-8 space-y-4">
         {pending.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border-strong bg-surface p-10 text-center text-sm text-muted">
             Nothing waiting for review.
           </div>
         ) : (
           pending.map((r) => (
             <article
               key={r.id}
-              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="rounded-xl border border-border bg-surface p-5 shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
-                <h2 className="font-semibold text-slate-900">{r.name}</h2>
+                <h2 className="font-semibold text-foreground">{r.name}</h2>
                 {r.category && (
                   <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">
                     {r.category}
@@ -57,20 +57,20 @@ export default async function ResourceReviewPage() {
                 )}
               </div>
               {r.notes && (
-                <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                <p className="mt-1 text-sm leading-relaxed text-muted">
                   {r.notes}
                 </p>
               )}
-              <div className="mt-2 space-y-0.5 text-sm text-slate-700">
+              <div className="mt-2 space-y-0.5 text-sm text-muted">
                 {r.phone && <p>{r.phone}</p>}
                 {r.email && <p>{r.email}</p>}
                 {r.website && <p className="truncate">{r.website}</p>}
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-muted">
                 Suggested by {r.submittedBy?.name || r.submittedBy?.email}
               </p>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
                 <form action={approveResource.bind(null, r.id)}>
                   <button
                     type="submit"
@@ -88,7 +88,7 @@ export default async function ResourceReviewPage() {
                     name="note"
                     maxLength={RESOURCE_NOTES_MAX}
                     placeholder="Reason (optional)"
-                    className="w-40 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    className="w-40 rounded-md border border-border-strong px-2 py-1.5 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   />
                   <button
                     type="submit"

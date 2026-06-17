@@ -200,10 +200,10 @@ export default async function EditUserPage({ params, searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         IT Admin
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Edit user
       </h1>
-      <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 break-words">
+      <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted break-words">
         Manage role and account status for{" "}
         <span className="font-mono text-sm">{target.email}</span>.
       </p>
@@ -238,15 +238,15 @@ export default async function EditUserPage({ params, searchParams }) {
       )}
 
       {/* Edit name + role form */}
-      <div className="mt-10 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+      <div className="mt-10 rounded-xl border border-border bg-surface p-6 sm:p-8">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Profile + role
         </h2>
         <form action={updateBound} className="mt-6 space-y-6">
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
               Email
             </label>
@@ -255,9 +255,9 @@ export default async function EditUserPage({ params, searchParams }) {
               type="email"
               value={target.email}
               disabled
-              className="mt-1 block w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-500 shadow-sm"
+              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Permanent sign-in identity. Cannot be changed.
             </p>
           </div>
@@ -265,7 +265,7 @@ export default async function EditUserPage({ params, searchParams }) {
           <div>
             <label
               htmlFor="name"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
               Display name <span className="text-rose-600">*</span>
             </label>
@@ -276,19 +276,19 @@ export default async function EditUserPage({ params, searchParams }) {
               required
               maxLength={NAME_MAX_LEN}
               defaultValue={target.name ?? ""}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Up to {NAME_MAX_LEN} characters. Editable by the user in
               Settings.
             </p>
           </div>
 
           <fieldset>
-            <legend className="block text-sm font-medium text-slate-700">
-              Job title <span className="text-slate-400">(optional)</span>
+            <legend className="block text-sm font-medium text-muted">
+              Job title <span className="text-faint">(optional)</span>
             </legend>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Position at MLS. Separate from the portal privilege role
               below.
             </p>
@@ -302,9 +302,9 @@ export default async function EditUserPage({ params, searchParams }) {
           <div>
             <label
               htmlFor="hireDate"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Hire date <span className="text-slate-400">(optional)</span>
+              Hire date <span className="text-faint">(optional)</span>
             </label>
             <input
               id="hireDate"
@@ -315,9 +315,9 @@ export default async function EditUserPage({ params, searchParams }) {
                   ? target.hireDate.toISOString().split("T")[0]
                   : ""
               }
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Start date at MLS. Displayed on the admin list with tenure
               (e.g. &quot;3y 2mo&quot;).
             </p>
@@ -326,9 +326,9 @@ export default async function EditUserPage({ params, searchParams }) {
           <div>
             <label
               htmlFor="phone"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Phone <span className="text-slate-400">(optional)</span>
+              Phone <span className="text-faint">(optional)</span>
             </label>
             <PhoneInput
               id="phone"
@@ -337,9 +337,9 @@ export default async function EditUserPage({ params, searchParams }) {
               defaultValue={target.phone ?? ""}
               autoComplete="off"
               placeholder="(909) 555-0123"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Shows on the Team Contacts directory. They can also set this
               themselves in Settings.
             </p>
@@ -348,9 +348,9 @@ export default async function EditUserPage({ params, searchParams }) {
           <div>
             <label
               htmlFor="workingHours"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Working hours <span className="text-slate-400">(optional)</span>
+              Working hours <span className="text-faint">(optional)</span>
             </label>
             <input
               id="workingHours"
@@ -360,18 +360,18 @@ export default async function EditUserPage({ params, searchParams }) {
               defaultValue={target.workingHours ?? ""}
               autoComplete="off"
               placeholder="e.g. Mon–Fri 9am–5pm"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Shown on their contact page. They can also set this in Settings.
             </p>
           </div>
 
           <fieldset>
-            <legend className="block text-sm font-medium text-slate-700">
+            <legend className="block text-sm font-medium text-muted">
               Privilege role <span className="text-rose-600">*</span>
             </legend>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Controls portal permissions. Elevated roles (IT, Admin,
               Manager) can manage users and post announcements.
             </p>
@@ -382,7 +382,7 @@ export default async function EditUserPage({ params, searchParams }) {
                   className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
                     value === "SUPER"
                       ? "border-rose-200 bg-rose-50 hover:border-rose-300"
-                      : "border-slate-200 bg-slate-50 hover:border-brand-light hover:bg-sky-50"
+                      : "border-border bg-surface-2 hover:border-brand-light hover:bg-sky-50"
                   }`}
                 >
                   <input
@@ -396,12 +396,12 @@ export default async function EditUserPage({ params, searchParams }) {
                   <div className="flex-1">
                     <div
                       className={`text-sm font-medium ${
-                        value === "SUPER" ? "text-rose-700" : "text-slate-900"
+                        value === "SUPER" ? "text-rose-700" : "text-foreground"
                       }`}
                     >
                       {ROLE_LABELS[value]}
                     </div>
-                    <div className="mt-0.5 text-xs text-slate-600">
+                    <div className="mt-0.5 text-xs text-muted">
                       {ROLE_DESCRIPTIONS[value]}
                     </div>
                   </div>
@@ -410,10 +410,10 @@ export default async function EditUserPage({ params, searchParams }) {
             </div>
           </fieldset>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-6">
+          <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
             <Link
               href="/portal/admin"
-              className="text-sm font-medium text-slate-600 transition hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="text-sm font-medium text-muted transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               Cancel
             </Link>
@@ -428,13 +428,13 @@ export default async function EditUserPage({ params, searchParams }) {
       </div>
 
       {/* Activate / deactivate */}
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+      <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-8">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Account status
         </h2>
         {isDeactivated ? (
           <>
-            <p className="mt-3 text-sm leading-relaxed text-slate-700">
+            <p className="mt-3 text-sm leading-relaxed text-muted">
               Restore portal access. They&apos;ll be able to sign in again
               with the role currently set above.
             </p>
@@ -449,7 +449,7 @@ export default async function EditUserPage({ params, searchParams }) {
           </>
         ) : (
           <>
-            <p className="mt-3 text-sm leading-relaxed text-slate-700">
+            <p className="mt-3 text-sm leading-relaxed text-muted">
               Block this user from signing in. Their account stays in the
               database with all data intact; you can reactivate at any
               time. Use this when someone leaves the company.
@@ -457,7 +457,7 @@ export default async function EditUserPage({ params, searchParams }) {
             <form action={deactivateBound} className="mt-5">
               <button
                 type="submit"
-                className="rounded-md border border-rose-300 bg-white px-5 py-2.5 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
+                className="rounded-md border border-rose-300 bg-surface px-5 py-2.5 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
               >
                 Deactivate user
               </button>

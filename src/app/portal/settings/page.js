@@ -119,10 +119,10 @@ export default async function SettingsPage({ searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Settings
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Your account
       </h1>
-      <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700">
+      <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
         Update how you appear in the portal: your name, photo, and phone
         show on the Team Contacts directory. Your email and role are
         managed by IT and can&apos;t be edited here.
@@ -156,12 +156,12 @@ export default async function SettingsPage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-10 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
+      <div className="mt-10 rounded-xl border border-border bg-surface p-6 sm:p-8">
         <form action={updateProfile} className="space-y-6">
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
               Email
             </label>
@@ -170,14 +170,14 @@ export default async function SettingsPage({ searchParams }) {
               type="email"
               value={user.email}
               disabled
-              className="mt-1 block w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-500 shadow-sm"
+              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
             />
           </div>
 
           <div>
             <label
               htmlFor="role"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
               Role
             </label>
@@ -186,14 +186,14 @@ export default async function SettingsPage({ searchParams }) {
               type="text"
               value={user.role}
               disabled
-              className="mt-1 block w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-500 shadow-sm"
+              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
             />
           </div>
 
           <div>
             <label
               htmlFor="name"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
               Display name
             </label>
@@ -206,9 +206,9 @@ export default async function SettingsPage({ searchParams }) {
               defaultValue={user.name ?? ""}
               autoComplete="name"
               placeholder="How you want your name to appear"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Up to {NAME_MAX_LEN} characters. Shows on the dashboard
               greeting and in the admin user list.
             </p>
@@ -217,9 +217,9 @@ export default async function SettingsPage({ searchParams }) {
           <div>
             <label
               htmlFor="phone"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Phone <span className="text-slate-400">(optional)</span>
+              Phone <span className="text-faint">(optional)</span>
             </label>
             <PhoneInput
               id="phone"
@@ -228,9 +228,9 @@ export default async function SettingsPage({ searchParams }) {
               defaultValue={user.phone ?? ""}
               autoComplete="tel"
               placeholder="(909) 555-0123"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Shows on the Team Contacts directory. Leave blank to keep it
               private.
             </p>
@@ -239,9 +239,9 @@ export default async function SettingsPage({ searchParams }) {
           <div>
             <label
               htmlFor="workingHours"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Working hours <span className="text-slate-400">(optional)</span>
+              Working hours <span className="text-faint">(optional)</span>
             </label>
             <input
               id="workingHours"
@@ -251,9 +251,9 @@ export default async function SettingsPage({ searchParams }) {
               defaultValue={user.workingHours ?? ""}
               autoComplete="off"
               placeholder="e.g. Mon–Fri 9am–5pm"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Shows on your contact page so coworkers know when to reach you.
             </p>
           </div>
@@ -261,9 +261,9 @@ export default async function SettingsPage({ searchParams }) {
           <div>
             <label
               htmlFor="photo"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Photo <span className="text-slate-400">(optional)</span>
+              Photo <span className="text-faint">(optional)</span>
             </label>
             <div className="mt-2 flex items-center gap-4">
               <Avatar
@@ -278,10 +278,10 @@ export default async function SettingsPage({ searchParams }) {
                   name="photo"
                   type="file"
                   accept={IMAGE_ACCEPT.join(",")}
-                  className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
+                  className="block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
                 />
                 {user.image && (
-                  <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                  <label className="mt-2 flex items-center gap-2 text-xs text-muted">
                     <input
                       type="checkbox"
                       name="removePhoto"
@@ -292,7 +292,7 @@ export default async function SettingsPage({ searchParams }) {
                 )}
               </div>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               A headshot helps coworkers put a face to your name. JPG, PNG,
               WebP, or GIF, up to {Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.
             </p>

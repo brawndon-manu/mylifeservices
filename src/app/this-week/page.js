@@ -27,11 +27,11 @@ export default async function ThisWeekPage() {
         intro="Highlights from the people we support and the team behind them, plus a look at what's coming up. Shared with permission."
       />
 
-      <section className="border-t border-slate-200 bg-white">
+      <section className="border-t border-border bg-surface">
         <div className="mx-auto max-w-4xl px-6 py-16 sm:py-20">
           {items.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
-              <p className="text-base text-slate-600">
+            <div className="rounded-xl border border-dashed border-border-strong bg-surface-2 p-12 text-center">
+              <p className="text-base text-muted">
                 Nothing posted yet. Check back soon.
               </p>
             </div>
@@ -44,7 +44,7 @@ export default async function ThisWeekPage() {
                 >
                   {item.imageUrl && (
                     <div className="sm:col-span-5">
-                      <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="overflow-hidden rounded-xl border border-border">
                         <Image
                           src={item.imageUrl}
                           alt=""
@@ -66,15 +66,15 @@ export default async function ThisWeekPage() {
                         {categoryLabel(item.category)}
                       </span>
                       {item.eventDate && (
-                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted">
                           {formatDate(item.eventDate)}
                         </span>
                       )}
                     </div>
-                    <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                    <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
                       {item.title}
                     </h2>
-                    <p className="mt-3 whitespace-pre-wrap text-base leading-relaxed text-slate-700">
+                    <p className="mt-3 whitespace-pre-wrap text-base leading-relaxed text-muted">
                       {item.body}
                     </p>
                   </div>

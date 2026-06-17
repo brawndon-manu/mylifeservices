@@ -21,11 +21,11 @@ export default async function NewDevicePage({ searchParams }) {
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
       <Link
         href="/portal/devices"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to Device Management
       </Link>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Add a device
       </h1>
 
@@ -38,7 +38,7 @@ export default async function NewDevicePage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
+      <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-8">
         <DeviceForm action={addDevice} submitLabel="Add device" />
       </div>
     </section>

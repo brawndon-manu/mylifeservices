@@ -25,7 +25,7 @@ export default function HelpTip({ label, children }) {
       {open && (
         <span
           role="tooltip"
-          className="absolute left-0 top-6 z-30 block w-72 rounded-md border border-slate-200 bg-white p-3 text-left text-xs font-normal not-italic leading-relaxed text-slate-600 shadow-lg"
+          className="absolute left-0 top-6 z-30 block w-72 rounded-md border border-border bg-surface p-3 text-left text-xs font-normal not-italic leading-relaxed text-muted shadow-lg"
         >
           {children}
         </span>

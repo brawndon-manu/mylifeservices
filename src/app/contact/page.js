@@ -63,10 +63,10 @@ export default function ContactPage() {
 
       <section className="mx-auto max-w-5xl px-6 pt-16">
         <div className="mx-auto max-w-2xl">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Send us a message
           </h2>
-          <p className="mt-3 text-base leading-relaxed text-slate-700">
+          <p className="mt-3 text-base leading-relaxed text-muted">
             Fill out the form and we&apos;ll get back to you. Prefer to reach us
             directly? Our details are just below.
           </p>
@@ -77,7 +77,7 @@ export default function ContactPage() {
       </section>
 
       <section className="mx-auto max-w-5xl px-6 py-16">
-        <h2 className="mb-8 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+        <h2 className="mb-8 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Or reach us directly
         </h2>
         <div className="grid gap-8 lg:grid-cols-2 lg:items-stretch">
@@ -89,17 +89,17 @@ export default function ContactPage() {
                   <Icon className="h-6 w-6" />
                 </span>
                 <div className="min-w-0">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
                     {label}
                   </h2>
-                  <p className="mt-1 whitespace-pre-line break-words text-base font-medium text-slate-900 group-hover:text-brand-dark">
+                  <p className="mt-1 whitespace-pre-line break-words text-base font-medium text-foreground group-hover:text-brand-dark">
                     {value}
                   </p>
                 </div>
               </>
             );
             const base =
-              "group flex h-full items-start gap-4 rounded-xl border border-slate-200 bg-white p-6 transition";
+              "group flex h-full items-start gap-4 rounded-xl border border-border bg-surface p-6 transition";
             return (
               <li key={label}>
                 {href ? (
@@ -116,7 +116,7 @@ export default function ContactPage() {
             );
           })}
           </ul>
-          <div className="flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-border shadow-sm">
             <iframe
               title="Map to the My Life Services office in Orange, CA"
               src={MAP_SRC}
@@ -130,7 +130,7 @@ export default function ContactPage() {
               href="https://www.google.com/maps/dir/?api=1&destination=2230+W+Chapman+Ave%2C+Orange%2C+CA+92868"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 border-t border-slate-200 bg-white px-4 py-3 text-sm font-medium text-brand-dark transition hover:text-brand"
+              className="flex items-center justify-center gap-1.5 border-t border-border bg-surface px-4 py-3 text-sm font-medium text-brand-dark transition hover:text-brand"
             >
               Get directions
               <span aria-hidden="true">→</span>
@@ -141,7 +141,7 @@ export default function ContactPage() {
 
       {/* Closing CTA - gradient card on white so it doesn't blend into the
           brand-light footer band right below it. */}
-      <section className="bg-white">
+      <section className="bg-surface">
         <div className="mx-auto max-w-5xl px-6 pb-16">
           <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-dark to-brand px-8 py-12 text-center text-white sm:px-12 sm:py-14">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -154,14 +154,14 @@ export default function ContactPage() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
                 href="tel:+15626862548"
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-6 py-3 text-base font-medium text-brand-dark shadow-sm transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-surface px-6 py-3 text-base font-medium text-brand-dark shadow-sm transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <PhoneIcon className="h-5 w-5" />
                 (562) 686-2548
               </a>
               <a
                 href="mailto:contact@mylifeservicesinc.com"
-                className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-white px-6 py-3 text-base font-medium text-white transition hover:bg-white hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-white px-6 py-3 text-base font-medium text-white transition hover:bg-surface hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <EnvelopeIcon className="h-5 w-5" />
                 Email us

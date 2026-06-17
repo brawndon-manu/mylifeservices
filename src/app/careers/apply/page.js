@@ -17,9 +17,9 @@ export default function ApplyPage() {
         title="Employment application"
         intro="Tell us about your background and how you’d like to support adults with intellectual and developmental disabilities at My Life Services. The form takes about 10–15 minutes to complete."
       />
-      <section className="bg-white">
+      <section className="bg-surface">
         <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-          <Suspense fallback={<p className="text-slate-600">Loading form…</p>}>
+          <Suspense fallback={<p className="text-muted">Loading form…</p>}>
             <ApplyForm />
           </Suspense>
         </div>

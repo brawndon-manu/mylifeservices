@@ -55,27 +55,27 @@ export default async function CareerRolePage({ params }) {
 function RoleDetails({ role }) {
   return (
     <>
-      <section className="border-b border-slate-200 bg-white">
+      <section className="border-b border-border bg-surface">
         <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             What you’ll do in this role
           </h2>
-          <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+          <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">
             {role.whatYoullDo}
           </p>
         </div>
       </section>
 
-      <section className="border-b border-slate-200 bg-slate-50">
+      <section className="border-b border-border bg-surface-2">
         <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Key responsibilities
           </h2>
           <ul className="mt-6 space-y-3">
             {role.responsibilities.map((item) => (
               <li
                 key={item}
-                className="flex items-start gap-3 text-base leading-relaxed text-slate-700"
+                className="flex items-start gap-3 text-base leading-relaxed text-muted"
               >
                 <span
                   aria-hidden="true"
@@ -88,16 +88,16 @@ function RoleDetails({ role }) {
         </div>
       </section>
 
-      <section className="border-b border-slate-200 bg-white">
+      <section className="border-b border-border bg-surface">
         <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             What this looks like day-to-day
           </h2>
           <ul className="mt-6 space-y-3">
             {role.dayToDay.map((item) => (
               <li
                 key={item}
-                className="flex items-start gap-3 text-base leading-relaxed text-slate-700"
+                className="flex items-start gap-3 text-base leading-relaxed text-muted"
               >
                 <span
                   aria-hidden="true"
@@ -111,12 +111,12 @@ function RoleDetails({ role }) {
       </section>
 
       {role.whyWork && (
-        <section className="border-b border-slate-200 bg-slate-50">
+        <section className="border-b border-border bg-surface-2">
           <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               {role.whyWork.heading}
             </h2>
-            <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+            <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">
               {role.whyWork.body}
             </p>
           </div>
@@ -128,9 +128,9 @@ function RoleDetails({ role }) {
 
 function RolePlaceholder({ baseName }) {
   return (
-    <section className="border-b border-slate-200 bg-white">
+    <section className="border-b border-border bg-surface">
       <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-        <p className="text-base leading-relaxed text-slate-700 sm:text-lg">
+        <p className="text-base leading-relaxed text-muted sm:text-lg">
           A full role description for {baseName} is being added. In the
           meantime, you can still apply below or reach out to our team with any
           questions.
@@ -142,12 +142,12 @@ function RolePlaceholder({ baseName }) {
 
 function ApplyCta({ baseName, slug }) {
   return (
-    <section className="bg-white">
+    <section className="bg-surface">
       <div className="mx-auto max-w-3xl px-6 py-16 text-center sm:py-20">
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Ready to apply?
         </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
           Submit our online application. {baseName} will be pre-selected on the
           form so you can focus on the rest of the details.
         </p>

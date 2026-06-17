@@ -33,7 +33,7 @@ export default async function PortalDashboard() {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Welcome back
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         {user?.name ? (
           <>
             Hi, {user.name}
@@ -50,9 +50,9 @@ export default async function PortalDashboard() {
         )}
       </h1>
       {user?.title && (
-        <p className="mt-2 text-base text-slate-600">{user.title}</p>
+        <p className="mt-2 text-base text-muted">{user.title}</p>
       )}
-      <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
+      <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
         {ROLE_GREETING[role]}
       </p>
 
@@ -89,20 +89,20 @@ export default async function PortalDashboard() {
       <div className="mt-6">
         <Link
           href="/portal/feedback"
-          className="group block rounded-xl border border-amber-200 bg-amber-50 p-6 transition hover:border-amber-300 hover:bg-amber-100/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+          className="group block rounded-xl border border-amber-200 bg-amber-50 p-6 transition hover:border-amber-300 hover:bg-amber-100/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 dark:border-amber-900/50 dark:bg-amber-950/25 dark:hover:border-amber-800 dark:hover:bg-amber-900/30"
         >
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-tight text-amber-900">
+            <h2 className="text-lg font-semibold tracking-tight text-amber-900 dark:text-amber-300">
               Suggestions &amp; Bugs
             </h2>
             <span
               aria-hidden="true"
-              className="text-amber-700 transition-transform group-hover:translate-x-0.5"
+              className="text-amber-700 transition-transform group-hover:translate-x-0.5 dark:text-amber-400"
             >
               →
             </span>
           </div>
-          <p className="mt-3 text-sm leading-relaxed text-amber-900/80">
+          <p className="mt-3 text-sm leading-relaxed text-amber-900/80 dark:text-amber-300/80">
             Spot a bug or have an idea to improve things? Post it here; IT
             and management track each item until it&apos;s resolved.
           </p>
@@ -113,7 +113,7 @@ export default async function PortalDashboard() {
         <div className="mt-6">
           <Link
             href="/portal/devices"
-            className="group block rounded-xl border border-slate-300 bg-slate-900 p-6 transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="group block rounded-xl border border-border-strong bg-slate-900 p-6 transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold tracking-tight text-white">
@@ -141,20 +141,20 @@ function LinkCard({ href, title, body }) {
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-slate-200 bg-white p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      className="group rounded-xl border border-border bg-surface p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
           {title}
         </h2>
         <span
           aria-hidden="true"
-          className="text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-brand"
+          className="text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-brand"
         >
           →
         </span>
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-slate-700">{body}</p>
+      <p className="mt-3 text-sm leading-relaxed text-muted">{body}</p>
     </Link>
   );
 }

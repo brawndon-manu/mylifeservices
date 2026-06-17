@@ -9,14 +9,14 @@ export default function CheckEmailPage() {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Almost in
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Check your email
       </h1>
-      <p className="mt-4 text-base leading-relaxed text-slate-700">
+      <p className="mt-4 text-base leading-relaxed text-muted">
         If an account is associated with that email, you&apos;ll receive a
         sign-in link shortly. The link is good for the next 24 hours.
       </p>
-      <p className="mt-6 text-sm text-slate-600">
+      <p className="mt-6 text-sm text-muted">
         Don&apos;t see anything? Check your spam folder, double-check the
         address you entered, or contact IT if you believe you should have
         access.
