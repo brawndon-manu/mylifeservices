@@ -5,20 +5,35 @@
 // inside the effect so it never runs during SSR (it touches `window`).
 //
 // clicking a pin calls onSelect(id) so the parent can open the inline detail
-// panel. hovering a pin shows its name. when selectedId changes the map pans
-// to that pin and opens its tooltip.
+// panel. hovering shows the name. the selected pin grows + pops to the front,
+// and the map pans to it.
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import { categoryColor } from "@/lib/contacts";
 
+// build a colored teardrop pin as a Leaflet divIcon. `big` scales it up for
+// the currently-selected resource.
+function pinIcon(L, color, big) {
+  const w = big ? 36 : 26;
+  const h = big ? 50 : 36;
+  const html =
+    `<svg width="${w}" height="${h}" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 ${big ? 2 : 1}px ${big ? 4 : 1.5}px rgba(0,0,0,0.5))">` +
+    `<path d="M13 0C5.8 0 0 5.8 0 13c0 9.2 13 23 13 23s13-13.8 13-23C26 5.8 20.2 0 13 0z" fill="${color}" stroke="#ffffff" stroke-width="${big ? 2 : 2.5}"/>` +
+    `<circle cx="13" cy="13" r="${big ? 5 : 4.5}" fill="#ffffff"/></svg>`;
+  return L.divIcon({ className: "", html, iconSize: [w, h], iconAnchor: [w / 2, h] });
+}
+
 export default function ResourceMap({ points, onSelect, selectedId }) {
   const ref = useRef(null);
-  // keep the latest onSelect in a ref so markers always call the current one
-  // without rebuilding the map when the callback identity changes.
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
   const mapRef = useRef(null);
   const markersRef = useRef({});
+  const LRef = useRef(null);
+  const prevSelRef = useRef(null);
+
+  const colorFor = (id) =>
+    categoryColor(points.find((p) => p.id === id)?.category);
 
   useEffect(() => {
     let map;
@@ -27,6 +42,7 @@ export default function ResourceMap({ points, onSelect, selectedId }) {
     (async () => {
       const L = (await import("leaflet")).default;
       if (cancelled || !ref.current) return;
+      LRef.current = L;
 
       map = L.map(ref.current, { scrollWheelZoom: false });
       mapRef.current = map;
@@ -39,16 +55,11 @@ export default function ResourceMap({ points, onSelect, selectedId }) {
       markersRef.current = {};
       for (const p of points) {
         if (typeof p.lat !== "number" || typeof p.lng !== "number") continue;
-        // colored teardrop pin (SVG divIcon), one color per category label.
-        // white outline + drop shadow so it stays visible over any tiles.
-        const color = categoryColor(p.category);
-        const html =
-          `<svg width="26" height="36" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,0.45))">` +
-          `<path d="M13 0C5.8 0 0 5.8 0 13c0 9.2 13 23 13 23s13-13.8 13-23C26 5.8 20.2 0 13 0z" fill="${color}" stroke="#ffffff" stroke-width="2.5"/>` +
-          `<circle cx="13" cy="13" r="4.5" fill="#ffffff"/></svg>`;
+        const big = p.id === selectedId;
         const m = L.marker([p.lat, p.lng], {
-          icon: L.divIcon({ className: "", html, iconSize: [26, 36], iconAnchor: [13, 36] }),
+          icon: pinIcon(L, categoryColor(p.category), big),
         }).addTo(map);
+        if (big) m.setZIndexOffset(1000);
         m.bindTooltip(p.name);
         m.on("click", () => selectRef.current?.(p.id));
         markersRef.current[p.id] = m;
@@ -70,11 +81,24 @@ export default function ResourceMap({ points, onSelect, selectedId }) {
     };
   }, [points]);
 
-  // pan to + flag the selected pin when the selection changes.
+  // grow + raise the selected pin, shrink the previously-selected one, pan to it.
   useEffect(() => {
+    const L = LRef.current;
     const map = mapRef.current;
-    const m = selectedId && markersRef.current[selectedId];
-    if (map && m) {
+    const markers = markersRef.current;
+    if (!L || !map) return;
+
+    const prev = prevSelRef.current;
+    if (prev && prev !== selectedId && markers[prev]) {
+      markers[prev].setIcon(pinIcon(L, colorFor(prev), false));
+      markers[prev].setZIndexOffset(0);
+    }
+    prevSelRef.current = selectedId;
+
+    const m = selectedId && markers[selectedId];
+    if (m) {
+      m.setIcon(pinIcon(L, colorFor(selectedId), true));
+      m.setZIndexOffset(1000);
       map.panTo(m.getLatLng());
       m.openTooltip();
     }

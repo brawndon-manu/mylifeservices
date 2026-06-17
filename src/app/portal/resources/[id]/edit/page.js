@@ -31,14 +31,14 @@ export default async function EditResourcePage({ params, searchParams }) {
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
         href={`/portal/resources/${id}`}
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to resource
       </Link>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Edit resource
       </h1>
-      <p className="mt-2 text-sm text-slate-600">{resource.name}</p>
+      <p className="mt-2 text-sm text-muted">{resource.name}</p>
 
       {errorMessage && (
         <div
@@ -49,12 +49,13 @@ export default async function EditResourcePage({ params, searchParams }) {
         </div>
       )}
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
+      <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-8">
         <ResourceForm
           action={updateResource.bind(null, id)}
           mode="edit"
           defaults={resource}
           submitLabel="Save changes"
+          cancelHref={`/portal/resources/${id}`}
         />
       </div>
 
@@ -67,7 +68,7 @@ export default async function EditResourcePage({ params, searchParams }) {
         <form action={deleteResource.bind(null, id)}>
           <ConfirmButton
             message="Remove this resource? This can't be undone."
-            className="rounded-md border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+            className="rounded-md border border-rose-300 bg-surface px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
           >
             Remove
           </ConfirmButton>

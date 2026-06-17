@@ -6,6 +6,7 @@
 // else gets the lean shared set. schedule is a dynamic list of rows that gets
 // serialized into a hidden field for the server action.
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import PhoneInput from "@/components/PhoneInput";
 import {
   RESOURCE_CATEGORIES,
@@ -27,21 +28,39 @@ import {
   subtypesFor,
   isDetailedCategory,
   categoryDescription,
+  parseUsAddress,
 } from "@/lib/contacts";
 
 const INPUT =
-  "mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
-const LABEL = "block text-sm font-medium text-slate-700";
+  "mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
+const LABEL = "block text-sm font-medium text-muted";
 
-export default function ResourceForm({ action, mode = "create", defaults = {}, submitLabel, existing = [] }) {
+export default function ResourceForm({ action, mode = "create", defaults = {}, submitLabel, existing = [], cancelHref = "/portal/resources" }) {
+  const router = useRouter();
   const d = defaults;
   const det = d.details || {};
   const [category, setCategory] = useState(d.category || "");
   const [nameVal, setNameVal] = useState(d.name || "");
   const [cityVal, setCityVal] = useState(d.city || "");
+  const [addressVal, setAddressVal] = useState(d.address || "");
+  const [zipVal, setZipVal] = useState(d.zip || "");
+  // mobile resources (e.g. a mobile food distribution) move around, so they
+  // have no fixed address; this hides + un-requires the location fields.
+  const [addressVaries, setAddressVaries] = useState(!!det.addressVaries);
   // whether the category tile picker is open. open by default until a
   // category is chosen; "Change" reopens it.
   const [picking, setPicking] = useState(false);
+
+  // if a full address is pasted/typed into the street box, split it into the
+  // street / city / zip fields so it doesn't all sit in one field.
+  function splitAddress(text) {
+    if (!/\d{5}/.test(text) || !text.includes(",")) return false;
+    const p = parseUsAddress(text);
+    setAddressVal(p.street || text);
+    if (p.city) setCityVal(p.city);
+    if (p.zip) setZipVal(p.zip);
+    return true;
+  }
   const [rows, setRows] = useState(
     Array.isArray(d.schedule) && d.schedule.length
       ? d.schedule.map((r) => ({
@@ -93,7 +112,17 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
   }
 
   return (
-    <form action={action} className="space-y-10">
+    <form
+      action={action}
+      className="space-y-10"
+      // Enter never submits the form (only the Save button does). in the
+      // street field, Enter splits a full address into the right fields.
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" || e.target.tagName === "TEXTAREA") return;
+        e.preventDefault();
+        if (e.target.id === "address") splitAddress(e.target.value);
+      }}
+    >
       {/* serialized schedule for the server action */}
       <input type="hidden" name="scheduleJson" value={JSON.stringify(rows)} />
 
@@ -125,7 +154,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
               <button
                 type="button"
                 onClick={() => setPicking(true)}
-                className="text-sm font-medium text-slate-500 transition hover:text-brand hover:underline"
+                className="text-sm font-medium text-muted transition hover:text-brand hover:underline"
               >
                 Change
               </button>
@@ -144,18 +173,18 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
                     className={`rounded-lg border p-3 text-left transition ${
                       category === c
                         ? "border-brand bg-sky-50 ring-1 ring-brand"
-                        : "border-slate-200 hover:border-brand-light hover:bg-slate-50"
+                        : "border-border hover:border-brand-light hover:bg-surface-2"
                     }`}
                   >
-                    <span className="block text-sm font-semibold text-slate-900">{c}</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">
+                    <span className="block text-sm font-semibold text-foreground">{c}</span>
+                    <span className="mt-0.5 block text-xs text-muted">
                       {categoryDescription(c)}
                     </span>
                   </button>
                 ))}
               </div>
               {!category && (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-muted">
                   Pick what kind of resource this is. The rest of the form
                   tailors itself to your choice.
                 </p>
@@ -168,7 +197,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
             {subtypes.length > 0 && (
               <div>
                 <label htmlFor="subtype" className={LABEL}>
-                  Resource type <span className="text-slate-400">(optional)</span>
+                  Resource type <span className="text-faint">(optional)</span>
                 </label>
                 <select id="subtype" name="subtype" defaultValue={d.subtype || ""} className={INPUT}>
                   <option value="">Not specified</option>
@@ -189,14 +218,44 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
 
       {/* 2. Location & contact */}
       <Section title="Location and contact">
-        <Field id="address" label="Street address" optional defaultValue={d.address} maxLength={RESOURCE_ADDRESS_MAX} placeholder="123 Main St" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field id="city" label="City" optional value={cityVal} onChange={setCityVal} maxLength={RESOURCE_CITY_MAX} placeholder="Anaheim" />
-          <Field id="state" label="State" optional defaultValue={d.state || "CA"} maxLength={20} placeholder="CA" />
-          <Field id="zip" label="ZIP" optional defaultValue={d.zip} maxLength={12} placeholder="92801" />
-        </div>
+        {/* mobile / on-the-move resources: no fixed address */}
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            name="addressVaries"
+            checked={addressVaries}
+            onChange={(e) => setAddressVaries(e.target.checked)}
+            className="rounded border-border-strong text-brand focus:ring-brand"
+          />
+          Address varies (mobile / on the move, no fixed location)
+        </label>
+        {!addressVaries && (
+          <>
+            <Field
+              id="address"
+              label="Street address"
+              required
+              value={addressVal}
+              onChange={setAddressVal}
+              onBlur={() => splitAddress(addressVal)}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                if (/\d{5}/.test(text) && text.includes(",")) {
+                  e.preventDefault();
+                  splitAddress(text);
+                }
+              }}
+              maxLength={RESOURCE_ADDRESS_MAX}
+              placeholder="123 Main St (paste a full address and it'll split below)"
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field id="city" label="City" required value={cityVal} onChange={setCityVal} maxLength={RESOURCE_CITY_MAX} />
+              <Field id="zip" label="ZIP" optional value={zipVal} onChange={setZipVal} maxLength={12} />
+            </div>
+          </>
+        )}
         <Field id="serviceArea" label="Service area" optional defaultValue={d.serviceArea} maxLength={120} placeholder="e.g. Anaheim residents only" />
-        <Field id="phone" label="Phone" optional type="tel" defaultValue={d.phone} placeholder="(714) 555-0123" />
+        <Field id="phone" label="Phone" required type="tel" defaultValue={d.phone} />
         <Field id="email" label="Email" optional type="email" defaultValue={d.email} placeholder="contact@example.org" />
         <Field id="website" label="Website" optional defaultValue={d.website} placeholder="example.org" />
         <Field id="appointmentLink" label="Appointment link" optional defaultValue={d.appointmentLink} placeholder="Online booking URL, if any" />
@@ -207,7 +266,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
       <Section title="Schedule" hint="Pick the days that share the same hours, set the times once. Add another block for days with different hours (e.g. a 2nd & 4th Saturday).">
         <div className="space-y-3">
           {rows.map((row, i) => (
-            <div key={i} className="rounded-lg border border-slate-200 p-3">
+            <div key={i} className="rounded-lg border border-border p-3">
               {/* day chips + quick presets */}
               <div className="flex flex-wrap items-center gap-1.5">
                 {DAY_OPTIONS.map((dy) => (
@@ -219,7 +278,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
                     className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
                       row.days.includes(dy)
                         ? "bg-brand text-white"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        : "bg-surface-3 text-muted hover:bg-surface-3"
                     }`}
                   >
                     {DAY_ABBR[dy]}
@@ -241,7 +300,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
               {/* frequency + times */}
               <div className="mt-3 grid gap-2 sm:grid-cols-[1.6fr_1fr_1fr_40px] sm:items-end sm:gap-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Frequency</label>
+                  <label className="text-xs font-medium text-muted">Frequency</label>
                   <select value={row.frequency} onChange={(e) => setRow(i, "frequency", e.target.value)} className={INPUT}>
                     {FREQUENCY_OPTIONS.map((f) => (
                       <option key={f} value={f}>{f}</option>
@@ -249,18 +308,18 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Opens</label>
+                  <label className="text-xs font-medium text-muted">Opens</label>
                   <input type="time" value={row.start} onChange={(e) => setRow(i, "start", e.target.value)} className={INPUT} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Closes</label>
+                  <label className="text-xs font-medium text-muted">Closes</label>
                   <input type="time" value={row.end} onChange={(e) => setRow(i, "end", e.target.value)} className={INPUT} />
                 </div>
                 {rows.length > 1 ? (
                   <button
                     type="button"
                     onClick={() => removeRow(i)}
-                    className="flex h-9 w-9 items-center justify-center justify-self-start rounded-md text-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                    className="flex h-9 w-9 items-center justify-center justify-self-start rounded-md text-lg text-faint transition hover:bg-rose-50 hover:text-rose-600"
                     aria-label="Remove this block"
                     title="Remove this block"
                   >
@@ -284,7 +343,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
         <CheckGroup legend="Who it serves" name="whoItServes" options={WHO_IT_SERVES_OPTIONS} selected={d.whoItServes || []} />
         <div>
           <p className={LABEL}>Requirements to get help</p>
-          <p className="text-xs text-slate-500">What a client needs before they can use it. Check all that apply.</p>
+          <p className="text-xs text-muted">What a client needs before they can use it. Check all that apply.</p>
           <div className="mt-2 space-y-2">
             <Toggle name="appointmentRequired" label="Appointment required" checked={d.appointmentRequired} />
             <Toggle name="referralRequired" label="Referral required" checked={det.referralRequired} />
@@ -331,8 +390,25 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
         <Field id="source" label="Source" optional defaultValue={d.source} maxLength={300} placeholder="Where this info came from (flyer, site, person)" />
       </Section>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-6">
-            <button type="submit" className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand">
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-6">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Discard changes? Anything you've entered or edited here will be lost.")) {
+                  router.push(cancelHref);
+                }
+              }}
+              className="rounded-md border border-border-strong px-5 py-2.5 text-sm font-semibold text-muted transition hover:border-brand hover:text-brand"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              onClick={(e) => {
+                if (!window.confirm("Save this resource?")) e.preventDefault();
+              }}
+              className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+            >
               {submitLabel || "Save resource"}
             </button>
           </div>
@@ -345,14 +421,14 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
 function Section({ title, hint, children }) {
   return (
     <div>
-      <h2 className="text-base font-semibold tracking-tight text-slate-900">{title}</h2>
-      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+      <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
       <div className="mt-4 space-y-5">{children}</div>
     </div>
   );
 }
 
-function Field({ id, label, optional, required, type = "text", maxLength, placeholder, defaultValue, value, onChange }) {
+function Field({ id, label, optional, required, type = "text", maxLength, placeholder, defaultValue, value, onChange, onBlur, onPaste }) {
   // controlled when value/onChange are passed (used for the dup-check name +
   // city fields), otherwise a plain uncontrolled input.
   const controlled = onChange != null;
@@ -360,10 +436,10 @@ function Field({ id, label, optional, required, type = "text", maxLength, placeh
     <div>
       <label htmlFor={id} className={LABEL}>
         {label} {required && <span className="text-rose-600">*</span>}
-        {optional && <span className="text-slate-400">(optional)</span>}
+        {optional && <span className="text-faint">(optional)</span>}
       </label>
       {type === "tel" ? (
-        <PhoneInput id={id} name={id} defaultValue={defaultValue || ""} maxLength={maxLength} placeholder={placeholder} autoComplete="off" className={INPUT} />
+        <PhoneInput id={id} name={id} required={required} defaultValue={defaultValue || ""} maxLength={maxLength} placeholder={placeholder} autoComplete="off" className={INPUT} />
       ) : (
         <input
           id={id}
@@ -374,6 +450,8 @@ function Field({ id, label, optional, required, type = "text", maxLength, placeh
           placeholder={placeholder}
           autoComplete="off"
           className={INPUT}
+          onBlur={onBlur}
+          onPaste={onPaste}
           {...(controlled
             ? { value, onChange: (e) => onChange(e.target.value) }
             : { defaultValue: defaultValue || "" })}
@@ -387,7 +465,7 @@ function TextArea({ id, label, rows = 3, maxLength, placeholder, defaultValue })
   return (
     <div>
       <label htmlFor={id} className={LABEL}>
-        {label} <span className="text-slate-400">(optional)</span>
+        {label} <span className="text-faint">(optional)</span>
       </label>
       <textarea id={id} name={id} rows={rows} defaultValue={defaultValue || ""} maxLength={maxLength} placeholder={placeholder} className={INPUT} />
     </div>
@@ -399,7 +477,7 @@ function Select({ id, label, options, labels, defaultValue, includeBlank = true,
     <div>
       <div className="flex items-center gap-1.5">
         <label htmlFor={id} className={LABEL}>
-          {label} {includeBlank && <span className="text-slate-400">(optional)</span>}
+          {label} {includeBlank && <span className="text-faint">(optional)</span>}
         </label>
         {help && <Help label={`About ${label}`}>{help}</Help>}
       </div>
@@ -419,8 +497,8 @@ function CheckGroup({ legend, name, options, selected }) {
       <legend className={LABEL}>{legend}</legend>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {options.map((o) => (
-          <label key={o} className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" name={name} value={o} defaultChecked={selected.includes(o)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+          <label key={o} className="flex items-center gap-2 text-sm text-muted">
+            <input type="checkbox" name={name} value={o} defaultChecked={selected.includes(o)} className="rounded border-border-strong text-brand focus:ring-brand" />
             {o}
           </label>
         ))}
@@ -431,8 +509,8 @@ function CheckGroup({ legend, name, options, selected }) {
 
 function Toggle({ name, label, checked }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-700">
-      <input type="checkbox" name={name} defaultChecked={!!checked} className="rounded border-slate-300 text-brand focus:ring-brand" />
+    <label className="flex items-center gap-2 text-sm text-muted">
+      <input type="checkbox" name={name} defaultChecked={!!checked} className="rounded border-border-strong text-brand focus:ring-brand" />
       {label}
     </label>
   );
@@ -454,14 +532,14 @@ function Help({ label, children }) {
         aria-label={label || "More info"}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600 transition hover:bg-slate-300"
+        className="flex h-4 w-4 items-center justify-center rounded-full bg-surface-3 text-[10px] font-bold text-muted transition hover:bg-border-strong"
       >
         ?
       </button>
       {open && (
         <div
           role="tooltip"
-          className="absolute left-0 top-6 z-20 w-64 rounded-md border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-600 shadow-lg"
+          className="absolute left-0 top-6 z-20 w-64 rounded-md border border-border bg-surface p-3 text-xs leading-relaxed text-muted shadow-lg"
         >
           {children}
         </div>

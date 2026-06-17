@@ -30,14 +30,14 @@ export default async function NewResourcePage({ searchParams }) {
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
         href="/portal/resources"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to Resources
       </Link>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Add a resource
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted">
         A community partner or service the team uses, like a housing provider,
         food bank, or clinic.{" "}
         {elevated
@@ -54,12 +54,13 @@ export default async function NewResourcePage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
+      <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-8">
         <ResourceForm
           action={submitResource}
           mode="create"
           existing={existing}
           submitLabel={elevated ? "Add resource" : "Submit for review"}
+          cancelHref="/portal/resources"
         />
       </div>
     </section>

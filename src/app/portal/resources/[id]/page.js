@@ -70,7 +70,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
-      <Link href="/portal/resources" className="text-sm font-medium text-slate-600 transition hover:text-brand">
+      <Link href="/portal/resources" className="text-sm font-medium text-muted transition hover:text-brand">
         ← Back to Resources
       </Link>
 
@@ -84,7 +84,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
         {r.category && (
           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-brand">{r.category}</span>
         )}
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${OP_CHIP[r.operationalStatus] || "bg-slate-100 text-slate-600"}`}>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${OP_CHIP[r.operationalStatus] || "bg-surface-3 text-muted"}`}>
           {OP_STATUS_LABELS[r.operationalStatus] || r.operationalStatus}
         </span>
         {r.staffPick && (
@@ -92,10 +92,10 @@ export default async function ResourceDetailPage({ params, searchParams }) {
         )}
       </div>
 
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">{r.name}</h1>
-      {subtitle && <p className="mt-1 text-sm text-slate-600">{subtitle}</p>}
-      {r.orgName && <p className="text-sm text-slate-500">{r.orgName}</p>}
-      {r.notes && <p className="mt-4 text-sm leading-relaxed text-slate-700">{r.notes}</p>}
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{r.name}</h1>
+      {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+      {r.orgName && <p className="text-sm text-muted">{r.orgName}</p>}
+      {r.notes && <p className="mt-4 text-sm leading-relaxed text-muted">{r.notes}</p>}
 
       {/* action buttons */}
       <div className="mt-5 flex flex-wrap gap-2">
@@ -105,17 +105,17 @@ export default async function ResourceDetailPage({ params, searchParams }) {
           </a>
         )}
         {phone && (
-          <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+          <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="rounded-md border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-surface-2">
             Call {phone}
           </a>
         )}
         {r.appointmentLink && (
-          <a href={r.appointmentLink} target="_blank" rel="noopener noreferrer" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+          <a href={r.appointmentLink} target="_blank" rel="noopener noreferrer" className="rounded-md border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-surface-2">
             Book appointment
           </a>
         )}
         {canEdit && (
-          <Link href={`/portal/resources/${id}/edit`} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+          <Link href={`/portal/resources/${id}/edit`} className="rounded-md border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-surface-2">
             Edit resource
           </Link>
         )}
@@ -126,24 +126,24 @@ export default async function ResourceDetailPage({ params, searchParams }) {
         {(schedule.length > 0 || r.hours) && (
           <Block title="Schedule">
             {schedule.length > 0 && (
-              <ul className="space-y-1 text-sm text-slate-700">
+              <ul className="space-y-1 text-sm text-muted">
                 {schedule.map((row, i) => (
                   <li key={i}>{formatScheduleRow(row)}</li>
                 ))}
               </ul>
             )}
-            {r.hours && <p className="mt-2 whitespace-pre-line text-sm text-slate-600">{r.hours}</p>}
+            {r.hours && <p className="mt-2 whitespace-pre-line text-sm text-muted">{r.hours}</p>}
           </Block>
         )}
 
         {/* location */}
         {(r.address || cityLine.trim() || r.serviceArea) && (
           <Block title="Location">
-            {r.address && <p className="text-sm text-slate-700">{r.address}</p>}
-            {cityLine.trim() && <p className="text-sm text-slate-700">{cityLine}</p>}
-            {r.serviceArea && <p className="mt-1 text-sm text-slate-500">Serves: {r.serviceArea}</p>}
+            {r.address && <p className="text-sm text-muted">{r.address}</p>}
+            {cityLine.trim() && <p className="text-sm text-muted">{cityLine}</p>}
+            {r.serviceArea && <p className="mt-1 text-sm text-muted">Serves: {r.serviceArea}</p>}
             {src && (
-              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+              <div className="mt-3 overflow-hidden rounded-lg border border-border">
                 <iframe title={`Map of ${r.name}`} src={src} className="block aspect-[16/9] w-full" style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
               </div>
             )}
@@ -154,14 +154,14 @@ export default async function ResourceDetailPage({ params, searchParams }) {
         {(phone || r.email || r.website || r.contactInstructions) && (
           <Block title="Contact">
             <div className="space-y-1 text-sm">
-              {phone && <p className="text-slate-700">{phone}</p>}
+              {phone && <p className="text-muted">{phone}</p>}
               {r.email && <a href={`mailto:${r.email}`} className="block text-brand hover:underline">{r.email}</a>}
               {r.website && (
                 <a href={r.website} target="_blank" rel="noopener noreferrer" className="block text-brand hover:underline">
                   {r.website.replace(/^https?:\/\//, "")}
                 </a>
               )}
-              {r.contactInstructions && <p className="text-slate-600">{r.contactInstructions}</p>}
+              {r.contactInstructions && <p className="text-muted">{r.contactInstructions}</p>}
             </div>
           </Block>
         )}
@@ -170,16 +170,16 @@ export default async function ResourceDetailPage({ params, searchParams }) {
         {(eligibility.length > 0 || (r.whoItServes || []).length > 0 || det.otherEligibility) && (
           <Block title="Who it serves">
             {(r.whoItServes || []).length > 0 && (
-              <p className="text-sm text-slate-700">{r.whoItServes.join(", ")}</p>
+              <p className="text-sm text-muted">{r.whoItServes.join(", ")}</p>
             )}
             {eligibility.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {eligibility.map((e) => (
-                  <span key={e} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{e}</span>
+                  <span key={e} className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-muted">{e}</span>
                 ))}
               </div>
             )}
-            {det.otherEligibility && <p className="mt-2 text-sm text-slate-600">{det.otherEligibility}</p>}
+            {det.otherEligibility && <p className="mt-2 text-sm text-muted">{det.otherEligibility}</p>}
           </Block>
         )}
 
@@ -193,7 +193,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
                 {det.whatToBring && <Row k="What to bring" v={det.whatToBring} />}
               </dl>
               {(det.specialInstructions || []).length > 0 && (
-                <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+                <ul className="mt-2 list-disc pl-5 text-sm text-muted">
                   {det.specialInstructions.map((s) => (
                     <li key={s}>{s}</li>
                   ))}
@@ -204,7 +204,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
 
         {/* verification + internal (elevated only) */}
         <Block title="Verification">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             {r.lastVerifiedAt
               ? `Last verified ${fmtDate(r.lastVerifiedAt)}${r.verifiedBy?.name ? ` by ${r.verifiedBy.name}` : ""}.`
               : "Not yet verified."}
@@ -216,7 +216,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
               </button>
             </form>
           )}
-          {elevated && r.source && <p className="mt-3 text-xs text-slate-400">Source: {r.source}</p>}
+          {elevated && r.source && <p className="mt-3 text-xs text-faint">Source: {r.source}</p>}
           {elevated && r.internalNotes && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Internal staff notes</p>
@@ -232,7 +232,7 @@ export default async function ResourceDetailPage({ params, searchParams }) {
 function Block({ title, children }) {
   return (
     <div>
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{title}</h2>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>
       <div className="mt-2">{children}</div>
     </div>
   );
@@ -241,8 +241,8 @@ function Block({ title, children }) {
 function Row({ k, v }) {
   return (
     <div className="flex gap-2">
-      <dt className="w-32 shrink-0 text-slate-500">{k}</dt>
-      <dd className="text-slate-700">{v}</dd>
+      <dt className="w-32 shrink-0 text-muted">{k}</dt>
+      <dd className="text-muted">{v}</dd>
     </div>
   );
 }

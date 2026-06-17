@@ -26,11 +26,11 @@ export default function CategoryInfo({ category }) {
   const lm = info.learnMore;
 
   return (
-    <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+    <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900/60 dark:bg-sky-950/40">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
         About {category.toLowerCase()}
       </p>
-      <p className="mt-1.5 text-sm leading-relaxed text-slate-800">
+      <p className="mt-1.5 text-sm leading-relaxed text-foreground">
         {info.blurb}
         {info.term && (
           <>
@@ -57,26 +57,26 @@ export default function CategoryInfo({ category }) {
           <div
             role="dialog"
             aria-modal="true"
-            className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl sm:p-8"
+            className="relative w-full max-w-2xl rounded-2xl bg-surface p-6 shadow-2xl sm:p-8"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close"
-              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-3 text-lg text-muted transition hover:bg-surface-3 hover:text-muted"
             >
               ×
             </button>
-            <h3 className="pr-8 text-xl font-semibold tracking-tight text-slate-900">{lm.title}</h3>
+            <h3 className="pr-8 text-xl font-semibold tracking-tight text-foreground">{lm.title}</h3>
             {lm.intro && (
-              <p className="mt-3 text-sm leading-relaxed text-slate-700">{lm.intro}</p>
+              <p className="mt-3 text-sm leading-relaxed text-muted">{lm.intro}</p>
             )}
             {lm.sectionTitle && (
               <h4 className="mt-6 text-sm font-semibold text-brand-dark">{lm.sectionTitle}</h4>
             )}
             {lm.sectionIntro && (
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{lm.sectionIntro}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">{lm.sectionIntro}</p>
             )}
 
             {Array.isArray(lm.steps) && lm.steps.length > 0 && (
@@ -86,23 +86,23 @@ export default function CategoryInfo({ category }) {
                     {i < lm.steps.length - 1 && (
                       <span
                         aria-hidden
-                        className="absolute bottom-0 left-[15px] top-9 border-l border-dotted border-slate-300"
+                        className="absolute bottom-0 left-[15px] top-9 border-l border-dotted border-border-strong"
                       />
                     )}
-                    <span className="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-slate-300 bg-white text-sm font-bold text-slate-600">
+                    <span className="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-border-strong bg-surface text-sm font-bold text-muted">
                       {i + 1}
                     </span>
-                    <p className="font-semibold text-slate-900">{s.title}</p>
-                    {s.sub && <p className="mt-0.5 text-xs italic text-slate-400">{s.sub}</p>}
-                    <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{s.body}</p>
+                    <p className="font-semibold text-foreground">{s.title}</p>
+                    {s.sub && <p className="mt-0.5 text-xs italic text-faint">{s.sub}</p>}
+                    <p className="mt-1.5 text-sm leading-relaxed text-muted">{s.body}</p>
                   </li>
                 ))}
               </ol>
             )}
 
             {lm.safetyNet && (
-              <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm leading-relaxed text-emerald-800">
-                <span className="font-semibold text-emerald-900">Safety net:</span> {lm.safetyNet}
+              <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm leading-relaxed text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <span className="font-semibold text-emerald-900 dark:text-emerald-200">Safety net:</span> {lm.safetyNet}
               </div>
             )}
           </div>

@@ -333,6 +333,48 @@ export function formatDays(days) {
     .join(", ");
 }
 
+// capitalize the first letter of each word, leaving the rest as typed (so
+// acronyms / "N." stay intact). used to tidy the street address on save.
+export function titleCaseWords(s) {
+  if (typeof s !== "string") return s;
+  return s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
+// best-effort split of a pasted/typed full US address into its parts. handles
+// the common "street, city, ST zip" and "street, city zip" shapes. pulls out
+// whatever it can confidently identify (zip, 2-letter state, city after the
+// last comma) and leaves the rest as the street. used by the add/edit form so
+// a full address dropped in the street box lands in the right fields.
+export function parseUsAddress(raw) {
+  if (typeof raw !== "string") return { street: "", city: "", state: "", zip: "" };
+  let s = raw.trim().replace(/\s+/g, " ");
+  // drop a trailing country (Google place strings end in ", USA").
+  s = s.replace(/,?\s*(usa|united states)\.?\s*$/i, "").trim();
+  let zip = "";
+  let state = "";
+  let city = "";
+  let street = "";
+
+  const zipM = s.match(/(\d{5}(?:-\d{4})?)\s*$/);
+  if (zipM) {
+    zip = zipM[1];
+    s = s.slice(0, zipM.index).trim().replace(/,\s*$/, "");
+  }
+  const stM = s.match(/[,\s]([A-Za-z]{2})\s*$/);
+  if (stM) {
+    state = stM[1].toUpperCase();
+    s = s.slice(0, stM.index).trim().replace(/,\s*$/, "");
+  }
+  const parts = s.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    city = parts[parts.length - 1];
+    street = parts.slice(0, -1).join(", ");
+  } else {
+    street = parts[0] || "";
+  }
+  return { street, city, state, zip };
+}
+
 // turn one schedule row into a short human string, e.g.
 // "Mon–Fri, 9:00 AM–5:00 PM" or "Second and fourth Sat, 10:00 AM–1:00 PM".
 export function formatScheduleRow(row) {

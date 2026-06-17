@@ -30,8 +30,11 @@ export default async function ResourcesPage({ searchParams }) {
       email: true,
       website: true,
       appointmentLink: true,
+      contactInstructions: true,
       address: true,
       city: true,
+      state: true,
+      zip: true,
       serviceArea: true,
       lat: true,
       lng: true,
@@ -43,9 +46,19 @@ export default async function ResourcesPage({ searchParams }) {
       operationalStatus: true,
       staffPick: true,
       lastVerifiedAt: true,
+      verifiedBy: { select: { name: true } },
       notes: true,
+      internalNotes: true,
+      source: true,
     },
   });
+
+  // internalNotes + source are staff-eyes-only; don't ship them in the client
+  // payload to non-management viewers (the inline panel only shows them to
+  // managers anyway).
+  const safeResources = canManage
+    ? resources
+    : resources.map(({ internalNotes, source, ...r }) => r);
   const pendingResources = elevated
     ? await prisma.resource.count({ where: { status: "PENDING" } })
     : 0;
@@ -66,10 +79,10 @@ export default async function ResourcesPage({ searchParams }) {
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             Portal
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Community Resources
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          <p className="mt-2 max-w-2xl text-sm text-muted">
             Housing, food banks, and other community services the team can share
             with participants and families.
           </p>
@@ -99,7 +112,7 @@ export default async function ResourcesPage({ searchParams }) {
       )}
 
       <ResourceBrowser
-        resources={resources}
+        resources={safeResources}
         canManage={canManage}
         canPick={canPick}
         initialCategory={isValidResourceCategory(params?.cat) ? params.cat : ""}

@@ -14,6 +14,8 @@ import {
   subtypesFor,
   cleanFromList,
   cleanSchedule,
+  parseUsAddress,
+  titleCaseWords,
   WHO_IT_SERVES_OPTIONS,
   DISTRIBUTION_METHODS,
   FOOD_SELECTION_OPTIONS,
@@ -119,6 +121,8 @@ function parseResourceForm(formData) {
     proofOfIncomeRequired: formData.get("proofOfIncomeRequired") === "on",
     referralRequired: formData.get("referralRequired") === "on",
     otherEligibility: cleanBody(formData.get("otherEligibility"), 500),
+    // mobile / on-the-move resource with no fixed address.
+    addressVaries: formData.get("addressVaries") === "on",
   };
   // food-specific visit details, only when the category uses them.
   if (detailed) {
@@ -133,6 +137,24 @@ function parseResourceForm(formData) {
     );
   }
 
+  // location: if the street field holds a whole address (city/zip embedded),
+  // split it into the right fields. then title-case the street + city.
+  let address = cleanBody(formData.get("address"), RESOURCE_ADDRESS_MAX);
+  let city = cleanBody(formData.get("city"), RESOURCE_CITY_MAX);
+  let state = cleanBody(formData.get("state"), 20);
+  let zip = cleanBody(formData.get("zip"), 12);
+  if (address && /\d{5}/.test(address) && address.includes(",")) {
+    const p = parseUsAddress(address);
+    address = p.street || address;
+    city = p.city || city;
+    state = p.state || state;
+    zip = p.zip || zip;
+  }
+  if (address) address = titleCaseWords(address);
+  if (city) city = titleCaseWords(city);
+  // we only operate in CA; the form no longer asks for state.
+  state = state || "CA";
+
   return {
     name,
     category,
@@ -143,10 +165,10 @@ function parseResourceForm(formData) {
     website: cleanUrl(formData.get("website")),
     appointmentLink: cleanUrl(formData.get("appointmentLink")),
     contactInstructions: cleanBody(formData.get("contactInstructions"), 300),
-    address: cleanBody(formData.get("address"), RESOURCE_ADDRESS_MAX),
-    city: cleanBody(formData.get("city"), RESOURCE_CITY_MAX),
-    state: cleanBody(formData.get("state"), 20),
-    zip: cleanBody(formData.get("zip"), 12),
+    address,
+    city,
+    state,
+    zip,
     serviceArea: cleanBody(formData.get("serviceArea"), 120),
     hours: cleanBody(formData.get("hours"), RESOURCE_HOURS_MAX),
     schedule,
@@ -173,7 +195,7 @@ export async function submitResource(formData) {
   // elevated submissions are auto-approved (they're the approvers anyway).
   const elevated = isElevated(user.role);
 
-  await prisma.resource.create({
+  const created = await prisma.resource.create({
     data: {
       ...data,
       lat,
@@ -187,12 +209,17 @@ export async function submitResource(formData) {
       lastVerifiedAt: elevated ? new Date() : null,
       verifiedById: elevated ? user.id : null,
     },
+    select: { id: true },
   });
 
   revalidatePath("/portal/contacts");
   revalidatePath("/portal/resources");
+  // elevated adds go live, so land on the new resource's detail page; a
+  // pending submission goes back to the list with the "sent for review" note.
   redirect(
-    elevated ? "/portal/resources?added=1" : "/portal/resources?submitted=1",
+    elevated
+      ? `/portal/resources/${created.id}?saved=1`
+      : "/portal/resources?submitted=1",
   );
 }
 
