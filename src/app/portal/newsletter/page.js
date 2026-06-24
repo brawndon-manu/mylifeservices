@@ -48,10 +48,10 @@ export default async function NewsletterPortalPage({ searchParams }) {
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             This Week in My Life Services
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Newsletter
           </h1>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-muted">
             Share a highlight or a heads-up. Submissions are reviewed by
             management before they go on the public{" "}
             <Link href="/this-week" className="text-brand underline-offset-2 hover:underline">
@@ -77,13 +77,13 @@ export default async function NewsletterPortalPage({ searchParams }) {
       {elevated && (
         <Link
           href="/portal/newsletter/review"
-          className="mt-6 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-light"
+          className="mt-6 flex items-center justify-between rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:border-brand-light"
         >
           <div>
-            <p className="text-sm font-semibold text-slate-900">
+            <p className="text-sm font-semibold text-foreground">
               Review queue
             </p>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-muted">
               Approve, reject, and publish submissions to the public page.
             </p>
           </div>
@@ -93,26 +93,26 @@ export default async function NewsletterPortalPage({ searchParams }) {
                 {pendingCount} pending
               </span>
             )}
-            <span aria-hidden className="text-slate-400">
+            <span aria-hidden className="text-faint">
               →
             </span>
           </span>
         </Link>
       )}
 
-      <h2 className="mt-10 text-lg font-semibold tracking-tight text-slate-900">
+      <h2 className="mt-10 text-lg font-semibold tracking-tight text-foreground">
         Your submissions
       </h2>
       <div className="mt-4 space-y-3">
         {mine.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border-strong bg-surface p-8 text-center text-sm text-muted">
             You haven&apos;t submitted anything yet.
           </div>
         ) : (
           mine.map((item) => (
             <div
               key={item.id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="rounded-xl border border-border bg-surface p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -128,13 +128,13 @@ export default async function NewsletterPortalPage({ searchParams }) {
                       {NL_STATUS_LABELS[item.status]}
                     </span>
                   </div>
-                  <h3 className="mt-2 font-semibold text-slate-900">
+                  <h3 className="mt-2 font-semibold text-foreground">
                     {item.title}
                   </h3>
-                  <p className="mt-1 line-clamp-2 text-sm text-slate-600">
+                  <p className="mt-1 line-clamp-2 text-sm text-muted">
                     {item.body}
                   </p>
-                  <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-faint">
                     Submitted {formatDate(item.createdAt)}
                   </p>
                   {item.status === "REJECTED" && item.reviewNote && (

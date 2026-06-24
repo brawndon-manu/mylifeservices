@@ -40,7 +40,7 @@ export default function PhotoSlideshow({ photos, ratio = "aspect-[4/3]" }) {
       onBlur={() => setPaused(false)}
     >
       <div
-        className={`relative ${ratio} w-full overflow-hidden rounded-2xl bg-slate-100 shadow-sm`}
+        className={`relative ${ratio} w-full overflow-hidden rounded-2xl bg-surface-3 shadow-sm`}
         aria-roledescription="carousel"
         aria-label="Community photos"
       >
@@ -64,7 +64,7 @@ export default function PhotoSlideshow({ photos, ratio = "aspect-[4/3]" }) {
               type="button"
               onClick={() => go(index - 1)}
               aria-label="Previous photo"
-              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/85 p-2 text-slate-700 shadow transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-surface/85 p-2 text-muted shadow transition hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -72,7 +72,7 @@ export default function PhotoSlideshow({ photos, ratio = "aspect-[4/3]" }) {
               type="button"
               onClick={() => go(index + 1)}
               aria-label="Next photo"
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/85 p-2 text-slate-700 shadow transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-surface/85 p-2 text-muted shadow transition hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -86,7 +86,7 @@ export default function PhotoSlideshow({ photos, ratio = "aspect-[4/3]" }) {
                   aria-label={`Show photo ${i + 1} of ${photos.length}`}
                   aria-current={i === index}
                   className={`h-2 w-2 rounded-full transition ${
-                    i === index ? "bg-white" : "bg-white/50 hover:bg-white/80"
+                    i === index ? "bg-surface" : "bg-surface/50 hover:bg-surface/80"
                   }`}
                 />
               ))}
@@ -95,7 +95,7 @@ export default function PhotoSlideshow({ photos, ratio = "aspect-[4/3]" }) {
         )}
       </div>
       <figcaption
-        className="mt-3 text-sm leading-relaxed text-slate-600"
+        className="mt-3 text-sm leading-relaxed text-muted"
         aria-live="polite"
       >
         {current.caption}

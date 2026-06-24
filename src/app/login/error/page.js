@@ -7,7 +7,7 @@ export default async function LoginErrorPage({ searchParams }) {
   const params = await searchParams;
   const error = params?.error;
 
-  // Intentionally generic — don't reveal whether the email exists, whether
+  // Intentionally generic: don't reveal whether the email exists, whether
   // the link expired, or whether the user lacks access.
   const message =
     "Something went wrong signing you in. Try again, or contact IT if the problem continues.";
@@ -17,10 +17,10 @@ export default async function LoginErrorPage({ searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-rose-600">
         Sign-in error
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         We couldn&apos;t sign you in
       </h1>
-      <p className="mt-4 text-base leading-relaxed text-slate-700">
+      <p className="mt-4 text-base leading-relaxed text-muted">
         {message}
       </p>
       <a

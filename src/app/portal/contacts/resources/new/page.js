@@ -1,13 +1,9 @@
 import Link from "next/link";
-import PhoneInput from "@/components/PhoneInput";
+import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
-import {
-  RESOURCE_NAME_MAX,
-  RESOURCE_NOTES_MAX,
-  RESOURCE_CATEGORIES,
-} from "@/lib/contacts";
 import { submitResource } from "../../actions";
+import ResourceForm from "@/app/portal/resources/ResourceForm";
 
 export const metadata = {
   title: "Add resource · MLS Portal",
@@ -24,20 +20,26 @@ export default async function NewResourcePage({ searchParams }) {
   const user = await getCurrentUser();
   const elevated = isElevated(user.role);
 
+  // existing names/cities for the non-blocking duplicate warning.
+  const existing = await prisma.resource.findMany({
+    where: { status: { not: "REJECTED" } },
+    select: { name: true, city: true },
+  });
+
   return (
-    <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
+    <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
-        href="/portal/contacts"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        href="/portal/resources"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
-        ← Back to Team Contacts
+        ← Back to Resources
       </Link>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Add a resource
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
-        A community partner or service the team uses — like a housing
-        provider, food bank, or clinic.{" "}
+      <p className="mt-2 text-sm text-muted">
+        A community partner or service the team uses, like a housing provider,
+        food bank, or clinic.{" "}
         {elevated
           ? "As management, yours is added right away."
           : "Management reviews it before it shows on the directory."}
@@ -52,125 +54,15 @@ export default async function NewResourcePage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
-        <form action={submitResource} className="space-y-6">
-          <Field
-            id="name"
-            label="Name"
-            required
-            maxLength={RESOURCE_NAME_MAX}
-            placeholder="e.g. Integrity Cottages"
-          />
-          <div>
-            <label
-              htmlFor="category"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Category <span className="text-rose-600">*</span>
-            </label>
-            <select
-              id="category"
-              name="category"
-              defaultValue="Housing"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            >
-              {RESOURCE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-500">
-              Groups the resource on the contacts page.
-            </p>
-          </div>
-          <Field
-            id="phone"
-            label="Phone"
-            optional
-            type="tel"
-            placeholder="(909) 555-0123"
-          />
-          <Field
-            id="email"
-            label="Email"
-            optional
-            type="email"
-            placeholder="contact@example.org"
-          />
-          <Field
-            id="website"
-            label="Website"
-            optional
-            placeholder="example.org"
-          />
-          <div>
-            <label
-              htmlFor="notes"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Notes <span className="text-slate-400">(optional)</span>
-            </label>
-            <textarea
-              id="notes"
-              name="notes"
-              rows={4}
-              maxLength={RESOURCE_NOTES_MAX}
-              placeholder="What they do, who to ask for, anything helpful."
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-6">
-            <Link
-              href="/portal/contacts"
-              className="text-sm font-medium text-slate-600 transition hover:text-slate-900"
-            >
-              Cancel
-            </Link>
-            <button
-              type="submit"
-              className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-            >
-              {elevated ? "Add resource" : "Submit for review"}
-            </button>
-          </div>
-        </form>
+      <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-8">
+        <ResourceForm
+          action={submitResource}
+          mode="create"
+          existing={existing}
+          submitLabel={elevated ? "Add resource" : "Submit for review"}
+          cancelHref="/portal/resources"
+        />
       </div>
     </section>
-  );
-}
-
-function Field({ id, label, optional, required, type = "text", maxLength, placeholder }) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
-        {label}{" "}
-        {required && <span className="text-rose-600">*</span>}
-        {optional && <span className="text-slate-400">(optional)</span>}
-      </label>
-      {type === "tel" ? (
-        <PhoneInput
-          id={id}
-          name={id}
-          required={required}
-          maxLength={maxLength}
-          placeholder={placeholder}
-          autoComplete="off"
-          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-        />
-      ) : (
-        <input
-          id={id}
-          name={id}
-          type={type}
-          required={required}
-          maxLength={maxLength}
-          placeholder={placeholder}
-          autoComplete="off"
-          className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-        />
-      )}
-    </div>
   );
 }

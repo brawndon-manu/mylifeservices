@@ -44,10 +44,10 @@ export default async function NewPostPage({ searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         MLS Hub
       </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         New post
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted">
         Share a flyer, a resource, or anything useful for the team.
       </p>
 
@@ -61,12 +61,12 @@ export default async function NewPostPage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
+      <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-8">
         <form action={createPost} className="space-y-6">
           <div>
             <label
               htmlFor="content"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
               What do you want to share? <span className="text-rose-600">*</span>
             </label>
@@ -77,9 +77,9 @@ export default async function NewPostPage({ searchParams }) {
               rows={6}
               maxLength={POST_CONTENT_MAX}
               placeholder="Type your message..."
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Up to {POST_CONTENT_MAX} characters.
             </p>
           </div>
@@ -88,15 +88,15 @@ export default async function NewPostPage({ searchParams }) {
             <div>
               <label
                 htmlFor="postAs"
-                className="block text-sm font-medium text-slate-700"
+                className="block text-sm font-medium text-muted"
               >
-                Post as <span className="text-slate-400">(IT / admin)</span>
+                Post as <span className="text-faint">(IT / admin)</span>
               </label>
               <select
                 id="postAs"
                 name="postAs"
                 defaultValue={user.id}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               >
                 <option value={user.id}>
                   Myself ({user.name || user.email})
@@ -106,12 +106,12 @@ export default async function NewPostPage({ searchParams }) {
                   .map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name || p.email}
-                      {showRoles ? ` — ${ROLE_LABELS[p.role] ?? p.role}` : ""} —{" "}
+                      {showRoles ? ` · ${ROLE_LABELS[p.role] ?? p.role}` : ""} ·{" "}
                       {p.email}
                     </option>
                   ))}
               </select>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted">
                 Posting for someone who isn&apos;t tech-savvy? Pick them
                 here and the post will be credited to their name. A record
                 of who actually posted it is kept.
@@ -122,34 +122,34 @@ export default async function NewPostPage({ searchParams }) {
           <div>
             <label
               htmlFor="image"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Image / flyer <span className="text-slate-400">(optional)</span>
+              Image / flyer <span className="text-faint">(optional)</span>
             </label>
             <input
               id="image"
               name="image"
               type="file"
               accept={IMAGE_ACCEPT.join(",")}
-              className="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
+              className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               JPG, PNG, WebP, or GIF. Up to {Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.
             </p>
           </div>
 
           <fieldset>
-            <legend className="block text-sm font-medium text-slate-700">
+            <legend className="block text-sm font-medium text-muted">
               Tag <span className="text-rose-600">*</span>
             </legend>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Pick one that fits best so people can filter the feed.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {POST_TAGS.map((t, i) => (
                 <label
                   key={t}
-                  className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 transition hover:border-brand-light hover:bg-sky-50"
+                  className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-surface-2 p-2 transition hover:border-brand-light hover:bg-sky-50"
                 >
                   <input
                     type="radio"
@@ -159,7 +159,7 @@ export default async function NewPostPage({ searchParams }) {
                     required
                     className="h-4 w-4 accent-brand"
                   />
-                  <span className="text-sm text-slate-800">{t}</span>
+                  <span className="text-sm text-foreground">{t}</span>
                 </label>
               ))}
             </div>
@@ -168,27 +168,27 @@ export default async function NewPostPage({ searchParams }) {
           <div>
             <label
               htmlFor="expiresAt"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-muted"
             >
-              Expires on <span className="text-slate-400">(optional)</span>
+              Expires on <span className="text-faint">(optional)</span>
             </label>
             <input
               id="expiresAt"
               name="expiresAt"
               type="date"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted">
               Use for time-sensitive posts (e.g. a job fair on Saturday).
               The post stays visible but gets an &quot;Expired&quot; badge
               after that date.
             </p>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-6">
+          <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
             <Link
               href="/portal/hub"
-              className="text-sm font-medium text-slate-600 transition hover:text-slate-900"
+              className="text-sm font-medium text-muted transition hover:text-foreground"
             >
               Cancel
             </Link>

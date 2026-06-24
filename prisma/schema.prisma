@@ -68,6 +68,8 @@ model User {
   feedbackResolved FeedbackItem[] @relation("FeedbackResolvedBy")
   resourcesSubmitted Resource[]   @relation("ResourceSubmittedBy")
   resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
+  resourcesVerified  Resource[]   @relation("ResourceVerifiedBy")
+  sitePhotos    SitePhoto[]   @relation("SitePhotoUploadedBy")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -116,15 +118,64 @@ enum ResourceStatus {
   REJECTED
 }
 
+// operational state - is the place actually running. distinct from the
+// ResourceStatus above, which is the moderation/approval workflow.
+enum ResourceOpStatus {
+  ACTIVE
+  TEMPORARILY_UNAVAILABLE
+  NEEDS_VERIFICATION
+  CLOSED
+}
+
 model Resource {
   id          String         @id @default(cuid())
   name        String
-  // free-text grouping shown as a chip, e.g. "Housing", "Health".
+  // top-level bucket shown as a chip, e.g. "Housing", "Food banks".
   category    String?
+  // finer type within the category, e.g. "Food pantry", "Mobile food
+  // distribution". options are per-category (see src/lib/contacts.js).
+  subtype     String?
+  // organization behind the location, if different from the resource name.
+  orgName     String?
   phone       String?
   email       String?
   website     String?
+  // direct link to book/schedule, if they take appointments online.
+  appointmentLink String?
+  // free text, e.g. "Call before visiting" or "Text to schedule".
+  contactInstructions String?
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  // who the service covers, e.g. "Anaheim residents only". free text.
+  serviceArea String?
+  lat         Float?
+  lng         Float?
+  // legacy free-text hours. superseded by `schedule` for new entries but
+  // kept so the imported food-bank hours still show.
+  hours       String?
+  // structured recurring schedule rows: [{ day, frequency, start, end }]
+  schedule    Json?
+  // populations served (multi). filterable. see WHO_IT_SERVES_OPTIONS.
+  whoItServes String[]       @default([])
+  appointmentRequired Boolean @default(false)
+  // category-specific answers (eligibility + food details). see
+  // buildDetails in src/lib/contacts.js for the shape.
+  details     Json?
+  // short public-facing description / what they do.
   notes       String?
+  // staff-only notes, never shown to clients.
+  internalNotes String?
+  // where this info came from (url, person, flyer).
+  source      String?
+  operationalStatus ResourceOpStatus @default(ACTIVE)
+  // featured by management - surfaces in a "Staff picks" row up top.
+  staffPick   Boolean        @default(false)
+  // verification trail so the directory doesn't go stale.
+  lastVerifiedAt DateTime?
+  verifiedById   String?
+  verifiedBy     User?        @relation("ResourceVerifiedBy", fields: [verifiedById], references: [id])
   status      ResourceStatus @default(PENDING)
   submittedById String
   submittedBy   User         @relation("ResourceSubmittedBy", fields: [submittedById], references: [id])
@@ -136,6 +187,32 @@ model Resource {
   updatedAt   DateTime       @updatedAt
 
   @@index([status])
+}
+
+// photos shown on the public About page, managed from the portal by
+// admin/IT so they can swap site imagery without a code change. uploaded
+// to vercel blob; we only keep the url + a bit of metadata here.
+model SitePhoto {
+  id               String   @id @default(cuid())
+  url              String
+  // which spot on the public page: "about-hero" | "agency-overview" |
+  // "partnership". validated against src/lib/site-photos.js.
+  section          String
+  caption          String?
+  // alt text for screen readers / when the image cant load.
+  alt              String?
+  // order within a section (low = first). drives the slideshow order.
+  sortOrder        Int      @default(0)
+  // turned off to hide from the site without deleting the upload.
+  active           Boolean  @default(true)
+  // uploader attests a signed photo release is on file for anyone pictured.
+  consentConfirmed Boolean  @default(false)
+  uploadedById     String?
+  uploadedBy       User?    @relation("SitePhotoUploadedBy", fields: [uploadedById], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([section, sortOrder])
 }
 
 // MLS Hub - internal feed for posts (flyers, helpful info) + comments.

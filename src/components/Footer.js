@@ -27,10 +27,10 @@ export default function Footer() {
                 <dt className="sr-only">Phone</dt>
                 <dd>
                   <a
-                    href="tel:+19098370907"
+                    href="tel:+15626862548"
                     className="underline-offset-2 hover:underline"
                   >
-                    (909) 837-0907
+                    (562) 686-2548
                   </a>
                 </dd>
               </div>
@@ -74,9 +74,9 @@ export default function Footer() {
           </dl>
         </div>
       </div>
-      <div className="border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-5xl px-6 py-5 text-sm text-slate-600">
-          &copy; {year} My Life Services. All rights reserved.
+      <div className="border-t border-border bg-surface">
+        <div className="mx-auto max-w-5xl px-6 py-5 text-sm text-muted">
+          &copy; {year} My Life Services Inc. All rights reserved.
         </div>
       </div>
     </footer>

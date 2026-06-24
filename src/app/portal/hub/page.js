@@ -78,10 +78,10 @@ export default async function HubPage({ searchParams }) {
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             MLS Hub
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Share with the team
           </h1>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-muted">
             Post flyers, helpful resources, or things worth knowing. Comment
             and react on anyone&apos;s post.
           </p>
@@ -97,14 +97,14 @@ export default async function HubPage({ searchParams }) {
       {/* filter bar */}
       <form
         method="GET"
-        className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm"
+        className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface p-3 text-sm"
       >
         <label className="flex items-center gap-2">
-          <span className="text-slate-600">Time:</span>
+          <span className="text-muted">Time:</span>
           <select
             name="window"
             defaultValue={windowVal}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900"
+            className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-foreground"
           >
             {TIME_WINDOWS.map((w) => (
               <option key={w.value} value={w.value}>
@@ -114,11 +114,11 @@ export default async function HubPage({ searchParams }) {
           </select>
         </label>
         <label className="flex items-center gap-2">
-          <span className="text-slate-600">Tag:</span>
+          <span className="text-muted">Tag:</span>
           <select
             name="tag"
             defaultValue={tagFilter ?? ""}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900"
+            className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-foreground"
           >
             <option value="">All tags</option>
             {POST_TAGS.map((t) => (
@@ -136,18 +136,18 @@ export default async function HubPage({ searchParams }) {
             defaultChecked={pinnedOnly}
             className="h-4 w-4 accent-brand"
           />
-          <span className="text-slate-700">Pinned only</span>
+          <span className="text-muted">Pinned only</span>
         </label>
         <button
           type="submit"
-          className="rounded-md border border-slate-300 px-3 py-1 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand"
+          className="rounded-md border border-border-strong px-3 py-1 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
         >
           Apply
         </button>
         {(windowVal !== "all" || tagFilter || pinnedOnly) && (
           <Link
             href="/portal/hub"
-            className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+            className="text-xs font-medium text-muted underline-offset-2 hover:text-muted hover:underline"
           >
             Reset
           </Link>
@@ -157,8 +157,8 @@ export default async function HubPage({ searchParams }) {
       {/* feed */}
       <div className="mt-6 space-y-5">
         {ordered.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <p className="text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border-strong bg-surface p-10 text-center">
+            <p className="text-sm text-muted">
               Nothing here yet. Be the first to post.
             </p>
           </div>
@@ -184,14 +184,14 @@ function PostCard({ post, currentUser }) {
   const canPin = isModerator(currentUser.role);
   const canEdit = post.authorId === currentUser.id;
   const tagClass =
-    TAG_STYLES[post.tag] ?? "bg-slate-100 text-slate-700";
+    TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm">
       <header className="flex items-start justify-between gap-3">
         <div>
           <AuthorChip author={post.author} size="md" showRole={canSeeRoles(currentUser.role)} />
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span>{timeAgo(post.createdAt)}</span>
             {post.editedAt && <span>· edited</span>}
             {post.postedBy && isElevated(currentUser.role) && (
@@ -205,12 +205,12 @@ function PostCard({ post, currentUser }) {
               </span>
             )}
             {expired && (
-              <span className="rounded bg-slate-200 px-1.5 py-0.5 font-medium text-slate-700">
+              <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                 Expired
               </span>
             )}
             {post.expiresAt && !expired && (
-              <span className="text-slate-500">
+              <span className="text-muted">
                 expires {new Date(post.expiresAt).toLocaleDateString()}
               </span>
             )}
@@ -224,13 +224,13 @@ function PostCard({ post, currentUser }) {
       </header>
 
       <Link href={`/portal/hub/${post.id}`} className="mt-3 block">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800 line-clamp-6">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground line-clamp-6">
           {post.content}
         </p>
         {post.imageUrl && (
-          <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-border">
             {/* unoptimized so Vercel Blob URLs work without an Image
-                optimization round-trip — saves bandwidth quota. */}
+                optimization round-trip - saves bandwidth quota. */}
             <Image
               src={post.imageUrl}
               alt=""
@@ -243,12 +243,12 @@ function PostCard({ post, currentUser }) {
         )}
       </Link>
 
-      <footer className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-sm">
+      <footer className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-sm">
         <form action={toggleLike.bind(null, post.id)}>
           <button
             type="submit"
             className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition hover:bg-rose-50 ${
-              liked ? "text-rose-600" : "text-slate-600"
+              liked ? "text-rose-600" : "text-muted"
             }`}
             aria-label={liked ? "Unlike" : "Like"}
           >
@@ -258,7 +258,7 @@ function PostCard({ post, currentUser }) {
         </form>
         <Link
           href={`/portal/hub/${post.id}`}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-slate-600 transition hover:bg-slate-100"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-muted transition hover:bg-surface-3"
         >
           <CommentIcon className="h-4 w-4" />
           <span className="text-xs font-medium">{post._count.comments}</span>
@@ -268,7 +268,7 @@ function PostCard({ post, currentUser }) {
             <form action={togglePin.bind(null, post.id)}>
               <button
                 type="submit"
-                className="rounded-md px-2 py-1 font-medium text-slate-600 transition hover:bg-amber-50 hover:text-amber-800"
+                className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-amber-50 hover:text-amber-800"
               >
                 {post.pinnedAt ? "Unpin" : "Pin"}
               </button>
@@ -277,7 +277,7 @@ function PostCard({ post, currentUser }) {
           {canEdit && (
             <Link
               href={`/portal/hub/${post.id}/edit`}
-              className="rounded-md px-2 py-1 font-medium text-slate-600 transition hover:bg-slate-100"
+              className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-surface-3"
             >
               Edit
             </Link>

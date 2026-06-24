@@ -9,6 +9,7 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "./auth.config";
 import { isElevated } from "./lib/roles";
+import { PREVIEW_COOKIE, resolveEffectiveRole } from "./lib/preview";
 
 const { auth } = NextAuth(authConfig);
 
@@ -29,8 +30,14 @@ export default auth((req) => {
 
   // signed in but role doesnt have elevated access -> bounce to the
   // regular dashboard. the admin pages also check this (defense-in-depth)
-  // in case someone bypasses the proxy somehow.
-  if (ADMIN_ONLY.test(pathname) && !isElevated(req.auth.user?.role)) {
+  // in case someone bypasses the proxy somehow. we gate on the EFFECTIVE
+  // role so the "view as role" preview is consistent here too (a preview
+  // can only ever lower access, so this never opens anything up).
+  const effectiveRole = resolveEffectiveRole(
+    req.auth.user?.role,
+    req.cookies.get(PREVIEW_COOKIE)?.value,
+  );
+  if (ADMIN_ONLY.test(pathname) && !isElevated(effectiveRole)) {
     return NextResponse.redirect(new URL("/portal", req.url));
   }
 });

@@ -22,7 +22,7 @@ export default function PositionPicker({
         {POSITIONS.map((p) => (
           <label
             key={p}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2.5 transition hover:border-brand-light hover:bg-sky-50"
+            className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-surface-2 p-2.5 transition hover:border-brand-light hover:bg-sky-50"
           >
             <input
               type="checkbox"
@@ -31,7 +31,7 @@ export default function PositionPicker({
               defaultChecked={selected.includes(p)}
               className="h-4 w-4 accent-brand"
             />
-            <span className="text-sm text-slate-800">{p}</span>
+            <span className="text-sm text-foreground">{p}</span>
           </label>
         ))}
       </div>
@@ -43,9 +43,9 @@ export default function PositionPicker({
           defaultValue={custom}
           autoComplete="off"
           placeholder="Other / custom (e.g. IT / Web Developer)"
-          className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-muted">
           Pick all that apply. Use the box for anything not listed. Leave
           everything blank for no title.
         </p>

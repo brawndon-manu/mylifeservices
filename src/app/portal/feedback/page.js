@@ -57,10 +57,10 @@ export default async function FeedbackPage({ searchParams }) {
           <p className="text-sm font-semibold uppercase tracking-wider text-amber-600">
             Internal board
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Suggestions &amp; Bugs
           </h1>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-muted">
             Spot something broken or have an idea to improve the portal or
             the way we work? Post it here. IT and management track each item
             until it&apos;s resolved.
@@ -82,7 +82,7 @@ export default async function FeedbackPage({ searchParams }) {
 
       <div className="mt-8 space-y-4">
         {items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border-strong bg-surface p-10 text-center text-sm text-muted">
             Nothing posted yet. Be the first to share a suggestion or report
             a bug.
           </div>
@@ -93,8 +93,8 @@ export default async function FeedbackPage({ searchParams }) {
             return (
               <article
                 key={item.id}
-                className={`rounded-xl border bg-white p-5 shadow-sm ${
-                  closed ? "border-slate-200 opacity-75" : "border-slate-200"
+                className={`rounded-xl border bg-surface p-5 shadow-sm ${
+                  closed ? "border-border opacity-75" : "border-border"
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -110,15 +110,15 @@ export default async function FeedbackPage({ searchParams }) {
                   </span>
                 </div>
 
-                <h2 className="mt-3 text-lg font-semibold text-slate-900">
+                <h2 className="mt-3 text-lg font-semibold text-foreground">
                   {item.title}
                 </h2>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted">
                   {item.body}
                 </p>
 
                 {item.imageUrl && (
-                  <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                  <div className="mt-3 overflow-hidden rounded-lg border border-border">
                     <Image
                       src={item.imageUrl}
                       alt=""
@@ -130,7 +130,7 @@ export default async function FeedbackPage({ searchParams }) {
                   </div>
                 )}
 
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
                   <AuthorChip author={item.author} size="sm" showRole={canSeeRoles(user.role)} />
                   <span>· {timeAgo(item.createdAt)}</span>
                   {closed && item.resolvedBy && (
@@ -140,7 +140,7 @@ export default async function FeedbackPage({ searchParams }) {
 
                 {/* action row */}
                 {(elevated || canDelete) && (
-                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
                     {elevated && (
                       <StatusButtons
                         itemId={item.id}
@@ -191,7 +191,7 @@ function StatusButtons({ itemId, current, it }) {
     {
       value: "OPEN",
       label: "Reopen",
-      className: "border border-slate-300 text-slate-600 hover:bg-slate-50",
+      className: "border border-border-strong text-muted hover:bg-surface-2",
     },
     // IT-only - subtle muted text button so it doesnt compete with the
     // primary actions.
@@ -199,7 +199,7 @@ function StatusButtons({ itemId, current, it }) {
       value: "DECLINED",
       label: "Discard",
       itOnly: true,
-      className: "text-slate-400 hover:text-slate-600 hover:bg-slate-50",
+      className: "text-faint hover:text-muted hover:bg-surface-2",
     },
   ];
 

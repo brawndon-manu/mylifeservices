@@ -26,8 +26,8 @@ export default function AuthBadge() {
   if (!user || (!user.name && !user.email)) return null;
 
   return (
-    <span className="hidden items-center gap-2 border-l border-slate-200 pl-3 text-sm sm:inline-flex">
-      <span className="font-medium text-slate-700">
+    <span className="hidden items-center gap-2 border-l border-border pl-3 text-sm sm:inline-flex">
+      <span className="font-medium text-muted">
         {user.name || user.email}
       </span>
       {user.role && (

@@ -62,13 +62,13 @@ export default async function PostDetailPage({ params, searchParams }) {
     post.authorId === user.id || isModerator(user.role);
   const canEditPost = post.authorId === user.id;
   const canPin = isModerator(user.role);
-  const tagClass = TAG_STYLES[post.tag] ?? "bg-slate-100 text-slate-700";
+  const tagClass = TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
         href="/portal/hub"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to Hub
       </Link>
@@ -82,11 +82,11 @@ export default async function PostDetailPage({ params, searchParams }) {
         </div>
       )}
 
-      <article className="mt-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <article className="mt-4 rounded-xl border border-border bg-surface p-6 shadow-sm">
         <header className="flex items-start justify-between gap-3">
           <div>
             <AuthorChip author={post.author} size="md" showRole={canSeeRoles(user.role)} />
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
               <span>{timeAgo(post.createdAt)}</span>
               {post.editedAt && <span>· edited</span>}
               {post.postedBy && isElevated(user.role) && (
@@ -100,7 +100,7 @@ export default async function PostDetailPage({ params, searchParams }) {
                 </span>
               )}
               {expired && (
-                <span className="rounded bg-slate-200 px-1.5 py-0.5 font-medium text-slate-700">
+                <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                   Expired
                 </span>
               )}
@@ -118,12 +118,12 @@ export default async function PostDetailPage({ params, searchParams }) {
           </span>
         </header>
 
-        <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed text-slate-800">
+        <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed text-foreground">
           {post.content}
         </p>
 
         {post.imageUrl && (
-          <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+          <div className="mt-4 overflow-hidden rounded-lg border border-border">
             <Image
               src={post.imageUrl}
               alt=""
@@ -135,12 +135,12 @@ export default async function PostDetailPage({ params, searchParams }) {
           </div>
         )}
 
-        <footer className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 text-sm">
+        <footer className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
           <form action={toggleLike.bind(null, post.id)}>
             <button
               type="submit"
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition hover:bg-rose-50 ${
-                liked ? "text-rose-600" : "text-slate-600"
+                liked ? "text-rose-600" : "text-muted"
               }`}
             >
               <HeartIcon filled={liked} className="h-4 w-4" />
@@ -154,7 +154,7 @@ export default async function PostDetailPage({ params, searchParams }) {
               <form action={togglePin.bind(null, post.id)}>
                 <button
                   type="submit"
-                  className="rounded-md px-2 py-1 font-medium text-slate-600 transition hover:bg-amber-50 hover:text-amber-800"
+                  className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-amber-50 hover:text-amber-800"
                 >
                   {post.pinnedAt ? "Unpin" : "Pin"}
                 </button>
@@ -163,7 +163,7 @@ export default async function PostDetailPage({ params, searchParams }) {
             {canEditPost && (
               <Link
                 href={`/portal/hub/${post.id}/edit`}
-                className="rounded-md px-2 py-1 font-medium text-slate-600 transition hover:bg-slate-100"
+                className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-surface-3"
               >
                 Edit
               </Link>
@@ -184,7 +184,7 @@ export default async function PostDetailPage({ params, searchParams }) {
 
       {/* comments */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
           {post.comments.length}{" "}
           {post.comments.length === 1 ? "comment" : "comments"}
         </h2>
@@ -196,12 +196,12 @@ export default async function PostDetailPage({ params, searchParams }) {
             return (
               <div
                 key={c.id}
-                className="rounded-lg border border-slate-200 bg-white p-4"
+                className="rounded-lg border border-border bg-surface p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <AuthorChip author={c.author} size="sm" showRole={canSeeRoles(user.role)} />
-                    <div className="mt-0.5 text-xs text-slate-500">
+                    <div className="mt-0.5 text-xs text-muted">
                       {timeAgo(c.createdAt)}
                       {c.editedAt && <span> · edited</span>}
                     </div>
@@ -217,7 +217,7 @@ export default async function PostDetailPage({ params, searchParams }) {
                     </form>
                   )}
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                   {c.content}
                 </p>
               </div>
@@ -227,11 +227,11 @@ export default async function PostDetailPage({ params, searchParams }) {
 
         <form
           action={addComment.bind(null, post.id)}
-          className="mt-5 rounded-xl border border-slate-200 bg-white p-4"
+          className="mt-5 rounded-xl border border-border bg-surface p-4"
         >
           <label
             htmlFor="content"
-            className="block text-sm font-medium text-slate-700"
+            className="block text-sm font-medium text-muted"
           >
             Add a comment
           </label>
@@ -242,7 +242,7 @@ export default async function PostDetailPage({ params, searchParams }) {
             rows={3}
             maxLength={COMMENT_CONTENT_MAX}
             placeholder="Share your thoughts..."
-            className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            className="mt-2 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
           <div className="mt-2 flex justify-end">
             <button

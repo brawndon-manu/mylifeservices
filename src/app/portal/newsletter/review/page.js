@@ -55,14 +55,14 @@ export default async function NewsletterReviewPage() {
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
         href="/portal/newsletter"
-        className="text-sm font-medium text-slate-600 transition hover:text-brand"
+        className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to Newsletter
       </Link>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Review queue
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted">
         Approve a submission, then publish it to push it live on the public{" "}
         <Link href="/this-week" className="text-brand underline-offset-2 hover:underline">
           This Week
@@ -72,14 +72,14 @@ export default async function NewsletterReviewPage() {
 
       <div className="mt-8 space-y-4">
         {items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border-strong bg-surface p-10 text-center text-sm text-muted">
             Nothing submitted yet.
           </div>
         ) : (
           items.map((item) => (
             <article
               key={item.id}
-              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="rounded-xl border border-border bg-surface p-5 shadow-sm"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span
@@ -93,21 +93,21 @@ export default async function NewsletterReviewPage() {
                   {NL_STATUS_LABELS[item.status]}
                 </span>
                 {item.eventDate && (
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-muted">
                     {formatDate(item.eventDate)}
                   </span>
                 )}
               </div>
 
-              <h2 className="mt-3 text-lg font-semibold text-slate-900">
+              <h2 className="mt-3 text-lg font-semibold text-foreground">
                 {item.title}
               </h2>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted">
                 {item.body}
               </p>
 
               {item.imageUrl && (
-                <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                <div className="mt-3 overflow-hidden rounded-lg border border-border">
                   <Image
                     src={item.imageUrl}
                     alt=""
@@ -119,12 +119,12 @@ export default async function NewsletterReviewPage() {
                   <p className="bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {item.consentConfirmed
                       ? "✓ Submitter confirmed written consent is on file for anyone pictured."
-                      : "⚠ No consent confirmation on file — verify before publishing."}
+                      : "⚠ No consent confirmation on file: verify before publishing."}
                   </p>
                 </div>
               )}
 
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-muted">
                 Submitted by {item.submittedBy?.name || item.submittedBy?.email}{" "}
                 · {formatDate(item.createdAt)}
                 {item.approvedBy && <> · approved by {item.approvedBy.name}</>}
@@ -138,7 +138,7 @@ export default async function NewsletterReviewPage() {
               )}
 
               {/* action row depends on status */}
-              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
                 {item.status === "SUBMITTED" && (
                   <>
                     <form action={approveItem.bind(null, item.id)}>
@@ -160,7 +160,7 @@ export default async function NewsletterReviewPage() {
                         type="submit"
                         className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
                       >
-                        Publish — push live
+                        Publish to push live
                       </button>
                     </form>
                     <RejectForm itemId={item.id} label="Send back / reject" />
@@ -171,7 +171,7 @@ export default async function NewsletterReviewPage() {
                   <form action={unpublishItem.bind(null, item.id)}>
                     <button
                       type="submit"
-                      className="rounded-md border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      className="rounded-md border border-border-strong px-4 py-1.5 text-sm font-medium text-muted transition hover:bg-surface-2"
                     >
                       Unpublish
                     </button>
@@ -182,9 +182,9 @@ export default async function NewsletterReviewPage() {
                   <form action={approveItem.bind(null, item.id)}>
                     <button
                       type="submit"
-                      className="rounded-md border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      className="rounded-md border border-border-strong px-4 py-1.5 text-sm font-medium text-muted transition hover:bg-surface-2"
                     >
-                      Reconsider — approve
+                      Reconsider and approve
                     </button>
                   </form>
                 )}
@@ -218,7 +218,7 @@ function RejectForm({ itemId, label = "Reject" }) {
         name="note"
         maxLength={NL_NOTE_MAX}
         placeholder="Reason (optional)"
-        className="w-40 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand sm:w-48"
+        className="w-40 rounded-md border border-border-strong px-2 py-1.5 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand sm:w-48"
       />
       <button
         type="submit"

@@ -80,10 +80,10 @@ export default async function LoginPage({ searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Employee portal
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Sign in
       </h1>
-      <p className="mt-3 text-base leading-relaxed text-slate-700">
+      <p className="mt-3 text-base leading-relaxed text-muted">
         Enter your work email and we&apos;ll send you a one-time sign-in
         link.
       </p>
@@ -103,7 +103,7 @@ export default async function LoginPage({ searchParams }) {
         <div>
           <label
             htmlFor="email"
-            className="block text-sm font-medium text-slate-700"
+            className="block text-sm font-medium text-muted"
           >
             Email
           </label>
@@ -117,7 +117,7 @@ export default async function LoginPage({ searchParams }) {
             // validates with cleanEmail() - dont trust the browser.
             maxLength={254}
             placeholder="you@example.com"
-            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
         <button

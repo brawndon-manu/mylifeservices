@@ -68,6 +68,15 @@ export async function submitApplication(_prevState, formData) {
     attachments = [{ filename: resume.name || "resume", content: buffer }];
   }
 
+  // if they said their work history is on their resume, a resume must be attached
+  if (formData.get("exp_on_resume") && !attachments) {
+    return {
+      ok: false,
+      error:
+        "You checked that your work history is on your resume. Please attach it below, or uncheck that box and fill in your work experience.",
+    };
+  }
+
   // APPLICATIONS_INBOX can be one address or a comma-separated list - everyone
   // listed gets a copy.
   const to = (process.env.APPLICATIONS_INBOX || "")
@@ -84,7 +93,7 @@ export async function submitApplication(_prevState, formData) {
     );
     return {
       ok: false,
-      error: "Something went wrong on our end. Please try again, or call us at (909) 837-0907.",
+      error: "Something went wrong on our end. Please try again, or call us at (562) 686-2548.",
     };
   }
 
@@ -96,7 +105,7 @@ export async function submitApplication(_prevState, formData) {
       from,
       to,
       replyTo: email,
-      subject: `New job application — ${firstName} ${lastName}`,
+      subject: `New job application from ${firstName} ${lastName}`,
       text: buildText(app),
       html: buildHtml(app),
       attachments,
@@ -105,14 +114,14 @@ export async function submitApplication(_prevState, formData) {
       console.error("resend application send error:", error);
       return {
         ok: false,
-        error: "We couldn't submit your application. Please try again, or call us at (909) 837-0907.",
+        error: "We couldn't submit your application. Please try again, or call us at (562) 686-2548.",
       };
     }
   } catch (err) {
     console.error("application send threw:", err);
     return {
       ok: false,
-      error: "We couldn't submit your application. Please try again, or call us at (909) 837-0907.",
+      error: "We couldn't submit your application. Please try again, or call us at (562) 686-2548.",
     };
   }
 
@@ -159,6 +168,7 @@ function readApplication(data, resumeFileName) {
     fieldOfStudy: v("field_of_study"),
     school: v("school"),
     certs: checkedAny(CERTIFICATIONS.map((c) => c.name)),
+    expOnResume: !!data.get("exp_on_resume"),
     employers: [1, 2, 3].map((i) => ({
       name: v(`emp${i}_name`),
       title: v(`emp${i}_title`),
@@ -176,6 +186,7 @@ function readApplication(data, resumeFileName) {
       ["CA Driver's License", v("q_license")],
       ["Reliable vehicle", v("q_vehicle")],
       ["Auto insurance", v("q_insurance")],
+      ["Vehicle registration", v("q_registration")],
       ["Willing to transport clients", v("q_transport")],
       ["DSP training", v("q_dsp")],
     ],
@@ -217,11 +228,15 @@ function buildText(a) {
   lines.push(`Field of Study: ${a.fieldOfStudy}  |  School: ${a.school}`);
   lines.push(`Certifications: ${a.certs}`);
   lines.push("\n--- WORK EXPERIENCE ---");
-  a.employers.forEach((e, i) => {
-    lines.push(`Employer ${i + 1}: ${e.name} | Title: ${e.title} | Supervisor: ${e.supervisor} | Phone: ${e.phone}`);
-    lines.push(`  Dates: ${e.from} to ${e.to} | Reason for Leaving: ${e.reason}`);
-    lines.push(`  Duties: ${e.duties}`);
-  });
+  if (a.expOnResume) {
+    lines.push("Provided in the attached resume.");
+  } else {
+    a.employers.forEach((e, i) => {
+      lines.push(`Employer ${i + 1}: ${e.name} | Title: ${e.title} | Supervisor: ${e.supervisor} | Phone: ${e.phone}`);
+      lines.push(`  Dates: ${e.from} to ${e.to} | Reason for Leaving: ${e.reason}`);
+      lines.push(`  Duties: ${e.duties}`);
+    });
+  }
   lines.push("\n--- QUALIFICATIONS ---");
   a.qualifications.forEach(([label, value]) => lines.push(`${label}: ${value}`));
   lines.push(`Additional Skills: ${a.additionalSkills}`);
@@ -273,13 +288,15 @@ function buildHtml(a) {
       return `<tr><td style="padding-top:${i === 0 ? 0 : 10}px;"><div style="background:#f7f9fb;border:1px solid ${LINE};border-radius:8px;padding:12px 14px;"><div style="font-size:12px;font-weight:bold;color:${BRAND};margin-bottom:6px;">Employer ${i + 1}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${row("Company", val(e.name))}${row("Title", val(e.title))}${row("Supervisor", val(e.supervisor))}${row("Phone", val(e.phone))}${row("Dates", `${val(e.from)} – ${val(e.to)}`)}${row("Reason for leaving", val(e.reason))}${row("Duties", val(e.duties))}</table></div></td></tr>`;
     })
     .join("");
-  const employersInner = employerBlocks || `<tr><td style="font-size:14px;">${dash}</td></tr>`;
+  const employersInner = a.expOnResume
+    ? `<tr><td style="font-size:14px;color:#1c1c1c;"><strong>Provided in the attached resume.</strong></td></tr>`
+    : employerBlocks || `<tr><td style="font-size:14px;">${dash}</td></tr>`;
 
   const refBlocks = a.references
     .map((r) => {
       const empty = [r.name, r.relationship, r.org, r.phone].every((x) => x === "—");
       if (empty) return "";
-      return `<tr><td style="padding:4px 0;font-size:14px;color:#1c1c1c;"><strong>${val(r.name)}</strong> <span style="color:${MUTED};">— ${val(r.relationship)}, ${val(r.org)} · ${val(r.phone)}</span></td></tr>`;
+      return `<tr><td style="padding:4px 0;font-size:14px;color:#1c1c1c;"><strong>${val(r.name)}:</strong> <span style="color:${MUTED};">${val(r.relationship)}, ${val(r.org)} · ${val(r.phone)}</span></td></tr>`;
     })
     .join("");
   const refsInner = refBlocks || `<tr><td style="font-size:14px;">${dash}</td></tr>`;

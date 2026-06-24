@@ -81,7 +81,7 @@ export async function submitContact(_prevState, formData) {
       from,
       to,
       replyTo: email,
-      subject: `New contact form: ${reason} — ${name}`,
+      subject: `New contact form from ${name} (${reason})`,
       text,
     });
     if (error) {

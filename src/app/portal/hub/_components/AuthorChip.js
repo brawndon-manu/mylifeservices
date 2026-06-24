@@ -6,8 +6,8 @@ import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 // dashboard greeting so the visual language is consistent.
 //
 // props:
-//   - author:   { name, role, email } — pulled from prisma
-//   - size:     "sm" | "md"           — md for posts, sm for comments
+//   - author:   { name, role, email } - pulled from prisma
+//   - size:     "sm" | "md"           - md for posts, sm for comments
 //   - showRole: only render the privilege-role badge when true. off by
 //               default so roles never leak - the caller passes
 //               canSeeRoles(viewer.role) (ADMIN/IT only). staff just see
@@ -16,14 +16,14 @@ export default function AuthorChip({ author, size = "md", showRole = false }) {
   if (!author) return null;
   const isSm = size === "sm";
   const nameClass = isSm
-    ? "text-sm font-medium text-slate-900"
-    : "text-base font-semibold text-slate-900";
+    ? "text-sm font-medium text-foreground"
+    : "text-base font-semibold text-foreground";
   const roleBadge = isSm
     ? `ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass(author.role)}`
     : `ml-2 rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(author.role)}`;
   const emailBadgeClass = isSm
-    ? "ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
-    : "ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500";
+    ? "ml-1.5 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-muted"
+    : "ml-2 rounded bg-surface-3 px-2 py-0.5 text-xs font-medium text-muted";
 
   return (
     <span className="inline-flex flex-wrap items-center">

@@ -24,12 +24,12 @@ export default function CareersPage() {
         }}
       />
 
-      <section className="border-b border-slate-200 bg-white">
+      <section className="border-b border-border bg-surface">
         <div className="mx-auto max-w-3xl px-6 py-16 sm:py-20">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Working at My Life Services
           </h2>
-          <p className="mt-5 text-base leading-relaxed text-slate-700 sm:text-lg">
+          <p className="mt-5 text-base leading-relaxed text-muted sm:text-lg">
             Working at My Life Services involves providing direct support to
             adults with intellectual and developmental disabilities in community
             settings. Staff work one-on-one or in small groups to support daily
@@ -40,29 +40,29 @@ export default function CareersPage() {
         </div>
       </section>
 
-      <section className="bg-slate-50">
+      <section className="bg-surface-2">
         <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
           <header className="mb-10 max-w-2xl">
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               Explore roles by program
             </h2>
-            <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+            <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">
               Different programs require different levels of support and daily
               responsibilities. Explore each program below to learn what working
               in that setting typically involves.
             </p>
           </header>
-          <ul className="divide-y divide-slate-200 border-y border-slate-200">
+          <ul className="divide-y divide-border border-y border-border">
             {services.map((service) => (
               <li
                 key={service.slug}
                 className="grid gap-5 py-8 sm:grid-cols-12 sm:items-center sm:gap-8"
               >
                 <div className="sm:col-span-7">
-                  <h3 className="text-xl font-semibold tracking-tight text-slate-900">
+                  <h3 className="text-xl font-semibold tracking-tight text-foreground">
                     {service.name}
                   </h3>
-                  <p className="mt-2 text-base leading-relaxed text-slate-700">
+                  <p className="mt-2 text-base leading-relaxed text-muted">
                     {service.roleDescription}
                   </p>
                 </div>

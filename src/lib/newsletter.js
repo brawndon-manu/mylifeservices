@@ -26,7 +26,7 @@ export function isValidCategory(value) {
 // the portal review queue + submitter's "my submissions" list.
 export const NL_STATUS_LABELS = {
   SUBMITTED: "Pending review",
-  APPROVED: "Approved — awaiting publish",
+  APPROVED: "Approved, awaiting publish",
   PUBLISHED: "Published",
   REJECTED: "Not approved",
 };

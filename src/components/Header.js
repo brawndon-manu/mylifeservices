@@ -23,16 +23,16 @@ const navLinks = [
   { href: "/careers/apply", label: "Apply" },
 ];
 
-const PHONE_DISPLAY = "(909) 837-0907";
-const PHONE_HREF = "tel:+19098370907";
+const PHONE_DISPLAY = "(562) 686-2548";
+const PHONE_HREF = "tel:+15626862548";
 
 export default function Header() {
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-3">
         <Link
           href="/"
-          className="flex items-center gap-3 rounded text-slate-900 transition hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="flex items-center gap-3 rounded text-foreground transition hover:text-brand-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           <Image
             src="/logo/treelogov2.png"
@@ -49,7 +49,7 @@ export default function Header() {
         <AuthBadge />
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <nav aria-label="Primary">
-            <ul className="flex items-center gap-6 text-sm font-medium text-slate-700">
+            <ul className="flex items-center gap-6 text-sm font-medium text-muted">
               {/* About dropdown - closes on outside click / nav / Escape */}
               <li>
                 <NavDropdown label="About" align="left">
@@ -58,7 +58,7 @@ export default function Header() {
                       key={link.href}
                       href={link.href}
                       role="menuitem"
-                      className="block rounded px-3 py-2 text-sm transition hover:bg-slate-50 hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                      className="block rounded px-3 py-2 text-sm transition hover:bg-surface-2 hover:text-brand-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                     >
                       {link.label}
                     </Link>
@@ -69,7 +69,7 @@ export default function Header() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="rounded px-1 py-1 transition hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                    className="rounded px-1 py-1 transition hover:text-brand-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                   >
                     {link.label}
                   </Link>
@@ -82,7 +82,7 @@ export default function Header() {
                 button so staff can spot it without it crowding the nav. */}
             <Link
               href="/portal"
-              className="inline-flex items-center gap-2 rounded-md border border-brand-light px-3 py-1.5 text-sm font-medium text-brand-dark transition hover:bg-brand-light hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="inline-flex items-center gap-2 rounded-md border border-brand-light px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-brand-light hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               <LockIcon className="h-3.5 w-3.5 flex-none" />
               <span>Employee portal</span>

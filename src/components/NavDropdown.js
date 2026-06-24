@@ -55,7 +55,7 @@ export default function NavDropdown({
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((o) => !o)}
-        className={`flex cursor-pointer items-center gap-1 rounded px-1 py-1 transition hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${triggerClassName}`}
+        className={`flex cursor-pointer items-center gap-1 rounded px-1 py-1 transition hover:text-brand-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${triggerClassName}`}
       >
         {label}
         <svg
@@ -74,7 +74,7 @@ export default function NavDropdown({
       {open && (
         <div
           role="menu"
-          className={`absolute top-full z-50 mt-2 w-52 rounded-md border border-slate-200 bg-white p-1 shadow-lg ${
+          className={`absolute top-full z-50 mt-2 w-52 rounded-md border border-border bg-surface p-1 shadow-lg ${
             align === "right" ? "right-0" : "left-0"
           }`}
         >

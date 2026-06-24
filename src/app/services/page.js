@@ -5,7 +5,7 @@ import { services } from "@/lib/services";
 export const metadata = {
   title: "Services",
   description:
-    "Independent Living, Day Program, Supported Living, Self-Determination, and Crisis Support — services from My Life Services.",
+    "Independent Living, Day Program, Supported Living, Self-Determination, and Crisis Support: services from My Life Services.",
 };
 
 export default function ServicesPage() {
@@ -19,10 +19,10 @@ export default function ServicesPage() {
 
       <nav
         aria-label="Service sections"
-        className="border-b border-slate-200 bg-white"
+        className="border-b border-border bg-surface"
       >
         <div className="mx-auto max-w-5xl px-6 py-8 sm:py-10">
-          <p className="text-sm font-semibold uppercase tracking-wider text-slate-600">
+          <p className="text-sm font-semibold uppercase tracking-wider text-muted">
             On this page
           </p>
           <ol className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -30,12 +30,12 @@ export default function ServicesPage() {
               <li key={service.slug}>
                 <a
                   href={`#${service.slug}`}
-                  className="group flex h-full items-baseline gap-2 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm transition hover:border-brand hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  className="group flex h-full items-baseline gap-2 rounded-md border border-border bg-surface px-3 py-2.5 text-sm transition hover:border-brand hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
                   <span className="font-mono text-sm text-brand-dark">
                     {i + 1}
                   </span>
-                  <span className="font-medium text-slate-900 group-hover:text-brand-dark">
+                  <span className="font-medium text-foreground group-hover:text-brand-dark">
                     {service.name}
                   </span>
                 </a>
@@ -50,17 +50,17 @@ export default function ServicesPage() {
           <section
             key={service.slug}
             id={service.slug}
-            className={`scroll-mt-28 ${i % 2 === 1 ? "bg-slate-50" : "bg-white"}`}
+            className={`scroll-mt-28 ${i % 2 === 1 ? "bg-surface-2" : "bg-surface"}`}
           >
             <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
               <div className="grid gap-8 sm:grid-cols-12 sm:gap-12">
                 <div className="sm:col-span-5">
-                  <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
                     {service.name}
                   </h2>
                 </div>
                 <div className="sm:col-span-7">
-                  <p className="text-base leading-relaxed text-slate-700 sm:text-lg">
+                  <p className="text-base leading-relaxed text-muted sm:text-lg">
                     {service.description}
                   </p>
                   <p className="mt-6">

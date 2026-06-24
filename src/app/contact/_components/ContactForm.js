@@ -9,8 +9,8 @@ const REASONS = ["General", "Services", "Employment", "Partnership", "Other"];
 const initialState = { ok: false, error: null };
 
 const fieldClass =
-  "mt-1.5 block w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand-light/40";
-const labelClass = "block text-sm font-medium text-slate-700";
+  "mt-1.5 block w-full rounded-md border border-border-strong bg-surface px-3 py-2.5 text-base text-foreground shadow-sm transition placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand-light/40";
+const labelClass = "block text-sm font-medium text-muted";
 
 export default function ContactForm() {
   const [state, formAction] = useActionState(submitContact, initialState);
@@ -32,12 +32,12 @@ export default function ContactForm() {
             <path d="M20 6 9 17l-5-5" />
           </svg>
         </div>
-        <h3 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">
-          Thanks — your message is on its way.
+        <h3 className="mt-4 text-xl font-semibold tracking-tight text-foreground">
+          Thanks, your message is on its way.
         </h3>
-        <p className="mt-2 text-base leading-relaxed text-slate-700">
+        <p className="mt-2 text-base leading-relaxed text-muted">
           We&apos;ll get back to you as soon as we can. If it&apos;s urgent,
-          feel free to call us at (909) 837-0907.
+          feel free to call us at (562) 686-2548.
         </p>
       </div>
     );
@@ -97,7 +97,7 @@ export default function ContactForm() {
       <div className="grid gap-5 sm:grid-cols-2">
         <div>
           <label htmlFor="phone" className={labelClass}>
-            Phone <span className="text-slate-400">(optional)</span>
+            Phone <span className="text-faint">(optional)</span>
           </label>
           <input
             id="phone"

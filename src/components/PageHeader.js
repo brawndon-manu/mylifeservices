@@ -27,11 +27,11 @@ export default function PageHeader({
           {eyebrow}
         </p>
       ) : null}
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-5xl">
         {title}
       </h1>
       {paragraphs.length > 0 && (
-        <div className="mt-5 max-w-2xl space-y-4 text-lg leading-relaxed text-slate-700">
+        <div className="mt-5 max-w-2xl space-y-4 text-lg leading-relaxed text-muted">
           {paragraphs.map((para, i) => (
             <p key={i}>{para}</p>
           ))}
@@ -41,7 +41,7 @@ export default function PageHeader({
   );
 
   return (
-    <header className="border-b border-slate-200 bg-slate-50">
+    <header className="border-b border-border bg-surface-2">
       <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
         {hasImage ? (
           <div className="grid items-center gap-10 sm:grid-cols-12 sm:gap-12">

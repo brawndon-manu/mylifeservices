@@ -43,12 +43,12 @@ export function roleBadgeClass(role) {
 // short descriptions shown next to each radio button on the invite +
 // edit user forms. helps the admin pick the right role.
 export const ROLE_DESCRIPTIONS = {
-  SUPER: "Superuser — full access to everything, including device management. IT-only, top-level.",
+  SUPER: "Superuser with full access to everything, including device management. IT-only, top-level.",
   IT_ADMIN: "Technical admin with full access to the portal and user management.",
   ADMIN: "Top-level oversight. Owner/Director-style role with full management access.",
-  MANAGER: "Program management — can manage users + post announcements.",
+  MANAGER: "Program management. Can manage users + post announcements.",
   HR: "Human resources. Standard access for now (will gain HR-specific tools later).",
-  SUPERVISOR: "Field supervisor. Standard access — oversees on-the-ground staff.",
+  SUPERVISOR: "Field supervisor. Standard access; oversees on-the-ground staff.",
   STAFF: "Standard staff member. Read announcements + access resources.",
 };
 
@@ -126,4 +126,13 @@ export function canSeeRoles(role) {
 // validation when accepting role from a form submission.
 export function isValidRole(role) {
   return typeof role === "string" && ROLES.includes(role);
+}
+
+// privilege rank by position in ROLES: lower number = higher privilege
+// (SUPER = 0 ... STAFF = 6). unknown roles rank lowest. used by the
+// "view as role" preview to guarantee it can only ever step DOWN to a
+// lower-or-equal role, never escalate.
+export function roleRank(role) {
+  const i = ROLES.indexOf(role);
+  return i === -1 ? ROLES.length : i;
 }

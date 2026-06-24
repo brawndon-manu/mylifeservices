@@ -160,18 +160,18 @@ export default async function AdminPage({ searchParams }) {
       </p>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             User management
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700">
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
             {activeCount} active
             {deactivatedCount > 0 && (
               <>
                 {" "}
-                · <span className="text-slate-500">{deactivatedCount} deactivated</span>
+                · <span className="text-muted">{deactivatedCount} deactivated</span>
               </>
             )}
-            . Sign-in is invite-only — only active emails in this list can log in.
+            . Sign-in is invite-only: only active emails in this list can log in.
           </p>
         </div>
         <Link
@@ -183,7 +183,7 @@ export default async function AdminPage({ searchParams }) {
         </Link>
       </div>
 
-      {/* Banners — only one shows at a time depending on what just happened */}
+      {/* Banners - only one shows at a time depending on what just happened */}
       {justInvited && (
         <Banner kind="success" title="User added">
           <span className="font-mono">{justInvited}</span> can now sign
@@ -222,9 +222,9 @@ export default async function AdminPage({ searchParams }) {
           screens (and when the user has long emails). overflow-hidden
           would just clip the rightmost column off, which is what was
           happening to the Edit arrow. */}
-      <div className="mt-10 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="mt-10 overflow-x-auto rounded-xl border border-border bg-surface">
         <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
+          <thead className="border-b border-border bg-surface-2 text-xs uppercase tracking-wider text-muted">
             <tr>
               <SortableHeader column="email" sort={sort} dir={dir}>
                 Email
@@ -250,14 +250,14 @@ export default async function AdminPage({ searchParams }) {
               <th className="px-6 py-3 font-semibold text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-200 text-slate-700">
+          <tbody className="divide-y divide-border text-muted">
             {users.map((u) => {
               const isDeactivated = !!u.deactivatedAt;
               const isSelf = u.id === current.id;
               return (
                 <tr
                   key={u.id}
-                  className={isDeactivated ? "bg-slate-50 text-slate-400" : ""}
+                  className={isDeactivated ? "bg-surface-2 text-faint" : ""}
                 >
                   <td className="whitespace-nowrap px-6 py-3">
                     <span className={isDeactivated ? "line-through" : ""}>
@@ -270,28 +270,28 @@ export default async function AdminPage({ searchParams }) {
                     )}
                   </td>
                   <td className="whitespace-nowrap px-6 py-3">{u.name ?? "—"}</td>
-                  <td className="whitespace-nowrap px-6 py-3 text-slate-600">
-                    {u.title ?? <span className="text-slate-400">—</span>}
+                  <td className="whitespace-nowrap px-6 py-3 text-muted">
+                    {u.title ?? <span className="text-faint">—</span>}
                   </td>
                   <td className="whitespace-nowrap px-6 py-3">
                     {u.hireDate ? (
                       <div>
-                        <div className="text-slate-700">
+                        <div className="text-muted">
                           {DATE_FMT.format(u.hireDate)}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-faint">
                           {tenureLabel(u.hireDate)}
                         </div>
                       </div>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-faint">—</span>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-6 py-3">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
                         isDeactivated
-                          ? "bg-slate-200 text-slate-500"
+                          ? "bg-surface-3 text-muted"
                           : roleBadgeClass(u.role)
                       }`}
                     >
@@ -309,12 +309,12 @@ export default async function AdminPage({ searchParams }) {
                       </span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-6 py-3 text-slate-500">
+                  <td className="whitespace-nowrap px-6 py-3 text-muted">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
                   <td className="whitespace-nowrap px-6 py-3 text-right">
                     {isSelf ? (
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-faint">
                         Use Settings
                       </span>
                     ) : (
