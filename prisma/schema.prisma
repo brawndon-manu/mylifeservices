@@ -29,7 +29,14 @@ enum Role {
 
 model User {
   id            String    @id @default(cuid())
+  // full / legal name (records). managed by admin/HR. shown only on the contact
+  // detail card + admin panel (gated to admin/management when hideLegalName).
   name          String?
+  // optional preferred first / last name. self-editable in settings. the name
+  // shown everywhere = (preferredFirstName or legal first) + (preferredLastName
+  // or legal last), e.g. "Manu" + legal last "Uribe" -> "Manu Uribe".
+  preferredFirstName String?
+  preferredLastName  String?
   email         String    @unique
   emailVerified DateTime?
   image         String?
@@ -53,6 +60,15 @@ model User {
   // free-text working hours shown on their contact detail page, e.g.
   // "Mon-Fri 9am-5pm". self-editable in Settings, admins too.
   workingHours  String?
+  // when false, the phone is hidden on the PUBLIC shared contact link
+  // (/c/[id]). still shown to signed-in staff in the portal. opt-out in
+  // Settings; defaults to sharing.
+  sharePhonePublicly Boolean @default(true)
+  // when true, the full/legal name is hidden from coworkers + the public link -
+  // only the oversight tier (HR/management) + the person themselves see it.
+  // self-set in settings. they should have a display name set so something
+  // still shows.
+  hideLegalName Boolean @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -61,6 +77,10 @@ model User {
   postedPosts   Post[]     @relation("PostPostedBy")
   comments      Comment[]
   likes         PostLike[]
+  announcements        Announcement[]        @relation("AnnouncementAuthor")
+  announcementsPosted  Announcement[]        @relation("AnnouncementPostedBy")
+  announcementComments AnnouncementComment[]
+  announcementLikes    AnnouncementLike[]
   nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
   nlApproved    NewsletterItem[] @relation("NLApprovedBy")
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
@@ -70,6 +90,7 @@ model User {
   resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
   resourcesVerified  Resource[]   @relation("ResourceVerifiedBy")
   sitePhotos    SitePhoto[]   @relation("SitePhotoUploadedBy")
+  notifications Notification[]
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -278,6 +299,63 @@ model PostLike {
   @@id([postId, userId])
 }
 
+// Announcements - a second internal feed, identical in shape to the Hub
+// (Post/Comment/PostLike) but separate so it stays a clean broadcast board.
+// only Supervisor+ can create announcements (see src/lib/roles.js
+// isSupervisorUp); everyone reads, comments, and reacts.
+model Announcement {
+  id         String     @id @default(cuid())
+  authorId   String
+  author     User       @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  // optional title - used by the Changelog type (Discord-style heading). plain
+  // announcements leave it null and just use content.
+  title      String?
+  content    String
+  imageUrl   String?
+  // proxy posting: authorId is the credited person, postedById is who hit
+  // submit (null when posted by themselves). kept for the audit trail.
+  postedById String?
+  postedBy   User?      @relation("AnnouncementPostedBy", fields: [postedById], references: [id])
+  tag        String
+  expiresAt  DateTime?
+  pinnedAt   DateTime?
+  pinnedById String?
+  editedAt   DateTime?
+  deletedAt  DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  comments   AnnouncementComment[]
+  likes      AnnouncementLike[]
+
+  @@index([createdAt])
+  @@index([pinnedAt])
+}
+
+model AnnouncementComment {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content        String
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([announcementId, createdAt])
+}
+
+model AnnouncementLike {
+  announcementId String
+  userId         String
+  createdAt      DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
+}
+
 // "This Week in My Life Services" newsletter. staff submit items, IT +
 // management approve, then IT publishes them to the public /this-week
 // page. lifecycle: SUBMITTED -> APPROVED -> PUBLISHED (or REJECTED).
@@ -328,6 +406,32 @@ model FeedbackItem {
   updatedAt    DateTime       @updatedAt
 
   @@index([status])
+  @@index([createdAt])
+}
+
+// in-portal notifications for the oversight tier. one row per recipient
+// (events fan out to every oversight user), each tracking its own read state.
+enum NotificationType {
+  RESOURCE_PENDING
+  FEEDBACK_NEW
+  NEWSLETTER_PENDING
+  USER_ADDED
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String
+  body      String
+  // in-portal path to jump to, e.g. /portal/contacts/resources/review
+  link      String?
+  // recipient user.
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
   @@index([createdAt])
 }
 
