@@ -40,7 +40,7 @@ const OP_CHIP = {
   CLOSED: "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",
 };
 
-export default function ResourceBrowser({ resources, canManage, canPick, initialCategory = "" }) {
+export default function ResourceBrowser({ resources, canManage, canPick, initialCategory = "", categoryOrder = RESOURCE_CATEGORIES, allCards = false }) {
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("");
   const [category, setCategory] = useState(initialCategory);
@@ -62,10 +62,10 @@ export default function ResourceBrowser({ resources, canManage, canPick, initial
   const categories = useMemo(() => {
     const present = new Set(resources.map((r) => r.category).filter(Boolean));
     return [
-      ...RESOURCE_CATEGORIES.filter((c) => present.has(c)),
-      ...[...present].filter((c) => !RESOURCE_CATEGORIES.includes(c)),
+      ...categoryOrder.filter((c) => present.has(c)),
+      ...[...present].filter((c) => !categoryOrder.includes(c)),
     ];
-  }, [resources]);
+  }, [resources, categoryOrder]);
   const servesOptions = useMemo(() => {
     const present = new Set(resources.flatMap((r) => r.whoItServes || []));
     return WHO_IT_SERVES_OPTIONS.filter((o) => present.has(o));
@@ -112,23 +112,28 @@ export default function ResourceBrowser({ resources, canManage, canPick, initial
       byCategory.get(c).push(r);
     }
     const ordered = [
-      ...RESOURCE_CATEGORIES.filter((c) => byCategory.has(c)),
-      ...[...byCategory.keys()].filter((c) => !RESOURCE_CATEGORIES.includes(c)),
+      ...categoryOrder.filter((c) => byCategory.has(c)),
+      ...[...byCategory.keys()].filter((c) => !categoryOrder.includes(c)),
     ];
     return ordered.map((c) => [c, byCategory.get(c)]);
-  }, [filtered]);
+  }, [filtered, categoryOrder]);
 
-  // landing cards: categories present in the data, plus any pinned category
-  // (e.g. Homeless shelters) so it shows even before it has resources.
+  // landing cards. `allCards` (recreation page) shows every category in this
+  // group up front, even empty ones; otherwise it's the categories present in
+  // the data plus any pinned category (e.g. Homeless shelters).
   const cardCategories = useMemo(() => {
     const counts = new Map(grouped.map(([c, items]) => [c, items.length]));
-    for (const c of pinnedCategories()) if (!counts.has(c)) counts.set(c, 0);
+    if (allCards) {
+      for (const c of categoryOrder) if (!counts.has(c)) counts.set(c, 0);
+    } else {
+      for (const c of pinnedCategories()) if (!counts.has(c)) counts.set(c, 0);
+    }
     const ordered = [
-      ...RESOURCE_CATEGORIES.filter((c) => counts.has(c)),
-      ...[...counts.keys()].filter((c) => !RESOURCE_CATEGORIES.includes(c)),
+      ...categoryOrder.filter((c) => counts.has(c)),
+      ...[...counts.keys()].filter((c) => !categoryOrder.includes(c)),
     ];
     return ordered.map((c) => [c, counts.get(c)]);
-  }, [grouped]);
+  }, [grouped, categoryOrder, allCards]);
 
   const mapPoints = useMemo(
     () =>
@@ -149,8 +154,8 @@ export default function ResourceBrowser({ resources, canManage, canPick, initial
   // categories actually shown on the map, for the color legend.
   const mapLegend = useMemo(() => {
     const present = new Set(mapPoints.map((p) => p.category).filter(Boolean));
-    return RESOURCE_CATEGORIES.filter((c) => present.has(c));
-  }, [mapPoints]);
+    return categoryOrder.filter((c) => present.has(c));
+  }, [mapPoints, categoryOrder]);
 
   // clicking a pin or a card name opens the inline detail panel (no redirect).
   const selected = useMemo(
@@ -455,6 +460,26 @@ function ResourceCard({ r, canManage, canPick, selectedId, onOpen }) {
           </div>
         )}
 
+        {(det.difficulty || det.entryFee || det.entranceFeeUsd != null || det.adventurePass) && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {det.difficulty && (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                {det.difficulty}
+              </span>
+            )}
+            {(det.entryFee || det.entranceFeeUsd != null) && (
+              <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] font-medium text-muted">
+                {det.entryFee || (det.entranceFeeUsd > 0 ? `$${det.entranceFeeUsd}` : "Free")}
+              </span>
+            )}
+            {det.adventurePass && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                Adventure Pass
+              </span>
+            )}
+          </div>
+        )}
+
         {(requirements.length > 0 || det.distributionMethod) && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {requirements.map((req) => (
@@ -503,6 +528,11 @@ function ResourceCard({ r, canManage, canPick, selectedId, onOpen }) {
           {r.website && (
             <a href={r.website} target="_blank" rel="noopener noreferrer" className="block truncate text-brand underline-offset-2 hover:underline">
               {r.website.replace(/^https?:\/\//, "")}
+            </a>
+          )}
+          {det.allTrailsUrl && (
+            <a href={det.allTrailsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400">
+              View on AllTrails →
             </a>
           )}
         </div>
@@ -699,13 +729,30 @@ function ResourcePanel({ r, canManage, onClose }) {
   const fullAddress = [r.address, cityLine.trim()].filter(Boolean).join(", ");
   const directions = r.address
     ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(r.address)}`
-    : null;
+    : typeof r.lat === "number" && typeof r.lng === "number"
+      ? `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}`
+      : null;
   const src = !det.addressVaries ? mapSrc(r.address) : null;
   const verifiedOn = r.lastVerifiedAt
     ? new Date(r.lastVerifiedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
     : null;
   const hasVisitDetails =
     det.distributionMethod || det.foodSelection || det.whatToBring || (det.specialInstructions || []).length > 0;
+  const hasOutdoor =
+    det.difficulty ||
+    det.entryFee ||
+    det.entranceFeeUsd != null ||
+    det.adventurePass ||
+    (det.payment || []).length > 0 ||
+    det.lengthMiles != null ||
+    det.timeHrs != null ||
+    det.elevationFt != null ||
+    det.parking ||
+    det.parkingOverflow ||
+    (det.terrain || []).length > 0 ||
+    (det.accessibility || []).length > 0 ||
+    (det.amenities || []).length > 0 ||
+    (det.hazards || []).length > 0;
 
   return (
     <div className="relative rounded-2xl border border-brand-light bg-surface p-5 shadow-md ring-1 ring-brand-light/40 sm:p-6">
@@ -755,6 +802,11 @@ function ResourcePanel({ r, canManage, onClose }) {
         {r.appointmentLink && (
           <a href={r.appointmentLink} target="_blank" rel="noopener noreferrer" className="rounded-md border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-surface-2">
             Book appointment
+          </a>
+        )}
+        {det.allTrailsUrl && (
+          <a href={det.allTrailsUrl} target="_blank" rel="noopener noreferrer" className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+            View on AllTrails
           </a>
         )}
         {canManage && (
@@ -836,6 +888,40 @@ function ResourcePanel({ r, canManage, onClose }) {
               <ul className="mt-1.5 list-disc pl-5 text-sm text-muted">
                 {det.specialInstructions.map((s) => <li key={s}>{s}</li>)}
               </ul>
+            )}
+          </PanelBlock>
+        )}
+
+        {hasOutdoor && (
+          <PanelBlock title="Recreation details">
+            <dl className="space-y-0.5 text-sm">
+              {det.difficulty && <PanelRow k="Difficulty" v={det.difficulty} />}
+              {det.lengthMiles != null && <PanelRow k="Length" v={`${det.lengthMiles} mi`} />}
+              {det.timeHrs != null && <PanelRow k="Time" v={`${det.timeHrs} hrs`} />}
+              {det.elevationFt != null && <PanelRow k="Elevation" v={`${det.elevationFt} ft`} />}
+              {(det.terrain || []).length > 0 && <PanelRow k="Terrain" v={det.terrain.join(", ")} />}
+              {(det.accessibility || []).length > 0 && (
+                <PanelRow k="Accessibility" v={det.accessibility.join(", ")} />
+              )}
+              {(det.amenities || []).length > 0 && (
+                <PanelRow k="Amenities" v={det.amenities.join(", ")} />
+              )}
+              {det.parking && <PanelRow k="Parking" v={det.parking} />}
+              {det.parkingOverflow && <PanelRow k="If lot's full" v={det.parkingOverflow} />}
+              {det.adventurePass && <PanelRow k="Adventure Pass" v="Required" />}
+              {det.entranceFeeUsd != null && (
+                <PanelRow k="Entrance fee" v={det.entranceFeeUsd > 0 ? `$${det.entranceFeeUsd}` : "Free"} />
+              )}
+              {det.entryFee && <PanelRow k="Fees" v={det.entryFee} />}
+              {(det.payment || []).length > 0 && <PanelRow k="Payment" v={det.payment.join(", ")} />}
+            </dl>
+            {(det.hazards || []).length > 0 && (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Heads up</p>
+                <ul className="mt-1 list-disc pl-5">
+                  {det.hazards.map((h) => <li key={h}>{h}</li>)}
+                </ul>
+              </div>
             )}
           </PanelBlock>
         )}

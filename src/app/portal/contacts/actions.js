@@ -4,22 +4,33 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { notifyOversight } from "@/lib/notify";
 import { isElevated, isAdminUp, isIT } from "@/lib/roles";
 import { cleanBody } from "@/lib/hub";
 import {
+  preferredName,
   formatUSPhone,
   isValidResourceCategory,
   isValidOpStatus,
   isDetailedCategory,
+  categoryHasBlock,
+  basePathForCategory,
   subtypesFor,
   cleanFromList,
   cleanSchedule,
   parseUsAddress,
+  parseCoords,
   titleCaseWords,
   WHO_IT_SERVES_OPTIONS,
   DISTRIBUTION_METHODS,
   FOOD_SELECTION_OPTIONS,
   SPECIAL_INSTRUCTIONS_OPTIONS,
+  DIFFICULTY_OPTIONS,
+  TERRAIN_OPTIONS,
+  ACCESSIBILITY_OPTIONS,
+  AMENITY_OPTIONS,
+  PAYMENT_OPTIONS,
+  HAZARD_OPTIONS,
   RESOURCE_NAME_MAX,
   RESOURCE_NOTES_MAX,
   RESOURCE_URL_MAX,
@@ -136,6 +147,37 @@ function parseResourceForm(formData) {
       SPECIAL_INSTRUCTIONS_OPTIONS,
     );
   }
+  // outdoor / recreation details, only for the categories that use them.
+  if (categoryHasBlock(category, "outdoor")) {
+    const diff = formData.get("difficulty");
+    details.difficulty = DIFFICULTY_OPTIONS.includes(diff) ? diff : null;
+    details.entryFee = cleanBody(formData.get("entryFee"), 120);
+    // numeric fields stored bare; the unit ($/mi/ft/hrs) is added on display.
+    const lm = parseFloat(formData.get("lengthMiles"));
+    details.lengthMiles = Number.isFinite(lm) && lm >= 0 ? lm : null;
+    const th = parseFloat(formData.get("timeHrs"));
+    details.timeHrs = Number.isFinite(th) && th >= 0 ? th : null;
+    const ef = parseFloat(formData.get("elevationFt"));
+    details.elevationFt = Number.isFinite(ef) && ef >= 0 ? ef : null;
+    const fee = parseFloat(formData.get("entranceFeeUsd"));
+    details.entranceFeeUsd = Number.isFinite(fee) && fee >= 0 ? fee : null;
+    details.payment = cleanFromList(formData.getAll("payment"), PAYMENT_OPTIONS);
+    details.adventurePass = formData.get("adventurePass") === "on";
+    details.terrain = cleanFromList(formData.getAll("terrain"), TERRAIN_OPTIONS);
+    details.accessibility = cleanFromList(
+      formData.getAll("accessibility"),
+      ACCESSIBILITY_OPTIONS,
+    );
+    details.amenities = cleanFromList(formData.getAll("amenities"), AMENITY_OPTIONS);
+    details.hazards = cleanFromList(formData.getAll("hazards"), HAZARD_OPTIONS);
+    // parking notes + an overflow/alternate spot for when the trailhead lot fills.
+    details.parking = cleanBody(formData.get("parking"), 300);
+    details.parkingOverflow = cleanBody(formData.get("parkingOverflow"), 300);
+  }
+  // trail-specific: AllTrails reference link.
+  if (categoryHasBlock(category, "trails")) {
+    details.allTrailsUrl = cleanUrl(formData.get("allTrailsUrl"));
+  }
 
   // location: if the street field holds a whole address (city/zip embedded),
   // split it into the right fields. then title-case the street + city.
@@ -187,7 +229,10 @@ export async function submitResource(formData) {
   const data = parseResourceForm(formData);
   if (!data.name) redirect("/portal/contacts/resources/new?error=name");
 
-  const { lat, lng } = await geocode(data.address);
+  // pasted coordinates (e.g. from AllTrails) set the pin exactly and win over
+  // address geocoding - the fix for trailheads with no usable street address.
+  const manualCoords = parseCoords(formData.get("coords"));
+  const { lat, lng } = manualCoords || (await geocode(data.address));
 
   const rawOp = formData.get("operationalStatus");
   const operationalStatus = isValidOpStatus(rawOp) ? rawOp : "ACTIVE";
@@ -214,12 +259,25 @@ export async function submitResource(formData) {
 
   revalidatePath("/portal/contacts");
   revalidatePath("/portal/resources");
+
+  // a pending submission (non-elevated) needs an approver - ping oversight.
+  if (!elevated) {
+    await notifyOversight({
+      type: "RESOURCE_PENDING",
+      title: "New resource pending review",
+      body: `${preferredName(user)} submitted "${data.name}" (${data.category}${data.city ? `, ${data.city}` : ""}) for approval.`,
+      link: "/portal/contacts/resources/review",
+      exceptUserId: user.id,
+    });
+  }
+
   // elevated adds go live, so land on the new resource's detail page; a
-  // pending submission goes back to the list with the "sent for review" note.
+  // pending submission goes back to its group's list (community or recreation)
+  // with the "sent for review" note.
   redirect(
     elevated
       ? `/portal/resources/${created.id}?saved=1`
-      : "/portal/resources?submitted=1",
+      : `${basePathForCategory(data.category)}?submitted=1`,
   );
 }
 
@@ -242,9 +300,13 @@ export async function updateResource(resourceId, formData) {
   const rawOp = formData.get("operationalStatus");
   const operationalStatus = isValidOpStatus(rawOp) ? rawOp : "ACTIVE";
 
-  // only re-geocode if the address actually changed (saves a Nominatim hit).
+  // pasted coordinates win; else re-geocode only if the address changed (saves
+  // a Nominatim hit); else keep the existing pin.
+  const manualCoords = parseCoords(formData.get("coords"));
   let coords = { lat: existing.lat, lng: existing.lng };
-  if ((data.address || null) !== (existing.address || null)) {
+  if (manualCoords) {
+    coords = manualCoords;
+  } else if ((data.address || null) !== (existing.address || null)) {
     coords = await geocode(data.address);
   }
 

@@ -15,6 +15,7 @@ import {
   RESOURCE_ADDRESS_MAX,
   RESOURCE_CITY_MAX,
   RESOURCE_HOURS_MAX,
+  RESOURCE_URL_MAX,
   WHO_IT_SERVES_OPTIONS,
   DAY_OPTIONS,
   DAY_ABBR,
@@ -23,11 +24,19 @@ import {
   DISTRIBUTION_METHODS,
   FOOD_SELECTION_OPTIONS,
   SPECIAL_INSTRUCTIONS_OPTIONS,
+  DIFFICULTY_OPTIONS,
+  TERRAIN_OPTIONS,
+  ACCESSIBILITY_OPTIONS,
+  AMENITY_OPTIONS,
+  PAYMENT_OPTIONS,
+  HAZARD_OPTIONS,
   OP_STATUSES,
   OP_STATUS_LABELS,
   subtypesFor,
   isDetailedCategory,
+  categoryHasBlock,
   categoryDescription,
+  formConfig,
   parseUsAddress,
 } from "@/lib/contacts";
 
@@ -35,7 +44,7 @@ const INPUT =
   "mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const LABEL = "block text-sm font-medium text-muted";
 
-export default function ResourceForm({ action, mode = "create", defaults = {}, submitLabel, existing = [], cancelHref = "/portal/resources" }) {
+export default function ResourceForm({ action, mode = "create", defaults = {}, submitLabel, existing = [], cancelHref = "/portal/resources", categories = RESOURCE_CATEGORIES }) {
   const router = useRouter();
   const d = defaults;
   const det = d.details || {};
@@ -74,6 +83,15 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
   );
 
   const detailed = isDetailedCategory(category);
+  const outdoor = categoryHasBlock(category, "outdoor");
+  const hasTrails = categoryHasBlock(category, "trails");
+  // per-category form config (labels, placeholders, which fields show). defaults
+  // to the original shared form so untailored categories are unchanged.
+  const cfg = useMemo(() => formConfig(category), [category]);
+  const rec = cfg.rec;
+  // current pin, shown as a hint so editors know what they'd be overriding.
+  const coordsDefault =
+    d.lat != null && d.lng != null ? `${d.lat}, ${d.lng}` : "";
   const subtypes = useMemo(() => subtypesFor(category), [category]);
 
   // non-blocking duplicate warning: flag existing resources with the same
@@ -127,9 +145,9 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
       <input type="hidden" name="scheduleJson" value={JSON.stringify(rows)} />
 
       {/* 1. Resource details */}
-      <Section title="Resource details">
+      <Section title={cfg.detailsTitle}>
         <div>
-          <Field id="name" label="Name" required value={nameVal} onChange={setNameVal} maxLength={RESOURCE_NAME_MAX} placeholder="e.g. Anaheim Community Food Pantry" />
+          <Field id="name" label="Name" required value={nameVal} onChange={setNameVal} maxLength={RESOURCE_NAME_MAX} placeholder={cfg.namePlaceholder} />
           {dupes.length > 0 && (
             <p className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               A resource named &ldquo;{nameVal.trim()}&rdquo; already exists
@@ -162,7 +180,7 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
           ) : (
             <>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {RESOURCE_CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -207,8 +225,8 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
                 </select>
               </div>
             )}
-            <Field id="orgName" label="Organization name" optional defaultValue={d.orgName} maxLength={120} placeholder="If different from the name above" />
-            <TextArea id="notes" label="Short description" defaultValue={d.notes} rows={3} maxLength={RESOURCE_NOTES_MAX} placeholder="What they do, who to ask for, anything helpful." />
+            <Field id="orgName" label={cfg.orgLabel} optional defaultValue={d.orgName} maxLength={120} placeholder={cfg.orgPlaceholder} />
+            <TextArea id="notes" label={cfg.notesLabel} defaultValue={d.notes} rows={3} maxLength={RESOURCE_NOTES_MAX} placeholder={cfg.notesPlaceholder} />
           </>
         )}
       </Section>
@@ -216,25 +234,28 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
       {category && (
         <>
 
-      {/* 2. Location & contact */}
-      <Section title="Location and contact">
+      {/* 2. Location & contact (config-driven per category) */}
+      <Section title={cfg.locationTitle}>
         {/* mobile / on-the-move resources: no fixed address */}
-        <label className="flex items-center gap-2 text-sm text-foreground">
-          <input
-            type="checkbox"
-            name="addressVaries"
-            checked={addressVaries}
-            onChange={(e) => setAddressVaries(e.target.checked)}
-            className="rounded border-border-strong text-brand focus:ring-brand"
-          />
-          Address varies (mobile / on the move, no fixed location)
-        </label>
+        {cfg.showAddressVaries && (
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              name="addressVaries"
+              checked={addressVaries}
+              onChange={(e) => setAddressVaries(e.target.checked)}
+              className="rounded border-border-strong text-brand focus:ring-brand"
+            />
+            Address varies (mobile / on the move, no fixed location)
+          </label>
+        )}
         {!addressVaries && (
           <>
             <Field
               id="address"
-              label="Street address"
-              required
+              label={cfg.addressLabel}
+              required={cfg.addressRequired}
+              optional={!cfg.addressRequired}
               value={addressVal}
               onChange={setAddressVal}
               onBlur={() => splitAddress(addressVal)}
@@ -246,24 +267,128 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
                 }
               }}
               maxLength={RESOURCE_ADDRESS_MAX}
-              placeholder="123 Main St (paste a full address and it'll split below)"
+              placeholder={cfg.addressPlaceholder}
             />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="city" label="City" required value={cityVal} onChange={setCityVal} maxLength={RESOURCE_CITY_MAX} />
+              <Field id="city" label="City" required={cfg.cityRequired} optional={!cfg.cityRequired} value={cityVal} onChange={setCityVal} maxLength={RESOURCE_CITY_MAX} />
               <Field id="zip" label="ZIP" optional value={zipVal} onChange={setZipVal} maxLength={12} />
             </div>
           </>
         )}
-        <Field id="serviceArea" label="Service area" optional defaultValue={d.serviceArea} maxLength={120} placeholder="e.g. Anaheim residents only" />
-        <Field id="phone" label="Phone" required type="tel" defaultValue={d.phone} />
-        <Field id="email" label="Email" optional type="email" defaultValue={d.email} placeholder="contact@example.org" />
-        <Field id="website" label="Website" optional defaultValue={d.website} placeholder="example.org" />
-        <Field id="appointmentLink" label="Appointment link" optional defaultValue={d.appointmentLink} placeholder="Online booking URL, if any" />
-        <Field id="contactInstructions" label="Contact instructions" optional defaultValue={d.contactInstructions} maxLength={300} placeholder='e.g. "Call before visiting" or "Text to schedule"' />
+        {/* trailheads + remote spots often have no street address - paste the
+            coordinates instead to drop an exact pin. */}
+        {outdoor && (
+          <div>
+            <label htmlFor="coords" className={LABEL}>
+              Map pin coordinates <span className="text-faint">(optional)</span>
+            </label>
+            <input
+              id="coords"
+              name="coords"
+              type="text"
+              defaultValue=""
+              maxLength={60}
+              autoComplete="off"
+              placeholder="lat, lng — e.g. 33.6765, -117.5121"
+              className={INPUT}
+            />
+            <p className="mt-1 text-xs text-muted">
+              Paste coordinates (e.g. from AllTrails or Google Maps) to set the
+              exact pin. Overrides the auto-locate from the address; great for
+              trailheads with no street address.
+              {coordsDefault && (
+                <>
+                  {" "}Current pin: <span className="font-mono">{coordsDefault}</span>.
+                </>
+              )}
+            </p>
+          </div>
+        )}
+        {cfg.showParking && (
+          <div className="rounded-lg border border-border bg-surface-2 p-4">
+            <p className={LABEL}>Parking &amp; fees</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Where to park, what it costs, and how to pay.
+            </p>
+            <div className="mt-3 space-y-4">
+              <TextArea
+                id="parking"
+                label="Parking notes"
+                defaultValue={det.parking}
+                rows={2}
+                maxLength={300}
+                placeholder="Where to park, e.g. Dirt lot at the trailhead"
+              />
+              <TextArea
+                id="parkingOverflow"
+                label="Overflow / alternate parking"
+                defaultValue={det.parkingOverflow}
+                rows={2}
+                maxLength={300}
+                placeholder="Where to park + how to get in if the main lot is full, e.g. Lot fills by 8am weekends; park along O'Neill Park Rd and walk in ~0.4 mi"
+              />
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-border-strong bg-surface px-3 py-2.5 text-sm font-medium text-foreground transition hover:border-brand-light">
+                <input
+                  type="checkbox"
+                  name="adventurePass"
+                  defaultChecked={!!det.adventurePass}
+                  className="h-4 w-4 rounded border-border-strong text-brand focus:ring-brand"
+                />
+                Adventure Pass required
+              </label>
+              {rec.entranceFee && (
+                <UnitField id="entranceFeeUsd" label="Entrance fee" prefix="$" defaultValue={det.entranceFeeUsd} placeholder="e.g. 5 (blank = free)" />
+              )}
+              {rec.payment && (
+                <CheckGroup legend="Payment accepted" name="payment" options={PAYMENT_OPTIONS} selected={det.payment || []} />
+              )}
+            </div>
+          </div>
+        )}
+        {hasTrails && (
+          <div>
+            <label htmlFor="allTrailsUrl" className={LABEL}>
+              AllTrails link <span className="text-faint">(optional)</span>
+            </label>
+            <input
+              id="allTrailsUrl"
+              name="allTrailsUrl"
+              type="text"
+              defaultValue={det.allTrailsUrl || ""}
+              maxLength={RESOURCE_URL_MAX}
+              autoComplete="off"
+              placeholder="alltrails.com/trail/..."
+              className={INPUT}
+            />
+            <p className="mt-1 text-xs text-muted">
+              Link to the trail on AllTrails for the map, distance, reviews, and
+              photos. Shows as a &ldquo;View on AllTrails&rdquo; button.
+            </p>
+          </div>
+        )}
+        {cfg.showServiceArea && (
+          <Field id="serviceArea" label="Service area" optional defaultValue={d.serviceArea} maxLength={120} placeholder="e.g. Anaheim residents only" />
+        )}
+        {cfg.showPhone && (
+          <Field id="phone" label={cfg.phoneLabel} required={cfg.phoneRequired} optional={!cfg.phoneRequired} type="tel" defaultValue={d.phone} placeholder={cfg.phonePlaceholder} />
+        )}
+        {cfg.showEmail && (
+          <Field id="email" label="Email" optional type="email" defaultValue={d.email} placeholder="contact@example.org" />
+        )}
+        {cfg.showWebsite && (
+          <Field id="website" label="Website" optional defaultValue={d.website} placeholder="example.org" />
+        )}
+        {cfg.showAppointmentLink && (
+          <Field id="appointmentLink" label="Appointment link" optional defaultValue={d.appointmentLink} placeholder="Online booking URL, if any" />
+        )}
+        {cfg.showContactInstructions && (
+          <Field id="contactInstructions" label="Contact instructions" optional defaultValue={d.contactInstructions} maxLength={300} placeholder='e.g. "Call before visiting" or "Text to schedule"' />
+        )}
       </Section>
 
-      {/* 3. Schedule */}
-      <Section title="Schedule" hint="Pick the days that share the same hours, set the times once. Add another block for days with different hours (e.g. a 2nd & 4th Saturday).">
+      {/* 3. Schedule - full day/time editor, simple hours text, or hidden */}
+      {cfg.schedule === "full" && (
+      <Section title={cfg.scheduleTitle} hint="Pick the days that share the same hours, set the times once. Add another block for days with different hours (e.g. a 2nd & 4th Saturday).">
         <div className="space-y-3">
           {rows.map((row, i) => (
             <div key={i} className="rounded-lg border border-border p-3">
@@ -335,10 +460,17 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
         <button type="button" onClick={addRow} className="text-sm font-semibold text-brand transition hover:text-brand-dark">
           + Add hours for other days
         </button>
-        <TextArea id="hours" label="Other schedule notes" defaultValue={d.hours} rows={2} maxLength={RESOURCE_HOURS_MAX} placeholder="Holidays, seasonal changes, or anything the rows above don't capture." />
+        <TextArea id="hours" label={cfg.hoursLabel} defaultValue={d.hours} rows={2} maxLength={RESOURCE_HOURS_MAX} placeholder={cfg.hoursPlaceholder} />
       </Section>
+      )}
+      {cfg.schedule === "simple" && (
+        <Section title={cfg.scheduleTitle}>
+          <TextArea id="hours" label={cfg.hoursLabel} defaultValue={d.hours} rows={2} maxLength={RESOURCE_HOURS_MAX} placeholder={cfg.hoursPlaceholder} />
+        </Section>
+      )}
 
       {/* 4. Eligibility & visit */}
+      {cfg.showEligibility && (
       <Section title="Eligibility and visit instructions">
         <CheckGroup legend="Who it serves" name="whoItServes" options={WHO_IT_SERVES_OPTIONS} selected={d.whoItServes || []} />
         <div>
@@ -364,6 +496,27 @@ export default function ResourceForm({ action, mode = "create", defaults = {}, s
           </>
         )}
       </Section>
+      )}
+
+      {/* 4b. Recreation details (per-category rec config) */}
+      {outdoor && (
+        <Section title={rec.title} hint={rec.hint}>
+          {(rec.difficulty || rec.length || rec.time || rec.elevation) && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {rec.difficulty && <Select id="difficulty" label="Difficulty" options={DIFFICULTY_OPTIONS} defaultValue={det.difficulty} />}
+              {rec.length && <UnitField id="lengthMiles" label="Length" unit="mi" defaultValue={det.lengthMiles} placeholder="e.g. 2.5" />}
+              {rec.time && <UnitField id="timeHrs" label="Typical time" unit="hrs" defaultValue={det.timeHrs} placeholder="e.g. 1.5" />}
+              {rec.elevation && <UnitField id="elevationFt" label="Elevation gain" unit="ft" defaultValue={det.elevationFt} placeholder="e.g. 800" />}
+            </div>
+          )}
+          {/* entrance fee + payment live under Parking & fees (Location) now */}
+          {rec.entryFee && <Field id="entryFee" label="Entrance / parking fee" optional defaultValue={det.entryFee} maxLength={120} placeholder="e.g. Free, or $5 parking" />}
+          {rec.terrain && <CheckGroup legend="Terrain" name="terrain" options={TERRAIN_OPTIONS} selected={det.terrain || []} />}
+          {rec.accessibility && <CheckGroup legend="Accessibility" name="accessibility" options={ACCESSIBILITY_OPTIONS} selected={det.accessibility || []} />}
+          {rec.amenities && <CheckGroup legend="Amenities" name="amenities" options={AMENITY_OPTIONS} selected={det.amenities || []} />}
+          {rec.hazards && <CheckGroup legend="Hazards / heads up" name="hazards" options={HAZARD_OPTIONS} selected={det.hazards || []} />}
+        </Section>
+      )}
 
       {/* 5. Verification & internal */}
       <Section title="Verification and internal notes">
@@ -457,6 +610,41 @@ function Field({ id, label, optional, required, type = "text", maxLength, placeh
             : { defaultValue: defaultValue || "" })}
         />
       )}
+    </div>
+  );
+}
+
+// manual-entry field with a fixed unit baked in - a suffix (e.g. "mi", "ft",
+// "hrs") or a prefix (e.g. "$"), so the user just types the number and the unit
+// is locked. plain text input (no number steppers) - manual entry only.
+function UnitField({ id, label, unit, prefix, defaultValue, placeholder }) {
+  return (
+    <div>
+      <label htmlFor={id} className={LABEL}>
+        {label} <span className="text-faint">(optional)</span>
+      </label>
+      <div className="relative mt-1">
+        {prefix && (
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-medium text-muted">
+            {prefix}
+          </span>
+        )}
+        <input
+          id={id}
+          name={id}
+          type="text"
+          inputMode="decimal"
+          defaultValue={defaultValue ?? ""}
+          placeholder={placeholder}
+          autoComplete="off"
+          className={`${INPUT} mt-0 ${prefix ? "pl-7" : ""} ${unit ? "pr-12" : ""}`}
+        />
+        {unit && (
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-muted">
+            {unit}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

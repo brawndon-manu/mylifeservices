@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isIT } from "@/lib/roles";
+import { ALL_RESOURCE_CATEGORIES } from "@/lib/contacts";
 import { updateResource, deleteResource } from "@/app/portal/contacts/actions";
 import ConfirmButton from "@/components/ConfirmButton";
 import ResourceForm from "../../ResourceForm";
@@ -56,6 +57,7 @@ export default async function EditResourcePage({ params, searchParams }) {
           defaults={resource}
           submitLabel="Save changes"
           cancelHref={`/portal/resources/${id}`}
+          categories={ALL_RESOURCE_CATEGORIES}
         />
       </div>
 

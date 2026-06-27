@@ -7,6 +7,7 @@ import {
   formatUSPhone,
   formatScheduleRow,
   isDetailedCategory,
+  basePathForCategory,
   OP_STATUS_LABELS,
 } from "@/lib/contacts";
 import { markVerified } from "@/app/portal/contacts/actions";
@@ -68,10 +69,18 @@ export default async function ResourceDetailPage({ params, searchParams }) {
     det.proofOfIncomeRequired && "Proof of income required",
   ].filter(Boolean);
 
+  // directions from the address, or the coordinates when there's no address
+  // (trailheads, remote spots).
+  const directions = r.address
+    ? directionsHref(r.address)
+    : typeof r.lat === "number" && typeof r.lng === "number"
+      ? `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}`
+      : null;
+
   return (
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
-        href={r.category ? `/portal/resources?cat=${encodeURIComponent(r.category)}` : "/portal/resources"}
+        href={`${basePathForCategory(r.category)}${r.category ? `?cat=${encodeURIComponent(r.category)}` : ""}`}
         className="text-sm font-medium text-muted transition hover:text-brand"
       >
         ← Back to {r.category || "Resources"}
@@ -102,8 +111,8 @@ export default async function ResourceDetailPage({ params, searchParams }) {
 
       {/* action buttons */}
       <div className="mt-5 flex flex-wrap gap-2">
-        {r.address && (
-          <a href={directionsHref(r.address)} target="_blank" rel="noopener noreferrer" className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand">
+        {directions && (
+          <a href={directions} target="_blank" rel="noopener noreferrer" className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand">
             Get directions
           </a>
         )}
@@ -115,6 +124,11 @@ export default async function ResourceDetailPage({ params, searchParams }) {
         {r.appointmentLink && (
           <a href={r.appointmentLink} target="_blank" rel="noopener noreferrer" className="rounded-md border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-surface-2">
             Book appointment
+          </a>
+        )}
+        {det.allTrailsUrl && (
+          <a href={det.allTrailsUrl} target="_blank" rel="noopener noreferrer" className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
+            View on AllTrails
           </a>
         )}
         {canEdit && (
@@ -204,6 +218,54 @@ export default async function ResourceDetailPage({ params, searchParams }) {
               )}
             </Block>
           )}
+
+        {/* outdoor / recreation details */}
+        {(det.difficulty ||
+          det.entryFee ||
+          det.entranceFeeUsd != null ||
+          det.adventurePass ||
+          (det.payment || []).length > 0 ||
+          det.lengthMiles != null ||
+          det.timeHrs != null ||
+          det.elevationFt != null ||
+          det.parking ||
+          det.parkingOverflow ||
+          (det.terrain || []).length > 0 ||
+          (det.accessibility || []).length > 0 ||
+          (det.amenities || []).length > 0 ||
+          (det.hazards || []).length > 0) && (
+          <Block title="Recreation details">
+            <dl className="space-y-1 text-sm">
+              {det.difficulty && <Row k="Difficulty" v={det.difficulty} />}
+              {det.lengthMiles != null && <Row k="Length" v={`${det.lengthMiles} mi`} />}
+              {det.timeHrs != null && <Row k="Time" v={`${det.timeHrs} hrs`} />}
+              {det.elevationFt != null && <Row k="Elevation" v={`${det.elevationFt} ft`} />}
+              {(det.terrain || []).length > 0 && <Row k="Terrain" v={det.terrain.join(", ")} />}
+              {(det.accessibility || []).length > 0 && (
+                <Row k="Accessibility" v={det.accessibility.join(", ")} />
+              )}
+              {(det.amenities || []).length > 0 && (
+                <Row k="Amenities" v={det.amenities.join(", ")} />
+              )}
+              {det.parking && <Row k="Parking" v={det.parking} />}
+              {det.parkingOverflow && <Row k="If lot's full" v={det.parkingOverflow} />}
+              {det.adventurePass && <Row k="Adventure Pass" v="Required" />}
+              {det.entranceFeeUsd != null && (
+                <Row k="Entrance fee" v={det.entranceFeeUsd > 0 ? `$${det.entranceFeeUsd}` : "Free"} />
+              )}
+              {det.entryFee && <Row k="Fees" v={det.entryFee} />}
+              {(det.payment || []).length > 0 && <Row k="Payment" v={det.payment.join(", ")} />}
+            </dl>
+            {(det.hazards || []).length > 0 && (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Heads up</p>
+                <ul className="mt-1 list-disc pl-5">
+                  {det.hazards.map((h) => <li key={h}>{h}</li>)}
+                </ul>
+              </div>
+            )}
+          </Block>
+        )}
 
         {/* verification + internal (elevated only) */}
         <Block title="Verification">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
+import { categoriesForGroup, RESOURCE_GROUPS } from "@/lib/contacts";
 import { submitResource } from "../../actions";
 import ResourceForm from "@/app/portal/resources/ResourceForm";
 
@@ -20,6 +21,12 @@ export default async function NewResourcePage({ searchParams }) {
   const user = await getCurrentUser();
   const elevated = isElevated(user.role);
 
+  // which resource group we're adding to (community services vs recreation).
+  // drives the category tiles + where Cancel / Back return to.
+  const group = params?.group === "recreation" ? "recreation" : "community";
+  const isRec = group === "recreation";
+  const backPath = RESOURCE_GROUPS[group].path;
+
   // existing names/cities for the non-blocking duplicate warning.
   const existing = await prisma.resource.findMany({
     where: { status: { not: "REJECTED" } },
@@ -29,17 +36,18 @@ export default async function NewResourcePage({ searchParams }) {
   return (
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
-        href="/portal/resources"
+        href={backPath}
         className="text-sm font-medium text-muted transition hover:text-brand"
       >
-        ← Back to Resources
+        ← Back to {isRec ? "Recreational Resources" : "Resources"}
       </Link>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Add a resource
+        Add a {isRec ? "recreation spot" : "resource"}
       </h1>
       <p className="mt-2 text-sm text-muted">
-        A community partner or service the team uses, like a housing provider,
-        food bank, or clinic.{" "}
+        {isRec
+          ? "An outdoor or recreation spot the team can take participants to, like a hike, park, or beach."
+          : "A community partner or service the team uses, like a housing provider, food bank, or clinic."}{" "}
         {elevated
           ? "As management, yours is added right away."
           : "Management reviews it before it shows on the directory."}
@@ -60,7 +68,8 @@ export default async function NewResourcePage({ searchParams }) {
           mode="create"
           existing={existing}
           submitLabel={elevated ? "Add resource" : "Submit for review"}
-          cancelHref="/portal/resources"
+          cancelHref={backPath}
+          categories={categoriesForGroup(group)}
         />
       </div>
     </section>

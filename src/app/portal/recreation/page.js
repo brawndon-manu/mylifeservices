@@ -2,29 +2,25 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated, isAdminUp, isIT } from "@/lib/roles";
-import { isValidResourceCategory, RESOURCE_CATEGORIES } from "@/lib/contacts";
+import { RECREATION_CATEGORIES } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
-import ResourceBrowser from "./ResourceBrowser";
+import ResourceBrowser from "../resources/ResourceBrowser";
 
 export const metadata = {
-  title: "Resources · MLS Portal",
+  title: "Recreational Resources · MLS Portal",
   robots: { index: false, follow: false },
 };
 
-export default async function ResourcesPage({ searchParams }) {
+export default async function RecreationPage({ searchParams }) {
   const user = await getCurrentUser();
   const elevated = isElevated(user.role);
   const canPick = isAdminUp(user.role);
   const canManage = isIT(user.role); // edit + remove are IT/Super only
   const params = await searchParams;
 
-  // community group only - recreation categories live on /portal/recreation.
-  // null/legacy categories stay here (community is the catch-all).
+  // recreation group only - the community services live on /portal/resources.
   const resources = await prisma.resource.findMany({
-    where: {
-      status: "APPROVED",
-      OR: [{ category: { in: RESOURCE_CATEGORIES } }, { category: null }],
-    },
+    where: { status: "APPROVED", category: { in: RECREATION_CATEGORIES } },
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -59,18 +55,13 @@ export default async function ResourcesPage({ searchParams }) {
     },
   });
 
-  // internalNotes + source are staff-eyes-only; don't ship them in the client
-  // payload to non-management viewers (the inline panel only shows them to
-  // managers anyway).
+  // internalNotes + source are staff-eyes-only; don't ship them to non-managers.
   const safeResources = canManage
     ? resources
     : resources.map(({ internalNotes, source, ...r }) => r);
   const pendingResources = elevated
     ? await prisma.resource.count({
-        where: {
-          status: "PENDING",
-          OR: [{ category: { in: RESOURCE_CATEGORIES } }, { category: null }],
-        },
+        where: { status: "PENDING", category: { in: RECREATION_CATEGORIES } },
       })
     : 0;
 
@@ -92,11 +83,11 @@ export default async function ResourcesPage({ searchParams }) {
             Portal
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Community Resources
+            Recreational Resources
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            Housing, food banks, and other community services the team can share
-            with participants and families.
+            Outdoor and recreation spots the team can take participants to: hikes,
+            parks, beaches, and more, with accessibility and safety notes.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -109,7 +100,7 @@ export default async function ResourcesPage({ searchParams }) {
             </Link>
           )}
           <Link
-            href="/portal/contacts/resources/new"
+            href="/portal/contacts/resources/new?group=recreation"
             className="rounded-md border border-brand-light bg-sky-50 px-3 py-2 text-sm font-semibold text-brand transition hover:bg-sky-100"
           >
             + Add resource
@@ -127,7 +118,11 @@ export default async function ResourcesPage({ searchParams }) {
         resources={safeResources}
         canManage={canManage}
         canPick={canPick}
-        initialCategory={isValidResourceCategory(params?.cat) ? params.cat : ""}
+        categoryOrder={RECREATION_CATEGORIES}
+        allCards
+        initialCategory={
+          RECREATION_CATEGORIES.includes(params?.cat) ? params.cat : ""
+        }
       />
     </section>
   );
