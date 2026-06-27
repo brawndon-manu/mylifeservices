@@ -28,20 +28,34 @@ export const POSITION_SEP = " / ";
 // per-position max + overall title cap.
 export const TITLE_MAX_LEN = 120;
 
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // split an existing title back into { selected, custom }:
-//   selected = the preset positions that are checked
-//   custom   = any leftover parts that arent presets (free text), rejoined
+//   selected = the preset positions that are checked (in canonical order)
+//   custom   = any leftover parts that arent presets (free text)
+// note: two presets ("IT / Web Developer", "Owner / Director") themselves
+// contain the " / " separator, so we cant just split on it. instead we match
+// each preset as a whole delimited segment (longest first) and strip it out,
+// leaving whatever's left as custom.
 export function parseTitle(title) {
   if (!title || typeof title !== "string") {
     return { selected: [], custom: "" };
   }
-  const parts = title
-    .split(POSITION_SEP)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  const selected = parts.filter((p) => POSITIONS.includes(p));
-  const custom = parts.filter((p) => !POSITIONS.includes(p)).join(POSITION_SEP);
-  return { selected, custom };
+  let rest = title.trim();
+  const found = [];
+  const sep = escapeRe(POSITION_SEP);
+  for (const p of [...POSITIONS].sort((a, b) => b.length - a.length)) {
+    const re = new RegExp(`(^|${sep})${escapeRe(p)}(${sep}|$)`);
+    const m = rest.match(re);
+    if (!m) continue;
+    found.push(p);
+    const join = m[1] && m[2] ? POSITION_SEP : "";
+    rest = (rest.slice(0, m.index) + join + rest.slice(m.index + m[0].length)).trim();
+  }
+  const custom = rest.replace(/^\s*\/\s*|\s*\/\s*$/g, "").trim();
+  return { selected: POSITIONS.filter((p) => found.includes(p)), custom };
 }
 
 // turn the form fields into the final title string (or null). takes the

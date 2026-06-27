@@ -1,16 +1,19 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, canSeeRoles, ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
+import { isElevated, isManagerUp, canSeeRoles } from "@/lib/roles";
 import {
   CONTACT_CATEGORIES,
   isValidCategory,
-  rolesForCategory,
+  titleForCategory,
+  preferredName,
+  legalName,
   RESOURCE_CATEGORIES,
   formatUSPhone,
 } from "@/lib/contacts";
-import Avatar from "@/components/Avatar";
 import ConfirmButton from "@/components/ConfirmButton";
+import BackLink from "@/components/BackLink";
+import ContactsDirectory from "./ContactsDirectory";
 import { deleteResource } from "./actions";
 
 export const metadata = {
@@ -27,16 +30,23 @@ export default async function ContactsPage({ searchParams }) {
   const showRoles = canSeeRoles(user.role);
 
   const cat = isValidCategory(params?.cat) ? params.cat : null;
-  const roleFilter = cat ? rolesForCategory(cat) : null;
+  const titleFilter = cat ? titleForCategory(cat) : null;
 
   const people = await prisma.user.findMany({
     where: {
       deactivatedAt: null,
-      ...(roleFilter ? { role: { in: roleFilter } } : {}),
+      // filter by job title (the User.title string holds one or more positions
+      // joined by " / ", so a contains-match catches multi-title people too).
+      ...(titleFilter
+        ? { title: { contains: titleFilter, mode: "insensitive" } }
+        : {}),
     },
     select: {
       id: true,
       name: true,
+      preferredFirstName: true,
+      preferredLastName: true,
+      hideLegalName: true,
       email: true,
       role: true,
       title: true,
@@ -46,12 +56,40 @@ export default async function ContactsPage({ searchParams }) {
     orderBy: { name: "asc" },
   });
 
+  // build the client cards. the legal name is included ONLY for cards this
+  // viewer is allowed to see it on (not hidden, or viewer is admin/management,
+  // or it's their own card) - so a hidden legal name is never sent to the
+  // client. role badge only when the viewer can see roles.
+  const canSeeLegal = (p) =>
+    !p.hideLegalName || isManagerUp(user.role) || p.id === user.id;
+  const cards = people
+    .map((p) => ({
+      id: p.id,
+      name: preferredName(p),
+      legal: canSeeLegal(p) ? legalName(p) : null,
+      email: p.email,
+      title: p.title,
+      phone: p.phone,
+      image: p.image,
+      role: showRoles ? p.role : null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // community group only - recreation resources live on /portal/recreation.
   const resources = await prisma.resource.findMany({
-    where: { status: "APPROVED" },
+    where: {
+      status: "APPROVED",
+      OR: [{ category: { in: RESOURCE_CATEGORIES } }, { category: null }],
+    },
     orderBy: { name: "asc" },
   });
   const pendingResources = elevated
-    ? await prisma.resource.count({ where: { status: "PENDING" } })
+    ? await prisma.resource.count({
+        where: {
+          status: "PENDING",
+          OR: [{ category: { in: RESOURCE_CATEGORIES } }, { category: null }],
+        },
+      })
     : 0;
 
   // group approved resources by category for collapsible sections.
@@ -78,7 +116,8 @@ export default async function ContactsPage({ searchParams }) {
 
   return (
     <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
+      <BackLink href="/portal">Back to Dashboard</BackLink>
+      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Portal
       </p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
@@ -173,48 +212,7 @@ export default async function ContactsPage({ searchParams }) {
 
         {/* directory grid - own scroll on desktop so the left rail stays put */}
         <div className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          {people.length === 0 ? (
-            <p className="text-sm text-muted">No one in this group.</p>
-          ) : (
-            <ul className="grid gap-4 sm:grid-cols-2">
-              {people.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    href={`/portal/contacts/${p.id}`}
-                    className="flex h-full gap-4 rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-                  >
-                    <Avatar
-                      name={p.name}
-                      email={p.email}
-                      image={p.image}
-                      size={56}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-foreground">
-                          {p.name || p.email}
-                        </span>
-                        {showRoles && (
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass(p.role)}`}>
-                            {ROLE_LABELS[p.role] ?? p.role}
-                          </span>
-                        )}
-                      </div>
-                      {p.title && (
-                        <p className="text-sm text-muted">{p.title}</p>
-                      )}
-                      <p className="mt-1 truncate text-sm text-brand">
-                        {p.email}
-                      </p>
-                      {p.phone && (
-                        <p className="text-sm text-muted">{p.phone}</p>
-                      )}
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ContactsDirectory cards={cards} />
         </div>
       </div>
     </section>

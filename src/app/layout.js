@@ -3,6 +3,7 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import PublicChrome from "@/components/PublicChrome";
 import AccessibilityMenu from "@/components/AccessibilityMenu";
 
 const geistSans = Geist({
@@ -49,11 +50,15 @@ export default function RootLayout({ children }) {
         >
           Skip to main content
         </a>
-        <Header />
+        <PublicChrome>
+          <Header />
+        </PublicChrome>
         <main id="main-content" className="flex-1">
           {children}
         </main>
-        <Footer />
+        <PublicChrome>
+          <Footer />
+        </PublicChrome>
         {/* always-on accessibility control, pinned to the bottom-right corner
             of the viewport on every page (public + portal). */}
         <div className="fixed bottom-4 right-4 z-50 print:hidden">

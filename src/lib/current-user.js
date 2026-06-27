@@ -7,11 +7,15 @@ const USER_SELECT = {
   id: true,
   email: true,
   name: true,
+  preferredFirstName: true,
+  preferredLastName: true,
   role: true,
   title: true,
   phone: true,
   image: true,
   workingHours: true,
+  sharePhonePublicly: true,
+  hideLegalName: true,
   deactivatedAt: true,
 };
 

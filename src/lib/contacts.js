@@ -1,32 +1,67 @@
 // Team contacts directory - shared constants + helpers. pure (no db).
+import { POSITIONS } from "@/lib/positions";
 
 // max length for a staff member's working-hours blurb (employee profile
 // field, edited in settings + admin).
 export const WORKING_HOURS_MAX = 120;
 
-// category buckets for the side filter. each maps a set of privilege
-// roles to a friendly grouping so "just management" is one click. value
-// goes in the URL as ?cat=...
-export const CONTACT_CATEGORIES = [
-  { value: "management", label: "Management", roles: ["ADMIN", "MANAGER"] },
-  { value: "supervisors", label: "Supervisors", roles: ["SUPERVISOR"] },
-  { value: "support", label: "Direct Support", roles: ["STAFF"] },
-  { value: "hr", label: "HR", roles: ["HR"] },
-  { value: "it", label: "IT / Web Developer", roles: ["IT_ADMIN"] },
-];
+// side-filter buckets for the directory. built straight from the job-title
+// list so filtering follows a person's TITLE (e.g. "IT / Web Developer"),
+// not their privilege role. value goes in the URL as ?cat=...; title is the
+// position string we match against User.title.
+function slugifyTitle(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+export const CONTACT_CATEGORIES = POSITIONS.map((p) => ({
+  value: slugifyTitle(p),
+  label: p,
+  title: p,
+}));
 
 export function isValidCategory(value) {
   return CONTACT_CATEGORIES.some((c) => c.value === value);
 }
 
-// which roles belong to a given category value. null = no filter.
-export function rolesForCategory(value) {
-  return CONTACT_CATEGORIES.find((c) => c.value === value)?.roles ?? null;
+// split a full/legal name into first + last(rest).
+function splitLegal(name) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  return { first: parts[0] || "", last: parts.slice(1).join(" ") };
 }
 
-// the category a given role falls into (for showing a person's bucket).
-export function categoryForRole(role) {
-  return CONTACT_CATEGORIES.find((c) => c.roles.includes(role))?.label ?? null;
+// the name shown everywhere: preferred first/last, falling back to the legal
+// first/last for whichever piece isn't set. e.g. preferred first "Manu" + no
+// preferred last + legal "Brandon Uribe" -> "Manu Uribe". falls back to email.
+export function preferredName(user) {
+  if (!user) return "";
+  const { first: lf, last: ll } = splitLegal(user.name);
+  const f = user.preferredFirstName || lf;
+  const l = user.preferredLastName || ll;
+  return [f, l].filter(Boolean).join(" ") || user.email || "";
+}
+
+// just the first name, for greetings ("Hi, Manu").
+export function firstNameOf(user) {
+  if (!user) return "";
+  return (
+    user.preferredFirstName ||
+    splitLegal(user.name).first ||
+    (user.email ? user.email.split("@")[0] : "")
+  );
+}
+
+// the full/legal name for records. only shown on the contact detail card +
+// admin panel (and gated to admin/management when hidden). returns null when
+// there's nothing extra to show beyond the displayed name.
+export function legalName(user) {
+  const legal = (user?.name || "").trim();
+  if (!legal || legal === preferredName(user)) return null;
+  return legal;
+}
+
+// the job title a category filters on. null = no filter (Everyone).
+export function titleForCategory(value) {
+  return CONTACT_CATEGORIES.find((c) => c.value === value)?.title ?? null;
 }
 
 // initials for the avatar fallback when someone hasnt set a photo.
@@ -58,8 +93,50 @@ export const RESOURCE_CATEGORIES = [
   "Other",
 ];
 
+// recreational resources - a separate, place-based section with its own portal
+// page + overview map (/portal/recreation). kept apart from the community
+// services list above so each group gets its own landing + map. add or remove
+// a card here; everything else (form, map, approval) follows.
+export const RECREATION_CATEGORIES = [
+  "Hikes & trails",
+  "Parks",
+  "Beaches",
+  "Lakes & fishing",
+  "Gardens & nature centers",
+  "Accessible playgrounds",
+  "Sports & rec centers",
+  "Indoor fun",
+];
+
+// every category across both groups - used for validation.
+export const ALL_RESOURCE_CATEGORIES = [
+  ...RESOURCE_CATEGORIES,
+  ...RECREATION_CATEGORIES,
+];
+
+// the two top-level resource groups, each with its own page + map.
+export const RESOURCE_GROUPS = {
+  community: { path: "/portal/resources", categories: RESOURCE_CATEGORIES },
+  recreation: { path: "/portal/recreation", categories: RECREATION_CATEGORIES },
+};
+
+export function categoriesForGroup(group) {
+  return RESOURCE_GROUPS[group]?.categories || RESOURCE_CATEGORIES;
+}
+
+// which group a category belongs to. community is the default / catch-all so
+// null + any legacy category stays on the community page.
+export function groupForCategory(category) {
+  return RECREATION_CATEGORIES.includes(category) ? "recreation" : "community";
+}
+
+// the portal page a category lives on (for "back to" links + redirects).
+export function basePathForCategory(category) {
+  return RESOURCE_GROUPS[groupForCategory(category)].path;
+}
+
 export function isValidResourceCategory(value) {
-  return typeof value === "string" && RESOURCE_CATEGORIES.includes(value);
+  return typeof value === "string" && ALL_RESOURCE_CATEGORIES.includes(value);
 }
 
 // per-category form config. each category can declare:
@@ -96,6 +173,82 @@ export const CATEGORY_FORMS = {
   "Education & training": { description: "Classes, tutoring, life skills, ESL." },
   "Recreation & community": { description: "Social, recreation, community events." },
   Other: { description: "Anything that doesn't fit the categories above." },
+
+  // recreational resources (the "outdoor" block adds fees, terrain,
+  // accessibility, and hazards to the form + detail view).
+  "Hikes & trails": {
+    description: "Trails and nature walks, rated by difficulty and terrain.",
+    blocks: ["outdoor", "trails"],
+    form: {
+      detailsTitle: "Trail details",
+      namePlaceholder: "e.g. Holy Jim Falls Trail",
+      orgLabel: "Managed by",
+      orgPlaceholder: "Park or agency that runs it, e.g. Cleveland National Forest, OC Parks",
+      notesPlaceholder: "Shaded creek trail to a small seasonal waterfall; out-and-back",
+
+      locationTitle: "Location & getting there",
+      showAddressVaries: false,
+      addressLabel: "Trailhead address or cross-streets",
+      addressPlaceholder: "Nearest cross-streets, if there's no street address",
+      addressRequired: false,
+      cityRequired: false,
+      showServiceArea: false,
+      phoneLabel: "Ranger station / park office phone",
+      phonePlaceholder: "For trail conditions or closures",
+      phoneRequired: false,
+      showEmail: false,
+      showWebsite: false,
+      showAppointmentLink: false,
+      showContactInstructions: false,
+      showParking: true,
+
+      schedule: "simple",
+      hoursLabel: "Hours / best time to go",
+      hoursPlaceholder:
+        "Open sunrise to sunset daily; go early to beat the heat and parking",
+
+      showEligibility: false,
+
+      recreation: {
+        title: "The hike",
+        hint: "What to expect on the trail. Helps staff judge fit, accessibility, and safety.",
+        entryFee: false,
+        entranceFee: true,
+        payment: true,
+        time: true,
+        elevation: true,
+        amenities: true,
+      },
+    },
+  },
+  Parks: {
+    description: "Community and regional parks, picnic and BBQ areas, open space.",
+    blocks: ["outdoor"],
+  },
+  Beaches: {
+    description: "Beaches and shoreline spots, with access and accessibility notes.",
+    blocks: ["outdoor"],
+  },
+  "Lakes & fishing": {
+    description: "Lakes, ponds, and piers for fishing, boating, and waterside time.",
+    blocks: ["outdoor"],
+  },
+  "Gardens & nature centers": {
+    description: "Botanical gardens, arboretums, and nature/interpretive centers.",
+    blocks: ["outdoor"],
+  },
+  "Accessible playgrounds": {
+    description: "Inclusive, all-abilities play areas.",
+    blocks: ["outdoor"],
+  },
+  "Sports & rec centers": {
+    description: "Pools, courts, gyms, and adaptive sports programs.",
+    blocks: ["outdoor"],
+  },
+  "Indoor fun": {
+    description: "Bowling, arcades, and movies, good for hot or rainy days.",
+    blocks: ["outdoor"],
+  },
 };
 
 export function categoryConfig(category) {
@@ -127,6 +280,70 @@ export function pinnedCategories() {
   return RESOURCE_CATEGORIES.filter((c) => CATEGORY_FORMS[c]?.pinned);
 }
 
+// per-category add/edit form shape. the defaults match the original
+// community-services (food-bank-era) form; a category tailors its own form by
+// setting a `form` object in CATEGORY_FORMS that overrides only what differs.
+// the recreation sub-block (`rec`) is merged separately for the same reason.
+const DEFAULT_FORM = {
+  detailsTitle: "Resource details",
+  namePlaceholder: "e.g. Anaheim Community Food Pantry",
+  orgLabel: "Organization name",
+  orgPlaceholder: "If different from the name above",
+  notesLabel: "Short description",
+  notesPlaceholder: "What they do, who to ask for, anything helpful.",
+
+  locationTitle: "Location and contact",
+  showAddressVaries: true,
+  addressLabel: "Street address",
+  addressPlaceholder: "123 Main St (paste a full address and it'll split below)",
+  addressRequired: true,
+  cityRequired: true,
+  showServiceArea: true,
+  showPhone: true,
+  phoneLabel: "Phone",
+  phonePlaceholder: "",
+  phoneRequired: true,
+  showEmail: true,
+  showWebsite: true,
+  showAppointmentLink: true,
+  showContactInstructions: true,
+  showParking: false,
+
+  schedule: "full", // "full" (day/time editor) | "simple" (hours text only) | "none"
+  scheduleTitle: "Schedule",
+  hoursLabel: "Other schedule notes",
+  hoursPlaceholder:
+    "Holidays, seasonal changes, or anything the rows above don't capture.",
+
+  showEligibility: true,
+};
+
+const DEFAULT_REC = {
+  title: "Recreation details",
+  hint: "What to expect on a visit. Helps staff plan for accessibility and safety.",
+  difficulty: true,
+  length: true,
+  time: false,
+  elevation: false,
+  entryFee: true, // legacy free-text "Entrance / parking fee"
+  entranceFee: false, // structured dollar amount + payment options
+  payment: false,
+  terrain: true,
+  accessibility: true,
+  amenities: false,
+  hazards: true,
+};
+
+// resolved form config for a category (defaults + the category's overrides).
+export function formConfig(category) {
+  const f = (CATEGORY_FORMS[category] || {}).form || {};
+  return {
+    ...DEFAULT_FORM,
+    ...f,
+    rec: { ...DEFAULT_REC, ...(f.recreation || {}) },
+  };
+}
+
 // one color per label, so the overview map pins are color-coded by category.
 export const CATEGORY_COLORS = {
   Housing: "#2563eb",
@@ -141,6 +358,15 @@ export const CATEGORY_COLORS = {
   "Education & training": "#0d9488",
   "Recreation & community": "#65a30d",
   Other: "#64748b",
+  // recreational group (own map, so colors just need to differ within it).
+  "Hikes & trails": "#15803d",
+  Parks: "#84cc16",
+  Beaches: "#0ea5e9",
+  "Lakes & fishing": "#2563eb",
+  "Gardens & nature centers": "#d97706",
+  "Accessible playgrounds": "#db2777",
+  "Sports & rec centers": "#ea580c",
+  "Indoor fun": "#7c3aed",
 };
 
 export function categoryColor(category) {
@@ -219,6 +445,59 @@ export const SPECIAL_INSTRUCTIONS_OPTIONS = [
   "Enter through a particular entrance",
   "Arrive early",
   "Available while supplies last",
+];
+
+// outdoor / recreation visit details (only shown for the "outdoor" block:
+// hikes, parks, beaches, etc.).
+export const DIFFICULTY_OPTIONS = ["Easy", "Moderate", "Hard"];
+
+export const TERRAIN_OPTIONS = [
+  "Paved path",
+  "Dirt trail",
+  "Gravel",
+  "Sand",
+  "Rocky",
+  "Steep / hilly",
+];
+
+export const ACCESSIBILITY_OPTIONS = [
+  "Wheelchair accessible",
+  "Stroller friendly",
+  "Accessible restrooms",
+  "Accessible parking",
+  "Benches / rest spots",
+  "Shaded areas",
+];
+
+export const HAZARD_OPTIONS = [
+  "Little shade / heat exposure",
+  "Steep drop-offs",
+  "Uneven footing",
+  "Water / drowning risk",
+  "Wildlife",
+  "Rattlesnakes",
+  "Poison oak",
+  "Limited cell service",
+  "Good cell reception",
+];
+
+// on-site amenities (recreation). multi-select.
+export const AMENITY_OPTIONS = [
+  "Restrooms",
+  "Porta-potties",
+  "Drinking water",
+  "Picnic tables",
+  "Shade",
+  "Visitor center",
+  "Dogs allowed",
+];
+
+// how a fee can be paid (recreation). multi-select.
+export const PAYMENT_OPTIONS = [
+  "Cash only",
+  "Card accepted",
+  "Tap to pay",
+  "All accepted",
 ];
 
 // operational status (is the place running). enum values + friendly labels.
@@ -373,6 +652,26 @@ export function parseUsAddress(raw) {
     street = parts[0] || "";
   }
   return { street, city, state, zip };
+}
+
+// parse a pasted "lat, lng" coordinate string into { lat, lng }, or null if it
+// doesn't look like one. tolerates the formats AllTrails / Google Maps hand you:
+// "33.6765, -117.5121", degree symbols, parens, extra spaces. auto-fixes a
+// reversed pair (lng, lat) by swapping when the first value can only be a
+// longitude. used to set an exact map pin without relying on address geocoding.
+export function parseCoords(raw) {
+  if (typeof raw !== "string") return null;
+  const nums = raw.match(/-?\d+(?:\.\d+)?/g);
+  if (!nums || nums.length < 2) return null;
+  let lat = parseFloat(nums[0]);
+  let lng = parseFloat(nums[1]);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  // reversed pair: a value past ±90 can't be a latitude, so swap.
+  if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+    [lat, lng] = [lng, lat];
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
 }
 
 // turn one schedule row into a short human string, e.g.

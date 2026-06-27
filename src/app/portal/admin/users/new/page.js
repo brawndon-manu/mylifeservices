@@ -2,15 +2,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { notifyOversight } from "@/lib/notify";
 import { cleanEmail, cleanDisplayName } from "@/lib/security";
 import {
   ROLE_LABELS,
   ROLE_DESCRIPTIONS,
   isElevated,
+  isIT,
+  isManagerUp,
   isValidRole,
   canAssignRole,
 } from "@/lib/roles";
 import { resolveTitle } from "@/lib/positions";
+import { preferredName } from "@/lib/contacts";
 import PositionPicker from "../_components/PositionPicker";
 
 export const metadata = {
@@ -61,28 +65,33 @@ async function inviteUser(formData) {
     formData.get("titleCustom"),
   );
 
-  // hire date is optional. <input type="date"> returns YYYY-MM-DD which
-  // new Date() parses as UTC midnight.
-  const rawHireDate = formData.get("hireDate");
+  // hire date is Manager-and-up only (HR can't set it). <input type="date">
+  // returns YYYY-MM-DD which new Date() parses as UTC midnight.
   let hireDate = null;
-  if (typeof rawHireDate === "string" && rawHireDate.length > 0) {
-    const parsed = new Date(rawHireDate);
-    if (!Number.isNaN(parsed.getTime())) {
-      hireDate = parsed;
+  if (isManagerUp(current.role)) {
+    const rawHireDate = formData.get("hireDate");
+    if (typeof rawHireDate === "string" && rawHireDate.length > 0) {
+      const parsed = new Date(rawHireDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        hireDate = parsed;
+      }
     }
   }
 
-  // validate role - has to be one of our allowed enum values. dont
-  // trust the radio value blindly, someone could craft a request with
-  // a bogus role string.
-  const role = formData.get("role");
-  if (!isValidRole(role)) {
-    redirect("/portal/admin/users/new?error=role");
-  }
-  // role caps: you can only assign a role within your authority - Super
-  // for Super, Admin/IT for Admin-and-up, the rest for any oversight role.
-  if (!canAssignRole(current.role, role)) {
-    redirect("/portal/admin/users/new?error=role");
+  // privilege role: only IT/Super set it - everyone else creates a Staff
+  // user (the form doesn't show the field to them, but force STAFF here so a
+  // crafted request can't sneak a role in). don't trust the radio blindly.
+  let role = "STAFF";
+  if (isIT(current.role)) {
+    const submitted = formData.get("role");
+    if (!isValidRole(submitted)) {
+      redirect("/portal/admin/users/new?error=role");
+    }
+    // Super for Super, everything else for IT/Super.
+    if (!canAssignRole(current.role, submitted)) {
+      redirect("/portal/admin/users/new?error=role");
+    }
+    role = submitted;
   }
 
   // check for duplicate. if the email is already in the db, redirect
@@ -93,12 +102,24 @@ async function inviteUser(formData) {
     redirect("/portal/admin/users/new?error=exists");
   }
 
+  // optional preferred first / last name (shown instead of the legal name).
+  const preferredFirstName = cleanDisplayName(formData.get("preferredFirstName"), NAME_MAX_LEN);
+  const preferredLastName = cleanDisplayName(formData.get("preferredLastName"), NAME_MAX_LEN);
+
   await prisma.user.create({
-    data: { email, name, role, title, hireDate },
+    data: { email, name, preferredFirstName, preferredLastName, role, title, hireDate },
+  });
+
+  await notifyOversight({
+    type: "USER_ADDED",
+    title: "New user invited",
+    body: `${preferredName(current)} invited ${email} (${ROLE_LABELS[role] ?? role}).`,
+    link: "/portal/admin/users",
+    exceptUserId: current.id,
   });
 
   // back to the admin user list with a success flag.
-  redirect(`/portal/admin?invited=${encodeURIComponent(email)}`);
+  redirect(`/portal/admin/users?invited=${encodeURIComponent(email)}`);
 }
 
 export default async function NewUserPage({ searchParams }) {
@@ -107,8 +128,8 @@ export default async function NewUserPage({ searchParams }) {
     redirect("/portal");
   }
 
-  // show only the roles this admin is allowed to assign (HR/Manager cap at
-  // Manager; Admin/IT for Admin-and-up; SUPER only for Super).
+  // only IT/Super pick a privilege role; everyone else creates a Staff user.
+  const canEditRole = isIT(current.role);
   const ALL_ROLES = [...ROLE_RADIO_ORDER, "SUPER"];
   const roleOptions = ALL_ROLES.filter((r) => canAssignRole(current.role, r));
 
@@ -117,7 +138,7 @@ export default async function NewUserPage({ searchParams }) {
 
   const errorMessages = {
     email: "That doesn't look like a valid email. Please double-check.",
-    name: `Display name must be 1-${NAME_MAX_LEN} characters.`,
+    name: `Full name must be 1-${NAME_MAX_LEN} characters.`,
     role: "Please pick a role for the new user.",
     exists:
       "Someone with that email already has portal access. Edit their role on the user list instead.",
@@ -182,7 +203,7 @@ export default async function NewUserPage({ searchParams }) {
               htmlFor="name"
               className="block text-sm font-medium text-muted"
             >
-              Display name <span className="text-faint">(optional)</span>
+              Full name <span className="text-faint">(optional)</span>
             </label>
             <input
               id="name"
@@ -190,12 +211,40 @@ export default async function NewUserPage({ searchParams }) {
               type="text"
               maxLength={NAME_MAX_LEN}
               autoComplete="off"
-              placeholder="Leave blank to use email prefix"
+              placeholder="Legal / full name for records"
               className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <p className="mt-1 text-xs text-muted">
-              Up to {NAME_MAX_LEN} characters. Editable by the user in
-              Settings after signing in.
+              Up to {NAME_MAX_LEN} characters. Leave blank to use the email
+              prefix. The user can set a preferred display name in Settings.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-muted">
+              Preferred name <span className="text-faint">(optional)</span>
+            </label>
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                name="preferredFirstName"
+                type="text"
+                maxLength={NAME_MAX_LEN}
+                autoComplete="off"
+                placeholder="Preferred first name"
+                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <input
+                name="preferredLastName"
+                type="text"
+                maxLength={NAME_MAX_LEN}
+                autoComplete="off"
+                placeholder="Preferred last name"
+                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Shown across the portal; each blank piece falls back to the legal
+              name for that part. The user can change this in Settings.
             </p>
           </div>
 
@@ -213,6 +262,8 @@ export default async function NewUserPage({ searchParams }) {
             />
           </fieldset>
 
+          {/* hire date is Manager-and-up only (HR can't set it) */}
+          {isManagerUp(current.role) && (
           <div>
             <label
               htmlFor="hireDate"
@@ -231,54 +282,61 @@ export default async function NewUserPage({ searchParams }) {
               Leave blank if unknown.
             </p>
           </div>
+          )}
 
-          <fieldset>
-            <legend className="block text-sm font-medium text-muted">
-              Privilege role <span className="text-rose-600">*</span>
-            </legend>
-            <p className="mt-1 text-xs text-muted">
-              Controls portal permissions. Elevated (IT, Admin, Manager)
-              can manage users and post announcements. Others get read
-              access.
+          {canEditRole ? (
+            <fieldset>
+              <legend className="block text-sm font-medium text-muted">
+                Privilege role <span className="text-rose-600">*</span>
+              </legend>
+              <p className="mt-1 text-xs text-muted">
+                Controls portal permissions. Only IT can set this.
+              </p>
+              <div className="mt-3 space-y-2">
+                {roleOptions.map((value, i) => (
+                  <label
+                    key={value}
+                    className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
+                      value === "SUPER"
+                        ? "border-rose-200 bg-rose-50 hover:border-rose-300"
+                        : "border-border bg-surface-2 hover:border-brand-light hover:bg-sky-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={value}
+                      defaultChecked={i === 0}
+                      required
+                      className="mt-1 h-4 w-4 accent-brand"
+                    />
+                    <div className="flex-1">
+                      <div
+                        className={`text-sm font-medium ${
+                          value === "SUPER" ? "text-rose-700" : "text-foreground"
+                        }`}
+                      >
+                        {ROLE_LABELS[value]}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted">
+                        {ROLE_DESCRIPTIONS[value]}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : (
+            // HR/Manager/Admin invite users but don't set roles - new users
+            // start as Staff; IT bumps the role later if needed.
+            <p className="rounded-md border border-border bg-surface-2 p-3 text-xs text-muted">
+              New users start with Staff access. Privilege roles are set by IT.
             </p>
-            <div className="mt-3 space-y-2">
-              {roleOptions.map((value, i) => (
-                <label
-                  key={value}
-                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
-                    value === "SUPER"
-                      ? "border-rose-200 bg-rose-50 hover:border-rose-300"
-                      : "border-border bg-surface-2 hover:border-brand-light hover:bg-sky-50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value={value}
-                    defaultChecked={i === 0}
-                    required
-                    className="mt-1 h-4 w-4 accent-brand"
-                  />
-                  <div className="flex-1">
-                    <div
-                      className={`text-sm font-medium ${
-                        value === "SUPER" ? "text-rose-700" : "text-foreground"
-                      }`}
-                    >
-                      {ROLE_LABELS[value]}
-                    </div>
-                    <div className="mt-0.5 text-xs text-muted">
-                      {ROLE_DESCRIPTIONS[value]}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          )}
 
           <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
             <Link
-              href="/portal/admin"
+              href="/portal/admin/users"
               className="text-sm font-medium text-muted transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               Cancel

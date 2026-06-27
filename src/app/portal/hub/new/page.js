@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated, canSeeRoles, ROLE_LABELS } from "@/lib/roles";
 import { POST_TAGS, POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
+import { preferredName } from "@/lib/contacts";
 import { createPost } from "../actions";
 
 export const metadata = {
@@ -34,7 +35,7 @@ export default async function NewPostPage({ searchParams }) {
   if (canProxyPost) {
     people = await prisma.user.findMany({
       where: { deactivatedAt: null },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, email: true, role: true },
       orderBy: { name: "asc" },
     });
   }
@@ -99,13 +100,13 @@ export default async function NewPostPage({ searchParams }) {
                 className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               >
                 <option value={user.id}>
-                  Myself ({user.name || user.email})
+                  Myself ({preferredName(user)})
                 </option>
                 {people
                   .filter((p) => p.id !== user.id)
                   .map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name || p.email}
+                      {preferredName(p)}
                       {showRoles ? ` · ${ROLE_LABELS[p.role] ?? p.role}` : ""} ·{" "}
                       {p.email}
                     </option>

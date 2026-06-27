@@ -1,20 +1,17 @@
-import { POSITIONS, TITLE_MAX_LEN, parseTitle } from "@/lib/positions";
+import { POSITIONS, parseTitle } from "@/lib/positions";
 
 // multi-select position picker shared by the invite + edit user forms.
-// checkboxes for the preset positions (someone can hold more than one)
-// plus a free-text field for anything not in the list. no client JS
-// needed - the server action reads getAll(fieldName) + the custom field.
+// checkboxes for the preset positions (someone can hold more than one).
+// no client JS needed - the server action reads getAll(fieldName).
 //
 // props:
-//   - currentTitle:    existing User.title string (for prefilling on edit)
-//   - fieldName:       checkbox name (server reads with formData.getAll)
-//   - customFieldName: text input name for custom positions
+//   - currentTitle: existing User.title string (for prefilling on edit)
+//   - fieldName:    checkbox name (server reads with formData.getAll)
 export default function PositionPicker({
   currentTitle = null,
   fieldName,
-  customFieldName,
 }) {
-  const { selected, custom } = parseTitle(currentTitle);
+  const { selected } = parseTitle(currentTitle);
 
   return (
     <div className="mt-3 space-y-3">
@@ -35,21 +32,9 @@ export default function PositionPicker({
           </label>
         ))}
       </div>
-      <div>
-        <input
-          type="text"
-          name={customFieldName}
-          maxLength={TITLE_MAX_LEN}
-          defaultValue={custom}
-          autoComplete="off"
-          placeholder="Other / custom (e.g. IT / Web Developer)"
-          className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-        />
-        <p className="mt-1 text-xs text-muted">
-          Pick all that apply. Use the box for anything not listed. Leave
-          everything blank for no title.
-        </p>
-      </div>
+      <p className="text-xs text-muted">
+        Pick all that apply. Leave everything blank for no title.
+      </p>
     </div>
   );
 }

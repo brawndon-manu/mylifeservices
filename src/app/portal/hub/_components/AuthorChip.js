@@ -1,4 +1,5 @@
 import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
+import { preferredName } from "@/lib/contacts";
 
 // renders an author's display name with a small role badge next to it,
 // plus a muted email badge so duplicate names (e.g. three "Brandon"s)
@@ -27,7 +28,7 @@ export default function AuthorChip({ author, size = "md", showRole = false }) {
 
   return (
     <span className="inline-flex flex-wrap items-center">
-      <span className={nameClass}>{author.name || "—"}</span>
+      <span className={nameClass}>{preferredName(author) || "—"}</span>
       {showRole && author.role && (
         <span className={roleBadge}>
           {ROLE_LABELS[author.role] ?? author.role}

@@ -29,25 +29,25 @@ const PHONE_HREF = "tel:+15626862548";
 export default function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-3">
-        <Link
-          href="/"
-          className="flex items-center gap-3 rounded text-foreground transition hover:text-brand-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-        >
-          <Image
-            src="/logo/treelogov2.png"
-            alt=""
-            width={2428}
-            height={1820}
-            priority
-            className="h-10 w-auto rounded-md"
-          />
-          <span className="text-lg font-semibold tracking-tight">
-            My Life Services
-          </span>
-        </Link>
-        <AuthBadge />
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <div className="mx-auto flex max-w-5xl items-start justify-between gap-x-6 px-6 py-3">
+        {/* left column: logo on its own line, brochure nav under it */}
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/"
+            className="flex items-center gap-3 rounded text-foreground transition hover:text-brand-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            <Image
+              src="/logo/treelogov2.png"
+              alt=""
+              width={2428}
+              height={1820}
+              priority
+              className="h-10 w-auto rounded-md"
+            />
+            <span className="text-lg font-semibold tracking-tight">
+              My Life Services
+            </span>
+          </Link>
           <nav aria-label="Primary">
             <ul className="flex items-center gap-6 text-sm font-medium text-muted">
               {/* About dropdown - closes on outside click / nav / Escape */}
@@ -77,24 +77,33 @@ export default function Header() {
               ))}
             </ul>
           </nav>
+        </div>
+        {/* right column: signed-in badge on top, Employee portal + phone
+            under it, all aligned to the right edge */}
+        <div className="flex flex-none flex-col items-end gap-2">
+          {/* reserve the logo's height so the buttons below line up with the
+              brochure nav row (and stay put even when signed out / no badge) */}
+          <div className="flex h-10 items-center">
+            <AuthBadge />
+          </div>
           <div className="flex items-center gap-2.5">
-            {/* Employee portal - outline button, the inverse of the phone
-                button so staff can spot it without it crowding the nav. */}
-            <Link
-              href="/portal"
-              className="inline-flex items-center gap-2 rounded-md border border-brand-light px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-brand-light hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-            >
-              <LockIcon className="h-3.5 w-3.5 flex-none" />
-              <span>Employee portal</span>
-            </Link>
-            <a
-              href={PHONE_HREF}
-              aria-label={`Call My Life Services at ${PHONE_DISPLAY}`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-brand-light px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-            >
-              <PhoneIcon className="h-3.5 w-3.5" />
-              <span>{PHONE_DISPLAY}</span>
-            </a>
+          {/* Employee portal - outline button, the inverse of the phone
+              button so staff can spot it without it crowding the nav. */}
+          <Link
+            href="/portal"
+            className="inline-flex items-center gap-2 rounded-md border border-brand-light px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-brand-light hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            <LockIcon className="h-3.5 w-3.5 flex-none" />
+            <span>Employee portal</span>
+          </Link>
+          <a
+            href={PHONE_HREF}
+            aria-label={`Call My Life Services at ${PHONE_DISPLAY}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand-light px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            <PhoneIcon className="h-3.5 w-3.5" />
+            <span>{PHONE_DISPLAY}</span>
+          </a>
           </div>
         </div>
       </div>

@@ -3,7 +3,8 @@ import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { cleanDisplayName } from "@/lib/security";
-import { formatUSPhone, PHONE_MAX, WORKING_HOURS_MAX } from "@/lib/contacts";
+import { isAdminUp, ROLE_LABELS } from "@/lib/roles";
+import { formatUSPhone, preferredName, PHONE_MAX, WORKING_HOURS_MAX } from "@/lib/contacts";
 import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
 import Avatar from "@/components/Avatar";
 import PhoneInput from "@/components/PhoneInput";
@@ -27,12 +28,11 @@ async function updateProfile(formData) {
     redirect("/login");
   }
 
-  // cleanDisplayName handles: type check, trim, strip control chars,
-  // length cap. returns null on garbage input.
-  const name = cleanDisplayName(formData.get("name"), NAME_MAX_LEN);
-  if (!name) {
-    redirect("/portal/settings?error=name");
-  }
+  // preferred first / last name - optional, blank clears (the directory then
+  // falls back to the legal first/last for that piece). cleanDisplayName trims,
+  // strips control chars, caps length; null when blank.
+  const preferredFirstName = cleanDisplayName(formData.get("preferredFirstName"), NAME_MAX_LEN);
+  const preferredLastName = cleanDisplayName(formData.get("preferredLastName"), NAME_MAX_LEN);
 
   // phone is optional - blank clears it. normalized to (xxx) xxx-xxxx.
   const phone = formatUSPhone(formData.get("phone"));
@@ -90,9 +90,14 @@ async function updateProfile(formData) {
     imageUpdate = { image: null };
   }
 
+  // opt-in/out: include phone on the public shared contact link (/c/[id]).
+  const sharePhonePublicly = formData.get("sharePhonePublicly") === "on";
+  // hide the full/legal name from coworkers (oversight + self still see it).
+  const hideLegalName = formData.get("hideLegalName") === "on";
+
   await prisma.user.update({
     where: { id: user.id },
-    data: { name, phone, workingHours, ...imageUpdate },
+    data: { preferredFirstName, preferredLastName, phone, workingHours, sharePhonePublicly, hideLegalName, ...imageUpdate },
   });
 
   redirect("/portal/settings?saved=1");
@@ -174,44 +179,90 @@ export default async function SettingsPage({ searchParams }) {
             />
           </div>
 
-          <div>
-            <label
-              htmlFor="role"
-              className="block text-sm font-medium text-muted"
-            >
-              Role
-            </label>
-            <input
-              id="role"
-              type="text"
-              value={user.role}
-              disabled
-              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
-            />
-          </div>
+          {isAdminUp(user.role) && (
+            <div>
+              <label
+                htmlFor="role"
+                className="block text-sm font-medium text-muted"
+              >
+                Role
+              </label>
+              <input
+                id="role"
+                type="text"
+                value={ROLE_LABELS[user.role] ?? user.role}
+                disabled
+                className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
+              />
+            </div>
+          )}
 
           <div>
             <label
-              htmlFor="name"
+              htmlFor="title"
               className="block text-sm font-medium text-muted"
             >
-              Display name
+              Title
             </label>
             <input
-              id="name"
-              name="name"
+              id="title"
               type="text"
-              required
-              maxLength={NAME_MAX_LEN}
-              defaultValue={user.name ?? ""}
-              autoComplete="name"
-              placeholder="How you want your name to appear"
-              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              value={user.title || "No title set"}
+              disabled
+              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
             />
             <p className="mt-1 text-xs text-muted">
-              Up to {NAME_MAX_LEN} characters. Shows on the dashboard
-              greeting and in the admin user list.
+              Your job title, managed by HR/admin.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-muted">
+              Preferred name <span className="text-faint">(optional)</span>
+            </label>
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                id="preferredFirstName"
+                name="preferredFirstName"
+                type="text"
+                maxLength={NAME_MAX_LEN}
+                defaultValue={user.preferredFirstName ?? ""}
+                autoComplete="given-name"
+                placeholder="Preferred first name"
+                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <input
+                id="preferredLastName"
+                name="preferredLastName"
+                type="text"
+                maxLength={NAME_MAX_LEN}
+                defaultValue={user.preferredLastName ?? ""}
+                autoComplete="family-name"
+                placeholder="Preferred last name"
+                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Shown across the portal. Each blank piece falls back to your legal
+              name{user.name ? <> (<span className="font-medium text-foreground">{user.name}</span>)</> : ""}
+              {" "}for that part. Your legal name is managed by HR/admin.
+            </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-surface-2 p-3">
+              <input
+                type="checkbox"
+                name="hideLegalName"
+                defaultChecked={user.hideLegalName ?? false}
+                className="mt-0.5 h-4 w-4 accent-brand"
+              />
+              <span className="text-sm text-foreground">
+                Hide my full name from coworkers
+                <span className="mt-0.5 block text-xs text-muted">
+                  Only HR and management can see your full name; everyone else
+                  sees just your display name. Set a display name above so people
+                  still have something to go by.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div>
@@ -234,6 +285,22 @@ export default async function SettingsPage({ searchParams }) {
               Shows on the Team Contacts directory. Leave blank to keep it
               private.
             </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-surface-2 p-3">
+              <input
+                type="checkbox"
+                name="sharePhonePublicly"
+                defaultChecked={user.sharePhonePublicly ?? true}
+                className="mt-0.5 h-4 w-4 accent-brand"
+              />
+              <span className="text-sm text-foreground">
+                Include my phone number on my public contact link
+                <span className="mt-0.5 block text-xs text-muted">
+                  When someone shares your contact via a public link, your phone
+                  is shown. Uncheck to keep it off the public link (it still
+                  shows to staff in the portal).
+                </span>
+              </span>
+            </label>
           </div>
 
           <div>
@@ -267,7 +334,7 @@ export default async function SettingsPage({ searchParams }) {
             </label>
             <div className="mt-2 flex items-center gap-4">
               <Avatar
-                name={user.name}
+                name={preferredName(user)}
                 email={user.email}
                 image={user.image}
                 size={64}

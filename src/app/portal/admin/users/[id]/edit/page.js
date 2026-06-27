@@ -6,9 +6,15 @@ import { cleanDisplayName, isLockedSuperEmail } from "@/lib/security";
 import {
   ROLE_LABELS,
   ROLE_DESCRIPTIONS,
+  roleBadgeClass,
   isElevated,
+  isIT,
+  isManagerUp,
+  isSuper,
   isValidRole,
   canAssignRole,
+  canManageUser,
+  canSeeRoles,
 } from "@/lib/roles";
 import { resolveTitle } from "@/lib/positions";
 import PositionPicker from "../../_components/PositionPicker";
@@ -35,12 +41,13 @@ async function loadActionTarget(userId) {
     redirect("/portal");
   }
 
-  // IT_ADMINs can't act on themselves. prevents the worst-case lockout
-  // scenarios (last admin deactivates themselves, demotes themselves
-  // by accident, etc.). they have to use the admin list with a
-  // different IT_ADMIN session to make changes to their own row.
-  if (userId === current.id) {
-    redirect("/portal/admin?error=self");
+  // elevated users can't act on themselves - prevents the worst-case lockout
+  // scenarios (last admin deactivates themselves, demotes themselves by
+  // accident, etc.). SUPER is exempt: their role is force-locked (via
+  // LOCKED_SUPER_EMAILS) and they can't be deactivated, so editing their own
+  // row (e.g. to set their own title) is safe.
+  if (userId === current.id && !isSuper(current.role)) {
+    redirect("/portal/admin/users?error=self");
   }
 
   const target = await prisma.user.findUnique({
@@ -49,6 +56,8 @@ async function loadActionTarget(userId) {
       id: true,
       email: true,
       name: true,
+      preferredFirstName: true,
+      preferredLastName: true,
       role: true,
       title: true,
       hireDate: true,
@@ -58,13 +67,14 @@ async function loadActionTarget(userId) {
     },
   });
   if (!target) {
-    redirect("/portal/admin?error=notfound");
+    redirect("/portal/admin/users?error=notfound");
   }
 
-  // authority guard: you can only manage a user whose role you're allowed
-  // to assign. stops e.g. a Manager from editing an Admin/IT/Super account.
-  if (!canAssignRole(current.role, target.role)) {
-    redirect("/portal/admin?error=forbidden");
+  // authority guard: you can only manage a user at or below your own tier.
+  // stops e.g. a Manager from editing an Admin/IT/Super account. (changing
+  // the role itself is separately gated to IT/Super - see updateUser.)
+  if (!canManageUser(current.role, target.role)) {
+    redirect("/portal/admin/users?error=forbidden");
   }
 
   return { current, target };
@@ -79,6 +89,10 @@ async function updateUser(userId, formData) {
     redirect(`/portal/admin/users/${userId}/edit?error=name`);
   }
 
+  // optional preferred first / last name (blank clears each).
+  const preferredFirstName = cleanDisplayName(formData.get("preferredFirstName"), NAME_MAX_LEN);
+  const preferredLastName = cleanDisplayName(formData.get("preferredLastName"), NAME_MAX_LEN);
+
   // positions come from the checkbox group (can be multiple) + an
   // optional custom text field. joined into the title string.
   const title = resolveTitle(
@@ -86,25 +100,36 @@ async function updateUser(userId, formData) {
     formData.get("titleCustom"),
   );
 
-  // hire date is optional. <input type="date"> gives us YYYY-MM-DD which
-  // new Date() parses as UTC midnight - safe to compare across timezones.
-  const rawHireDate = formData.get("hireDate");
-  let hireDate = null;
-  if (typeof rawHireDate === "string" && rawHireDate.length > 0) {
-    const parsed = new Date(rawHireDate);
-    if (!Number.isNaN(parsed.getTime())) {
-      hireDate = parsed;
+  // hire date is editable by Manager and up only (HR can't touch it). for
+  // anyone else we preserve whatever's already on the record. <input type=
+  // "date"> gives YYYY-MM-DD which new Date() parses as UTC midnight.
+  let hireDate = target.hireDate;
+  if (isManagerUp(current.role)) {
+    const rawHireDate = formData.get("hireDate");
+    hireDate = null;
+    if (typeof rawHireDate === "string" && rawHireDate.length > 0) {
+      const parsed = new Date(rawHireDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        hireDate = parsed;
+      }
     }
   }
 
-  let role = formData.get("role");
-  if (!isValidRole(role)) {
-    redirect(`/portal/admin/users/${userId}/edit?error=role`);
-  }
-  // role caps: Super only assigns Super; Admin/IT only by Admin-and-up;
-  // everything else by any oversight role. blocks crafted requests too.
-  if (!canAssignRole(current.role, role)) {
-    redirect(`/portal/admin/users/${userId}/edit?error=role`);
+  // privilege role: only IT/Super can change it. for everyone else we keep
+  // whatever's already on the record (the form doesn't even show the field
+  // to them, but preserve it server-side so a crafted request can't sneak
+  // a role in).
+  let role = target.role;
+  if (isIT(current.role)) {
+    const submitted = formData.get("role");
+    if (!isValidRole(submitted)) {
+      redirect(`/portal/admin/users/${userId}/edit?error=role`);
+    }
+    // Super for Super, everything else for IT/Super. blocks crafted requests.
+    if (!canAssignRole(current.role, submitted)) {
+      redirect(`/portal/admin/users/${userId}/edit?error=role`);
+    }
+    role = submitted;
   }
   // locked superusers (env LOCKED_SUPER_EMAILS) always stay SUPER - their
   // role can't be changed away, no matter what was submitted.
@@ -123,10 +148,10 @@ async function updateUser(userId, formData) {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { name, title, hireDate, phone, workingHours, role },
+    data: { name, preferredFirstName, preferredLastName, title, hireDate, phone, workingHours, role },
   });
 
-  redirect(`/portal/admin?updated=${encodeURIComponent(userId)}`);
+  redirect(`/portal/admin/users?updated=${encodeURIComponent(userId)}`);
 }
 
 async function deactivateUser(userId) {
@@ -141,7 +166,7 @@ async function deactivateUser(userId) {
 
   // already deactivated? no-op, just bounce.
   if (target.deactivatedAt) {
-    redirect("/portal/admin");
+    redirect("/portal/admin/users");
   }
 
   await prisma.user.update({
@@ -149,7 +174,7 @@ async function deactivateUser(userId) {
     data: { deactivatedAt: new Date() },
   });
 
-  redirect(`/portal/admin?deactivated=${encodeURIComponent(target.email)}`);
+  redirect(`/portal/admin/users?deactivated=${encodeURIComponent(target.email)}`);
 }
 
 async function reactivateUser(userId) {
@@ -161,16 +186,21 @@ async function reactivateUser(userId) {
     data: { deactivatedAt: null },
   });
 
-  redirect(`/portal/admin?reactivated=${encodeURIComponent(target.email)}`);
+  redirect(`/portal/admin/users?reactivated=${encodeURIComponent(target.email)}`);
 }
 
 export default async function EditUserPage({ params, searchParams }) {
   const { id } = await params;
   const { current, target } = await loadActionTarget(id);
 
-  // show only the roles this admin is allowed to assign, plus the target's
-  // current role (so the radio always reflects reality). hides SUPER from
-  // everyone but Super, and Admin/IT from HR/Manager.
+  // only IT/Super can change a role; Admin can see it (read-only); HR/Manager
+  // don't see it at all.
+  const canEditRole = isIT(current.role);
+  const showRole = canSeeRoles(current.role);
+
+  // role options for the picker (IT/Super only): the roles this actor can
+  // assign, plus the target's current role so the radio always reflects
+  // reality. SUPER is included only for Super.
   const ALL_ROLES = [...ROLE_RADIO_ORDER, "SUPER"];
   const roleOptions = ALL_ROLES.filter(
     (r) => canAssignRole(current.role, r) || r === target.role,
@@ -179,7 +209,7 @@ export default async function EditUserPage({ params, searchParams }) {
   const queryParams = await searchParams;
   const error = queryParams?.error;
   const errorMessages = {
-    name: `Display name must be 1-${NAME_MAX_LEN} characters.`,
+    name: `Full name must be 1-${NAME_MAX_LEN} characters.`,
     role: "Please pick a role.",
     locked:
       "This is a permanent superuser account: its role can't be changed and it can't be deactivated.",
@@ -204,7 +234,7 @@ export default async function EditUserPage({ params, searchParams }) {
         Edit user
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted break-words">
-        Manage role and account status for{" "}
+        Manage profile and account status for{" "}
         <span className="font-mono text-sm">{target.email}</span>.
       </p>
 
@@ -240,7 +270,7 @@ export default async function EditUserPage({ params, searchParams }) {
       {/* Edit name + role form */}
       <div className="mt-10 rounded-xl border border-border bg-surface p-6 sm:p-8">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
-          Profile + role
+          {showRole ? "Profile + role" : "Profile"}
         </h2>
         <form action={updateBound} className="mt-6 space-y-6">
           <div>
@@ -267,7 +297,7 @@ export default async function EditUserPage({ params, searchParams }) {
               htmlFor="name"
               className="block text-sm font-medium text-muted"
             >
-              Display name <span className="text-rose-600">*</span>
+              Full name <span className="text-rose-600">*</span>
             </label>
             <input
               id="name"
@@ -276,11 +306,39 @@ export default async function EditUserPage({ params, searchParams }) {
               required
               maxLength={NAME_MAX_LEN}
               defaultValue={target.name ?? ""}
+              placeholder="Legal / full name for records"
               className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <p className="mt-1 text-xs text-muted">
-              Up to {NAME_MAX_LEN} characters. Editable by the user in
-              Settings.
+              Full / legal name for records (admin-managed).
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-muted">
+              Preferred name <span className="text-faint">(optional)</span>
+            </label>
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                name="preferredFirstName"
+                type="text"
+                maxLength={NAME_MAX_LEN}
+                defaultValue={target.preferredFirstName ?? ""}
+                placeholder="Preferred first name"
+                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <input
+                name="preferredLastName"
+                type="text"
+                maxLength={NAME_MAX_LEN}
+                defaultValue={target.preferredLastName ?? ""}
+                placeholder="Preferred last name"
+                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Shown across the portal; each blank piece falls back to the legal
+              name for that part. The user can also set this in Settings.
             </p>
           </div>
 
@@ -299,6 +357,8 @@ export default async function EditUserPage({ params, searchParams }) {
             />
           </fieldset>
 
+          {/* hire date is Manager-and-up only (HR can't edit it) */}
+          {isManagerUp(current.role) && (
           <div>
             <label
               htmlFor="hireDate"
@@ -322,6 +382,7 @@ export default async function EditUserPage({ params, searchParams }) {
               (e.g. &quot;3y 2mo&quot;).
             </p>
           </div>
+          )}
 
           <div>
             <label
@@ -367,52 +428,66 @@ export default async function EditUserPage({ params, searchParams }) {
             </p>
           </div>
 
-          <fieldset>
-            <legend className="block text-sm font-medium text-muted">
-              Privilege role <span className="text-rose-600">*</span>
-            </legend>
-            <p className="mt-1 text-xs text-muted">
-              Controls portal permissions. Elevated roles (IT, Admin,
-              Manager) can manage users and post announcements.
-            </p>
-            <div className="mt-3 space-y-2">
-              {roleOptions.map((value) => (
-                <label
-                  key={value}
-                  className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
-                    value === "SUPER"
-                      ? "border-rose-200 bg-rose-50 hover:border-rose-300"
-                      : "border-border bg-surface-2 hover:border-brand-light hover:bg-sky-50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value={value}
-                    defaultChecked={target.role === value}
-                    required
-                    className="mt-1 h-4 w-4 accent-brand"
-                  />
-                  <div className="flex-1">
-                    <div
-                      className={`text-sm font-medium ${
-                        value === "SUPER" ? "text-rose-700" : "text-foreground"
-                      }`}
-                    >
-                      {ROLE_LABELS[value]}
+          {canEditRole ? (
+            <fieldset>
+              <legend className="block text-sm font-medium text-muted">
+                Privilege role <span className="text-rose-600">*</span>
+              </legend>
+              <p className="mt-1 text-xs text-muted">
+                Controls portal permissions. Only IT can change this.
+              </p>
+              <div className="mt-3 space-y-2">
+                {roleOptions.map((value) => (
+                  <label
+                    key={value}
+                    className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
+                      value === "SUPER"
+                        ? "border-rose-200 bg-rose-50 hover:border-rose-300"
+                        : "border-border bg-surface-2 hover:border-brand-light hover:bg-sky-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={value}
+                      defaultChecked={target.role === value}
+                      required
+                      className="mt-1 h-4 w-4 accent-brand"
+                    />
+                    <div className="flex-1">
+                      <div
+                        className={`text-sm font-medium ${
+                          value === "SUPER" ? "text-rose-700" : "text-foreground"
+                        }`}
+                      >
+                        {ROLE_LABELS[value]}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted">
+                        {ROLE_DESCRIPTIONS[value]}
+                      </div>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted">
-                      {ROLE_DESCRIPTIONS[value]}
-                    </div>
-                  </div>
-                </label>
-              ))}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : showRole ? (
+            // Admin can see the role but not change it - read-only display.
+            <div>
+              <p className="block text-sm font-medium text-muted">Privilege role</p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className={`rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(target.role)}`}>
+                  {ROLE_LABELS[target.role] ?? target.role}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                Set by IT. Ask an IT admin to change a privilege role.
+              </p>
             </div>
-          </fieldset>
+          ) : null}
 
           <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
             <Link
-              href="/portal/admin"
+              href="/portal/admin/users"
               className="text-sm font-medium text-muted transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               Cancel

@@ -3,6 +3,7 @@ import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isModerator, isElevated, canSeeRoles } from "@/lib/roles";
+import { preferredName } from "@/lib/contacts";
 import {
   POST_TAGS,
   TAG_STYLES,
@@ -55,8 +56,8 @@ export default async function HubPage({ searchParams }) {
       { createdAt: "desc" },
     ],
     include: {
-      author: { select: { id: true, name: true, role: true, email: true } },
-      postedBy: { select: { id: true, name: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
+      postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       _count: { select: { comments: true, likes: true } },
       likes: {
         where: { userId: user.id },
@@ -196,7 +197,7 @@ function PostCard({ post, currentUser }) {
             {post.editedAt && <span>· edited</span>}
             {post.postedBy && isElevated(currentUser.role) && (
               <span className="italic">
-                · posted on their behalf by {post.postedBy.name || "staff"}
+                · posted on their behalf by {preferredName(post.postedBy) || "staff"}
               </span>
             )}
             {post.pinnedAt && (

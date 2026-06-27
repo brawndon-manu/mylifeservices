@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
+import { ROLE_LABELS, roleBadgeClass, isAdminUp } from "@/lib/roles";
 
 // shows the signed-in employee's display name + role next to the brand
 // in the public header. fetched client-side from the Auth.js session
@@ -26,11 +26,11 @@ export default function AuthBadge() {
   if (!user || (!user.name && !user.email)) return null;
 
   return (
-    <span className="hidden items-center gap-2 border-l border-border pl-3 text-sm sm:inline-flex">
+    <span className="hidden items-center gap-2 text-sm sm:inline-flex">
       <span className="font-medium text-muted">
         {user.name || user.email}
       </span>
-      {user.role && (
+      {isAdminUp(user.role) && (
         <span className={`rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(user.role)}`}>
           {ROLE_LABELS[user.role] ?? user.role}
         </span>

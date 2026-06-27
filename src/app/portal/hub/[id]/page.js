@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isModerator, isElevated, canSeeRoles } from "@/lib/roles";
+import { preferredName } from "@/lib/contacts";
 import {
   TAG_STYLES,
   timeAgo,
@@ -40,15 +41,15 @@ export default async function PostDetailPage({ params, searchParams }) {
   const post = await prisma.post.findUnique({
     where: { id },
     include: {
-      author: { select: { id: true, name: true, role: true, email: true } },
-      postedBy: { select: { id: true, name: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
+      postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       _count: { select: { likes: true } },
       comments: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
         include: {
-          author: { select: { id: true, name: true, role: true, email: true } },
+          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
         },
       },
     },
@@ -91,7 +92,7 @@ export default async function PostDetailPage({ params, searchParams }) {
               {post.editedAt && <span>· edited</span>}
               {post.postedBy && isElevated(user.role) && (
                 <span className="italic">
-                  · posted on their behalf by {post.postedBy.name || "staff"}
+                  · posted on their behalf by {preferredName(post.postedBy) || "staff"}
                 </span>
               )}
               {post.pinnedAt && (

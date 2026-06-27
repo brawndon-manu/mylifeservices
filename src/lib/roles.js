@@ -100,12 +100,35 @@ export function isAdminUp(role) {
   return role === "ADMIN" || isIT(role);
 }
 
-// can `actorRole` assign - or manage a user who currently holds -
-// `targetRole`? SUPER -> Super only; ADMIN/IT -> Admin and up; anything
-// else -> any oversight role. used to filter the role picker AND guard
-// the edit-user action, so e.g. a Manager can't grant or even touch an
-// Admin/IT/Super account.
-export function canAssignRole(actorRole, targetRole) {
+// "Manager and up" - MANAGER, ADMIN, IT_ADMIN, SUPER. the oversight tier minus
+// HR. used for things HR shouldn't touch (e.g. editing a user's hire date).
+const MANAGER_UP_ROLES = new Set(["MANAGER", "ADMIN", "IT_ADMIN", "SUPER"]);
+export function isManagerUp(role) {
+  return MANAGER_UP_ROLES.has(role);
+}
+
+// "Supervisor and up" - everyone EXCEPT plain Staff (SUPERVISOR, HR, MANAGER,
+// ADMIN, IT_ADMIN, SUPER). used for posting Announcements: leads broadcast,
+// staff read + comment + react.
+const SUPERVISOR_UP_ROLES = new Set([
+  "SUPER",
+  "IT_ADMIN",
+  "ADMIN",
+  "MANAGER",
+  "HR",
+  "SUPERVISOR",
+]);
+export function isSupervisorUp(role) {
+  return SUPERVISOR_UP_ROLES.has(role);
+}
+
+// can `actorRole` MANAGE a user who currently holds `targetRole`? this is
+// the authority guard for the admin user actions (edit profile, deactivate,
+// reactivate) - it stops someone acting on a user above their own tier.
+// SUPER -> Super only; ADMIN/IT -> Admin and up; anything else -> any
+// oversight role. NOTE: this is about touching the user at all, not about
+// changing their privilege role - that's gated separately by canAssignRole.
+export function canManageUser(actorRole, targetRole) {
   if (targetRole === "SUPER") return isSuper(actorRole);
   if (targetRole === "ADMIN" || targetRole === "IT_ADMIN") {
     return isAdminUp(actorRole);
@@ -113,13 +136,22 @@ export function canAssignRole(actorRole, targetRole) {
   return isElevated(actorRole);
 }
 
-// who can SEE other people's privilege role (the access tier, e.g. the
-// role badge). the oversight tier (HR / Manager / Admin / IT / Super)
-// sees them; Staff + Supervisor only see job titles. keeps roles - esp.
-// SUPER - off the staff-facing surfaces. a user always sees their OWN
-// role (gated at the call site, not here).
+// who can ASSIGN / change a user's privilege role? roles are an IT concern
+// now - only IT + Super set them. Super is the only one who can grant Super.
+// HR / Manager / Admin still manage users (canManageUser) but the role field
+// is read-only / hidden for them. used to filter the role picker AND guard
+// the role write in the invite + edit actions.
+export function canAssignRole(actorRole, targetRole) {
+  if (targetRole === "SUPER") return isSuper(actorRole);
+  return isIT(actorRole);
+}
+
+// who can SEE a privilege role (badge / role field) anywhere in the portal -
+// other people's AND their own. limited to Admin / IT / Super (isAdminUp);
+// HR / Manager / Staff / Supervisor only see names + job titles, never the
+// privilege tier. keeps roles off everyone-facing surfaces.
 export function canSeeRoles(role) {
-  return isElevated(role);
+  return isAdminUp(role);
 }
 
 // returns true if `role` is a valid Role enum value. use for form

@@ -2,8 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { ROLE_LABELS, roleBadgeClass, canSeeRoles } from "@/lib/roles";
+import { ROLE_LABELS, roleBadgeClass, canSeeRoles, isManagerUp } from "@/lib/roles";
+import { preferredName, legalName } from "@/lib/contacts";
 import Avatar from "@/components/Avatar";
+import CopyButton from "@/components/CopyButton";
+import ShareMenu from "@/components/ShareMenu";
 
 export const metadata = {
   title: "Contact · MLS Portal",
@@ -19,6 +22,9 @@ export default async function ContactDetailPage({ params }) {
     select: {
       id: true,
       name: true,
+      preferredFirstName: true,
+      preferredLastName: true,
+      hideLegalName: true,
       email: true,
       role: true,
       title: true,
@@ -29,9 +35,10 @@ export default async function ContactDetailPage({ params }) {
   });
   if (!person) notFound();
 
-  // privilege role shows only to ADMIN/IT, or when you're viewing your
-  // own profile. everyone else just sees the title.
-  const showRole = canSeeRoles(viewer.role) || viewer.id === person.id;
+  // privilege role badge shows only to Admin/IT/Super (canSeeRoles). no
+  // self-exception - HR/Manager/Staff don't see their own role here either;
+  // everyone outside Admin/IT/Super just sees the title.
+  const showRole = canSeeRoles(viewer.role);
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
@@ -45,7 +52,7 @@ export default async function ContactDetailPage({ params }) {
       {/* profile header */}
       <div className="mt-4 flex items-start gap-5 rounded-xl border border-border bg-surface p-6 shadow-sm">
         <Avatar
-          name={person.name}
+          name={preferredName(person)}
           email={person.email}
           image={person.image}
           size={80}
@@ -53,31 +60,43 @@ export default async function ContactDetailPage({ params }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              {person.name || person.email}
+              {preferredName(person)}
             </h1>
+            {/* share a public, no-login link to this contact (/c/[id]) */}
+            <ShareMenu path={`/c/${person.id}`} label="Share contact" />
             {showRole && (
               <span className={`rounded px-2 py-0.5 text-xs font-medium ${roleBadgeClass(person.role)}`}>
                 {ROLE_LABELS[person.role] ?? person.role}
               </span>
             )}
           </div>
+          {legalName(person) &&
+            (!person.hideLegalName || isManagerUp(viewer.role) || viewer.id === person.id) && (
+              <p className="text-sm text-muted">{legalName(person)}</p>
+            )}
           {person.title && (
             <p className="text-sm text-muted">{person.title}</p>
           )}
           <div className="mt-3 space-y-1 text-sm">
-            <a
-              href={`mailto:${person.email}`}
-              className="block text-brand underline-offset-2 hover:underline"
-            >
-              {person.email}
-            </a>
-            {person.phone && (
+            <div className="flex items-center gap-2">
               <a
-                href={`tel:${person.phone.replace(/[^\d+]/g, "")}`}
-                className="block text-muted underline-offset-2 hover:underline"
+                href={`mailto:${person.email}`}
+                className="text-brand underline-offset-2 hover:underline"
               >
-                {person.phone}
+                {person.email}
               </a>
+              <CopyButton text={person.email} label="Copy email" />
+            </div>
+            {person.phone && (
+              <div className="flex items-center gap-2">
+                <a
+                  href={`tel:${person.phone.replace(/[^\d+]/g, "")}`}
+                  className="text-muted underline-offset-2 hover:underline"
+                >
+                  {person.phone}
+                </a>
+                <CopyButton text={person.phone} label="Copy phone" />
+              </div>
             )}
             {person.workingHours && (
               <p className="text-muted">
