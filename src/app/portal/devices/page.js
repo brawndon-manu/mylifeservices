@@ -9,6 +9,7 @@ import {
   deviceStatusChip,
   formatCents,
 } from "@/lib/devices";
+import BackLink from "@/components/BackLink";
 
 export const metadata = {
   title: "Device Management · MLS Portal",
@@ -39,7 +40,8 @@ export default async function DevicesPage({ searchParams }) {
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <BackLink href="/portal/admin">Back to admin dashboard</BackLink>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             Management

@@ -9,7 +9,7 @@ export default function ComingSoon({ title }) {
         href="/portal"
         className="text-sm font-medium text-muted transition hover:text-brand"
       >
-        ← Back to dashboard
+        ← Back to Dashboard
       </Link>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         {title}

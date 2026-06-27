@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import ConfirmButton from "@/components/ConfirmButton";
+import BackLink from "@/components/BackLink";
 import {
   SITE_PHOTO_PAGES,
   sectionsForPage,
@@ -51,7 +52,8 @@ export default async function SitePhotosPage({ searchParams }) {
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
-      <p className="text-sm text-muted">Portal / Site Photos</p>
+      <BackLink href="/portal/admin">Back to admin dashboard</BackLink>
+      <p className="mt-3 text-sm text-muted">Portal / Site Photos</p>
       <h1 className="mt-1 flex flex-wrap items-center gap-3 text-3xl font-semibold tracking-tight text-foreground">
         Site Photos
         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
