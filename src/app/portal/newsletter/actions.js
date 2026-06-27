@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { notifyOversight } from "@/lib/notify";
 import { isElevated } from "@/lib/roles";
+import { preferredName } from "@/lib/contacts";
 import {
   cleanBody,
   isValidCategory,
@@ -112,6 +114,14 @@ export async function submitItem(formData) {
       consentConfirmed: hasImage ? true : consentConfirmed,
       submittedById: user.id,
     },
+  });
+
+  await notifyOversight({
+    type: "NEWSLETTER_PENDING",
+    title: "Newsletter item awaiting review",
+    body: `${preferredName(user)} submitted "${title}".`,
+    link: "/portal/newsletter/review",
+    exceptUserId: user.id,
   });
 
   revalidatePath("/portal/newsletter");

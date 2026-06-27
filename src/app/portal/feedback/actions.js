@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
+import { notifyOversight } from "@/lib/notify";
 import { isElevated, isIT } from "@/lib/roles";
+import { preferredName } from "@/lib/contacts";
 import {
   cleanBody,
   isValidType,
@@ -72,6 +74,14 @@ export async function submitFeedback(formData) {
 
   await prisma.feedbackItem.create({
     data: { type, title, body, imageUrl, authorId: user.id },
+  });
+
+  await notifyOversight({
+    type: "FEEDBACK_NEW",
+    title: type === "BUG" ? "New bug report" : "New suggestion",
+    body: `${preferredName(user)} submitted "${title}".`,
+    link: "/portal/feedback",
+    exceptUserId: user.id,
   });
 
   revalidatePath("/portal/feedback");
