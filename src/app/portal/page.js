@@ -69,6 +69,11 @@ export default async function PortalDashboard() {
           body="Internal forms staff can fill out or download."
         />
         <LinkCard
+          href="/portal/guidebook"
+          title="Employee Guidebook"
+          body="Handbook, onboarding, and reference docs for the team."
+        />
+        <LinkCard
           href="/portal/resources"
           title="Resources"
           body="Community resources: housing, food banks, clinics, and more, with a map and details."
