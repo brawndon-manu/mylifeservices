@@ -7,10 +7,15 @@
 // (client info) never touches the server.
 import { useEffect, useRef, useState } from "react";
 import { PDFDocument, PDFName, PDFNumber } from "pdf-lib";
+import SignaturePad from "./SignaturePad";
 
 const RICH_TEXT_FLAG = 1 << 25;
 const WORKER_SRC = "/pdf.worker.min.mjs";
 const MAX_WIDTH = 880;
+
+// signature fields are AcroForm text fields whose name says "signature" - those
+// get a draw-it canvas instead of a text box, and stamp as an image.
+const isSignatureField = (name) => /signature/i.test(name || "");
 
 function slugify(s) {
   return (
@@ -24,6 +29,7 @@ export default function FormFiller({ fileUrl, title }) {
   const [placements, setPlacements] = useState([]); // { name, kind, page, left, top, width, height, multiline }
   const [values, setValues] = useState({});
   const [busy, setBusy] = useState(false);
+  const [signing, setSigning] = useState(null); // field name being signed
   const bytesRef = useRef(null);
   const wrapRef = useRef(null);
 
@@ -49,7 +55,7 @@ export default function FormFiller({ fileUrl, title }) {
         for (const f of doc.getForm().getFields()) {
           const type = f.constructor.name;
           let kind = null;
-          if (type === "PDFTextField") kind = "text";
+          if (type === "PDFTextField") kind = isSignatureField(f.getName()) ? "signature" : "text";
           else if (type === "PDFCheckBox") kind = "checkbox";
           else continue;
           const multiline = kind === "text" && !!f.isMultiline();
@@ -141,7 +147,57 @@ export default function FormFiller({ fileUrl, title }) {
           // skip a field that won't accept the value
         }
       }
+
+      // collect each drawn signature's rect + page BEFORE flatten, blank its
+      // text field, then draw the images AFTER flatten - otherwise the flattened
+      // (empty) field appearance paints over the signature.
+      const sigPages = doc.getPages();
+      const sigPageIndex = (ref) =>
+        sigPages.findIndex(
+          (pg) =>
+            pg.ref.objectNumber === ref.objectNumber &&
+            pg.ref.generationNumber === ref.generationNumber,
+        );
+      const sigStamps = [];
+      for (const f of form.getFields()) {
+        if (f.constructor.name !== "PDFTextField" || !isSignatureField(f.getName())) {
+          continue;
+        }
+        const val = values[f.getName()];
+        if (typeof val !== "string" || !val.startsWith("data:image")) continue;
+        for (const w of f.acroField.getWidgets()) {
+          const pref = w.dict.get(PDFName.of("P"));
+          const pi = pref ? sigPageIndex(pref) : -1;
+          if (pi >= 0) sigStamps.push({ pi, rect: w.getRectangle(), val });
+        }
+        try {
+          f.setText("");
+        } catch {
+          // ignore
+        }
+      }
+
       form.flatten();
+
+      for (const s of sigStamps) {
+        let png;
+        try {
+          png = await doc.embedPng(s.val);
+        } catch {
+          continue;
+        }
+        const pg = sigPages[s.pi];
+        const r = s.rect;
+        const k = Math.min(r.width / png.width, r.height / png.height);
+        const dw = png.width * k;
+        const dh = png.height * k;
+        pg.drawImage(png, {
+          x: r.x + (r.width - dw) / 2,
+          y: r.y + (r.height - dh) / 2,
+          width: dw,
+          height: dh,
+        });
+      }
       const out = await doc.save();
       const blob = new Blob([out], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
@@ -192,7 +248,51 @@ export default function FormFiller({ fileUrl, title }) {
                 {placements
                   .filter((p) => p.page === i)
                   .map((p, j) =>
-                    p.kind === "checkbox" ? (
+                    p.kind === "signature" ? (
+                      <button
+                        key={p.name + j}
+                        type="button"
+                        onClick={() => setSigning(p.name)}
+                        aria-label="Draw signature"
+                        style={{
+                          position: "absolute",
+                          left: p.left,
+                          top: p.top,
+                          width: p.width,
+                          height: p.height,
+                          border: "1px solid rgba(37,99,235,0.45)",
+                          background: values[p.name] ? "transparent" : "rgba(255,255,255,0.55)",
+                          borderRadius: 2,
+                          padding: 0,
+                          margin: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          overflow: "hidden",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {values[p.name] ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={values[p.name]}
+                            alt="signature"
+                            style={{ maxWidth: "100%", maxHeight: "100%" }}
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: Math.min(Math.max(p.height * 0.4, 9), 12),
+                              color: "#2563eb",
+                              fontWeight: 500,
+                            }}
+                          >
+                            Sign
+                          </span>
+                        )}
+                      </button>
+                    ) : p.kind === "checkbox" ? (
                       <input
                         key={p.name + j}
                         type="checkbox"
@@ -231,7 +331,8 @@ export default function FormFiller({ fileUrl, title }) {
           </div>
 
           <p className="mt-3 text-xs text-faint">
-            Tip: signature lines are signed by hand after you download or print.
+            Tip: tap a signature box to draw your signature with your mouse or
+            finger. Everything else types in.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-5">
@@ -246,6 +347,16 @@ export default function FormFiller({ fileUrl, title }) {
             </button>
             <span className="text-xs text-faint">Send by email is coming next.</span>
           </div>
+
+          {signing && (
+            <SignaturePad
+              onClose={() => setSigning(null)}
+              onSave={(data) => {
+                setVal(signing, data);
+                setSigning(null);
+              }}
+            />
+          )}
         </>
       )}
     </div>
