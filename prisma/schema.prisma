@@ -356,6 +356,26 @@ model AnnouncementLike {
   @@id([announcementId, userId])
 }
 
+// the Forms library - a managed list of blank form templates (PDFs). staff
+// browse + download; fillable PDFs (AcroForm) can be filled in the browser and
+// downloaded/sent. NO filled-in copies are ever stored here - only the blank
+// templates. fileUrl points at a public /forms/* path or a Vercel Blob URL.
+model Form {
+  id          String   @id @default(cuid())
+  title       String
+  category    String
+  description String?
+  fileUrl     String
+  // true when the PDF has AcroForm fields, so it can be filled in-app.
+  fillable    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+}
+
 // "This Week in My Life Services" newsletter. staff submit items, IT +
 // management approve, then IT publishes them to the public /this-week
 // page. lifecycle: SUBMITTED -> APPROVED -> PUBLISHED (or REJECTED).
