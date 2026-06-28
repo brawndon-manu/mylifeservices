@@ -1,9 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
-import { marked } from "marked";
+import { renderMarkdown } from "@/lib/markdown";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated, isSupervisorUp, canSeeRoles } from "@/lib/roles";
+import { isModerator, isElevated, isSupervisorUp, canSeeRoles, mustAcknowledge } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   TIME_WINDOWS,
@@ -60,6 +60,10 @@ export default async function AnnouncementsPage({ searchParams }) {
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       _count: { select: { comments: true, likes: true } },
       likes: {
+        where: { userId: user.id },
+        select: { userId: true },
+      },
+      acks: {
         where: { userId: user.id },
         select: { userId: true },
       },
@@ -184,11 +188,14 @@ function PostCard({ post, currentUser }) {
     post.authorId === currentUser.id || isModerator(currentUser.role);
   const canPin = isModerator(currentUser.role);
   const canEdit = post.authorId === currentUser.id;
+  const iAcked = post.acks?.length > 0;
+  const iMustAck = mustAcknowledge(currentUser.role);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
-  // changelog preview: render the markdown body (trusted IT/Super authors) and
-  // estimate a reading time (~200 words/min).
-  const changelogHtml = changelog ? marked.parse(post.content || "", { breaks: true }) : null;
+  // changelog preview: render the markdown body and estimate a reading time
+  // (~200 words/min). plain announcements render a faded markdown preview too.
+  const changelogHtml = changelog ? renderMarkdown(post.content) : null;
+  const previewHtml = !changelog ? renderMarkdown(post.content) : null;
   const readMins = changelog
     ? Math.max(1, Math.round((post.content || "").split(/\s+/).filter(Boolean).length / 200))
     : 0;
@@ -213,14 +220,28 @@ function PostCard({ post, currentUser }) {
             )}
             {expired && (
               <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
-                Expired
+                Past due
               </span>
             )}
             {post.expiresAt && !expired && (
               <span className="text-muted">
-                expires {new Date(post.expiresAt).toLocaleDateString()}
+                due {new Date(post.expiresAt).toLocaleDateString()}
               </span>
             )}
+            {post.requireAck &&
+              (iAcked ? (
+                <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                  Acknowledged
+                </span>
+              ) : iMustAck ? (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                  Acknowledgment needed
+                </span>
+              ) : (
+                <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
+                  Acknowledgment requested
+                </span>
+              ))}
           </div>
         </div>
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${tagClass}`}>
@@ -252,12 +273,19 @@ function PostCard({ post, currentUser }) {
           </div>
         </div>
       ) : (
-        <Link href={`/portal/announcements/${post.id}`} className="mt-3 block">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground line-clamp-6">
-            {post.content}
-          </p>
+        <div className="mt-3">
+          <Link
+            href={`/portal/announcements/${post.id}`}
+            className="block text-lg font-semibold text-foreground transition hover:text-brand"
+          >
+            {post.title || "Announcement"}
+          </Link>
+          <div
+            className="mt-2 max-h-28 overflow-hidden text-sm leading-relaxed text-muted [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [&_a]:text-brand [&_h1]:mt-2 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-foreground [&_h2]:mt-2 [&_h2]:text-base [&_h2]:font-medium [&_h2]:text-foreground [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-foreground [&_li]:marker:text-faint [&_ol]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mt-1.5 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
           {post.imageUrl && (
-            <div className="mt-3 overflow-hidden rounded-lg border border-border">
+            <Link href={`/portal/announcements/${post.id}`} className="mt-3 block overflow-hidden rounded-lg border border-border">
               <Image
                 src={post.imageUrl}
                 alt=""
@@ -266,9 +294,9 @@ function PostCard({ post, currentUser }) {
                 unoptimized
                 className="h-auto w-full object-cover"
               />
-            </div>
+            </Link>
           )}
-        </Link>
+        </div>
       )}
 
       <footer className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-sm">

@@ -5,6 +5,7 @@ import { isElevated, isIT, isSupervisorUp, canSeeRoles, ROLE_LABELS } from "@/li
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
 import { IMAGE_MAX_BYTES } from "@/lib/hub";
 import { preferredName } from "@/lib/contacts";
+import { getStaffByTitle } from "@/lib/staff-audience";
 import { createPost } from "../actions";
 import AnnouncementForm from "../_components/AnnouncementForm";
 
@@ -15,7 +16,7 @@ export const metadata = {
 
 const ERRORS = {
   content: "Announcement content cant be blank.",
-  title: "Changelog posts need a title.",
+  title: "Give your announcement a title.",
   tag: "Please pick a type.",
   forbidden: "You dont have permission to post that type.",
   imageType: "Image must be JPG, PNG, WebP, or GIF.",
@@ -42,6 +43,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
 
   const canProxy = isElevated(user.role);
   const showRoles = canSeeRoles(user.role);
+  const staffByTitle = await getStaffByTitle();
   let people = [];
   if (canProxy) {
     const rows = await prisma.user.findMany({
@@ -88,6 +90,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
           showRoles={showRoles}
           meId={user.id}
           meName={preferredName(user)}
+          staffByTitle={staffByTitle}
           submitLabel="Post"
         />
       </div>

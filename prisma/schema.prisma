@@ -81,6 +81,7 @@ model User {
   announcementsPosted  Announcement[]        @relation("AnnouncementPostedBy")
   announcementComments AnnouncementComment[]
   announcementLikes    AnnouncementLike[]
+  announcementAcks     AnnouncementAck[]
   nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
   nlApproved    NewsletterItem[] @relation("NLApprovedBy")
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
@@ -322,13 +323,44 @@ model Announcement {
   pinnedById String?
   editedAt   DateTime?
   deletedAt  DateTime?
+  // when true, staff get an "I read this" box and management gets a
+  // who-has/who-hasnt roster. opt-in per announcement (see requireAck box
+  // on the form). plain posts leave it false.
+  requireAck Boolean    @default(false)
+  // the acknowledgment audience - who is expected to acknowledge (drives the
+  // roster denominator + the email send default). ackEveryone = the whole
+  // expected-ack staff set; otherwise ackTitles lists the job titles targeted.
+  ackEveryone Boolean   @default(true)
+  ackTitles   String[]  @default([])
+  // specific individuals to target (in addition to ackTitles), used when the
+  // poster narrows a title role to certain people. unioned with ackTitles.
+  ackUserIds  String[]  @default([])
+  // last time the "Send to staff by email" blast went out, so the roster
+  // can show "last emailed ..." and re-sends only hit the un-acked.
+  ackEmailSentAt DateTime?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
   comments   AnnouncementComment[]
   likes      AnnouncementLike[]
+  acks       AnnouncementAck[]
 
   @@index([createdAt])
   @@index([pinnedAt])
+}
+
+// read-receipt for an ack-required announcement. one row per person who
+// acknowledged, composite PK so each person acks once. mirrors
+// AnnouncementLike. viaEmail records whether they clicked the one-click
+// email link or checked the box in the portal.
+model AnnouncementAck {
+  announcementId String
+  userId         String
+  viaEmail       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
 }
 
 model AnnouncementComment {

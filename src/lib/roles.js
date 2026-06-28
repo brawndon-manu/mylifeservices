@@ -122,6 +122,20 @@ export function isSupervisorUp(role) {
   return SUPERVISOR_UP_ROLES.has(role);
 }
 
+// who is EXPECTED to acknowledge an ack-required announcement: everyone
+// except upper management (Manager / Admin / Super). IT is deliberately
+// included - they're operational too. so the expected set ends up being
+// Staff, Supervisor, HR, IT. used both for the email blast recipient list
+// and as the "who hasnt" roster denominator.
+const NO_ACK_ROLES = new Set(["MANAGER", "ADMIN", "SUPER"]);
+export function mustAcknowledge(role) {
+  return !NO_ACK_ROLES.has(role);
+}
+
+// the concrete list of roles on the expected-to-ack list, for prisma `in`
+// queries (recipients + roster). derived from ROLES so there's one source.
+export const EXPECTED_ACK_ROLES = ROLES.filter(mustAcknowledge);
+
 // can `actorRole` MANAGE a user who currently holds `targetRole`? this is
 // the authority guard for the admin user actions (edit profile, deactivate,
 // reactivate) - it stops someone acting on a user above their own tier.

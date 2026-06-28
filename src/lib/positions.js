@@ -19,6 +19,7 @@ export const POSITIONS = [
   "Day Program",
   "Resources Specialist",
   "IT / Web Developer",
+  "Tester",
 ];
 
 // separator used to join multiple positions into the title string. none

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isIT } from "@/lib/roles";
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
+import { getStaffByTitle } from "@/lib/staff-audience";
 import { editPost } from "../../actions";
 import AnnouncementForm from "../../_components/AnnouncementForm";
 
@@ -14,7 +15,7 @@ export const metadata = {
 
 const ERRORS = {
   content: "Announcement content cant be blank.",
-  title: "Changelog posts need a title.",
+  title: "Give your announcement a title.",
   tag: "Please pick a type.",
   forbidden: "You dont have permission to do that.",
 };
@@ -34,6 +35,10 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       content: true,
       tag: true,
       expiresAt: true,
+      requireAck: true,
+      ackEveryone: true,
+      ackTitles: true,
+      ackUserIds: true,
       deletedAt: true,
     },
   });
@@ -50,6 +55,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
   const tags = ANNOUNCEMENT_TAGS.filter(
     (t) => t !== CHANGELOG_TAG || canChangelog || post.tag === t,
   );
+  const staffByTitle = await getStaffByTitle();
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
@@ -78,6 +84,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
           mode="edit"
           defaults={post}
           tags={tags}
+          staffByTitle={staffByTitle}
           cancelHref={`/portal/announcements/${id}`}
           submitLabel="Save changes"
         />

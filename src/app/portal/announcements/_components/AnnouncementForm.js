@@ -13,6 +13,7 @@ import {
   isChangelog,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
+import AudiencePicker from "./AudiencePicker";
 
 const INPUT =
   "mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
@@ -28,12 +29,15 @@ export default function AnnouncementForm({
   showRoles = false,
   meId,
   meName,
+  staffByTitle = {},
   cancelHref = "/portal/announcements",
   submitLabel = "Post",
 }) {
   const d = defaults;
   const [tag, setTag] = useState(d.tag || tags[0] || "Announcement");
   const changelog = isChangelog(tag);
+  const [requireAck, setRequireAck] = useState(!!d.requireAck);
+  const [sendEmail, setSendEmail] = useState(false);
 
   return (
     <form action={action} className="space-y-6">
@@ -91,50 +95,52 @@ export default function AnnouncementForm({
         </div>
       )}
 
+      {/* Title - shown on every type now (the layout is built around it) */}
+      <div>
+        <label htmlFor="title" className={LABEL}>
+          Title <span className="text-rose-600">*</span>
+        </label>
+        <input
+          id="title"
+          name="title"
+          type="text"
+          required
+          maxLength={ANNOUNCEMENT_TITLE_MAX}
+          defaultValue={d.title || ""}
+          placeholder={
+            changelog ? "e.g. Portal Update: June 27, 2026" : "e.g. New meal break waiver"
+          }
+          className={INPUT}
+        />
+      </div>
+
       {changelog ? (
-        /* -------- Changelog fields -------- */
-        <>
-          <div>
-            <label htmlFor="title" className={LABEL}>
-              Title <span className="text-rose-600">*</span>
-            </label>
-            <input
-              id="title"
-              name="title"
-              type="text"
-              required
-              maxLength={ANNOUNCEMENT_TITLE_MAX}
-              defaultValue={d.title || ""}
-              placeholder="e.g. Portal Update: June 27, 2026"
-              className={INPUT}
-            />
-          </div>
-          <div>
-            <label htmlFor="content" className={LABEL}>
-              Changelog <span className="text-rose-600">*</span>
-            </label>
-            <textarea
-              id="content"
-              name="content"
-              required
-              rows={14}
-              maxLength={CHANGELOG_CONTENT_MAX}
-              defaultValue={d.content || ""}
-              placeholder={
-                "Intro line about this release.\n\n## 📣 What's new\n- **Big thing** - what it does\n- Another improvement\n\n## 🔧 Fixes\n- Fixed the thing that was broken"
-              }
-              className={`${INPUT} font-mono text-sm`}
-            />
-            <p className="mt-1 text-xs text-muted">
-              Markdown supported: <code>## Section</code> for headers (add an
-              emoji), <code>- item</code> for bullets, <code>**bold**</code>, and{" "}
-              <code>[links](https://...)</code>. The first lines before a header
-              read as the intro.
-            </p>
-          </div>
-        </>
+        /* -------- Changelog body -------- */
+        <div>
+          <label htmlFor="content" className={LABEL}>
+            Changelog <span className="text-rose-600">*</span>
+          </label>
+          <textarea
+            id="content"
+            name="content"
+            required
+            rows={14}
+            maxLength={CHANGELOG_CONTENT_MAX}
+            defaultValue={d.content || ""}
+            placeholder={
+              "Intro line about this release.\n\n## 📣 What's new\n- **Big thing** - what it does\n- Another improvement\n\n## 🔧 Fixes\n- Fixed the thing that was broken"
+            }
+            className={`${INPUT} font-mono text-sm`}
+          />
+          <p className="mt-1 text-xs text-muted">
+            Markdown supported: <code>## Section</code> for headers (add an
+            emoji), <code>- item</code> for bullets, <code>**bold**</code>, and{" "}
+            <code>[links](https://...)</code>. The first lines before a header
+            read as the intro.
+          </p>
+        </div>
       ) : (
-        /* -------- Plain announcement fields -------- */
+        /* -------- Plain announcement fields (markdown) -------- */
         <>
           <div>
             <label htmlFor="content" className={LABEL}>
@@ -144,13 +150,19 @@ export default function AnnouncementForm({
               id="content"
               name="content"
               required
-              rows={6}
+              rows={8}
               maxLength={POST_CONTENT_MAX}
               defaultValue={d.content || ""}
-              placeholder="Type your announcement..."
-              className={INPUT}
+              placeholder={
+                "Write your announcement. Markdown works:\n\n## What you need to do\n- **Step one**\n- Step two\n\n[Link](https://...)"
+              }
+              className={`${INPUT} font-mono text-sm`}
             />
-            <p className="mt-1 text-xs text-muted">Up to {POST_CONTENT_MAX} characters.</p>
+            <p className="mt-1 text-xs text-muted">
+              Markdown supported: <code>## Section</code>, <code>- bullets</code>,{" "}
+              <code>**bold**</code>, <code>[links](https://...)</code>. Up to{" "}
+              {POST_CONTENT_MAX} characters.
+            </p>
           </div>
 
           {mode === "create" && (
@@ -173,7 +185,7 @@ export default function AnnouncementForm({
 
           <div>
             <label htmlFor="expiresAt" className={LABEL}>
-              Expires on <span className="text-faint">(optional)</span>
+              Due date <span className="text-faint">(optional)</span>
             </label>
             <input
               id="expiresAt"
@@ -183,12 +195,89 @@ export default function AnnouncementForm({
               className={INPUT}
             />
             <p className="mt-1 text-xs text-muted">
-              Time-sensitive post? It stays visible but gets an &quot;Expired&quot;
+              Got a deadline? It stays visible but gets a &quot;Past due&quot;
               badge after this date.
             </p>
           </div>
         </>
       )}
+
+      {/* acknowledgment opt-in - works for any type */}
+      <div className="rounded-md border border-border bg-surface-2 p-4">
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="requireAck"
+            checked={requireAck}
+            onChange={(e) => setRequireAck(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-brand"
+          />
+          <span>
+            <span className="block text-sm font-medium text-foreground">
+              Require staff to acknowledge they&apos;ve read this
+            </span>
+            <span className="mt-0.5 block text-xs text-muted">
+              Adds an &quot;I read this&quot; box and a who-has/hasn&apos;t
+              roster. You can also email it for one-click acknowledgment.
+            </span>
+          </span>
+        </label>
+
+        {requireAck && (
+          <div className="mt-3 border-t border-border pt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+              Who needs to acknowledge?
+            </p>
+            <AudiencePicker
+              everyoneName="ackEveryone"
+              titlesName="ackTitles"
+              userIdsName="ackUserIds"
+              staffByTitle={staffByTitle}
+              defaultEveryone={d.ackEveryone !== false}
+              defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
+              defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
+            />
+          </div>
+        )}
+
+        {mode === "create" && (
+          <label className="mt-3 flex items-start gap-3 border-t border-border pt-3">
+            <input
+              type="checkbox"
+              name="sendEmail"
+              checked={sendEmail}
+              onChange={(e) => setSendEmail(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-brand"
+            />
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Also send as an email now
+              </span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Emails this announcement (from announcements@mylifeservicesinc.com)
+                when you post it.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {mode === "create" && sendEmail && (
+          <div className="mt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+              Who gets the email?
+            </p>
+            <AudiencePicker
+              everyoneName="emailEveryone"
+              titlesName="emailTitles"
+              userIdsName="emailUserIds"
+              staffByTitle={staffByTitle}
+              defaultEveryone
+              defaultTitles={[]}
+              defaultUserIds={[]}
+            />
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
         <Link href={cancelHref} className="text-sm font-medium text-muted transition hover:text-foreground">
