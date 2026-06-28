@@ -18,7 +18,7 @@ import {
   isValidAnnouncementTag,
   isChangelog,
 } from "@/lib/announcements";
-import AuthorChip from "../hub/_components/AuthorChip";
+import AuthorPreview from "./_components/AuthorPreview";
 import ConfirmButton from "@/components/ConfirmButton";
 import BackLink from "@/components/BackLink";
 import { toggleLike, togglePin, deletePost } from "./actions";
@@ -56,7 +56,7 @@ export default async function AnnouncementsPage({ searchParams }) {
       { createdAt: "desc" },
     ],
     include: {
-      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       _count: { select: { comments: true, likes: true } },
       likes: {
@@ -201,10 +201,10 @@ function PostCard({ post, currentUser }) {
     : 0;
 
   return (
-    <article className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+    <article className="group relative rounded-xl border border-border bg-surface p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <AuthorChip author={post.author} size="md" showRole={canSeeRoles(currentUser.role)} />
+          <AuthorPreview author={post.author} size="md" showRole={canSeeRoles(currentUser.role)} />
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span>{timeAgo(post.createdAt)}</span>
             {post.editedAt && <span>· edited</span>}
@@ -253,7 +253,7 @@ function PostCard({ post, currentUser }) {
         <div className="mt-3">
           <Link
             href={`/portal/announcements/${post.id}`}
-            className="block text-lg font-semibold text-foreground transition hover:text-brand"
+            className="block text-lg font-semibold text-foreground transition before:absolute before:inset-0 group-hover:text-brand"
           >
             {post.title || "Changelog"}
           </Link>
@@ -264,19 +264,16 @@ function PostCard({ post, currentUser }) {
           />
           <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
             <span className="text-xs text-muted">{readMins} min read</span>
-            <Link
-              href={`/portal/announcements/${post.id}`}
-              className="text-sm font-medium text-brand transition hover:text-brand-dark"
-            >
+            <span className="text-sm font-medium text-brand transition group-hover:text-brand-dark">
               Read the changelog →
-            </Link>
+            </span>
           </div>
         </div>
       ) : (
         <div className="mt-3">
           <Link
             href={`/portal/announcements/${post.id}`}
-            className="block text-lg font-semibold text-foreground transition hover:text-brand"
+            className="block text-lg font-semibold text-foreground transition before:absolute before:inset-0 group-hover:text-brand"
           >
             {post.title || "Announcement"}
           </Link>
@@ -285,7 +282,7 @@ function PostCard({ post, currentUser }) {
             dangerouslySetInnerHTML={{ __html: previewHtml }}
           />
           {post.imageUrl && (
-            <Link href={`/portal/announcements/${post.id}`} className="mt-3 block overflow-hidden rounded-lg border border-border">
+            <div className="mt-3 overflow-hidden rounded-lg border border-border">
               <Image
                 src={post.imageUrl}
                 alt=""
@@ -294,12 +291,12 @@ function PostCard({ post, currentUser }) {
                 unoptimized
                 className="h-auto w-full object-cover"
               />
-            </Link>
+            </div>
           )}
         </div>
       )}
 
-      <footer className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-sm">
+      <footer className="relative z-10 mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-sm">
         <form action={toggleLike.bind(null, post.id)}>
           <button
             type="submit"
