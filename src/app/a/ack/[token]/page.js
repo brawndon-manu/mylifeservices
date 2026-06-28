@@ -90,12 +90,13 @@ export default async function AckPage({ params }) {
           <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
             Thanks, {firstName}.
           </h1>
-          <p className="mt-2 text-base text-muted">
-            You&apos;ve acknowledged{" "}
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-base font-semibold text-white shadow-sm">
+            <CheckIcon className="h-5 w-5" /> You have acknowledged this!
+          </div>
+          <p className="mt-3 text-base text-muted">
             <span className="font-medium text-foreground">
               &ldquo;{title}&rdquo;
             </span>
-            .
           </p>
           <Link
             href={`/portal/announcements/${announcementId}`}

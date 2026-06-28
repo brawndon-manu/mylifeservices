@@ -22,7 +22,10 @@ import {
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { signAckToken } from "@/lib/ack-token";
 import { renderMarkdown } from "@/lib/markdown";
-import { buildAnnouncementEmailHtml } from "@/lib/announcement-email";
+import {
+  buildAnnouncementEmailHtml,
+  buildMeetingBlockHtml,
+} from "@/lib/announcement-email";
 import {
   cleanBody,
   IMAGE_ACCEPT,
@@ -33,6 +36,11 @@ import {
 import {
   isValidAnnouncementTag,
   isChangelog,
+  isCompanyMeeting,
+  isValidMeetingKind,
+  isValidMeetingFormat,
+  formatHasOnline,
+  formatHasAddress,
   ANNOUNCEMENT_TITLE_MAX,
   CHANGELOG_CONTENT_MAX,
 } from "@/lib/announcements";
@@ -82,6 +90,87 @@ function parseEmailAudience(formData) {
     return { everyone: true, titles: [], userIds: [] };
   }
   return { everyone: false, titles, userIds };
+}
+
+// the Company Meeting fields. only meaningful when tag = "Company Meeting";
+// other types store nulls/defaults so the columns stay clean.
+function parseMeetingFields(formData, tag) {
+  const blank = {
+    meetingKind: null,
+    meetingFormat: null,
+    meetingMandatory: false,
+    zoomLink: null,
+    zoomCode: null,
+    meetingAddress: null,
+    meetingOptions: null,
+    meetingMultiPick: false,
+    meetingAt: null,
+    meetingTimezone: null,
+    meetingDurationFromMin: null,
+    meetingDurationToMin: null,
+  };
+  if (!isCompanyMeeting(tag)) return blank;
+
+  const trim = (s, max) => {
+    const v = typeof s === "string" ? s.trim() : "";
+    return v ? v.slice(0, max) : null;
+  };
+  const kind = formData.get("meetingKind");
+  const format = formData.get("meetingFormat");
+  const online = formatHasOnline(format);
+  const addr = formatHasAddress(format);
+
+  let meetingOptions = null;
+  let meetingMultiPick = false;
+  const raw = formData.get("meetingOptions");
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const opts = arr
+          .filter((o) => o && typeof o.label === "string" && o.label.trim())
+          .map((o, i) => ({
+            id: String(o.id || `opt${i}`),
+            label: o.label.trim().slice(0, 140),
+          }));
+        if (opts.length) {
+          meetingOptions = opts;
+          meetingMultiPick = formData.get("meetingMultiPick") === "on";
+        }
+      }
+    } catch {
+      // ignore bad json - just no options
+    }
+  }
+
+  // single-meeting start instant (only when not offering session options).
+  let meetingAt = null;
+  const meetingAtRaw = formData.get("meetingAt");
+  if (!meetingOptions && typeof meetingAtRaw === "string" && meetingAtRaw) {
+    const dt = new Date(meetingAtRaw);
+    if (!Number.isNaN(dt.getTime())) meetingAt = dt;
+  }
+  const durMin = (hKey, mKey) => {
+    const h = parseInt(formData.get(hKey) || "0", 10) || 0;
+    const m = parseInt(formData.get(mKey) || "0", 10) || 0;
+    const t = h * 60 + m;
+    return t > 0 ? t : null;
+  };
+
+  return {
+    meetingKind: isValidMeetingKind(kind) ? kind : "Other",
+    meetingFormat: isValidMeetingFormat(format) ? format : "zoom",
+    meetingMandatory: formData.get("meetingMandatory") === "on",
+    zoomLink: online ? trim(formData.get("zoomLink"), 500) : null,
+    zoomCode: online ? trim(formData.get("zoomCode"), 60) : null,
+    meetingAddress: addr ? trim(formData.get("meetingAddress"), 300) : null,
+    meetingOptions,
+    meetingMultiPick,
+    meetingAt,
+    meetingTimezone: meetingAt ? trim(formData.get("meetingTimezone"), 60) : null,
+    meetingDurationFromMin: durMin("meetingDurFromHrs", "meetingDurFromMin"),
+    meetingDurationToMin: durMin("meetingDurToHrs", "meetingDurToMin"),
+  };
 }
 
 async function uploadImage(file) {
@@ -185,7 +274,7 @@ export async function createPost(formData) {
   // picker, used to send now) are independent.
   const { ackEveryone, ackTitles, ackUserIds } = parseAckAudience(
     formData,
-    requireAck,
+    requireAck || isCompanyMeeting(tag),
   );
 
   const post = await prisma.announcement.create({
@@ -201,6 +290,7 @@ export async function createPost(formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      ...parseMeetingFields(formData, tag),
     },
   });
 
@@ -213,6 +303,7 @@ export async function createPost(formData) {
         content: true,
         requireAck: true,
         createdAt: true,
+        ...EMAIL_MEETING_SELECT,
         author: { select: EMAIL_AUTHOR_SELECT },
       },
     });
@@ -285,7 +376,7 @@ export async function editPost(postId, formData) {
   const requireAck = formData.get("requireAck") === "on";
   const { ackEveryone, ackTitles, ackUserIds } = parseAckAudience(
     formData,
-    requireAck,
+    requireAck || isCompanyMeeting(tag),
   );
 
   await prisma.announcement.update({
@@ -299,6 +390,7 @@ export async function editPost(postId, formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      ...parseMeetingFields(formData, tag),
       editedAt: new Date(),
     },
   });
@@ -450,6 +542,65 @@ export async function acknowledge(postId) {
       create: { announcementId: postId, userId: user.id, viaEmail: false },
       update: {},
     });
+  }
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// pick or unpick a meeting session option. single-pick replaces any prior
+// choice (clicking the same one clears it); multi-pick toggles just that one.
+// only people in the meeting audience may pick.
+export async function chooseMeetingOption(postId, optionId) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true,
+      deletedAt: true,
+      meetingOptions: true,
+      meetingMultiPick: true,
+      ackEveryone: true,
+      ackTitles: true,
+      ackUserIds: true,
+    },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  if (!opts.some((o) => o && o.id === optionId)) {
+    redirect(`/portal/announcements/${postId}`);
+  }
+  const inAudience = post.ackEveryone
+    ? mustAcknowledge(user.role)
+    : (post.ackTitles || []).some((t) =>
+        (user.title || "").toLowerCase().includes(t.toLowerCase()),
+      ) || (post.ackUserIds || []).includes(user.id);
+  if (!inAudience) redirect(`/portal/announcements/${postId}`);
+
+  const key = {
+    announcementId_userId_optionId: {
+      announcementId: postId,
+      userId: user.id,
+      optionId,
+    },
+  };
+  const existing = await prisma.announcementMeetingChoice.findUnique({ where: key });
+  if (post.meetingMultiPick) {
+    if (existing) {
+      await prisma.announcementMeetingChoice.delete({ where: key });
+    } else {
+      await prisma.announcementMeetingChoice.create({
+        data: { announcementId: postId, userId: user.id, optionId },
+      });
+    }
+  } else {
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: { announcementId: postId, userId: user.id },
+    });
+    if (!existing) {
+      await prisma.announcementMeetingChoice.create({
+        data: { announcementId: postId, userId: user.id, optionId },
+      });
+    }
   }
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
@@ -617,6 +768,7 @@ async function emailAnnouncement(post, { everyone, titles, userIds = [] }) {
   const logoUrl = `${base}/logo/treelogo_white.png`;
   const authorName = preferredName(post.author);
   const authorTitle = post.author?.title || null;
+  const meetingHtml = buildMeetingBlockHtml(post);
 
   const messages = recipients.map((r) => {
     const ackUrl = post.requireAck
@@ -631,6 +783,7 @@ async function emailAnnouncement(post, { everyone, titles, userIds = [] }) {
       requireAck: post.requireAck,
       bodyHtml,
       ackUrl,
+      meetingHtml,
     });
     const firstName = firstNameOf(r) || "there";
     const text =
@@ -669,6 +822,19 @@ const EMAIL_AUTHOR_SELECT = {
   title: true,
 };
 
+// meeting fields the email needs to render the access block.
+const EMAIL_MEETING_SELECT = {
+  tag: true,
+  meetingFormat: true,
+  zoomLink: true,
+  zoomCode: true,
+  meetingAddress: true,
+  meetingAt: true,
+  meetingTimezone: true,
+  meetingDurationFromMin: true,
+  meetingDurationToMin: true,
+};
+
 // "Send by email" dialog action. Supervisor+ only.
 export async function sendAnnouncementEmail(postId, formData) {
   const user = await requireUser();
@@ -684,6 +850,7 @@ export async function sendAnnouncementEmail(postId, formData) {
       requireAck: true,
       deletedAt: true,
       createdAt: true,
+      ...EMAIL_MEETING_SELECT,
       author: { select: EMAIL_AUTHOR_SELECT },
     },
   });

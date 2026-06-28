@@ -82,6 +82,7 @@ model User {
   announcementComments AnnouncementComment[]
   announcementLikes    AnnouncementLike[]
   announcementAcks     AnnouncementAck[]
+  announcementMeetingChoices AnnouncementMeetingChoice[]
   nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
   nlApproved    NewsletterItem[] @relation("NLApprovedBy")
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
@@ -335,6 +336,26 @@ model Announcement {
   // specific individuals to target (in addition to ackTitles), used when the
   // poster narrows a title role to certain people. unioned with ackTitles.
   ackUserIds  String[]  @default([])
+  // Company Meeting fields (used when tag = "Company Meeting").
+  meetingKind      String?  // Training | Team meeting | All-hands | Orientation | Other
+  meetingFormat    String?  // zoom | in_person | hybrid
+  meetingMandatory Boolean  @default(false)
+  zoomLink         String?
+  zoomCode         String?
+  meetingAddress   String?
+  // optional sessions to pick from: [{ id, label }]. empty = single meeting.
+  meetingOptions   Json?
+  // when true, attendees may pick more than one session.
+  meetingMultiPick Boolean  @default(false)
+  // the meeting's start as an absolute instant (UTC). each viewer sees it in
+  // their own device timezone. meetingTimezone is the zone the author set it in
+  // (IANA, e.g. America/New_York) - kept for editing + a "set in" label.
+  meetingAt        DateTime?
+  meetingTimezone  String?
+  // duration estimate in minutes (from -> optional to for a range).
+  meetingDurationFromMin Int?
+  meetingDurationToMin   Int?
+  meetingChoices   AnnouncementMeetingChoice[]
   // last time the "Send to staff by email" blast went out, so the roster
   // can show "last emailed ..." and re-sends only hit the un-acked.
   ackEmailSentAt DateTime?
@@ -386,6 +407,21 @@ model AnnouncementLike {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([announcementId, userId])
+}
+
+// a person's pick(s) for a Company Meeting's session options. one row per
+// chosen option, so a user can pick several when meetingMultiPick is on; the
+// composite PK keeps each (user, option) unique. drives the who-picked-what
+// roster.
+model AnnouncementMeetingChoice {
+  announcementId String
+  userId         String
+  optionId       String
+  createdAt      DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId, optionId])
 }
 
 // the Forms library - a managed list of blank form templates (PDFs). staff

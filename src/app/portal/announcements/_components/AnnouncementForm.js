@@ -4,20 +4,76 @@
 // at the top, and the rest of the form adapts to it - mirrors the resource form
 // pattern. the Changelog type (IT/Super only) swaps in a title + markdown body
 // that renders Discord-style; every other type is a plain post.
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
+import { marked } from "marked";
 import {
   ANNOUNCEMENT_TAG_STYLES,
   ANNOUNCEMENT_TITLE_MAX,
   CHANGELOG_CONTENT_MAX,
   isChangelog,
+  isCompanyMeeting,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
 import AudiencePicker from "./AudiencePicker";
+import MeetingFields from "./MeetingFields";
 
 const INPUT =
   "mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const LABEL = "block text-sm font-medium text-muted";
+
+const PREVIEW_PROSE =
+  "min-h-[8rem] max-h-[28rem] overflow-y-auto rounded-md border border-border-strong bg-surface px-3 py-2 text-[15px] leading-relaxed text-foreground [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-2 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_a]:text-brand [&_a]:underline [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_em]:italic [&_hr]:my-4 [&_hr]:border-border";
+
+// markdown textarea with a GitHub-style Write / Preview toggle so authors can
+// see how their post renders before publishing. controlled so preview is live.
+function MarkdownField({ value, onChange, rows, maxLength, placeholder }) {
+  const [tab, setTab] = useState("write");
+  const html = useMemo(
+    () => marked.parse(value || "_Nothing to preview yet._", { breaks: true }),
+    [value],
+  );
+  const tabClass = (active) =>
+    `rounded-t-md px-3 py-1.5 text-sm font-medium transition ${
+      active
+        ? "border border-b-0 border-border-strong bg-surface text-foreground"
+        : "text-muted hover:text-foreground"
+    }`;
+  return (
+    <div>
+      <div className="flex gap-1 border-b border-border-strong">
+        <button type="button" onClick={() => setTab("write")} className={tabClass(tab === "write")}>
+          Write
+        </button>
+        <button type="button" onClick={() => setTab("preview")} className={tabClass(tab === "preview")}>
+          Preview
+        </button>
+      </div>
+      {tab === "write" ? (
+        <textarea
+          id="content"
+          name="content"
+          required
+          rows={rows}
+          maxLength={maxLength}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className={`${INPUT} mt-0 rounded-t-none font-mono text-sm`}
+        />
+      ) : (
+        <>
+          {/* keep the value submittable while previewing */}
+          <input type="hidden" name="content" value={value} />
+          <div
+            className={`${PREVIEW_PROSE} mt-0 rounded-t-none`}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function AnnouncementForm({
   action,
@@ -36,8 +92,11 @@ export default function AnnouncementForm({
   const d = defaults;
   const [tag, setTag] = useState(d.tag || tags[0] || "Announcement");
   const changelog = isChangelog(tag);
+  const meeting = isCompanyMeeting(tag);
   const [requireAck, setRequireAck] = useState(!!d.requireAck);
   const [sendEmail, setSendEmail] = useState(false);
+  const [content, setContent] = useState(d.content || "");
+  const onContent = (e) => setContent(e.target.value);
 
   return (
     <form action={action} className="space-y-6">
@@ -120,17 +179,14 @@ export default function AnnouncementForm({
           <label htmlFor="content" className={LABEL}>
             Changelog <span className="text-rose-600">*</span>
           </label>
-          <textarea
-            id="content"
-            name="content"
-            required
+          <MarkdownField
+            value={content}
+            onChange={onContent}
             rows={14}
             maxLength={CHANGELOG_CONTENT_MAX}
-            defaultValue={d.content || ""}
             placeholder={
               "Intro line about this release.\n\n## 📣 What's new\n- **Big thing** - what it does\n- Another improvement\n\n## 🔧 Fixes\n- Fixed the thing that was broken"
             }
-            className={`${INPUT} font-mono text-sm`}
           />
           <p className="mt-1 text-xs text-muted">
             Markdown supported: <code>## Section</code> for headers (add an
@@ -146,17 +202,14 @@ export default function AnnouncementForm({
             <label htmlFor="content" className={LABEL}>
               What do you want to announce? <span className="text-rose-600">*</span>
             </label>
-            <textarea
-              id="content"
-              name="content"
-              required
+            <MarkdownField
+              value={content}
+              onChange={onContent}
               rows={8}
               maxLength={POST_CONTENT_MAX}
-              defaultValue={d.content || ""}
               placeholder={
                 "Write your announcement. Markdown works:\n\n## What you need to do\n- **Step one**\n- Step two\n\n[Link](https://...)"
               }
-              className={`${INPUT} font-mono text-sm`}
             />
             <p className="mt-1 text-xs text-muted">
               Markdown supported: <code>## Section</code>, <code>- bullets</code>,{" "}
@@ -164,6 +217,8 @@ export default function AnnouncementForm({
               {POST_CONTENT_MAX} characters.
             </p>
           </div>
+
+          {meeting && <MeetingFields defaults={d} />}
 
           {mode === "create" && (
             <div>
@@ -223,10 +278,10 @@ export default function AnnouncementForm({
           </span>
         </label>
 
-        {requireAck && (
+        {(requireAck || meeting) && (
           <div className="mt-3 border-t border-border pt-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-              Who needs to acknowledge?
+              {meeting ? "Who's invited?" : "Who needs to acknowledge?"}
             </p>
             <AudiencePicker
               everyoneName="ackEveryone"

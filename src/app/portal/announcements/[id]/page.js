@@ -22,11 +22,18 @@ import {
 import {
   ANNOUNCEMENT_TAG_STYLES,
   isChangelog,
+  isCompanyMeeting,
+  MEETING_FORMAT_LABELS,
+  formatHasOnline,
+  formatHasAddress,
 } from "@/lib/announcements";
 import AuthorChip from "../../hub/_components/AuthorChip";
 import Avatar from "@/components/Avatar";
 import ConfirmButton from "@/components/ConfirmButton";
 import SendEmailDialog from "../_components/SendEmailDialog";
+import CopyButton from "../_components/CopyButton";
+import MeetingTime from "../_components/MeetingTime";
+import { formatDuration } from "@/lib/meeting-time";
 import {
   toggleLike,
   togglePin,
@@ -36,6 +43,7 @@ import {
   acknowledge,
   sendAckEmails,
   sendAnnouncementEmail,
+  chooseMeetingOption,
 } from "../actions";
 
 export const metadata = {
@@ -69,6 +77,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       acks: { where: { userId: user.id }, select: { viaEmail: true, createdAt: true } },
+      meetingChoices: { where: { userId: user.id }, select: { optionId: true } },
       _count: { select: { likes: true } },
       comments: {
         where: { deletedAt: null },
@@ -160,6 +169,56 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     roster = { acked, notYet, total, pct };
   }
 
+  // ---- Company Meeting ----
+  const meeting = isCompanyMeeting(post.tag);
+  const meetingOptions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const myPicks = (post.meetingChoices || []).map((c) => c.optionId);
+  // can I pick a session? = in the meeting audience (same membership as ack).
+  const iCanPick = post.ackEveryone
+    ? mustAcknowledge(user.role)
+    : (post.ackTitles || []).some(titleMatches) ||
+      (post.ackUserIds || []).includes(user.id);
+
+  let meetingRoster = null;
+  if (meeting && meetingOptions.length && canSeeRoster) {
+    const audienceWhere = { deactivatedAt: null };
+    if (post.ackEveryone || (!post.ackTitles?.length && !post.ackUserIds?.length)) {
+      audienceWhere.role = { in: EXPECTED_ACK_ROLES };
+    } else {
+      audienceWhere.OR = [
+        ...post.ackTitles.map((t) => ({ title: { contains: t, mode: "insensitive" } })),
+        ...(post.ackUserIds?.length ? [{ id: { in: post.ackUserIds } }] : []),
+      ];
+    }
+    const [audienceUsers, choices] = await Promise.all([
+      prisma.user.findMany({
+        where: audienceWhere,
+        select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
+        orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
+      }),
+      prisma.announcementMeetingChoice.findMany({
+        where: { announcementId: id },
+        select: { userId: true, optionId: true },
+      }),
+    ]);
+    const audIds = new Set(audienceUsers.map((u) => u.id));
+    const chosenUserIds = new Set(
+      choices.filter((c) => audIds.has(c.userId)).map((c) => c.userId),
+    );
+    const counts = {};
+    for (const o of meetingOptions) counts[o.id] = 0;
+    for (const c of choices) {
+      if (audIds.has(c.userId) && counts[c.optionId] !== undefined) counts[c.optionId]++;
+    }
+    const notPicked = audienceUsers.filter((u) => !chosenUserIds.has(u.id));
+    meetingRoster = {
+      counts,
+      notPicked,
+      total: audienceUsers.length,
+      picked: chosenUserIds.size,
+    };
+  }
+
   // "sent=N" banner after the email blast.
   const sentRaw = sp?.sent;
   const sentCount = sentRaw != null ? parseInt(sentRaw, 10) : null;
@@ -226,20 +285,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         ) : (
           /* new announcement layout: hero with faded logo + title block + body */
           <div>
-            <div className="relative h-44 overflow-hidden sm:h-52">
+            <div className="relative h-52 overflow-hidden sm:h-60">
+              {/* soft cloud / dome glow (no grid) */}
               <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(rgba(47,111,235,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(47,111,235,0.08) 1px, transparent 1px)",
-                  backgroundSize: "46px 46px",
-                }}
-              />
-              <div
-                className="absolute left-1/2 top-[-150px] h-[420px] w-[420px] -translate-x-1/2 rounded-full"
+                className="absolute left-1/2 top-[-130px] h-[380px] w-[640px] max-w-[150%] -translate-x-1/2 opacity-60 dark:opacity-100"
                 style={{
                   background:
-                    "radial-gradient(circle at 50% 60%, rgba(47,111,235,0.30), rgba(47,111,235,0.08) 45%, transparent 68%)",
+                    "radial-gradient(58% 60% at 50% 50%, rgba(47,111,235,0.50), rgba(47,111,235,0.18) 42%, rgba(47,111,235,0.05) 64%, transparent 78%)",
                 }}
               />
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -247,14 +299,14 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 src="/logo/treelogo_dark.png"
                 alt=""
                 aria-hidden="true"
-                className="pointer-events-none absolute left-1/2 top-7 w-32 -translate-x-1/2 opacity-20 dark:opacity-50 sm:w-36"
+                className="pointer-events-none absolute left-1/2 top-8 w-28 -translate-x-1/2 opacity-25 dark:opacity-90 dark:brightness-150 dark:drop-shadow-[0_0_30px_rgba(47,111,235,0.9)] sm:w-32"
               />
-              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[#eef3fa] dark:to-[#070912]" />
+              <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-b from-transparent to-[#eef3fa] dark:to-[#070912]" />
             </div>
 
             <div className="relative -mt-10 px-6 text-center sm:px-8">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f63c9] dark:text-[#58a6ff]">
-                Announcement
+                {meeting ? "Company Meeting" : "Announcement"}
               </p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 {post.title || "Announcement"}
@@ -294,6 +346,188 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               className={`mx-auto mt-6 max-w-2xl px-6 sm:px-8 ${PROSE}`}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
+
+            {meeting && (
+              <div className="mx-auto mt-6 max-w-2xl px-6 sm:px-8">
+                <div className="flex flex-wrap items-center gap-2">
+                  {post.meetingKind && (
+                    <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+                      {post.meetingKind}
+                    </span>
+                  )}
+                  {post.meetingFormat && (
+                    <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
+                      {MEETING_FORMAT_LABELS[post.meetingFormat]}
+                    </span>
+                  )}
+                  {post.meetingMandatory && (
+                    <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-950/50 dark:text-rose-300">
+                      Mandatory
+                    </span>
+                  )}
+                </div>
+
+                {(post.meetingAt || formatDuration(post.meetingDurationFromMin, post.meetingDurationToMin)) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground">
+                    <ClockIcon className="h-4 w-4 text-muted" />
+                    {post.meetingAt && (
+                      <MeetingTime
+                        iso={post.meetingAt.toISOString()}
+                        setTz={post.meetingTimezone}
+                      />
+                    )}
+                    {formatDuration(post.meetingDurationFromMin, post.meetingDurationToMin) && (
+                      <span className="text-muted">
+                        {post.meetingAt ? "· " : ""}
+                        {formatDuration(post.meetingDurationFromMin, post.meetingDurationToMin)}
+                      </span>
+                    )}
+                    {post.meetingAt && (
+                      <span className="text-xs text-faint">(your time)</span>
+                    )}
+                  </div>
+                )}
+
+                {(formatHasOnline(post.meetingFormat) || formatHasAddress(post.meetingFormat)) && (
+                  <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
+                    {formatHasOnline(post.meetingFormat) && post.zoomLink && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href={post.zoomLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+                        >
+                          <VideoIcon className="h-4 w-4" /> Join meeting
+                        </a>
+                        <CopyButton
+                          text={post.zoomLink}
+                          label="Copy link"
+                          className="rounded-md border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:text-foreground"
+                        />
+                        {post.zoomCode && (
+                          <span className="ml-auto flex items-center gap-2">
+                            <span className="text-sm text-muted">Passcode</span>
+                            <span className="rounded bg-surface-2 px-2.5 py-1 font-mono text-sm tracking-widest text-foreground">
+                              {post.zoomCode}
+                            </span>
+                            <CopyButton
+                              text={post.zoomCode}
+                              label="Copy"
+                              className="rounded-md border border-border-strong px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-foreground"
+                            />
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {formatHasAddress(post.meetingFormat) && post.meetingAddress && (
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                        <PinIcon className="h-4 w-4 text-muted" />
+                        <span>{post.meetingAddress}</span>
+                        <CopyButton
+                          text={post.meetingAddress}
+                          label="Copy"
+                          className="rounded-md border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:text-foreground"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {meetingOptions.length > 0 && (
+                  <div className="mt-5">
+                    <p className="text-sm font-semibold text-foreground">
+                      {post.meetingMultiPick
+                        ? "Pick the sessions you'll attend"
+                        : "Choose the session you'll attend"}
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {meetingOptions.map((opt) => {
+                        const picked = myPicks.includes(opt.id);
+                        return (
+                          <form
+                            key={opt.id}
+                            action={chooseMeetingOption.bind(null, post.id, opt.id)}
+                          >
+                            <button
+                              type="submit"
+                              disabled={!iCanPick}
+                              className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                                picked
+                                  ? "border-brand bg-sky-50 dark:bg-sky-950/30"
+                                  : "border-border hover:border-brand-light"
+                              } ${iCanPick ? "" : "cursor-default opacity-80"}`}
+                            >
+                              <span
+                                className={`flex h-5 w-5 flex-none items-center justify-center border-2 ${
+                                  post.meetingMultiPick ? "rounded" : "rounded-full"
+                                } ${picked ? "border-brand bg-brand text-white" : "border-border-strong"}`}
+                              >
+                                {picked && <CheckMini className="h-3 w-3" />}
+                              </span>
+                              <span className="flex-1 text-sm text-foreground">{opt.label}</span>
+                              {picked && (
+                                <span className="text-xs font-medium text-brand">you picked this</span>
+                              )}
+                            </button>
+                          </form>
+                        );
+                      })}
+                    </div>
+                    {!iCanPick && (
+                      <p className="mt-2 text-xs text-muted">
+                        You&apos;re not on the invite list for this meeting.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {meetingRoster && (
+                  <div className="mt-5 rounded-xl border border-border bg-surface p-5">
+                    <p className="text-sm font-medium text-foreground">
+                      Responses{" "}
+                      <span className="text-muted">
+                        ({meetingRoster.picked} of {meetingRoster.total} picked)
+                      </span>
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {meetingOptions.map((opt) => {
+                        const n = meetingRoster.counts[opt.id] || 0;
+                        const pct = meetingRoster.total
+                          ? Math.round((n / meetingRoster.total) * 100)
+                          : 0;
+                        return (
+                          <div key={opt.id}>
+                            <div className="flex justify-between text-sm text-foreground">
+                              <span>{opt.label}</span>
+                              <span className="text-muted">{n}</span>
+                            </div>
+                            <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-3">
+                              <div
+                                className="h-full rounded-full bg-brand"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-4 border-t border-border pt-3 text-sm">
+                      <span className="text-muted">
+                        Haven&apos;t picked ({meetingRoster.notPicked.length}):
+                      </span>{" "}
+                      {meetingRoster.notPicked.length === 0 ? (
+                        <span className="text-foreground">everyone&apos;s in.</span>
+                      ) : (
+                        <span className="text-foreground">
+                          {meetingRoster.notPicked.map((u) => preferredName(u)).join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {post.imageUrl && (
               <div className="mx-auto mt-5 max-w-2xl px-6 sm:px-8">
@@ -684,6 +918,41 @@ function MonitorIcon({ className }) {
     >
       <rect x="3" y="4" width="18" height="12" rx="2" />
       <path d="M8 20h8M12 16v4" />
+    </svg>
+  );
+}
+
+function VideoIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="6" width="13" height="12" rx="2" />
+      <path d="M16 10l5-3v10l-5-3" />
+    </svg>
+  );
+}
+
+function PinIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
+function CheckMini({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 10l4 4 8-9" />
+    </svg>
+  );
+}
+
+function ClockIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
     </svg>
   );
 }
