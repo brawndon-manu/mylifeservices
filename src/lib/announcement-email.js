@@ -32,6 +32,18 @@ export function buildMeetingBlockHtml(post) {
       `<div style="font-size:15px;color:#1f2937;margin-bottom:8px;"><strong>${esc(t)}</strong>${dur ? ` &middot; ${esc(dur)}` : ""}</div>`,
     );
   }
+  const sessions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  if (sessions.length) {
+    const rows = sessions.map((o) => {
+      const t = o.at ? esc(formatInstant(o.at, o.tz || "America/Los_Angeles")) : "";
+      const dur = esc(formatDuration(o.durationFromMin, o.durationToMin) || "");
+      const meta = [t, dur].filter(Boolean).join(" &middot; ");
+      return `<div style="font-size:14px;color:#1f2937;margin-bottom:4px;"><strong>${esc(o.label)}</strong>${meta ? ` &mdash; ${meta}` : ""}</div>`;
+    });
+    parts.push(
+      `<div style="margin-bottom:8px;"><div style="font-size:13px;color:#6b7280;margin-bottom:4px;">Sessions to choose from:</div>${rows.join("")}</div>`,
+    );
+  }
   if (formatHasOnline(post.meetingFormat) && post.zoomLink) {
     parts.push(
       `<div style="margin:6px 0 10px;"><a href="${post.zoomLink}" style="display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600;">Join meeting</a></div>`,
