@@ -14,6 +14,7 @@ export default function SendEmailDialog({
   requireAck,
   fromAddress,
   staffByTitle = {},
+  everyoneTotal = null,
   defaultEveryone = true,
   defaultTitles = [],
   defaultUserIds = [],
@@ -77,6 +78,7 @@ export default function SendEmailDialog({
               titlesName="titles"
               userIdsName="userIds"
               staffByTitle={staffByTitle}
+              everyoneTotal={everyoneTotal}
               defaultEveryone={defaultEveryone}
               defaultTitles={defaultTitles}
               defaultUserIds={defaultUserIds}

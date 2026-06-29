@@ -1,5 +1,52 @@
 // Announcements - tag list + helpers. kept separate from the Hub's POST_TAGS
-// (src/lib/hub.js) so the two boards can diverge. pure (no db / no prisma).
+// (src/lib/hub.js) so the two boards can diverge. pure (builds plain objects,
+// no db / no prisma calls).
+
+import { ACK_EXEMPT_TITLE, POSITION_SEP, titleHasSegment } from "./positions";
+
+// the Owner/Director doesn't acknowledge - everyone else does.
+export function isAckExempt(user) {
+  return titleHasSegment(user?.title, ACK_EXEMPT_TITLE);
+}
+
+// a prisma condition matching `title` as a WHOLE segment (titles are stored
+// joined by " / ", e.g. "Independent Living Instructor / Day Program"), NOT a
+// loose substring - so targeting "Program Manager" doesn't also catch
+// "Assistant Program Manager".
+export function titleSegmentMatch(title) {
+  const s = POSITION_SEP;
+  return {
+    OR: [
+      { title: { equals: title, mode: "insensitive" } },
+      { title: { startsWith: `${title}${s}`, mode: "insensitive" } },
+      { title: { endsWith: `${s}${title}`, mode: "insensitive" } },
+      { title: { contains: `${s}${title}${s}`, mode: "insensitive" } },
+    ],
+  };
+}
+
+// the prisma `where` for an announcement's ack audience: Everyone = the
+// expected-ack staff set, otherwise the picked job titles + specific people.
+// this is the ONE place that turns a stored audience into a recipient set, so
+// the ack box, the roster denominator, and the email send all hit the exact
+// same people. always active users only. takes a post-ish object carrying
+// ackEveryone / ackTitles / ackUserIds.
+export function ackAudienceWhere(post) {
+  const where = { deactivatedAt: null };
+  if (
+    post.ackEveryone ||
+    (!post.ackTitles?.length && !post.ackUserIds?.length)
+  ) {
+    // Everyone = all active staff except the ack-exempt Owner/Director.
+    where.NOT = titleSegmentMatch(ACK_EXEMPT_TITLE);
+  } else {
+    where.OR = [
+      ...post.ackTitles.map((t) => titleSegmentMatch(t)),
+      ...(post.ackUserIds?.length ? [{ id: { in: post.ackUserIds } }] : []),
+    ];
+  }
+  return where;
+}
 
 // the "type" of an announcement, picked first on the form; the rest of the form
 // adapts to it (Changelog gets a title + markdown body, the rest are plain).

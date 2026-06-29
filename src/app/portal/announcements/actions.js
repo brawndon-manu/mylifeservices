@@ -16,10 +16,9 @@ import {
   isElevated,
   isSupervisorUp,
   isIT,
-  mustAcknowledge,
-  EXPECTED_ACK_ROLES,
 } from "@/lib/roles";
 import { firstNameOf, preferredName } from "@/lib/contacts";
+import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import { signAckToken } from "@/lib/ack-token";
 import { renderMarkdown } from "@/lib/markdown";
 import {
@@ -43,6 +42,9 @@ import {
   formatHasAddress,
   ANNOUNCEMENT_TITLE_MAX,
   CHANGELOG_CONTENT_MAX,
+  ackAudienceWhere,
+  titleSegmentMatch,
+  isAckExempt,
 } from "@/lib/announcements";
 
 async function requireUser() {
@@ -59,36 +61,42 @@ function parseDateField(raw) {
 }
 
 // the acknowledgment audience from the form: Everyone (the whole expected-ack
-// staff set) or a list of job titles. only meaningful when requireAck; falls
-// back to Everyone if nothing specific is picked so the roster is never empty.
-function parseAckAudience(formData, requireAck) {
-  if (!requireAck) return { ackEveryone: true, ackTitles: [], ackUserIds: [] };
+// staff set) or a list of job titles / specific people. only meaningful when
+// active (requireAck or a meeting). NO empty-fallback to Everyone anymore - an
+// empty pick stays empty so the action can reject it (the author must choose).
+function parseAckAudience(formData, active) {
+  if (!active) return { ackEveryone: true, ackTitles: [], ackUserIds: [] };
   const everyone = formData.get("ackEveryone") === "on";
+  if (everyone) return { ackEveryone: true, ackTitles: [], ackUserIds: [] };
   const titles = formData
     .getAll("ackTitles")
     .filter((t) => typeof t === "string" && t);
   const userIds = formData
     .getAll("ackUserIds")
     .filter((t) => typeof t === "string" && t);
-  if (everyone || (titles.length === 0 && userIds.length === 0)) {
-    return { ackEveryone: true, ackTitles: [], ackUserIds: [] };
-  }
   return { ackEveryone: false, ackTitles: titles, ackUserIds: userIds };
+}
+
+// true when an ack audience came back empty (nobody chosen). used to block a
+// post that requires acknowledgment but didn't pick who.
+function ackAudienceEmpty({ ackEveryone, ackTitles, ackUserIds }) {
+  return !ackEveryone && !ackTitles.length && !ackUserIds.length;
 }
 
 // the "send as email" audience on the create form - its own picker, separate
 // from the ack audience. not stored (the email goes out at post time).
+// IMPORTANT: an empty pick means send to NOBODY, not everyone. only an explicit
+// "Everyone" check blasts all staff. (this used to default empty -> everyone,
+// which accidentally emailed the whole company.)
 function parseEmailAudience(formData) {
   const everyone = formData.get("emailEveryone") === "on";
+  if (everyone) return { everyone: true, titles: [], userIds: [] };
   const titles = formData
     .getAll("emailTitles")
     .filter((t) => typeof t === "string" && t);
   const userIds = formData
     .getAll("emailUserIds")
     .filter((t) => typeof t === "string" && t);
-  if (everyone || (titles.length === 0 && userIds.length === 0)) {
-    return { everyone: true, titles: [], userIds: [] };
-  }
   return { everyone: false, titles, userIds };
 }
 
@@ -127,12 +135,28 @@ function parseMeetingFields(formData, tag) {
     try {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
+        const posInt = (v) => {
+          const n = parseInt(v, 10);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        };
         const opts = arr
           .filter((o) => o && typeof o.label === "string" && o.label.trim())
-          .map((o, i) => ({
-            id: String(o.id || `opt${i}`),
-            label: o.label.trim().slice(0, 140),
-          }));
+          .map((o, i) => {
+            // each session carries its own absolute start + timezone + duration.
+            let at = null;
+            if (typeof o.at === "string" && o.at) {
+              const dt = new Date(o.at);
+              if (!Number.isNaN(dt.getTime())) at = dt.toISOString();
+            }
+            return {
+              id: String(o.id || `opt${i}`),
+              label: o.label.trim().slice(0, 140),
+              at,
+              tz: at && typeof o.tz === "string" ? o.tz.slice(0, 60) : null,
+              durationFromMin: posInt(o.durationFromMin),
+              durationToMin: posInt(o.durationToMin),
+            };
+          });
         if (opts.length) {
           meetingOptions = opts;
           meetingMultiPick = formData.get("meetingMultiPick") === "on";
@@ -252,6 +276,20 @@ export async function createPost(formData) {
     postedById = user.id;
   }
 
+  const requireAck = formData.get("requireAck") === "on";
+  const sendEmail = formData.get("sendEmail") === "on";
+  // ack audience (stored, drives the roster) and the email audience (its own
+  // picker, used to send now) are independent. validate before uploading the
+  // image so a rejected post doesn't orphan a blob.
+  const ackAudience = parseAckAudience(
+    formData,
+    requireAck || isCompanyMeeting(tag),
+  );
+  if (requireAck && ackAudienceEmpty(ackAudience)) {
+    redirect("/portal/announcements/new?error=ackAudience");
+  }
+  const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
+
   let imageUrl = null;
   const file = formData.get("image");
   if (file && typeof file === "object" && "size" in file && file.size > 0) {
@@ -267,15 +305,6 @@ export async function createPost(formData) {
       redirect("/portal/announcements/new?error=imageUpload");
     }
   }
-
-  const requireAck = formData.get("requireAck") === "on";
-  const sendEmail = formData.get("sendEmail") === "on";
-  // ack audience (stored, drives the roster) and the email audience (its own
-  // picker, used to send now) are independent.
-  const { ackEveryone, ackTitles, ackUserIds } = parseAckAudience(
-    formData,
-    requireAck || isCompanyMeeting(tag),
-  );
 
   const post = await prisma.announcement.create({
     data: {
@@ -303,12 +332,30 @@ export async function createPost(formData) {
         content: true,
         requireAck: true,
         createdAt: true,
+        ackEveryone: true,
+        ackTitles: true,
+        ackUserIds: true,
         ...EMAIL_MEETING_SELECT,
         author: { select: EMAIL_AUTHOR_SELECT },
       },
     });
-    const res = await emailAnnouncement(full, parseEmailAudience(formData));
+    // "same as who needs to ack / who's invited" reuses the ack audience (with an
+    // optional add for the Program Director); otherwise use the email picker.
+    const sameAsAck = formData.get("emailSameAsAck") === "on";
+    const res = sameAsAck
+      ? await emailAnnouncement(full, ackAudienceWhere(full), {
+          includeDirector: formData.get("emailIncludeDirector") === "on",
+        })
+      : await emailAnnouncement(full, emailAudienceWhere(parseEmailAudience(formData)));
     revalidatePath("/portal/announcements");
+    // post still got created; only the email could no-op. flag why so the user
+    // knows nothing went out (no audience picked, or email not configured).
+    if (!res.ok && res.reason === "config") {
+      redirect(`/portal/announcements/${post.id}?error=emailConfig`);
+    }
+    if (!res.ok && res.reason === "recipients") {
+      redirect(`/portal/announcements/${post.id}?error=recipients`);
+    }
     redirect(`/portal/announcements/${post.id}?sent=${res.sent}`);
   }
 
@@ -374,10 +421,14 @@ export async function editPost(postId, formData) {
   }
   const expiresAt = parseDateField(formData.get("expiresAt"));
   const requireAck = formData.get("requireAck") === "on";
-  const { ackEveryone, ackTitles, ackUserIds } = parseAckAudience(
+  const ackAudience = parseAckAudience(
     formData,
     requireAck || isCompanyMeeting(tag),
   );
+  if (requireAck && ackAudienceEmpty(ackAudience)) {
+    redirect(`/portal/announcements/${postId}/edit?error=ackAudience`);
+  }
+  const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
 
   await prisma.announcement.update({
     where: { id: postId },
@@ -534,7 +585,7 @@ export async function acknowledge(postId) {
   if (!post || post.deletedAt || !post.requireAck) {
     redirect(`/portal/announcements/${postId}`);
   }
-  if (mustAcknowledge(user.role)) {
+  if (!isAckExempt(user)) {
     await prisma.announcementAck.upsert({
       where: {
         announcementId_userId: { announcementId: postId, userId: user.id },
@@ -570,7 +621,7 @@ export async function chooseMeetingOption(postId, optionId) {
     redirect(`/portal/announcements/${postId}`);
   }
   const inAudience = post.ackEveryone
-    ? mustAcknowledge(user.role)
+    ? !isAckExempt(user)
     : (post.ackTitles || []).some((t) =>
         (user.title || "").toLowerCase().includes(t.toLowerCase()),
       ) || (post.ackUserIds || []).includes(user.id);
@@ -645,6 +696,9 @@ export async function sendAckEmails(postId) {
       content: true,
       requireAck: true,
       deletedAt: true,
+      ackEveryone: true,
+      ackTitles: true,
+      ackUserIds: true,
     },
   });
   if (!post || post.deletedAt || !post.requireAck) {
@@ -660,10 +714,11 @@ export async function sendAckEmails(postId) {
     redirect(`/portal/announcements/${postId}?error=emailConfig`);
   }
 
+  // recipients = this announcement's audience (NOT every staffer) who hasn't
+  // acked yet, so the roster button can only nudge the people it's actually for.
   const recipients = await prisma.user.findMany({
     where: {
-      role: { in: EXPECTED_ACK_ROLES },
-      deactivatedAt: null,
+      ...ackAudienceWhere(post),
       announcementAcks: { none: { announcementId: postId } },
     },
     select: {
@@ -722,39 +777,51 @@ export async function sendAckEmails(postId) {
   redirect(`/portal/announcements/${postId}?sent=${sent}`);
 }
 
-// core email send, shared by the "Send by email" dialog AND the "send as email
-// now" option on the create form. emails the changelog-style email to an
-// audience (Everyone = all active, or anyone whose job title matches). when the
-// announcement requires ack, each email carries that person's one-click ack
-// link. best-effort; stamps ackEmailSentAt when any go out. returns { ok, sent,
+// the prisma `where` for the "Who gets the email?" picker: Everyone = all active
+// (incl. the Owner/Director), else the picked titles/people. null = nobody.
+function emailAudienceWhere({ everyone, titles, userIds = [] }) {
+  if (everyone) return { deactivatedAt: null };
+  if (!titles?.length && !userIds?.length) return null;
+  return {
+    deactivatedAt: null,
+    OR: [
+      ...titles.map((t) => titleSegmentMatch(t)),
+      ...(userIds.length ? [{ id: { in: userIds } }] : []),
+    ],
+  };
+}
+
+// core email send, shared by the dialog AND the create form. `where` is the
+// recipient query (null = nobody). `includeDirector` also adds the Owner/
+// Director (used by "same as ack" where they're otherwise excluded). when the
+// announcement requires ack, each email carries that person's one-click link.
+// best-effort; stamps ackEmailSentAt when any go out. returns { ok, sent,
 // reason }. `post` must include id/title/content/requireAck/createdAt + author.
-async function emailAnnouncement(post, { everyone, titles, userIds = [] }) {
+async function emailAnnouncement(post, where, { includeDirector = false } = {}) {
   const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
   const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
   if (!from || !base || !process.env.RESEND_API_KEY) {
     console.error("announcement email misconfigured - missing from/base/key");
     return { ok: false, reason: "config", sent: 0 };
   }
-  const where = { deactivatedAt: null };
-  if (!everyone) {
-    if (!titles?.length && !userIds?.length) {
-      return { ok: false, reason: "recipients", sent: 0 };
+  if (!where) return { ok: false, reason: "recipients", sent: 0 };
+  const select = {
+    id: true,
+    email: true,
+    name: true,
+    preferredFirstName: true,
+    preferredLastName: true,
+  };
+  const recipients = await prisma.user.findMany({ where, select });
+  if (includeDirector) {
+    const director = await prisma.user.findFirst({
+      where: { deactivatedAt: null, OR: titleSegmentMatch(ACK_EXEMPT_TITLE).OR },
+      select,
+    });
+    if (director && !recipients.some((r) => r.id === director.id)) {
+      recipients.push(director);
     }
-    where.OR = [
-      ...titles.map((t) => ({ title: { contains: t, mode: "insensitive" } })),
-      ...(userIds.length ? [{ id: { in: userIds } }] : []),
-    ];
   }
-  const recipients = await prisma.user.findMany({
-    where,
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      preferredFirstName: true,
-      preferredLastName: true,
-    },
-  });
   if (!recipients.length) return { ok: true, sent: 0 };
 
   const title = post.title || "Announcement";
@@ -833,6 +900,7 @@ const EMAIL_MEETING_SELECT = {
   meetingTimezone: true,
   meetingDurationFromMin: true,
   meetingDurationToMin: true,
+  meetingOptions: true,
 };
 
 // "Send by email" dialog action. Supervisor+ only.
@@ -866,7 +934,10 @@ export async function sendAnnouncementEmail(postId, formData) {
   if (!everyone && titles.length === 0 && userIds.length === 0) {
     redirect(`/portal/announcements/${postId}?error=recipients`);
   }
-  const res = await emailAnnouncement(post, { everyone, titles, userIds });
+  const res = await emailAnnouncement(
+    post,
+    emailAudienceWhere({ everyone, titles, userIds }),
+  );
   if (!res.ok && res.reason === "config") {
     redirect(`/portal/announcements/${postId}?error=emailConfig`);
   }

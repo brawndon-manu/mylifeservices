@@ -5,7 +5,11 @@ import { isElevated, isIT, isSupervisorUp, canSeeRoles, ROLE_LABELS } from "@/li
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
 import { IMAGE_MAX_BYTES } from "@/lib/hub";
 import { preferredName } from "@/lib/contacts";
-import { getStaffByTitle } from "@/lib/staff-audience";
+import {
+  getStaffByTitle,
+  getAckStaffByTitle,
+  getAudienceTotals,
+} from "@/lib/staff-audience";
 import { createPost } from "../actions";
 import AnnouncementForm from "../_components/AnnouncementForm";
 
@@ -23,6 +27,8 @@ const ERRORS = {
   imageSize: `Image must be under ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.`,
   imageUpload: "Image upload failed. Try again or post without an image.",
   postAs: "That person isnt a valid active user. Pick someone else.",
+  ackAudience:
+    "Pick who needs to acknowledge this (Everyone or specific titles/people).",
 };
 
 export default async function NewAnnouncementPage({ searchParams }) {
@@ -43,7 +49,12 @@ export default async function NewAnnouncementPage({ searchParams }) {
 
   const canProxy = isElevated(user.role);
   const showRoles = canSeeRoles(user.role);
-  const staffByTitle = await getStaffByTitle();
+  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }] =
+    await Promise.all([
+      getAckStaffByTitle(),
+      getStaffByTitle(),
+      getAudienceTotals(),
+    ]);
   let people = [];
   if (canProxy) {
     const rows = await prisma.user.findMany({
@@ -90,7 +101,10 @@ export default async function NewAnnouncementPage({ searchParams }) {
           showRoles={showRoles}
           meId={user.id}
           meName={preferredName(user)}
-          staffByTitle={staffByTitle}
+          ackStaffByTitle={ackStaffByTitle}
+          emailStaffByTitle={emailStaffByTitle}
+          ackEveryoneTotal={ackEveryone}
+          emailEveryoneTotal={allActive}
           submitLabel="Post"
         />
       </div>

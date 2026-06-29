@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isIT } from "@/lib/roles";
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
-import { getStaffByTitle } from "@/lib/staff-audience";
+import {
+  getStaffByTitle,
+  getAckStaffByTitle,
+  getAudienceTotals,
+} from "@/lib/staff-audience";
 import { editPost } from "../../actions";
 import AnnouncementForm from "../../_components/AnnouncementForm";
 
@@ -18,6 +22,8 @@ const ERRORS = {
   title: "Give your announcement a title.",
   tag: "Please pick a type.",
   forbidden: "You dont have permission to do that.",
+  ackAudience:
+    "Pick who needs to acknowledge this (Everyone or specific titles/people).",
 };
 
 export default async function EditAnnouncementPage({ params, searchParams }) {
@@ -55,7 +61,12 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
   const tags = ANNOUNCEMENT_TAGS.filter(
     (t) => t !== CHANGELOG_TAG || canChangelog || post.tag === t,
   );
-  const staffByTitle = await getStaffByTitle();
+  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }] =
+    await Promise.all([
+      getAckStaffByTitle(),
+      getStaffByTitle(),
+      getAudienceTotals(),
+    ]);
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
@@ -84,7 +95,10 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
           mode="edit"
           defaults={post}
           tags={tags}
-          staffByTitle={staffByTitle}
+          ackStaffByTitle={ackStaffByTitle}
+          emailStaffByTitle={emailStaffByTitle}
+          ackEveryoneTotal={ackEveryone}
+          emailEveryoneTotal={allActive}
           cancelHref={`/portal/announcements/${id}`}
           submitLabel="Save changes"
         />

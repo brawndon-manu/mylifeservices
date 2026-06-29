@@ -9,7 +9,7 @@
 // smart selection: expanding "More options" or picking anything specific
 // unchecks Everyone; checking a title auto-checks its people; unchecking a
 // person drops the whole-role flag so it narrows to the remaining people.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { POSITIONS } from "@/lib/positions";
 
 export default function AudiencePicker({
@@ -20,28 +20,49 @@ export default function AudiencePicker({
   defaultEveryone = true,
   defaultTitles = [],
   defaultUserIds = [],
+  everyoneTotal = null,
+  onChange,
 }) {
   const [everyone, setEveryone] = useState(defaultEveryone !== false);
   const [titles, setTitles] = useState(defaultTitles);
   const [userIds, setUserIds] = useState(defaultUserIds);
-  // start expanded only when a specific audience is preset (editing / re-send).
-  const [open, setOpen] = useState(defaultEveryone === false);
+  // the dropdown stays closed until clicked. only start open when a specific
+  // audience is already preset (editing / re-send) so it's visible.
+  const [open, setOpen] = useState(
+    (defaultTitles?.length || defaultUserIds?.length) > 0,
+  );
+
+  // report the current selection up so a parent can mirror it (the "same as
+  // above" email option reuses the ack/invite audience).
+  useEffect(() => {
+    onChange?.({ everyone, titles, userIds });
+  }, [everyone, titles, userIds, onChange]);
 
   const peopleOf = (title) => (staffByTitle[title] || []).map((p) => p.id);
   const uniq = (arr) => [...new Set(arr)];
 
+  // "Everyone" ticks every (non-empty) box below; clearing it empties them.
+  function selectAll() {
+    const withPeople = POSITIONS.filter((t) => peopleOf(t).length);
+    setTitles(withPeople);
+    setUserIds(uniq(withPeople.flatMap(peopleOf)));
+  }
+  function clearAll() {
+    setTitles([]);
+    setUserIds([]);
+  }
+
   function handleOpen(isOpen) {
     setOpen(isOpen);
-    if (isOpen) setEveryone(false);
+    // opening the list while Everyone is on shows all the boxes checked.
+    if (isOpen && everyone) selectAll();
   }
   function handleEveryone(checked) {
     setEveryone(checked);
-    if (checked) {
-      setTitles([]);
-      setUserIds([]);
-    } else {
-      setOpen(true);
-    }
+    // if Everyone is on AND the list is open, auto-tick every box below; when
+    // it's closed the boxes are hidden so there's nothing to show yet.
+    if (checked && open) selectAll();
+    else clearAll();
   }
   function toggleTitle(title, checked) {
     setEveryone(false);
@@ -65,6 +86,9 @@ export default function AudiencePicker({
     }
   }
 
+  // how many individual people are currently picked (when not Everyone).
+  const selectedCount = userIds.length;
+
   return (
     <div>
       <label className="flex items-center gap-2 rounded-md border border-brand-light/40 bg-sky-50 px-3 py-2 dark:bg-sky-950/30">
@@ -76,7 +100,9 @@ export default function AudiencePicker({
           className="h-4 w-4 accent-brand"
         />
         <span className="flex-1 text-sm font-medium text-foreground">Everyone</span>
-        <span className="text-xs text-muted">all staff</span>
+        <span className="text-xs text-muted">
+          all staff{everyoneTotal != null ? ` · ${everyoneTotal}` : ""}
+        </span>
       </label>
 
       <details
@@ -86,6 +112,11 @@ export default function AudiencePicker({
       >
         <summary className="inline-flex cursor-pointer select-none list-none items-center gap-1 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:text-foreground [&::-webkit-details-marker]:hidden">
           More options
+          {!everyone && selectedCount > 0 && (
+            <span className="rounded-full bg-brand-light/15 px-1.5 py-0.5 text-xs font-semibold text-brand">
+              {selectedCount} selected
+            </span>
+          )}
           <svg
             viewBox="0 0 20 20"
             className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
@@ -101,6 +132,9 @@ export default function AudiencePicker({
         <div className="mt-2 space-y-1">
           {POSITIONS.map((title) => {
             const people = staffByTitle[title] || [];
+            // skip titles nobody in this picker's pool holds (e.g. management
+            // titles in the ack picker, or any empty role).
+            if (people.length === 0) return null;
             return (
               <div key={title}>
                 <label className="flex items-center gap-2 text-sm text-foreground">

@@ -8,8 +8,6 @@ import {
   isElevated,
   canSeeRoles,
   isSupervisorUp,
-  mustAcknowledge,
-  EXPECTED_ACK_ROLES,
 } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { renderMarkdown } from "@/lib/markdown";
@@ -26,6 +24,8 @@ import {
   MEETING_FORMAT_LABELS,
   formatHasOnline,
   formatHasAddress,
+  ackAudienceWhere,
+  isAckExempt,
 } from "@/lib/announcements";
 import AuthorChip from "../../hub/_components/AuthorChip";
 import Avatar from "@/components/Avatar";
@@ -114,7 +114,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const titleMatches = (t) =>
     (user.title || "").toLowerCase().includes(t.toLowerCase());
   const iMustAck = post.ackEveryone
-    ? mustAcknowledge(user.role)
+    ? !isAckExempt(user)
     : (post.ackTitles || []).some(titleMatches) ||
       (post.ackUserIds || []).includes(user.id);
   // roster is visible to anyone who can post (Supervisor+) plus the author.
@@ -122,6 +122,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   // Supervisor+ can email the announcement out to a chosen audience.
   const canSend = isSupervisorUp(user.role);
   const staffByTitle = canSend ? await getStaffByTitle() : {};
+  // the email "Everyone" = all active users; show the count in the picker.
+  const emailEveryoneTotal = canSend
+    ? await prisma.user.count({ where: { deactivatedAt: null } })
+    : null;
   const fromAddress =
     process.env.ANNOUNCEMENTS_FROM ||
     process.env.AUTH_RESEND_FROM ||
@@ -129,21 +133,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
   let roster = null;
   if (post.requireAck && canSeeRoster) {
-    // the roster denominator = this announcement's audience.
-    const audienceWhere = { deactivatedAt: null };
-    if (post.ackEveryone || (!post.ackTitles?.length && !post.ackUserIds?.length)) {
-      audienceWhere.role = { in: EXPECTED_ACK_ROLES };
-    } else {
-      audienceWhere.OR = [
-        ...post.ackTitles.map((t) => ({
-          title: { contains: t, mode: "insensitive" },
-        })),
-        ...(post.ackUserIds?.length ? [{ id: { in: post.ackUserIds } }] : []),
-      ];
-    }
+    // the roster denominator = this announcement's audience (shared helper).
     const [expectedUsers, acks] = await Promise.all([
       prisma.user.findMany({
-        where: audienceWhere,
+        where: ackAudienceWhere(post),
         select: {
           id: true,
           name: true,
@@ -175,24 +168,15 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const myPicks = (post.meetingChoices || []).map((c) => c.optionId);
   // can I pick a session? = in the meeting audience (same membership as ack).
   const iCanPick = post.ackEveryone
-    ? mustAcknowledge(user.role)
+    ? !isAckExempt(user)
     : (post.ackTitles || []).some(titleMatches) ||
       (post.ackUserIds || []).includes(user.id);
 
   let meetingRoster = null;
   if (meeting && meetingOptions.length && canSeeRoster) {
-    const audienceWhere = { deactivatedAt: null };
-    if (post.ackEveryone || (!post.ackTitles?.length && !post.ackUserIds?.length)) {
-      audienceWhere.role = { in: EXPECTED_ACK_ROLES };
-    } else {
-      audienceWhere.OR = [
-        ...post.ackTitles.map((t) => ({ title: { contains: t, mode: "insensitive" } })),
-        ...(post.ackUserIds?.length ? [{ id: { in: post.ackUserIds } }] : []),
-      ];
-    }
     const [audienceUsers, choices] = await Promise.all([
       prisma.user.findMany({
-        where: audienceWhere,
+        where: ackAudienceWhere(post),
         select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
         orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
       }),
@@ -465,9 +449,25 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                               >
                                 {picked && <CheckMini className="h-3 w-3" />}
                               </span>
-                              <span className="flex-1 text-sm text-foreground">{opt.label}</span>
+                              <span className="flex-1">
+                                <span className="block text-sm font-medium text-foreground">
+                                  {opt.label}
+                                </span>
+                                {(opt.at ||
+                                  formatDuration(opt.durationFromMin, opt.durationToMin)) && (
+                                  <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                                    {opt.at && <MeetingTime iso={opt.at} setTz={opt.tz} />}
+                                    {formatDuration(opt.durationFromMin, opt.durationToMin) && (
+                                      <span>
+                                        {opt.at ? "· " : ""}
+                                        {formatDuration(opt.durationFromMin, opt.durationToMin)}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </span>
                               {picked && (
-                                <span className="text-xs font-medium text-brand">you picked this</span>
+                                <span className="flex-none text-xs font-medium text-brand">you picked this</span>
                               )}
                             </button>
                           </form>
@@ -586,6 +586,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 requireAck={post.requireAck}
                 fromAddress={fromAddress}
                 staffByTitle={staffByTitle}
+                everyoneTotal={emailEveryoneTotal}
                 defaultEveryone={post.ackEveryone}
                 defaultTitles={post.ackTitles || []}
                 defaultUserIds={post.ackUserIds || []}

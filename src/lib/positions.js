@@ -9,22 +9,47 @@
 // note: these are job TITLES, separate from privilege roles (Staff,
 // Supervisor, Manager, Admin, etc.). "Super" is a role, not a position,
 // so it doesn't belong here.
+// listed roughly high -> low privilege / seniority. "Unknown Job Title" stays
+// last (under Independent Living Instructor) as the catch-all.
 export const POSITIONS = [
   "Owner / Director",
   "Program Manager",
+  "Assistant Program Manager",
   "HR Administrator",
   "Field Supervisor",
   "Quality Assurance Specialist",
-  "Independent Living Instructor",
-  "Day Program",
-  "Resources Specialist",
   "IT / Web Developer",
+  "Resources Specialist",
+  "Day Program",
   "Tester",
+  "Independent Living Instructor",
+  "Unknown Job Title",
 ];
 
 // separator used to join multiple positions into the title string. none
 // of our position names contain this, so we can split on it cleanly.
 export const POSITION_SEP = " / ";
+
+// the Owner/Director is exempt from acknowledgments (too busy) - everyone else
+// acknowledges. used to drop them from the ack picker + roster.
+export const ACK_EXEMPT_TITLE = "Owner / Director";
+
+// does a (possibly multi-) title string hold `title` as a whole segment?
+// can't just split on " / " - two titles ("Owner / Director", "IT / Web
+// Developer") contain the separator themselves. so match `title` as a whole
+// chunk bounded by the separator or the string ends (same logic as the SQL
+// titleSegmentMatch).
+export function titleHasSegment(userTitle, title) {
+  const ut = (userTitle || "").trim().toLowerCase();
+  const t = title.trim().toLowerCase();
+  const s = POSITION_SEP.toLowerCase();
+  return (
+    ut === t ||
+    ut.startsWith(t + s) ||
+    ut.endsWith(s + t) ||
+    ut.includes(s + t + s)
+  );
+}
 
 // per-position max + overall title cap.
 export const TITLE_MAX_LEN = 120;

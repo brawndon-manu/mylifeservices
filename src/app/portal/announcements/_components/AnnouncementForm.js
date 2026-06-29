@@ -15,6 +15,7 @@ import {
   isCompanyMeeting,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
+import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import AudiencePicker from "./AudiencePicker";
 import MeetingFields from "./MeetingFields";
 
@@ -85,7 +86,10 @@ export default function AnnouncementForm({
   showRoles = false,
   meId,
   meName,
-  staffByTitle = {},
+  ackStaffByTitle = {},
+  emailStaffByTitle = {},
+  ackEveryoneTotal = null,
+  emailEveryoneTotal = null,
   cancelHref = "/portal/announcements",
   submitLabel = "Post",
 }) {
@@ -97,6 +101,14 @@ export default function AnnouncementForm({
   const [sendEmail, setSendEmail] = useState(false);
   const [content, setContent] = useState(d.content || "");
   const onContent = (e) => setContent(e.target.value);
+
+  // does an audience picker show above the email section? (ack on, or a meeting)
+  const hasAudienceAbove = requireAck || meeting;
+  // when there's an audience above, default the email to "same as above".
+  const [emailSameAsAck, setEmailSameAsAck] = useState(true);
+  // the Owner/Director isn't in the ack audience; offer to add them to the email.
+  const director = (emailStaffByTitle?.[ACK_EXEMPT_TITLE] || [])[0];
+  const [includeDirector, setIncludeDirector] = useState(false);
 
   return (
     <form action={action} className="space-y-6">
@@ -220,6 +232,24 @@ export default function AnnouncementForm({
 
           {meeting && <MeetingFields defaults={d} />}
 
+          {meeting && (
+            <div className="rounded-md border border-border bg-surface-2 p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                Who&apos;s invited?
+              </p>
+              <AudiencePicker
+                everyoneName="ackEveryone"
+                titlesName="ackTitles"
+                userIdsName="ackUserIds"
+                staffByTitle={ackStaffByTitle}
+                everyoneTotal={ackEveryoneTotal}
+                defaultEveryone={d.ackEveryone !== false}
+                defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
+                defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
+              />
+            </div>
+          )}
+
           {mode === "create" && (
             <div>
               <label htmlFor="image" className={LABEL}>
@@ -278,21 +308,27 @@ export default function AnnouncementForm({
           </span>
         </label>
 
-        {(requireAck || meeting) && (
+        {requireAck && !meeting && (
           <div className="mt-3 border-t border-border pt-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-              {meeting ? "Who's invited?" : "Who needs to acknowledge?"}
+              Who needs to acknowledge?
             </p>
             <AudiencePicker
               everyoneName="ackEveryone"
               titlesName="ackTitles"
               userIdsName="ackUserIds"
-              staffByTitle={staffByTitle}
-              defaultEveryone={d.ackEveryone !== false}
+              staffByTitle={ackStaffByTitle}
+              everyoneTotal={ackEveryoneTotal}
+              defaultEveryone={d.ackEveryone === true}
               defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
               defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
             />
           </div>
+        )}
+        {requireAck && meeting && (
+          <p className="mt-3 border-t border-border pt-3 text-xs text-muted">
+            Everyone on the invite list above will be asked to acknowledge.
+          </p>
         )}
 
         {mode === "create" && (
@@ -321,15 +357,62 @@ export default function AnnouncementForm({
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
               Who gets the email?
             </p>
-            <AudiencePicker
-              everyoneName="emailEveryone"
-              titlesName="emailTitles"
-              userIdsName="emailUserIds"
-              staffByTitle={staffByTitle}
-              defaultEveryone
-              defaultTitles={[]}
-              defaultUserIds={[]}
-            />
+
+            {hasAudienceAbove && (
+              <div className="mb-2 space-y-1.5">
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="radio"
+                    name="emailAudienceMode"
+                    checked={emailSameAsAck}
+                    onChange={() => setEmailSameAsAck(true)}
+                    className="h-4 w-4 accent-brand"
+                  />
+                  Same as {meeting ? "who's invited" : "who needs to acknowledge"} above
+                </label>
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="radio"
+                    name="emailAudienceMode"
+                    checked={!emailSameAsAck}
+                    onChange={() => setEmailSameAsAck(false)}
+                    className="h-4 w-4 accent-brand"
+                  />
+                  A different group
+                </label>
+              </div>
+            )}
+
+            {hasAudienceAbove && emailSameAsAck ? (
+              // the action reuses the ack/invite audience for the email; just
+              // flag it, plus an optional add for the Program Director.
+              <>
+                <input type="hidden" name="emailSameAsAck" value="on" />
+                {director && (
+                  <label className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      name="emailIncludeDirector"
+                      checked={includeDirector}
+                      onChange={(e) => setIncludeDirector(e.target.checked)}
+                      className="h-4 w-4 accent-brand"
+                    />
+                    Also include {director.name} (Program Director)
+                  </label>
+                )}
+              </>
+            ) : (
+              <AudiencePicker
+                everyoneName="emailEveryone"
+                titlesName="emailTitles"
+                userIdsName="emailUserIds"
+                staffByTitle={emailStaffByTitle}
+                everyoneTotal={emailEveryoneTotal}
+                defaultEveryone={false}
+                defaultTitles={[]}
+                defaultUserIds={[]}
+              />
+            )}
           </div>
         )}
       </div>

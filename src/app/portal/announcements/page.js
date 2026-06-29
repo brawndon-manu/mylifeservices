@@ -3,7 +3,7 @@ import Image from "next/image";
 import { renderMarkdown } from "@/lib/markdown";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated, isSupervisorUp, canSeeRoles, mustAcknowledge } from "@/lib/roles";
+import { isModerator, isElevated, isSupervisorUp, canSeeRoles } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   TIME_WINDOWS,
@@ -17,6 +17,7 @@ import {
   ANNOUNCEMENT_TAG_STYLES,
   isValidAnnouncementTag,
   isChangelog,
+  isAckExempt,
 } from "@/lib/announcements";
 import AuthorPreview from "./_components/AuthorPreview";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -189,7 +190,7 @@ function PostCard({ post, currentUser }) {
   const canPin = isModerator(currentUser.role);
   const canEdit = post.authorId === currentUser.id;
   const iAcked = post.acks?.length > 0;
-  const iMustAck = mustAcknowledge(currentUser.role);
+  const iMustAck = !isAckExempt(currentUser);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
   // changelog preview: render the markdown body and estimate a reading time
