@@ -18,6 +18,7 @@ import {
   buildAuthorNudgeHtml,
   buildResponseNoticeHtml,
   seeOriginalButton,
+  EMAIL_TZ,
 } from "@/lib/announcement-email";
 
 export const dynamic = "force-dynamic";
@@ -141,16 +142,15 @@ export async function GET(request) {
     const bodyHtml = renderMarkdown(m.content);
     const meetingHtml = buildMeetingBlockHtml(m, session);
     const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${m.id}`);
-    // header date = the meeting date (in the session's zone), not the post date.
+    // header date = the meeting date, always shown in Pacific (emails pin one zone).
     const sessIso = session?.at || (m.meetingAt instanceof Date ? m.meetingAt.toISOString() : m.meetingAt);
-    const sessTz = session?.tz || m.meetingTimezone || "America/Los_Angeles";
     const dateStr = sessIso
       ? new Date(sessIso).toLocaleDateString("en-US", {
           weekday: "long",
           year: "numeric",
           month: "long",
           day: "numeric",
-          timeZone: sessTz,
+          timeZone: EMAIL_TZ,
         })
       : "";
     const messages = recipients.map((r) => ({

@@ -10,6 +10,11 @@ import {
   formatHasAddress,
 } from "@/lib/announcements";
 
+// emails always show times in Pacific. a static email can't convert to each
+// reader's zone the way the in-portal view does, and ~all staff are in CA, so we
+// pin one zone instead of printing whatever zone the author happened to set.
+export const EMAIL_TZ = "America/Los_Angeles";
+
 function esc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -59,8 +64,12 @@ export function seeOriginalButton(url) {
 export function buildMeetingBlockHtml(post, session = null) {
   if (!post || !isCompanyMeeting(post.tag)) return "";
   const parts = [];
+  // per-session link wins (each session can have its own Zoom), else the
+  // meeting-level link (single-session meetings).
+  const link = (session && session.zoomLink) || post.zoomLink;
+  const code = (session && session.zoomCode) || post.zoomCode;
   if (session && session.at) {
-    const t = formatInstant(session.at, session.tz || "America/Los_Angeles");
+    const t = formatInstant(session.at, EMAIL_TZ);
     const dur = formatDuration(session.durationFromMin, session.durationToMin);
     const lbl = session.label ? `${esc(session.label)} &middot; ` : "";
     parts.push(
@@ -68,35 +77,55 @@ export function buildMeetingBlockHtml(post, session = null) {
     );
   } else if (post.meetingAt) {
     const iso = post.meetingAt instanceof Date ? post.meetingAt.toISOString() : post.meetingAt;
-    const t = formatInstant(iso, post.meetingTimezone || "America/Los_Angeles");
+    const t = formatInstant(iso, EMAIL_TZ);
     const dur = formatDuration(post.meetingDurationFromMin, post.meetingDurationToMin);
     parts.push(
       `<div style="font-size:15px;color:#1f2937;margin-bottom:8px;"><strong>${esc(t)}</strong>${dur ? ` &middot; ${esc(dur)}` : ""}</div>`,
     );
   } else {
     const sessions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
-    if (sessions.length) {
-      const rows = sessions.map((o) => {
-        const t = o.at ? esc(formatInstant(o.at, o.tz || "America/Los_Angeles")) : "";
-        const dur = esc(formatDuration(o.durationFromMin, o.durationToMin) || "");
-        const meta = [t, dur].filter(Boolean).join(" &middot; ");
-        return `<div style="font-size:14px;color:#1f2937;margin-bottom:4px;"><strong>${esc(o.label)}</strong>${meta ? ` &mdash; ${meta}` : ""}</div>`;
-      });
+    const isSeries = sessions.some((o) => o && o.seriesId);
+    const rowFor = (o, bullet) => {
+      const t = o.at ? esc(formatInstant(o.at, EMAIL_TZ)) : "";
+      const dur = esc(formatDuration(o.durationFromMin, o.durationToMin) || "");
+      const meta = [t, dur].filter(Boolean).join(" &middot; ");
+      const label = bullet ? `&bull; ${esc(o.label)}` : `<strong>${esc(o.label)}</strong>`;
+      return `<div style="font-size:14px;color:#1f2937;margin:${bullet ? "2px 0 2px 12px" : "0 0 4px"};">${label}${meta ? ` &mdash; ${meta}` : ""}</div>`;
+    };
+    if (sessions.length && isSeries) {
+      // grouped by series; the reader picks one date from each.
+      const groups = [];
+      for (const o of sessions) {
+        let g = groups.find((x) => x.id === o.seriesId);
+        if (!g) {
+          g = { id: o.seriesId, label: o.seriesLabel || "Series", opts: [] };
+          groups.push(g);
+        }
+        g.opts.push(o);
+      }
+      const blocks = groups.map(
+        (g) =>
+          `<div style="margin-bottom:10px;"><div style="font-size:13px;font-weight:700;color:#111827;">${esc(g.label)} <span style="font-weight:400;color:#6b7280;">(pick one)</span></div>${g.opts.map((o) => rowFor(o, true)).join("")}</div>`,
+      );
       parts.push(
-        `<div style="margin-bottom:8px;"><div style="font-size:13px;color:#6b7280;margin-bottom:4px;">Sessions to choose from:</div>${rows.join("")}</div>`,
+        `<div style="margin-bottom:8px;"><div style="font-size:13px;color:#6b7280;margin-bottom:6px;">Pick one date from each series:</div>${blocks.join("")}</div>`,
+      );
+    } else if (sessions.length) {
+      parts.push(
+        `<div style="margin-bottom:8px;"><div style="font-size:13px;color:#6b7280;margin-bottom:4px;">Sessions to choose from:</div>${sessions.map((o) => rowFor(o, false)).join("")}</div>`,
       );
     }
   }
-  if (formatHasOnline(post.meetingFormat) && post.zoomLink) {
+  if (formatHasOnline(post.meetingFormat) && link) {
     parts.push(
-      `<div style="margin:6px 0 10px;"><a href="${post.zoomLink}" style="${BTN}">Join meeting</a></div>`,
+      `<div style="margin:6px 0 10px;"><a href="${link}" style="${BTN}">Join meeting</a></div>`,
     );
     parts.push(
-      `<div style="font-size:13px;color:#4b5563;word-break:break-all;">Link: <a href="${post.zoomLink}" style="color:#2f6feb;">${esc(post.zoomLink)}</a></div>`,
+      `<div style="font-size:13px;color:#4b5563;word-break:break-all;">Link: <a href="${link}" style="color:#2f6feb;">${esc(link)}</a></div>`,
     );
-    if (post.zoomCode) {
+    if (code) {
       parts.push(
-        `<div style="font-size:13px;color:#4b5563;">Passcode: <strong style="font-family:monospace;letter-spacing:1px;">${esc(post.zoomCode)}</strong></div>`,
+        `<div style="font-size:13px;color:#4b5563;">Passcode: <strong style="font-family:monospace;letter-spacing:1px;">${esc(code)}</strong></div>`,
       );
     }
   }
