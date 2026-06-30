@@ -83,6 +83,7 @@ model User {
   announcementLikes    AnnouncementLike[]
   announcementAcks     AnnouncementAck[]
   announcementMeetingChoices AnnouncementMeetingChoice[]
+  announcementMeetingResponses AnnouncementMeetingResponse[]
   nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
   nlApproved    NewsletterItem[] @relation("NLApprovedBy")
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
@@ -355,7 +356,22 @@ model Announcement {
   // duration estimate in minutes (from -> optional to for a range).
   meetingDurationFromMin Int?
   meetingDurationToMin   Int?
+  // optional "response needed by" deadline for a meeting RSVP. the auto second-
+  // notice email (Phase C) fires at this instant; tz kept for the editor label.
+  meetingResponseDueAt   DateTime?
+  meetingResponseDueTz   String?
+  // Phase C (auto-reminders): settable lead time for the "starting soon" email;
+  // zoomLinkTbd = "link provided closer to the date" (attendees see a note, the
+  // author gets a nudge). the *SentAt stamps keep the cron from double-firing.
+  meetingReminderLeadMin      Int       @default(10)
+  zoomLinkTbd                 Boolean   @default(false)
+  // also send a "meeting tomorrow" reminder at 8pm the day before each session.
+  meetingNightBefore          Boolean   @default(true)
+  meetingAuthorNudgeSentAt    DateTime?
+  meetingResponseNoticeSentAt DateTime?
   meetingChoices   AnnouncementMeetingChoice[]
+  meetingResponses AnnouncementMeetingResponse[]
+  meetingReminders AnnouncementMeetingReminder[]
   // last time the "Send to staff by email" blast went out, so the roster
   // can show "last emailed ..." and re-sends only hit the un-acked.
   ackEmailSentAt DateTime?
@@ -422,6 +438,41 @@ model AnnouncementMeetingChoice {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([announcementId, userId, optionId])
+}
+
+// a person's overall response to a Company Meeting: going, or cant make it (with
+// an optional reason). one row per (announcement, user) - the row existing means
+// they responded, which also counts as their acknowledgment. which session(s)
+// theyre going to lives in AnnouncementMeetingChoice. drives the Going / Cant
+// make it / No response roster.
+model AnnouncementMeetingResponse {
+  announcementId String
+  userId         String
+  cantMakeIt     Boolean      @default(false)
+  reason         String?
+  // roll-call (Phase B): admin marks "present" / "absent" on the day. null =
+  // not yet marked. attendance is meeting-level (the session they picked).
+  attended       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
+}
+
+// idempotency for the Phase C "starting soon" reminder: one row per session that
+// has been reminded (optionId = "" for a single-session meeting). the cron
+// checks this before sending so a 5-min poll never double-fires. survives edits.
+model AnnouncementMeetingReminder {
+  announcementId String
+  optionId       String       @default("")
+  // which reminder: "soon" (lead-min before) or "night" (8pm the day before).
+  kind           String       @default("soon")
+  sentAt         DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, optionId, kind])
 }
 
 // the Forms library - a managed list of blank form templates (PDFs). staff

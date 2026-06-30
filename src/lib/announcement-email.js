@@ -66,6 +66,41 @@ export function buildMeetingBlockHtml(post) {
   return `<div style="margin:18px 0;padding:16px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:10px;">${parts.join("")}</div>`;
 }
 
+const WRAP =
+  "font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#1f2937;";
+const BTN =
+  "display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;";
+
+// pre-meeting email to the author: add the Zoom link + passcode if missing, or
+// confirm they're still correct if already set.
+export function buildAuthorNudgeHtml({ title, editUrl, zoomLink, zoomCode }) {
+  if (zoomLink) {
+    return `<div style="${WRAP}">
+      <p style="font-size:15px;">Your meeting <strong>${esc(title)}</strong> is coming up soon. Quick check - is the Zoom info still correct?</p>
+      <div style="margin:14px 0;padding:14px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:10px;">
+        <div style="font-size:13px;color:#4b5563;word-break:break-all;">Link: <a href="${zoomLink}" style="color:#2f6feb;">${esc(zoomLink)}</a></div>
+        ${zoomCode ? `<div style="font-size:13px;color:#4b5563;margin-top:4px;">Passcode: <strong style="font-family:monospace;letter-spacing:1px;">${esc(zoomCode)}</strong></div>` : `<div style="font-size:13px;color:#9aa3ad;margin-top:4px;">No passcode set.</div>`}
+      </div>
+      <p style="margin:20px 0;"><a href="${editUrl}" style="${BTN}">Edit if needed</a></p>
+      <p style="font-size:13px;color:#6b7280;">Attendees get this link in their reminder, so make sure it&apos;s right.</p>
+    </div>`;
+  }
+  return `<div style="${WRAP}">
+    <p style="font-size:15px;">Heads up - your meeting <strong>${esc(title)}</strong> is coming up soon and still has no Zoom link or passcode.</p>
+    <p style="margin:24px 0;"><a href="${editUrl}" style="${BTN}">Add the Zoom link + passcode</a></p>
+    <p style="font-size:13px;color:#6b7280;">Attendees get the link automatically in their reminder, so add it before then.</p>
+  </div>`;
+}
+
+// second-notice to people who haven't responded by the response-due date.
+export function buildResponseNoticeHtml({ firstName, title, url }) {
+  return `<div style="${WRAP}">
+    <p style="font-size:15px;">Hi ${esc(firstName)},</p>
+    <p style="font-size:15px;">Second notice: please let us know if you can attend <strong>${esc(title)}</strong>. A response is needed by end of day.</p>
+    <p style="margin:24px 0;"><a href="${url}" style="${BTN}">Respond now</a></p>
+  </div>`;
+}
+
 export function buildAnnouncementEmailHtml({
   logoUrl,
   title,

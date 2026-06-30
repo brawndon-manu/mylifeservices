@@ -109,6 +109,7 @@ function TimeBlock({ value, onChange }) {
 export default function MeetingFields({ defaults = {} }) {
   const d = defaults;
   const [format, setFormat] = useState(d.meetingFormat || "zoom");
+  const [linkTbd, setLinkTbd] = useState(!!d.zoomLinkTbd);
   const initTz = d.meetingTimezone || DEFAULT_TZ;
 
   // single-meeting time block (used when NOT offering sessions).
@@ -141,6 +142,13 @@ export default function MeetingFields({ defaults = {} }) {
   });
   const [hasOptions, setHasOptions] = useState(presetSessions.length > 0);
   const [options, setOptions] = useState(presetSessions);
+
+  // optional "response needed by" date - stored as end-of-day in the author's
+  // zone. (the auto second-notice email that uses it lands in a later phase.)
+  const presetDue = d.meetingResponseDueAt
+    ? instantToZoned(d.meetingResponseDueAt, d.meetingResponseDueTz || initTz).date
+    : "";
+  const [dueDate, setDueDate] = useState(presetDue);
 
   // snap the single block's tz to the author's device zone on mount (unless
   // editing a preset). new sessions read the device zone when added.
@@ -226,9 +234,24 @@ export default function MeetingFields({ defaults = {} }) {
         <>
           <div>
             <label htmlFor="zoomLink" className={LABEL}>
-              Zoom link
+              Zoom link {linkTbd && <span className="text-faint">(add later)</span>}
             </label>
-            <input id="zoomLink" name="zoomLink" type="url" defaultValue={d.zoomLink || ""} placeholder="https://zoom.us/j/..." className={INPUT} />
+            <input id="zoomLink" name="zoomLink" type="url" defaultValue={d.zoomLink || ""} placeholder={linkTbd ? "Provided closer to the date" : "https://zoom.us/j/..."} className={INPUT} />
+            <label className="mt-2 flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="zoomLinkTbd"
+                checked={linkTbd}
+                onChange={(e) => setLinkTbd(e.target.checked)}
+                className="h-4 w-4 accent-brand"
+              />
+              <span className="text-sm text-foreground">
+                Provide the link closer to the date{" "}
+                <span className="text-xs text-muted">
+                  (we&apos;ll remind you, and attendees get it in the reminder)
+                </span>
+              </span>
+            </label>
           </div>
           <div>
             <label htmlFor="zoomCode" className={LABEL}>
@@ -257,6 +280,55 @@ export default function MeetingFields({ defaults = {} }) {
           </span>
         </span>
       </label>
+
+      <div>
+        <label className={LABEL}>
+          Response needed by <span className="text-faint">(optional)</span>
+        </label>
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className={INPUT}
+        />
+        <p className="mt-1 text-xs text-muted">
+          A deadline to RSVP. Anyone who hasn&apos;t responded by then gets a
+          second-notice email.
+        </p>
+        <input
+          type="hidden"
+          name="meetingResponseDueAt"
+          value={dueDate ? zonedToInstant(dueDate, "23:59", single.tz) || "" : ""}
+        />
+        <input type="hidden" name="meetingResponseDueTz" value={single.tz} />
+      </div>
+
+      <div>
+        <label className={LABEL}>Reminder</label>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
+          Send a &quot;starting soon&quot; email
+          <input
+            name="meetingReminderLeadMin"
+            type="text"
+            inputMode="numeric"
+            defaultValue={d.meetingReminderLeadMin ?? 10}
+            className={`${INPUT} mt-0 !w-16`}
+          />
+          minutes before each session starts.
+        </div>
+        <label className="mt-2 flex items-center gap-2">
+          <input
+            type="checkbox"
+            name="meetingNightBefore"
+            defaultChecked={d.meetingNightBefore !== false}
+            className="h-4 w-4 accent-brand"
+          />
+          <span className="text-sm text-foreground">
+            Also send a &quot;meeting tomorrow&quot; reminder the night before{" "}
+            <span className="text-xs text-muted">(8pm the day before)</span>
+          </span>
+        </label>
+      </div>
 
       {!hasOptions && (
         <>

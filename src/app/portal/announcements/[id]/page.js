@@ -44,6 +44,10 @@ import {
   sendAckEmails,
   sendAnnouncementEmail,
   chooseMeetingOption,
+  attendMeeting,
+  cantMakeMeeting,
+  setAttendance,
+  setMeetingLink,
 } from "../actions";
 
 export const metadata = {
@@ -63,6 +67,61 @@ const ERRORS = {
 const PROSE =
   "text-[15px] leading-relaxed text-foreground [&_h1]:mt-8 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-8 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold [&_p]:mt-3 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_ol]:mt-3 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_li]:marker:text-faint [&_a]:font-medium [&_a]:text-brand [&_a]:underline [&_strong]:font-semibold [&_strong]:text-foreground [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_em]:italic [&_hr]:my-6 [&_hr]:border-border [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-surface-2 [&_pre]:p-3";
 
+// one row in the meeting roster: avatar + display name + job title. shows a
+// reason chip (cant-make-it) or, with rollPostId set, present/absent roll-call
+// toggles (Phase B) reading user.attended.
+function PersonRow({ user, reason, rollPostId }) {
+  const att = user.attended || null;
+  const rollBtn =
+    "rounded-md border px-2 py-0.5 text-xs font-medium transition";
+  return (
+    <div className="flex items-center gap-2.5 py-1">
+      <Avatar name={preferredName(user)} image={user.image} size={30} />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-foreground">
+          {preferredName(user)}
+        </div>
+        {user.title && (
+          <div className="truncate text-xs text-muted">{user.title}</div>
+        )}
+      </div>
+      {reason && (
+        <span className="ml-auto rounded-md border border-rose-300/40 bg-rose-50 px-2 py-0.5 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+          {reason}
+        </span>
+      )}
+      {rollPostId && (
+        <span className="ml-auto flex flex-none gap-1.5">
+          <form action={setAttendance.bind(null, rollPostId, user.id, att === "present" ? "" : "present")}>
+            <button
+              type="submit"
+              className={`${rollBtn} ${
+                att === "present"
+                  ? "border-green-500 bg-green-500 text-white"
+                  : "border-border-strong text-muted hover:border-green-500 hover:text-green-600"
+              }`}
+            >
+              Present
+            </button>
+          </form>
+          <form action={setAttendance.bind(null, rollPostId, user.id, att === "absent" ? "" : "absent")}>
+            <button
+              type="submit"
+              className={`${rollBtn} ${
+                att === "absent"
+                  ? "border-rose-500 bg-rose-500 text-white"
+                  : "border-border-strong text-muted hover:border-rose-500 hover:text-rose-600"
+              }`}
+            >
+              Absent
+            </button>
+          </form>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default async function AnnouncementDetailPage({ params, searchParams }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -78,6 +137,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       likes: { where: { userId: user.id }, select: { userId: true } },
       acks: { where: { userId: user.id }, select: { viaEmail: true, createdAt: true } },
       meetingChoices: { where: { userId: user.id }, select: { optionId: true } },
+      meetingResponses: {
+        where: { userId: user.id },
+        select: { cantMakeIt: true, reason: true },
+      },
       _count: { select: { likes: true } },
       comments: {
         where: { deletedAt: null },
@@ -95,6 +158,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const liked = post.likes.length > 0;
   const canDeletePost = post.authorId === user.id || isModerator(user.role);
   const canEditPost = post.authorId === user.id;
+  const canManageLink = canEditPost || isModerator(user.role);
   const canPin = isModerator(user.role);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
@@ -172,34 +236,69 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     : (post.ackTitles || []).some(titleMatches) ||
       (post.ackUserIds || []).includes(user.id);
 
+  // my current response (going / cant make it + reason), for the controls.
+  const myResponse = post.meetingResponses?.[0] || null;
+
   let meetingRoster = null;
-  if (meeting && meetingOptions.length && canSeeRoster) {
-    const [audienceUsers, choices] = await Promise.all([
+  if (meeting && canSeeRoster) {
+    const [audienceUsers, choices, responses] = await Promise.all([
       prisma.user.findMany({
         where: ackAudienceWhere(post),
-        select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
+        select: {
+          id: true,
+          name: true,
+          preferredFirstName: true,
+          preferredLastName: true,
+          title: true,
+          image: true,
+        },
         orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
       }),
       prisma.announcementMeetingChoice.findMany({
         where: { announcementId: id },
         select: { userId: true, optionId: true },
       }),
+      prisma.announcementMeetingResponse.findMany({
+        where: { announcementId: id },
+        select: { userId: true, cantMakeIt: true, reason: true, attended: true },
+      }),
     ]);
     const audIds = new Set(audienceUsers.map((u) => u.id));
-    const chosenUserIds = new Set(
-      choices.filter((c) => audIds.has(c.userId)).map((c) => c.userId),
+    const userById = new Map(audienceUsers.map((u) => [u.id, u]));
+    const respByUser = new Map(
+      responses.filter((r) => audIds.has(r.userId)).map((r) => [r.userId, r]),
     );
-    const counts = {};
-    for (const o of meetingOptions) counts[o.id] = 0;
-    for (const c of choices) {
-      if (audIds.has(c.userId) && counts[c.optionId] !== undefined) counts[c.optionId]++;
-    }
-    const notPicked = audienceUsers.filter((u) => !chosenUserIds.has(u.id));
+    const isGoing = (uid) => respByUser.has(uid) && !respByUser.get(uid).cantMakeIt;
+    // a going person + their attendance mark, for the roll-call controls.
+    const goingUser = (uid) => ({
+      ...userById.get(uid),
+      attended: respByUser.get(uid)?.attended || null,
+    });
+
+    // Going, grouped by session (multi-session); single-session has no options.
+    const bySession = meetingOptions.map((o) => ({
+      option: o,
+      users: choices
+        .filter((c) => c.optionId === o.id && audIds.has(c.userId) && isGoing(c.userId))
+        .map((c) => goingUser(c.userId))
+        .filter((u) => u.id),
+    }));
+    const singleGoing = meetingOptions.length
+      ? []
+      : audienceUsers.filter((u) => isGoing(u.id)).map((u) => goingUser(u.id));
+    const cantUsers = audienceUsers
+      .filter((u) => respByUser.get(u.id)?.cantMakeIt)
+      .map((u) => ({ ...u, reason: respByUser.get(u.id).reason }));
+    const noResponse = audienceUsers.filter((u) => !respByUser.has(u.id));
+
     meetingRoster = {
-      counts,
-      notPicked,
+      bySession,
+      singleGoing,
+      cantUsers,
+      noResponse,
+      goingCount: audienceUsers.filter((u) => isGoing(u.id)).length,
       total: audienceUsers.length,
-      picked: chosenUserIds.size,
+      responded: respByUser.size,
     };
   }
 
@@ -374,6 +473,12 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
                 {(formatHasOnline(post.meetingFormat) || formatHasAddress(post.meetingFormat)) && (
                   <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
+                    {formatHasOnline(post.meetingFormat) && !post.zoomLink && post.zoomLinkTbd && (
+                      <div className="flex items-center gap-2 text-sm text-muted">
+                        <VideoIcon className="h-4 w-4" />
+                        The Zoom link will be sent before the meeting.
+                      </div>
+                    )}
                     {formatHasOnline(post.meetingFormat) && post.zoomLink && (
                       <div className="flex flex-wrap items-center gap-2">
                         <a
@@ -415,71 +520,189 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         />
                       </div>
                     )}
+
+                    {/* author/admin: add or update the Zoom link + passcode */}
+                    {formatHasOnline(post.meetingFormat) && canManageLink && (
+                      <details
+                        className="rounded-lg border border-border bg-surface-2"
+                        open={!post.zoomLink || undefined}
+                      >
+                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
+                          {post.zoomLink ? "Edit Zoom link / passcode" : "Add the Zoom link"}
+                        </summary>
+                        <form
+                          action={setMeetingLink.bind(null, post.id)}
+                          className="space-y-2 px-3 pb-3"
+                        >
+                          <input
+                            name="zoomLink"
+                            type="url"
+                            defaultValue={post.zoomLink || ""}
+                            placeholder="https://zoom.us/j/..."
+                            className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                          />
+                          <input
+                            name="zoomCode"
+                            type="text"
+                            defaultValue={post.zoomCode || ""}
+                            placeholder="Passcode (optional)"
+                            className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                          />
+                          <button
+                            type="submit"
+                            className="rounded-md bg-brand-light px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-brand"
+                          >
+                            Save link
+                          </button>
+                        </form>
+                      </details>
+                    )}
                   </div>
                 )}
 
-                {meetingOptions.length > 0 && (
+                {post.meetingResponseDueAt && (
+                  <p className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-surface-3 px-3 py-1 text-xs font-medium text-muted">
+                    Response needed by{" "}
+                    {new Date(post.meetingResponseDueAt).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                )}
+
+                {/* my response: pick a session / I'll be there + can't make it */}
+                {iCanPick && (
                   <div className="mt-5">
                     <p className="text-sm font-semibold text-foreground">
-                      {post.meetingMultiPick
-                        ? "Pick the sessions you'll attend"
-                        : "Choose the session you'll attend"}
+                      {meetingOptions.length > 0
+                        ? post.meetingMultiPick
+                          ? "Will you attend? Pick the sessions you'll come to."
+                          : "Will you attend? Pick a session."
+                        : "Will you attend?"}
                     </p>
                     <div className="mt-2 space-y-2">
-                      {meetingOptions.map((opt) => {
-                        const picked = myPicks.includes(opt.id);
-                        return (
-                          <form
-                            key={opt.id}
-                            action={chooseMeetingOption.bind(null, post.id, opt.id)}
-                          >
-                            <button
-                              type="submit"
-                              disabled={!iCanPick}
-                              className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                                picked
-                                  ? "border-brand bg-sky-50 dark:bg-sky-950/30"
-                                  : "border-border hover:border-brand-light"
-                              } ${iCanPick ? "" : "cursor-default opacity-80"}`}
+                      {meetingOptions.length > 0 ? (
+                        meetingOptions.map((opt) => {
+                          const picked = myPicks.includes(opt.id);
+                          return (
+                            <form
+                              key={opt.id}
+                              action={chooseMeetingOption.bind(null, post.id, opt.id)}
                             >
-                              <span
-                                className={`flex h-5 w-5 flex-none items-center justify-center border-2 ${
-                                  post.meetingMultiPick ? "rounded" : "rounded-full"
-                                } ${picked ? "border-brand bg-brand text-white" : "border-border-strong"}`}
+                              <button
+                                type="submit"
+                                className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                                  picked
+                                    ? "border-brand bg-sky-50 dark:bg-sky-950/30"
+                                    : "border-border hover:border-brand-light"
+                                }`}
                               >
-                                {picked && <CheckMini className="h-3 w-3" />}
-                              </span>
-                              <span className="flex-1">
-                                <span className="block text-sm font-medium text-foreground">
-                                  {opt.label}
+                                <span
+                                  className={`flex h-5 w-5 flex-none items-center justify-center border-2 ${
+                                    post.meetingMultiPick ? "rounded" : "rounded-full"
+                                  } ${picked ? "border-brand bg-brand text-white" : "border-border-strong"}`}
+                                >
+                                  {picked && <CheckMini className="h-3 w-3" />}
                                 </span>
-                                {(opt.at ||
-                                  formatDuration(opt.durationFromMin, opt.durationToMin)) && (
-                                  <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
-                                    {opt.at && <MeetingTime iso={opt.at} setTz={opt.tz} />}
-                                    {formatDuration(opt.durationFromMin, opt.durationToMin) && (
-                                      <span>
-                                        {opt.at ? "· " : ""}
-                                        {formatDuration(opt.durationFromMin, opt.durationToMin)}
-                                      </span>
-                                    )}
+                                <span className="flex-1">
+                                  <span className="block text-sm font-medium text-foreground">
+                                    {opt.label}
                                   </span>
+                                  {(opt.at ||
+                                    formatDuration(opt.durationFromMin, opt.durationToMin)) && (
+                                    <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                                      {opt.at && <MeetingTime iso={opt.at} setTz={opt.tz} />}
+                                      {formatDuration(opt.durationFromMin, opt.durationToMin) && (
+                                        <span>
+                                          {opt.at ? "· " : ""}
+                                          {formatDuration(opt.durationFromMin, opt.durationToMin)}
+                                        </span>
+                                      )}
+                                    </span>
+                                  )}
+                                </span>
+                                {picked && (
+                                  <span className="flex-none text-xs font-medium text-brand">you picked this</span>
                                 )}
-                              </span>
-                              {picked && (
-                                <span className="flex-none text-xs font-medium text-brand">you picked this</span>
-                              )}
-                            </button>
-                          </form>
-                        );
-                      })}
+                              </button>
+                            </form>
+                          );
+                        })
+                      ) : (
+                        <form action={attendMeeting.bind(null, post.id)}>
+                          <button
+                            type="submit"
+                            className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                              myResponse && !myResponse.cantMakeIt
+                                ? "border-brand bg-sky-50 dark:bg-sky-950/30"
+                                : "border-border hover:border-brand-light"
+                            }`}
+                          >
+                            <span
+                              className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                                myResponse && !myResponse.cantMakeIt
+                                  ? "border-brand bg-brand text-white"
+                                  : "border-border-strong"
+                              }`}
+                            >
+                              {myResponse && !myResponse.cantMakeIt && <CheckMini className="h-3 w-3" />}
+                            </span>
+                            <span className="flex-1 text-sm font-medium text-foreground">
+                              I&apos;ll be there
+                            </span>
+                          </button>
+                        </form>
+                      )}
+
+                      {/* can't make it / can't make any */}
+                      <details
+                        className="rounded-lg border border-border"
+                        open={myResponse?.cantMakeIt || undefined}
+                      >
+                        <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
+                          <span
+                            className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                              myResponse?.cantMakeIt ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
+                            }`}
+                          >
+                            {myResponse?.cantMakeIt && <CheckMini className="h-3 w-3" />}
+                          </span>
+                          <span className="font-medium text-foreground">
+                            {myResponse?.cantMakeIt
+                              ? "You said you can't make it"
+                              : meetingOptions.length > 1
+                                ? "I can't make any of these"
+                                : "I can't make it"}
+                          </span>
+                        </summary>
+                        <form action={cantMakeMeeting.bind(null, post.id)} className="px-3 pb-3">
+                          <textarea
+                            name="reason"
+                            defaultValue={myResponse?.reason || ""}
+                            rows={2}
+                            placeholder="Reason (optional) - e.g. I'm on PTO that week"
+                            className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                          />
+                          <button
+                            type="submit"
+                            className="mt-2 rounded-md bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700"
+                          >
+                            {myResponse?.cantMakeIt ? "Update" : "Submit"}
+                          </button>
+                        </form>
+                      </details>
                     </div>
-                    {!iCanPick && (
-                      <p className="mt-2 text-xs text-muted">
-                        You&apos;re not on the invite list for this meeting.
-                      </p>
-                    )}
+                    <p className="mt-2 text-xs text-faint">
+                      Responding counts as your acknowledgment - no separate
+                      &quot;I read this&quot; needed.
+                    </p>
                   </div>
+                )}
+                {meeting && !iCanPick && (
+                  <p className="mt-4 text-xs text-muted">
+                    You&apos;re not on the invite list for this meeting.
+                  </p>
                 )}
 
                 {meetingRoster && (
@@ -487,41 +710,89 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     <p className="text-sm font-medium text-foreground">
                       Responses{" "}
                       <span className="text-muted">
-                        ({meetingRoster.picked} of {meetingRoster.total} picked)
+                        ({meetingRoster.responded} of {meetingRoster.total} responded
+                        {meetingRoster.total
+                          ? ` · ${Math.round((meetingRoster.responded / meetingRoster.total) * 100)}%`
+                          : ""}
+                        )
                       </span>
                     </p>
-                    <div className="mt-3 space-y-3">
-                      {meetingOptions.map((opt) => {
-                        const n = meetingRoster.counts[opt.id] || 0;
-                        const pct = meetingRoster.total
-                          ? Math.round((n / meetingRoster.total) * 100)
-                          : 0;
-                        return (
-                          <div key={opt.id}>
-                            <div className="flex justify-between text-sm text-foreground">
-                              <span>{opt.label}</span>
-                              <span className="text-muted">{n}</span>
-                            </div>
-                            <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-3">
-                              <div
-                                className="h-full rounded-full bg-brand"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
+                      <div
+                        className="h-full rounded-full bg-brand"
+                        style={{
+                          width: `${meetingRoster.total ? Math.round((meetingRoster.responded / meetingRoster.total) * 100) : 0}%`,
+                        }}
+                      />
                     </div>
-                    <div className="mt-4 border-t border-border pt-3 text-sm">
-                      <span className="text-muted">
-                        Haven&apos;t picked ({meetingRoster.notPicked.length}):
-                      </span>{" "}
-                      {meetingRoster.notPicked.length === 0 ? (
-                        <span className="text-foreground">everyone&apos;s in.</span>
-                      ) : (
-                        <span className="text-foreground">
-                          {meetingRoster.notPicked.map((u) => preferredName(u)).join(", ")}
+
+                    {/* Going */}
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                        Going{" "}
+                        <span className="ml-1 rounded-full bg-surface-3 px-2 py-0.5 text-xs text-foreground">
+                          {meetingRoster.goingCount}
                         </span>
+                      </p>
+                      {meetingOptions.length > 0 ? (
+                        meetingRoster.bySession.map(({ option, users }) => {
+                          const present = users.filter((u) => u.attended === "present").length;
+                          const absent = users.filter((u) => u.attended === "absent").length;
+                          return (
+                            <div key={option.id} className="mt-2">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium text-foreground">{option.label}</span>
+                                <span className="text-xs text-muted">
+                                  {users.length} going
+                                  {present || absent ? ` · ${present} present · ${absent} absent` : ""}
+                                </span>
+                              </div>
+                              {users.length === 0 ? (
+                                <p className="py-1 text-xs text-faint">nobody yet</p>
+                              ) : (
+                                users.map((u) => (
+                                  <PersonRow key={u.id} user={u} rollPostId={post.id} />
+                                ))
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : meetingRoster.singleGoing.length === 0 ? (
+                        <p className="py-1 text-xs text-faint">nobody yet</p>
+                      ) : (
+                        meetingRoster.singleGoing.map((u) => (
+                          <PersonRow key={u.id} user={u} rollPostId={post.id} />
+                        ))
+                      )}
+                    </div>
+
+                    {/* Can't make it */}
+                    {meetingRoster.cantUsers.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                          Can&apos;t make it{" "}
+                          <span className="ml-1 rounded-full bg-surface-3 px-2 py-0.5 text-xs text-foreground">
+                            {meetingRoster.cantUsers.length}
+                          </span>
+                        </p>
+                        {meetingRoster.cantUsers.map((u) => (
+                          <PersonRow key={u.id} user={u} reason={u.reason} />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* No response */}
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-faint">
+                        No response yet{" "}
+                        <span className="ml-1 rounded-full bg-surface-3 px-2 py-0.5 text-xs text-foreground">
+                          {meetingRoster.noResponse.length}
+                        </span>
+                      </p>
+                      {meetingRoster.noResponse.length === 0 ? (
+                        <p className="py-1 text-sm text-foreground">everyone responded.</p>
+                      ) : (
+                        meetingRoster.noResponse.map((u) => <PersonRow key={u.id} user={u} />)
                       )}
                     </div>
                   </div>

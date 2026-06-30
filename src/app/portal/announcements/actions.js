@@ -116,6 +116,11 @@ function parseMeetingFields(formData, tag) {
     meetingTimezone: null,
     meetingDurationFromMin: null,
     meetingDurationToMin: null,
+    meetingResponseDueAt: null,
+    meetingResponseDueTz: null,
+    zoomLinkTbd: false,
+    meetingNightBefore: true,
+    meetingReminderLeadMin: 10,
   };
   if (!isCompanyMeeting(tag)) return blank;
 
@@ -194,6 +199,15 @@ function parseMeetingFields(formData, tag) {
     meetingTimezone: meetingAt ? trim(formData.get("meetingTimezone"), 60) : null,
     meetingDurationFromMin: durMin("meetingDurFromHrs", "meetingDurFromMin"),
     meetingDurationToMin: durMin("meetingDurToHrs", "meetingDurToMin"),
+    meetingResponseDueAt: parseDateField(formData.get("meetingResponseDueAt")),
+    meetingResponseDueTz:
+      trim(formData.get("meetingResponseDueTz"), 60) || null,
+    zoomLinkTbd: online ? formData.get("zoomLinkTbd") === "on" : false,
+    meetingNightBefore: formData.get("meetingNightBefore") === "on",
+    meetingReminderLeadMin: (() => {
+      const n = parseInt(formData.get("meetingReminderLeadMin"), 10);
+      return Number.isFinite(n) && n >= 0 && n <= 1440 ? n : 10;
+    })(),
   };
 }
 
@@ -598,34 +612,56 @@ export async function acknowledge(postId) {
   redirect(`/portal/announcements/${postId}`);
 }
 
+// is this user in the meeting's audience (who's invited)?
+function meetingInAudience(post, user) {
+  return post.ackEveryone
+    ? !isAckExempt(user)
+    : (post.ackTitles || []).some((t) =>
+        (user.title || "").toLowerCase().includes(t.toLowerCase()),
+      ) || (post.ackUserIds || []).includes(user.id);
+}
+
+// a meeting response (going or cant make it) also records the acknowledgment,
+// so a meeting that requires ack is satisfied by responding.
+async function markMeetingAck(postId, user, requireAck) {
+  if (requireAck && !isAckExempt(user)) {
+    await prisma.announcementAck.upsert({
+      where: {
+        announcementId_userId: { announcementId: postId, userId: user.id },
+      },
+      create: { announcementId: postId, userId: user.id, viaEmail: false },
+      update: {},
+    });
+  }
+}
+
+const MEETING_RESPONSE_SELECT = {
+  id: true,
+  deletedAt: true,
+  meetingOptions: true,
+  meetingMultiPick: true,
+  requireAck: true,
+  ackEveryone: true,
+  ackTitles: true,
+  ackUserIds: true,
+};
+
 // pick or unpick a meeting session option. single-pick replaces any prior
 // choice (clicking the same one clears it); multi-pick toggles just that one.
-// only people in the meeting audience may pick.
+// only people in the meeting audience may pick. picking marks them "going"
+// (clears any "cant make it"); unpicking the last one drops the response.
 export async function chooseMeetingOption(postId, optionId) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: {
-      id: true,
-      deletedAt: true,
-      meetingOptions: true,
-      meetingMultiPick: true,
-      ackEveryone: true,
-      ackTitles: true,
-      ackUserIds: true,
-    },
+    select: MEETING_RESPONSE_SELECT,
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
   const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
   if (!opts.some((o) => o && o.id === optionId)) {
     redirect(`/portal/announcements/${postId}`);
   }
-  const inAudience = post.ackEveryone
-    ? !isAckExempt(user)
-    : (post.ackTitles || []).some((t) =>
-        (user.title || "").toLowerCase().includes(t.toLowerCase()),
-      ) || (post.ackUserIds || []).includes(user.id);
-  if (!inAudience) redirect(`/portal/announcements/${postId}`);
+  if (!meetingInAudience(post, user)) redirect(`/portal/announcements/${postId}`);
 
   const key = {
     announcementId_userId_optionId: {
@@ -653,6 +689,132 @@ export async function chooseMeetingOption(postId, optionId) {
       });
     }
   }
+
+  // sync the response: going if any pick remains, otherwise back to no-response.
+  const respKey = {
+    announcementId_userId: { announcementId: postId, userId: user.id },
+  };
+  const remaining = await prisma.announcementMeetingChoice.count({
+    where: { announcementId: postId, userId: user.id },
+  });
+  if (remaining > 0) {
+    await prisma.announcementMeetingResponse.upsert({
+      where: respKey,
+      create: { announcementId: postId, userId: user.id, cantMakeIt: false },
+      update: { cantMakeIt: false, reason: null },
+    });
+    await markMeetingAck(postId, user, post.requireAck);
+  } else {
+    await prisma.announcementMeetingResponse.deleteMany({
+      where: { announcementId: postId, userId: user.id },
+    });
+  }
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// single-session "I'll be there" toggle (no session options to pick). sets the
+// response to going, or clears it if they were already going.
+export async function attendMeeting(postId) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: MEETING_RESPONSE_SELECT,
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (!meetingInAudience(post, user)) redirect(`/portal/announcements/${postId}`);
+  const respKey = {
+    announcementId_userId: { announcementId: postId, userId: user.id },
+  };
+  const existing = await prisma.announcementMeetingResponse.findUnique({
+    where: respKey,
+  });
+  if (existing && !existing.cantMakeIt) {
+    await prisma.announcementMeetingResponse.delete({ where: respKey });
+  } else {
+    await prisma.announcementMeetingResponse.upsert({
+      where: respKey,
+      create: { announcementId: postId, userId: user.id, cantMakeIt: false },
+      update: { cantMakeIt: false, reason: null },
+    });
+    await markMeetingAck(postId, user, post.requireAck);
+  }
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// "I can't make it / can't make any of these" + an optional reason. clears any
+// session picks and marks the response as cant make it.
+export async function cantMakeMeeting(postId, formData) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: MEETING_RESPONSE_SELECT,
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (!meetingInAudience(post, user)) redirect(`/portal/announcements/${postId}`);
+  const reason =
+    (formData.get("reason") || "").toString().trim().slice(0, 300) || null;
+  await prisma.announcementMeetingChoice.deleteMany({
+    where: { announcementId: postId, userId: user.id },
+  });
+  await prisma.announcementMeetingResponse.upsert({
+    where: {
+      announcementId_userId: { announcementId: postId, userId: user.id },
+    },
+    create: { announcementId: postId, userId: user.id, cantMakeIt: true, reason },
+    update: { cantMakeIt: true, reason },
+  });
+  await markMeetingAck(postId, user, post.requireAck);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// add / update the Zoom link + passcode on an existing meeting (e.g. it was
+// created "link provided later"). author or a moderator. adding a link clears
+// the "provided later" flag; clearing the link leaves that flag as-is.
+export async function setMeetingLink(postId, formData) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true, deletedAt: true, meetingFormat: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (post.authorId !== user.id && !isModerator(user.role)) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  if (!formatHasOnline(post.meetingFormat)) {
+    redirect(`/portal/announcements/${postId}`);
+  }
+  const link =
+    (formData.get("zoomLink") || "").toString().trim().slice(0, 500) || null;
+  const code =
+    (formData.get("zoomCode") || "").toString().trim().slice(0, 60) || null;
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: { zoomLink: link, zoomCode: code, ...(link ? { zoomLinkTbd: false } : {}) },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// roll-call (Phase B): mark a going attendee present / absent, or clear it.
+// Supervisor+ or the author. only touches "going" responses.
+export async function setAttendance(postId, userId, status) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true, deletedAt: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (!isSupervisorUp(user.role) && post.authorId !== user.id) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  const value = status === "present" || status === "absent" ? status : null;
+  await prisma.announcementMeetingResponse.updateMany({
+    where: { announcementId: postId, userId, cantMakeIt: false },
+    data: { attended: value },
+  });
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
 }
