@@ -782,7 +782,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                             <p className="text-sm font-medium text-foreground">
                               {s.label}{" "}
                               <span className="text-xs text-muted">
-                                · {s.users.length} can&apos;t attend
+                                {`· ${s.users.length} can't attend`}
                               </span>
                             </p>
                             {s.users.map((u) => (
