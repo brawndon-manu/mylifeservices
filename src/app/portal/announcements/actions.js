@@ -25,6 +25,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import {
   buildAnnouncementEmailHtml,
   buildMeetingBlockHtml,
+  postButton,
   EMAIL_TZ,
 } from "@/lib/announcement-email";
 import {
@@ -1126,6 +1127,11 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
   const authorName = preferredName(post.author);
   const authorTitle = post.author?.title || null;
   const meetingHtml = buildMeetingBlockHtml(post);
+  // button straight to the post so they can respond / read it in the portal.
+  const ctaHtml = postButton(
+    `${base}/portal/announcements/${post.id}`,
+    isCompanyMeeting(post.tag) ? "Respond now" : "Go to the announcement",
+  );
 
   const messages = recipients.map((r) => {
     const ackUrl = post.requireAck
@@ -1141,6 +1147,7 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
       bodyHtml,
       ackUrl,
       meetingHtml,
+      ctaHtml,
     });
     const firstName = firstNameOf(r) || "there";
     const text =

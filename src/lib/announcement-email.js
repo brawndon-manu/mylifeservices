@@ -58,6 +58,12 @@ export function seeOriginalButton(url) {
   return `<div style="margin-top:18px;"><a href="${url}" style="${BTN_GHOST}">See original post</a></div>`;
 }
 
+// a primary button linking to the announcement (e.g. "Respond now" for a meeting,
+// "Go to the announcement" otherwise) so recipients can open the post directly.
+export function postButton(url, label = "Go to the announcement") {
+  return `<div style="margin-top:22px;"><a href="${url}" style="${BTN}">${esc(label)}</a></div>`;
+}
+
 // meeting access block: the time (a specific `session` if given - so a reminder
 // shows only the session that person chose; else the single meeting time; else
 // the full list to pick from), a Join button, the link + passcode, the address.
