@@ -17,6 +17,7 @@ import {
   buildMeetingBlockHtml,
   buildAuthorNudgeHtml,
   buildResponseNoticeHtml,
+  seeOriginalButton,
 } from "@/lib/announcement-email";
 
 export const dynamic = "force-dynamic";
@@ -130,12 +131,15 @@ export async function GET(request) {
     });
   };
 
-  // one reminder email to a session's going attendees (subject differs by kind).
-  const sendSessionReminder = async (m, optionId, hasOptions, subject) => {
+  // one reminder email to a session's going attendees. `session` is the option
+  // that person chose (null for a single-session meeting), so the email shows
+  // only their session's time. carries a "See original post" button.
+  const sendSessionReminder = async (m, optionId, hasOptions, subject, eyebrow, session) => {
     const recipients = await goingRecipients(m, optionId, hasOptions);
     if (!recipients.length) return;
     const bodyHtml = renderMarkdown(m.content);
-    const meetingHtml = buildMeetingBlockHtml(m);
+    const meetingHtml = buildMeetingBlockHtml(m, session);
+    const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${m.id}`);
     const dateStr = new Date(m.createdAt).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
@@ -151,10 +155,12 @@ export async function GET(request) {
         authorName: "My Life Services",
         authorTitle: null,
         dateStr,
+        eyebrow,
         requireAck: false,
         bodyHtml,
         ackUrl: null,
         meetingHtml,
+        ctaHtml,
       }),
       text: `${subject}. ${m.zoomLink || ""}`,
     }));
@@ -180,20 +186,19 @@ export async function GET(request) {
     // session reminders: "soon" (lead-min before) + optional "night" (8pm prior)
     const sent = new Set(m.meetingReminders.map((r) => `${r.kind}:${r.optionId}`));
     const sessions = opts.length
-      ? opts.filter((o) => o.at).map((o) => ({ optionId: o.id, at: new Date(o.at), tz: o.tz || defTz }))
+      ? opts.filter((o) => o.at).map((o) => ({ optionId: o.id, at: new Date(o.at), tz: o.tz || defTz, opt: o }))
       : m.meetingAt
-        ? [{ optionId: "", at: new Date(m.meetingAt), tz: defTz }]
+        ? [{ optionId: "", at: new Date(m.meetingAt), tz: defTz, opt: null }]
         : [];
+    const title = m.title || "Company meeting";
     for (const s of sessions) {
       // starting-soon (confirmation)
       if (!sent.has(`soon:${s.optionId}`)) {
         const remindAt = s.at.getTime() - lead;
         if (now.getTime() >= remindAt && now.getTime() <= s.at.getTime() + GRACE_MS) {
           await sendSessionReminder(
-            m,
-            s.optionId,
-            opts.length > 0,
-            `Coming up - you're confirmed: ${m.title || "Company meeting"}`,
+            m, s.optionId, opts.length > 0,
+            `Coming up - you're confirmed: ${title}`, "Reminder", s.opt,
           );
           await prisma.announcementMeetingReminder
             .create({ data: { announcementId: m.id, optionId: s.optionId, kind: "soon" } })
@@ -208,10 +213,8 @@ export async function GET(request) {
         const sessDate = instantToZoned(s.at.toISOString(), s.tz).date;
         if (nightAt && now.getTime() >= nightAt && nowDate < sessDate) {
           await sendSessionReminder(
-            m,
-            s.optionId,
-            opts.length > 0,
-            `Meeting tomorrow: ${m.title || "Company meeting"}`,
+            m, s.optionId, opts.length > 0,
+            `Meeting tomorrow: ${title}`, "Tomorrow", s.opt,
           );
           await prisma.announcementMeetingReminder
             .create({ data: { announcementId: m.id, optionId: s.optionId, kind: "night" } })
@@ -238,6 +241,7 @@ export async function GET(request) {
                 ? `Confirm your Zoom link: ${m.title}`
                 : `Add the Zoom link: ${m.title}`,
               html: buildAuthorNudgeHtml({
+                logoUrl,
                 title: m.title,
                 editUrl,
                 zoomLink: m.zoomLink,
@@ -275,6 +279,7 @@ export async function GET(request) {
           to: [u.email],
           subject: `Second notice: ${m.title}`,
           html: buildResponseNoticeHtml({
+            logoUrl,
             firstName: firstNameOf(u) || "there",
             title: m.title,
             url: link,
