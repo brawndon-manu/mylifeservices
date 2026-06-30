@@ -828,11 +828,16 @@ export async function setMeetingChoices(postId, formData) {
   };
   // attending at least one real date = going; only can't-attend picks = can't make it.
   const realPicks = ids.filter((id) => !isCant(id));
+  // a reason only applies when they declined at least one series.
+  const hasCant = ids.some(isCant);
+  const reason = hasCant
+    ? (formData.get("reason") || "").toString().trim().slice(0, 300) || null
+    : null;
   if (ids.length > 0) {
     await prisma.announcementMeetingResponse.upsert({
       where: respKey,
-      create: { announcementId: postId, userId: user.id, cantMakeIt: realPicks.length === 0 },
-      update: { cantMakeIt: realPicks.length === 0, reason: null },
+      create: { announcementId: postId, userId: user.id, cantMakeIt: realPicks.length === 0, reason },
+      update: { cantMakeIt: realPicks.length === 0, reason },
     });
     await markMeetingAck(postId, user, post.requireAck);
   } else {

@@ -341,13 +341,14 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         audIds.has(c.userId)
       ) {
         const sid = c.optionId.slice(5);
-        (seriesCantMap[sid] ||= []).push(userById.get(c.userId));
+        const u = userById.get(c.userId);
+        if (u) (seriesCantMap[sid] ||= []).push({ ...u, reason: respByUser.get(c.userId)?.reason || null });
       }
     }
     const seriesCantList = Object.entries(seriesCantMap)
       .map(([sid, users]) => ({
         label: meetingOptions.find((o) => o.seriesId === sid)?.seriesLabel || "Series",
-        users: users.filter(Boolean),
+        users,
       }))
       .filter((x) => x.users.length);
 
@@ -785,7 +786,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                               </span>
                             </p>
                             {s.users.map((u) => (
-                              <PersonRow key={u.id} user={u} />
+                              <PersonRow key={u.id} user={u} reason={u.reason} />
                             ))}
                           </div>
                         ))}

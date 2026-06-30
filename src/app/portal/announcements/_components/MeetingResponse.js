@@ -95,6 +95,7 @@ export default function MeetingResponse({
   const [selected, setSelected] = useState(new Set(myPicks));
   // start in edit mode only when there's no response yet.
   const [editing, setEditing] = useState(!isGoing && !cantMakeIt);
+  const [reason, setReason] = useState(myResponse?.reason || "");
 
   const linkFor = (opt) => opt?.zoomLink || defaultLink;
   const codeFor = (opt) => opt?.zoomCode || defaultCode;
@@ -130,6 +131,19 @@ export default function MeetingResponse({
   const seriesValue = (g) =>
     g.options.find((o) => selected.has(o.id))?.id ||
     (selected.has(cantId(g.id)) ? cantId(g.id) : null);
+
+  // toggle "can't attend" for a series from the consolidated dropdown.
+  const toggleCant = (seriesId) => {
+    setSelected((prev) => {
+      const cid = cantId(seriesId);
+      const had = prev.has(cid);
+      const next = new Set();
+      for (const id of prev) if (seriesOf(id) !== seriesId) next.add(id);
+      if (!had) next.add(cid);
+      return next;
+    });
+  };
+  const anyCant = isSeries && seriesGroups.some((g) => selected.has(cantId(g.id)));
 
   // a series is "decided" once a date OR can't-attend is chosen for it.
   const seriesPicked = isSeries ? seriesGroups.filter((g) => seriesValue(g)).length : 0;
@@ -224,6 +238,9 @@ export default function MeetingResponse({
                       </div>
                     );
                   })}
+                  {myResponse?.reason && (
+                    <p className="mt-2 text-xs text-muted">“{myResponse.reason}”</p>
+                  )}
                 </>
               ) : (
                 <>
@@ -330,29 +347,14 @@ export default function MeetingResponse({
                             pick one
                           </span>
                         )}
+                        {cantSel && (
+                          <span className="ml-2 font-normal normal-case text-rose-600 dark:text-rose-400">
+                            can&apos;t attend
+                          </span>
+                        )}
                       </p>
                       <div className="space-y-2">
                         {g.options.map((opt) => optBtn(opt, () => pickInSeries(g.id, opt.id)))}
-                        <button
-                          type="button"
-                          onClick={() => pickInSeries(g.id, cantId(g.id))}
-                          className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                            cantSel
-                              ? "border-rose-400 bg-rose-50 dark:bg-rose-950/30"
-                              : "border-border hover:border-rose-300"
-                          }`}
-                        >
-                          <span
-                            className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
-                              cantSel ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
-                            }`}
-                          >
-                            {cantSel && <Check className="h-3 w-3" />}
-                          </span>
-                          <span className="text-sm font-medium text-foreground">
-                            I can&apos;t attend this series
-                          </span>
-                        </button>
                       </div>
                     </div>
                   );
@@ -362,10 +364,51 @@ export default function MeetingResponse({
               options.map((opt) => optBtn(opt))
             )}
 
+            {/* series: one "can't attend one or more" control - check the series you
+                can't make, plus a reason. (replaces a per-series button.) */}
+            {isSeries && (
+              <details className="rounded-lg border border-border" open={anyCant || undefined}>
+                <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
+                  <span
+                    className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                      anyCant ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
+                    }`}
+                  >
+                    {anyCant && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="font-medium text-foreground">
+                    I can&apos;t attend one or more of these
+                  </span>
+                </summary>
+                <div className="space-y-2 px-3 pb-3">
+                  <p className="text-xs text-muted">Check the series you can&apos;t attend.</p>
+                  {seriesGroups.map((g) => (
+                    <label key={g.id} className="flex items-center gap-2 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(cantId(g.id))}
+                        onChange={() => toggleCant(g.id)}
+                        className="h-4 w-4 accent-rose-500"
+                      />
+                      {g.label}
+                    </label>
+                  ))}
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={2}
+                    placeholder="Reason (optional) - e.g. I'm on PTO that week"
+                    className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  />
+                </div>
+              </details>
+            )}
+
             <form action={setChoices.bind(null, postId)} className="flex flex-wrap items-center gap-3 pt-1">
               {[...selected].map((id) => (
                 <input key={id} type="hidden" name="optionId" value={id} />
               ))}
+              {isSeries && <input type="hidden" name="reason" value={reason} />}
               <button
                 type="submit"
                 disabled={confirmDisabled}
@@ -387,6 +430,7 @@ export default function MeetingResponse({
                   type="button"
                   onClick={() => {
                     setSelected(new Set(myPicks));
+                    setReason(myResponse?.reason || "");
                     setEditing(false);
                   }}
                   className="text-xs font-medium text-muted transition hover:text-foreground"
@@ -417,7 +461,9 @@ export default function MeetingResponse({
           </form>
         )}
 
-        {/* can't make it / can't make any */}
+        {/* can't make it / can't make any - flat lists only (series uses the
+            "can't attend one or more" control above) */}
+        {!isSeries && (
         <details className="rounded-lg border border-border" open={cantMakeIt || undefined}>
           <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
             <span
@@ -447,6 +493,7 @@ export default function MeetingResponse({
             </button>
           </form>
         </details>
+        )}
       </div>
 
       <p className="mt-2 text-xs text-faint">
