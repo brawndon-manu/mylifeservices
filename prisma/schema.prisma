@@ -325,6 +325,10 @@ model Announcement {
   pinnedById String?
   editedAt   DateTime?
   deletedAt  DateTime?
+  // null = draft: created via "Preview", not shown in the feed, no emails sent.
+  // set to now() on Publish. existing rows are backfilled to createdAt so nothing
+  // already posted disappears.
+  publishedAt DateTime?
   // when true, staff get an "I read this" box and management gets a
   // who-has/who-hasnt roster. opt-in per announcement (see requireAck box
   // on the form). plain posts leave it false.
