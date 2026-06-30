@@ -83,6 +83,7 @@ export async function GET(request) {
       title: true,
       content: true,
       createdAt: true,
+      tag: true,
       meetingFormat: true,
       zoomLink: true,
       zoomCode: true,
@@ -140,11 +141,18 @@ export async function GET(request) {
     const bodyHtml = renderMarkdown(m.content);
     const meetingHtml = buildMeetingBlockHtml(m, session);
     const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${m.id}`);
-    const dateStr = new Date(m.createdAt).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    // header date = the meeting date (in the session's zone), not the post date.
+    const sessIso = session?.at || (m.meetingAt instanceof Date ? m.meetingAt.toISOString() : m.meetingAt);
+    const sessTz = session?.tz || m.meetingTimezone || "America/Los_Angeles";
+    const dateStr = sessIso
+      ? new Date(sessIso).toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          timeZone: sessTz,
+        })
+      : "";
     const messages = recipients.map((r) => ({
       from,
       to: [r.email],
