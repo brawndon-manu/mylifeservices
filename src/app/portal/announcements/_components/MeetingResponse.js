@@ -72,7 +72,10 @@ export default function MeetingResponse({
 }) {
   const hasSessions = options.length > 0;
   const cantMakeIt = !!myResponse?.cantMakeIt;
-  const goingPicks = hasSessions ? myPicks : myResponse && !cantMakeIt ? ["_single"] : [];
+  // a "cant:<seriesId>" pick = can't attend that series. real picks = actual dates.
+  const isCantPick = (id) => String(id).startsWith("cant:");
+  const myRealPicks = myPicks.filter((id) => !isCantPick(id));
+  const goingPicks = hasSessions ? myRealPicks : myResponse && !cantMakeIt ? ["_single"] : [];
   const isGoing = goingPicks.length > 0 && !cantMakeIt;
 
   // series mode: options grouped by seriesId; the attendee picks one per series.
@@ -96,19 +99,24 @@ export default function MeetingResponse({
   const linkFor = (opt) => opt?.zoomLink || defaultLink;
   const codeFor = (opt) => opt?.zoomCode || defaultCode;
 
+  const cantId = (sid) => `cant:${sid}`;
+  const seriesOf = (id) =>
+    isCantPick(id) ? id.slice(5) : options.find((o) => o.id === id)?.seriesId;
+
+  // each series holds ONE value - a date optionId or its cant:<seriesId>. picking
+  // replaces any other selection in that series (so you can attend some series and
+  // mark others can't-attend).
+  const pickInSeries = (seriesId, value) => {
+    setSelected((prev) => {
+      const next = new Set();
+      for (const id of prev) if (seriesOf(id) !== seriesId) next.add(id);
+      next.add(value);
+      return next;
+    });
+  };
+
   const toggle = (id) => {
     setSelected((prev) => {
-      if (isSeries) {
-        // one pick per series: drop any other pick in this option's series.
-        const opt = options.find((o) => o.id === id);
-        const next = new Set(prev);
-        for (const oid of prev) {
-          const oo = options.find((o) => o.id === oid);
-          if (oo && oo.seriesId === opt?.seriesId) next.delete(oid);
-        }
-        next.add(id);
-        return next;
-      }
       if (multiPick) {
         const next = new Set(prev);
         next.has(id) ? next.delete(id) : next.add(id);
@@ -118,22 +126,29 @@ export default function MeetingResponse({
     });
   };
 
-  // for the picker: how many series have a pick, and is every series covered.
-  const seriesPicked = isSeries
-    ? seriesGroups.filter((g) => g.options.some((o) => selected.has(o.id))).length
-    : 0;
+  // the chosen value within a series (date id, cant: id, or null).
+  const seriesValue = (g) =>
+    g.options.find((o) => selected.has(o.id))?.id ||
+    (selected.has(cantId(g.id)) ? cantId(g.id) : null);
+
+  // a series is "decided" once a date OR can't-attend is chosen for it.
+  const seriesPicked = isSeries ? seriesGroups.filter((g) => seriesValue(g)).length : 0;
   const allSeriesPicked = isSeries && seriesPicked === seriesGroups.length;
   const confirmDisabled = isSeries ? !allSeriesPicked : selected.size === 0;
+  // the "can't make any of these" bubble shows filled only while it's actually the
+  // active choice - the moment you pick a session/series option it clears.
+  const cantActive = cantMakeIt && selected.size === 0;
 
   // one selectable option button (radio for single/series, checkbox for multi).
-  const optBtn = (opt) => {
+  // `onPick` overrides the default toggle (series rows pick within their series).
+  const optBtn = (opt, onPick) => {
     const on = selected.has(opt.id);
     const square = multiPick && !isSeries;
     return (
       <button
         key={opt.id}
         type="button"
-        onClick={() => toggle(opt.id)}
+        onClick={onPick || (() => toggle(opt.id))}
         className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
           on ? "border-brand bg-sky-50 dark:bg-sky-950/30" : "border-border hover:border-brand-light"
         }`}
@@ -171,36 +186,73 @@ export default function MeetingResponse({
               <Check className="h-3.5 w-3.5" />
             </span>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-foreground">
-                You&apos;re attending
-                {picked.length > 1 ? ` ${picked.length} ${isSeries ? "dates" : "sessions"}` : ""}
-              </p>
-              {picked.map((o) => (
-                <div key={o.id} className="mt-2">
-                  {o.seriesLabel && (
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      {o.seriesLabel}
-                    </p>
-                  )}
-                  <p className="text-sm font-medium text-foreground">{o.label}</p>
-                  {o.at && (
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
-                      <MeetingTime iso={o.at} setTz={o.tz} />
-                      {formatDuration(o.durationFromMin, o.durationToMin) && (
-                        <span>· {formatDuration(o.durationFromMin, o.durationToMin)}</span>
+              {isSeries ? (
+                <>
+                  <p className="text-sm font-semibold text-foreground">Your response</p>
+                  {seriesGroups.map((g) => {
+                    const o = g.options.find((x) => myPicks.includes(x.id));
+                    return (
+                      <div key={g.id} className="mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                          {g.label}
+                        </p>
+                        {o ? (
+                          <>
+                            <p className="text-sm font-medium text-foreground">{o.label}</p>
+                            {o.at && (
+                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                                <MeetingTime iso={o.at} setTz={o.tz} />
+                                {formatDuration(o.durationFromMin, o.durationToMin) && (
+                                  <span>· {formatDuration(o.durationFromMin, o.durationToMin)}</span>
+                                )}
+                              </p>
+                            )}
+                            {online &&
+                              (isAdmin ? (
+                                <JoinRow link={linkFor(o)} code={codeFor(o)} />
+                              ) : (
+                                <p className="mt-2 text-xs font-medium text-muted">
+                                  Link will be provided soon!
+                                </p>
+                              ))}
+                          </>
+                        ) : (
+                          <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                            Can&apos;t attend
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-foreground">
+                    You&apos;re attending{picked.length > 1 ? ` ${picked.length} sessions` : ""}
+                  </p>
+                  {picked.map((o) => (
+                    <div key={o.id} className="mt-2">
+                      <p className="text-sm font-medium text-foreground">{o.label}</p>
+                      {o.at && (
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                          <MeetingTime iso={o.at} setTz={o.tz} />
+                          {formatDuration(o.durationFromMin, o.durationToMin) && (
+                            <span>· {formatDuration(o.durationFromMin, o.durationToMin)}</span>
+                          )}
+                        </p>
                       )}
-                    </p>
-                  )}
-                  {online &&
-                    (isAdmin ? (
-                      <JoinRow link={linkFor(o)} code={codeFor(o)} />
-                    ) : (
-                      <p className="mt-2 text-xs font-medium text-muted">
-                        Link will be provided soon!
-                      </p>
-                    ))}
-                </div>
-              ))}
+                      {online &&
+                        (isAdmin ? (
+                          <JoinRow link={linkFor(o)} code={codeFor(o)} />
+                        ) : (
+                          <p className="mt-2 text-xs font-medium text-muted">
+                            Link will be provided soon!
+                          </p>
+                        ))}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
             <button
               type="button"
@@ -267,18 +319,41 @@ export default function MeetingResponse({
             {isSeries ? (
               <div className="space-y-3">
                 {seriesGroups.map((g) => {
-                  const done = g.options.some((o) => selected.has(o.id));
+                  const val = seriesValue(g);
+                  const cantSel = val === cantId(g.id);
                   return (
                     <div key={g.id} className="rounded-lg border border-border p-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                         {g.label}
-                        {!done && (
+                        {!val && (
                           <span className="ml-2 font-normal normal-case text-amber-600 dark:text-amber-400">
                             pick one
                           </span>
                         )}
                       </p>
-                      <div className="space-y-2">{g.options.map((opt) => optBtn(opt))}</div>
+                      <div className="space-y-2">
+                        {g.options.map((opt) => optBtn(opt, () => pickInSeries(g.id, opt.id)))}
+                        <button
+                          type="button"
+                          onClick={() => pickInSeries(g.id, cantId(g.id))}
+                          className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                            cantSel
+                              ? "border-rose-400 bg-rose-50 dark:bg-rose-950/30"
+                              : "border-border hover:border-rose-300"
+                          }`}
+                        >
+                          <span
+                            className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                              cantSel ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
+                            }`}
+                          >
+                            {cantSel && <Check className="h-3 w-3" />}
+                          </span>
+                          <span className="text-sm font-medium text-foreground">
+                            I can&apos;t attend this series
+                          </span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -345,7 +420,13 @@ export default function MeetingResponse({
         {/* can't make it / can't make any */}
         <details className="rounded-lg border border-border" open={cantMakeIt || undefined}>
           <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
-            <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 border-border-strong" />
+            <span
+              className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                cantActive ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
+              }`}
+            >
+              {cantActive && <Check className="h-3 w-3" />}
+            </span>
             <span className="font-medium text-foreground">
               {hasSessions && options.length > 1 ? "I can't make any of these" : "I can't make it"}
             </span>

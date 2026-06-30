@@ -332,11 +332,31 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       .map((u) => ({ ...u, reason: respByUser.get(u.id).reason }));
     const noResponse = audienceUsers.filter((u) => !respByUser.has(u.id));
 
+    // per-series "can't attend this series" picks (series meetings only).
+    const seriesCantMap = {};
+    for (const c of choices) {
+      if (
+        typeof c.optionId === "string" &&
+        c.optionId.startsWith("cant:") &&
+        audIds.has(c.userId)
+      ) {
+        const sid = c.optionId.slice(5);
+        (seriesCantMap[sid] ||= []).push(userById.get(c.userId));
+      }
+    }
+    const seriesCantList = Object.entries(seriesCantMap)
+      .map(([sid, users]) => ({
+        label: meetingOptions.find((o) => o.seriesId === sid)?.seriesLabel || "Series",
+        users: users.filter(Boolean),
+      }))
+      .filter((x) => x.users.length);
+
     meetingRoster = {
       bySession,
       singleGoing,
       cantUsers,
       noResponse,
+      seriesCantList,
       goingCount: audienceUsers.filter((u) => isGoing(u.id)).length,
       total: audienceUsers.length,
       responded: respByUser.size,
@@ -746,6 +766,28 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         </p>
                         {meetingRoster.cantUsers.map((u) => (
                           <PersonRow key={u.id} user={u} reason={u.reason} />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Can't attend specific series (partial declines) */}
+                    {meetingRoster.seriesCantList?.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                          Can&apos;t attend a series
+                        </p>
+                        {meetingRoster.seriesCantList.map((s) => (
+                          <div key={s.label} className="mt-2">
+                            <p className="text-sm font-medium text-foreground">
+                              {s.label}{" "}
+                              <span className="text-xs text-muted">
+                                · {s.users.length} can&apos;t attend
+                              </span>
+                            </p>
+                            {s.users.map((u) => (
+                              <PersonRow key={u.id} user={u} />
+                            ))}
+                          </div>
                         ))}
                       </div>
                     )}

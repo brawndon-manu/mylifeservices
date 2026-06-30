@@ -796,16 +796,19 @@ export async function setMeetingChoices(postId, formData) {
   if (!post || post.deletedAt) redirect("/portal/announcements");
   if (!meetingInAudience(post, user)) redirect(`/portal/announcements/${postId}`);
   const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
-  const valid = new Set(opts.map((o) => o && o.id).filter(Boolean));
+  const optById = new Map(opts.map((o) => [o.id, o]));
   const isSeries = opts.some((o) => o && o.seriesId);
-  let ids = [...new Set(formData.getAll("optionId").map(String))].filter((id) =>
-    valid.has(id),
-  );
+  const seriesIds = new Set(opts.map((o) => o && o.seriesId).filter(Boolean));
+  // valid = real option ids, plus a "cant:<seriesId>" decline per series.
+  const isCant = (id) => String(id).startsWith("cant:");
+  const seriesOf = (id) => (isCant(id) ? id.slice(5) : optById.get(id)?.seriesId);
+  const valid = (id) =>
+    isCant(id) ? seriesIds.has(id.slice(5)) : optById.has(id);
+  let ids = [...new Set(formData.getAll("optionId").map(String))].filter(valid);
   if (isSeries) {
-    // series: exactly one pick per series. keep the last submitted per seriesId.
+    // exactly one decision per series (a date, or can't-attend). last per series.
     const bySeries = new Map();
-    const optById = new Map(opts.map((o) => [o.id, o]));
-    for (const id of ids) bySeries.set(optById.get(id)?.seriesId, id);
+    for (const id of ids) bySeries.set(seriesOf(id), id);
     ids = [...bySeries.values()];
   } else if (!post.meetingMultiPick) {
     ids = ids.slice(0, 1);
@@ -823,11 +826,13 @@ export async function setMeetingChoices(postId, formData) {
   const respKey = {
     announcementId_userId: { announcementId: postId, userId: user.id },
   };
+  // attending at least one real date = going; only can't-attend picks = can't make it.
+  const realPicks = ids.filter((id) => !isCant(id));
   if (ids.length > 0) {
     await prisma.announcementMeetingResponse.upsert({
       where: respKey,
-      create: { announcementId: postId, userId: user.id, cantMakeIt: false },
-      update: { cantMakeIt: false, reason: null },
+      create: { announcementId: postId, userId: user.id, cantMakeIt: realPicks.length === 0 },
+      update: { cantMakeIt: realPicks.length === 0, reason: null },
     });
     await markMeetingAck(postId, user, post.requireAck);
   } else {
