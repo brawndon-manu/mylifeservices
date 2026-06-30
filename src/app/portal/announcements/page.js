@@ -38,7 +38,9 @@ export default async function AnnouncementsPage({ searchParams }) {
   const tagFilter = isValidAnnouncementTag(params?.tag) ? params.tag : null;
   const pinnedOnly = params?.pinned === "1";
 
-  const where = { deletedAt: null };
+  // only published posts in the feed - drafts (publishedAt null) live in preview
+  // until the author publishes them.
+  const where = { deletedAt: null, publishedAt: { not: null } };
   const cutoff = windowCutoff(windowVal);
   if (cutoff) {
     where.createdAt = { gte: cutoff };

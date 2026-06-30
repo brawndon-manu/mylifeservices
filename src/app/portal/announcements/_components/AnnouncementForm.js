@@ -15,7 +15,6 @@ import {
   isCompanyMeeting,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
-import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import AudiencePicker from "./AudiencePicker";
 import MeetingFields from "./MeetingFields";
 
@@ -79,6 +78,7 @@ function MarkdownField({ value, onChange, rows, maxLength, placeholder }) {
 export default function AnnouncementForm({
   action,
   mode = "create",
+  isDraft = false,
   defaults = {},
   tags,
   canProxy = false,
@@ -87,28 +87,17 @@ export default function AnnouncementForm({
   meId,
   meName,
   ackStaffByTitle = {},
-  emailStaffByTitle = {},
   ackEveryoneTotal = null,
-  emailEveryoneTotal = null,
   cancelHref = "/portal/announcements",
-  submitLabel = "Post",
+  submitLabel = "Preview",
 }) {
   const d = defaults;
   const [tag, setTag] = useState(d.tag || tags[0] || "Announcement");
   const changelog = isChangelog(tag);
   const meeting = isCompanyMeeting(tag);
   const [requireAck, setRequireAck] = useState(!!d.requireAck);
-  const [sendEmail, setSendEmail] = useState(false);
   const [content, setContent] = useState(d.content || "");
   const onContent = (e) => setContent(e.target.value);
-
-  // does an audience picker show above the email section? (ack on, or a meeting)
-  const hasAudienceAbove = requireAck || meeting;
-  // when there's an audience above, default the email to "same as above".
-  const [emailSameAsAck, setEmailSameAsAck] = useState(true);
-  // the Owner/Director isn't in the ack audience; offer to add them to the email.
-  const director = (emailStaffByTitle?.[ACK_EXEMPT_TITLE] || [])[0];
-  const [includeDirector, setIncludeDirector] = useState(false);
 
   return (
     <form action={action} className="space-y-6">
@@ -143,13 +132,13 @@ export default function AnnouncementForm({
         </div>
       </fieldset>
 
-      {/* proxy "post as" - elevated only, create only */}
-      {canProxy && mode === "create" && (
+      {/* proxy "post as" - elevated only; on create or while still a draft */}
+      {canProxy && (mode === "create" || isDraft) && (
         <div>
           <label htmlFor="postAs" className={LABEL}>
             Post as <span className="text-faint">(IT / admin)</span>
           </label>
-          <select id="postAs" name="postAs" defaultValue={meId} className={INPUT}>
+          <select id="postAs" name="postAs" defaultValue={d.authorId || meId} className={INPUT}>
             <option value={meId}>Myself ({meName})</option>
             {people
               .filter((p) => p.id !== meId)
@@ -243,7 +232,7 @@ export default function AnnouncementForm({
                 userIdsName="ackUserIds"
                 staffByTitle={ackStaffByTitle}
                 everyoneTotal={ackEveryoneTotal}
-                defaultEveryone={d.ackEveryone !== false}
+                defaultEveryone={d.ackEveryone === true}
                 defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
                 defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
               />
@@ -332,88 +321,10 @@ export default function AnnouncementForm({
         )}
 
         {mode === "create" && (
-          <label className="mt-3 flex items-start gap-3 border-t border-border pt-3">
-            <input
-              type="checkbox"
-              name="sendEmail"
-              checked={sendEmail}
-              onChange={(e) => setSendEmail(e.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-brand"
-            />
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                Also send as an email now
-              </span>
-              <span className="mt-0.5 block text-xs text-muted">
-                Emails this announcement (from announcements@mylifeservicesinc.com)
-                when you post it.
-              </span>
-            </span>
-          </label>
-        )}
-
-        {mode === "create" && sendEmail && (
-          <div className="mt-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-              Who gets the email?
-            </p>
-
-            {hasAudienceAbove && (
-              <div className="mb-2 space-y-1.5">
-                <label className="flex items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="radio"
-                    name="emailAudienceMode"
-                    checked={emailSameAsAck}
-                    onChange={() => setEmailSameAsAck(true)}
-                    className="h-4 w-4 accent-brand"
-                  />
-                  Same as {meeting ? "who's invited" : "who needs to acknowledge"} above
-                </label>
-                <label className="flex items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="radio"
-                    name="emailAudienceMode"
-                    checked={!emailSameAsAck}
-                    onChange={() => setEmailSameAsAck(false)}
-                    className="h-4 w-4 accent-brand"
-                  />
-                  A different group
-                </label>
-              </div>
-            )}
-
-            {hasAudienceAbove && emailSameAsAck ? (
-              // the action reuses the ack/invite audience for the email; just
-              // flag it, plus an optional add for the Program Director.
-              <>
-                <input type="hidden" name="emailSameAsAck" value="on" />
-                {director && (
-                  <label className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-foreground">
-                    <input
-                      type="checkbox"
-                      name="emailIncludeDirector"
-                      checked={includeDirector}
-                      onChange={(e) => setIncludeDirector(e.target.checked)}
-                      className="h-4 w-4 accent-brand"
-                    />
-                    Also include {director.name} (Program Director)
-                  </label>
-                )}
-              </>
-            ) : (
-              <AudiencePicker
-                everyoneName="emailEveryone"
-                titlesName="emailTitles"
-                userIdsName="emailUserIds"
-                staffByTitle={emailStaffByTitle}
-                everyoneTotal={emailEveryoneTotal}
-                defaultEveryone={false}
-                defaultTitles={[]}
-                defaultUserIds={[]}
-              />
-            )}
-          </div>
+          <p className="mt-3 border-t border-border pt-3 text-xs text-muted">
+            You&apos;ll choose who gets emailed when you publish - the next screen
+            previews the post first, then lets you publish and send.
+          </p>
         )}
       </div>
 

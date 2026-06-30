@@ -6,7 +6,7 @@
 // multiple sessions" is on, each session carries its OWN time block + an
 // editable name (default "Session N"), serialized to a hidden meetingOptions
 // JSON field. otherwise the single meeting's time is emitted as hidden fields.
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   MEETING_KINDS,
   MEETING_FORMATS,
@@ -38,6 +38,81 @@ function PencilIcon() {
 const splitHrs = (min) => (min ? String(Math.floor(min / 60) || "") : "");
 const splitMin = (min) => (min ? String(min % 60 || "") : "");
 
+// loose time entry -> canonical "HH:MM" (24h). accepts "9" -> 09:00, "9am",
+// "230pm", "9:00 AM", "0930", "1430", etc.
+function parseLooseTime(str) {
+  if (!str) return "";
+  let s = String(str).trim().toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
+  let ampm = "";
+  if (s.endsWith("am") || s.endsWith("a")) { ampm = "am"; s = s.replace(/am?$/, ""); }
+  else if (s.endsWith("pm") || s.endsWith("p")) { ampm = "pm"; s = s.replace(/pm?$/, ""); }
+  s = s.replace(/[^\d:]/g, "");
+  let h, min;
+  if (s.includes(":")) {
+    const [hh, mm] = s.split(":");
+    h = parseInt(hh, 10); min = parseInt(mm || "0", 10);
+  } else if (/^\d+$/.test(s)) {
+    if (s.length <= 2) { h = parseInt(s, 10); min = 0; }
+    else if (s.length === 3) { h = parseInt(s.slice(0, 1), 10); min = parseInt(s.slice(1), 10); }
+    else { h = parseInt(s.slice(0, 2), 10); min = parseInt(s.slice(2, 4), 10); }
+  } else {
+    return "";
+  }
+  if (Number.isNaN(h) || Number.isNaN(min)) return "";
+  if (ampm === "pm" && h < 12) h += 12;
+  if (ampm === "am" && h === 12) h = 0;
+  if (h > 23 || min > 59) return "";
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+// "09:00" -> "09:00 AM" (12h with a padded hour, e.g. 09:00 AM / 02:30 PM).
+function formatTimeDisplay(hhmm) {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h)) return "";
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+// a text input for the time that accepts loose entry ("9", "9am", "230pm") and
+// normalizes it on blur/Enter. keeps the canonical "HH:MM" in the parent.
+function TimeField({ value, onChange }) {
+  const [text, setText] = useState(() => formatTimeDisplay(value));
+  const last = useRef(value);
+  useEffect(() => {
+    if (value !== last.current) {
+      last.current = value;
+      setText(formatTimeDisplay(value));
+    }
+  }, [value]);
+  const commit = () => {
+    const parsed = parseLooseTime(text);
+    if (parsed) {
+      last.current = parsed;
+      setText(formatTimeDisplay(parsed));
+      if (parsed !== value) onChange(parsed);
+    } else if (!text.trim() && value) {
+      last.current = "";
+      onChange("");
+    }
+  };
+  return (
+    <input
+      type="text"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className={INPUT}
+    />
+  );
+}
+
 // a blank time block keyed to a timezone.
 const blankTime = (tz) => ({
   date: "",
@@ -51,57 +126,203 @@ const blankTime = (tz) => ({
 
 // the shared date / start time / timezone / duration block (controlled). used
 // for the single meeting AND each session so they look identical.
-function TimeBlock({ value, onChange }) {
+// shared duration hr/min-from-to inputs. `v` has {fromHrs, fromMin, toHrs, toMin}.
+function DurationInputs({ v, set }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
+      <input type="text" inputMode="numeric" value={v.fromHrs} onChange={(e) => set({ fromHrs: e.target.value })} placeholder="0" className={`${INPUT} mt-0 !w-16`} />
+      hr
+      <input type="text" inputMode="numeric" value={v.fromMin} onChange={(e) => set({ fromMin: e.target.value })} placeholder="00" className={`${INPUT} mt-0 !w-16`} />
+      min
+      <span className="px-1 text-faint">to</span>
+      <input type="text" inputMode="numeric" value={v.toHrs} onChange={(e) => set({ toHrs: e.target.value })} placeholder="0" className={`${INPUT} mt-0 !w-16`} />
+      hr
+      <input type="text" inputMode="numeric" value={v.toMin} onChange={(e) => set({ toMin: e.target.value })} placeholder="00" className={`${INPUT} mt-0 !w-16`} />
+      min
+    </div>
+  );
+}
+
+function TimeBlock({ value, onChange, hideTime = false, hideDuration = false }) {
   const set = (patch) => onChange({ ...value, ...patch });
   const instant = zonedToInstant(value.date, value.time, value.tz);
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <div>
+      <div className={hideTime ? "sm:col-span-2" : ""}>
         <label className={LABEL}>Date</label>
         <input type="date" value={value.date} onChange={(e) => set({ date: e.target.value })} className={INPUT} />
       </div>
-      <div>
-        <label className={LABEL}>Start time</label>
-        <input type="time" value={value.time} onChange={(e) => set({ time: e.target.value })} className={INPUT} />
-      </div>
-      <div className="sm:col-span-2">
-        <label className={LABEL}>
-          Time zone <span className="text-faint">(defaults to your device)</span>
-        </label>
-        <select value={value.tz} onChange={(e) => set({ tz: e.target.value })} className={INPUT}>
-          {US_TIMEZONES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-          {!US_TIMEZONES.some((t) => t.value === value.tz) && (
-            <option value={value.tz}>{value.tz}</option>
-          )}
-        </select>
-        {instant && (
-          <p className="mt-1 text-xs text-muted">
-            Saved as one moment - everyone sees it in their own zone. You&apos;d
-            see: {formatInstant(instant, deviceTimezone())}
-          </p>
-        )}
-      </div>
-      <div className="sm:col-span-2">
-        <label className={LABEL}>
-          Duration estimate <span className="text-faint">(optional)</span>
-        </label>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
-          <input type="text" inputMode="numeric" value={value.durFromHrs} onChange={(e) => set({ durFromHrs: e.target.value })} placeholder="0" className={`${INPUT} mt-0 !w-16`} />
-          hr
-          <input type="text" inputMode="numeric" value={value.durFromMin} onChange={(e) => set({ durFromMin: e.target.value })} placeholder="00" className={`${INPUT} mt-0 !w-16`} />
-          min
-          <span className="px-1 text-faint">to</span>
-          <input type="text" inputMode="numeric" value={value.durToHrs} onChange={(e) => set({ durToHrs: e.target.value })} placeholder="0" className={`${INPUT} mt-0 !w-16`} />
-          hr
-          <input type="text" inputMode="numeric" value={value.durToMin} onChange={(e) => set({ durToMin: e.target.value })} placeholder="00" className={`${INPUT} mt-0 !w-16`} />
-          min
+      {!hideTime && (
+        <>
+          <div>
+            <label className={LABEL}>Start time</label>
+            <TimeField value={value.time} onChange={(v) => set({ time: v })} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={LABEL}>
+              Time zone <span className="text-faint">(defaults to your device)</span>
+            </label>
+            <select value={value.tz} onChange={(e) => set({ tz: e.target.value })} className={INPUT}>
+              {US_TIMEZONES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+              {!US_TIMEZONES.some((t) => t.value === value.tz) && (
+                <option value={value.tz}>{value.tz}</option>
+              )}
+            </select>
+            {instant && (
+              <p className="mt-1 text-xs text-muted">
+                Saved as one moment - everyone sees it in their own zone. You&apos;d
+                see: {formatInstant(instant, deviceTimezone())}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+      {!hideDuration && (
+        <div className="sm:col-span-2">
+          <label className={LABEL}>
+            Duration estimate <span className="text-faint">(optional)</span>
+          </label>
+          <DurationInputs
+            v={{ fromHrs: value.durFromHrs, fromMin: value.durFromMin, toHrs: value.durToHrs, toMin: value.durToMin }}
+            set={(p) => {
+              const map = { fromHrs: "durFromHrs", fromMin: "durFromMin", toHrs: "durToHrs", toMin: "durToMin" };
+              const patch = {};
+              for (const k in p) patch[map[k]] = p[k];
+              set(patch);
+            }}
+          />
+          <p className="mt-1 text-xs text-muted">Leave the second pair blank for a single estimate.</p>
         </div>
-        <p className="mt-1 text-xs text-muted">Leave the second pair blank for a single estimate.</p>
+      )}
+    </div>
+  );
+}
+
+// a date string "YYYY-MM-DD" -> "Mon, Jul 9" (date-only label, tz-agnostic).
+function prettyDate(dateStr) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  try {
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "";
+  }
+}
+
+// one date/session card: name (or date caption) + remove, a TimeBlock, and the
+// per-session Zoom link toggle. reused by the flat session list and each series.
+function OptionCard({ o, index, online, onPatch, onRemove, showName = true, namePrefix = "Session", autoName = null, hideTime = false, hideDuration = false }) {
+  return (
+    <div className="rounded-md border border-border bg-surface p-3">
+      <div className="mb-2 flex items-center gap-2">
+        {autoName ? (
+          // auto-numbered (e.g. series sessions): a fixed, non-editable label.
+          <span className="text-sm font-semibold text-foreground">{autoName}</span>
+        ) : showName ? (
+          o.editing ? (
+            <input
+              autoFocus
+              value={o.name}
+              onChange={(e) => onPatch({ name: e.target.value })}
+              onBlur={() => onPatch({ editing: false })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onPatch({ editing: false });
+                }
+              }}
+              placeholder={`${namePrefix} ${index + 1}`}
+              className={`${INPUT} mt-0 !w-52`}
+            />
+          ) : (
+            <>
+              <span className="text-sm font-semibold text-foreground">
+                {o.name || `${namePrefix} ${index + 1}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => onPatch({ editing: true })}
+                aria-label="Rename"
+                className="rounded p-1 text-muted transition hover:bg-surface-3 hover:text-brand"
+              >
+                <PencilIcon />
+              </button>
+            </>
+          )
+        ) : (
+          <span className="text-sm font-semibold text-foreground">
+            {prettyDate(o.date) || `Date ${index + 1}`}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove"
+          className="ml-auto rounded-md px-2 py-1 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+        >
+          ✕
+        </button>
       </div>
+      <TimeBlock value={o} onChange={(v) => onPatch(v)} hideTime={hideTime} hideDuration={hideDuration} />
+      {online && (
+        <div className="mt-3">
+          <span className={LABEL}>Zoom link for this {showName ? "session" : "date"}</span>
+          <div className="mt-1 flex gap-2">
+            {[
+              ["same", "Same Default Link as Above"],
+              ["different", "Different link"],
+            ].map(([val, text]) => {
+              const on = (o.linkMode || "same") === val;
+              return (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => onPatch({ linkMode: val })}
+                  className={`flex flex-1 items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                    on
+                      ? "border-brand bg-sky-50 text-foreground ring-1 ring-brand dark:bg-sky-950/40"
+                      : "border-border-strong text-muted hover:border-brand-light"
+                  }`}
+                >
+                  <span
+                    className={`h-3.5 w-3.5 flex-none rounded-full border-2 ${
+                      on ? "border-brand bg-brand" : "border-border-strong"
+                    }`}
+                  />
+                  {text}
+                </button>
+              );
+            })}
+          </div>
+          {(o.linkMode || "same") === "different" && (
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <input
+                type="url"
+                value={o.zoomLink}
+                onChange={(e) => onPatch({ zoomLink: e.target.value })}
+                placeholder="https://zoom.us/j/..."
+                className={INPUT}
+              />
+              <input
+                type="text"
+                value={o.zoomCode}
+                onChange={(e) => onPatch({ zoomCode: e.target.value })}
+                placeholder="Passcode (optional)"
+                className={INPUT}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -137,11 +358,51 @@ export default function MeetingFields({ defaults = {} }) {
       durFromMin: splitMin(o.durationFromMin),
       durToHrs: splitHrs(o.durationToMin),
       durToMin: splitMin(o.durationToMin),
+      zoomLink: o.zoomLink || "",
+      zoomCode: o.zoomCode || "",
+      linkMode: o.zoomLink ? "different" : "same",
+      seriesId: o.seriesId || null,
+      seriesLabel: o.seriesLabel || "",
       editing: false,
     };
   });
   const [hasOptions, setHasOptions] = useState(presetSessions.length > 0);
   const [options, setOptions] = useState(presetSessions);
+
+  // series mode: sessions grouped into named series; attendees pick one date per
+  // series. inferred from preset options carrying a seriesId.
+  const presetSeries = [];
+  for (const o of presetSessions) {
+    if (o.seriesId && !presetSeries.some((s) => s.id === o.seriesId)) {
+      presetSeries.push({
+        id: o.seriesId,
+        name: o.seriesLabel || `Series ${presetSeries.length + 1}`,
+        editing: false,
+      });
+    }
+  }
+  const [seriesMode, setSeriesMode] = useState(presetSeries.length > 0);
+  const [seriesList, setSeriesList] = useState(presetSeries);
+
+  // "same time / duration for every session" - set once, applied to all. detect
+  // from a preset where every session already shares the same time/tz/duration.
+  const durKey = (o) => `${o.durFromHrs}|${o.durFromMin}|${o.durToHrs}|${o.durToMin}`;
+  const allSameTime =
+    presetSessions.length > 1 &&
+    presetSessions.every((o) => o.time && o.time === presetSessions[0].time && o.tz === presetSessions[0].tz);
+  const presetHasDur = presetSessions[0] && (presetSessions[0].durFromHrs || presetSessions[0].durFromMin);
+  const allSameDur =
+    presetSessions.length > 1 && presetSessions.every((o) => durKey(o) === durKey(presetSessions[0]));
+  const [sameTime, setSameTime] = useState(allSameTime);
+  const [sharedTime, setSharedTime] = useState(allSameTime ? presetSessions[0].time : "");
+  const [sharedTz, setSharedTz] = useState(allSameTime ? presetSessions[0].tz : initTz);
+  const [sameDur, setSameDur] = useState(!!(allSameDur && presetHasDur));
+  const [sharedDur, setSharedDur] = useState({
+    fromHrs: allSameDur ? presetSessions[0].durFromHrs : "",
+    fromMin: allSameDur ? presetSessions[0].durFromMin : "",
+    toHrs: allSameDur ? presetSessions[0].durToHrs : "",
+    toMin: allSameDur ? presetSessions[0].durToMin : "",
+  });
 
   // optional "response needed by" date - stored as end-of-day in the author's
   // zone. (the auto second-notice email that uses it lands in a later phase.)
@@ -159,6 +420,7 @@ export default function MeetingFields({ defaults = {} }) {
       // would hydration-mismatch the server's zone).
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSingle((s) => (s.tz === DEFAULT_TZ ? { ...s, tz } : s));
+      setSharedTz((z) => (z === DEFAULT_TZ ? tz : z));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -167,29 +429,80 @@ export default function MeetingFields({ defaults = {} }) {
   const addr = formatHasAddress(format);
   const singleInstant = !hasOptions ? zonedToInstant(single.date, single.time, single.tz) : null;
 
+  const blankOption = (seriesId = null) => ({
+    id: crypto.randomUUID(),
+    name: "",
+    ...blankTime(deviceTimezone()),
+    zoomLink: "",
+    zoomCode: "",
+    linkMode: "same",
+    seriesId,
+    editing: false,
+  });
   const addSession = () =>
-    setOptions((o) => [
-      ...o,
-      { id: crypto.randomUUID(), name: `Session ${o.length + 1}`, ...blankTime(deviceTimezone()), editing: false },
-    ]);
+    setOptions((o) => [...o, { ...blankOption(), name: `Session ${o.length + 1}` }]);
   const patchSession = (id, patch) =>
     setOptions((o) => o.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const removeSession = (id) => setOptions((o) => o.filter((x) => x.id !== id));
+
+  // series helpers
+  const addSeries = () => {
+    const sid = crypto.randomUUID();
+    setSeriesList((s) => [...s, { id: sid, name: `Series ${s.length + 1}`, editing: false }]);
+    setOptions((o) => [...o, { ...blankOption(sid), name: "Session 1" }]);
+  };
+  const removeSeries = (sid) => {
+    setSeriesList((s) => s.filter((x) => x.id !== sid));
+    setOptions((o) => o.filter((x) => x.seriesId !== sid));
+  };
+  const patchSeries = (sid, patch) =>
+    setSeriesList((s) => s.map((x) => (x.id === sid ? { ...x, ...patch } : x)));
+  const addDate = (sid) =>
+    setOptions((o) => {
+      const n = o.filter((x) => x.seriesId === sid).length + 1;
+      return [...o, { ...blankOption(sid), name: `Session ${n}` }];
+    });
 
   const durMin = (h, m) => {
     const t = (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0);
     return t > 0 ? t : null;
   };
-  // serialize sessions to the stored shape { id, label, at, tz, durationFromMin, durationToMin }.
+  // serialize sessions to the stored shape. in series mode each option carries
+  // its seriesId + seriesLabel, and the label is auto-numbered per series
+  // ("Session 1", "Session 2", ...) by position - so it always restarts at 1 in
+  // each series and renumbers when one is removed.
+  const seriesCounters = {};
   const sessionsJson = JSON.stringify(
-    options.map((o) => ({
-      id: o.id,
-      label: (o.name || "").trim() || "Session",
-      at: zonedToInstant(o.date, o.time, o.tz) || "",
-      tz: o.tz,
-      durationFromMin: durMin(o.durFromHrs, o.durFromMin),
-      durationToMin: durMin(o.durToHrs, o.durToMin),
-    })),
+    options
+      .filter((o) => !seriesMode || o.seriesId)
+      .map((o) => {
+        let label = (o.name || "").trim() || "Session";
+        if (seriesMode && o.seriesId) {
+          seriesCounters[o.seriesId] = (seriesCounters[o.seriesId] || 0) + 1;
+          label = `Session ${seriesCounters[o.seriesId]}`;
+        }
+        // "same for all" overrides each session's own time/tz/duration.
+        const t = sameTime ? sharedTime : o.time;
+        const z = sameTime ? sharedTz : o.tz;
+        const base = {
+          id: o.id,
+          label,
+          at: zonedToInstant(o.date, t, z) || "",
+          tz: z,
+          durationFromMin: sameDur ? durMin(sharedDur.fromHrs, sharedDur.fromMin) : durMin(o.durFromHrs, o.durFromMin),
+          durationToMin: sameDur ? durMin(sharedDur.toHrs, sharedDur.toMin) : durMin(o.durToHrs, o.durToMin),
+          // only store a per-session link when this session opted for its own;
+          // "same" leaves it blank so it falls back to the default link.
+          zoomLink: online && o.linkMode === "different" ? (o.zoomLink || "").trim() : "",
+          zoomCode: online && o.linkMode === "different" ? (o.zoomCode || "").trim() : "",
+        };
+        if (seriesMode && o.seriesId) {
+          base.seriesId = o.seriesId;
+          base.seriesLabel =
+            (seriesList.find((s) => s.id === o.seriesId)?.name || "").trim() || "Series";
+        }
+        return base;
+      }),
   );
 
   return (
@@ -234,9 +547,22 @@ export default function MeetingFields({ defaults = {} }) {
         <>
           <div>
             <label htmlFor="zoomLink" className={LABEL}>
-              Zoom link {linkTbd && <span className="text-faint">(add later)</span>}
+              {hasOptions ? "Default Zoom link" : "Zoom link"}
             </label>
-            <input id="zoomLink" name="zoomLink" type="url" defaultValue={d.zoomLink || ""} placeholder={linkTbd ? "Provided closer to the date" : "https://zoom.us/j/..."} className={INPUT} />
+            {linkTbd ? (
+              <p className="mt-1 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-sm text-muted">
+                All links will be provided later - attendees get them in the reminder.
+              </p>
+            ) : (
+              <>
+                <input id="zoomLink" name="zoomLink" type="url" defaultValue={d.zoomLink || ""} placeholder="https://zoom.us/j/..." className={INPUT} />
+                {hasOptions && (
+                  <p className="mt-1 text-xs text-muted">
+                    Used for every session below, unless a session sets its own.
+                  </p>
+                )}
+              </>
+            )}
             <label className="mt-2 flex items-center gap-2">
               <input
                 type="checkbox"
@@ -253,12 +579,14 @@ export default function MeetingFields({ defaults = {} }) {
               </span>
             </label>
           </div>
-          <div>
-            <label htmlFor="zoomCode" className={LABEL}>
-              Passcode <span className="text-faint">(optional)</span>
-            </label>
-            <input id="zoomCode" name="zoomCode" type="text" defaultValue={d.zoomCode || ""} placeholder="e.g. 849302" className={INPUT} />
-          </div>
+          {!linkTbd && (
+            <div>
+              <label htmlFor="zoomCode" className={LABEL}>
+                Passcode <span className="text-faint">(optional)</span>
+              </label>
+              <input id="zoomCode" name="zoomCode" type="text" defaultValue={d.zoomCode || ""} placeholder="e.g. 849302" className={INPUT} />
+            </div>
+          )}
         </>
       )}
 
@@ -285,12 +613,7 @@ export default function MeetingFields({ defaults = {} }) {
         <label className={LABEL}>
           Response needed by <span className="text-faint">(optional)</span>
         </label>
-        <input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          className={INPUT}
-        />
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={INPUT} />
         <p className="mt-1 text-xs text-muted">
           A deadline to RSVP. Anyone who hasn&apos;t responded by then gets a
           second-notice email.
@@ -367,61 +690,172 @@ export default function MeetingFields({ defaults = {} }) {
         {hasOptions && (
           <div className="mt-3 space-y-4">
             <input type="hidden" name="meetingOptions" value={sessionsJson} />
-            {options.map((o, i) => (
-              <div key={o.id} className="rounded-md border border-border bg-surface p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  {o.editing ? (
-                    <input
-                      autoFocus
-                      value={o.name}
-                      onChange={(e) => patchSession(o.id, { name: e.target.value })}
-                      onBlur={() => patchSession(o.id, { editing: false })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          patchSession(o.id, { editing: false });
-                        }
-                      }}
-                      placeholder={`Session ${i + 1}`}
-                      className={`${INPUT} mt-0 !w-52`}
-                    />
-                  ) : (
-                    <>
-                      <span className="text-sm font-semibold text-foreground">
-                        {o.name || `Session ${i + 1}`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => patchSession(o.id, { editing: true })}
-                        aria-label="Rename session"
-                        className="rounded p-1 text-muted transition hover:bg-surface-3 hover:text-brand"
-                      >
-                        <PencilIcon />
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeSession(o.id)}
-                    aria-label="Remove session"
-                    className="ml-auto rounded-md px-2 py-1 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <TimeBlock value={o} onChange={(v) => patchSession(o.id, v)} />
-              </div>
-            ))}
-            <button type="button" onClick={addSession} className="text-sm font-medium text-brand transition hover:underline">
-              + Add a session
-            </button>
 
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" name="meetingMultiPick" defaultChecked={!!d.meetingMultiPick} className="h-4 w-4 accent-brand" />
-              <span className="text-sm text-foreground">
-                Let attendees pick more than one session
+            <label className="flex items-start gap-3 rounded-md border border-border bg-surface p-3">
+              <input
+                type="checkbox"
+                checked={seriesMode}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setSeriesMode(on);
+                  if (on && seriesList.length === 0) addSeries();
+                }}
+                className="mt-0.5 h-4 w-4 accent-brand"
+              />
+              <span>
+                <span className="block text-sm font-medium text-foreground">
+                  Organize into series
+                </span>
+                <span className="block text-xs text-muted">
+                  Attendees pick one date from each series (e.g. Series 1 offers two
+                  dates, they pick one).
+                </span>
               </span>
             </label>
+
+            {/* same time / duration for every session - set once, auto-applied so
+                each session below only needs a date. */}
+            <div className="space-y-3 rounded-md border border-border bg-surface p-3">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={sameTime} onChange={(e) => setSameTime(e.target.checked)} className="h-4 w-4 accent-brand" />
+                <span className="text-sm font-medium text-foreground">Same start time for every session</span>
+              </label>
+              {sameTime && (
+                <div className="grid gap-3 pl-6 sm:grid-cols-2">
+                  <div>
+                    <label className={LABEL}>Start time</label>
+                    <TimeField value={sharedTime} onChange={setSharedTime} />
+                  </div>
+                  <div>
+                    <label className={LABEL}>Time zone</label>
+                    <select value={sharedTz} onChange={(e) => setSharedTz(e.target.value)} className={INPUT}>
+                      {US_TIMEZONES.map((t) => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                      {!US_TIMEZONES.some((t) => t.value === sharedTz) && (
+                        <option value={sharedTz}>{sharedTz}</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+              )}
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={sameDur} onChange={(e) => setSameDur(e.target.checked)} className="h-4 w-4 accent-brand" />
+                <span className="text-sm font-medium text-foreground">Same duration for every session</span>
+              </label>
+              {sameDur && (
+                <div className="pl-6">
+                  <label className={LABEL}>
+                    Duration estimate <span className="text-faint">(optional)</span>
+                  </label>
+                  <DurationInputs v={sharedDur} set={(p) => setSharedDur((s) => ({ ...s, ...p }))} />
+                </div>
+              )}
+            </div>
+
+            {!seriesMode ? (
+              <>
+                {options.map((o, i) => (
+                  <OptionCard
+                    key={o.id}
+                    o={o}
+                    index={i}
+                    online={online && !linkTbd}
+                    hideTime={sameTime}
+                    hideDuration={sameDur}
+                    onPatch={(patch) => patchSession(o.id, patch)}
+                    onRemove={() => removeSession(o.id)}
+                  />
+                ))}
+                <button type="button" onClick={addSession} className="text-sm font-medium text-brand transition hover:underline">
+                  + Add a session
+                </button>
+                <label className="mt-2 flex items-center gap-2">
+                  <input type="checkbox" name="meetingMultiPick" defaultChecked={!!d.meetingMultiPick} className="h-4 w-4 accent-brand" />
+                  <span className="text-sm text-foreground">
+                    Let attendees pick more than one session
+                  </span>
+                </label>
+              </>
+            ) : (
+              <div className="space-y-4">
+                {seriesList.map((s, si) => {
+                  const dates = options.filter((o) => o.seriesId === s.id);
+                  return (
+                    <div key={s.id} className="rounded-lg border border-border-strong bg-surface-2 p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        {s.editing ? (
+                          <input
+                            autoFocus
+                            value={s.name}
+                            onChange={(e) => patchSeries(s.id, { name: e.target.value })}
+                            onBlur={() => patchSeries(s.id, { editing: false })}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                patchSeries(s.id, { editing: false });
+                              }
+                            }}
+                            placeholder={`Series ${si + 1}`}
+                            className={`${INPUT} mt-0 !w-52`}
+                          />
+                        ) : (
+                          <>
+                            <span className="text-sm font-semibold text-foreground">
+                              {s.name || `Series ${si + 1}`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => patchSeries(s.id, { editing: true })}
+                              aria-label="Rename series"
+                              className="rounded p-1 text-muted transition hover:bg-surface-3 hover:text-brand"
+                            >
+                              <PencilIcon />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeSeries(s.id)}
+                          aria-label="Remove series"
+                          className="ml-auto rounded-md px-2 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+                        >
+                          Remove series
+                        </button>
+                      </div>
+                      <p className="mb-2 text-xs text-muted">
+                        Sessions in this series - attendees pick one:
+                      </p>
+                      <div className="space-y-3">
+                        {dates.map((o, di) => (
+                          <OptionCard
+                            key={o.id}
+                            o={o}
+                            index={di}
+                            online={online && !linkTbd}
+                            autoName={`Session ${di + 1}`}
+                            hideTime={sameTime}
+                            hideDuration={sameDur}
+                            onPatch={(patch) => patchSession(o.id, patch)}
+                            onRemove={() => removeSession(o.id)}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => addDate(s.id)}
+                        className="mt-2 text-sm font-medium text-brand transition hover:underline"
+                      >
+                        + Add a session
+                      </button>
+                    </div>
+                  );
+                })}
+                <button type="button" onClick={addSeries} className="text-sm font-medium text-brand transition hover:underline">
+                  + Add a series
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

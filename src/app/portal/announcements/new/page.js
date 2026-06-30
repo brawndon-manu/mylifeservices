@@ -29,6 +29,8 @@ const ERRORS = {
   postAs: "That person isnt a valid active user. Pick someone else.",
   ackAudience:
     "Pick who needs to acknowledge this (Everyone or specific titles/people).",
+  meetingAudience:
+    "Pick who's invited to this meeting (Everyone or specific titles/people).",
 };
 
 export default async function NewAnnouncementPage({ searchParams }) {
@@ -105,7 +107,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
           emailStaffByTitle={emailStaffByTitle}
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
-          submitLabel="Post"
+          submitLabel="Preview"
         />
       </div>
     </section>

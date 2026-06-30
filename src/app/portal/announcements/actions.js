@@ -15,6 +15,7 @@ import {
   isModerator,
   isElevated,
   isSupervisorUp,
+  isAdminUp,
   isIT,
 } from "@/lib/roles";
 import { firstNameOf, preferredName } from "@/lib/contacts";
@@ -24,6 +25,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import {
   buildAnnouncementEmailHtml,
   buildMeetingBlockHtml,
+  EMAIL_TZ,
 } from "@/lib/announcement-email";
 import {
   cleanBody,
@@ -83,23 +85,6 @@ function ackAudienceEmpty({ ackEveryone, ackTitles, ackUserIds }) {
   return !ackEveryone && !ackTitles.length && !ackUserIds.length;
 }
 
-// the "send as email" audience on the create form - its own picker, separate
-// from the ack audience. not stored (the email goes out at post time).
-// IMPORTANT: an empty pick means send to NOBODY, not everyone. only an explicit
-// "Everyone" check blasts all staff. (this used to default empty -> everyone,
-// which accidentally emailed the whole company.)
-function parseEmailAudience(formData) {
-  const everyone = formData.get("emailEveryone") === "on";
-  if (everyone) return { everyone: true, titles: [], userIds: [] };
-  const titles = formData
-    .getAll("emailTitles")
-    .filter((t) => typeof t === "string" && t);
-  const userIds = formData
-    .getAll("emailUserIds")
-    .filter((t) => typeof t === "string" && t);
-  return { everyone: false, titles, userIds };
-}
-
 // the Company Meeting fields. only meaningful when tag = "Company Meeting";
 // other types store nulls/defaults so the columns stay clean.
 function parseMeetingFields(formData, tag) {
@@ -153,6 +138,25 @@ function parseMeetingFields(formData, tag) {
               const dt = new Date(o.at);
               if (!Number.isNaN(dt.getTime())) at = dt.toISOString();
             }
+            // each online session can carry its own Zoom link + passcode.
+            const sLink =
+              online && typeof o.zoomLink === "string" && o.zoomLink.trim()
+                ? o.zoomLink.trim().slice(0, 500)
+                : null;
+            const sCode =
+              online && typeof o.zoomCode === "string" && o.zoomCode.trim()
+                ? o.zoomCode.trim().slice(0, 60)
+                : null;
+            // series mode: an option belongs to a named series (attendees pick
+            // one option from each series). null when it's a plain session list.
+            const seriesId =
+              typeof o.seriesId === "string" && o.seriesId
+                ? o.seriesId.slice(0, 60)
+                : null;
+            const seriesLabel =
+              seriesId && typeof o.seriesLabel === "string" && o.seriesLabel.trim()
+                ? o.seriesLabel.trim().slice(0, 80)
+                : null;
             return {
               id: String(o.id || `opt${i}`),
               label: o.label.trim().slice(0, 140),
@@ -160,6 +164,10 @@ function parseMeetingFields(formData, tag) {
               tz: at && typeof o.tz === "string" ? o.tz.slice(0, 60) : null,
               durationFromMin: posInt(o.durationFromMin),
               durationToMin: posInt(o.durationToMin),
+              zoomLink: sLink,
+              zoomCode: sCode,
+              seriesId,
+              seriesLabel,
             };
           });
         if (opts.length) {
@@ -291,16 +299,18 @@ export async function createPost(formData) {
   }
 
   const requireAck = formData.get("requireAck") === "on";
-  const sendEmail = formData.get("sendEmail") === "on";
-  // ack audience (stored, drives the roster) and the email audience (its own
-  // picker, used to send now) are independent. validate before uploading the
-  // image so a rejected post doesn't orphan a blob.
+  // ack/invite audience (stored, drives the roster). validate before uploading
+  // the image so a rejected post doesn't orphan a blob. email is decided later,
+  // at Publish time - creating just makes a draft.
   const ackAudience = parseAckAudience(
     formData,
     requireAck || isCompanyMeeting(tag),
   );
-  if (requireAck && ackAudienceEmpty(ackAudience)) {
-    redirect("/portal/announcements/new?error=ackAudience");
+  // meetings need an invite list, and require-ack needs an ack audience - the
+  // same picker drives both. empty isn't allowed for either (no silent Everyone).
+  if ((requireAck || isCompanyMeeting(tag)) && ackAudienceEmpty(ackAudience)) {
+    const err = isCompanyMeeting(tag) && !requireAck ? "meetingAudience" : "ackAudience";
+    redirect(`/portal/announcements/new?error=${err}`);
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
 
@@ -337,44 +347,83 @@ export async function createPost(formData) {
     },
   });
 
-  if (sendEmail) {
-    const full = await prisma.announcement.findUnique({
-      where: { id: post.id },
-      select: {
-        id: true,
-        title: true,
-        content: true,
-        requireAck: true,
-        createdAt: true,
-        ackEveryone: true,
-        ackTitles: true,
-        ackUserIds: true,
-        ...EMAIL_MEETING_SELECT,
-        author: { select: EMAIL_AUTHOR_SELECT },
-      },
-    });
-    // "same as who needs to ack / who's invited" reuses the ack audience (with an
-    // optional add for the Program Director); otherwise use the email picker.
-    const sameAsAck = formData.get("emailSameAsAck") === "on";
-    const res = sameAsAck
-      ? await emailAnnouncement(full, ackAudienceWhere(full), {
-          includeDirector: formData.get("emailIncludeDirector") === "on",
-        })
-      : await emailAnnouncement(full, emailAudienceWhere(parseEmailAudience(formData)));
-    revalidatePath("/portal/announcements");
-    // post still got created; only the email could no-op. flag why so the user
-    // knows nothing went out (no audience picked, or email not configured).
-    if (!res.ok && res.reason === "config") {
-      redirect(`/portal/announcements/${post.id}?error=emailConfig`);
-    }
-    if (!res.ok && res.reason === "recipients") {
-      redirect(`/portal/announcements/${post.id}?error=recipients`);
-    }
-    redirect(`/portal/announcements/${post.id}?sent=${res.sent}`);
+  // created as a DRAFT (publishedAt stays null). it isn't in the feed and no
+  // email goes out yet - the author lands on the preview and publishes from there.
+  revalidatePath("/portal/announcements");
+  redirect(`/portal/announcements/${post.id}`);
+}
+
+// publish a draft: stamp publishedAt (it enters the feed), and - per the publish
+// dialog - email the audience now. v1 emails "same as invitees" (the invite/ack
+// audience) for meetings + ack posts; a plain post can opt to email everyone.
+export async function publishAnnouncement(postId, formData) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true,
+      authorId: true,
+      deletedAt: true,
+      publishedAt: true,
+      tag: true,
+      title: true,
+      content: true,
+      requireAck: true,
+      createdAt: true,
+      ackEveryone: true,
+      ackTitles: true,
+      ackUserIds: true,
+      ...EMAIL_MEETING_SELECT,
+      author: { select: EMAIL_AUTHOR_SELECT },
+    },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (post.authorId !== user.id && !isModerator(user.role)) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  if (post.publishedAt) redirect(`/portal/announcements/${postId}`); // already live
+
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: { publishedAt: new Date() },
+  });
+
+  let res = { sent: 0 };
+  if (formData?.get("doEmail") === "on") {
+    const hasAudience = isCompanyMeeting(post.tag) || post.requireAck;
+    const where = hasAudience
+      ? ackAudienceWhere(post)
+      : formData.get("emailEveryone") === "on"
+        ? { deactivatedAt: null }
+        : null;
+    if (where) res = await emailAnnouncement(post, where);
   }
 
   revalidatePath("/portal/announcements");
-  redirect(`/portal/announcements/${post.id}`);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(
+    `/portal/announcements/${postId}?published=1${res.sent ? `&sent=${res.sent}` : ""}`,
+  );
+}
+
+// discard a draft entirely (it was never published, so nothing is saved). hard
+// delete; cascades take care of any rows. drafts only.
+export async function discardDraft(postId) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true, postedById: true, deletedAt: true, publishedAt: true, imageUrl: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  const canDiscard =
+    post.authorId === user.id || post.postedById === user.id || isModerator(user.role);
+  if (post.publishedAt || !canDiscard) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  await tryDeleteBlob(post.imageUrl);
+  await prisma.announcement.delete({ where: { id: postId } });
+  revalidatePath("/portal/announcements");
+  redirect("/portal/announcements?discarded=1");
 }
 
 export async function deletePost(postId) {
@@ -406,13 +455,32 @@ export async function editPost(postId, formData) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, deletedAt: true },
+    select: { id: true, authorId: true, postedById: true, deletedAt: true, publishedAt: true },
   });
   if (!post || post.deletedAt) {
     redirect("/portal/announcements");
   }
-  if (post.authorId !== user.id) {
+  const isDraft = !post.publishedAt;
+  // the author can edit; for a draft posted on someone's behalf, the actual
+  // poster (postedBy) can edit too.
+  if (post.authorId !== user.id && !(isDraft && post.postedById === user.id)) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+
+  // "Post as" re-attribution is allowed only while it's still a draft.
+  let authorUpdate = {};
+  const postAs = formData.get("postAs");
+  if (isDraft && isElevated(user.role) && typeof postAs === "string" && postAs) {
+    if (postAs === user.id) {
+      authorUpdate = { authorId: user.id, postedById: null };
+    } else {
+      const target = await prisma.user.findFirst({
+        where: { id: postAs, deactivatedAt: null },
+        select: { id: true },
+      });
+      if (!target) redirect(`/portal/announcements/${postId}/edit?error=postAs`);
+      authorUpdate = { authorId: target.id, postedById: user.id };
+    }
   }
 
   const tag = formData.get("tag");
@@ -439,8 +507,9 @@ export async function editPost(postId, formData) {
     formData,
     requireAck || isCompanyMeeting(tag),
   );
-  if (requireAck && ackAudienceEmpty(ackAudience)) {
-    redirect(`/portal/announcements/${postId}/edit?error=ackAudience`);
+  if ((requireAck || isCompanyMeeting(tag)) && ackAudienceEmpty(ackAudience)) {
+    const err = isCompanyMeeting(tag) && !requireAck ? "meetingAudience" : "ackAudience";
+    redirect(`/portal/announcements/${postId}/edit?error=${err}`);
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
 
@@ -455,6 +524,7 @@ export async function editPost(postId, formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      ...authorUpdate,
       ...parseMeetingFields(formData, tag),
       editedAt: new Date(),
     },
@@ -713,6 +783,61 @@ export async function chooseMeetingOption(postId, optionId) {
   redirect(`/portal/announcements/${postId}`);
 }
 
+// set the user's whole session pick-set at once (the "Confirm attendance" flow).
+// replaces any existing picks with the submitted optionIds (capped to 1 unless
+// the meeting allows multi-pick), then syncs the going/no-response state.
+export async function setMeetingChoices(postId, formData) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: MEETING_RESPONSE_SELECT,
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (!meetingInAudience(post, user)) redirect(`/portal/announcements/${postId}`);
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const valid = new Set(opts.map((o) => o && o.id).filter(Boolean));
+  const isSeries = opts.some((o) => o && o.seriesId);
+  let ids = [...new Set(formData.getAll("optionId").map(String))].filter((id) =>
+    valid.has(id),
+  );
+  if (isSeries) {
+    // series: exactly one pick per series. keep the last submitted per seriesId.
+    const bySeries = new Map();
+    const optById = new Map(opts.map((o) => [o.id, o]));
+    for (const id of ids) bySeries.set(optById.get(id)?.seriesId, id);
+    ids = [...bySeries.values()];
+  } else if (!post.meetingMultiPick) {
+    ids = ids.slice(0, 1);
+  }
+
+  await prisma.announcementMeetingChoice.deleteMany({
+    where: { announcementId: postId, userId: user.id },
+  });
+  if (ids.length) {
+    await prisma.announcementMeetingChoice.createMany({
+      data: ids.map((optionId) => ({ announcementId: postId, userId: user.id, optionId })),
+      skipDuplicates: true,
+    });
+  }
+  const respKey = {
+    announcementId_userId: { announcementId: postId, userId: user.id },
+  };
+  if (ids.length > 0) {
+    await prisma.announcementMeetingResponse.upsert({
+      where: respKey,
+      create: { announcementId: postId, userId: user.id, cantMakeIt: false },
+      update: { cantMakeIt: false, reason: null },
+    });
+    await markMeetingAck(postId, user, post.requireAck);
+  } else {
+    await prisma.announcementMeetingResponse.deleteMany({
+      where: { announcementId: postId, userId: user.id },
+    });
+  }
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
 // single-session "I'll be there" toggle (no session options to pick). sets the
 // response to going, or clears it if they were already going.
 export async function attendMeeting(postId) {
@@ -780,7 +905,8 @@ export async function setMeetingLink(postId, formData) {
     select: { id: true, authorId: true, deletedAt: true, meetingFormat: true },
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
-  if (post.authorId !== user.id && !isModerator(user.role)) {
+  // the Zoom link + passcode are admin-only.
+  if (!isAdminUp(user.role)) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
   }
   if (!formatHasOnline(post.meetingFormat)) {
@@ -807,7 +933,8 @@ export async function setAttendance(postId, userId, status) {
     select: { id: true, authorId: true, deletedAt: true },
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
-  if (!isSupervisorUp(user.role) && post.authorId !== user.id) {
+  // roll-call (attendance) is admin-and-up only, matching who can see the roster.
+  if (!isAdminUp(user.role)) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
   }
   const value = status === "present" || status === "absent" ? status : null;
@@ -993,6 +1120,7 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: EMAIL_TZ,
   });
   const logoUrl = `${base}/logo/treelogo_white.png`;
   const authorName = preferredName(post.author);

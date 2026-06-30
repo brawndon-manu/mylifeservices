@@ -8,6 +8,7 @@ import {
   isElevated,
   canSeeRoles,
   isSupervisorUp,
+  isAdminUp,
 } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { renderMarkdown } from "@/lib/markdown";
@@ -33,6 +34,8 @@ import ConfirmButton from "@/components/ConfirmButton";
 import SendEmailDialog from "../_components/SendEmailDialog";
 import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
+import MeetingResponse from "../_components/MeetingResponse";
+import PublishBar from "../_components/PublishBar";
 import { formatDuration } from "@/lib/meeting-time";
 import {
   toggleLike,
@@ -43,7 +46,9 @@ import {
   acknowledge,
   sendAckEmails,
   sendAnnouncementEmail,
-  chooseMeetingOption,
+  publishAnnouncement,
+  discardDraft,
+  setMeetingChoices,
   attendMeeting,
   cantMakeMeeting,
   setAttendance,
@@ -154,11 +159,20 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
   if (!post || post.deletedAt) notFound();
 
+  // a draft (publishedAt null) is preview-only: visible to its author or a
+  // moderator, a 404 to everyone else (it isn't live yet).
+  const isDraft = !post.publishedAt;
+  if (isDraft && post.authorId !== user.id && !isModerator(user.role)) notFound();
+
   const expired = isExpired(post);
   const liked = post.likes.length > 0;
   const canDeletePost = post.authorId === user.id || isModerator(user.role);
   const canEditPost = post.authorId === user.id;
-  const canManageLink = canEditPost || isModerator(user.role);
+  // the Zoom link + passcode are admin-only: only Admin/IT/Super can see or manage
+  // them. everyone else sees a "Link will be provided soon!" note (they get the
+  // link in the reminder email).
+  const isAdmin = isAdminUp(user.role);
+  const canManageLink = isAdmin;
   const canPin = isModerator(user.role);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
@@ -181,8 +195,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     ? !isAckExempt(user)
     : (post.ackTitles || []).some(titleMatches) ||
       (post.ackUserIds || []).includes(user.id);
-  // roster is visible to anyone who can post (Supervisor+) plus the author.
-  const canSeeRoster = isSupervisorUp(user.role) || post.authorId === user.id;
+  // the roster (who's responded / acknowledged / going / attended) is sensitive -
+  // Admin/IT/Super only. NOTE: gated on the EFFECTIVE role, and no author
+  // exception, so "view as staff" (or any non-admin) never sees it.
+  const canSeeRoster = isAdminUp(user.role);
   // Supervisor+ can email the announcement out to a chosen audience.
   const canSend = isSupervisorUp(user.role);
   const staffByTitle = canSend ? await getStaffByTitle() : {};
@@ -238,6 +254,31 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
   // my current response (going / cant make it + reason), for the controls.
   const myResponse = post.meetingResponses?.[0] || null;
+
+  // draft -> the author/moderator sees a publish bar. precompute the email
+  // recipients ("same as invitees" = the invite/ack audience) for the dialog.
+  let publishInfo = null;
+  if (isDraft && (post.authorId === user.id || isModerator(user.role))) {
+    const hasAudience = meeting || post.requireAck;
+    const recipients = hasAudience
+      ? await prisma.user.findMany({
+          where: ackAudienceWhere(post),
+          select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, title: true },
+          orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
+        })
+      : [];
+    publishInfo = {
+      hasAudience,
+      count: recipients.length,
+      recipients: recipients.map((u) => ({ id: u.id, name: preferredName(u), title: u.title || "" })),
+      allActiveCount: hasAudience
+        ? 0
+        : await prisma.user.count({ where: { deactivatedAt: null } }),
+      meeting,
+      reminderLeadMin: post.meetingReminderLeadMin ?? 10,
+      nightBefore: post.meetingNightBefore !== false,
+    };
+  }
 
   let meetingRoster = null;
   if (meeting && canSeeRoster) {
@@ -327,6 +368,24 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         </div>
       )}
 
+      {sp?.published === "1" && (
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+          <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white">
+            ✓
+          </span>
+          <p className="text-sm font-medium text-foreground">
+            Published - it&apos;s live in the feed
+            {sentCount ? ` and emailed to ${sentCount} ${sentCount === 1 ? "person" : "people"}` : ""}.
+          </p>
+        </div>
+      )}
+
+      {publishInfo && (
+        <div className="mt-4">
+          <PublishBar postId={post.id} publish={publishAnnouncement} discard={discardDraft} info={publishInfo} />
+        </div>
+      )}
+
       <article
         className={`mt-4 overflow-hidden rounded-xl border border-border shadow-sm ${
           changelog ? "bg-surface p-6 sm:p-8" : "bg-[#eef3fa] dark:bg-[#070912]"
@@ -368,6 +427,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         ) : (
           /* new announcement layout: hero with faded logo + title block + body */
           <div>
+            {/* hero band is always dark - the .dark wrapper forces dark styling
+                so Light mode matches Dim/Night from the divider up; the body below
+                keeps the theme-aware (light in Light) card color. */}
+            <div className="dark bg-[#070912]">
             <div className="relative h-52 overflow-hidden sm:h-60">
               {/* soft cloud / dome glow (no grid) */}
               <div
@@ -424,6 +487,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               )}
               <div className="mx-auto mt-6 h-px max-w-2xl bg-border" />
             </div>
+            </div>
 
             <div
               className={`mx-auto mt-6 max-w-2xl px-6 sm:px-8 ${PROSE}`}
@@ -471,15 +535,24 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   </div>
                 )}
 
-                {(formatHasOnline(post.meetingFormat) || formatHasAddress(post.meetingFormat)) && (
+                {/* meeting access card. only admins see/manage the Zoom link +
+                    passcode; everyone else sees a "provided soon" note (they get
+                    the link in the reminder email). */}
+                {(formatHasOnline(post.meetingFormat) ||
+                  (formatHasAddress(post.meetingFormat) && post.meetingAddress)) && (
                   <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
-                    {formatHasOnline(post.meetingFormat) && !post.zoomLink && post.zoomLinkTbd && (
+                    {formatHasOnline(post.meetingFormat) && !isAdmin && (
+                      <div className="flex items-center gap-2 rounded-md border border-border-strong bg-surface-2 px-4 py-2.5 text-sm font-medium text-muted">
+                        <VideoIcon className="h-4 w-4" /> Link will be provided soon!
+                      </div>
+                    )}
+                    {formatHasOnline(post.meetingFormat) && isAdmin && meetingOptions.length === 0 && !post.zoomLink && post.zoomLinkTbd && (
                       <div className="flex items-center gap-2 text-sm text-muted">
                         <VideoIcon className="h-4 w-4" />
                         The Zoom link will be sent before the meeting.
                       </div>
                     )}
-                    {formatHasOnline(post.meetingFormat) && post.zoomLink && (
+                    {formatHasOnline(post.meetingFormat) && isAdmin && meetingOptions.length === 0 && post.zoomLink && (
                       <div className="flex flex-wrap items-center gap-2">
                         <a
                           href={post.zoomLink}
@@ -571,133 +644,26 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   </p>
                 )}
 
-                {/* my response: pick a session / I'll be there + can't make it */}
+                {/* my response: pick / confirm / change (client component) */}
                 {iCanPick && (
-                  <div className="mt-5">
-                    <p className="text-sm font-semibold text-foreground">
-                      {meetingOptions.length > 0
-                        ? post.meetingMultiPick
-                          ? "Will you attend? Pick the sessions you'll come to."
-                          : "Will you attend? Pick a session."
-                        : "Will you attend?"}
-                    </p>
-                    <div className="mt-2 space-y-2">
-                      {meetingOptions.length > 0 ? (
-                        meetingOptions.map((opt) => {
-                          const picked = myPicks.includes(opt.id);
-                          return (
-                            <form
-                              key={opt.id}
-                              action={chooseMeetingOption.bind(null, post.id, opt.id)}
-                            >
-                              <button
-                                type="submit"
-                                className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                                  picked
-                                    ? "border-brand bg-sky-50 dark:bg-sky-950/30"
-                                    : "border-border hover:border-brand-light"
-                                }`}
-                              >
-                                <span
-                                  className={`flex h-5 w-5 flex-none items-center justify-center border-2 ${
-                                    post.meetingMultiPick ? "rounded" : "rounded-full"
-                                  } ${picked ? "border-brand bg-brand text-white" : "border-border-strong"}`}
-                                >
-                                  {picked && <CheckMini className="h-3 w-3" />}
-                                </span>
-                                <span className="flex-1">
-                                  <span className="block text-sm font-medium text-foreground">
-                                    {opt.label}
-                                  </span>
-                                  {(opt.at ||
-                                    formatDuration(opt.durationFromMin, opt.durationToMin)) && (
-                                    <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
-                                      {opt.at && <MeetingTime iso={opt.at} setTz={opt.tz} />}
-                                      {formatDuration(opt.durationFromMin, opt.durationToMin) && (
-                                        <span>
-                                          {opt.at ? "· " : ""}
-                                          {formatDuration(opt.durationFromMin, opt.durationToMin)}
-                                        </span>
-                                      )}
-                                    </span>
-                                  )}
-                                </span>
-                                {picked && (
-                                  <span className="flex-none text-xs font-medium text-brand">you picked this</span>
-                                )}
-                              </button>
-                            </form>
-                          );
-                        })
-                      ) : (
-                        <form action={attendMeeting.bind(null, post.id)}>
-                          <button
-                            type="submit"
-                            className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                              myResponse && !myResponse.cantMakeIt
-                                ? "border-brand bg-sky-50 dark:bg-sky-950/30"
-                                : "border-border hover:border-brand-light"
-                            }`}
-                          >
-                            <span
-                              className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
-                                myResponse && !myResponse.cantMakeIt
-                                  ? "border-brand bg-brand text-white"
-                                  : "border-border-strong"
-                              }`}
-                            >
-                              {myResponse && !myResponse.cantMakeIt && <CheckMini className="h-3 w-3" />}
-                            </span>
-                            <span className="flex-1 text-sm font-medium text-foreground">
-                              I&apos;ll be there
-                            </span>
-                          </button>
-                        </form>
-                      )}
-
-                      {/* can't make it / can't make any */}
-                      <details
-                        className="rounded-lg border border-border"
-                        open={myResponse?.cantMakeIt || undefined}
-                      >
-                        <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
-                          <span
-                            className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
-                              myResponse?.cantMakeIt ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
-                            }`}
-                          >
-                            {myResponse?.cantMakeIt && <CheckMini className="h-3 w-3" />}
-                          </span>
-                          <span className="font-medium text-foreground">
-                            {myResponse?.cantMakeIt
-                              ? "You said you can't make it"
-                              : meetingOptions.length > 1
-                                ? "I can't make any of these"
-                                : "I can't make it"}
-                          </span>
-                        </summary>
-                        <form action={cantMakeMeeting.bind(null, post.id)} className="px-3 pb-3">
-                          <textarea
-                            name="reason"
-                            defaultValue={myResponse?.reason || ""}
-                            rows={2}
-                            placeholder="Reason (optional) - e.g. I'm on PTO that week"
-                            className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                          <button
-                            type="submit"
-                            className="mt-2 rounded-md bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700"
-                          >
-                            {myResponse?.cantMakeIt ? "Update" : "Submit"}
-                          </button>
-                        </form>
-                      </details>
-                    </div>
-                    <p className="mt-2 text-xs text-faint">
-                      Responding counts as your acknowledgment - no separate
-                      &quot;I read this&quot; needed.
-                    </p>
-                  </div>
+                  <MeetingResponse
+                    postId={post.id}
+                    options={meetingOptions}
+                    multiPick={!!post.meetingMultiPick}
+                    online={formatHasOnline(post.meetingFormat)}
+                    isAdmin={isAdmin}
+                    defaultLink={post.zoomLink}
+                    defaultCode={post.zoomCode}
+                    myPicks={myPicks}
+                    myResponse={
+                      myResponse
+                        ? { cantMakeIt: myResponse.cantMakeIt, reason: myResponse.reason }
+                        : null
+                    }
+                    setChoices={setMeetingChoices}
+                    attend={attendMeeting}
+                    cantMake={cantMakeMeeting}
+                  />
                 )}
                 {meeting && !iCanPick && (
                   <p className="mt-4 text-xs text-muted">
@@ -741,7 +707,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           return (
                             <div key={option.id} className="mt-2">
                               <div className="flex items-center justify-between text-sm">
-                                <span className="font-medium text-foreground">{option.label}</span>
+                                <span className="font-medium text-foreground">
+                                  {option.seriesLabel ? `${option.seriesLabel}: ` : ""}
+                                  {option.label}
+                                </span>
                                 <span className="text-xs text-muted">
                                   {users.length} going
                                   {present || absent ? ` · ${present} present · ${absent} absent` : ""}
@@ -833,6 +802,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
           </div>
         )}
 
+        {!isDraft && (
         <footer
           className={`mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm ${
             changelog ? "" : "px-6 pb-5 sm:px-8"
@@ -850,7 +820,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
             </button>
           </form>
           <div className="ml-auto flex items-center gap-1 text-xs">
-            {canSend && (
+            {canSend && !isDraft && (
               <SendEmailDialog
                 action={sendAnnouncementEmail.bind(null, post.id)}
                 title={post.title || "Announcement"}
@@ -893,6 +863,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
             )}
           </div>
         </footer>
+        )}
+        {/* the footer normally provides bottom padding; add it back on a draft */}
+        {isDraft && <div aria-hidden className="h-8" />}
       </article>
 
       {/* acknowledgments */}
@@ -951,19 +924,21 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     of {roster.total} acknowledged · {roster.pct}%
                   </span>
                 </div>
-                <form action={sendAckEmails.bind(null, post.id)}>
-                  <ConfirmButton
-                    message={
-                      roster.notYet.length
-                        ? `Email this announcement to the ${roster.notYet.length} staff who haven't acknowledged yet?`
-                        : "Everyone has already acknowledged. Send anyway? (nobody will be emailed.)"
-                    }
-                    className="inline-flex items-center gap-2 rounded-md border border-border-strong px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-3"
-                  >
-                    <MailIcon className="h-4 w-4" />
-                    Send to staff by email
-                  </ConfirmButton>
-                </form>
+                {!isDraft && (
+                  <form action={sendAckEmails.bind(null, post.id)}>
+                    <ConfirmButton
+                      message={
+                        roster.notYet.length
+                          ? `Email this announcement to the ${roster.notYet.length} staff who haven't acknowledged yet?`
+                          : "Everyone has already acknowledged. Send anyway? (nobody will be emailed.)"
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border border-border-strong px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-3"
+                    >
+                      <MailIcon className="h-4 w-4" />
+                      Send to staff by email
+                    </ConfirmButton>
+                  </form>
+                )}
               </div>
 
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3">
@@ -1036,8 +1011,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         </div>
       )}
 
-      {/* comments */}
-      <div className="mt-8">
+      {/* comments - hidden on a draft preview (no commenting before it's posted) */}
+      {!isDraft && (
+        <div className="mt-8">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           {post.comments.length}{" "}
           {post.comments.length === 1 ? "comment" : "comments"}
@@ -1100,7 +1076,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
             </button>
           </div>
         </form>
-      </div>
+        </div>
+      )}
     </section>
   );
 }
