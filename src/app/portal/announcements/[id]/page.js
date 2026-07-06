@@ -969,17 +969,25 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
             ) : (
               <form
                 action={acknowledge.bind(null, post.id)}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-5 py-4 dark:border-sky-900 dark:bg-sky-950/40"
+                className="rounded-xl border border-sky-200 bg-sky-50 px-5 py-4 dark:border-sky-900 dark:bg-sky-950/40"
               >
-                <CheckboxIcon className="h-6 w-6 shrink-0 text-brand" />
-                <span className="flex-1 text-sm text-brand-dark dark:text-sky-200">
-                  Your acknowledgment is requested for this announcement.
-                </span>
+                <div className="flex items-start gap-3">
+                  <CheckboxIcon className="h-6 w-6 shrink-0 text-brand" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-brand-dark dark:text-sky-100">
+                      Your acknowledgment is requested for this announcement.
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-brand-dark/80 dark:text-sky-200/80">
+                      By clicking below, you acknowledge that you have read and
+                      understood the contents of this announcement.
+                    </p>
+                  </div>
+                </div>
                 <button
                   type="submit"
-                  className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+                  className="mt-3 w-full rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand sm:w-auto"
                 >
-                  I acknowledge I&apos;ve read this
+                  Acknowledge that I&apos;ve read this
                 </button>
               </form>
             ))}

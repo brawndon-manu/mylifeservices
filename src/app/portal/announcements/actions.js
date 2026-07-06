@@ -1005,7 +1005,8 @@ function ackEmailHtml({ firstName, title, snippet, url }) {
     <p style="font-size: 15px;">Hi ${escapeHtml(firstName)},</p>
     <p style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">${escapeHtml(title)}</p>
     <p style="font-size: 14px; line-height: 1.6; color: #4b5563; white-space: pre-wrap;">${escapeHtml(snippet)}</p>
-    <p style="margin: 26px 0;">
+    <p style="font-size: 14px; line-height: 1.6; color: #374151;">By clicking below, you acknowledge that you have read and understood the contents of this announcement.</p>
+    <p style="margin: 22px 0;">
       <a href="${url}" style="display: inline-block; background: #2f6f4f; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-size: 15px; font-weight: 600;">Acknowledge that I've read this</a>
     </p>
     <p style="font-size: 12px; color: #6b7280;">One click confirms it, no login needed. If the button doesnt work, paste this into your browser:<br /><a href="${url}" style="color: #2f6f4f;">${url}</a></p>
