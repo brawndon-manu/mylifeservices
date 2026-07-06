@@ -13,6 +13,8 @@ import {
   formatDate,
 } from "@/lib/newsletter";
 import ConfirmButton from "@/components/ConfirmButton";
+import NameHover from "@/components/NameHover";
+import { preferredName } from "@/lib/contacts";
 import {
   approveItem,
   rejectItem,
@@ -39,7 +41,7 @@ export default async function NewsletterReviewPage() {
   const items = await prisma.newsletterItem.findMany({
     orderBy: { createdAt: "desc" },
     include: {
-      submittedBy: { select: { name: true, email: true } },
+      submittedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, email: true, title: true, image: true, phone: true } },
       approvedBy: { select: { name: true } },
       publishedBy: { select: { name: true } },
     },
@@ -125,7 +127,25 @@ export default async function NewsletterReviewPage() {
               )}
 
               <p className="mt-3 text-xs text-muted">
-                Submitted by {item.submittedBy?.name || item.submittedBy?.email}{" "}
+                Submitted by{" "}
+                {item.submittedBy ? (
+                  <NameHover
+                    user={{
+                      id: item.submittedBy.id,
+                      displayName:
+                        preferredName(item.submittedBy) ||
+                        item.submittedBy.name ||
+                        item.submittedBy.email,
+                      title: item.submittedBy.title,
+                      image: item.submittedBy.image,
+                      email: item.submittedBy.email,
+                      phone: item.submittedBy.phone,
+                    }}
+                    className="font-medium text-muted"
+                  />
+                ) : (
+                  "someone"
+                )}{" "}
                 · {formatDate(item.createdAt)}
                 {item.approvedBy && <> · approved by {item.approvedBy.name}</>}
                 {item.publishedBy && <> · published by {item.publishedBy.name}</>}

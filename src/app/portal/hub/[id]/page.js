@@ -41,7 +41,7 @@ export default async function PostDetailPage({ params, searchParams }) {
   const post = await prisma.post.findUnique({
     where: { id },
     include: {
-      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       _count: { select: { likes: true } },
@@ -49,7 +49,7 @@ export default async function PostDetailPage({ params, searchParams }) {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
         include: {
-          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
+          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
         },
       },
     },

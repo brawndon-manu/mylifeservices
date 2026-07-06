@@ -1,5 +1,6 @@
 import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
+import NameHover from "@/components/NameHover";
 
 // renders an author's display name with a small role badge next to it,
 // plus a muted email badge so duplicate names (e.g. three "Brandon"s)
@@ -28,7 +29,17 @@ export default function AuthorChip({ author, size = "md", showRole = false }) {
 
   return (
     <span className="inline-flex flex-wrap items-center">
-      <span className={nameClass}>{preferredName(author) || "—"}</span>
+      <NameHover
+        user={{
+          id: author.id,
+          displayName: preferredName(author) || "—",
+          title: author.title,
+          image: author.image,
+          email: author.email,
+          phone: author.phone,
+        }}
+        className={nameClass}
+      />
       {showRole && author.role && (
         <span className={roleBadge}>
           {ROLE_LABELS[author.role] ?? author.role}

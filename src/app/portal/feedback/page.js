@@ -33,7 +33,7 @@ export default async function FeedbackPage({ searchParams }) {
     where: it ? undefined : { status: { not: "DECLINED" } },
     orderBy: { createdAt: "desc" },
     include: {
-      author: { select: { id: true, name: true, role: true, email: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
       resolvedBy: { select: { name: true } },
     },
     take: 100,
