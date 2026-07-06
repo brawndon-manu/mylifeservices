@@ -331,6 +331,9 @@ export default function MeetingFields({ defaults = {} }) {
   const d = defaults;
   const [format, setFormat] = useState(d.meetingFormat || "zoom");
   const [linkTbd, setLinkTbd] = useState(!!d.zoomLinkTbd);
+  // mandatory drives the RSVP requirement: when on, we ask for a "Response needed
+  // by" date. responding to the meeting is itself the acknowledgment.
+  const [mandatory, setMandatory] = useState(!!d.meetingMandatory);
   const initTz = d.meetingTimezone || DEFAULT_TZ;
 
   // single-meeting time block (used when NOT offering sessions).
@@ -600,31 +603,41 @@ export default function MeetingFields({ defaults = {} }) {
       )}
 
       <label className="flex items-start gap-3">
-        <input type="checkbox" name="meetingMandatory" defaultChecked={!!d.meetingMandatory} className="mt-0.5 h-4 w-4 accent-brand" />
+        <input
+          type="checkbox"
+          name="meetingMandatory"
+          checked={mandatory}
+          onChange={(e) => setMandatory(e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-brand"
+        />
         <span>
           <span className="block text-sm font-medium text-foreground">Mandatory</span>
           <span className="block text-xs text-muted">
-            Shows a &quot;Mandatory&quot; badge - attendance is required.
+            Shows a &quot;Mandatory&quot; badge, attendance is required, and everyone
+            is asked to respond by a date.
           </span>
         </span>
       </label>
 
-      <div>
-        <label className={LABEL}>
-          Response needed by <span className="text-faint">(optional)</span>
-        </label>
-        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={INPUT} />
-        <p className="mt-1 text-xs text-muted">
-          A deadline to RSVP. Anyone who hasn&apos;t responded by then gets a
-          second-notice email.
-        </p>
-        <input
-          type="hidden"
-          name="meetingResponseDueAt"
-          value={dueDate ? zonedToInstant(dueDate, "23:59", single.tz) || "" : ""}
-        />
-        <input type="hidden" name="meetingResponseDueTz" value={single.tz} />
-      </div>
+      {mandatory && (
+        <div>
+          <label className={LABEL}>
+            Response needed by <span className="text-faint">(optional)</span>
+          </label>
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={INPUT} />
+          <p className="mt-1 text-xs text-muted">
+            A deadline to respond. Anyone who hasn&apos;t by then gets a
+            second-notice email. Responding is the acknowledgment, so there&apos;s no
+            separate step.
+          </p>
+          <input
+            type="hidden"
+            name="meetingResponseDueAt"
+            value={dueDate ? zonedToInstant(dueDate, "23:59", single.tz) || "" : ""}
+          />
+          <input type="hidden" name="meetingResponseDueTz" value={single.tz} />
+        </div>
+      )}
 
       <div>
         <label className={LABEL}>Reminder</label>

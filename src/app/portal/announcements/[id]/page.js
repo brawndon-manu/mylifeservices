@@ -200,6 +200,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const canPin = isModerator(user.role);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
+  const meeting = isCompanyMeeting(post.tag);
   // every announcement renders markdown now (sanitized). non-changelogs get the
   // new hero layout; changelogs keep their "What's New" treatment.
   const bodyHtml = renderMarkdown(post.content);
@@ -215,10 +216,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   // staff set; otherwise my job title has to match one of the targeted titles.)
   const titleMatches = (t) =>
     (user.title || "").toLowerCase().includes(t.toLowerCase());
-  const iMustAck = post.ackEveryone
-    ? !isAckExempt(user)
-    : (post.ackTitles || []).some(titleMatches) ||
-      (post.ackUserIds || []).includes(user.id);
+  // meetings use the RSVP response as the record - no separate acknowledgment.
+  const iMustAck =
+    !meeting &&
+    (post.ackEveryone
+      ? !isAckExempt(user)
+      : (post.ackTitles || []).some(titleMatches) ||
+        (post.ackUserIds || []).includes(user.id));
   // the roster (who's responded / acknowledged / going / attended) is sensitive -
   // Admin/IT/Super only. NOTE: gated on the EFFECTIVE role, and no author
   // exception, so "view as staff" (or any non-admin) never sees it.
@@ -236,7 +240,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     "announcements@mylifeservicesinc.com";
 
   let roster = null;
-  if (post.requireAck && canSeeRoster) {
+  if (post.requireAck && !meeting && canSeeRoster) {
     // the roster denominator = this announcement's audience (shared helper).
     const [expectedUsers, acks] = await Promise.all([
       prisma.user.findMany({
@@ -270,7 +274,6 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   }
 
   // ---- Company Meeting ----
-  const meeting = isCompanyMeeting(post.tag);
   const meetingOptions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
   const myPicks = (post.meetingChoices || []).map((c) => c.optionId);
   // can I pick a session? = in the meeting audience (same membership as ack).
@@ -525,7 +528,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 {post.editedAt && " · edited"}
                 {post.pinnedAt && " · pinned"}
               </p>
-              {post.requireAck && (
+              {post.requireAck && !meeting && (
                 <p className="mt-2 text-sm font-medium text-rose-600 dark:text-rose-400">
                   Acknowledgment required
                 </p>
@@ -861,12 +864,12 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 <span className={`rounded-full px-2.5 py-0.5 font-medium ${tagClass}`}>
                   {post.tag}
                 </span>
-                {expired && (
+                {!meeting && expired && (
                   <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                     Past due
                   </span>
                 )}
-                {post.expiresAt && !expired && (
+                {!meeting && post.expiresAt && !expired && (
                   <span>due {new Date(post.expiresAt).toLocaleDateString()}</span>
                 )}
               </div>
@@ -940,8 +943,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         {isDraft && <div aria-hidden className="h-8" />}
       </article>
 
-      {/* acknowledgments */}
-      {post.requireAck && (
+      {/* acknowledgments - non-meeting only (meetings use the RSVP response) */}
+      {post.requireAck && !meeting && (
         <div className="mt-6 space-y-4">
           {sentCount != null && (
             <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">

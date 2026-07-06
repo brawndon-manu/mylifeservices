@@ -4,7 +4,7 @@ import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
-import { ackAudienceWhere, ANNOUNCEMENT_TAG_STYLES } from "@/lib/announcements";
+import { ackAudienceWhere, ANNOUNCEMENT_TAG_STYLES, COMPANY_MEETING_TAG } from "@/lib/announcements";
 import AckBoard from "./_components/AckBoard";
 
 export const metadata = {
@@ -58,7 +58,12 @@ export default async function AcknowledgmentsPage() {
   }
 
   const rawPosts = await prisma.announcement.findMany({
-    where: { requireAck: true, deletedAt: null, publishedAt: { not: null } },
+    where: {
+      requireAck: true,
+      deletedAt: null,
+      publishedAt: { not: null },
+      tag: { not: COMPANY_MEETING_TAG },
+    },
     orderBy: { publishedAt: "desc" },
     select: {
       id: true,

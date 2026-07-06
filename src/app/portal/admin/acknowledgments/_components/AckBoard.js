@@ -75,10 +75,6 @@ export default function AckBoard({ posts, counts }) {
         </div>
       )}
 
-      <p className="mt-8 text-xs leading-relaxed text-faint">
-        Company Meetings count an RSVP as an acknowledgment, so a meeting with
-        &quot;require acknowledgment&quot; on also appears here.
-      </p>
     </>
   );
 }

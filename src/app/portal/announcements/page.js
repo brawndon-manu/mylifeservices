@@ -17,6 +17,7 @@ import {
   ANNOUNCEMENT_TAG_STYLES,
   isValidAnnouncementTag,
   isChangelog,
+  isCompanyMeeting,
   isAckExempt,
 } from "@/lib/announcements";
 import AuthorPreview from "./_components/AuthorPreview";
@@ -195,6 +196,7 @@ function PostCard({ post, currentUser }) {
   const iMustAck = !isAckExempt(currentUser);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
+  const meeting = isCompanyMeeting(post.tag);
   // changelog preview: render the markdown body and estimate a reading time
   // (~200 words/min). plain announcements render a faded markdown preview too.
   const changelogHtml = changelog ? renderMarkdown(post.content) : null;
@@ -221,17 +223,17 @@ function PostCard({ post, currentUser }) {
                 Pinned
               </span>
             )}
-            {expired && (
+            {!meeting && expired && (
               <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                 Past due
               </span>
             )}
-            {post.expiresAt && !expired && (
+            {!meeting && post.expiresAt && !expired && (
               <span className="text-muted">
                 due {new Date(post.expiresAt).toLocaleDateString()}
               </span>
             )}
-            {post.requireAck &&
+            {!meeting && post.requireAck &&
               (iAcked ? (
                 <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
                   Acknowledged

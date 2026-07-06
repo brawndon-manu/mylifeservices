@@ -256,77 +256,77 @@ export default function AnnouncementForm({
               </p>
             </div>
           )}
-
-          <div>
-            <label htmlFor="expiresAt" className={LABEL}>
-              Due date <span className="text-faint">(optional)</span>
-            </label>
-            <input
-              id="expiresAt"
-              name="expiresAt"
-              type="date"
-              defaultValue={d.expiresAt ? new Date(d.expiresAt).toISOString().split("T")[0] : ""}
-              className={INPUT}
-            />
-            <p className="mt-1 text-xs text-muted">
-              Got a deadline? It stays visible but gets a &quot;Past due&quot;
-              badge after this date.
-            </p>
-          </div>
         </>
       )}
 
-      {/* acknowledgment opt-in - works for any type */}
-      <div className="rounded-md border border-border bg-surface-2 p-4">
-        <label className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            name="requireAck"
-            checked={requireAck}
-            onChange={(e) => setRequireAck(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-brand"
-          />
-          <span>
-            <span className="block text-sm font-medium text-foreground">
-              Require staff to acknowledge they&apos;ve read this
-            </span>
-            <span className="mt-0.5 block text-xs text-muted">
-              Adds an &quot;I read this&quot; box and a who-has/hasn&apos;t
-              roster. You can also email it for one-click acknowledgment.
-            </span>
-          </span>
-        </label>
-
-        {requireAck && !meeting && (
-          <div className="mt-3 border-t border-border pt-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-              Who needs to acknowledge?
-            </p>
-            <AudiencePicker
-              everyoneName="ackEveryone"
-              titlesName="ackTitles"
-              userIdsName="ackUserIds"
-              staffByTitle={ackStaffByTitle}
-              everyoneTotal={ackEveryoneTotal}
-              defaultEveryone={d.ackEveryone === true}
-              defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
-              defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
+      {/* acknowledgment - non-meeting types only. a meeting uses its RSVP response
+          as the record, so there's no separate acknowledgment step for meetings. */}
+      {!meeting && (
+        <div className="rounded-md border border-border bg-surface-2 p-4">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              name="requireAck"
+              checked={requireAck}
+              onChange={(e) => setRequireAck(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-brand"
             />
-          </div>
-        )}
-        {requireAck && meeting && (
-          <p className="mt-3 border-t border-border pt-3 text-xs text-muted">
-            Everyone on the invite list above will be asked to acknowledge.
-          </p>
-        )}
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Require staff to acknowledge they&apos;ve read this
+              </span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Adds an &quot;Acknowledge that I&apos;ve read this&quot; box and a
+                who-has / who-hasn&apos;t roster. You can also email it for one-click
+                acknowledgment.
+              </span>
+            </span>
+          </label>
 
-        {mode === "create" && (
-          <p className="mt-3 border-t border-border pt-3 text-xs text-muted">
-            You&apos;ll choose who gets emailed when you publish - the next screen
-            previews the post first, then lets you publish and send.
-          </p>
-        )}
-      </div>
+          {requireAck && (
+            <div className="mt-3 space-y-4 border-t border-border pt-3">
+              <div>
+                <label htmlFor="expiresAt" className={LABEL}>
+                  Acknowledge by <span className="text-faint">(optional)</span>
+                </label>
+                <input
+                  id="expiresAt"
+                  name="expiresAt"
+                  type="date"
+                  defaultValue={d.expiresAt ? new Date(d.expiresAt).toISOString().split("T")[0] : ""}
+                  className={INPUT}
+                />
+                <p className="mt-1 text-xs text-muted">
+                  The date staff should acknowledge by. Anyone who hasn&apos;t by
+                  then gets a reminder.
+                </p>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                  Who needs to acknowledge?
+                </p>
+                <AudiencePicker
+                  everyoneName="ackEveryone"
+                  titlesName="ackTitles"
+                  userIdsName="ackUserIds"
+                  staffByTitle={ackStaffByTitle}
+                  everyoneTotal={ackEveryoneTotal}
+                  defaultEveryone={d.ackEveryone === true}
+                  defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
+                  defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "create" && (
+        <p className="rounded-md border border-border bg-surface-2 p-4 text-xs text-muted">
+          You&apos;ll choose who gets emailed when you publish - the next screen
+          previews the post first, then lets you publish and send.
+        </p>
+      )}
 
       <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
         <Link href={cancelHref} className="text-sm font-medium text-muted transition hover:text-foreground">
