@@ -28,7 +28,7 @@ import {
   ackAudienceWhere,
   isAckExempt,
 } from "@/lib/announcements";
-import AuthorChip from "../../hub/_components/AuthorChip";
+import AuthorPreview from "../_components/AuthorPreview";
 import Avatar from "@/components/Avatar";
 import ConfirmButton from "@/components/ConfirmButton";
 import SendEmailDialog from "../_components/SendEmailDialog";
@@ -36,6 +36,21 @@ import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
 import PublishBar from "../_components/PublishBar";
+import AckEmailAction from "../_components/AckEmailAction";
+import NameHover from "@/components/NameHover";
+
+// shape a db user into the {id,displayName,title,image,email,phone} the hover
+// card wants, so a name anywhere on this page can pop the person's contact card.
+function nhUser(u) {
+  return {
+    id: u.id,
+    displayName: preferredName(u),
+    title: u.title || "",
+    image: u.image || null,
+    email: u.email || null,
+    phone: u.phone || null,
+  };
+}
 import { formatDuration } from "@/lib/meeting-time";
 import {
   toggleLike,
@@ -83,9 +98,7 @@ function PersonRow({ user, reason, rollPostId }) {
     <div className="flex items-center gap-2.5 py-1">
       <Avatar name={preferredName(user)} image={user.image} size={30} />
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-foreground">
-          {preferredName(user)}
-        </div>
+        <NameHover user={nhUser(user)} className="block truncate text-sm font-medium text-foreground" />
         {user.title && (
           <div className="truncate text-xs text-muted">{user.title}</div>
         )}
@@ -132,6 +145,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const sp = await searchParams;
   const errorMessage = sp?.error ? ERRORS[sp.error] : null;
 
+  // the back link returns you to where you came from. the admin report pages
+  // link in with ?from=... so "back" doesn't dump you on the feed.
+  const BACKS = {
+    ack: { href: "/portal/admin/acknowledgments", label: "← Back to Acknowledgments" },
+    meetings: { href: "/portal/admin/meeting-attendance", label: "← Back to Meeting attendance" },
+  };
+  const back = BACKS[sp?.from] || {
+    href: "/portal/announcements",
+    label: "← Back to Announcements",
+  };
+
   const user = await getCurrentUser();
 
   const post = await prisma.announcement.findUnique({
@@ -151,7 +175,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
         include: {
-          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true } },
+          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
         },
       },
     },
@@ -223,6 +247,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
           preferredFirstName: true,
           preferredLastName: true,
           email: true,
+          title: true,
+          image: true,
+          phone: true,
         },
         orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
       }),
@@ -292,6 +319,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
           preferredLastName: true,
           title: true,
           image: true,
+          email: true,
+          phone: true,
         },
         orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
       }),
@@ -374,10 +403,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   return (
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <Link
-        href="/portal/announcements"
+        href={back.href}
         className="text-sm font-medium text-muted transition hover:text-brand"
       >
-        ← Back to Announcements
+        {back.label}
       </Link>
 
       {errorMessage && (
@@ -968,19 +997,12 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   </span>
                 </div>
                 {!isDraft && (
-                  <form action={sendAckEmails.bind(null, post.id)}>
-                    <ConfirmButton
-                      message={
-                        roster.notYet.length
-                          ? `Email this announcement to the ${roster.notYet.length} staff who haven't acknowledged yet?`
-                          : "Everyone has already acknowledged. Send anyway? (nobody will be emailed.)"
-                      }
-                      className="inline-flex items-center gap-2 rounded-md border border-border-strong px-3 py-2 text-sm font-medium text-foreground transition hover:bg-surface-3"
-                    >
-                      <MailIcon className="h-4 w-4" />
-                      Send to staff by email
-                    </ConfirmButton>
-                  </form>
+                  <AckEmailAction
+                    postId={post.id}
+                    send={sendAckEmails}
+                    notYetCount={roster.notYet.length}
+                    isMeeting={meeting}
+                  />
                 )}
               </div>
 
@@ -1015,7 +1037,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         key={u.id}
                         className="flex items-center justify-between gap-2 text-sm text-foreground"
                       >
-                        <span className="truncate">{preferredName(u)}</span>
+                        <NameHover user={nhUser(u)} className="truncate" />
                         <span className="flex shrink-0 items-center gap-1 text-xs text-muted">
                           {u.ack.viaEmail ? (
                             <MailIcon className="h-3.5 w-3.5" />
@@ -1037,8 +1059,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                       <li className="text-sm text-muted">Everyone&apos;s in.</li>
                     )}
                     {roster.notYet.map((u) => (
-                      <li key={u.id} className="truncate text-sm text-foreground">
-                        {preferredName(u)}
+                      <li key={u.id} className="text-sm text-foreground">
+                        <NameHover user={nhUser(u)} className="truncate" />
                       </li>
                     ))}
                   </ul>
@@ -1069,7 +1091,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               <div key={c.id} className="rounded-lg border border-border bg-surface p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <AuthorChip author={c.author} size="sm" showRole={canSeeRoles(user.role)} />
+                    <AuthorPreview author={c.author} size="sm" showRole={canSeeRoles(user.role)} />
                     <div className="mt-0.5 text-xs text-muted">
                       {timeAgo(c.createdAt)}
                       {c.editedAt && <span> · edited</span>}
