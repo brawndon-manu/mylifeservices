@@ -39,7 +39,7 @@ export default function SendEmailDialog({
           <form
             action={action}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl"
+            className="w-full max-w-lg rounded-xl border border-border bg-surface p-5 shadow-xl"
           >
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-foreground">Send by email</h2>

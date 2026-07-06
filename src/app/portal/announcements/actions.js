@@ -706,6 +706,15 @@ async function markMeetingAck(postId, user, requireAck) {
   }
 }
 
+// retracting a meeting response also clears the auto-ack that responding created
+// (viaEmail=false, since for a meeting "responding counts as acknowledgment"). a
+// real one-click email ack (viaEmail=true) is left intact.
+async function clearMeetingResponseAck(postId, userId) {
+  await prisma.announcementAck.deleteMany({
+    where: { announcementId: postId, userId, viaEmail: false },
+  });
+}
+
 const MEETING_RESPONSE_SELECT = {
   id: true,
   deletedAt: true,
@@ -779,6 +788,7 @@ export async function chooseMeetingOption(postId, optionId) {
     await prisma.announcementMeetingResponse.deleteMany({
       where: { announcementId: postId, userId: user.id },
     });
+    await clearMeetingResponseAck(postId, user.id);
   }
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
@@ -844,6 +854,7 @@ export async function setMeetingChoices(postId, formData) {
     await prisma.announcementMeetingResponse.deleteMany({
       where: { announcementId: postId, userId: user.id },
     });
+    await clearMeetingResponseAck(postId, user.id);
   }
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
@@ -867,6 +878,7 @@ export async function attendMeeting(postId) {
   });
   if (existing && !existing.cantMakeIt) {
     await prisma.announcementMeetingResponse.delete({ where: respKey });
+    await clearMeetingResponseAck(postId, user.id);
   } else {
     await prisma.announcementMeetingResponse.upsert({
       where: respKey,
@@ -955,6 +967,27 @@ export async function setAttendance(postId, userId, status) {
   });
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
+}
+
+// like setAttendance but RETURNS instead of redirecting, so the admin meeting-
+// attendance card can mark roll-call inline without a full navigation (which would
+// collapse the drill-down). status "" / anything else = back to neutral (unmarked).
+export async function markAttendance(postId, userId, status) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) return { ok: false };
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, deletedAt: true },
+  });
+  if (!post || post.deletedAt) return { ok: false };
+  const value = status === "present" || status === "absent" ? status : null;
+  await prisma.announcementMeetingResponse.updateMany({
+    where: { announcementId: postId, userId, cantMakeIt: false },
+    data: { attended: value },
+  });
+  revalidatePath("/portal/admin/meeting-attendance");
+  revalidatePath(`/portal/announcements/${postId}`);
+  return { ok: true };
 }
 
 function escapeHtml(s) {

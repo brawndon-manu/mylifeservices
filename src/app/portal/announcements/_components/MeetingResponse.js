@@ -5,10 +5,27 @@
 // once confirmed it shows a summary (with the join link) + a Change button to
 // re-pick. single-session meetings get an "I'll be there" / "can't make it"
 // version of the same confirmed/change pattern.
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
 import MeetingTime from "./MeetingTime";
 import CopyButton from "./CopyButton";
 import { formatDuration } from "@/lib/meeting-time";
+
+// submit button that shows a pending state while the action runs, so a slow db
+// round-trip doesn't feel dead + can't be double-submitted.
+function SubmitButton({ children, className, disabled, onClick, pendingLabel = "Saving…" }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={disabled || pending}
+      onClick={onClick}
+      className={className}
+    >
+      {pending ? pendingLabel : children}
+    </button>
+  );
+}
 
 function Check({ className }) {
   return (
@@ -96,6 +113,14 @@ export default function MeetingResponse({
   // start in edit mode only when there's no response yet.
   const [editing, setEditing] = useState(!isGoing && !cantMakeIt);
   const [reason, setReason] = useState(myResponse?.reason || "");
+  // optimistic single-session "I'll be there" so the bubble reacts instantly
+  // instead of waiting on the server round-trip + redirect.
+  const [isPending, startTransition] = useTransition();
+  const [optGoing, setOptGoing] = useState(isGoing);
+  const goingNow = isPending ? optGoing : isGoing;
+  // single-session "I can't make it" fills its bubble the moment it's clicked
+  // (client state), before the reason is submitted.
+  const [cantSelected, setCantSelected] = useState(cantMakeIt);
 
   const linkFor = (opt) => opt?.zoomLink || defaultLink;
   const codeFor = (opt) => opt?.zoomCode || defaultCode;
@@ -190,7 +215,7 @@ export default function MeetingResponse({
   };
 
   // ---- confirmed summary (going) ----
-  if (hasSessions && isGoing && !editing) {
+  if (isGoing && !editing) {
     const picked = options.filter((o) => myPicks.includes(o.id));
     return (
       <div className="mt-5">
@@ -200,7 +225,21 @@ export default function MeetingResponse({
               <Check className="h-3.5 w-3.5" />
             </span>
             <div className="flex-1">
-              {isSeries ? (
+              {!hasSessions ? (
+                <>
+                  <p className="text-sm font-semibold text-foreground">
+                    You&apos;re attending
+                  </p>
+                  {online &&
+                    (isAdmin ? (
+                      <JoinRow link={defaultLink} code={defaultCode} />
+                    ) : (
+                      <p className="mt-2 text-xs font-medium text-muted">
+                        Link will be provided soon!
+                      </p>
+                    ))}
+                </>
+              ) : isSeries ? (
                 <>
                   <p className="text-sm font-semibold text-foreground">Your response</p>
                   {seriesGroups.map((g) => {
@@ -400,6 +439,7 @@ export default function MeetingResponse({
                     placeholder="Reason (optional) - e.g. I'm on PTO that week"
                     className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   />
+                  <p className="text-xs text-muted">Only admins can see this reason.</p>
                 </div>
               </details>
             )}
@@ -409,13 +449,12 @@ export default function MeetingResponse({
                 <input key={id} type="hidden" name="optionId" value={id} />
               ))}
               {isSeries && <input type="hidden" name="reason" value={reason} />}
-              <button
-                type="submit"
+              <SubmitButton
                 disabled={confirmDisabled}
                 className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand disabled:cursor-not-allowed disabled:bg-surface-3 disabled:text-faint"
               >
                 {isGoing ? "Update" : "Confirm attendance"}
-              </button>
+              </SubmitButton>
               {(isSeries ? seriesPicked > 0 : selected.size > 0) && (
                 <span className="text-xs text-faint">
                   {isSeries
@@ -441,29 +480,89 @@ export default function MeetingResponse({
             </form>
           </>
         ) : (
-          // single-session "I'll be there"
-          <form action={attend.bind(null, postId)}>
+          // single-session: "I'll be there" (optimistic one-click) or "I can't make
+          // it" (fills instantly on click, then asks for a required reason).
+          <>
             <button
-              type="submit"
-              className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                isGoing ? "border-brand bg-sky-50 dark:bg-sky-950/30" : "border-border hover:border-brand-light"
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setCantSelected(false);
+                setOptGoing(true);
+                setEditing(false);
+                startTransition(() => attend(postId));
+              }}
+              className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition disabled:cursor-wait ${
+                goingNow && !cantSelected
+                  ? "border-brand bg-sky-50 dark:bg-sky-950/30"
+                  : "border-border hover:border-brand-light"
               }`}
             >
               <span
                 className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
-                  isGoing ? "border-brand bg-brand text-white" : "border-border-strong"
+                  goingNow && !cantSelected ? "border-brand bg-brand text-white" : "border-border-strong"
                 }`}
               >
-                {isGoing && <Check className="h-3 w-3" />}
+                {goingNow && !cantSelected && <Check className="h-3 w-3" />}
               </span>
               <span className="flex-1 text-sm font-medium text-foreground">I&apos;ll be there</span>
             </button>
-          </form>
+
+            <button
+              type="button"
+              onClick={() => {
+                setCantSelected(true);
+                setOptGoing(false);
+              }}
+              className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
+                cantSelected
+                  ? "border-rose-500 bg-rose-50 dark:bg-rose-950/30"
+                  : "border-border hover:border-brand-light"
+              }`}
+            >
+              <span
+                className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                  cantSelected ? "border-rose-500 bg-rose-500 text-white" : "border-border-strong"
+                }`}
+              >
+                {cantSelected && <Check className="h-3 w-3" />}
+              </span>
+              <span className="flex-1 text-sm font-medium text-foreground">I can&apos;t make it</span>
+            </button>
+
+            {cantSelected && (
+              <form action={cantMake.bind(null, postId)} className="rounded-lg border border-border p-3">
+                <label htmlFor="cant-reason" className="block text-sm font-medium text-foreground">
+                  Why can&apos;t you make it?
+                </label>
+                <textarea
+                  id="cant-reason"
+                  name="reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  required
+                  rows={2}
+                  placeholder="e.g. I'm on PTO that week"
+                  className="mt-1.5 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+                <p className="mt-1.5 text-xs text-muted">
+                  A reason is required. Only admins can see it.
+                </p>
+                <SubmitButton
+                  disabled={!reason.trim()}
+                  onClick={() => setEditing(false)}
+                  className="mt-2.5 rounded-md bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-surface-3 disabled:text-faint"
+                >
+                  Submit
+                </SubmitButton>
+              </form>
+            )}
+          </>
         )}
 
-        {/* can't make it / can't make any - flat lists only (series uses the
-            "can't attend one or more" control above) */}
-        {!isSeries && (
+        {/* "can't make any" for FLAT multi-session lists (single-session has its own
+            above; series uses the "can't attend one or more" control). */}
+        {hasSessions && !isSeries && (
         <details className="rounded-lg border border-border" open={cantMakeIt || undefined}>
           <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
             <span
@@ -473,24 +572,28 @@ export default function MeetingResponse({
             >
               {cantActive && <Check className="h-3 w-3" />}
             </span>
-            <span className="font-medium text-foreground">
-              {hasSessions && options.length > 1 ? "I can't make any of these" : "I can't make it"}
-            </span>
+            <span className="font-medium text-foreground">I can&apos;t make any of these</span>
           </summary>
           <form action={cantMake.bind(null, postId)} className="px-3 pb-3">
             <textarea
               name="reason"
-              defaultValue={myResponse?.reason || ""}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
               rows={2}
-              placeholder="Reason (optional) - e.g. I'm on PTO that week"
+              placeholder="e.g. I'm on PTO that week"
               className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
-            <button
-              type="submit"
-              className="mt-2 rounded-md bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700"
+            <p className="mt-1.5 text-xs text-muted">
+              A reason is required. Only admins can see it.
+            </p>
+            <SubmitButton
+              disabled={!reason.trim()}
+              onClick={() => setEditing(false)}
+              className="mt-2 rounded-md bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-surface-3 disabled:text-faint"
             >
               Submit
-            </button>
+            </SubmitButton>
           </form>
         </details>
         )}
