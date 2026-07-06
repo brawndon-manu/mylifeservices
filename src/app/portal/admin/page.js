@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated, isAdminUp } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
+import NewBadge from "@/components/NewBadge";
 
 export const metadata = {
   title: "Admin",
@@ -43,6 +44,22 @@ export default async function AdminPage() {
         />
         {isAdminUp(user.role) && (
           <LinkCard
+            href="/portal/admin/meeting-attendance"
+            title="Meeting attendance"
+            isNew
+            body="RSVPs and roll-call across every Company Meeting: who's going, who hasn't responded, and who showed up."
+          />
+        )}
+        {isAdminUp(user.role) && (
+          <LinkCard
+            href="/portal/admin/acknowledgments"
+            title="Acknowledgments"
+            isNew
+            body="Read-receipts across every announcement that needs one: who has acknowledged and who still hasn't."
+          />
+        )}
+        {isAdminUp(user.role) && (
+          <LinkCard
             href="/portal/site-photos"
             title="Site photos"
             body="Manage the public About/Stories photos: upload, caption, reorder, show or hide."
@@ -53,15 +70,16 @@ export default async function AdminPage() {
   );
 }
 
-function LinkCard({ href, title, body }) {
+function LinkCard({ href, title, body, isNew }) {
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-border bg-surface p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      className="group rounded-xl border border-border bg-surface p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]"
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">
+        <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
           {title}
+          {isNew && <NewBadge />}
         </h2>
         <span
           aria-hidden="true"

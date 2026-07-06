@@ -13,8 +13,33 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function ContactDetailPage({ params }) {
+// the back link returns you to wherever you opened this contact from (the
+// ?from=<path> marker set by the hover card), falling back to Team Contacts.
+function backTarget(from) {
+  const def = { href: "/portal/contacts", label: "Team Contacts" };
+  if (typeof from !== "string" || !from.startsWith("/") || from.startsWith("//")) return def;
+  const label = from.startsWith("/portal/announcements")
+    ? "Announcements"
+    : from.startsWith("/portal/admin/acknowledgments")
+      ? "Acknowledgments"
+      : from.startsWith("/portal/admin/meeting-attendance")
+        ? "Meeting attendance"
+        : from.startsWith("/portal/hub")
+          ? "the Hub"
+          : from.startsWith("/portal/newsletter")
+            ? "Newsletter"
+            : from.startsWith("/portal/feedback")
+              ? "Suggestions"
+              : from.startsWith("/portal/contacts")
+                ? "Team Contacts"
+                : "back";
+  return { href: from, label };
+}
+
+export default async function ContactDetailPage({ params, searchParams }) {
   const { id } = await params;
+  const sp = await searchParams;
+  const back = backTarget(sp?.from);
   const viewer = await getCurrentUser();
 
   const person = await prisma.user.findFirst({
@@ -43,10 +68,10 @@ export default async function ContactDetailPage({ params }) {
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
       <Link
-        href="/portal/contacts"
+        href={back.href}
         className="text-sm font-medium text-muted transition hover:text-brand"
       >
-        ← Back to Team Contacts
+        ← Back to {back.label}
       </Link>
 
       {/* profile header */}
