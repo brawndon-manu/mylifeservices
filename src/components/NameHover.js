@@ -1,18 +1,17 @@
 "use client";
 
-// the author's name, but clickable: hover changes its color, and clicking pops
-// a little contact card (avatar, title, email, phone, link to the full contact).
-// rendered through a portal so the card's overflow/transform/stacking doesn't
-// clip it. drop-in for AuthorChip where we want the preview.
+// a person's name that pops a small contact card on click (avatar, title, email,
+// phone, link to their full contact). reusable anywhere a name is shown - rosters,
+// comments, reports - so an admin can get detail on whoever they're reading. the
+// card is portaled to <body> so overflow/transform on ancestors can't clip it.
+// `user` = { id, displayName, title, image, email, phone }.
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Avatar from "@/components/Avatar";
-import { preferredName } from "@/lib/contacts";
-import { ROLE_LABELS, roleBadgeClass } from "@/lib/roles";
 
-export default function AuthorPreview({ author, size = "md", showRole = false }) {
+export default function NameHover({ user, className = "" }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
@@ -45,14 +44,11 @@ export default function AuthorPreview({ author, size = "md", showRole = false })
     };
   }, [open, place]);
 
-  if (!author) return null;
-  const isSm = size === "sm";
-  const nameClass = isSm ? "text-sm font-medium" : "text-base font-semibold";
-  const badgeSize = isSm ? "ml-1.5 text-[10px]" : "ml-2 text-xs";
-  const name = preferredName(author) || "—";
+  if (!user) return null;
+  const name = user.displayName || "—";
 
   return (
-    <span className="relative z-10 inline-flex flex-wrap items-center">
+    <>
       <button
         ref={btnRef}
         type="button"
@@ -61,20 +57,10 @@ export default function AuthorPreview({ author, size = "md", showRole = false })
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className={`${nameClass} text-foreground transition hover:text-brand dark:hover:text-brand-light`}
+        className={`text-left transition hover:text-brand dark:hover:text-brand-light ${className}`}
       >
         {name}
       </button>
-      {showRole && author.role && (
-        <span className={`${badgeSize} rounded px-1.5 py-0.5 font-medium ${roleBadgeClass(author.role)}`}>
-          {ROLE_LABELS[author.role] ?? author.role}
-        </span>
-      )}
-      {author.email && (
-        <span className={`${badgeSize} rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted`}>
-          {author.email}
-        </span>
-      )}
 
       {open &&
         pos &&
@@ -86,36 +72,36 @@ export default function AuthorPreview({ author, size = "md", showRole = false })
             className="w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-4 shadow-xl"
           >
             <div className="flex items-center gap-3">
-              <Avatar name={name} email={author.email} image={author.image} size={44} />
+              <Avatar name={name} email={user.email} image={user.image} size={44} />
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{name}</p>
-                {author.title && (
-                  <p className="truncate text-xs text-muted">{author.title}</p>
-                )}
+                {user.title && <p className="truncate text-xs text-muted">{user.title}</p>}
               </div>
             </div>
-            <div className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm">
-              {author.email && (
-                <a
-                  href={`mailto:${author.email}`}
-                  className="flex items-center gap-2 text-brand transition hover:underline"
-                >
-                  <MailIcon className="h-4 w-4 flex-none" />
-                  <span className="truncate">{author.email}</span>
-                </a>
-              )}
-              {author.phone && (
-                <a
-                  href={`tel:${author.phone}`}
-                  className="flex items-center gap-2 text-foreground transition hover:text-brand"
-                >
-                  <PhoneIcon className="h-4 w-4 flex-none" />
-                  {author.phone}
-                </a>
-              )}
-            </div>
+            {(user.email || user.phone) && (
+              <div className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm">
+                {user.email && (
+                  <a
+                    href={`mailto:${user.email}`}
+                    className="flex items-center gap-2 text-brand transition hover:underline"
+                  >
+                    <MailIcon className="h-4 w-4 flex-none" />
+                    <span className="truncate">{user.email}</span>
+                  </a>
+                )}
+                {user.phone && (
+                  <a
+                    href={`tel:${user.phone}`}
+                    className="flex items-center gap-2 text-foreground transition hover:text-brand"
+                  >
+                    <PhoneIcon className="h-4 w-4 flex-none" />
+                    {user.phone}
+                  </a>
+                )}
+              </div>
+            )}
             <Link
-              href={`/portal/contacts/${author.id}${pathname ? `?from=${encodeURIComponent(pathname)}` : ""}`}
+              href={`/portal/contacts/${user.id}${pathname ? `?from=${encodeURIComponent(pathname)}` : ""}`}
               className="mt-3 inline-block text-xs font-medium text-brand transition hover:underline"
             >
               View full contact →
@@ -123,7 +109,7 @@ export default function AuthorPreview({ author, size = "md", showRole = false })
           </div>,
           document.body,
         )}
-    </span>
+    </>
   );
 }
 
