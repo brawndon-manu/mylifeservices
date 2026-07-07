@@ -83,11 +83,16 @@ export default function MeetingResponse({
   defaultCode = null,
   myPicks = [],
   myResponse = null,
+  lockedAll = false,
+  lockedSeriesIds = [],
   setChoices,
   attend,
   cantMake,
 }) {
   const hasSessions = options.length > 0;
+  // a session/series the attendee can no longer change (it started or they were
+  // marked present/absent). admins bypass this; the server enforces it too.
+  const lockedSeries = new Set(lockedSeriesIds);
   const cantMakeIt = !!myResponse?.cantMakeIt;
   // a "cant:<seriesId>" pick = can't attend that series. real picks = actual dates.
   const isCantPick = (id) => String(id).startsWith("cant:");
@@ -316,13 +321,17 @@ export default function MeetingResponse({
                 </>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="flex-none rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-brand hover:text-brand"
-            >
-              Change
-            </button>
+            {lockedAll ? (
+              <span className="flex-none text-xs font-medium text-muted">Locked in</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="flex-none rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-brand hover:text-brand"
+              >
+                Change
+              </button>
+            )}
           </div>
         </div>
         <p className="mt-2 text-xs text-faint">
@@ -349,13 +358,17 @@ export default function MeetingResponse({
                 <p className="mt-1 text-sm text-muted">“{myResponse.reason}”</p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="flex-none rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-brand hover:text-brand"
-            >
-              Change
-            </button>
+            {lockedAll ? (
+              <span className="flex-none text-xs font-medium text-muted">Locked in</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="flex-none rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-brand hover:text-brand"
+              >
+                Change
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -383,24 +396,41 @@ export default function MeetingResponse({
                 {seriesGroups.map((g) => {
                   const val = seriesValue(g);
                   const cantSel = val === cantId(g.id);
+                  const locked = lockedSeries.has(g.id);
+                  const pickedOpt = g.options.find((o) => o.id === val);
                   return (
                     <div key={g.id} className="rounded-lg border border-border p-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
                         {g.label}
-                        {!val && (
-                          <span className="ml-2 font-normal normal-case text-amber-600 dark:text-amber-400">
-                            pick one
-                          </span>
-                        )}
-                        {cantSel && (
-                          <span className="ml-2 font-normal normal-case text-rose-600 dark:text-rose-400">
-                            can&apos;t attend
-                          </span>
+                        {locked ? (
+                          <span className="ml-2 font-normal normal-case text-muted">closed</span>
+                        ) : (
+                          <>
+                            {!val && (
+                              <span className="ml-2 font-normal normal-case text-amber-600 dark:text-amber-400">
+                                pick one
+                              </span>
+                            )}
+                            {cantSel && (
+                              <span className="ml-2 font-normal normal-case text-rose-600 dark:text-rose-400">
+                                can&apos;t attend
+                              </span>
+                            )}
+                          </>
                         )}
                       </p>
-                      <div className="space-y-2">
-                        {g.options.map((opt) => optBtn(opt, () => pickInSeries(g.id, opt.id)))}
-                      </div>
+                      {locked ? (
+                        <p className="text-sm text-foreground">
+                          {cantSel ? "Can't attend" : pickedOpt ? pickedOpt.label : "No pick"}
+                          <span className="mt-0.5 block text-xs text-muted">
+                            This one already started or was recorded, so it&apos;s locked in.
+                          </span>
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {g.options.map((opt) => optBtn(opt, () => pickInSeries(g.id, opt.id)))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -411,7 +441,7 @@ export default function MeetingResponse({
 
             {/* series: one "can't attend one or more" control - check the series you
                 can't make, plus a reason. (replaces a per-series button.) */}
-            {isSeries && (
+            {isSeries && seriesGroups.some((g) => !lockedSeries.has(g.id)) && (
               <details className="rounded-lg border border-border" open={anyCant || undefined}>
                 <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
                   <span
@@ -427,7 +457,9 @@ export default function MeetingResponse({
                 </summary>
                 <div className="space-y-2 px-3 pb-3">
                   <p className="text-xs text-muted">Check the series you can&apos;t attend.</p>
-                  {seriesGroups.map((g) => (
+                  {seriesGroups
+                    .filter((g) => !lockedSeries.has(g.id))
+                    .map((g) => (
                     <label key={g.id} className="flex items-center gap-2 text-sm text-foreground">
                       <input
                         type="checkbox"

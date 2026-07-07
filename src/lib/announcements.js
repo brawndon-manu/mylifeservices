@@ -128,3 +128,65 @@ export const ANNOUNCEMENT_TITLE_MAX = 140;
 // changelogs are long-form (multiple sections), so they get a much bigger cap
 // than a plain post (POST_CONTENT_MAX = 2000 in hub.js).
 export const CHANGELOG_CONTENT_MAX = 20000;
+
+// a real (non-decline) session option.
+function realOptions(options) {
+  return (options || []).filter(
+    (o) => o && o.id && !String(o.id).startsWith("cant:"),
+  );
+}
+
+// which of a person's meeting picks can no longer be changed by that person. a
+// pick locks once its session has started OR it's been marked present/absent. for
+// a series that only locks that one series (the others stay open); a single or
+// flat-multi meeting locks the whole response. admins bypass this entirely - it's
+// only used to gate the attendee's own controls.
+//   options   = post.meetingOptions
+//   myChoices = the person's choice rows [{ optionId, attended }]
+//   meetingAt = post.meetingAt (single-session start)
+//   myAttended = the person's response.attended (single-session mark)
+//   now       = Date.now()
+export function computeMeetingLocks({ options, myChoices, meetingAt, myAttended, now }) {
+  const opts = realOptions(options);
+  const optById = new Map(opts.map((o) => [o.id, o]));
+  const choices = myChoices || [];
+  const started = (o) => o?.at && new Date(o.at).getTime() <= now;
+
+  // a pick is locked if its session started or the pick itself is marked.
+  const lockedOptionIds = new Set();
+  for (const c of choices) {
+    const o = optById.get(c.optionId);
+    if (o && (started(o) || c.attended != null)) lockedOptionIds.add(c.optionId);
+  }
+
+  const isSeries = opts.some((o) => o.seriesId);
+  if (isSeries) {
+    const bySeries = new Map();
+    for (const o of opts) {
+      const sid = o.seriesId || "_";
+      if (!bySeries.has(sid)) bySeries.set(sid, []);
+      bySeries.get(sid).push(o);
+    }
+    const pickedOpt = new Set(choices.map((c) => c.optionId));
+    const lockedSeriesIds = new Set();
+    for (const [sid, sessions] of bySeries) {
+      const myPick = sessions.find((o) => pickedOpt.has(o.id));
+      const pickLocked = myPick && lockedOptionIds.has(myPick.id);
+      const allStarted = sessions.every(started);
+      if (pickLocked || allStarted) lockedSeriesIds.add(sid);
+    }
+    return {
+      isSeries: true,
+      lockedAll: false,
+      lockedSeriesIds: [...lockedSeriesIds],
+      lockedOptionIds: [...lockedOptionIds],
+    };
+  }
+
+  // single-session (no options) or flat multi-pick.
+  const lockedAll =
+    opts.length === 0
+      ? Boolean((meetingAt && new Date(meetingAt).getTime() <= now) || myAttended != null)
+      : lockedOptionIds.size > 0;
+  return { isSeries: false, lockedAll, lockedSeriesIds: [], lockedOptionIds: [...lockedOptionIds] };
+}

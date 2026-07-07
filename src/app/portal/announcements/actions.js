@@ -48,6 +48,7 @@ import {
   ackAudienceWhere,
   titleSegmentMatch,
   isAckExempt,
+  computeMeetingLocks,
 } from "@/lib/announcements";
 
 async function requireUser() {
@@ -720,11 +721,27 @@ const MEETING_RESPONSE_SELECT = {
   deletedAt: true,
   meetingOptions: true,
   meetingMultiPick: true,
+  meetingAt: true,
   requireAck: true,
   ackEveryone: true,
   ackTitles: true,
   ackUserIds: true,
 };
+
+// the attendee's current picks + response mark, for computing what's locked.
+async function loadMyMeetingState(postId, userId) {
+  const [myChoices, resp] = await Promise.all([
+    prisma.announcementMeetingChoice.findMany({
+      where: { announcementId: postId, userId },
+      select: { optionId: true, attended: true },
+    }),
+    prisma.announcementMeetingResponse.findUnique({
+      where: { announcementId_userId: { announcementId: postId, userId } },
+      select: { attended: true },
+    }),
+  ]);
+  return { myChoices, myAttended: resp?.attended || null };
+}
 
 // pick or unpick a meeting session option. single-pick replaces any prior
 // choice (clicking the same one clears it); multi-pick toggles just that one.
@@ -814,36 +831,73 @@ export async function setMeetingChoices(postId, formData) {
   const seriesOf = (id) => (isCant(id) ? id.slice(5) : optById.get(id)?.seriesId);
   const valid = (id) =>
     isCant(id) ? seriesIds.has(id.slice(5)) : optById.has(id);
+  // what's already locked for this attendee (started sessions / marked picks).
+  const { myChoices } = await loadMyMeetingState(postId, user.id);
+  const locks = computeMeetingLocks({
+    options: opts,
+    myChoices,
+    meetingAt: post.meetingAt,
+    now: Date.now(),
+  });
+
   let ids = [...new Set(formData.getAll("optionId").map(String))].filter(valid);
   if (isSeries) {
-    // exactly one decision per series (a date, or can't-attend). last per series.
+    const lockedSeries = new Set(locks.lockedSeriesIds);
+    // one decision per series; ignore any change to a locked series.
     const bySeries = new Map();
-    for (const id of ids) bySeries.set(seriesOf(id), id);
+    for (const id of ids) {
+      const sid = seriesOf(id);
+      if (lockedSeries.has(sid)) continue;
+      bySeries.set(sid, id);
+    }
     ids = [...bySeries.values()];
-  } else if (!post.meetingMultiPick) {
-    ids = ids.slice(0, 1);
+    // replace only the unlocked-series picks; keep the locked ones untouched.
+    const toDelete = myChoices
+      .map((c) => c.optionId)
+      .filter((oid) => !lockedSeries.has(seriesOf(oid)));
+    if (toDelete.length) {
+      await prisma.announcementMeetingChoice.deleteMany({
+        where: { announcementId: postId, userId: user.id, optionId: { in: toDelete } },
+      });
+    }
+    if (ids.length) {
+      await prisma.announcementMeetingChoice.createMany({
+        data: ids.map((optionId) => ({ announcementId: postId, userId: user.id, optionId })),
+        skipDuplicates: true,
+      });
+    }
+  } else {
+    // single / flat multi: the whole response is locked once it starts or is marked.
+    if (locks.lockedAll) redirect(`/portal/announcements/${postId}?error=locked`);
+    if (!post.meetingMultiPick) ids = ids.slice(0, 1);
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: { announcementId: postId, userId: user.id },
+    });
+    if (ids.length) {
+      await prisma.announcementMeetingChoice.createMany({
+        data: ids.map((optionId) => ({ announcementId: postId, userId: user.id, optionId })),
+        skipDuplicates: true,
+      });
+    }
   }
 
-  await prisma.announcementMeetingChoice.deleteMany({
+  // recompute the response from the FULL resulting pick set (kept + new).
+  const finalChoices = await prisma.announcementMeetingChoice.findMany({
     where: { announcementId: postId, userId: user.id },
+    select: { optionId: true },
   });
-  if (ids.length) {
-    await prisma.announcementMeetingChoice.createMany({
-      data: ids.map((optionId) => ({ announcementId: postId, userId: user.id, optionId })),
-      skipDuplicates: true,
-    });
-  }
+  const finalIds = finalChoices.map((c) => c.optionId);
   const respKey = {
     announcementId_userId: { announcementId: postId, userId: user.id },
   };
   // attending at least one real date = going; only can't-attend picks = can't make it.
-  const realPicks = ids.filter((id) => !isCant(id));
+  const realPicks = finalIds.filter((id) => !isCant(id));
   // a reason only applies when they declined at least one series.
-  const hasCant = ids.some(isCant);
+  const hasCant = finalIds.some(isCant);
   const reason = hasCant
     ? (formData.get("reason") || "").toString().trim().slice(0, 300) || null
     : null;
-  if (ids.length > 0) {
+  if (finalIds.length > 0) {
     await prisma.announcementMeetingResponse.upsert({
       where: respKey,
       create: { announcementId: postId, userId: user.id, cantMakeIt: realPicks.length === 0, reason },
@@ -876,6 +930,15 @@ export async function attendMeeting(postId) {
   const existing = await prisma.announcementMeetingResponse.findUnique({
     where: respKey,
   });
+  // single-session: once it starts or you're marked present/absent, it's locked.
+  const locks = computeMeetingLocks({
+    options: [],
+    myChoices: [],
+    meetingAt: post.meetingAt,
+    myAttended: existing?.attended || null,
+    now: Date.now(),
+  });
+  if (locks.lockedAll) redirect(`/portal/announcements/${postId}?error=locked`);
   if (existing && !existing.cantMakeIt) {
     await prisma.announcementMeetingResponse.delete({ where: respKey });
     await clearMeetingResponseAck(postId, user.id);
@@ -901,6 +964,21 @@ export async function cantMakeMeeting(postId, formData) {
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
   if (!meetingInAudience(post, user)) redirect(`/portal/announcements/${postId}`);
+  // this "can't make any of these" path clears every pick, so refuse it if
+  // anything is already locked (a started/marked session or series) - those can't
+  // be retracted by the attendee.
+  const { myChoices, myAttended } = await loadMyMeetingState(postId, user.id);
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const locks = computeMeetingLocks({
+    options: opts,
+    myChoices,
+    meetingAt: post.meetingAt,
+    myAttended,
+    now: Date.now(),
+  });
+  if (locks.lockedAll || locks.lockedSeriesIds.length) {
+    redirect(`/portal/announcements/${postId}?error=locked`);
+  }
   const reason =
     (formData.get("reason") || "").toString().trim().slice(0, 300) || null;
   await prisma.announcementMeetingChoice.deleteMany({

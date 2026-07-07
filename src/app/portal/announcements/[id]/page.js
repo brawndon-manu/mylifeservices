@@ -27,6 +27,7 @@ import {
   formatHasAddress,
   ackAudienceWhere,
   isAckExempt,
+  computeMeetingLocks,
 } from "@/lib/announcements";
 import AuthorPreview from "../_components/AuthorPreview";
 import Avatar from "@/components/Avatar";
@@ -80,6 +81,7 @@ const ERRORS = {
   forbidden: "You dont have permission to do that.",
   emailConfig: "Email isnt configured yet. Add the announcements sender to the env.",
   recipients: "Pick at least one group to send to.",
+  locked: "That session is closed - it already started or you were marked for it. Ask an admin if you need a change.",
 };
 
 // shared markdown body styling for both the changelog + the new announcement
@@ -165,10 +167,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       acks: { where: { userId: user.id }, select: { viaEmail: true, createdAt: true } },
-      meetingChoices: { where: { userId: user.id }, select: { optionId: true } },
+      meetingChoices: { where: { userId: user.id }, select: { optionId: true, attended: true } },
       meetingResponses: {
         where: { userId: user.id },
-        select: { cantMakeIt: true, reason: true },
+        select: { cantMakeIt: true, reason: true, attended: true },
       },
       _count: { select: { likes: true } },
       comments: {
@@ -284,6 +286,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
   // my current response (going / cant make it + reason), for the controls.
   const myResponse = post.meetingResponses?.[0] || null;
+  // what I can no longer change myself (a started/marked session or series). the
+  // server enforces this too; here it just drives the read-only UI.
+  const myLocks = meeting
+    ? computeMeetingLocks({
+        options: meetingOptions,
+        myChoices: post.meetingChoices || [],
+        meetingAt: post.meetingAt,
+        myAttended: myResponse?.attended || null,
+        now: Date.now(),
+      })
+    : { lockedAll: false, lockedSeriesIds: [] };
 
   // draft -> the author/moderator sees a publish bar. precompute the email
   // recipients ("same as invitees" = the invite/ack audience) for the dialog.
@@ -727,6 +740,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         ? { cantMakeIt: myResponse.cantMakeIt, reason: myResponse.reason }
                         : null
                     }
+                    lockedAll={myLocks.lockedAll}
+                    lockedSeriesIds={myLocks.lockedSeriesIds}
                     setChoices={setMeetingChoices}
                     attend={attendMeeting}
                     cantMake={cantMakeMeeting}
