@@ -666,19 +666,9 @@ export default function MeetingFields({ defaults = {} }) {
         </label>
       </div>
 
-      {!hasOptions && (
-        <>
-          <TimeBlock value={single} onChange={setSingle} />
-          <input type="hidden" name="meetingAt" value={singleInstant || ""} />
-          <input type="hidden" name="meetingTimezone" value={single.tz} />
-          <input type="hidden" name="meetingDurFromHrs" value={single.durFromHrs} />
-          <input type="hidden" name="meetingDurFromMin" value={single.durFromMin} />
-          <input type="hidden" name="meetingDurToHrs" value={single.durToHrs} />
-          <input type="hidden" name="meetingDurToMin" value={single.durToMin} />
-        </>
-      )}
-
       <div className="border-t border-border pt-4">
+        {/* choose single-vs-multi FIRST, then show the matching time fields -
+            otherwise checking this box wipes the date/time you just entered */}
         <label className="flex items-start gap-3">
           <input
             type="checkbox"
@@ -699,6 +689,18 @@ export default function MeetingFields({ defaults = {} }) {
             </span>
           </span>
         </label>
+
+        {!hasOptions && (
+          <div className="mt-4">
+            <TimeBlock value={single} onChange={setSingle} />
+            <input type="hidden" name="meetingAt" value={singleInstant || ""} />
+            <input type="hidden" name="meetingTimezone" value={single.tz} />
+            <input type="hidden" name="meetingDurFromHrs" value={single.durFromHrs} />
+            <input type="hidden" name="meetingDurFromMin" value={single.durFromMin} />
+            <input type="hidden" name="meetingDurToHrs" value={single.durToHrs} />
+            <input type="hidden" name="meetingDurToMin" value={single.durToMin} />
+          </div>
+        )}
 
         {hasOptions && (
           <div className="mt-3 space-y-4">
