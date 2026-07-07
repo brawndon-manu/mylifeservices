@@ -37,6 +37,7 @@ import SendEmailDialog from "../_components/SendEmailDialog";
 import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
+import ZoomLinksDialog from "../_components/ZoomLinksDialog";
 import PublishBar from "../_components/PublishBar";
 import AckEmailAction from "../_components/AckEmailAction";
 import NameHover from "@/components/NameHover";
@@ -69,7 +70,7 @@ import {
   attendMeeting,
   cantMakeMeeting,
   setAttendance,
-  setMeetingLink,
+  setMeetingZoomLinks,
   adminAddToSession,
   adminMoveSession,
   adminSetGoing,
@@ -751,41 +752,27 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                       </div>
                     )}
 
-                    {/* author/admin: add or update the Zoom link + passcode */}
+                    {/* author/admin: edit the Zoom link(s) via a popup (single
+                        link, or one per session for a series) */}
                     {formatHasOnline(post.meetingFormat) && canManageLink && (
-                      <details
-                        className="rounded-lg border border-border bg-surface-2"
-                        open={!post.zoomLink || undefined}
-                      >
-                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-foreground">
-                          {post.zoomLink ? "Edit Zoom link / passcode" : "Add the Zoom link"}
-                        </summary>
-                        <form
-                          action={setMeetingLink.bind(null, post.id)}
-                          className="space-y-2 px-3 pb-3"
-                        >
-                          <input
-                            name="zoomLink"
-                            type="url"
-                            defaultValue={post.zoomLink || ""}
-                            placeholder="https://zoom.us/j/..."
-                            className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                          <input
-                            name="zoomCode"
-                            type="text"
-                            defaultValue={post.zoomCode || ""}
-                            placeholder="Passcode (optional)"
-                            className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-md bg-brand-light px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-brand"
-                          >
-                            Save link
-                          </button>
-                        </form>
-                      </details>
+                      <div>
+                        <ZoomLinksDialog
+                          postId={post.id}
+                          defaultLink={post.zoomLink}
+                          defaultCode={post.zoomCode}
+                          sessions={meetingOptions
+                            .filter((o) => o && o.id)
+                            .map((o) => ({
+                              id: o.id,
+                              label: o.label,
+                              seriesLabel: o.seriesLabel || null,
+                              seriesId: o.seriesId || null,
+                              zoomLink: o.zoomLink || null,
+                              zoomCode: o.zoomCode || null,
+                            }))}
+                          action={setMeetingZoomLinks}
+                        />
+                      </div>
                     )}
                   </div>
                 )}

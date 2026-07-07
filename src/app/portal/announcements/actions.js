@@ -1139,6 +1139,55 @@ export async function setMeetingLink(postId, formData) {
   redirect(`/portal/announcements/${postId}`);
 }
 
+// set the meeting's Zoom link(s) from the "Edit Zoom links" dialog. handles the
+// "same for every session" case (one default link) and the per-session case
+// (each session its own link, stored in meetingOptions). admin only.
+export async function setMeetingZoomLinks(postId, formData) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) redirect(`/portal/announcements/${postId}?error=forbidden`);
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, deletedAt: true, meetingFormat: true, meetingOptions: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (!formatHasOnline(post.meetingFormat)) redirect(`/portal/announcements/${postId}`);
+
+  const clean = (v, max) => (v || "").toString().trim().slice(0, max) || null;
+  const defLink = clean(formData.get("zoomLink"), 500);
+  const defCode = clean(formData.get("zoomCode"), 60);
+  const sameForAll = formData.get("sameForAll") === "on";
+
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  let newOpts = opts;
+  if (opts.length && !sameForAll) {
+    // each session carries its own link/passcode; blank = fall back to default.
+    newOpts = opts.map((o) =>
+      o && o.id
+        ? {
+            ...o,
+            zoomLink: clean(formData.get(`optZoomLink_${o.id}`), 500),
+            zoomCode: clean(formData.get(`optZoomCode_${o.id}`), 60),
+          }
+        : o,
+    );
+  } else if (opts.length && sameForAll) {
+    // "same for all": clear the per-session overrides so everyone uses default.
+    newOpts = opts.map((o) => (o && o.id ? { ...o, zoomLink: null, zoomCode: null } : o));
+  }
+
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: {
+      zoomLink: defLink,
+      zoomCode: defCode,
+      ...(opts.length ? { meetingOptions: newOpts } : {}),
+      ...(defLink ? { zoomLinkTbd: false } : {}),
+    },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
 // write a present/absent/null mark. for a multi-session or series meeting the
 // mark lives per session on the chosen option row; for a single-session meeting
 // (no optionId) it stays on the response. shared by both roll-call actions.
