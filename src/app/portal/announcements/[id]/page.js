@@ -441,7 +441,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
       <article
         className={`mt-4 overflow-hidden rounded-xl border border-border shadow-sm ${
-          changelog ? "bg-surface p-6 sm:p-8" : "bg-[#eef3fa] dark:bg-[#070912]"
+          changelog
+            ? "bg-surface p-6 sm:p-8"
+            : "bg-[#eef3fa] dark:bg-[#070912] night:!bg-background"
         }`}
       >
         {changelog ? (
@@ -480,12 +482,11 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         ) : (
           /* new announcement layout: hero with faded logo + title block + body */
           <div>
-            {/* hero band is always dark - the .dark wrapper forces dark styling
-                so Light mode matches Dim/Night from the divider up; the body below
-                keeps the theme-aware (light in Light) card color. */}
-            <div className="dark bg-[#070912]">
+            {/* hero: soft cloud glow + gradient tree, theme-aware - its own airy
+                light look in Light, glowing in Dim/Night; fades into the body
+                color below the divider */}
             <div className="relative h-52 overflow-hidden sm:h-60">
-              {/* soft cloud / dome glow (no grid) */}
+              {/* soft cloud / dome glow (dimmer in Light, full in Dim/Night) */}
               <div
                 className="absolute left-1/2 top-[-130px] h-[380px] w-[640px] max-w-[150%] -translate-x-1/2 opacity-60 dark:opacity-100"
                 style={{
@@ -493,14 +494,26 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     "radial-gradient(58% 60% at 50% 50%, rgba(47,111,235,0.50), rgba(47,111,235,0.18) 42%, rgba(47,111,235,0.05) 64%, transparent 78%)",
                 }}
               />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo/treelogo_dark.png"
-                alt=""
+              {/* tree recolored from the white silhouette via a css mask, so the
+                 cyan->blue gradient is one value across every theme (no per-theme
+                 image); glows a bit stronger in dark */}
+              <div
                 aria-hidden="true"
-                className="pointer-events-none absolute left-1/2 top-8 w-28 -translate-x-1/2 opacity-25 dark:opacity-90 dark:brightness-150 dark:drop-shadow-[0_0_30px_rgba(47,111,235,0.9)] sm:w-32"
+                className="pointer-events-none absolute left-1/2 top-8 h-[84px] w-28 -translate-x-1/2 drop-shadow-[0_5px_14px_rgba(41,111,235,0.28)] dark:brightness-110 dark:drop-shadow-[0_0_30px_rgba(47,130,235,0.85)] sm:h-[96px] sm:w-32"
+                style={{
+                  background:
+                    "linear-gradient(180deg, #3bc4f2 0%, #1f8ec4 45%, #14608a 100%)",
+                  WebkitMaskImage: "url(/logo/treelogo_white.png)",
+                  maskImage: "url(/logo/treelogo_white.png)",
+                  WebkitMaskRepeat: "no-repeat",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskPosition: "center",
+                  maskPosition: "center",
+                  WebkitMaskSize: "contain",
+                  maskSize: "contain",
+                }}
               />
-              <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-b from-transparent to-[#eef3fa] dark:to-[#070912]" />
+              <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-b from-transparent to-[#eef3fa] dark:to-[#070912] night:!to-background" />
             </div>
 
             <div className="relative -mt-10 px-6 text-center sm:px-8">
@@ -539,7 +552,6 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 </p>
               )}
               <div className="mx-auto mt-6 h-px max-w-2xl bg-border" />
-            </div>
             </div>
 
             <div
