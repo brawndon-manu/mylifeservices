@@ -220,8 +220,14 @@ export default function MeetingResponse({
     return (
       <div className="mt-5">
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-emerald-500 text-white">
+          {/* single session is one short line, so center the row; multi/series
+              content is tall, keep the check pinned to the top there */}
+          <div className={`flex gap-3 ${hasSessions ? "items-start" : "items-center"}`}>
+            <span
+              className={`flex h-6 w-6 flex-none items-center justify-center rounded-full bg-emerald-500 text-white ${
+                hasSessions ? "mt-0.5" : ""
+              }`}
+            >
               <Check className="h-3.5 w-3.5" />
             </span>
             <div className="flex-1">
