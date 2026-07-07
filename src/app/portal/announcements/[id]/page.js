@@ -63,6 +63,7 @@ import {
   deleteComment,
   acknowledge,
   sendAckEmails,
+  emailMeetingNoResponse,
   sendAnnouncementEmail,
   publishAnnouncement,
   discardDraft,
@@ -358,6 +359,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       meeting,
       reminderLeadMin: post.meetingReminderLeadMin ?? 10,
       nightBefore: post.meetingNightBefore !== false,
+      // for a plain post's publish dialog: let the author pick who gets the email.
+      staffByTitle: hasAudience ? {} : staffByTitle,
+      everyoneTotal: emailEveryoneTotal,
     };
   }
 
@@ -831,7 +835,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           )
                         </span>
                       </p>
-                      <OverrideToggle />
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {canSend && !isDraft && meetingRoster.noResponse.length > 0 && (
+                          <AckEmailAction
+                            postId={post.id}
+                            send={emailMeetingNoResponse}
+                            notYetCount={meetingRoster.noResponse.length}
+                            isMeeting
+                          />
+                        )}
+                        <OverrideToggle />
+                      </div>
                     </div>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
                       <div

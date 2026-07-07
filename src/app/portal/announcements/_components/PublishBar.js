@@ -6,10 +6,12 @@
 // list + meeting reminder note), then submits the publish server action.
 import { useState } from "react";
 import Link from "next/link";
+import AudiencePicker from "./AudiencePicker";
 
 export default function PublishBar({ postId, publish, discard, info }) {
   const [open, setOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [doEmail, setDoEmail] = useState(false);
   const willEmail = info.hasAudience || info.allActiveCount > 0;
 
   return (
@@ -142,20 +144,38 @@ export default function PublishBar({ postId, publish, discard, info }) {
                   )}
                 </>
               ) : (
-                <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-2 p-3">
-                  <input type="checkbox" name="doEmail" className="mt-0.5 h-4 w-4 accent-brand" />
-                  <input type="hidden" name="emailEveryone" value="on" />
-                  <span className="text-sm text-foreground">
-                    Also email all{" "}
-                    <span className="font-semibold text-brand-light">
-                      {info.allActiveCount}
-                    </span>{" "}
-                    staff now{" "}
-                    <span className="text-xs text-muted">
-                      (leave off to just post it to the feed)
+                <>
+                  <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-2 p-3">
+                    <input
+                      type="checkbox"
+                      name="doEmail"
+                      checked={doEmail}
+                      onChange={(e) => setDoEmail(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-brand"
+                    />
+                    <span className="text-sm text-foreground">
+                      Also email people now{" "}
+                      <span className="text-xs text-muted">
+                        (leave off to just post it to the feed)
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                  {doEmail && (
+                    <div className="mt-2">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                        Send to
+                      </p>
+                      <AudiencePicker
+                        everyoneName="emailEveryone"
+                        titlesName="emailTitles"
+                        userIdsName="emailUserIds"
+                        staffByTitle={info.staffByTitle || {}}
+                        everyoneTotal={info.everyoneTotal}
+                        defaultEveryone
+                      />
+                    </div>
+                  )}
+                </>
               )}
 
               {info.meeting && (

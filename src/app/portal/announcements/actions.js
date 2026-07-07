@@ -394,11 +394,15 @@ export async function publishAnnouncement(postId, formData) {
   let res = { sent: 0 };
   if (formData?.get("doEmail") === "on") {
     const hasAudience = isCompanyMeeting(post.tag) || post.requireAck;
+    // ack/meeting posts email their invited audience; a plain post emails whoever
+    // the author picked in the publish dialog (Everyone or specific titles/people).
     const where = hasAudience
       ? ackAudienceWhere(post)
-      : formData.get("emailEveryone") === "on"
-        ? { deactivatedAt: null }
-        : null;
+      : emailAudienceWhere({
+          everyone: formData.get("emailEveryone") === "on",
+          titles: formData.getAll("emailTitles").filter((t) => typeof t === "string" && t),
+          userIds: formData.getAll("emailUserIds").filter((t) => typeof t === "string" && t),
+        });
     if (where) res = await emailAnnouncement(post, where);
   }
 
@@ -1578,6 +1582,52 @@ export async function sendAckEmails(postId) {
 
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}?sent=${sent}`);
+}
+
+// meeting version of the roster nudge: email the invited people who haven't
+// responded yet the meeting announcement (with the "Respond now" button).
+// Supervisor+.
+export async function emailMeetingNoResponse(postId) {
+  const user = await requireUser();
+  if (!isSupervisorUp(user.role)) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      requireAck: true,
+      createdAt: true,
+      deletedAt: true,
+      ackEveryone: true,
+      ackTitles: true,
+      ackUserIds: true,
+      ...EMAIL_MEETING_SELECT,
+      author: { select: EMAIL_AUTHOR_SELECT },
+    },
+  });
+  if (!post || post.deletedAt || !isCompanyMeeting(post.tag)) {
+    redirect(`/portal/announcements/${postId}`);
+  }
+  // invited people minus anyone who already responded.
+  const audience = await prisma.user.findMany({
+    where: ackAudienceWhere(post),
+    select: { id: true },
+  });
+  const responders = await prisma.announcementMeetingResponse.findMany({
+    where: { announcementId: postId },
+    select: { userId: true },
+  });
+  const responded = new Set(responders.map((r) => r.userId));
+  const noRespIds = audience.map((u) => u.id).filter((id) => !responded.has(id));
+  if (!noRespIds.length) {
+    redirect(`/portal/announcements/${postId}?sent=0`);
+  }
+  const res = await emailAnnouncement(post, { id: { in: noRespIds } });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}?sent=${res?.sent || 0}`);
 }
 
 // the prisma `where` for the "Who gets the email?" picker: Everyone = all active
