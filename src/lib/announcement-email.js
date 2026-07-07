@@ -1,7 +1,7 @@
-// builds the HTML for announcement + meeting emails. email-safe: a solid dark
-// hero band (logo + title block) over a white body, inline styles only, no radial
-// gradients (email clients strip them). all email types share one shell so they
-// look consistent.
+// builds the HTML for announcement + meeting + sign-in emails. email-safe: a
+// solid dark hero band (logo + title block) over a white body, inline styles
+// only, no radial gradients (email clients strip them). all email types share
+// one shell so they look consistent.
 
 import { formatInstant, formatDuration } from "@/lib/meeting-time";
 import {
@@ -29,8 +29,16 @@ const BTN_GHOST =
   "display:inline-block;background:#ffffff;color:#2f6feb;text-decoration:none;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #cdd9ec;";
 
 // the shared shell: dark logo hero + white card + footer. `subtitle` is raw HTML
-// (built by the caller); `eyebrow` + `title` are escaped here.
-function emailShell({ logoUrl, eyebrow, title, subtitle = "", bodyHtml }) {
+// (built by the caller); `eyebrow` + `title` are escaped here. `footer` lets a
+// caller swap the footer line (sign-in emails aren't "staff announcements").
+function emailShell({
+  logoUrl,
+  eyebrow,
+  title,
+  subtitle = "",
+  bodyHtml,
+  footer = "My Life Services &middot; staff announcement",
+}) {
   const logo = logoUrl
     ? `<img src="${logoUrl}" width="64" alt="" style="display:block;margin:0 auto 10px;opacity:.95;" />`
     : "";
@@ -47,7 +55,7 @@ function emailShell({ logoUrl, eyebrow, title, subtitle = "", bodyHtml }) {
         ${bodyHtml}
       </div>
       <div style="padding:14px 28px;border-top:1px solid #eef1f5;color:#9aa4b2;font-size:12px;text-align:center;">
-        My Life Services &middot; staff announcement
+        ${footer}
       </div>
     </div>
   </div>`;
@@ -167,6 +175,24 @@ export function buildAuthorNudgeHtml({ logoUrl, title, editUrl, zoomLink, zoomCo
     eyebrow: zoomLink ? "Confirm details" : "Action needed",
     title,
     bodyHtml: body,
+  });
+}
+
+// the magic-link sign-in email. replaces Auth.js's plain default ("Sign in to
+// localhost:3000") so the one email people get before they're even logged in
+// still looks like us. `url` is the one-time link; it's dropped straight into an
+// href so it must already be a trusted Auth.js callback URL (it is).
+export function buildSignInEmailHtml({ logoUrl, url }) {
+  const body = `
+    <p style="margin:0 0 14px;">Here's your one-time link to sign in to the My Life Services employee portal.</p>
+    <a href="${url}" style="${BTN}">Sign in</a>
+    <p style="margin:18px 0 0;font-size:13px;color:#6b7280;">This link is good for the next 24 hours and can only be used once. If you didn't request it, you can safely ignore this email. No one can sign in without it.</p>`;
+  return emailShell({
+    logoUrl,
+    eyebrow: "Employee portal",
+    title: "Sign in to the portal",
+    bodyHtml: body,
+    footer: "My Life Services &middot; employee portal",
   });
 }
 

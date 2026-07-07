@@ -4,9 +4,11 @@
 
 import NextAuth from "next-auth";
 import Resend from "next-auth/providers/resend";
+import { Resend as ResendClient } from "resend";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "./auth.config";
+import { buildSignInEmailHtml } from "@/lib/announcement-email";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -16,6 +18,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Resend({
       apiKey: process.env.RESEND_API_KEY,
       from: process.env.AUTH_RESEND_FROM,
+      // override Auth.js's plain default template (the bare "Sign in to
+      // localhost:3000" email) so the sign-in link matches our other emails.
+      // sending it ourselves via the resend sdk instead of the provider's
+      // built-in fetch keeps this in one place with the rest of our mail.
+      async sendVerificationRequest({ identifier: to, url, provider }) {
+        const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
+        // the gradient tree (cyan->blue), matching the light-themed announcement
+        // hero. it's a pre-rendered png because email clients strip the css mask
+        // + gradient the portal uses to tint the white silhouette.
+        const logoUrl = `${base}/logo/treelogo_gradient.png`;
+        const resend = new ResendClient(provider.apiKey);
+        const { error } = await resend.emails.send({
+          from: provider.from,
+          to,
+          subject: "Your sign-in link for My Life Services",
+          html: buildSignInEmailHtml({ logoUrl, url }),
+          text: `Sign in to the My Life Services employee portal using the link below.\n\n${url}\n\nThis link is good for the next 24 hours and can only be used once. If you didn't request it, you can safely ignore this email.`,
+        });
+        if (error) {
+          throw new Error(`Resend sign-in email failed: ${error.message || error.name}`);
+        }
+      },
     }),
   ],
   // explicit cookie config so we know exactly what's happening rather
