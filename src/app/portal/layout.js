@@ -6,6 +6,14 @@ import { isElevated, isIT, isAdminUp, roleBadgeClass, ROLE_LABELS } from "@/lib/
 import { prisma } from "@/lib/prisma";
 import PreviewBar from "./_components/PreviewBar";
 
+// the portal has its own Light / Dim / Night themes, so tell Dark Reader (and
+// similar dark-mode extensions) to leave these pages alone. Dark Reader rewrites
+// the DOM continuously, which breaks React hydration - forms still submit but
+// client onClick handlers (like the roster's Manual override toggle) go dead.
+export const metadata = {
+  other: { "darkreader-lock": "true" },
+};
+
 async function handleSignOut() {
   "use server";
   await signOut({ redirectTo: "/" });
