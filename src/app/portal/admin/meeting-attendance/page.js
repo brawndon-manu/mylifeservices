@@ -27,7 +27,9 @@ function meetingIsPast(latestMs) {
   return latestMs != null && latestMs < Date.now();
 }
 
-// a plain, serializable person for the client board.
+// a plain, serializable person for the client board. optionId is set for a
+// per-session row (multi/series) so roll-call marks that session; null on
+// single-session / can't / no-response rows.
 function toPerson(u) {
   return {
     id: u.id,
@@ -37,6 +39,7 @@ function toPerson(u) {
     email: u.email || null,
     phone: u.phone || null,
     attended: u.attended || null,
+    optionId: u.optionId || null,
     reason: u.reason || null,
   };
 }
@@ -83,7 +86,9 @@ function buildRoster(m, audienceUsers, choices, responses) {
     dateLabel: fmtSession(o),
     going: choices
       .filter((c) => c.optionId === o.id && audIds.has(c.userId) && isGoing(c.userId))
-      .map((c) => goingUser(c.userId))
+      // attendance is per session now, so it reads from the choice row + the row
+      // carries its optionId so the board marks the right session.
+      .map((c) => ({ ...userById.get(c.userId), attended: c.attended || null, optionId: o.id }))
       .filter((u) => u.id)
       .map(toPerson),
   }));
@@ -138,7 +143,20 @@ function buildRoster(m, audienceUsers, choices, responses) {
   );
 
   const goingUsers = audienceUsers.filter((u) => isGoing(u.id));
-  const attendedOf = (uid) => respByUser.get(uid)?.attended || null;
+  // present/absent tally: per-session for multi/series (count marked choice rows),
+  // meeting-level for single-session (the response's own mark).
+  const realGoingChoices = choices.filter(
+    (c) =>
+      !String(c.optionId).startsWith("cant:") &&
+      audIds.has(c.userId) &&
+      isGoing(c.userId),
+  );
+  const present = opts.length
+    ? realGoingChoices.filter((c) => c.attended === "present").length
+    : goingUsers.filter((u) => respByUser.get(u.id)?.attended === "present").length;
+  const absent = opts.length
+    ? realGoingChoices.filter((c) => c.attended === "absent").length
+    : goingUsers.filter((u) => respByUser.get(u.id)?.attended === "absent").length;
   return {
     opts,
     isSeries,
@@ -149,8 +167,8 @@ function buildRoster(m, audienceUsers, choices, responses) {
     cantAll,
     goingCount: goingUsers.length,
     seriesCantCount: seriesDecliners.size,
-    present: goingUsers.filter((u) => attendedOf(u.id) === "present").length,
-    absent: goingUsers.filter((u) => attendedOf(u.id) === "absent").length,
+    present,
+    absent,
     responded: respByUser.size,
     invited: audienceUsers.length,
   };
@@ -200,7 +218,7 @@ export default async function MeetingAttendancePage() {
         }),
         prisma.announcementMeetingChoice.findMany({
           where: { announcementId: m.id },
-          select: { userId: true, optionId: true },
+          select: { userId: true, optionId: true, attended: true },
         }),
         prisma.announcementMeetingResponse.findMany({
           where: { announcementId: m.id },

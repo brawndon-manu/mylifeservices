@@ -90,7 +90,7 @@ const PROSE =
 // one row in the meeting roster: avatar + display name + job title. shows a
 // reason chip (cant-make-it) or, with rollPostId set, present/absent roll-call
 // toggles (Phase B) reading user.attended.
-function PersonRow({ user, reason, rollPostId }) {
+function PersonRow({ user, reason, rollPostId, optionId = null }) {
   const att = user.attended || null;
   const rollBtn =
     "rounded-md border px-2 py-0.5 text-xs font-medium transition";
@@ -110,7 +110,7 @@ function PersonRow({ user, reason, rollPostId }) {
       )}
       {rollPostId && (
         <span className="ml-auto flex flex-none gap-1.5">
-          <form action={setAttendance.bind(null, rollPostId, user.id, att === "present" ? "" : "present")}>
+          <form action={setAttendance.bind(null, rollPostId, user.id, att === "present" ? "" : "present", optionId)}>
             <button
               type="submit"
               className={`${rollBtn} ${
@@ -122,7 +122,7 @@ function PersonRow({ user, reason, rollPostId }) {
               Present
             </button>
           </form>
-          <form action={setAttendance.bind(null, rollPostId, user.id, att === "absent" ? "" : "absent")}>
+          <form action={setAttendance.bind(null, rollPostId, user.id, att === "absent" ? "" : "absent", optionId)}>
             <button
               type="submit"
               className={`${rollBtn} ${
@@ -329,7 +329,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       }),
       prisma.announcementMeetingChoice.findMany({
         where: { announcementId: id },
-        select: { userId: true, optionId: true },
+        select: { userId: true, optionId: true, attended: true },
       }),
       prisma.announcementMeetingResponse.findMany({
         where: { announcementId: id },
@@ -349,11 +349,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     });
 
     // Going, grouped by session (multi-session); single-session has no options.
+    // attendance is now per session, so it reads from the choice row, not the
+    // meeting-level response.
     const bySession = meetingOptions.map((o) => ({
       option: o,
       users: choices
         .filter((c) => c.optionId === o.id && audIds.has(c.userId) && isGoing(c.userId))
-        .map((c) => goingUser(c.userId))
+        .map((c) => ({ ...userById.get(c.userId), attended: c.attended || null }))
         .filter((u) => u.id),
     }));
     const singleGoing = meetingOptions.length
@@ -785,7 +787,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                 <p className="py-1 text-xs text-faint">nobody yet</p>
                               ) : (
                                 users.map((u) => (
-                                  <PersonRow key={u.id} user={u} rollPostId={post.id} />
+                                  <PersonRow key={u.id} user={u} rollPostId={post.id} optionId={option.id} />
                                 ))
                               )}
                             </div>

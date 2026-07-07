@@ -43,16 +43,18 @@ export default function AttendanceBoard({ upcoming, past, counts }) {
     } catch {}
   };
 
+  // keyed by post + user + session (optionId), since roll-call is per session now
+  // (a series attendee can be present at one session, absent at another).
   const attendedOf = (postId, user) => {
-    const key = `${postId}:${user.id}`;
+    const key = `${postId}:${user.id}:${user.optionId || ""}`;
     return key in marks ? marks[key] : user.attended || null;
   };
-  const mark = (postId, userId, status) => {
+  const mark = (postId, userId, status, optionId = null) => {
     const value = status === "present" || status === "absent" ? status : null;
-    setMarks((prev) => ({ ...prev, [`${postId}:${userId}`]: value }));
+    setMarks((prev) => ({ ...prev, [`${postId}:${userId}:${optionId || ""}`]: value }));
     startTransition(async () => {
       try {
-        await markAttendance(postId, userId, status);
+        await markAttendance(postId, userId, status, optionId);
       } catch {}
     });
   };
@@ -230,7 +232,7 @@ function PersonLine({ user, postId, showDot }) {
         <span className="ml-auto flex flex-none gap-1.5">
           <button
             type="button"
-            onClick={() => mark(postId, user.id, att === "present" ? "" : "present")}
+            onClick={() => mark(postId, user.id, att === "present" ? "" : "present", user.optionId)}
             className={`${rollBtn} ${
               att === "present"
                 ? "border-emerald-500 bg-emerald-500 text-white"
@@ -241,7 +243,7 @@ function PersonLine({ user, postId, showDot }) {
           </button>
           <button
             type="button"
-            onClick={() => mark(postId, user.id, att === "absent" ? "" : "absent")}
+            onClick={() => mark(postId, user.id, att === "absent" ? "" : "absent", user.optionId)}
             className={`${rollBtn} ${
               att === "absent"
                 ? "border-rose-500 bg-rose-500 text-white"
@@ -499,17 +501,20 @@ function PeopleDisc({ label, users, tone }) {
 
 function MeetingCard({ m, view, past }) {
   const { attendedOf } = useAttendance();
-  // distinct going people across sessions, for the live top-of-card tally.
+  // every per-session going entry (a series attendee shows once per session), plus
+  // the distinct set for the "going" count. present/absent tally per session so it
+  // matches the per-session roll-call.
+  const goingSessions = [...m.sessions.flatMap((s) => s.going), ...m.singleGoing];
   const goingAll = [];
   const seen = new Set();
-  for (const u of [...m.sessions.flatMap((s) => s.going), ...m.singleGoing]) {
+  for (const u of goingSessions) {
     if (!seen.has(u.id)) {
       seen.add(u.id);
       goingAll.push(u);
     }
   }
-  const present = goingAll.filter((u) => attendedOf(m.id, u) === "present").length;
-  const absent = goingAll.filter((u) => attendedOf(m.id, u) === "absent").length;
+  const present = goingSessions.filter((u) => attendedOf(m.id, u) === "present").length;
+  const absent = goingSessions.filter((u) => attendedOf(m.id, u) === "absent").length;
 
   return (
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]">

@@ -397,6 +397,10 @@ model AnnouncementAck {
   announcementId String
   userId         String
   viaEmail       Boolean      @default(false)
+  // set when an admin logged the acknowledgment on someone's behalf (out sick,
+  // tech trouble, etc). null = the person acknowledged it themselves. plain id,
+  // resolved to a name at render time so we can show "recorded by X".
+  recordedById   String?
   createdAt      DateTime     @default(now())
   announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -437,6 +441,10 @@ model AnnouncementMeetingChoice {
   announcementId String
   userId         String
   optionId       String
+  // per-session roll-call: "present" / "absent" / null (not marked). used for
+  // multi-session + series meetings so each session tracks its own attendance;
+  // single-session meetings keep using AnnouncementMeetingResponse.attended.
+  attended       String?
   createdAt      DateTime     @default(now())
   announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)

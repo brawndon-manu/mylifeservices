@@ -947,9 +947,27 @@ export async function setMeetingLink(postId, formData) {
   redirect(`/portal/announcements/${postId}`);
 }
 
-// roll-call (Phase B): mark a going attendee present / absent, or clear it.
-// Supervisor+ or the author. only touches "going" responses.
-export async function setAttendance(postId, userId, status) {
+// write a present/absent/null mark. for a multi-session or series meeting the
+// mark lives per session on the chosen option row; for a single-session meeting
+// (no optionId) it stays on the response. shared by both roll-call actions.
+async function writeAttendance(postId, userId, status, optionId) {
+  const value = status === "present" || status === "absent" ? status : null;
+  if (optionId) {
+    await prisma.announcementMeetingChoice.updateMany({
+      where: { announcementId: postId, userId, optionId },
+      data: { attended: value },
+    });
+  } else {
+    await prisma.announcementMeetingResponse.updateMany({
+      where: { announcementId: postId, userId, cantMakeIt: false },
+      data: { attended: value },
+    });
+  }
+}
+
+// roll-call: mark a going attendee present / absent for a session, or clear it.
+// admin-and-up only. optionId set = per-session (multi/series); null = single.
+export async function setAttendance(postId, userId, status, optionId = null) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
@@ -960,11 +978,7 @@ export async function setAttendance(postId, userId, status) {
   if (!isAdminUp(user.role)) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
   }
-  const value = status === "present" || status === "absent" ? status : null;
-  await prisma.announcementMeetingResponse.updateMany({
-    where: { announcementId: postId, userId, cantMakeIt: false },
-    data: { attended: value },
-  });
+  await writeAttendance(postId, userId, status, optionId);
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
 }
@@ -972,7 +986,7 @@ export async function setAttendance(postId, userId, status) {
 // like setAttendance but RETURNS instead of redirecting, so the admin meeting-
 // attendance card can mark roll-call inline without a full navigation (which would
 // collapse the drill-down). status "" / anything else = back to neutral (unmarked).
-export async function markAttendance(postId, userId, status) {
+export async function markAttendance(postId, userId, status, optionId = null) {
   const user = await requireUser();
   if (!isAdminUp(user.role)) return { ok: false };
   const post = await prisma.announcement.findUnique({
@@ -980,11 +994,7 @@ export async function markAttendance(postId, userId, status) {
     select: { id: true, deletedAt: true },
   });
   if (!post || post.deletedAt) return { ok: false };
-  const value = status === "present" || status === "absent" ? status : null;
-  await prisma.announcementMeetingResponse.updateMany({
-    where: { announcementId: postId, userId, cantMakeIt: false },
-    data: { attended: value },
-  });
+  await writeAttendance(postId, userId, status, optionId);
   revalidatePath("/portal/admin/meeting-attendance");
   revalidatePath(`/portal/announcements/${postId}`);
   return { ok: true };
