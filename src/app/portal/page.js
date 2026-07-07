@@ -61,7 +61,7 @@ export default async function PortalDashboard() {
         <LinkCard
           href="/portal/announcements"
           title="Announcements"
-          body="Updates from upper management: job fairs, food banks, training, events."
+          body="Company updates, events, meetings, and changelog notes. Comment, react, and respond where a reply or acknowledgment is asked."
         />
         <LinkCard
           href="/portal/forms"

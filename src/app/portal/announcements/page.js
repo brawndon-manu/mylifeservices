@@ -95,8 +95,8 @@ export default async function AnnouncementsPage({ searchParams }) {
             Announcements
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Updates from upper management: job fairs, food banks, training,
-            events. Comment and react on any post.
+            Company updates, events, meetings, and changelog notes. Comment and
+            react on any post, and RSVP or acknowledge when it&apos;s asked.
           </p>
         </div>
         {canPost && (
