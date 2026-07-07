@@ -463,9 +463,13 @@ export async function editPost(postId, formData) {
     redirect("/portal/announcements");
   }
   const isDraft = !post.publishedAt;
-  // the author can edit; for a draft posted on someone's behalf, the actual
-  // poster (postedBy) can edit too.
-  if (post.authorId !== user.id && !(isDraft && post.postedById === user.id)) {
+  // the author can edit; moderators can edit anyone's; for a draft posted on
+  // someone's behalf, the actual poster (postedBy) can edit too.
+  if (
+    post.authorId !== user.id &&
+    !isModerator(user.role) &&
+    !(isDraft && post.postedById === user.id)
+  ) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
   }
 
@@ -1076,6 +1080,174 @@ export async function markAttendance(postId, userId, status, optionId = null) {
   revalidatePath("/portal/admin/meeting-attendance");
   revalidatePath(`/portal/announcements/${postId}`);
   return { ok: true };
+}
+
+// ---- admin overrides on the roster (all Admin/IT/Super, all bypass locks) ----
+
+// record an acknowledgment on someone's behalf. keeps an existing self/email ack
+// as-is (only stamps recordedById when creating a fresh one).
+async function recordAckFor(postId, userId, adminId) {
+  await prisma.announcementAck.upsert({
+    where: { announcementId_userId: { announcementId: postId, userId } },
+    create: { announcementId: postId, userId, viaEmail: false, recordedById: adminId },
+    update: {},
+  });
+}
+
+// gate an admin roster action + load the meeting. returns the post or redirects.
+async function requireAdminMeeting(postId) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) redirect(`/portal/announcements/${postId}?error=forbidden`);
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true,
+      deletedAt: true,
+      meetingOptions: true,
+      meetingMultiPick: true,
+      requireAck: true,
+    },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  return { user, post };
+}
+
+// ensure a person is "going" to optionId, clearing conflicting picks: the same
+// series (series) or their single pick (single-pick meeting). shared by add +
+// move. records the ack if the meeting requires one.
+async function ensureGoingChoice(post, userId, optionId, adminId) {
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const target = opts.find((o) => o && o.id === optionId);
+  if (!target) return false;
+  if (target.seriesId) {
+    const sameSeries = opts
+      .filter((o) => o.seriesId === target.seriesId)
+      .map((o) => o.id);
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: {
+        announcementId: post.id,
+        userId,
+        optionId: { in: [...sameSeries, `cant:${target.seriesId}`] },
+      },
+    });
+  } else if (!post.meetingMultiPick) {
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: { announcementId: post.id, userId },
+    });
+  }
+  await prisma.announcementMeetingChoice.upsert({
+    where: {
+      announcementId_userId_optionId: { announcementId: post.id, userId, optionId },
+    },
+    create: { announcementId: post.id, userId, optionId },
+    update: {},
+  });
+  await prisma.announcementMeetingResponse.upsert({
+    where: { announcementId_userId: { announcementId: post.id, userId } },
+    create: { announcementId: post.id, userId, cantMakeIt: false },
+    update: { cantMakeIt: false, reason: null },
+  });
+  if (post.requireAck) await recordAckFor(post.id, userId, adminId);
+  return true;
+}
+
+// walk-in / record-going: add someone to a session (used by "+ Add to this
+// session" and by recording a no-response person as going).
+export async function adminAddToSession(postId, userId, optionId) {
+  const { user, post } = await requireAdminMeeting(postId);
+  await ensureGoingChoice(post, userId, optionId, user.id);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// move a pick from one session to another (kebab "Move to another session").
+export async function adminMoveSession(postId, userId, fromOptionId, toOptionId) {
+  const { user, post } = await requireAdminMeeting(postId);
+  if (fromOptionId) {
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: { announcementId: postId, userId, optionId: fromOptionId },
+    });
+  }
+  await ensureGoingChoice(post, userId, toOptionId, user.id);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// single-session: record a no-response person as going ("I'll be there" on their
+// behalf).
+export async function adminSetGoing(postId, userId) {
+  const { user, post } = await requireAdminMeeting(postId);
+  await prisma.announcementMeetingResponse.upsert({
+    where: { announcementId_userId: { announcementId: postId, userId } },
+    create: { announcementId: postId, userId, cantMakeIt: false },
+    update: { cantMakeIt: false, reason: null },
+  });
+  if (post.requireAck) await recordAckFor(postId, userId, user.id);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// record a person as can't-make-it (clears any picks).
+export async function adminSetCantMake(postId, userId) {
+  const { user, post } = await requireAdminMeeting(postId);
+  await prisma.announcementMeetingChoice.deleteMany({
+    where: { announcementId: postId, userId },
+  });
+  await prisma.announcementMeetingResponse.upsert({
+    where: { announcementId_userId: { announcementId: postId, userId } },
+    create: { announcementId: postId, userId, cantMakeIt: true },
+    update: { cantMakeIt: true },
+  });
+  if (post.requireAck) await recordAckFor(postId, userId, user.id);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// remove someone from the meeting entirely (response + picks + the auto-ack that
+// responding created; a real one-click email ack is left intact).
+export async function adminRemoveFromMeeting(postId, userId) {
+  await requireAdminMeeting(postId);
+  await prisma.announcementMeetingChoice.deleteMany({
+    where: { announcementId: postId, userId },
+  });
+  await prisma.announcementMeetingResponse.deleteMany({
+    where: { announcementId: postId, userId },
+  });
+  await prisma.announcementAck.deleteMany({
+    where: { announcementId: postId, userId, viaEmail: false },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// mark / unmark an acknowledgment on someone's behalf. works for a plain ack
+// announcement or a meeting. admin only.
+export async function markAckFor(postId, userId) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) redirect(`/portal/announcements/${postId}?error=forbidden`);
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, deletedAt: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  await recordAckFor(postId, userId, user.id);
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+export async function unmarkAckFor(postId, userId) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) redirect(`/portal/announcements/${postId}?error=forbidden`);
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, deletedAt: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  await prisma.announcementAck.deleteMany({
+    where: { announcementId: postId, userId },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
 }
 
 function escapeHtml(s) {

@@ -69,7 +69,21 @@ import {
   cantMakeMeeting,
   setAttendance,
   setMeetingLink,
+  adminAddToSession,
+  adminMoveSession,
+  adminSetGoing,
+  adminSetCantMake,
+  adminRemoveFromMeeting,
+  markAckFor,
 } from "../actions";
+import {
+  PersonKebab,
+  AddToSession,
+  RecordResponse,
+  MarkAckButton,
+  OverrideProvider,
+  OverrideToggle,
+} from "../_components/RosterAdmin";
 
 export const metadata = {
   title: "Announcement · MLS Portal",
@@ -92,7 +106,7 @@ const PROSE =
 // one row in the meeting roster: avatar + display name + job title. shows a
 // reason chip (cant-make-it) or, with rollPostId set, present/absent roll-call
 // toggles (Phase B) reading user.attended.
-function PersonRow({ user, reason, rollPostId, optionId = null }) {
+function PersonRow({ user, reason, rollPostId, optionId = null, extra = null }) {
   const att = user.attended || null;
   const rollBtn =
     "rounded-md border px-2 py-0.5 text-xs font-medium transition";
@@ -106,36 +120,41 @@ function PersonRow({ user, reason, rollPostId, optionId = null }) {
         )}
       </div>
       {reason && (
-        <span className="ml-auto rounded-md border border-rose-300/40 bg-rose-50 px-2 py-0.5 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+        <span className="ml-2 rounded-md border border-rose-300/40 bg-rose-50 px-2 py-0.5 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
           {reason}
         </span>
       )}
-      {rollPostId && (
-        <span className="ml-auto flex flex-none gap-1.5">
-          <form action={setAttendance.bind(null, rollPostId, user.id, att === "present" ? "" : "present", optionId)}>
-            <button
-              type="submit"
-              className={`${rollBtn} ${
-                att === "present"
-                  ? "border-green-500 bg-green-500 text-white"
-                  : "border-border-strong text-muted hover:border-green-500 hover:text-green-600"
-              }`}
-            >
-              Present
-            </button>
-          </form>
-          <form action={setAttendance.bind(null, rollPostId, user.id, att === "absent" ? "" : "absent", optionId)}>
-            <button
-              type="submit"
-              className={`${rollBtn} ${
-                att === "absent"
-                  ? "border-rose-500 bg-rose-500 text-white"
-                  : "border-border-strong text-muted hover:border-rose-500 hover:text-rose-600"
-              }`}
-            >
-              Absent
-            </button>
-          </form>
+      {(rollPostId || extra) && (
+        <span className="ml-auto flex flex-none items-center gap-1.5">
+          {rollPostId && (
+            <>
+              <form action={setAttendance.bind(null, rollPostId, user.id, att === "present" ? "" : "present", optionId)}>
+                <button
+                  type="submit"
+                  className={`${rollBtn} ${
+                    att === "present"
+                      ? "border-green-500 bg-green-500 text-white"
+                      : "border-border-strong text-muted hover:border-green-500 hover:text-green-600"
+                  }`}
+                >
+                  Present
+                </button>
+              </form>
+              <form action={setAttendance.bind(null, rollPostId, user.id, att === "absent" ? "" : "absent", optionId)}>
+                <button
+                  type="submit"
+                  className={`${rollBtn} ${
+                    att === "absent"
+                      ? "border-rose-500 bg-rose-500 text-white"
+                      : "border-border-strong text-muted hover:border-rose-500 hover:text-rose-600"
+                  }`}
+                >
+                  Absent
+                </button>
+              </form>
+            </>
+          )}
+          {extra}
         </span>
       )}
     </div>
@@ -193,7 +212,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const expired = isExpired(post);
   const liked = post.likes.length > 0;
   const canDeletePost = post.authorId === user.id || isModerator(user.role);
-  const canEditPost = post.authorId === user.id;
+  // the author edits their own; moderators (HR/Manager/Admin/IT/Super) can edit
+  // anyone's, same tier that can already delete/pin others' posts.
+  const canEditPost = post.authorId === user.id || isModerator(user.role);
   // the Zoom link + passcode are admin-only: only Admin/IT/Super can see or manage
   // them. everyone else sees a "Link will be provided soon!" note (they get the
   // link in the reminder email).
@@ -261,13 +282,28 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       }),
       prisma.announcementAck.findMany({
         where: { announcementId: id },
-        select: { userId: true, viaEmail: true, createdAt: true },
+        select: { userId: true, viaEmail: true, createdAt: true, recordedById: true },
       }),
     ]);
     const ackMap = new Map(acks.map((a) => [a.userId, a]));
+    // resolve the names of admins who logged an ack on someone's behalf.
+    const recorderIds = [...new Set(acks.map((a) => a.recordedById).filter(Boolean))];
+    const recorders = recorderIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: recorderIds } },
+          select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
+        })
+      : [];
+    const recorderName = new Map(recorders.map((u) => [u.id, preferredName(u)]));
     const acked = expectedUsers
       .filter((u) => ackMap.has(u.id))
-      .map((u) => ({ ...u, ack: ackMap.get(u.id) }))
+      .map((u) => ({
+        ...u,
+        ack: ackMap.get(u.id),
+        recordedBy: ackMap.get(u.id).recordedById
+          ? recorderName.get(ackMap.get(u.id).recordedById) || "an admin"
+          : null,
+      }))
       .sort((a, b) => b.ack.createdAt - a.ack.createdAt);
     const notYet = expectedUsers.filter((u) => !ackMap.has(u.id));
     const total = expectedUsers.length;
@@ -408,6 +444,19 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       goingCount: audienceUsers.filter((u) => isGoing(u.id)).length,
       total: audienceUsers.length,
       responded: respByUser.size,
+      // for the admin override controls: the real sessions (move / record targets)
+      // and a slim audience list (walk-in picker).
+      sessions: meetingOptions.map((o) => ({
+        id: o.id,
+        label: o.label,
+        seriesLabel: o.seriesLabel || null,
+      })),
+      audience: audienceUsers.map((u) => ({
+        id: u.id,
+        displayName: preferredName(u),
+        title: u.title || "",
+        image: u.image || null,
+      })),
     };
   }
 
@@ -754,17 +803,21 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 )}
 
                 {meetingRoster && (
+                  <OverrideProvider>
                   <div className="mt-5 rounded-xl border border-border bg-surface p-5">
-                    <p className="text-sm font-medium text-foreground">
-                      Responses{" "}
-                      <span className="text-muted">
-                        ({meetingRoster.responded} of {meetingRoster.total} responded
-                        {meetingRoster.total
-                          ? ` · ${Math.round((meetingRoster.responded / meetingRoster.total) * 100)}%`
-                          : ""}
-                        )
-                      </span>
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">
+                        Responses{" "}
+                        <span className="text-muted">
+                          ({meetingRoster.responded} of {meetingRoster.total} responded
+                          {meetingRoster.total
+                            ? ` · ${Math.round((meetingRoster.responded / meetingRoster.total) * 100)}%`
+                            : ""}
+                          )
+                        </span>
+                      </p>
+                      <OverrideToggle />
+                    </div>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
                       <div
                         className="h-full rounded-full bg-brand"
@@ -802,9 +855,34 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                 <p className="py-1 text-xs text-faint">nobody yet</p>
                               ) : (
                                 users.map((u) => (
-                                  <PersonRow key={u.id} user={u} rollPostId={post.id} optionId={option.id} />
+                                  <PersonRow
+                                    key={u.id}
+                                    user={u}
+                                    rollPostId={post.id}
+                                    optionId={option.id}
+                                    extra={
+                                      <PersonKebab
+                                        postId={post.id}
+                                        userId={u.id}
+                                        currentOptionId={option.id}
+                                        moveTargets={meetingRoster.sessions.filter((s) => s.id !== option.id)}
+                                        move={adminMoveSession}
+                                        remove={adminRemoveFromMeeting}
+                                      />
+                                    }
+                                  />
                                 ))
                               )}
+                              <div className="pt-1">
+                                <AddToSession
+                                  postId={post.id}
+                                  optionId={option.id}
+                                  candidates={meetingRoster.audience.filter(
+                                    (a) => !users.some((u) => u.id === a.id),
+                                  )}
+                                  add={adminAddToSession}
+                                />
+                              </div>
                             </div>
                           );
                         })
@@ -812,7 +890,21 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         <p className="py-1 text-xs text-faint">nobody yet</p>
                       ) : (
                         meetingRoster.singleGoing.map((u) => (
-                          <PersonRow key={u.id} user={u} rollPostId={post.id} />
+                          <PersonRow
+                            key={u.id}
+                            user={u}
+                            rollPostId={post.id}
+                            extra={
+                              <PersonKebab
+                                postId={post.id}
+                                userId={u.id}
+                                currentOptionId={null}
+                                moveTargets={[]}
+                                move={adminMoveSession}
+                                remove={adminRemoveFromMeeting}
+                              />
+                            }
+                          />
                         ))
                       )}
                     </div>
@@ -865,10 +957,29 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                       {meetingRoster.noResponse.length === 0 ? (
                         <p className="py-1 text-sm text-foreground">everyone responded.</p>
                       ) : (
-                        meetingRoster.noResponse.map((u) => <PersonRow key={u.id} user={u} />)
+                        meetingRoster.noResponse.map((u) => (
+                          <PersonRow
+                            key={u.id}
+                            user={u}
+                            extra={
+                              <RecordResponse
+                                postId={post.id}
+                                userId={u.id}
+                                sessions={meetingRoster.sessions}
+                                hasSessions={meetingOptions.length > 0}
+                                requireAck={post.requireAck}
+                                addToSession={adminAddToSession}
+                                setGoing={adminSetGoing}
+                                cantMake={adminSetCantMake}
+                                markAck={markAckFor}
+                              />
+                            }
+                          />
+                        ))
                       )}
                     </div>
                   </div>
+                  </OverrideProvider>
                 )}
               </div>
             )}
@@ -1026,6 +1137,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
           {/* roster - Supervisor+ and the author */}
           {roster && (
+            <OverrideProvider>
             <div className="rounded-xl border border-border bg-surface p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-baseline gap-2">
@@ -1036,14 +1148,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     of {roster.total} acknowledged · {roster.pct}%
                   </span>
                 </div>
-                {!isDraft && (
-                  <AckEmailAction
-                    postId={post.id}
-                    send={sendAckEmails}
-                    notYetCount={roster.notYet.length}
-                    isMeeting={meeting}
-                  />
-                )}
+                <div className="flex items-center gap-2">
+                  <OverrideToggle />
+                  {!isDraft && (
+                    <AckEmailAction
+                      postId={post.id}
+                      send={sendAckEmails}
+                      notYetCount={roster.notYet.length}
+                      isMeeting={meeting}
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3">
@@ -1085,6 +1200,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                             <MonitorIcon className="h-3.5 w-3.5" />
                           )}
                           {ackDateFmt(u.ack.createdAt)}
+                          {u.recordedBy && (
+                            <span className="italic text-faint">· by {u.recordedBy}</span>
+                          )}
                         </span>
                       </li>
                     ))}
@@ -1099,8 +1217,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                       <li className="text-sm text-muted">Everyone&apos;s in.</li>
                     )}
                     {roster.notYet.map((u) => (
-                      <li key={u.id} className="text-sm text-foreground">
+                      <li key={u.id} className="flex items-center gap-2 text-sm text-foreground">
                         <NameHover user={nhUser(u)} className="truncate" />
+                        <MarkAckButton postId={post.id} userId={u.id} markAck={markAckFor} />
                       </li>
                     ))}
                   </ul>
@@ -1112,6 +1231,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 <MonitorIcon className="h-3.5 w-3.5" /> in the portal
               </p>
             </div>
+            </OverrideProvider>
           )}
         </div>
       )}
