@@ -1756,7 +1756,9 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
     day: "numeric",
     timeZone: EMAIL_TZ,
   });
-  const logoUrl = `${base}/logo/treelogo_white.png`;
+  // Blob-hosted logo so it renders in every mail client (base is localhost in
+  // dev, which recipients can't reach); falls back to the on-site logo.
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_white.png`;
   const authorName = preferredName(post.author);
   const authorTitle = post.author?.title || null;
   const meetingHtml = buildMeetingBlockHtml(post);

@@ -26,8 +26,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
         // the gradient tree (cyan->blue), matching the light-themed announcement
         // hero. it's a pre-rendered png because email clients strip the css mask
-        // + gradient the portal uses to tint the white silhouette.
-        const logoUrl = `${base}/logo/treelogo_gradient.png`;
+        // + gradient the portal uses to tint the white silhouette. served from a
+        // public url (Blob) so it loads in every mail client - a ${base} of
+        // localhost in dev would be unreachable from the recipient's device.
+        const logoUrl =
+          process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
         const resend = new ResendClient(provider.apiKey);
         const { error } = await resend.emails.send({
           from: provider.from,
