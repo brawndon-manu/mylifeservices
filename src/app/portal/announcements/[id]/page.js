@@ -78,6 +78,8 @@ import {
   adminSetCantMake,
   adminRemoveFromMeeting,
   adminRecordChoices,
+  adminAddInvitee,
+  adminRemoveInvitee,
   markAckFor,
 } from "../actions";
 import {
@@ -85,6 +87,7 @@ import {
   AddToSession,
   RecordResponse,
   MarkAckButton,
+  InviteeManager,
   OverrideProvider,
   OverrideToggle,
 } from "../_components/RosterAdmin";
@@ -311,7 +314,27 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     const notYet = expectedUsers.filter((u) => !ackMap.has(u.id));
     const total = expectedUsers.length;
     const pct = total ? Math.round((acked.length / total) * 100) : 0;
-    roster = { acked, notYet, total, pct };
+    // manage-invitees data (same as the meeting roster).
+    const expectedIds = new Set(expectedUsers.map((u) => u.id));
+    const allActive = await prisma.user.findMany({
+      where: { deactivatedAt: null },
+      select: {
+        id: true,
+        name: true,
+        preferredFirstName: true,
+        preferredLastName: true,
+        title: true,
+        image: true,
+      },
+      orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
+    });
+    const inviteeCandidates = allActive
+      .filter((u) => !expectedIds.has(u.id))
+      .map((u) => ({ id: u.id, displayName: preferredName(u), title: u.title || "", image: u.image || null }));
+    const addedInvitees = expectedUsers
+      .filter((u) => (post.ackUserIds || []).includes(u.id))
+      .map((u) => ({ id: u.id, displayName: preferredName(u) }));
+    roster = { acked, notYet, total, pct, inviteeCandidates, addedInvitees };
   }
 
   // ---- Company Meeting ----
@@ -441,12 +464,35 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       }))
       .filter((x) => x.users.length);
 
+    // manage-invitees data: everyone active (candidates to add) + the people who
+    // were added by hand (in ackUserIds, so removable).
+    const allActive = await prisma.user.findMany({
+      where: { deactivatedAt: null },
+      select: {
+        id: true,
+        name: true,
+        preferredFirstName: true,
+        preferredLastName: true,
+        title: true,
+        image: true,
+      },
+      orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
+    });
+    const inviteeCandidates = allActive
+      .filter((u) => !audIds.has(u.id))
+      .map((u) => ({ id: u.id, displayName: preferredName(u), title: u.title || "", image: u.image || null }));
+    const addedInvitees = audienceUsers
+      .filter((u) => (post.ackUserIds || []).includes(u.id))
+      .map((u) => ({ id: u.id, displayName: preferredName(u) }));
+
     meetingRoster = {
       bySession,
       singleGoing,
       cantUsers,
       noResponse,
       seriesCantList,
+      inviteeCandidates,
+      addedInvitees,
       goingCount: audienceUsers.filter((u) => isGoing(u.id)).length,
       total: audienceUsers.length,
       responded: respByUser.size,
@@ -1008,6 +1054,14 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         ))
                       )}
                     </div>
+
+                    <InviteeManager
+                      postId={post.id}
+                      added={meetingRoster.addedInvitees}
+                      candidates={meetingRoster.inviteeCandidates}
+                      add={adminAddInvitee}
+                      remove={adminRemoveInvitee}
+                    />
                   </div>
                   </OverrideProvider>
                 )}
@@ -1260,6 +1314,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 <span className="mx-1">·</span>
                 <MonitorIcon className="h-3.5 w-3.5" /> in the portal
               </p>
+              <InviteeManager
+                postId={post.id}
+                added={roster.addedInvitees}
+                candidates={roster.inviteeCandidates}
+                add={adminAddInvitee}
+                remove={adminRemoveInvitee}
+              />
             </div>
             </OverrideProvider>
           )}

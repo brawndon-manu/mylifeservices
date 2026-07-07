@@ -1431,6 +1431,71 @@ export async function adminRemoveFromMeeting(postId, userId) {
   redirect(`/portal/announcements/${postId}`);
 }
 
+// add someone to the invite/ack audience without editing the whole post (appends
+// to the specific-people list). optionally emails just that new person. admin
+// only. works on a meeting or an ack-required announcement.
+export async function adminAddInvitee(postId, userId, formData) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) redirect(`/portal/announcements/${postId}?error=forbidden`);
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true,
+      deletedAt: true,
+      tag: true,
+      requireAck: true,
+      ackUserIds: true,
+      title: true,
+      content: true,
+      createdAt: true,
+      ackEveryone: true,
+      ackTitles: true,
+      ...EMAIL_MEETING_SELECT,
+      author: { select: EMAIL_AUTHOR_SELECT },
+    },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (!isCompanyMeeting(post.tag) && !post.requireAck) {
+    redirect(`/portal/announcements/${postId}`);
+  }
+  const target = await prisma.user.findFirst({
+    where: { id: userId, deactivatedAt: null },
+    select: { id: true },
+  });
+  if (!target) redirect(`/portal/announcements/${postId}`);
+
+  const ids = new Set(post.ackUserIds || []);
+  if (!ids.has(userId)) {
+    await prisma.announcement.update({
+      where: { id: postId },
+      data: { ackUserIds: [...ids, userId] },
+    });
+  }
+  if (formData?.get("email") === "on") {
+    await emailAnnouncement(post, { id: { in: [userId] } });
+  }
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
+// remove an individually-added invitee (drops them from the specific-people
+// list). someone invited via Everyone or a role can't be removed this way.
+export async function adminRemoveInvitee(postId, userId) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) redirect(`/portal/announcements/${postId}?error=forbidden`);
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, deletedAt: true, ackUserIds: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: { ackUserIds: (post.ackUserIds || []).filter((id) => id !== userId) },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
 // mark / unmark an acknowledgment on someone's behalf. works for a plain ack
 // announcement or a meeting. admin only.
 export async function markAckFor(postId, userId) {

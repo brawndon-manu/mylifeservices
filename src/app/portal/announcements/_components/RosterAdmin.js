@@ -315,6 +315,114 @@ function SeriesRecord({ postId, userId, seriesGroups, record, cantMake }) {
   );
 }
 
+// add / remove invitees straight from the roster (no full edit). removable chips
+// for the people added by hand; an "+ Add invitee" picker that can also email the
+// new person. shown behind Manual override, under the responses box.
+export function InviteeManager({ postId, added = [], candidates = [], add, remove }) {
+  if (!useOverrideShown()) return null;
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+          Invitees added by hand
+        </p>
+        <AddInvitee postId={postId} candidates={candidates} add={add} />
+      </div>
+      {added.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {added.map((p) => (
+            <span
+              key={p.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-surface-2 px-2.5 py-1 text-xs text-foreground"
+            >
+              {p.displayName}
+              <form action={remove.bind(null, postId, p.id)} className="flex">
+                <button
+                  type="submit"
+                  aria-label={`Remove ${p.displayName}`}
+                  className="text-base leading-none text-muted transition hover:text-rose-600"
+                >
+                  &times;
+                </button>
+              </form>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-1 text-xs text-faint">
+          No one added by hand yet. People invited by Everyone or a role can&apos;t be
+          removed here.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AddInvitee({ postId, candidates, add }) {
+  const [q, setQ] = useState("");
+  const list = q
+    ? candidates.filter((c) => c.displayName.toLowerCase().includes(q.toLowerCase()))
+    : candidates;
+  return (
+    <Dropdown
+      align="right"
+      width="w-72"
+      trigger={
+        <button
+          type="button"
+          className="rounded-md border border-dashed border-brand-light/50 px-2.5 py-1 text-xs font-semibold text-brand-light transition hover:bg-brand-light/10"
+        >
+          + Add invitee
+        </button>
+      }
+    >
+      <div onClick={(e) => e.stopPropagation()} className="p-1">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search people"
+          className="mb-1 block w-full rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-sm text-foreground focus:border-brand focus:outline-none"
+        />
+        <div className="max-h-60 overflow-y-auto">
+          {list.length === 0 ? (
+            <p className="px-2 py-2 text-xs text-faint">everyone here is already invited</p>
+          ) : (
+            list.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2"
+              >
+                <Avatar name={c.displayName} image={c.image} size={22} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-foreground">{c.displayName}</span>
+                  {c.title && <span className="block truncate text-xs text-muted">{c.title}</span>}
+                </span>
+                <form action={add.bind(null, postId, c.id)}>
+                  <button
+                    type="submit"
+                    className="rounded border border-border-strong px-2 py-0.5 text-xs font-medium text-muted transition hover:text-foreground"
+                  >
+                    Add
+                  </button>
+                </form>
+                <form action={add.bind(null, postId, c.id)}>
+                  <input type="hidden" name="email" value="on" />
+                  <button
+                    type="submit"
+                    className="rounded border border-brand-light/50 px-2 py-0.5 text-xs font-semibold text-brand-light transition hover:bg-brand-light/10"
+                  >
+                    + email
+                  </button>
+                </form>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Dropdown>
+  );
+}
+
 // a single "Mark acknowledged" button for the (non-meeting) acknowledgment roster.
 export function MarkAckButton({ postId, userId, markAck }) {
   if (!useOverrideShown()) return null;
