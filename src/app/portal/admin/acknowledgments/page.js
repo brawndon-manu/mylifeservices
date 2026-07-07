@@ -2,10 +2,15 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
-import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
-import { ackAudienceWhere, ANNOUNCEMENT_TAG_STYLES, COMPANY_MEETING_TAG } from "@/lib/announcements";
-import { markAckFor } from "@/app/portal/announcements/actions";
+import { ackAudienceWhere, COMPANY_MEETING_TAG } from "@/lib/announcements";
+import {
+  buildAckRoster,
+  audienceLabel,
+  firstLine,
+  fmtPosted,
+  tagCls,
+} from "./roster";
 import AckBoard from "./_components/AckBoard";
 
 export const metadata = {
@@ -14,41 +19,6 @@ export const metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-const PACIFIC = "America/Los_Angeles";
-const DEFAULT_TAG_CLS = "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
-
-function fmtPosted(iso) {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: PACIFIC,
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(iso));
-}
-function fmtAck(iso) {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: PACIFIC,
-    month: "short",
-    day: "numeric",
-  }).format(new Date(iso));
-}
-
-function audienceLabel(p, expected) {
-  if (p.ackEveryone || (!p.ackTitles?.length && !p.ackUserIds?.length)) {
-    return `Everyone (${expected})`;
-  }
-  const bits = [...(p.ackTitles || [])];
-  if (p.ackUserIds?.length) {
-    bits.push(`${p.ackUserIds.length} ${p.ackUserIds.length === 1 ? "person" : "people"}`);
-  }
-  return `${bits.join(", ")} (${expected})`;
-}
-
-function firstLine(content) {
-  const line = (content || "").split("\n").find((l) => l.trim()) || "Announcement";
-  return line.length > 80 ? line.slice(0, 79) + "…" : line;
-}
 
 export default async function AcknowledgmentsPage() {
   const user = await getCurrentUser();
@@ -90,43 +60,22 @@ export default async function AcknowledgmentsPage() {
           preferredLastName: true,
           title: true,
           image: true,
-          email: true,
-          phone: true,
         },
         orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
       });
-      const ackByUser = new Map(p.acks.map((a) => [a.userId, a]));
-      const people = audienceUsers.map((u) => {
-        const a = ackByUser.get(u.id);
-        return {
-          id: u.id,
-          displayName: preferredName(u),
-          title: u.title || "",
-          image: u.image || null,
-          email: u.email || null,
-          phone: u.phone || null,
-          acked: !!a,
-          viaEmail: a?.viaEmail || false,
-          dateLabel: a ? fmtAck(a.createdAt) : null,
-        };
-      });
-      const acked = people.filter((x) => x.acked).length;
-      const viaEmail = people.filter((x) => x.acked && x.viaEmail).length;
-      const expected = people.length;
+      const r = buildAckRoster(p, audienceUsers);
       return {
         id: p.id,
         title: p.title || firstLine(p.content),
         tag: p.tag,
-        tagCls: ANNOUNCEMENT_TAG_STYLES[p.tag] || DEFAULT_TAG_CLS,
+        tagCls: tagCls(p.tag),
         dateLabel: p.publishedAt ? fmtPosted(p.publishedAt) : null,
-        audience: audienceLabel(p, expected),
-        expected,
-        acked,
-        viaEmail,
-        inPortal: acked - viaEmail,
-        notYetCount: Math.max(0, expected - acked),
-        pct: expected > 0 ? Math.round((acked / expected) * 100) : 0,
-        people,
+        audience: audienceLabel(p, r.expected),
+        expected: r.expected,
+        acked: r.acked,
+        notYetCount: r.notYet,
+        pct: r.pct,
+        summary: r.summary,
       };
     }),
   );
@@ -147,15 +96,11 @@ export default async function AcknowledgmentsPage() {
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
         Every announcement that asked staff to acknowledge, with who&apos;s done it
-        and who hasn&apos;t. Expand one to see the people; open it to nudge the
+        and who hasn&apos;t. Click one to open the full list and nudge the
         stragglers by email.
       </p>
 
-      <AckBoard
-        posts={posts}
-        counts={{ total: posts.length, done, avg }}
-        markAck={markAckFor}
-      />
+      <AckBoard posts={posts} counts={{ total: posts.length, done, avg }} />
     </section>
   );
 }

@@ -1246,6 +1246,9 @@ export async function markAttendance(postId, userId, status, optionId = null) {
 }
 
 // ---- admin overrides on the roster (all Admin/IT/Super, all bypass locks) ----
+// these don't redirect - they revalidate the detail page AND the meeting-attendance
+// report and return, so the admin can run them from either place without getting
+// bounced away (same idea as markAttendance / markAckFor).
 
 // record an acknowledgment on someone's behalf. keeps an existing self/email ack
 // as-is (only stamps recordedById when creating a fresh one).
@@ -1359,7 +1362,7 @@ export async function adminRecordChoices(postId, userId, formData) {
     });
   }
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
 }
 
 // walk-in / record-going: add someone to a session (used by "+ Add to this
@@ -1368,7 +1371,7 @@ export async function adminAddToSession(postId, userId, optionId) {
   const { user, post } = await requireAdminMeeting(postId);
   await ensureGoingChoice(post, userId, optionId, user.id);
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
 }
 
 // move a pick from one session to another (kebab "Move to another session").
@@ -1381,7 +1384,7 @@ export async function adminMoveSession(postId, userId, fromOptionId, toOptionId)
   }
   await ensureGoingChoice(post, userId, toOptionId, user.id);
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
 }
 
 // single-session: record a no-response person as going ("I'll be there" on their
@@ -1395,7 +1398,7 @@ export async function adminSetGoing(postId, userId) {
   });
   if (post.requireAck) await recordAckFor(postId, userId, user.id);
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
 }
 
 // record a person as can't-make-it (clears any picks).
@@ -1411,7 +1414,7 @@ export async function adminSetCantMake(postId, userId) {
   });
   if (post.requireAck) await recordAckFor(postId, userId, user.id);
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
 }
 
 // remove someone from the meeting entirely (response + picks + the auto-ack that
@@ -1428,7 +1431,7 @@ export async function adminRemoveFromMeeting(postId, userId) {
     where: { announcementId: postId, userId, viaEmail: false },
   });
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
 }
 
 // add someone to the invite/ack audience without editing the whole post (appends
@@ -1475,7 +1478,8 @@ export async function adminAddInvitee(postId, userId, formData) {
     await emailAnnouncement(post, { id: { in: [userId] } });
   }
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
+  revalidatePath("/portal/admin/acknowledgments");
 }
 
 // remove an individually-added invitee (drops them from the specific-people
@@ -1493,7 +1497,8 @@ export async function adminRemoveInvitee(postId, userId) {
     data: { ackUserIds: (post.ackUserIds || []).filter((id) => id !== userId) },
   });
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
+  revalidatePath("/portal/admin/acknowledgments");
 }
 
 // mark / unmark an acknowledgment on someone's behalf. works for a plain ack
