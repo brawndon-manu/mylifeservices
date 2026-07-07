@@ -29,6 +29,7 @@ import {
   ackAudienceWhere,
   isAckExempt,
   computeMeetingLocks,
+  canSeeAnnouncement,
 } from "@/lib/announcements";
 import AuthorPreview from "../_components/AuthorPreview";
 import Avatar from "@/components/Avatar";
@@ -178,6 +179,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const BACKS = {
     ack: { href: "/portal/admin/acknowledgments", label: "← Back to Acknowledgments" },
     meetings: { href: "/portal/admin/meeting-attendance", label: "← Back to Meeting attendance" },
+    // arriving from a dedicated report page (its "View announcement" link) - go
+    // back to that meeting's / announcement's own report page.
+    meetingDetail: { href: `/portal/admin/meeting-attendance/${id}`, label: "← Back to meeting attendance" },
+    ackDetail: { href: `/portal/admin/acknowledgments/${id}`, label: "← Back to acknowledgments" },
   };
   const back = BACKS[sp?.from] || {
     href: "/portal/announcements",
@@ -215,6 +220,11 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   // moderator, a 404 to everyone else (it isn't live yet).
   const isDraft = !post.publishedAt;
   if (isDraft && post.authorId !== user.id && !isModerator(user.role)) notFound();
+
+  // visibility gate: a published Company Meeting / ack-required announcement is
+  // private to its invited audience (admins + the author always see it); other
+  // announcements are public. hide it as a 404 to anyone outside the audience.
+  if (!isDraft && !canSeeAnnouncement(post, user)) notFound();
 
   const expired = isExpired(post);
   const liked = post.likes.length > 0;

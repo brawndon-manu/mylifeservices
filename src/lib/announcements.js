@@ -3,6 +3,7 @@
 // no db / no prisma calls).
 
 import { ACK_EXEMPT_TITLE, POSITION_SEP, titleHasSegment } from "./positions";
+import { isAdminUp } from "./roles";
 
 // the Owner/Director doesn't acknowledge - everyone else does.
 export function isAckExempt(user) {
@@ -46,6 +47,27 @@ export function ackAudienceWhere(post) {
     ];
   }
   return where;
+}
+
+// who can SEE an announcement (feed + detail page). Company Meetings and
+// acknowledgment-required announcements are private to their invited audience;
+// every other announcement is visible to all staff. admins and the author always
+// see everything, and a post whose audience is "Everyone" is visible to everyone.
+// mirrors ackAudienceWhere's membership rules but runs per-user in JS.
+export function canSeeAnnouncement(post, user) {
+  if (!user) return false;
+  if (isAdminUp(user.role)) return true;
+  if (post.authorId && post.authorId === user.id) return true;
+  // only meetings + ack-required posts are gated; anything else is public.
+  const restricted = isCompanyMeeting(post.tag) || post.requireAck;
+  if (!restricted) return true;
+  // "Everyone" audience is visible to everyone (incl. the ack-exempt Owner).
+  const everyone =
+    post.ackEveryone || (!post.ackTitles?.length && !post.ackUserIds?.length);
+  if (everyone) return true;
+  // targeted: you're in the audience by id or by one of your job titles.
+  if ((post.ackUserIds || []).includes(user.id)) return true;
+  return (post.ackTitles || []).some((t) => titleHasSegment(user.title, t));
 }
 
 // the "type" of an announcement, picked first on the form; the rest of the form
@@ -125,9 +147,11 @@ export const MEETING_FORMAT_LABELS = {
 
 export const ANNOUNCEMENT_TITLE_MAX = 140;
 
-// changelogs are long-form (multiple sections), so they get a much bigger cap
-// than a plain post (POST_CONTENT_MAX = 2000 in hub.js).
-export const CHANGELOG_CONTENT_MAX = 20000;
+// changelogs are long-form (a full week's worth of sections), so they get a much
+// bigger cap than a plain post (POST_CONTENT_MAX = 2000 in hub.js). generous on
+// purpose - the content column is postgres text (no db limit) and this stays well
+// under the 5mb server-action body limit; a real changelog runs ~20-30k chars.
+export const CHANGELOG_CONTENT_MAX = 100000;
 
 // a real (non-decline) session option.
 function realOptions(options) {

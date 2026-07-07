@@ -19,6 +19,7 @@ import {
   isChangelog,
   isCompanyMeeting,
   isAckExempt,
+  canSeeAnnouncement,
 } from "@/lib/announcements";
 import AuthorPreview from "./_components/AuthorPreview";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -75,8 +76,11 @@ export default async function AnnouncementsPage({ searchParams }) {
     take: 50,
   });
 
-  const activeOrPinned = posts.filter((p) => p.pinnedAt || !isExpired(p));
-  const expiredUnpinned = posts.filter((p) => !p.pinnedAt && isExpired(p));
+  // visibility gate: meetings + ack-required posts only show to their invited
+  // audience (admins + the author always see them); everything else is public.
+  const visible = posts.filter((p) => canSeeAnnouncement(p, user));
+  const activeOrPinned = visible.filter((p) => p.pinnedAt || !isExpired(p));
+  const expiredUnpinned = visible.filter((p) => !p.pinnedAt && isExpired(p));
   const ordered = [...activeOrPinned, ...expiredUnpinned];
 
   return (
