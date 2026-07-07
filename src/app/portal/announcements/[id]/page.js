@@ -749,18 +749,18 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 {(formatHasOnline(post.meetingFormat) ||
                   (formatHasAddress(post.meetingFormat) && post.meetingAddress)) && (
                   <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
-                    {formatHasOnline(post.meetingFormat) && !isAdmin && (
-                      <div className="flex items-center gap-2 rounded-md border border-border-strong bg-surface-2 px-4 py-2.5 text-sm font-medium text-muted">
-                        <VideoIcon className="h-4 w-4" /> Link will be provided soon!
-                      </div>
-                    )}
-                    {formatHasOnline(post.meetingFormat) && isAdmin && meetingOptions.length === 0 && !post.zoomLink && post.zoomLinkTbd && (
-                      <div className="flex items-center gap-2 text-sm text-muted">
-                        <VideoIcon className="h-4 w-4" />
-                        The Zoom link will be sent before the meeting.
-                      </div>
-                    )}
-                    {formatHasOnline(post.meetingFormat) && isAdmin && meetingOptions.length === 0 && post.zoomLink && (
+                    {/* single-session online: show the Join link + passcode to
+                        everyone once it's set (multi/series links live per-session
+                        in the response controls below) */}
+                    {formatHasOnline(post.meetingFormat) &&
+                      meetingOptions.length === 0 &&
+                      !post.zoomLink && (
+                        <div className="flex items-center gap-2 rounded-md border border-border-strong bg-surface-2 px-4 py-2.5 text-sm font-medium text-muted">
+                          <VideoIcon className="h-4 w-4" /> The Zoom link will be sent
+                          before the meeting.
+                        </div>
+                      )}
+                    {formatHasOnline(post.meetingFormat) && meetingOptions.length === 0 && post.zoomLink && (
                       <div className="flex flex-wrap items-center gap-2">
                         <a
                           href={post.zoomLink}

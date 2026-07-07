@@ -242,7 +242,7 @@ export default function MeetingResponse({
                     You&apos;re attending
                   </p>
                   {online &&
-                    (isAdmin ? (
+                    (defaultLink ? (
                       <JoinRow link={defaultLink} code={defaultCode} />
                     ) : (
                       <p className="mt-2 text-xs font-medium text-muted">
@@ -272,7 +272,7 @@ export default function MeetingResponse({
                               </p>
                             )}
                             {online &&
-                              (isAdmin ? (
+                              (linkFor(o) ? (
                                 <JoinRow link={linkFor(o)} code={codeFor(o)} />
                               ) : (
                                 <p className="mt-2 text-xs font-medium text-muted">
@@ -309,7 +309,7 @@ export default function MeetingResponse({
                         </p>
                       )}
                       {online &&
-                        (isAdmin ? (
+                        (linkFor(o) ? (
                           <JoinRow link={linkFor(o)} code={codeFor(o)} />
                         ) : (
                           <p className="mt-2 text-xs font-medium text-muted">
