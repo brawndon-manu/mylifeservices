@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isIT, isElevated, canSeeRoles, ROLE_LABELS } from "@/lib/roles";
+import { isIT, isElevated, canSeeRoles, ROLE_LABELS, isSuper } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
 import {
@@ -80,9 +80,13 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
   // post just saves. the button copy reflects that.
   const isDraft = !post.publishedAt;
 
-  // the author can edit; for a draft posted on someone's behalf, the person who
-  // actually posted it (postedBy) can edit too.
-  if (post.authorId !== user.id && !(isDraft && post.postedById === user.id)) {
+  // the author can edit; Super can edit anyone's; for a draft posted on someone's
+  // behalf, the person who actually posted it (postedBy) can edit too.
+  if (
+    post.authorId !== user.id &&
+    !isSuper(user.role) &&
+    !(isDraft && post.postedById === user.id)
+  ) {
     redirect(`/portal/announcements/${id}?error=forbidden`);
   }
 

@@ -9,6 +9,7 @@ import {
   canSeeRoles,
   isSupervisorUp,
   isAdminUp,
+  isSuper,
 } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { renderMarkdown } from "@/lib/markdown";
@@ -74,6 +75,7 @@ import {
   adminSetGoing,
   adminSetCantMake,
   adminRemoveFromMeeting,
+  adminRecordChoices,
   markAckFor,
 } from "../actions";
 import {
@@ -212,9 +214,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const expired = isExpired(post);
   const liked = post.likes.length > 0;
   const canDeletePost = post.authorId === user.id || isModerator(user.role);
-  // the author edits their own; moderators (HR/Manager/Admin/IT/Super) can edit
-  // anyone's, same tier that can already delete/pin others' posts.
-  const canEditPost = post.authorId === user.id || isModerator(user.role);
+  // the author edits their own; Super can edit anyone's.
+  const canEditPost = post.authorId === user.id || isSuper(user.role);
   // the Zoom link + passcode are admin-only: only Admin/IT/Super can see or manage
   // them. everyone else sees a "Link will be provided soon!" note (they get the
   // link in the reminder email).
@@ -451,6 +452,20 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         label: o.label,
         seriesLabel: o.seriesLabel || null,
       })),
+      isSeries: meetingOptions.some((o) => o && o.seriesId),
+      seriesGroups: (() => {
+        const groups = [];
+        for (const o of meetingOptions) {
+          if (!o || !o.seriesId) continue;
+          let g = groups.find((x) => x.id === o.seriesId);
+          if (!g) {
+            g = { id: o.seriesId, label: o.seriesLabel || "Series", options: [] };
+            groups.push(g);
+          }
+          g.options.push({ id: o.id, label: o.label });
+        }
+        return groups;
+      })(),
       audience: audienceUsers.map((u) => ({
         id: u.id,
         displayName: preferredName(u),
@@ -493,6 +508,19 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
           <p className="text-sm font-medium text-foreground">
             Published - it&apos;s live in the feed
             {sentCount ? ` and emailed to ${sentCount} ${sentCount === 1 ? "person" : "people"}` : ""}.
+          </p>
+        </div>
+      )}
+
+      {sp?.reset && (
+        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <p className="text-sm font-medium text-foreground">Session times updated.</p>
+          <p className="mt-1 text-sm text-muted">
+            {sp.reset} {sp.reset === "1" ? "person" : "people"} who picked a changed
+            session need to RSVP again
+            {sp.emailed
+              ? ` - emailed ${sp.emailed} ${sp.emailed === "1" ? "person" : "people"}.`
+              : "."}
           </p>
         </div>
       )}
@@ -967,11 +995,12 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                 userId={u.id}
                                 sessions={meetingRoster.sessions}
                                 hasSessions={meetingOptions.length > 0}
-                                requireAck={post.requireAck}
+                                isSeries={meetingRoster.isSeries}
+                                seriesGroups={meetingRoster.seriesGroups}
                                 addToSession={adminAddToSession}
                                 setGoing={adminSetGoing}
                                 cantMake={adminSetCantMake}
-                                markAck={markAckFor}
+                                record={adminRecordChoices}
                               />
                             }
                           />
@@ -1049,10 +1078,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               />
             )}
             {canPin && (
-              <form action={togglePin.bind(null, post.id)}>
+              <form action={togglePin.bind(null, post.id)} className="flex">
                 <button
                   type="submit"
-                  className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-amber-50 hover:text-amber-800"
+                  className="inline-flex items-center rounded-md px-2 py-1 font-medium text-muted transition hover:bg-amber-50 hover:text-amber-800"
                 >
                   {post.pinnedAt ? "Unpin" : "Pin"}
                 </button>
@@ -1061,16 +1090,16 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
             {canEditPost && (
               <Link
                 href={`/portal/announcements/${post.id}/edit`}
-                className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-surface-3"
+                className="inline-flex items-center rounded-md px-2 py-1 font-medium text-muted transition hover:bg-surface-3"
               >
                 Edit
               </Link>
             )}
             {canDeletePost && (
-              <form action={deletePost.bind(null, post.id)}>
+              <form action={deletePost.bind(null, post.id)} className="flex">
                 <ConfirmButton
                   message="Delete this announcement? This can't be undone."
-                  className="rounded-md px-2 py-1 font-medium text-rose-600 transition hover:bg-rose-50"
+                  className="inline-flex items-center rounded-md px-2 py-1 font-medium text-rose-600 transition hover:bg-rose-50"
                 >
                   Delete
                 </ConfirmButton>

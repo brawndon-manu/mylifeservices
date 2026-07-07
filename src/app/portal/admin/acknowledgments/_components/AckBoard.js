@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import NameHover from "@/components/NameHover";
+import {
+  OverrideProvider,
+  OverrideToggle,
+  useOverrideShown,
+} from "@/app/portal/announcements/_components/RosterAdmin";
+
+// per-card: the announcement id + the mark-acknowledged action, so a PersonLine
+// deep in a view can log an ack without threading props through every view.
+const AckCtx = createContext({ postId: null, markAck: null });
 
 // people-view styles, tailored to acks (who's done vs who hasn't).
 const VIEWS = [
@@ -13,7 +22,7 @@ const VIEWS = [
 ];
 const STORE_KEY = "mls-ack-view";
 
-export default function AckBoard({ posts, counts }) {
+export default function AckBoard({ posts, counts, markAck }) {
   const [view, setView] = useState("grouped");
   useEffect(() => {
     const saved = window.localStorage.getItem(STORE_KEY);
@@ -70,7 +79,7 @@ export default function AckBoard({ posts, counts }) {
       ) : (
         <div className="mt-8 space-y-3.5">
           {posts.map((p) => (
-            <AckCard key={p.id} p={p} view={view} />
+            <AckCard key={p.id} p={p} view={view} markAck={markAck} />
           ))}
         </div>
       )}
@@ -126,6 +135,8 @@ function AvatarStack({ users, max = 6 }) {
 }
 
 function PersonLine({ user, showDot }) {
+  const { postId, markAck } = useContext(AckCtx);
+  const override = useOverrideShown();
   return (
     <div className="flex items-center gap-2.5 py-1">
       {showDot && (
@@ -140,11 +151,23 @@ function PersonLine({ user, showDot }) {
         <NameHover user={user} className="block truncate text-sm font-medium text-foreground" />
         {user.title && <div className="truncate text-xs text-muted">{user.title}</div>}
       </div>
-      {user.acked && (
+      {user.acked ? (
         <span className="ml-auto whitespace-nowrap text-xs text-muted">
           {user.viaEmail ? "via email" : "in portal"}
           {user.dateLabel ? ` · ${user.dateLabel}` : ""}
         </span>
+      ) : (
+        override &&
+        markAck && (
+          <form action={markAck.bind(null, postId, user.id)} className="ml-auto flex">
+            <button
+              type="submit"
+              className="rounded-md border border-brand-light/50 px-2.5 py-1 text-xs font-semibold text-brand-light transition hover:bg-brand-light/10"
+            >
+              Mark acknowledged
+            </button>
+          </form>
+        )
       )}
     </div>
   );
@@ -276,8 +299,10 @@ function AckPeople({ people, view }) {
   return <GroupedView people={people} />;
 }
 
-function AckCard({ p, view }) {
+function AckCard({ p, view, markAck }) {
   return (
+    <OverrideProvider>
+    <AckCtx.Provider value={{ postId: p.id, markAck }}>
     <div className="rounded-xl border border-border bg-surface p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]">
       {/* header opens the announcement; the drill-down below stays interactive. */}
       <div className="group relative flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -324,6 +349,11 @@ function AckCard({ p, view }) {
           <AckPeople people={p.people} view={view} />
         </div>
       </details>
+      <div className="mt-3 flex justify-end">
+        <OverrideToggle />
+      </div>
     </div>
+    </AckCtx.Provider>
+    </OverrideProvider>
   );
 }

@@ -219,7 +219,9 @@ export default function AnnouncementForm({
             </p>
           </div>
 
-          {meeting && <MeetingFields defaults={d} />}
+          {meeting && (
+            <MeetingFields defaults={d} showTimeNotify={mode === "edit" && !isDraft} />
+          )}
 
           {meeting && (
             <div className="rounded-md border border-border bg-surface-2 p-4">

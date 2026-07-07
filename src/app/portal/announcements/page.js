@@ -3,7 +3,7 @@ import Image from "next/image";
 import { renderMarkdown } from "@/lib/markdown";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated, isSupervisorUp, canSeeRoles } from "@/lib/roles";
+import { isModerator, isElevated, isSupervisorUp, canSeeRoles, isSuper } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   TIME_WINDOWS,
@@ -191,7 +191,7 @@ function PostCard({ post, currentUser }) {
   const canDelete =
     post.authorId === currentUser.id || isModerator(currentUser.role);
   const canPin = isModerator(currentUser.role);
-  const canEdit = post.authorId === currentUser.id;
+  const canEdit = post.authorId === currentUser.id || isSuper(currentUser.role);
   const iAcked = post.acks?.length > 0;
   const iMustAck = !isAckExempt(currentUser);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
@@ -323,10 +323,10 @@ function PostCard({ post, currentUser }) {
         </Link>
         <div className="ml-auto flex items-center gap-1 text-xs">
           {canPin && (
-            <form action={togglePin.bind(null, post.id)}>
+            <form action={togglePin.bind(null, post.id)} className="flex">
               <button
                 type="submit"
-                className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-amber-50 hover:text-amber-800"
+                className="inline-flex items-center rounded-md px-2 py-1 font-medium text-muted transition hover:bg-amber-50 hover:text-amber-800"
               >
                 {post.pinnedAt ? "Unpin" : "Pin"}
               </button>
@@ -335,16 +335,16 @@ function PostCard({ post, currentUser }) {
           {canEdit && (
             <Link
               href={`/portal/announcements/${post.id}/edit`}
-              className="rounded-md px-2 py-1 font-medium text-muted transition hover:bg-surface-3"
+              className="inline-flex items-center rounded-md px-2 py-1 font-medium text-muted transition hover:bg-surface-3"
             >
               Edit
             </Link>
           )}
           {canDelete && (
-            <form action={deletePost.bind(null, post.id)}>
+            <form action={deletePost.bind(null, post.id)} className="flex">
               <ConfirmButton
                 message="Delete this announcement? This can't be undone."
-                className="rounded-md px-2 py-1 font-medium text-rose-600 transition hover:bg-rose-50"
+                className="inline-flex items-center rounded-md px-2 py-1 font-medium text-rose-600 transition hover:bg-rose-50"
               >
                 Delete
               </ConfirmButton>

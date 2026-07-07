@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import { ackAudienceWhere, ANNOUNCEMENT_TAG_STYLES, COMPANY_MEETING_TAG } from "@/lib/announcements";
+import { markAckFor } from "@/app/portal/announcements/actions";
 import AckBoard from "./_components/AckBoard";
 
 export const metadata = {
@@ -153,6 +154,7 @@ export default async function AcknowledgmentsPage() {
       <AckBoard
         posts={posts}
         counts={{ total: posts.length, done, avg }}
+        markAck={markAckFor}
       />
     </section>
   );

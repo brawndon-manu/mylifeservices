@@ -570,7 +570,8 @@ function MeetingCard({ m, view, past }) {
 
       <details className="mt-4 border-t border-border pt-3">
         <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wider text-muted">
-          <span className="text-faint">▾</span> Per-{m.isSeries ? "series" : "session"} breakdown &amp; roll-call
+          <span className="text-faint">▾</span>{" "}
+          {`Per-${m.isSeries ? "series" : "session"} breakdown & roll-call`}
         </summary>
         <div className="mt-3 space-y-2.5 border-l-2 border-border-strong pl-3">
           {m.isSeries ? (

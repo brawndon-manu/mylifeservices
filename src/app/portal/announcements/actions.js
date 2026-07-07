@@ -17,6 +17,7 @@ import {
   isSupervisorUp,
   isAdminUp,
   isIT,
+  isSuper,
 } from "@/lib/roles";
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { ACK_EXEMPT_TITLE } from "@/lib/positions";
@@ -457,17 +458,26 @@ export async function editPost(postId, formData) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, postedById: true, deletedAt: true, publishedAt: true },
+    select: {
+      id: true,
+      authorId: true,
+      postedById: true,
+      deletedAt: true,
+      publishedAt: true,
+      tag: true,
+      meetingOptions: true,
+      meetingAt: true,
+    },
   });
   if (!post || post.deletedAt) {
     redirect("/portal/announcements");
   }
   const isDraft = !post.publishedAt;
-  // the author can edit; moderators can edit anyone's; for a draft posted on
-  // someone's behalf, the actual poster (postedBy) can edit too.
+  // the author can edit; Super can edit anyone's; for a draft posted on someone's
+  // behalf, the actual poster (postedBy) can edit too.
   if (
     post.authorId !== user.id &&
-    !isModerator(user.role) &&
+    !isSuper(user.role) &&
     !(isDraft && post.postedById === user.id)
   ) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
@@ -519,6 +529,7 @@ export async function editPost(postId, formData) {
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
 
+  const meetingFields = parseMeetingFields(formData, tag);
   await prisma.announcement.update({
     where: { id: postId },
     data: {
@@ -531,14 +542,113 @@ export async function editPost(postId, formData) {
       ackTitles,
       ackUserIds,
       ...authorUpdate,
-      ...parseMeetingFields(formData, tag),
+      ...meetingFields,
       editedAt: new Date(),
     },
   });
 
+  // if this is a published meeting and any session's start time moved, reset the
+  // picks for just those sessions (attendees re-RSVP) and, per the author's
+  // choice, email the affected people or everyone invited about the change.
+  let reset = 0;
+  let emailed = 0;
+  if (isCompanyMeeting(tag) && post.publishedAt) {
+    const affected = await resetChangedMeetingSessions(post, meetingFields);
+    reset = affected.length;
+    const notify = formData.get("timeChangeNotify");
+    if (affected.length && (notify === "affected" || notify === "everyone")) {
+      const emailPost = await prisma.announcement.findUnique({
+        where: { id: postId },
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          requireAck: true,
+          createdAt: true,
+          ackEveryone: true,
+          ackTitles: true,
+          ackUserIds: true,
+          ...EMAIL_MEETING_SELECT,
+          author: { select: EMAIL_AUTHOR_SELECT },
+        },
+      });
+      const where =
+        notify === "everyone"
+          ? ackAudienceWhere(emailPost)
+          : { id: { in: affected } };
+      const res = await emailAnnouncement(emailPost, where);
+      emailed = res?.sent || 0;
+    }
+  }
+
   revalidatePath("/portal/announcements");
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  const q = reset
+    ? `?reset=${reset}${emailed ? `&emailed=${emailed}` : ""}`
+    : "";
+  redirect(`/portal/announcements/${postId}${q}`);
+}
+
+// after a meeting edit, find which sessions changed start time and reset just
+// those picks (attendees re-RSVP). returns the affected user ids for the optional
+// notify email. compares stored vs new instants, so an unchanged session (same
+// time round-tripped) isn't touched.
+async function resetChangedMeetingSessions(post, newFields) {
+  const oldOpts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const newOpts = Array.isArray(newFields.meetingOptions) ? newFields.meetingOptions : [];
+  const oldById = new Map(oldOpts.filter((o) => o && o.id).map((o) => [o.id, o]));
+  const instant = (v) => (v ? new Date(v).getTime() : null);
+
+  const changedIds = [];
+  for (const o of newOpts) {
+    if (!o || !o.id) continue;
+    const old = oldById.get(o.id);
+    if (old && instant(old.at) !== instant(o.at)) changedIds.push(o.id);
+  }
+  const singleChanged =
+    oldOpts.length === 0 &&
+    newOpts.length === 0 &&
+    Boolean(post.meetingAt || newFields.meetingAt) &&
+    instant(post.meetingAt) !== instant(newFields.meetingAt);
+
+  if (!changedIds.length && !singleChanged) return [];
+
+  if (changedIds.length) {
+    const choices = await prisma.announcementMeetingChoice.findMany({
+      where: { announcementId: post.id, optionId: { in: changedIds } },
+      select: { userId: true },
+    });
+    const affected = [...new Set(choices.map((c) => c.userId))];
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: { announcementId: post.id, optionId: { in: changedIds } },
+    });
+    // anyone left with no real pick goes back to no-response (must re-RSVP).
+    for (const uid of affected) {
+      const remaining = await prisma.announcementMeetingChoice.findMany({
+        where: { announcementId: post.id, userId: uid },
+        select: { optionId: true },
+      });
+      const realLeft = remaining.filter((c) => !String(c.optionId).startsWith("cant:"));
+      if (realLeft.length === 0) {
+        await prisma.announcementMeetingResponse.deleteMany({
+          where: { announcementId: post.id, userId: uid },
+        });
+        await clearMeetingResponseAck(post.id, uid);
+      }
+    }
+    return affected;
+  }
+  // single-session time moved: reset everyone who was going.
+  const going = await prisma.announcementMeetingResponse.findMany({
+    where: { announcementId: post.id, cantMakeIt: false },
+    select: { userId: true },
+  });
+  const affected = going.map((r) => r.userId);
+  await prisma.announcementMeetingResponse.deleteMany({
+    where: { announcementId: post.id, cantMakeIt: false },
+  });
+  for (const uid of affected) await clearMeetingResponseAck(post.id, uid);
+  return affected;
 }
 
 export async function togglePin(postId) {
@@ -1151,6 +1261,54 @@ async function ensureGoingChoice(post, userId, optionId, adminId) {
   return true;
 }
 
+// record a whole response for someone (used by the series "Record response"
+// picker: one date per series at once). replaces their pick-set with the
+// submitted optionIds (one per series), sets going, records the ack.
+export async function adminRecordChoices(postId, userId, formData) {
+  const { user, post } = await requireAdminMeeting(postId);
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const optById = new Map(opts.filter((o) => o && o.id).map((o) => [o.id, o]));
+  const isSeries = opts.some((o) => o && o.seriesId);
+  const seriesIds = new Set(opts.map((o) => o && o.seriesId).filter(Boolean));
+  const isCant = (id) => String(id).startsWith("cant:");
+  const seriesOf = (id) => (isCant(id) ? id.slice(5) : optById.get(id)?.seriesId);
+  const valid = (id) => (isCant(id) ? seriesIds.has(id.slice(5)) : optById.has(id));
+
+  let ids = [...new Set(formData.getAll("optionId").map(String))].filter(valid);
+  if (isSeries) {
+    const bySeries = new Map();
+    for (const id of ids) bySeries.set(seriesOf(id), id);
+    ids = [...bySeries.values()];
+  } else if (!post.meetingMultiPick) {
+    ids = ids.slice(0, 1);
+  }
+
+  await prisma.announcementMeetingChoice.deleteMany({
+    where: { announcementId: postId, userId },
+  });
+  if (ids.length) {
+    await prisma.announcementMeetingChoice.createMany({
+      data: ids.map((optionId) => ({ announcementId: postId, userId, optionId })),
+      skipDuplicates: true,
+    });
+  }
+  const realPicks = ids.filter((id) => !isCant(id));
+  if (ids.length) {
+    await prisma.announcementMeetingResponse.upsert({
+      where: { announcementId_userId: { announcementId: postId, userId } },
+      create: { announcementId: postId, userId, cantMakeIt: realPicks.length === 0 },
+      update: { cantMakeIt: realPicks.length === 0, reason: null },
+    });
+    if (post.requireAck) await recordAckFor(postId, userId, user.id);
+  } else {
+    await prisma.announcementMeetingResponse.deleteMany({
+      where: { announcementId: postId, userId },
+    });
+  }
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}`);
+}
+
 // walk-in / record-going: add someone to a session (used by "+ Add to this
 // session" and by recording a no-response person as going).
 export async function adminAddToSession(postId, userId, optionId) {
@@ -1231,8 +1389,10 @@ export async function markAckFor(postId, userId) {
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
   await recordAckFor(postId, userId, user.id);
+  // no redirect - stays on whichever page called it (detail roster OR the admin
+  // acknowledgments report), re-rendering with the fresh ack.
   revalidatePath(`/portal/announcements/${postId}`);
-  redirect(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/acknowledgments");
 }
 
 export async function unmarkAckFor(postId, userId) {

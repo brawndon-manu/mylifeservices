@@ -327,7 +327,7 @@ function OptionCard({ o, index, online, onPatch, onRemove, showName = true, name
   );
 }
 
-export default function MeetingFields({ defaults = {} }) {
+export default function MeetingFields({ defaults = {}, showTimeNotify = false }) {
   const d = defaults;
   const [format, setFormat] = useState(d.meetingFormat || "zoom");
   const [linkTbd, setLinkTbd] = useState(!!d.zoomLinkTbd);
@@ -874,6 +874,34 @@ export default function MeetingFields({ defaults = {} }) {
           </div>
         )}
       </div>
+
+      {showTimeNotify && (
+        <div className="border-t border-border pt-4">
+          <label className={LABEL}>If you change a session time</label>
+          <p className="mt-1 text-xs text-muted">
+            Anyone who picked a session whose time you change has to RSVP again.
+            Nothing is emailed unless you pick a group here.
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {[
+              ["none", "Don't email - I'll tell them myself"],
+              ["affected", "Email just the people who need to RSVP again"],
+              ["everyone", "Email everyone invited"],
+            ].map(([val, label]) => (
+              <label key={val} className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="radio"
+                  name="timeChangeNotify"
+                  value={val}
+                  defaultChecked={val === "none"}
+                  className="h-4 w-4 accent-brand"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

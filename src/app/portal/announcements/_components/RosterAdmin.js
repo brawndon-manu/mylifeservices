@@ -5,7 +5,8 @@
 // response menu for people who never answered. each item is a plain <form> that
 // submits a server action (bound with its ids) and reloads - same pattern as the
 // present/absent roll-call buttons, so it stays simple.
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
 
 // the override controls stay hidden until an admin flips "Manual override" on, so
@@ -34,28 +35,62 @@ export function OverrideToggle() {
   );
 }
 
-function useOverrideShown() {
+export function useOverrideShown() {
   return useContext(OverrideCtx).show;
 }
 
-// a light dropdown: a trigger + an absolutely-positioned panel with a full-screen
-// backdrop that closes it on an outside click.
+// a light dropdown. the menu is portaled to <body> with fixed positioning so it
+// isn't clipped by the roster card's overflow-hidden - it hangs over the card and
+// shows every option. flips upward when the trigger sits low in the viewport.
 function Dropdown({ trigger, children, align = "right", width = "w-56" }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const ref = useRef(null);
+
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const up = r.bottom > window.innerHeight * 0.6;
+    setPos({
+      up,
+      top: up ? undefined : r.bottom + 4,
+      bottom: up ? window.innerHeight - r.top + 4 : undefined,
+      right: window.innerWidth - r.right,
+      left: r.left,
+    });
+  };
+  const toggle = () => {
+    if (!open) place();
+    setOpen((v) => !v);
+  };
+
+  const style = pos
+    ? {
+        top: pos.top,
+        bottom: pos.bottom,
+        ...(align === "right" ? { right: pos.right } : { left: pos.left }),
+      }
+    : {};
+
   return (
-    <span className="relative flex-none">
-      <span onClick={() => setOpen((v) => !v)}>{trigger}</span>
-      {open && (
-        <>
-          <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className={`absolute z-50 mt-1 ${align === "right" ? "right-0" : "left-0"} ${width} rounded-xl border border-border-strong bg-surface p-1.5 shadow-lg`}
-            onClick={() => setOpen(false)}
-          >
-            {children}
-          </div>
-        </>
-      )}
+    <span ref={ref} className="flex-none">
+      <span onClick={toggle}>{trigger}</span>
+      {open &&
+        pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+            <div
+              style={style}
+              className={`fixed z-[61] ${width} max-h-[70vh] overflow-y-auto rounded-xl border border-border-strong bg-surface p-1.5 shadow-lg`}
+              onClick={() => setOpen(false)}
+            >
+              {children}
+            </div>
+          </>,
+          document.body,
+        )}
     </span>
   );
 }
@@ -157,23 +192,33 @@ export function AddToSession({ postId, optionId, candidates, add }) {
   );
 }
 
-// for a person who never responded: record them going (pick a session, or "going"
-// on a single-session meeting), mark can't-make-it, or just mark acknowledged.
+// for a person who never responded: record them going. a series meeting picks
+// one date per series then confirms; a flat/single meeting picks a session (or
+// "Going") directly. plus can't-make-it.
 export function RecordResponse({
   postId,
   userId,
   sessions,
   hasSessions,
-  requireAck,
+  isSeries = false,
+  seriesGroups = [],
   addToSession,
   setGoing,
   cantMake,
-  markAck,
+  record,
 }) {
   if (!useOverrideShown()) return null;
+  const cantForm = (label) => (
+    <form action={cantMake.bind(null, postId, userId)}>
+      <button type="submit" className={`${ITEM} text-rose-600 dark:text-rose-400`}>
+        <span>&times;</span> {label}
+      </button>
+    </form>
+  );
   return (
     <span className="flex flex-none items-center gap-1.5">
       <Dropdown
+        width="w-64"
         trigger={
           <button
             type="button"
@@ -183,43 +228,90 @@ export function RecordResponse({
           </button>
         }
       >
-        <p className={SUBHEAD}>{hasSessions ? "Mark going to" : "Response"}</p>
-        {hasSessions ? (
-          sessions.map((s) => (
-            <form key={s.id} action={addToSession.bind(null, postId, userId, s.id)}>
-              <button type="submit" className={ITEM}>
-                <span className="truncate">
-                  {s.seriesLabel ? `${s.seriesLabel}: ` : ""}
-                  {s.label}
-                </span>
-              </button>
-            </form>
-          ))
+        {isSeries ? (
+          <SeriesRecord
+            postId={postId}
+            userId={userId}
+            seriesGroups={seriesGroups}
+            record={record}
+            cantMake={cantMake}
+          />
         ) : (
-          <form action={setGoing.bind(null, postId, userId)}>
-            <button type="submit" className={ITEM}>
-              Going
-            </button>
-          </form>
+          <>
+            <p className={SUBHEAD}>{hasSessions ? "Mark going to" : "Response"}</p>
+            {hasSessions ? (
+              sessions.map((s) => (
+                <form key={s.id} action={addToSession.bind(null, postId, userId, s.id)}>
+                  <button type="submit" className={ITEM}>
+                    <span className="truncate">
+                      {s.seriesLabel ? `${s.seriesLabel}: ` : ""}
+                      {s.label}
+                    </span>
+                  </button>
+                </form>
+              ))
+            ) : (
+              <form action={setGoing.bind(null, postId, userId)}>
+                <button type="submit" className={ITEM}>
+                  Going
+                </button>
+              </form>
+            )}
+            <div className="my-1 h-px bg-border" />
+            {cantForm("Can't make it")}
+          </>
         )}
-        <div className="my-1 h-px bg-border" />
-        <form action={cantMake.bind(null, postId, userId)}>
-          <button type="submit" className={`${ITEM} text-rose-600 dark:text-rose-400`}>
-            <span>&times;</span> Can&apos;t make it
-          </button>
-        </form>
       </Dropdown>
-      {requireAck && (
-        <form action={markAck.bind(null, postId, userId)}>
-          <button
-            type="submit"
-            className="rounded-md border border-brand-light/50 px-2.5 py-1 text-xs font-semibold text-brand-light transition hover:bg-brand-light/10"
-          >
-            Mark acknowledged
-          </button>
-        </form>
-      )}
     </span>
+  );
+}
+
+// series: pick one date per series, then Confirm going. stops click-propagation
+// so interacting doesn't close the dropdown.
+function SeriesRecord({ postId, userId, seriesGroups, record, cantMake }) {
+  const [picks, setPicks] = useState({});
+  const done = seriesGroups.filter((g) => picks[g.id]).length;
+  const allPicked = done === seriesGroups.length;
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <form action={record.bind(null, postId, userId)}>
+        {seriesGroups.map((g) => (
+          <input key={g.id} type="hidden" name="optionId" value={picks[g.id] || ""} />
+        ))}
+        {seriesGroups.map((g) => (
+          <div key={g.id} className="mb-1">
+            <p className={SUBHEAD}>{g.label}</p>
+            {g.options.map((o) => (
+              <label
+                key={o.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-foreground hover:bg-surface-2"
+              >
+                <input
+                  type="radio"
+                  checked={picks[g.id] === o.id}
+                  onChange={() => setPicks((p) => ({ ...p, [g.id]: o.id }))}
+                  className="h-4 w-4 accent-brand"
+                />
+                <span className="truncate">{o.label}</span>
+              </label>
+            ))}
+          </div>
+        ))}
+        <button
+          type="submit"
+          disabled={!allPicked}
+          className="mt-1 w-full rounded-md bg-brand-light px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand disabled:opacity-40"
+        >
+          Confirm going ({done}/{seriesGroups.length})
+        </button>
+      </form>
+      <div className="my-1 h-px bg-border" />
+      <form action={cantMake.bind(null, postId, userId)}>
+        <button type="submit" className={`${ITEM} text-rose-600 dark:text-rose-400`}>
+          <span>&times;</span> Can&apos;t make any
+        </button>
+      </form>
+    </div>
   );
 }
 
