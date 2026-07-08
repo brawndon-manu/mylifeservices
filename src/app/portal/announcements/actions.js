@@ -1777,10 +1777,7 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
     const ackUrl =
       post.requireAck && !isMeeting ? `${base}/a/ack/${signAckToken(post.id, r.id)}` : null;
     const ctaHtml = isMeeting
-      ? buildRsvpButtons(
-          post,
-          (choice) => `${base}/a/rsvp/${signRsvpToken(post.id, r.id, choice)}`,
-        )
+      ? buildRsvpButtons(post, `${base}/a/rsvp/${signRsvpToken(post.id, r.id, "pick")}`)
       : postButton(`${base}/portal/announcements/${post.id}`, "Go to the announcement");
     const html = buildAnnouncementEmailHtml({
       logoUrl,

@@ -146,6 +146,180 @@ export async function recordEmailRsvp(post, user, choice) {
   return { status: "going", label: optLabel(opt), series: opts.some((o) => o && o.seriesId) };
 }
 
+// records a whole meeting RSVP in one shot from the /a/rsvp picker: a date per
+// series (and/or a "can't attend this series" per series), or a pick / "can't
+// make any" for a flat meeting. one Send, no login. `sel` is:
+//   { seriesPick: {seriesId: optionId}, cantSeriesIds: [seriesId],
+//     flatPicks: [optionId], flatCant: bool, reason }
+// locked series/sessions are left untouched. this is the options-meeting path;
+// single-session meetings still use recordEmailRsvp / recordEmailCant.
+export async function recordEmailPicks(post, user, sel = {}) {
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  if (!inAudience(post, user)) return { status: "notInvited" };
+  const isSeries = opts.some((o) => o && o.seriesId);
+  const cleanReason = (sel.reason || "").toString().trim().slice(0, 300) || null;
+
+  // single-session meeting: "I'll be there" or "I can't attend" (+ reason)
+  if (opts.length === 0) {
+    if (!sel.singleCant && sel.single !== "going") return { status: "invalid" };
+    return sel.singleCant
+      ? recordEmailCant(post, user, { reason: sel.reason })
+      : recordEmailRsvp(post, user, "going");
+  }
+
+  const [myChoices, resp] = await Promise.all([
+    prisma.announcementMeetingChoice.findMany({
+      where: { announcementId: post.id, userId: user.id },
+      select: { optionId: true, attended: true },
+    }),
+    prisma.announcementMeetingResponse.findUnique({
+      where: { announcementId_userId: { announcementId: post.id, userId: user.id } },
+      select: { attended: true },
+    }),
+  ]);
+  const locks = computeMeetingLocks({
+    options: opts,
+    myChoices,
+    meetingAt: post.meetingAt,
+    myAttended: resp?.attended || null,
+    now: Date.now(),
+  });
+  const respKey = { announcementId_userId: { announcementId: post.id, userId: user.id } };
+
+  if (isSeries) {
+    const seriesIds = [...new Set(opts.map((o) => o && o.seriesId).filter(Boolean))];
+    const cantSet = new Set(
+      (sel.cantSeriesIds || []).filter((s) => seriesIds.includes(s)),
+    );
+    const pick = sel.seriesPick || {};
+    let touched = 0;
+    for (const sid of seriesIds) {
+      if (locks.lockedSeriesIds.includes(sid)) continue; // leave locked series alone
+      const sameSeries = opts.filter((o) => o.seriesId === sid).map((o) => o.id);
+      if (cantSet.has(sid)) {
+        await prisma.announcementMeetingChoice.deleteMany({
+          where: { announcementId: post.id, userId: user.id, optionId: { in: sameSeries } },
+        });
+        await prisma.announcementMeetingChoice.upsert({
+          where: {
+            announcementId_userId_optionId: {
+              announcementId: post.id,
+              userId: user.id,
+              optionId: `cant:${sid}`,
+            },
+          },
+          create: { announcementId: post.id, userId: user.id, optionId: `cant:${sid}` },
+          update: {},
+        });
+        touched++;
+      } else if (pick[sid] && sameSeries.includes(pick[sid])) {
+        await prisma.announcementMeetingChoice.deleteMany({
+          where: {
+            announcementId: post.id,
+            userId: user.id,
+            optionId: { in: [...sameSeries, `cant:${sid}`] },
+          },
+        });
+        await prisma.announcementMeetingChoice.upsert({
+          where: {
+            announcementId_userId_optionId: {
+              announcementId: post.id,
+              userId: user.id,
+              optionId: pick[sid],
+            },
+          },
+          create: { announcementId: post.id, userId: user.id, optionId: pick[sid] },
+          update: {},
+        });
+        touched++;
+      }
+      // no selection for a series -> leave whatever's already there
+    }
+
+    const final = await prisma.announcementMeetingChoice.findMany({
+      where: { announcementId: post.id, userId: user.id },
+      select: { optionId: true },
+    });
+    const realPicks = final.filter((c) => !String(c.optionId).startsWith("cant:"));
+    const cantMarks = final.filter((c) => String(c.optionId).startsWith("cant:"));
+    // nothing selected this time and nothing on file = a bare Send, treat as invalid
+    if (touched === 0 && realPicks.length === 0 && cantMarks.length === 0) {
+      return { status: "invalid" };
+    }
+    await prisma.announcementMeetingResponse.upsert({
+      where: respKey,
+      create: {
+        announcementId: post.id,
+        userId: user.id,
+        cantMakeIt: realPicks.length === 0,
+        reason: cleanReason,
+        viaEmail: true,
+      },
+      update: { cantMakeIt: realPicks.length === 0, reason: cleanReason, viaEmail: true },
+    });
+    await markAck(post, user);
+    return {
+      status: realPicks.length === 0 ? "cant" : "saved",
+      attending: realPicks.length,
+      cant: cantMarks.length,
+    };
+  }
+
+  // flat (non-series) meeting
+  const validIds = new Set(opts.map((o) => o.id));
+  if (sel.flatCant) {
+    if (locks.lockedAll) return { status: "locked" };
+    await prisma.announcementMeetingChoice.deleteMany({
+      where: { announcementId: post.id, userId: user.id },
+    });
+    await prisma.announcementMeetingResponse.upsert({
+      where: respKey,
+      create: {
+        announcementId: post.id,
+        userId: user.id,
+        cantMakeIt: true,
+        reason: cleanReason,
+        viaEmail: true,
+      },
+      update: { cantMakeIt: true, reason: cleanReason, viaEmail: true },
+    });
+    await markAck(post, user);
+    return { status: "cant" };
+  }
+  const picks = [...new Set((sel.flatPicks || []).filter((id) => validIds.has(id)))];
+  if (!picks.length) return { status: "invalid" };
+  if (locks.lockedAll) return { status: "locked" };
+  await prisma.announcementMeetingChoice.deleteMany({
+    where: { announcementId: post.id, userId: user.id },
+  });
+  for (const id of picks) {
+    await prisma.announcementMeetingChoice.upsert({
+      where: {
+        announcementId_userId_optionId: {
+          announcementId: post.id,
+          userId: user.id,
+          optionId: id,
+        },
+      },
+      create: { announcementId: post.id, userId: user.id, optionId: id },
+      update: {},
+    });
+  }
+  await prisma.announcementMeetingResponse.upsert({
+    where: respKey,
+    create: {
+      announcementId: post.id,
+      userId: user.id,
+      cantMakeIt: false,
+      reason: cleanReason,
+      viaEmail: true,
+    },
+    update: { cantMakeIt: false, reason: cleanReason, viaEmail: true },
+  });
+  await markAck(post, user);
+  return { status: "saved", attending: picks.length, cant: 0 };
+}
+
 // records a "can't make it" with a reason (single/flat) or a per-series decline
 // with a reason (series). from the /a/rsvp cant form. `cantSeriesIds` is the
 // series the person checked "can't attend"; ignored for non-series meetings.

@@ -27,6 +27,8 @@ export function toPerson(u) {
     attended: u.attended || null,
     optionId: u.optionId || null,
     reason: u.reason || null,
+    // true when the person's response last came in through a one-click email link
+    viaEmail: u.viaEmail || false,
   };
 }
 
@@ -67,6 +69,7 @@ export function buildRoster(m, audienceUsers, choices, responses) {
   const goingUser = (uid) => ({
     ...userById.get(uid),
     attended: respByUser.get(uid)?.attended || null,
+    viaEmail: respByUser.get(uid)?.viaEmail || false,
   });
 
   const bySession = opts.map((o) => ({
@@ -77,7 +80,12 @@ export function buildRoster(m, audienceUsers, choices, responses) {
       .filter((c) => c.optionId === o.id && audIds.has(c.userId) && isGoing(c.userId))
       // attendance is per session now, so it reads from the choice row + the row
       // carries its optionId so the board marks the right session.
-      .map((c) => ({ ...userById.get(c.userId), attended: c.attended || null, optionId: o.id }))
+      .map((c) => ({
+        ...userById.get(c.userId),
+        attended: c.attended || null,
+        optionId: o.id,
+        viaEmail: respByUser.get(c.userId)?.viaEmail || false,
+      }))
       .filter((u) => u.id)
       .map(toPerson),
   }));
@@ -87,7 +95,13 @@ export function buildRoster(m, audienceUsers, choices, responses) {
   const noResponse = audienceUsers.filter((u) => !respByUser.has(u.id)).map(toPerson);
   const cantAll = audienceUsers
     .filter((u) => respByUser.get(u.id)?.cantMakeIt)
-    .map((u) => toPerson({ ...u, reason: respByUser.get(u.id)?.reason || null }));
+    .map((u) =>
+      toPerson({
+        ...u,
+        reason: respByUser.get(u.id)?.reason || null,
+        viaEmail: respByUser.get(u.id)?.viaEmail || false,
+      }),
+    );
 
   const isSeries = opts.some((o) => o.seriesId);
   let seriesGroups = [];
@@ -112,7 +126,11 @@ export function buildRoster(m, audienceUsers, choices, responses) {
         const sid = c.optionId.slice(5);
         if (map.has(sid)) {
           map.get(sid).cant.push(
-            toPerson({ ...userById.get(c.userId), reason: respByUser.get(c.userId)?.reason || null }),
+            toPerson({
+              ...userById.get(c.userId),
+              reason: respByUser.get(c.userId)?.reason || null,
+              viaEmail: respByUser.get(c.userId)?.viaEmail || false,
+            }),
           );
         }
       }

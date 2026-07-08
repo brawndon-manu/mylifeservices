@@ -181,6 +181,32 @@ const STATUS_DOT = {
   unmarked: "bg-amber-400",
 };
 
+// small badge on a person row when their response came in through the one-click
+// email link (vs. logging into the portal). purely informational.
+function ViaEmailTag() {
+  return (
+    <span
+      title="Responded from the meeting email"
+      className="flex-none inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-3 w-3"
+        aria-hidden="true"
+      >
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="m3 7 9 6 9-6" />
+      </svg>
+      via email
+    </span>
+  );
+}
+
 // a person row. with postId it shows live Present/Absent roll-call buttons
 // (going people) plus the override kebab; without it, it's read-only.
 function PersonLine({ user, postId, showDot, extra }) {
@@ -197,6 +223,7 @@ function PersonLine({ user, postId, showDot, extra }) {
         <NameHover user={user} className="block truncate text-sm font-medium text-foreground" />
         {user.title && <div className="truncate text-xs text-muted">{user.title}</div>}
       </div>
+      {user.viaEmail && <ViaEmailTag />}
       {postId ? (
         // going row: roll-call is always visible; the kebab (move / remove) only
         // shows once Manual override is on.

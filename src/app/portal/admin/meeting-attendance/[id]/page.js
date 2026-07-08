@@ -83,7 +83,7 @@ export default async function MeetingAttendanceDetailPage({ params }) {
     }),
     prisma.announcementMeetingResponse.findMany({
       where: { announcementId: m.id },
-      select: { userId: true, cantMakeIt: true, reason: true, attended: true },
+      select: { userId: true, cantMakeIt: true, reason: true, attended: true, viaEmail: true },
     }),
     prisma.user.findMany({
       where: { deactivatedAt: null },
