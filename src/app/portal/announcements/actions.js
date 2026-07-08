@@ -22,10 +22,12 @@ import {
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import { signAckToken } from "@/lib/ack-token";
+import { signRsvpToken } from "@/lib/rsvp-token";
 import { renderMarkdown } from "@/lib/markdown";
 import {
   buildAnnouncementEmailHtml,
   buildMeetingBlockHtml,
+  buildRsvpButtons,
   postButton,
   EMAIL_TZ,
 } from "@/lib/announcement-email";
@@ -1761,32 +1763,43 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
   const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_white.png`;
   const authorName = preferredName(post.author);
   const authorTitle = post.author?.title || null;
-  const meetingHtml = buildMeetingBlockHtml(post);
-  // button straight to the post so they can respond / read it in the portal.
-  const ctaHtml = postButton(
-    `${base}/portal/announcements/${post.id}`,
-    isCompanyMeeting(post.tag) ? "Respond now" : "Go to the announcement",
-  );
+  const isMeeting = isCompanyMeeting(post.tag);
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  // a meeting with sessions to pick lists every date in the RSVP buttons already,
+  // so skip the redundant date block; a single-session meeting keeps its time +
+  // Join block.
+  const meetingHtml = isMeeting && opts.length === 0 ? buildMeetingBlockHtml(post) : "";
 
   const messages = recipients.map((r) => {
-    const ackUrl = post.requireAck
-      ? `${base}/a/ack/${signAckToken(post.id, r.id)}`
-      : null;
+    // a meeting gets one-click RSVP buttons (responding also records the ack, so
+    // no separate ack button); everything else gets the ack link + a "go to post"
+    // button. both are signed per recipient so the link needs no login.
+    const ackUrl =
+      post.requireAck && !isMeeting ? `${base}/a/ack/${signAckToken(post.id, r.id)}` : null;
+    const ctaHtml = isMeeting
+      ? buildRsvpButtons(
+          post,
+          (choice) => `${base}/a/rsvp/${signRsvpToken(post.id, r.id, choice)}`,
+        )
+      : postButton(`${base}/portal/announcements/${post.id}`, "Go to the announcement");
     const html = buildAnnouncementEmailHtml({
       logoUrl,
       title,
       authorName,
       authorTitle,
       dateStr,
-      requireAck: post.requireAck,
+      eyebrow: isMeeting ? "Company meeting" : "Announcement",
+      requireAck: post.requireAck && !isMeeting,
       bodyHtml,
       ackUrl,
       meetingHtml,
       ctaHtml,
+      footer: isMeeting ? "My Life Services &middot; staff meeting" : undefined,
     });
     const firstName = firstNameOf(r) || "there";
-    const text =
-      post.requireAck && ackUrl
+    const text = isMeeting
+      ? `${title}\n\nHi ${firstName}, please RSVP for this meeting: ${base}/portal/announcements/${post.id}`
+      : post.requireAck && ackUrl
         ? `${title}\n\nHi ${firstName}, please read this announcement and acknowledge: ${ackUrl}`
         : `${title}\n\nHi ${firstName}, a new announcement was posted. View it in the portal.`;
     return { from, to: [r.email], subject, html, text };

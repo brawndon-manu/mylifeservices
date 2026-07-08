@@ -465,6 +465,9 @@ model AnnouncementMeetingResponse {
   // roll-call (Phase B): admin marks "present" / "absent" on the day. null =
   // not yet marked. attendance is meeting-level (the session they picked).
   attended       String?
+  // true when the response was last recorded through a one-click email link
+  // (no login), so the attendance report can show how it came in.
+  viaEmail       Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)

@@ -72,6 +72,57 @@ export function postButton(url, label = "Go to the announcement") {
   return `<div style="margin-top:22px;"><a href="${url}" style="${BTN}">${esc(label)}</a></div>`;
 }
 
+// one-click RSVP buttons for a Company Meeting email: I'll-be-there / can't-make-it
+// for a single session, a button per session for a flat list, or a button per date
+// grouped by series. `sign(choice)` returns the /a/rsvp/<token> url for a choice
+// ("going" | "cant" | an option id) - the caller signs it per recipient.
+const BTN_GO =
+  "display:inline-block;background:#2f6f4f;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:8px;font-size:15px;font-weight:700;margin:0 8px 8px 0;";
+const BTN_CANT =
+  "display:inline-block;background:#ffffff;color:#b4443b;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;border:1px solid #e6c3bf;margin:0 8px 8px 0;";
+const BTN_OPT =
+  "display:inline-block;background:#ffffff;color:#2f6feb;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #cdd9ec;margin:0 8px 8px 0;";
+
+export function buildRsvpButtons(post, sign) {
+  if (!isCompanyMeeting(post.tag)) return "";
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const sessionLabel = (o) =>
+    o.at ? esc(formatInstant(o.at, EMAIL_TZ)) : esc(o.label || "This session");
+  const cant = (label) => `<a href="${sign("cant")}" style="${BTN_CANT}">${esc(label)}</a>`;
+
+  let heading;
+  let inner;
+  if (opts.length === 0) {
+    heading = "Can you make it? One tap, no login needed.";
+    inner = `<a href="${sign("going")}" style="${BTN_GO}">&#10003;&nbsp; I'll be there</a>${cant("Can't make it")}`;
+  } else if (opts.some((o) => o && o.seriesId)) {
+    heading = "Pick one date in each series. One tap each, no login needed.";
+    const groups = [];
+    for (const o of opts) {
+      let g = groups.find((x) => x.id === o.seriesId);
+      if (!g) {
+        g = { id: o.seriesId, label: o.seriesLabel || "Series", opts: [] };
+        groups.push(g);
+      }
+      g.opts.push(o);
+    }
+    inner =
+      groups
+        .map(
+          (g) =>
+            `<div style="margin-top:14px;"><div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:6px;">${esc(g.label)} <span style="font-weight:400;color:#6b7280;">(pick one)</span></div>${g.opts.map((o) => `<a href="${sign(o.id)}" style="${BTN_OPT}">${sessionLabel(o)}</a>`).join("")}</div>`,
+        )
+        .join("") + `<div style="margin-top:16px;">${cant("Can't attend the series")}</div>`;
+  } else {
+    heading = "Which works for you? One tap, no login needed.";
+    inner =
+      `<div>${opts.map((o) => `<a href="${sign(o.id)}" style="${BTN_OPT}">${sessionLabel(o)}</a>`).join("")}</div>` +
+      `<div style="margin-top:12px;">${cant("Can't make any")}</div>`;
+  }
+
+  return `<div style="margin-top:22px;border-top:1px solid #eef1f5;padding-top:20px;"><div style="font-size:15px;font-weight:600;color:#1f2937;margin-bottom:12px;">${heading}</div>${inner}<div style="margin-top:12px;font-size:12px;color:#8a93a0;">You can change your response anytime in the portal.</div></div>`;
+}
+
 // meeting access block: the time (a specific `session` if given - so a reminder
 // shows only the session that person chose; else the single meeting time; else
 // the full list to pick from), a Join button, the link + passcode, the address.
@@ -217,6 +268,7 @@ export function buildAnnouncementEmailHtml({
   ackUrl = null,
   meetingHtml = "",
   ctaHtml = "",
+  footer,
 }) {
   const role = authorTitle
     ? `<span style="color:#8ab4f0;font-style:italic;"> &middot; ${esc(authorTitle)}</span>`
@@ -235,5 +287,6 @@ export function buildAnnouncementEmailHtml({
     title,
     subtitle,
     bodyHtml: `${bodyHtml}${meetingHtml}${ctaHtml}${ackButton}`,
+    ...(footer ? { footer } : {}),
   });
 }
