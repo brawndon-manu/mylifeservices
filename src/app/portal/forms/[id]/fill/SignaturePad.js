@@ -13,7 +13,9 @@ export default function SignaturePad({ onSave, onClose }) {
 
   useEffect(() => {
     const ctx = canvasRef.current.getContext("2d");
-    ctx.lineWidth = 2.5;
+    // thick on the 500px canvas so it survives the downscale into the (small)
+    // PDF signature field and doesn't come out hairline-thin.
+    ctx.lineWidth = 5;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#111827";

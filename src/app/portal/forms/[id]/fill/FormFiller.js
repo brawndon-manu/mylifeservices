@@ -6,16 +6,35 @@
 // into the real PDF (pdf-lib) - entirely in the browser, so the filled copy
 // (client info) never touches the server.
 import { useEffect, useRef, useState } from "react";
-import { PDFDocument, PDFName, PDFNumber, PDFTextField, PDFCheckBox } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+  PDFTextField,
+  PDFCheckBox,
+  PDFSignature,
+} from "pdf-lib";
 import SignaturePad from "./SignaturePad";
 
 const RICH_TEXT_FLAG = 1 << 25;
 const WORKER_SRC = "/pdf.worker.min.mjs";
 const MAX_WIDTH = 880;
 
-// signature fields are AcroForm text fields whose name says "signature" - those
-// get a draw-it canvas instead of a text box, and stamp as an image.
-const isSignatureField = (name) => /signature/i.test(name || "");
+// a real AcroForm signature field always gets a draw box. some forms instead use
+// a plain text field named "...signature..." for the signature, so match those
+// too - but NOT a "signature date" text field (that's the date beside it).
+const isSignatureName = (name) => /signature/i.test(name || "") && !/date/i.test(name || "");
+
+// normalize a widget rectangle: some fields store the corners reversed, so
+// getRectangle() hands back a negative width/height and the overlay lands wrong.
+function normRect(r) {
+  return {
+    x: Math.min(r.x, r.x + r.width),
+    y: Math.min(r.y, r.y + r.height),
+    width: Math.abs(r.width),
+    height: Math.abs(r.height),
+  };
+}
 
 function slugify(s) {
   return (
@@ -57,8 +76,9 @@ export default function FormFiller({ fileUrl, title }) {
           // pdf-lib and mangles the class names, so a string compare would skip
           // every field (forms rendered but had no fill boxes on prod).
           let kind = null;
-          if (f instanceof PDFTextField) kind = isSignatureField(f.getName()) ? "signature" : "text";
+          if (f instanceof PDFTextField) kind = isSignatureName(f.getName()) ? "signature" : "text";
           else if (f instanceof PDFCheckBox) kind = "checkbox";
+          else if (f instanceof PDFSignature) kind = "signature";
           else continue;
           const multiline = kind === "text" && !!f.isMultiline();
           for (const w of f.acroField.getWidgets()) {
@@ -67,7 +87,7 @@ export default function FormFiller({ fileUrl, title }) {
             if (pi < 0) continue;
             const pg = docPages[pi];
             const scale = W / pg.getWidth();
-            const r = w.getRectangle();
+            const r = normRect(w.getRectangle());
             pls.push({
               name: f.getName(),
               kind,
@@ -161,19 +181,34 @@ export default function FormFiller({ fileUrl, title }) {
             pg.ref.generationNumber === ref.generationNumber,
         );
       const sigStamps = [];
+      const sigFieldsToRemove = [];
       for (const f of form.getFields()) {
-        if (!(f instanceof PDFTextField) || !isSignatureField(f.getName())) {
-          continue;
-        }
+        const isTextSig = f instanceof PDFTextField && isSignatureName(f.getName());
+        const isRealSig = f instanceof PDFSignature;
+        if (!isTextSig && !isRealSig) continue;
         const val = values[f.getName()];
-        if (typeof val !== "string" || !val.startsWith("data:image")) continue;
-        for (const w of f.acroField.getWidgets()) {
-          const pref = w.dict.get(PDFName.of("P"));
-          const pi = pref ? sigPageIndex(pref) : -1;
-          if (pi >= 0) sigStamps.push({ pi, rect: w.getRectangle(), val });
+        if (typeof val === "string" && val.startsWith("data:image")) {
+          for (const w of f.acroField.getWidgets()) {
+            const pref = w.dict.get(PDFName.of("P"));
+            const pi = pref ? sigPageIndex(pref) : -1;
+            if (pi >= 0) sigStamps.push({ pi, rect: normRect(w.getRectangle()), val });
+          }
         }
+        // text-sig fields flatten fine once blanked; a real signature field can't
+        // be flattened, so drop it first (we draw the image over its spot anyway).
+        if (isTextSig) {
+          try {
+            f.setText("");
+          } catch {
+            // ignore
+          }
+        } else {
+          sigFieldsToRemove.push(f);
+        }
+      }
+      for (const f of sigFieldsToRemove) {
         try {
-          f.setText("");
+          form.removeField(f);
         } catch {
           // ignore
         }
