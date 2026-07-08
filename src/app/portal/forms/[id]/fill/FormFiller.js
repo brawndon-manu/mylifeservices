@@ -6,7 +6,7 @@
 // into the real PDF (pdf-lib) - entirely in the browser, so the filled copy
 // (client info) never touches the server.
 import { useEffect, useRef, useState } from "react";
-import { PDFDocument, PDFName, PDFNumber } from "pdf-lib";
+import { PDFDocument, PDFName, PDFNumber, PDFTextField, PDFCheckBox } from "pdf-lib";
 import SignaturePad from "./SignaturePad";
 
 const RICH_TEXT_FLAG = 1 << 25;
@@ -53,10 +53,12 @@ export default function FormFiller({ fileUrl, title }) {
           );
         const pls = [];
         for (const f of doc.getForm().getFields()) {
-          const type = f.constructor.name;
+          // instanceof, NOT f.constructor.name - the production build minifies
+          // pdf-lib and mangles the class names, so a string compare would skip
+          // every field (forms rendered but had no fill boxes on prod).
           let kind = null;
-          if (type === "PDFTextField") kind = isSignatureField(f.getName()) ? "signature" : "text";
-          else if (type === "PDFCheckBox") kind = "checkbox";
+          if (f instanceof PDFTextField) kind = isSignatureField(f.getName()) ? "signature" : "text";
+          else if (f instanceof PDFCheckBox) kind = "checkbox";
           else continue;
           const multiline = kind === "text" && !!f.isMultiline();
           for (const w of f.acroField.getWidgets()) {
@@ -122,7 +124,7 @@ export default function FormFiller({ fileUrl, title }) {
       const doc = await PDFDocument.load(bytesRef.current, { updateMetadata: false });
       const form = doc.getForm();
       for (const f of form.getFields()) {
-        if (f.constructor.name !== "PDFTextField") continue;
+        if (!(f instanceof PDFTextField)) continue;
         const dict = f.acroField.dict;
         const ff = dict.lookup(PDFName.of("Ff"));
         const n = ff && ff.asNumber ? ff.asNumber() : 0;
@@ -160,7 +162,7 @@ export default function FormFiller({ fileUrl, title }) {
         );
       const sigStamps = [];
       for (const f of form.getFields()) {
-        if (f.constructor.name !== "PDFTextField" || !isSignatureField(f.getName())) {
+        if (!(f instanceof PDFTextField) || !isSignatureField(f.getName())) {
           continue;
         }
         const val = values[f.getName()];
