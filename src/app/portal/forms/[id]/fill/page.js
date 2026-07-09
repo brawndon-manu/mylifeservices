@@ -19,7 +19,7 @@ export default async function FillFormPage({ params }) {
 
   const form = await prisma.form.findUnique({
     where: { id },
-    select: { id: true, title: true, fileUrl: true, fillable: true },
+    select: { id: true, title: true, fileUrl: true, fillable: true, shareSlug: true },
   });
   if (!form) notFound();
   if (!form.fillable) redirect("/portal/forms");
@@ -52,7 +52,7 @@ export default async function FillFormPage({ params }) {
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           {form.title}
         </h1>
-        {route && <ShareMenu path={`/f/${form.id}`} label="Share link" />}
+        {route && form.shareSlug && <ShareMenu path={`/f/${form.shareSlug}`} label="Share link" />}
       </div>
       {route && (
         <p className="mt-2 text-sm text-muted">

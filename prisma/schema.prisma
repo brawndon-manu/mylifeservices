@@ -533,6 +533,9 @@ model Form {
   fileUrl     String
   // true when the PDF has AcroForm fields, so it can be filled in-app.
   fillable    Boolean  @default(false)
+  // random, unguessable id for the public /f/<slug> share link (so the link is
+  // only reachable if it's shared, not by guessing the readable form id).
+  shareSlug   String?  @unique
   sortOrder   Int      @default(0)
   createdById String?
   createdAt   DateTime @default(now())

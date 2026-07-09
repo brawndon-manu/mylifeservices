@@ -6,16 +6,17 @@ import { getRecipientOptions } from "@/lib/form-recipients";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { submitPublicFormByEmail } from "./actions";
 
-// PUBLIC, UNLISTED fill page for a form shared via its direct link. reachable
-// only by the (unguessable) link or from the portal - not indexed, not linked
-// anywhere public. lets non-portal staff fill + submit the form without a login.
-// anyone already signed in gets bounced to the normal portal fill page so they
-// keep the portal look (and don't have to re-type their name/email).
+// PUBLIC, UNLISTED fill page for a form shared via its direct link. the URL is a
+// random, unguessable shareSlug (NOT the readable form id), so it's only reachable
+// if the link was shared with you - not indexed, not linked anywhere public. lets
+// non-portal staff fill + submit the form without a login. anyone already signed in
+// gets bounced to the normal portal fill page so they keep the portal look (and
+// don't have to re-type their name/email).
 
 export async function generateMetadata({ params }) {
-  const { id } = await params;
+  const { slug } = await params;
   const form = await prisma.form.findUnique({
-    where: { id },
+    where: { shareSlug: slug },
     select: { title: true },
   });
   return {
@@ -25,17 +26,17 @@ export async function generateMetadata({ params }) {
 }
 
 export default async function PublicFillPage({ params }) {
-  const { id } = await params;
-
-  // already signed in? use the normal in-portal fill page.
-  const user = await getCurrentUser();
-  if (user) redirect(`/portal/forms/${id}/fill`);
+  const { slug } = await params;
 
   const form = await prisma.form.findUnique({
-    where: { id },
+    where: { shareSlug: slug },
     select: { id: true, title: true, fileUrl: true, fillable: true },
   });
   if (!form || !form.fillable) notFound();
+
+  // already signed in? use the normal in-portal fill page (by the real form id).
+  const user = await getCurrentUser();
+  if (user) redirect(`/portal/forms/${form.id}/fill`);
 
   // the public link only makes sense for a form that can be submitted by email.
   const route = formEmailRoute(form.title);
