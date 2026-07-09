@@ -39,6 +39,9 @@ export default function AudiencePicker({
   defaultUserIds = [],
   everyoneTotal = null,
   onChange,
+  // when "Everyone" is on we normally dim the role/person list (it's moot). set
+  // false to keep it crisp + clickable so the author can still narrow it down.
+  dimWhenEveryone = true,
 }) {
   const peopleOf = (t) => (staffByTitle[t] || []).map((p) => p.id);
   const uniq = (a) => [...new Set(a)];
@@ -131,7 +134,7 @@ export default function AudiencePicker({
 
       <div
         className={`max-h-72 space-y-0.5 overflow-y-auto pr-1 ${
-          everyone ? "pointer-events-none opacity-50" : ""
+          everyone && dimWhenEveryone ? "pointer-events-none opacity-50" : ""
         }`}
       >
         {roles.map((t) => {

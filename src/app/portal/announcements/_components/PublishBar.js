@@ -12,7 +12,10 @@ export default function PublishBar({ postId, publish, discard, info }) {
   const [open, setOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [doEmail, setDoEmail] = useState(false);
-  const willEmail = info.hasAudience || info.allActiveCount > 0;
+  // only promise an email when one will actually send: an ack/meeting post
+  // defaults to emailing its audience; a plain post emails only if the author
+  // ticks the box below.
+  const willEmail = info.hasAudience || doEmail;
 
   return (
     <>
@@ -172,6 +175,7 @@ export default function PublishBar({ postId, publish, discard, info }) {
                         staffByTitle={info.staffByTitle || {}}
                         everyoneTotal={info.everyoneTotal}
                         defaultEveryone
+                        dimWhenEveryone={false}
                       />
                     </div>
                   )}
