@@ -46,6 +46,9 @@ model User {
   // "Program Manager", "Field Supervisor", "HR Administrator", "ILS",
   // "Day Program", "Supported Living", etc.
   title         String?
+  // which office(s) they work out of, from HR's roster. "ILS" (My Life Services)
+  // and/or "DP" (Day Program) - a list so someone who splits both keeps one row.
+  offices       String[]  @default([])
   // soft delete - when set, this user cant sign in anymore. preserves
   // history (audit trails, role at time of action, etc.) rather than
   // hard deleting the row. set back to null to reactivate.

@@ -15,12 +15,15 @@ export const POSITIONS = [
   "Owner / Director",
   "Program Manager",
   "Assistant Program Manager",
+  "Field Operations Manager",
   "HR Administrator",
   "Field Supervisor",
   "Quality Assurance Specialist",
   "IT / Web Developer",
   "Resources Specialist",
+  "Lead Staff",
   "Day Program",
+  "Attendant",
   "Tester",
   "Independent Living Instructor",
   "Unknown Job Title",
@@ -29,6 +32,13 @@ export const POSITIONS = [
 // separator used to join multiple positions into the title string. none
 // of our position names contain this, so we can split on it cleanly.
 export const POSITION_SEP = " / ";
+
+// which office(s) a person works out of (User.offices). "MLS" = My Life Services
+// (the main agency), "DP" = the Day Program. someone can be in both, and more
+// offices can be added here later.
+export const OFFICES = ["MLS", "DP"];
+export const OFFICE_LABELS = { MLS: "MLS", DP: "DP" };
+export const OFFICE_FULL = { MLS: "My Life Services", DP: "Day Program" };
 
 // the Owner/Director is exempt from acknowledgments (too busy) - everyone else
 // acknowledges. used to drop them from the ack picker + roster.

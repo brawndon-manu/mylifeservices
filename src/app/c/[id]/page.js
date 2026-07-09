@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatUSPhone } from "@/lib/contacts";
+import { OFFICE_LABELS } from "@/lib/positions";
 import Avatar from "@/components/Avatar";
 import CopyButton from "@/components/CopyButton";
 
@@ -15,6 +16,7 @@ const PUBLIC_SELECT = {
   preferredLastName: true,
   hideLegalName: true,
   title: true,
+  offices: true,
   email: true,
   phone: true,
   image: true,
@@ -76,6 +78,18 @@ export default async function PublicContactPage({ params }) {
             {top}
           </h1>
           {p.title && <p className="text-sm text-muted">{p.title}</p>}
+          {p.offices?.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {p.offices.map((o) => (
+                <span
+                  key={o}
+                  className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted"
+                >
+                  {OFFICE_LABELS[o] || o}
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="mt-3 space-y-1 text-sm">
             <div className="flex items-center gap-2">
