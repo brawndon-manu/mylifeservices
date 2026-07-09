@@ -99,6 +99,32 @@ export function isValidAnnouncementTag(tag) {
   return typeof tag === "string" && ANNOUNCEMENT_TAGS.includes(tag);
 }
 
+// the Event type carries a date + location (for a map embed) and a staff RSVP for
+// a headcount. audience is "employee" (staff get-together) or "client" (staff +
+// clients, e.g. a BBQ - staff also say how many clients they're bringing).
+export const EVENT_TAG = "Event";
+
+export function isEvent(tag) {
+  return tag === EVENT_TAG;
+}
+
+export const EVENT_AUDIENCES = [
+  { value: "employee", label: "Employee event", blurb: "Staff get-together" },
+  { value: "client", label: "Client event", blurb: "Staff + clients (BBQ, mixer)" },
+];
+
+export function isClientEvent(audience) {
+  return audience === "client";
+}
+
+export function eventAudienceLabel(audience) {
+  return EVENT_AUDIENCES.find((a) => a.value === audience)?.label || "Event";
+}
+
+export function isValidEventAudience(a) {
+  return a === "employee" || a === "client";
+}
+
 // tag chip colors. paired by tag so they're stable.
 export const ANNOUNCEMENT_TAG_STYLES = {
   Announcement: "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300",

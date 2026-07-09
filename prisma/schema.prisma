@@ -87,6 +87,7 @@ model User {
   announcementAcks     AnnouncementAck[]
   announcementMeetingChoices AnnouncementMeetingChoice[]
   announcementMeetingResponses AnnouncementMeetingResponse[]
+  announcementEventRsvps AnnouncementEventRsvp[]
   nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
   nlApproved    NewsletterItem[] @relation("NLApprovedBy")
   nlPublished   NewsletterItem[] @relation("NLPublishedBy")
@@ -382,14 +383,41 @@ model Announcement {
   // last time the "Send to staff by email" blast went out, so the roster
   // can show "last emailed ..." and re-sends only hit the un-acked.
   ackEmailSentAt DateTime?
+  // Event fields (used when tag = "Event"). audience = "employee" (staff
+  // get-together) or "client" (staff + clients, e.g. a BBQ). one date + optional
+  // end, a venue name + address for the map embed. staff RSVP for a headcount;
+  // on client events they also say how many clients they're bringing.
+  eventAudience     String?
+  eventAt           DateTime?
+  eventTimezone     String?
+  eventEndAt        DateTime?
+  eventLocationName String?
+  eventAddress      String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
   comments   AnnouncementComment[]
   likes      AnnouncementLike[]
   acks       AnnouncementAck[]
+  eventRsvps AnnouncementEventRsvp[]
 
   @@index([createdAt])
   @@index([pinnedAt])
+}
+
+// one person's RSVP to an Event, for a headcount. going = they're coming;
+// clientCount = how many clients they're bringing (client events only). one row
+// per person (composite PK).
+model AnnouncementEventRsvp {
+  announcementId String
+  userId         String
+  going          Boolean      @default(true)
+  clientCount    Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
 }
 
 // read-receipt for an ack-required announcement. one row per person who

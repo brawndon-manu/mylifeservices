@@ -18,6 +18,8 @@ import {
   isValidAnnouncementTag,
   isChangelog,
   isCompanyMeeting,
+  isEvent,
+  eventAudienceLabel,
   isAckExempt,
   canSeeAnnouncement,
 } from "@/lib/announcements";
@@ -201,6 +203,11 @@ function PostCard({ post, currentUser }) {
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
   const meeting = isCompanyMeeting(post.tag);
+  const event = isEvent(post.tag);
+  const eventWhen = event && post.eventAt
+    ? `${new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: post.eventTimezone || "America/Los_Angeles" }).format(post.eventAt)} · ${new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: post.eventTimezone || "America/Los_Angeles" }).format(post.eventAt)}`
+    : null;
+  const eventWhere = event ? post.eventLocationName || post.eventAddress : null;
   // changelog preview: render the markdown body and estimate a reading time
   // (~200 words/min). plain announcements render a faded markdown preview too.
   const changelogHtml = changelog ? renderMarkdown(post.content) : null;
@@ -253,9 +260,22 @@ function PostCard({ post, currentUser }) {
               ))}
           </div>
         </div>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${tagClass}`}>
-          {post.tag}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${tagClass}`}>
+            {post.tag}
+          </span>
+          {event && post.eventAudience && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                post.eventAudience === "client"
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                  : "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300"
+              }`}
+            >
+              {eventAudienceLabel(post.eventAudience)}
+            </span>
+          )}
+        </div>
       </header>
 
       {changelog ? (
@@ -286,6 +306,22 @@ function PostCard({ post, currentUser }) {
           >
             {post.title || "Announcement"}
           </Link>
+          {event && (eventWhen || eventWhere) && (
+            <div className="relative z-10 mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border border-border bg-background px-3 py-2 text-xs">
+              {eventWhen && (
+                <span className="font-medium text-foreground">
+                  <span className="mr-1 text-faint">When</span>
+                  {eventWhen}
+                </span>
+              )}
+              {eventWhere && (
+                <span className="font-medium text-foreground">
+                  <span className="mr-1 text-faint">Where</span>
+                  {eventWhere}
+                </span>
+              )}
+            </div>
+          )}
           <div
             className="mt-2 max-h-28 overflow-hidden text-sm leading-relaxed text-muted [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [&_a]:text-brand [&_h1]:mt-2 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-foreground [&_h2]:mt-2 [&_h2]:text-base [&_h2]:font-medium [&_h2]:text-foreground [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-foreground [&_li]:marker:text-faint [&_ol]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mt-1.5 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
             dangerouslySetInnerHTML={{ __html: previewHtml }}

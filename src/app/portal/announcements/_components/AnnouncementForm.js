@@ -13,14 +13,35 @@ import {
   CHANGELOG_CONTENT_MAX,
   isChangelog,
   isCompanyMeeting,
+  isEvent,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
 import AudiencePicker from "./AudiencePicker";
 import MeetingFields from "./MeetingFields";
+import EventFields from "./EventFields";
 
 const INPUT =
   "mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const LABEL = "block text-sm font-medium text-muted";
+
+// placeholders tuned to the selected type, so the examples match the category
+// you're posting in (an Event title reads different from a Changelog title).
+const TITLE_PLACEHOLDERS = {
+  Announcement: "e.g. New meal break waiver",
+  Changelog: "e.g. Portal Update: June 27, 2026",
+  Event: "e.g. Summer Staff Mixer",
+  "Company Meeting": "e.g. Q3 Training Series",
+  Other: "e.g. Parking lot closed this Friday",
+};
+const BODY_PLACEHOLDERS = {
+  Announcement:
+    "Write your announcement. Markdown works:\n\n## What you need to do\n- **Step one**\n- Step two\n\n[Link](https://...)",
+  Event:
+    "What's happening? Who's invited, what to expect, and anything to bring.\n\n**Food, games, and music** - hope to see you there!",
+  "Company Meeting":
+    "What's this meeting about? Add an agenda and anything to prepare.\n\n## Agenda\n- First item\n- Second item",
+  Other: "Write your update. Markdown works: ## headers, - bullets, **bold**, [links](https://...).",
+};
 
 const PREVIEW_PROSE =
   "min-h-[8rem] max-h-[28rem] overflow-y-auto rounded-md border border-border-strong bg-surface px-3 py-2 text-[15px] leading-relaxed text-foreground [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-2 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_a]:text-brand [&_a]:underline [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_em]:italic [&_hr]:my-4 [&_hr]:border-border";
@@ -95,6 +116,7 @@ export default function AnnouncementForm({
   const [tag, setTag] = useState(d.tag || tags[0] || "Announcement");
   const changelog = isChangelog(tag);
   const meeting = isCompanyMeeting(tag);
+  const event = isEvent(tag);
   const [requireAck, setRequireAck] = useState(!!d.requireAck);
   const [content, setContent] = useState(d.content || "");
   const onContent = (e) => setContent(e.target.value);
@@ -167,9 +189,7 @@ export default function AnnouncementForm({
           required
           maxLength={ANNOUNCEMENT_TITLE_MAX}
           defaultValue={d.title || ""}
-          placeholder={
-            changelog ? "e.g. Portal Update: June 27, 2026" : "e.g. New meal break waiver"
-          }
+          placeholder={TITLE_PLACEHOLDERS[tag] || TITLE_PLACEHOLDERS.Announcement}
           className={INPUT}
         />
       </div>
@@ -208,9 +228,7 @@ export default function AnnouncementForm({
               onChange={onContent}
               rows={8}
               maxLength={POST_CONTENT_MAX}
-              placeholder={
-                "Write your announcement. Markdown works:\n\n## What you need to do\n- **Step one**\n- Step two\n\n[Link](https://...)"
-              }
+              placeholder={BODY_PLACEHOLDERS[tag] || BODY_PLACEHOLDERS.Announcement}
             />
             <p className="mt-1 text-xs text-muted">
               Markdown supported: <code>## Section</code>, <code>- bullets</code>,{" "}
@@ -222,6 +240,8 @@ export default function AnnouncementForm({
           {meeting && (
             <MeetingFields defaults={d} showTimeNotify={mode === "edit" && !isDraft} />
           )}
+
+          {event && <EventFields defaults={d} />}
 
           {meeting && (
             <div className="rounded-md border border-border bg-surface-2 p-4">

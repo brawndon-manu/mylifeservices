@@ -72,6 +72,13 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       meetingResponseDueTz: true,
       meetingReminderLeadMin: true,
       meetingNightBefore: true,
+      // event fields - so editing an Event reloads audience / date / location.
+      eventAudience: true,
+      eventAt: true,
+      eventTimezone: true,
+      eventEndAt: true,
+      eventLocationName: true,
+      eventAddress: true,
     },
   });
   if (!post || post.deletedAt) notFound();

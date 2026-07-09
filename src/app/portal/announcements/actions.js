@@ -42,6 +42,8 @@ import {
   isValidAnnouncementTag,
   isChangelog,
   isCompanyMeeting,
+  isEvent,
+  isValidEventAudience,
   isValidMeetingKind,
   isValidMeetingFormat,
   formatHasOnline,
@@ -92,6 +94,39 @@ function ackAudienceEmpty({ ackEveryone, ackTitles, ackUserIds }) {
 
 // the Company Meeting fields. only meaningful when tag = "Company Meeting";
 // other types store nulls/defaults so the columns stay clean.
+// event fields (used when tag = "Event"). blank otherwise so switching a post
+// off Event clears them.
+function parseEventFields(formData, tag) {
+  const blank = {
+    eventAudience: null,
+    eventAt: null,
+    eventTimezone: null,
+    eventEndAt: null,
+    eventLocationName: null,
+    eventAddress: null,
+  };
+  if (!isEvent(tag)) return blank;
+  const trim = (s, max) => {
+    const v = typeof s === "string" ? s.trim() : "";
+    return v ? v.slice(0, max) : null;
+  };
+  const toDate = (s) => {
+    if (typeof s !== "string" || !s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const audience = formData.get("eventAudience");
+  const eventAt = toDate(formData.get("eventAt"));
+  return {
+    eventAudience: isValidEventAudience(audience) ? audience : "employee",
+    eventAt,
+    eventTimezone: eventAt ? trim(formData.get("eventTimezone"), 60) : null,
+    eventEndAt: toDate(formData.get("eventEndAt")),
+    eventLocationName: trim(formData.get("eventLocationName"), 200),
+    eventAddress: trim(formData.get("eventAddress"), 300),
+  };
+}
+
 function parseMeetingFields(formData, tag) {
   const blank = {
     meetingKind: null,
@@ -349,6 +384,7 @@ export async function createPost(formData) {
       ackTitles,
       ackUserIds,
       ...parseMeetingFields(formData, tag),
+      ...parseEventFields(formData, tag),
     },
   });
 
@@ -549,6 +585,7 @@ export async function editPost(postId, formData) {
       ackUserIds,
       ...authorUpdate,
       ...meetingFields,
+      ...parseEventFields(formData, tag),
       editedAt: new Date(),
     },
   });
@@ -1885,4 +1922,33 @@ export async function sendAnnouncementEmail(postId, formData) {
   }
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}?sent=${res.sent}`);
+}
+
+// staff RSVP to an Event (for a headcount). going = coming or not; on a client
+// event they also say how many clients they're bringing. one row per person.
+export async function rsvpEvent(postId, formData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, tag: true, deletedAt: true, publishedAt: true, eventAudience: true },
+  });
+  if (!post || post.deletedAt || !post.publishedAt || !isEvent(post.tag)) {
+    redirect("/portal/announcements");
+  }
+
+  const going = formData.get("going") !== "no";
+  let clientCount = 0;
+  if (going && post.eventAudience === "client") {
+    const n = parseInt(formData.get("clientCount"), 10);
+    clientCount = Number.isFinite(n) && n > 0 ? Math.min(n, 999) : 0;
+  }
+
+  await prisma.announcementEventRsvp.upsert({
+    where: { announcementId_userId: { announcementId: postId, userId: user.id } },
+    create: { announcementId: postId, userId: user.id, going, clientCount },
+    update: { going, clientCount },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
 }

@@ -23,6 +23,7 @@ import {
   ANNOUNCEMENT_TAG_STYLES,
   isChangelog,
   isCompanyMeeting,
+  isEvent,
   MEETING_FORMAT_LABELS,
   formatHasOnline,
   formatHasAddress,
@@ -38,6 +39,7 @@ import SendEmailDialog from "../_components/SendEmailDialog";
 import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
+import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
 import PublishBar from "../_components/PublishBar";
 import AckEmailAction from "../_components/AckEmailAction";
@@ -203,6 +205,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         where: { userId: user.id },
         select: { cantMakeIt: true, reason: true, attended: true },
       },
+      eventRsvps: {
+        where: { userId: user.id },
+        select: { going: true, clientCount: true },
+      },
       _count: { select: { likes: true } },
       comments: {
         where: { deletedAt: null },
@@ -240,6 +246,26 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
   const meeting = isCompanyMeeting(post.tag);
+  const event = isEvent(post.tag);
+
+  // event RSVP: my own row (for prefilling) + a headcount rollup (staff going +
+  // total clients being brought) shown to everyone as social proof.
+  const myEventRsvp = post.eventRsvps?.[0] || null;
+  let eventData = null;
+  if (event) {
+    const rsvps = await prisma.announcementEventRsvp.findMany({
+      where: { announcementId: id, going: true },
+      select: {
+        clientCount: true,
+        user: { select: { name: true, preferredFirstName: true, preferredLastName: true, image: true, email: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    const staff = rsvps.length;
+    const clients = rsvps.reduce((n, r) => n + (r.clientCount || 0), 0);
+    eventData = { staff, clients, total: staff + clients, people: rsvps.map((r) => r.user) };
+  }
+
   // every announcement renders markdown now (sanitized). non-changelogs get the
   // new hero layout; changelogs keep their "What's New" treatment.
   const bodyHtml = renderMarkdown(post.content);
@@ -671,7 +697,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
             <div className="relative -mt-10 px-6 text-center sm:px-8">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f63c9] dark:text-[#58a6ff]">
-                {meeting ? "Company Meeting" : "Announcement"}
+                {meeting ? "Company Meeting" : event ? "Event" : "Announcement"}
               </p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 {post.title || "Announcement"}
@@ -711,6 +737,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               className={`mx-auto mt-6 max-w-2xl px-6 sm:px-8 ${PROSE}`}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
+
+            {event && <EventDetail post={post} myRsvp={myEventRsvp} data={eventData} />}
 
             {meeting && (
               <div className="mx-auto mt-6 max-w-2xl px-6 sm:px-8">
