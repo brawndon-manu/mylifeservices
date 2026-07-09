@@ -252,6 +252,34 @@ export function buildResponseNoticeHtml({ logoUrl, title, firstName, url }) {
   return emailShell({ logoUrl, eyebrow: "Response needed", title, bodyHtml: body });
 }
 
+// a submitted form (e.g. an SIR) emailed to its reviewers. same branded shell as
+// announcements: the form title in the hero, "Submitted by <name> (<email>)" + the
+// timestamp under it, then any note the submitter added + the "PDF attached" line.
+export function buildFormEmailHtml({
+  logoUrl,
+  formTitle,
+  submitterName,
+  submitterEmail,
+  dateStr,
+  note = "",
+  eyebrow = "Form submission",
+}) {
+  const subtitle = `
+    <div style="margin-top:12px;color:#e6edf3;font-size:14px;">Submitted by ${esc(submitterName)} <span style="color:#9aa4b2;">(${esc(submitterEmail)})</span></div>
+    <div style="margin-top:4px;color:#9aa4b2;font-size:13px;">${esc(dateStr)}</div>`;
+  const noteBlock = note
+    ? `<div style="margin:0 0 16px;padding:14px 16px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:10px;"><div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Additional info from the submitter</div><div style="color:#33414f;">${esc(note).replace(/\n/g, "<br>")}</div></div>`
+    : "";
+  return emailShell({
+    logoUrl,
+    eyebrow,
+    title: formTitle,
+    subtitle,
+    bodyHtml: `${noteBlock}<p style="margin:0;">The completed form is attached as a PDF.</p>`,
+    footer: "My Life Services &middot; form submission",
+  });
+}
+
 export function buildAnnouncementEmailHtml({
   logoUrl,
   title,
