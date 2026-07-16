@@ -123,7 +123,7 @@ function LinkCard({ href, title, body }) {
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-border bg-surface p-6 transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      className="group card-lift rounded-xl border border-border bg-surface p-6 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">

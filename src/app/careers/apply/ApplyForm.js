@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { submitApplication } from "./actions";
 import { formatPhoneLive } from "@/lib/contacts";
+import DatePicker from "@/components/DatePicker";
 
 // keep under Vercel Hobby's ~4.5MB request cap (resume + the text fields).
 const MAX_RESUME_BYTES = 4 * 1024 * 1024;
@@ -125,8 +126,8 @@ export default function ApplyForm() {
           ))}
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Field label="Application date" name="app_date" type="date" />
-          <Field label="Available start date" name="start_date" type="date" />
+          <DatePicker label="Application date" name="app_date" />
+          <DatePicker label="Available start date" name="start_date" />
         </div>
       </section>
 
@@ -149,8 +150,14 @@ export default function ApplyForm() {
           <Field label="Primary phone" name="phone_primary" type="tel" required />
           <Field label="Secondary phone" name="phone_secondary" type="tel" />
         </div>
-        <div className="mt-4">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="Email address" name="email" type="email" required />
+          <Select label="Gender (optional)" name="gender">
+            <option value="">Prefer not to say</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Non-binary">Non-binary</option>
+          </Select>
         </div>
       </section>
 
@@ -360,7 +367,7 @@ export default function ApplyForm() {
             name="signature"
             required
           />
-          <Field label="Today’s date" name="sign_date" type="date" required />
+          <DatePicker label="Today’s date" name="sign_date" required />
         </div>
       </section>
 
@@ -567,11 +574,12 @@ function EmployerBlock({ index }) {
         <Field label="Phone" name={`emp${index}_phone`} type="tel" />
         <Field label="Job title" name={`emp${index}_title`} />
         <Field label="Supervisor" name={`emp${index}_supervisor`} />
-        <Field label="From" name={`emp${index}_from`} placeholder="mm/yyyy" />
-        <Field
+        <DatePicker label="From" name={`emp${index}_from`} granularity="month" />
+        <DatePicker
           label="To"
           name={`emp${index}_to`}
-          placeholder="mm/yyyy or Present"
+          granularity="month"
+          allowPresent
         />
       </div>
       <div className="mt-4">

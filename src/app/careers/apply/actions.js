@@ -7,7 +7,10 @@
 // with a plain-text fallback.
 
 import { headers } from "next/headers";
+import { randomBytes } from "node:crypto";
 import { Resend } from "resend";
+import { put } from "@vercel/blob";
+import { prisma } from "@/lib/prisma";
 import { checkRateLimit, cleanEmail, cleanDisplayName } from "@/lib/security";
 
 // keep under Vercel Hobby's ~4.5MB request cap (resume + the text fields).
@@ -55,6 +58,7 @@ export async function submitApplication(_prevState, formData) {
 
   // resume (optional). server action receives it as a File via FormData.
   let attachments;
+  let resumeMeta = null;
   const resume = formData.get("resume");
   if (resume && typeof resume === "object" && typeof resume.arrayBuffer === "function" && resume.size > 0) {
     if (resume.size > MAX_RESUME_BYTES) {
@@ -66,6 +70,7 @@ export async function submitApplication(_prevState, formData) {
     }
     const buffer = Buffer.from(await resume.arrayBuffer());
     attachments = [{ filename: resume.name || "resume", content: buffer }];
+    resumeMeta = { buffer, name: resume.name || "resume", type: resume.type || "application/octet-stream" };
   }
 
   // if they said their work history is on their resume, a resume must be attached
@@ -125,7 +130,47 @@ export async function submitApplication(_prevState, formData) {
     };
   }
 
+  // keep a copy in the portal for the oversight tier to review. best-effort: the
+  // email already went out, so a storage hiccup just logs and the applicant still
+  // sees success. the resume goes to Blob under a random key + is only ever
+  // streamed back through the gated admin route (its url never reaches a browser).
+  await storeApplication(app, { firstName, lastName, email }, resumeMeta);
+
   return { ok: true, firstName };
+}
+
+async function storeApplication(app, { firstName, lastName, email }, resumeMeta) {
+  try {
+    let resumeUrl = null;
+    if (resumeMeta && process.env.BLOB_READ_WRITE_TOKEN) {
+      const ext = (resumeMeta.name.split(".").pop() || "pdf").toLowerCase().slice(0, 8);
+      const key = `applications/${randomBytes(12).toString("hex")}.${ext}`;
+      const blob = await put(key, resumeMeta.buffer, {
+        access: "public",
+        contentType: resumeMeta.type,
+      });
+      resumeUrl = blob.url;
+    }
+    // the readApplication() values use "—" / "None selected" for blanks; keep the
+    // preview columns null instead so the list can render them cleanly.
+    const clean = (x) => (x && x !== "—" && x !== "None selected" ? x : null);
+    await prisma.application.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        phone: clean(app.phonePrimary),
+        gender: clean(app.gender),
+        positions: clean(app.positions),
+        startDate: clean(app.startDate),
+        resumeName: resumeMeta?.name || null,
+        resumeUrl,
+        data: app,
+      },
+    });
+  } catch (e) {
+    console.error("application store failed (email already sent):", e);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -154,6 +199,7 @@ function readApplication(data, resumeFileName) {
     appDate: v("app_date"),
     startDate: v("start_date"),
     name: `${v("first_name")} ${v("last_name")}`.replace(/—/g, "").trim() || "—",
+    gender: v("gender"),
     address: `${v("address")}, ${v("city")}, ${v("state")} ${v("zip")}`,
     phonePrimary: v("phone_primary"),
     phoneSecondary: v("phone_secondary"),
@@ -213,6 +259,7 @@ function buildText(a) {
   lines.push(`Application Date: ${a.appDate}  |  Available Start Date: ${a.startDate}`);
   lines.push("\n--- PERSONAL INFORMATION ---");
   lines.push(`Name: ${a.name}`);
+  if (a.gender && a.gender !== "—") lines.push(`Gender: ${a.gender}`);
   lines.push(`Address: ${a.address}`);
   lines.push(`Primary Phone: ${a.phonePrimary}  |  Secondary: ${a.phoneSecondary}`);
   lines.push(`Email: ${a.email}`);
@@ -337,7 +384,7 @@ function buildHtml(a) {
 
   ${section("Position & availability", row("Position(s)", val(a.positions)) + row("Application date", val(a.appDate)) + row("Available start", val(a.startDate)) + row("Employment type", val(a.empType)) + row("Shifts", val(a.shifts)) + row("Desired pay", val(a.pay)) + row("Hours / week", val(a.hours)))}
 
-  ${section("Personal information", row("Name", val(a.name)) + row("Address", val(a.address)) + row("Primary phone", val(a.phonePrimary)) + row("Secondary phone", val(a.phoneSecondary)) + row("Email", mail(a.email)))}
+  ${section("Personal information", row("Name", val(a.name)) + (a.gender && a.gender !== "—" ? row("Gender", val(a.gender)) : "") + row("Address", val(a.address)) + row("Primary phone", val(a.phonePrimary)) + row("Secondary phone", val(a.phoneSecondary)) + row("Email", mail(a.email)))}
 
   ${section("Referral", row("Referred by an employee?", val(a.referral)) + row("Referrer name", val(a.referralName)))}
 

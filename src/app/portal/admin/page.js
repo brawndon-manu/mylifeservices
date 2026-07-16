@@ -38,6 +38,12 @@ export default async function AdminPage() {
           body="Invite, edit, deactivate users; set roles, titles, and hire dates."
         />
         <LinkCard
+          href="/portal/admin/applications"
+          title="Applications"
+          isNew
+          body="Job applications submitted through the website: preview each one, then open the full application and resume."
+        />
+        <LinkCard
           href="/portal/devices"
           title="Devices"
           body="Company hardware log: what we own, who has it, and what it cost."
@@ -74,7 +80,7 @@ function LinkCard({ href, title, body, isNew }) {
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-border bg-surface p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]"
+      className="group rounded-xl border border-border bg-surface p-6 shadow-sm card-lift focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">

@@ -176,7 +176,7 @@ function MeetingCard({ m }) {
   return (
     <Link
       href={`/portal/admin/meeting-attendance/${m.id}`}
-      className="group block rounded-xl border border-border bg-surface p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]"
+      className="group block rounded-xl border border-border bg-surface p-5 shadow-sm card-lift"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="min-w-0 sm:flex-[1_1_46%]">

@@ -217,7 +217,7 @@ function PostCard({ post, currentUser }) {
     : 0;
 
   return (
-    <article className="group relative rounded-xl border border-border bg-surface p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-border-strong hover:shadow-[6px_6px_0_0_rgba(15,23,42,0.9)] dark:hover:shadow-[6px_6px_0_0_rgba(56,138,221,0.45)]">
+    <article className="group relative rounded-xl border border-border bg-surface p-5 shadow-sm card-lift">
       <header className="flex items-start justify-between gap-3">
         <div>
           <AuthorPreview author={post.author} size="md" showRole={canSeeRoles(currentUser.role)} />

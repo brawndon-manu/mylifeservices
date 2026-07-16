@@ -544,6 +544,29 @@ model Form {
   @@index([category])
 }
 
+// a job application submitted through the public careers form. we still email it
+// to the applications inbox on submit; this stores a copy so the oversight tier
+// can review them in the portal. `data` is the whole structured application (the
+// same object the email is built from); the top-level columns are just for the
+// list preview + sorting. `resumeUrl` is a Blob url kept server-side only - the
+// resume is streamed through a gated route, never linked to the browser.
+model Application {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String
+  phone      String?
+  gender     String?
+  positions  String?
+  startDate  String?
+  resumeName String?
+  resumeUrl  String?
+  data       Json
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // "This Week in My Life Services" newsletter. staff submit items, IT +
 // management approve, then IT publishes them to the public /this-week
 // page. lifecycle: SUBMITTED -> APPROVED -> PUBLISHED (or REJECTED).

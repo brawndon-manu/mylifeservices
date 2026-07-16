@@ -146,7 +146,7 @@ export default async function DevicesPage({ searchParams }) {
               <Link
                 key={d.id}
                 href={`/portal/devices/${d.id}/edit`}
-                className="block rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                className="block rounded-xl border border-border bg-surface p-4 shadow-sm card-lift focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               >
                 {card}
               </Link>

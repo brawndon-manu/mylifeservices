@@ -13,11 +13,13 @@ import { usePathname } from "next/navigation";
 //   - label:           the trigger text
 //   - align:           "left" | "right" (which edge the panel hangs off)
 //   - triggerClassName: extra classes for the trigger button
+//   - panelClassName:  override the panel's box classes (width/bg/border/etc.)
 //   - children:        the menu items (Link elements)
 export default function NavDropdown({
   label,
   align = "left",
   triggerClassName = "",
+  panelClassName = "",
   children,
 }) {
   const [open, setOpen] = useState(false);
@@ -74,8 +76,11 @@ export default function NavDropdown({
       {open && (
         <div
           role="menu"
-          className={`absolute top-full z-50 mt-2 w-52 rounded-md border border-border bg-surface p-1 shadow-lg ${
+          className={`nav-pop absolute top-full z-50 mt-2 ${
             align === "right" ? "right-0" : "left-0"
+          } ${
+            panelClassName ||
+            "w-52 rounded-md border border-border bg-surface p-1 shadow-lg"
           }`}
         >
           {children}

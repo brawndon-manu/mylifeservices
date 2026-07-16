@@ -7,7 +7,10 @@ import { ROLE_LABELS, roleBadgeClass, isAdminUp } from "@/lib/roles";
 // in the public header. fetched client-side from the Auth.js session
 // endpoint so the brochure pages stay static (the badge just hydrates
 // in after load). renders nothing when signed out.
-export default function AuthBadge() {
+//
+// tone="light" is for the translucent header sitting on the dark homepage
+// hero, where the usual muted grey would disappear.
+export default function AuthBadge({ tone = "default" }) {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -27,7 +30,7 @@ export default function AuthBadge() {
 
   return (
     <span className="hidden items-center gap-2 text-sm sm:inline-flex">
-      <span className="font-medium text-muted">
+      <span className={`font-medium ${tone === "light" ? "text-white/85" : "text-muted"}`}>
         {user.name || user.email}
       </span>
       {isAdminUp(user.role) && (

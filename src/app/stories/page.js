@@ -47,32 +47,39 @@ export default async function StoriesPage() {
             </div>
             <div className="sm:col-span-7">
               <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                RO&apos;s first place
+                Robert&apos;s first place
               </h2>
               <p className="mt-4 text-lg leading-relaxed text-muted">
-                After years of unstable housing, RO moved into his first
-                studio apartment, supported by MLS and our partner
-                Integrity Cottages.
+                When Robert joined My Life Services in 2020, he wasn&apos;t
+                looking for a place of his own. He just wanted to build his
+                independence, living on his own felt out of reach.
               </p>
               <div className="mt-6 space-y-4 text-base leading-relaxed text-muted">
                 <p>
-                  RO joined My Life Services in 2020 with a clear long-term
-                  goal: a place of his own. Before MLS, he didn&apos;t have a
-                  stable place to live, making it hard to build the daily
-                  routines that turn a space into a home.
+                  At the time, his uncle had given him a place to land during a
+                  hard stretch: a sectioned-off part of the garage with a small
+                  electric stove and just enough room to get by. It was a real
+                  kindness that kept him going, but it wasn&apos;t a space where
+                  he could fully build a life of his own.
                 </p>
                 <p>
-                  Independence takes time. Over the next several years, RO
-                  and his MLS team worked on the day-to-day skills that
-                  lead to stable housing: cooking, budgeting, household
-                  management, and the confidence that comes with making
-                  decisions about your own life.
+                  Robert came to us to work on everyday skills, not to move out.
+                  Living on his own wasn&apos;t something he could picture back
+                  then, and he didn&apos;t expect much of himself.
                 </p>
                 <p>
-                  When the right opportunity came through Integrity
-                  Cottages (a Project-Based Voucher community), RO was
-                  ready. The photo below captures the day he received the
-                  keys to his first studio.
+                  So when a spot at Integrity Cottages first opened up, he
+                  wasn&apos;t ready. Moving out felt like too big a leap, and he
+                  let it pass. That was okay. Independence happens on your own
+                  timeline.
+                </p>
+                <p>
+                  Over the next year, Robert and his ILS instructor kept at it:
+                  saving money, cooking, managing a household, making his own
+                  decisions. Bit by bit, the picture changed. When the
+                  opportunity at Integrity Cottages (a Project-Based Voucher
+                  community) came back around about a year later, Robert was
+                  ready, and this time he said yes.
                 </p>
               </div>
             </div>
@@ -84,7 +91,7 @@ export default async function StoriesPage() {
                 <div className="relative mx-auto aspect-[4/3] w-full max-w-3xl overflow-hidden rounded-2xl bg-surface-3 shadow-sm">
                   <Image
                     src={roMilestone.src}
-                    alt={roMilestone.alt || "RO on move-in day"}
+                    alt={roMilestone.alt || "Robert on move-in day"}
                     fill
                     sizes="(min-width: 640px) 768px, 100vw"
                     className="object-cover"
@@ -100,17 +107,16 @@ export default async function StoriesPage() {
               <>
                 <MilestonePhotoPlaceholder />
                 <figcaption className="mx-auto mt-3 max-w-3xl text-center text-sm leading-relaxed text-muted">
-                  Move-in day photo coming soon, once RO&apos;s consent is on
-                  file.
+                  Move-in day photo coming soon.
                 </figcaption>
               </>
             )}
           </figure>
 
           <p className="mx-auto mt-12 max-w-3xl text-base leading-relaxed text-muted sm:text-lg">
-            Today, RO lives independently in his studio. MLS staff continue
-            to support him with the routines and goals that matter most to
-            him.
+            Today, Robert lives independently in his own studio, something he
+            once couldn&apos;t imagine. His My Life Services team still supports
+            the routines and goals that matter most to him.
           </p>
         </div>
       </section>

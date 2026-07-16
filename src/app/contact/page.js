@@ -105,7 +105,7 @@ export default function ContactPage() {
                 {href ? (
                   <a
                     href={href}
-                    className={`${base} hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand`}
+                    className={`${base} card-lift focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand`}
                   >
                     {inner}
                   </a>

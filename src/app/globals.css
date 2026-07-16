@@ -131,3 +131,146 @@ body {
    lighter accent token so they stay legible. */
 .dark .text-brand { color: var(--accent); }
 .dark .text-brand-dark { color: var(--accent-strong); }
+
+/* the one card hover used across the whole site + portal. on hover the card lifts
+   and gets a themed light-blue flat (comic-style) offset shadow + a light-blue
+   border. put `card-lift` on any clickable card; keep the resting border / shadow-sm
+   inline. change the look here once and every card follows. */
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-4px);
+  border-color: #29abe2;
+  box-shadow: 6px 6px 0 0 rgba(79, 195, 240, 0.55);
+}
+.dark .card-lift:hover {
+  box-shadow: 6px 6px 0 0 rgba(79, 195, 240, 0.4);
+}
+
+/* subtle open animation for header dropdown panels (fade + a small drop) */
+@keyframes nav-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.nav-pop {
+  animation: nav-pop 0.16s ease-out;
+  transform-origin: top;
+}
+
+/* homepage intro reveal. a branded curtain (logo gradient + tree mark + wordmark
+   + tagline) that plays once per session, then lifts away to show the site. the
+   inline script in IntroReveal adds .intro-done to <html> to hide it for
+   returning-this-session / reduced-motion visitors (before paint, so no flash). */
+.intro-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  /* the deeper logo gradient, so the white mark pops; then it lifts to reveal the
+     lighter hero underneath */
+  background: linear-gradient(135deg, #0a3049 0%, #1c7ba6 55%, #2ac2f1 100%);
+  animation: intro-lift 0.7s ease-in 1.9s forwards;
+}
+html.intro-done .intro-reveal {
+  display: none;
+}
+.intro-reveal .intro-glow {
+  position: absolute;
+  width: 640px;
+  height: 640px;
+  max-width: 120vw;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(120, 220, 250, 0.35), transparent 66%);
+}
+.intro-reveal .intro-mark {
+  position: relative;
+  width: 118px;
+  height: auto;
+  opacity: 0;
+  transform: scale(0.82);
+  animation: intro-pop 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) 0.12s forwards;
+}
+.intro-reveal .intro-word {
+  position: relative;
+  margin-top: 18px;
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: intro-rise 0.6s ease-out 0.55s forwards;
+}
+.intro-reveal .intro-tag {
+  position: relative;
+  margin-top: 8px;
+  /* nudge right by one tracking step so the wide letter-spacing stays optically centered */
+  text-indent: 0.32em;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  color: #bfe6fa;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: intro-rise 0.6s ease-out 0.9s forwards;
+}
+@keyframes intro-pop {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes intro-rise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes intro-lift {
+  to {
+    opacity: 0;
+    transform: translateY(-24px);
+    visibility: hidden;
+  }
+}
+
+/* reduced-motion variant: no scale/lift, just a gentle opacity cross-fade in and
+   back out, so the branding still shows without any vestibular-triggering motion.
+   .intro-reduced is set on <html> by the intro script for reduced-motion visitors. */
+html.intro-reduced .intro-reveal {
+  animation: intro-fade 1.8s ease-in-out forwards;
+}
+html.intro-reduced .intro-mark,
+html.intro-reduced .intro-word,
+html.intro-reduced .intro-tag {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+@keyframes intro-fade {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}

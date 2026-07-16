@@ -47,7 +47,7 @@ export default function ContactsDirectory({ cards }) {
             <li key={c.id}>
               <Link
                 href={`/portal/contacts/${c.id}`}
-                className="flex h-full gap-4 rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-light hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                className="flex h-full gap-4 rounded-xl border border-border bg-surface p-4 shadow-sm card-lift focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               >
                 <Avatar name={c.name} email={c.email} image={c.image} size={56} />
                 <div className="min-w-0 flex-1">
