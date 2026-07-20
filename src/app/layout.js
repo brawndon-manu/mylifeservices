@@ -16,13 +16,44 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://www.mylifeservicesinc.com";
+const SITE_DESC =
+  "My Life Services supports adults with intellectual and developmental disabilities through person-centered programs.";
+
 export const metadata = {
+  // metadataBase makes the og/twitter image an absolute url, which imessage,
+  // facebook, and the rest all require
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "My Life Services",
     template: "%s | My Life Services",
   },
-  description:
-    "My Life Services supports adults with intellectual and developmental disabilities through person-centered programs.",
+  description: SITE_DESC,
+  // without an explicit og:image, link previews scrape the page and grab
+  // whatever photo they find (it was picking a client photo off the homepage).
+  // pin it to the branded card so every shared link looks the same.
+  openGraph: {
+    type: "website",
+    siteName: "My Life Services",
+    title: "My Life Services",
+    description: SITE_DESC,
+    url: SITE_URL,
+    locale: "en_US",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "My Life Services - My Life. My Way.",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "My Life Services",
+    description: SITE_DESC,
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({ children }) {
