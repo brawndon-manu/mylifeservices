@@ -21,7 +21,7 @@ export const metadata = {
 
 export default function IndependentLivingPage() {
   if (!service) notFound();
-  const { day = [], categories = [], cta } = service;
+  const { day = [], categories = [], cta, umbrella } = service;
   const total = categories.reduce((n, c) => n + c.items.length, 0);
 
   return (
@@ -114,6 +114,36 @@ export default function IndependentLivingPage() {
       </section>
 
       <SkillsBrowser categories={categories} chipGradient={CHIP_GRADIENT} />
+
+      {umbrella && (
+        <section className="border-t border-border bg-surface-2">
+          <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              {umbrella.title}
+            </h2>
+            {umbrella.intro && (
+              <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted sm:text-lg">
+                {umbrella.intro}
+              </p>
+            )}
+            <ul className="mt-8 grid gap-5 sm:grid-cols-3">
+              {umbrella.items.map((item) => (
+                <li
+                  key={item.name}
+                  className="rounded-2xl border border-border bg-surface p-6 shadow-sm"
+                >
+                  <h3 className="text-lg font-semibold tracking-tight text-foreground">
+                    {item.name}
+                  </h3>
+                  <p className="mt-3 text-base leading-relaxed text-muted">
+                    {item.description}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       {cta && (
         <section className="border-t border-border bg-surface">

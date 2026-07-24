@@ -1,7 +1,16 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { services } from "@/lib/services";
+
+// roles we no longer hire for on the public site. old links land on the careers
+// page instead of 404-ing.
+const RETIRED_SLUGS = new Set([
+  "supported-living",
+  "self-determination",
+  "crisis-support",
+  "day-program",
+]);
 
 export function generateStaticParams() {
   return services.map((s) => ({ slug: s.slug }));
@@ -24,7 +33,10 @@ export async function generateMetadata({ params }) {
 export default async function CareerRolePage({ params }) {
   const { slug } = await params;
   const service = services.find((s) => s.slug === slug);
-  if (!service) notFound();
+  if (!service) {
+    if (RETIRED_SLUGS.has(slug)) redirect("/careers");
+    notFound();
+  }
 
   const role = service.role;
   const baseName = service.name.split(" (")[0];

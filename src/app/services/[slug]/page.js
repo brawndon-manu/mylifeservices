@@ -1,12 +1,21 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { services } from "@/lib/services";
 
-// independent-living + day-program have their own pages under services/, so
-// they're left out here - those static routes win anyway, no point
-// prerendering both.
-const OWN_PAGE = ["independent-living", "day-program"];
+// independent-living has its own page under services/, so it's left out here -
+// that static route wins anyway, no point prerendering it.
+const OWN_PAGE = ["independent-living"];
+
+// services we used to give their own page but now present under the ILS umbrella
+// (or, for the day program, hold off the site for now). old links land on the
+// services page instead of 404-ing.
+const RETIRED_SLUGS = new Set([
+  "supported-living",
+  "self-determination",
+  "crisis-support",
+  "day-program",
+]);
 
 export function generateStaticParams() {
   return services
@@ -35,7 +44,10 @@ function categorySlug(name) {
 export default async function ServiceDetailPage({ params }) {
   const { slug } = await params;
   const service = services.find((s) => s.slug === slug);
-  if (!service) notFound();
+  if (!service) {
+    if (RETIRED_SLUGS.has(slug)) redirect("/services");
+    notFound();
+  }
 
   return (
     <>

@@ -55,7 +55,7 @@ export const STAFF_QUOTES = [
     approved: false,
     body: "I've never sat at a desk all day here. One morning you're helping someone practice cooking, that afternoon you're out in the community or at a job site. If you want every day to look the same, this isn't the job. If you don't, it's the best one I've had.",
     name: "Kam",
-    title: "Day Program Staff",
+    title: "Independent Living Instructor",
   },
 ];
 
@@ -83,34 +83,5 @@ export const HIRING_STEPS = [
   {
     title: "Onboarding",
     body: "Background check and training before you start.",
-  },
-];
-
-// how someone picks a role by the kind of work they want, rather than by our
-// program names. each option maps to the service slugs that fit it.
-export const WORK_SETTINGS = [
-  {
-    id: "one-on-one",
-    label: "One person at a time",
-    blurb: "Just you and one person, working on their goals in their home and around town.",
-    slugs: ["independent-living", "supported-living"],
-  },
-  {
-    id: "group",
-    label: "Leading a group",
-    blurb: "Running activities and keeping a room of people engaged all day.",
-    slugs: ["day-program"],
-  },
-  {
-    id: "self-directed",
-    label: "Helping someone run their own plan",
-    blurb: "Supporting people who direct their own services and budgets.",
-    slugs: ["self-determination"],
-  },
-  {
-    id: "crisis",
-    label: "Showing up when it's hard",
-    blurb: "Short-term, responsive support when someone needs stabilizing.",
-    slugs: ["crisis-support"],
   },
 ];

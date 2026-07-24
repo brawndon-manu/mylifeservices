@@ -18,12 +18,9 @@ const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 const ALLOWED_RESUME_EXT = [".pdf", ".doc", ".docx"];
 
 // mirrored from the form so the server controls how things are labeled.
+// The site hires for a single role right now, Independent Living Staff.
 const POSITIONS = [
   { name: "pos_ils", label: "Independent Living Staff" },
-  { name: "pos_dps", label: "Day Program Staff" },
-  { name: "pos_sls", label: "Supported Living Staff" },
-  { name: "pos_sds", label: "Self-Determination Staff" },
-  { name: "pos_css", label: "Crisis Support Staff" },
 ];
 const EMPLOYMENT_TYPES = [{ name: "avail_ft" }, { name: "avail_pt" }, { name: "avail_oc" }];
 const SHIFTS = [{ name: "shift_am" }, { name: "shift_pm" }, { name: "shift_we" }];

@@ -10,12 +10,10 @@ import DatePicker from "@/components/DatePicker";
 const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 
 // Positions map: slug used in the ?program= query param ↔ form input name ↔ display label
+// The site hires for a single role right now, Independent Living Staff. The other
+// positions are preserved in archive/services/services-original.js.
 const POSITIONS = [
   { slug: "independent-living", name: "pos_ils", label: "Independent Living Staff" },
-  { slug: "day-program", name: "pos_dps", label: "Day Program Staff" },
-  { slug: "supported-living", name: "pos_sls", label: "Supported Living Staff" },
-  { slug: "self-determination", name: "pos_sds", label: "Self-Determination Staff" },
-  { slug: "crisis-support", name: "pos_css", label: "Crisis Support Staff" },
 ];
 
 const EMPLOYMENT_TYPES = [
@@ -121,7 +119,7 @@ export default function ApplyForm() {
               name={p.name}
               value={p.label}
               label={p.label}
-              defaultChecked={preselectedSlug === p.slug}
+              defaultChecked={preselectedSlug === p.slug || POSITIONS.length === 1}
             />
           ))}
         </div>

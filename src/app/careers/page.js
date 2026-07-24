@@ -5,11 +5,9 @@ import {
   REQUIREMENTS,
   NICE_TO_HAVE,
   HIRING_STEPS,
-  WORK_SETTINGS,
   PUBLISHED_QUOTES,
 } from "@/lib/careers";
 import QuoteCarousel from "@/components/QuoteCarousel";
-import RoleMatcher from "@/components/RoleMatcher";
 import {
   TrendIcon,
   HandshakeIcon,
@@ -20,7 +18,7 @@ import {
 export const metadata = {
   title: "Careers",
   description:
-    "Join My Life Services. Direct support roles across five programs in Orange County.",
+    "Join My Life Services. Independent Living Services staff roles in Orange County.",
 };
 
 const LOGO_GRADIENT =
@@ -53,6 +51,9 @@ const REASONS = [
 ];
 
 export default function CareersPage() {
+  const ils =
+    services.find((s) => s.slug === "independent-living") ?? services[0];
+
   return (
     <>
       <section
@@ -76,9 +77,9 @@ export default function CareersPage() {
             Show up for someone, until they can do it themselves
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-[#e8f6fd] sm:text-lg">
-            My Life Services hires direct support staff across five programs in
-            Orange County, supporting adults with intellectual and developmental
-            disabilities. All five are hiring right now.
+            My Life Services hires Independent Living Services staff in Orange
+            County, supporting adults with intellectual and developmental
+            disabilities. We are hiring right now.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -134,33 +135,44 @@ export default function CareersPage() {
         </div>
       </section>
 
-      {/* pick a role by the kind of work, not by our program names */}
+      {/* the role we're hiring for */}
       <section id="roles" className="scroll-mt-24 border-b border-border bg-surface-2">
         <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
           <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Find the role that fits you
+            The role
           </h2>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
-            Same mission across all five programs, but very different days. All
-            five are below. Pick the kind of work you want to narrow it down, or
-            browse them all.
+            We are hiring Independent Living Services staff, working one-on-one
+            with adults on the daily-living skills that build real independence.
           </p>
-          <div className="mt-8">
-            <RoleMatcher
-              settings={WORK_SETTINGS}
-              roles={services.map((s) => ({
-                slug: s.slug,
-                name: s.name,
-                roleDescription: s.roleDescription,
-              }))}
-              chipGradient={CHIP_GRADIENT}
-            />
+
+          <div className="mt-8 rounded-2xl border border-border bg-surface p-6 sm:p-8">
+            <h3 className="text-xl font-semibold tracking-tight text-foreground">
+              {ils.role?.title || ils.name}
+            </h3>
+            <p className="mt-3 max-w-3xl text-base leading-relaxed text-muted">
+              {ils.roleDescription}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href={`/careers/apply?program=${ils.slug}`}
+                className="inline-flex items-center justify-center rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Apply for this role
+              </Link>
+              <Link
+                href={`/careers/${ils.slug}`}
+                className="inline-flex items-center justify-center rounded-md border border-border-strong px-5 py-2.5 text-sm font-semibold text-foreground transition hover:border-brand-light hover:text-brand-dark"
+              >
+                Read the full role
+              </Link>
+            </div>
           </div>
 
           <p className="mt-6 text-sm text-muted">
-            Want to read about every program instead?{" "}
+            Want to read about the service itself?{" "}
             <Link href="/services" className="font-semibold text-brand-dark underline underline-offset-2">
-              See all five services
+              See Independent Living Services
             </Link>
             .
           </p>
@@ -258,8 +270,8 @@ export default function CareersPage() {
             Ready to apply?
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
-            One application covers our open roles. Tell us which program you are
-            interested in and our team will follow up.
+            One short application and our team will follow up with you about the
+            role.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
