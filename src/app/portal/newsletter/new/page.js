@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DatePicker from "@/components/DatePicker";
 import {
   NL_CATEGORIES,
   NL_TITLE_MAX,
@@ -126,12 +127,13 @@ export default async function NewNewsletterItemPage({ searchParams }) {
             >
               Date <span className="text-faint">(optional)</span>
             </label>
-            <input
-              id="eventDate"
-              name="eventDate"
-              type="date"
-              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            />
+            <div className="mt-1">
+              <DatePicker
+                id="eventDate"
+                name="eventDate"
+                inputClassName="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 pr-10 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
             <p className="mt-1 text-xs text-muted">
               When it happened, or when it&apos;s coming up.
             </p>

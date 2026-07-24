@@ -14,6 +14,7 @@ import {
   formatHasAddress,
 } from "@/lib/announcements";
 import TimeField from "./TimeField";
+import DatePicker from "@/components/DatePicker";
 import {
   US_TIMEZONES,
   deviceTimezone,
@@ -76,7 +77,7 @@ function TimeBlock({ value, onChange, hideTime = false, hideDuration = false }) 
     <div className="grid gap-3 sm:grid-cols-2">
       <div className={hideTime ? "sm:col-span-2" : ""}>
         <label className={LABEL}>Date</label>
-        <input type="date" value={value.date} onChange={(e) => set({ date: e.target.value })} className={INPUT} />
+        <DatePicker value={value.date} onChange={(v) => set({ date: v })} inputClassName={`${INPUT} pr-10`} />
       </div>
       {!hideTime && (
         <>
@@ -550,7 +551,7 @@ export default function MeetingFields({ defaults = {}, showTimeNotify = false })
           <label className={LABEL}>
             Response needed by <span className="text-faint">(optional)</span>
           </label>
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={INPUT} />
+          <DatePicker value={dueDate} onChange={setDueDate} inputClassName={`${INPUT} pr-10`} />
           <p className="mt-1 text-xs text-muted">
             A deadline to respond. Anyone who hasn&apos;t by then gets a
             second-notice email. Responding is the acknowledgment, so there&apos;s no

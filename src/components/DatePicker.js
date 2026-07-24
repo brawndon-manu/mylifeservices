@@ -8,8 +8,17 @@ import { useState, useRef, useEffect, useId } from "react";
 //   granularity="month" -> mm/yyyy input, year select + 12-month grid,
 //                          submits MM/YYYY (matches the free-text from/to fields)
 // allowPresent adds a "Present" checkbox (for open-ended "to" dates); when
-// checked the field submits "Present". the value rides on a hidden input under
-// `name`, so no server/action changes are needed. theme-aware.
+// checked the field submits "Present". theme-aware.
+//
+// works two ways:
+//   uncontrolled - pass `name` and the value rides on a hidden input under it,
+//                  so it's a drop-in for <input type="date"> with no action changes.
+//   controlled   - pass `value` + `onChange` and the parent owns the string
+//                  (same YYYY-MM-DD the native input gave it). `name` optional.
+// `label` is optional: leave it off and the call site keeps its own label
+// markup, which is what the portal forms do since they each style their own.
+// `inputClassName` overrides the field styling for the same reason (keep the
+// pr-10 though, the calendar button sits in there).
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -44,10 +53,14 @@ export default function DatePicker({
   name,
   required = false,
   defaultValue = "",
+  value: controlledValue,
+  onChange,
   granularity = "day",
   allowPresent = false,
   id,
+  inputClassName,
 }) {
+  const isControlled = typeof onChange === "function";
   const isMonth = granularity === "month";
   const reactId = useId();
   const inputId = id || reactId;
@@ -85,10 +98,11 @@ export default function DatePicker({
     return parseTyped(s);
   };
 
-  const initial = parseDefault(defaultValue);
+  const source = isControlled ? controlledValue ?? "" : defaultValue;
+  const initial = parseDefault(source);
   const [value, setValue] = useState(initial);
   const [text, setText] = useState(initial ? fmt(initial) : "");
-  const [present, setPresent] = useState(defaultValue === "Present");
+  const [present, setPresent] = useState(source === "Present");
   const [open, setOpen] = useState(false);
   const [view, setView] = useState(null); // { year, month }
   const [above, setAbove] = useState(true);
@@ -98,6 +112,28 @@ export default function DatePicker({
   const inputRef = useRef(null);
 
   const submitted = present ? "Present" : value ? serialize(value) : "";
+
+  // remember what we last handed the parent, so our own emits don't come back
+  // around as an "external" change and wipe out what's being typed
+  const lastEmit = useRef(source);
+  const emit = (next) => {
+    if (!isControlled) return;
+    lastEmit.current = next;
+    onChange(next);
+  };
+
+  // a controlled parent can set the date out from under us (reset the form, load
+  // a saved value); resync when it does, but ignore the echo of our own emit
+  useEffect(() => {
+    if (!isControlled) return;
+    const incoming = controlledValue ?? "";
+    if (incoming === lastEmit.current) return;
+    lastEmit.current = incoming;
+    const d = parseDefault(incoming);
+    setValue(d);
+    setText(d ? fmt(d) : "");
+    setPresent(incoming === "Present");
+  }, [controlledValue, isControlled]);
 
   useEffect(() => {
     if (!open) return;
@@ -154,6 +190,7 @@ export default function DatePicker({
   function pickDay(d) {
     setValue(d);
     setText(fmt(d));
+    emit(serialize(d));
     inputRef.current?.setCustomValidity("");
     setOpen(false);
   }
@@ -161,6 +198,7 @@ export default function DatePicker({
     const d = new Date(year, month, 1);
     setValue(d);
     setText(fmt(d));
+    emit(serialize(d));
     inputRef.current?.setCustomValidity("");
     setOpen(false);
   }
@@ -170,6 +208,8 @@ export default function DatePicker({
     setText(raw);
     const d = parseTyped(raw);
     setValue(d);
+    // a half-typed date reads as empty to the parent until it's a real one
+    emit(d ? serialize(d) : "");
     if (inputRef.current) {
       inputRef.current.setCustomValidity(
         raw.trim() && !d
@@ -185,6 +225,7 @@ export default function DatePicker({
     const on = e.target.checked;
     setPresent(on);
     setOpen(false);
+    emit(on ? "Present" : value ? serialize(value) : "");
     if (on) inputRef.current?.setCustomValidity("");
   }
 
@@ -193,14 +234,16 @@ export default function DatePicker({
 
   return (
     <div className="relative" ref={wrapRef}>
-      <label htmlFor={inputId} className="block text-xs font-semibold text-muted">
-        {label}
-        {required && <span className="ml-0.5 text-red-600">*</span>}
-      </label>
+      {label && (
+        <label htmlFor={inputId} className="block text-xs font-semibold text-muted">
+          {label}
+          {required && <span className="ml-0.5 text-red-600">*</span>}
+        </label>
+      )}
 
-      <input type="hidden" name={name} value={submitted} />
+      {name && <input type="hidden" name={name} value={submitted} />}
 
-      <div className="relative mt-1">
+      <div className={`relative ${label ? "mt-1" : ""}`}>
         <input
           id={inputId}
           ref={inputRef}
@@ -213,7 +256,10 @@ export default function DatePicker({
           disabled={present}
           required={required}
           aria-required={required}
-          className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 pr-10 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted"
+          className={
+            inputClassName ||
+            "block w-full rounded-md border border-border-strong bg-surface px-3 py-2 pr-10 text-sm text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted"
+          }
         />
         <button
           type="button"

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DatePicker from "@/components/DatePicker";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -120,13 +121,14 @@ export default async function EditPostPage({ params, searchParams }) {
             >
               Expires on <span className="text-faint">(optional)</span>
             </label>
-            <input
-              id="expiresAt"
-              name="expiresAt"
-              type="date"
-              defaultValue={expiresStr}
-              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            />
+            <div className="mt-1">
+              <DatePicker
+                id="expiresAt"
+                name="expiresAt"
+                defaultValue={expiresStr}
+                inputClassName="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 pr-10 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
             <p className="mt-1 text-xs text-muted">
               Clear the field to make the post never expire.
             </p>

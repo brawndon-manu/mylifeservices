@@ -5,6 +5,7 @@
 // drives the Google Map embed on the detail page). staff RSVP for a headcount on
 // the detail page; no RSVP config needed here.
 import { useEffect, useState } from "react";
+import DatePicker from "@/components/DatePicker";
 import { EVENT_AUDIENCES } from "@/lib/announcements";
 import {
   US_TIMEZONES,
@@ -91,7 +92,7 @@ export default function EventFields({ defaults = {} }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label className={LABEL}>Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={INPUT} />
+          <DatePicker value={date} onChange={setDate} inputClassName={`${INPUT} pr-10`} />
           {date && <p className="mt-1 text-xs text-muted">{prettyDate(date)}</p>}
         </div>
         <div>

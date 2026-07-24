@@ -8,6 +8,79 @@ export const services = [
     categoriesIntro: {
       title: "What Independent Living Services Include",
     },
+    // the ILS page tells the story as a day first, then opens the full skills
+    // browser underneath. every `skills` label below is pulled from the real
+    // categories further down, so the narrative never promises something we
+    // don't actually work on.
+    day: [
+      {
+        when: "Morning",
+        title: "The day starts on your own terms",
+        body: "Routines that hold together without someone standing over them: getting ready, keeping medication straight, putting a real breakfast on the table, and knowing what the day looks like before it starts. We build the system with you, then step back out of it.",
+        skills: [
+          "Hygiene routines",
+          "Medication organization",
+          "Meal planning and cooking",
+          "Health routines and checklists",
+        ],
+      },
+      {
+        when: "Out the door",
+        title: "Getting there yourself",
+        body: "We ride the bus with you until the route is yours, not ours. Reading a schedule, planning the trip, paying the fare, crossing a busy street, and having a backup when the bus never shows.",
+        skills: [
+          "Public transit until routes are mastered",
+          "Reading schedules and maps",
+          "Trip planning and transit passes",
+          "Emergency backup plans",
+        ],
+      },
+      {
+        when: "Daytime",
+        title: "Work, school, or figuring out what's next",
+        body: "Whatever the goal is, we work backward from it. We get you to the employment services that handle resumes and job placement, then practice the interview, what to expect once you're hired, what accommodations you can ask for, and how to speak up when something isn't working.",
+        skills: [
+          "Employment service referrals",
+          "Interview practice",
+          "Workplace accommodations",
+          "Self-advocacy at work and school",
+          "Identifying strengths and interests",
+        ],
+      },
+      {
+        when: "Errands",
+        title: "Money decisions you make yourself",
+        body: "A grocery list that survives contact with a real budget. Bills that get paid before they're late. Benefits kept current. Knowing a scam when it calls you. Savings that grow because you decided they would.",
+        skills: [
+          "Budgeting with visual tools",
+          "Banking and bill payment",
+          "Recognizing scams",
+          "Savings goals with tracking",
+        ],
+      },
+      {
+        when: "Evening",
+        title: "A place that's actually yours",
+        body: "The ordinary work of keeping a home: cooking, laundry, cleaning that stays done. And the harder parts nobody warns you about, like talking to a roommate, calling a landlord, and understanding what the lease you signed actually says.",
+        skills: [
+          "Cleaning and laundry routines",
+          "Roommate communication",
+          "Communicating with landlords",
+          "Lease agreements and tenant rights",
+        ],
+      },
+      {
+        when: "Any time",
+        title: "The things nobody plans for",
+        body: "Independence includes the bad days. Knowing what to do, who to call, and what you're entitled to, before you need any of it.",
+        skills: [
+          "Emergency procedures and calling 911",
+          "Personalized safety plans",
+          "Disability rights and legal protections",
+          "ADA, Fair Housing, and Lanterman Act",
+        ],
+      },
+    ],
     categories: [
       {
         name: "Personal Care & Health",
@@ -78,7 +151,7 @@ export const services = [
       {
         name: "Employment & Education",
         items: [
-          "Developing resume writing and interview preparation skills",
+          "Finding resume and job-search help through employment services",
           "Practicing job interview and workplace communication scenarios",
           "Exploring workplace accommodation options and disclosure strategies",
           "Connecting with vocational rehabilitation and employment services",
@@ -323,6 +396,82 @@ export const services = [
       title: "What the Day Program Includes",
       body: "The Day Program offers structured activities designed to promote personal growth, independence, and community involvement. Services are tailored to individual goals while fostering a supportive and engaging environment.",
     },
+
+    // ------------------------------------------------------------------
+    // TO FILL IN when the real details are confirmed. everything below is
+    // written to be TRUE as-is: the schedule renders as a sequence with no
+    // clock times, and `hours`/`days`/`location` are left null so the page
+    // just omits those stats. add a `time` to a block (e.g. time: "9:00 AM")
+    // and the clock column appears; set the three facts below and the hero
+    // stat strip appears. nothing here states a time we haven't confirmed.
+    // ------------------------------------------------------------------
+    facts: {
+      days: null, // e.g. "Mon-Fri"
+      hours: null, // e.g. "9am-2pm"
+      location: null, // e.g. "Orange, CA"
+    },
+    schedule: [
+      {
+        title: "Arrival and morning check-in",
+        body: "Everyone settles in, greets the group, and goes over what the day holds. A predictable start, the same way every day.",
+        tags: ["Social & Peer Engagement"],
+      },
+      {
+        title: "Skill-building block",
+        body: "Small-group work on communication, problem-solving, and daily living skills, matched to what each person is working toward.",
+        tags: ["Skill Development"],
+      },
+      {
+        title: "Movement and wellness",
+        body: "Exercise, a walk, or nutrition activities. Something active built into the day.",
+        tags: ["Health & Wellness Support"],
+      },
+      {
+        title: "Lunch together",
+        body: "Eating as a group, which carries its own set of skills: sharing space, holding a conversation, cleaning up after yourself.",
+        tags: ["Social & Peer Engagement"],
+      },
+      {
+        title: "Out in the community",
+        body: "An outing, a volunteer shift, or a work-readiness activity. This is the part that does not happen inside four walls.",
+        tags: ["Community-Based Activities", "Pre-Vocational & Employment Readiness"],
+      },
+      {
+        title: "Wrap-up and pickup",
+        body: "Recap the day, note progress toward goals, and pass along anything families should know about.",
+        tags: ["Individual Goal Progression"],
+      },
+    ],
+    // answers are deliberately general where we haven't confirmed specifics
+    // (eligibility rules, funding, intake steps). they point people to us
+    // instead of stating a process we haven't verified.
+    faq: [
+      {
+        q: "Who is the Day Program for?",
+        note: "eligibility",
+        a: "Adults with intellectual and developmental disabilities who are looking for daytime structure, group connection, and steady skill-building. If you are not sure whether it fits, that is worth a conversation, not a guess.",
+      },
+      {
+        q: "What does a day actually look like?",
+        note: "the day",
+        a: "A consistent routine: a morning check-in, a skill-building block, movement and lunch, then an outing or work-readiness activity before pickup. The rhythm stays the same so it is easy to settle into.",
+      },
+      {
+        q: "Who is with them all day?",
+        note: "staffing",
+        a: "Trained staff who lead the activities, support personal care needs, supervise community outings, keep the environment safe and inclusive, and document how each person is progressing toward their goals.",
+      },
+      {
+        q: "How individual is it, really?",
+        note: "goals",
+        a: "Each participant has their own goals and support plan. The group schedule is the frame, but what someone works on inside it is theirs, and it is reviewed with families and service coordinators.",
+      },
+      {
+        q: "How do we get started?",
+        note: "next step",
+        a: "Reach out and tell us about the person's goals and the services they have now. We will walk you through what enrollment looks like from there.",
+      },
+    ],
     categories: [
       {
         name: "Skill Development",

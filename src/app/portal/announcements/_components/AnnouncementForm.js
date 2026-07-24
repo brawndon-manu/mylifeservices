@@ -4,7 +4,7 @@
 // at the top, and the rest of the form adapts to it - mirrors the resource form
 // pattern. the Changelog type (IT/Super only) swaps in a title + markdown body
 // that renders Discord-style; every other type is a plain post.
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import { marked } from "marked";
 import {
@@ -16,6 +16,7 @@ import {
   isEvent,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
+import DatePicker from "@/components/DatePicker";
 import AudiencePicker from "./AudiencePicker";
 import MeetingFields from "./MeetingFields";
 import EventFields from "./EventFields";
@@ -44,16 +45,30 @@ const BODY_PLACEHOLDERS = {
 };
 
 const PREVIEW_PROSE =
-  "min-h-[8rem] max-h-[28rem] overflow-y-auto rounded-md border border-border-strong bg-surface px-3 py-2 text-[15px] leading-relaxed text-foreground [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-2 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_a]:text-brand [&_a]:underline [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_em]:italic [&_hr]:my-4 [&_hr]:border-border";
+  "min-h-[8rem] rounded-md border border-border-strong bg-surface px-3 py-2 text-[15px] leading-relaxed text-foreground [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:mt-2 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_a]:text-brand [&_a]:underline [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_em]:italic [&_hr]:my-4 [&_hr]:border-border";
 
 // markdown textarea with a GitHub-style Write / Preview toggle so authors can
 // see how their post renders before publishing. controlled so preview is live.
+// the box grows with the content instead of scrolling inside a fixed height -
+// a changelog runs long and typing into a little porthole is miserable.
 function MarkdownField({ value, onChange, rows, maxLength, placeholder }) {
   const [tab, setTab] = useState("write");
+  const taRef = useRef(null);
   const html = useMemo(
     () => marked.parse(value || "_Nothing to preview yet._", { breaks: true }),
     [value],
   );
+
+  const grow = (el) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  // re-measure when the value changes or we switch back to the write tab (a
+  // hidden textarea has no scrollHeight, so it can't size itself while away)
+  useEffect(() => {
+    if (tab === "write") grow(taRef.current);
+  }, [value, tab]);
   const tabClass = (active) =>
     `rounded-t-md px-3 py-1.5 text-sm font-medium transition ${
       active
@@ -73,6 +88,7 @@ function MarkdownField({ value, onChange, rows, maxLength, placeholder }) {
       {tab === "write" ? (
         <textarea
           id="content"
+          ref={taRef}
           name="content"
           required
           rows={rows}
@@ -80,7 +96,7 @@ function MarkdownField({ value, onChange, rows, maxLength, placeholder }) {
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          className={`${INPUT} mt-0 rounded-t-none font-mono text-sm`}
+          className={`${INPUT} mt-0 resize-y overflow-hidden rounded-t-none font-mono text-sm`}
         />
       ) : (
         <>
@@ -311,12 +327,11 @@ export default function AnnouncementForm({
                 <label htmlFor="expiresAt" className={LABEL}>
                   Acknowledge by <span className="text-faint">(optional)</span>
                 </label>
-                <input
+                <DatePicker
                   id="expiresAt"
                   name="expiresAt"
-                  type="date"
                   defaultValue={d.expiresAt ? new Date(d.expiresAt).toISOString().split("T")[0] : ""}
-                  className={INPUT}
+                  inputClassName={`${INPUT} pr-10`}
                 />
                 <p className="mt-1 text-xs text-muted">
                   The date staff should acknowledge by. Anyone who hasn&apos;t by

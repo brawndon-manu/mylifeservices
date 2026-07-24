@@ -3,8 +3,15 @@ import { notFound } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { services } from "@/lib/services";
 
+// independent-living + day-program have their own pages under services/, so
+// they're left out here - those static routes win anyway, no point
+// prerendering both.
+const OWN_PAGE = ["independent-living", "day-program"];
+
 export function generateStaticParams() {
-  return services.map((s) => ({ slug: s.slug }));
+  return services
+    .filter((s) => !OWN_PAGE.includes(s.slug))
+    .map((s) => ({ slug: s.slug }));
 }
 
 export async function generateMetadata({ params }) {

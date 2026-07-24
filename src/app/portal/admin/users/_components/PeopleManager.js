@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
+import DatePicker from "@/components/DatePicker";
 import { roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 import { OFFICE_LABELS, OFFICE_FULL } from "@/lib/positions";
 import PositionPicker from "./PositionPicker";
@@ -421,7 +422,7 @@ function EditDrawer({ u, showRoles, canEditRole, canEditHire, roleOptions, onSav
           </Field>
           <div className="grid grid-cols-2 gap-3">
             {canEditHire && (
-              <Field label="Hire date"><input type="date" name="hireDate" defaultValue={u.hireDateValue} className={INPUT} /></Field>
+              <Field label="Hire date"><DatePicker name="hireDate" defaultValue={u.hireDateValue} inputClassName={`${INPUT} pr-10`} /></Field>
             )}
             <Field label="Phone"><input name="phone" defaultValue={u.phone} className={INPUT} placeholder="(909) 555-0123" /></Field>
           </div>
@@ -479,7 +480,7 @@ function InviteModal({ canEditRole, canEditHire, roleOptions, onInvite, onClose 
           </Field>
           <Field label="Office"><OfficeToggles defaultOffices={["MLS"]} /></Field>
           <div className="grid grid-cols-2 gap-3">
-            {canEditHire && <Field label="Hire date" hint="(optional)"><input type="date" name="hireDate" className={INPUT} /></Field>}
+            {canEditHire && <Field label="Hire date" hint="(optional)"><DatePicker name="hireDate" inputClassName={`${INPUT} pr-10`} /></Field>}
             {canEditRole && <Field label="Role"><RoleSelect roleOptions={roleOptions} defaultRole="STAFF" /></Field>}
           </div>
           <div className="mt-6 flex justify-end gap-2">

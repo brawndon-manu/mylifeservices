@@ -38,24 +38,10 @@ export default async function AdminPage() {
           body="Invite, edit, deactivate users; set roles, titles, and hire dates."
         />
         <LinkCard
-          href="/portal/admin/applications"
-          title="Applications"
-          isNew
-          body="Job applications submitted through the website: preview each one, then open the full application and resume."
-        />
-        <LinkCard
           href="/portal/devices"
           title="Devices"
           body="Company hardware log: what we own, who has it, and what it cost."
         />
-        {isAdminUp(user.role) && (
-          <LinkCard
-            href="/portal/admin/meeting-attendance"
-            title="Meeting attendance"
-            isNew
-            body="RSVPs and roll-call across every Company Meeting: who's going, who hasn't responded, and who showed up."
-          />
-        )}
         {isAdminUp(user.role) && (
           <LinkCard
             href="/portal/admin/acknowledgments"
@@ -64,6 +50,20 @@ export default async function AdminPage() {
             body="Read-receipts across every announcement that needs one: who has acknowledged and who still hasn't."
           />
         )}
+        {isAdminUp(user.role) && (
+          <LinkCard
+            href="/portal/admin/meeting-attendance"
+            title="Meeting attendance"
+            isNew
+            body="RSVPs and roll-call across every Company Meeting: who's going, who hasn't responded, and who showed up."
+          />
+        )}
+        <LinkCard
+          href="/portal/admin/applications"
+          title="Applications"
+          isNew
+          body="Job applications submitted through the website: preview each one, then open the full application and resume."
+        />
         {isAdminUp(user.role) && (
           <LinkCard
             href="/portal/site-photos"

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DatePicker from "@/components/DatePicker";
 import {
   DEVICE_TYPES,
   DEVICE_STATUSES,
@@ -113,13 +114,14 @@ export default function DeviceForm({ action, device = null, submitLabel }) {
           >
             Purchase date <span className="text-faint">(optional)</span>
           </label>
-          <input
-            id="purchaseDate"
-            name="purchaseDate"
-            type="date"
-            defaultValue={purchaseStr}
-            className="mt-1 block w-full rounded-md border border-border-strong px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          />
+          <div className="mt-1">
+            <DatePicker
+              id="purchaseDate"
+              name="purchaseDate"
+              defaultValue={purchaseStr}
+              inputClassName="block w-full rounded-md border border-border-strong px-3 py-2 pr-10 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+          </div>
         </div>
         <div>
           <label
