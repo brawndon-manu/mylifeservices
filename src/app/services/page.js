@@ -46,7 +46,7 @@ export default function ServicesPage() {
           priority
           className="pointer-events-none absolute -right-8 top-10 w-[240px] max-w-[45%] opacity-[0.12] sm:w-[360px]"
         />
-        <div className="relative mx-auto max-w-5xl px-6 py-16 sm:py-24">
+        <div className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#cfeefc]">
             What we do
           </p>
@@ -62,7 +62,7 @@ export default function ServicesPage() {
       </section>
 
       <div className="border-t border-border bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-20">
           <div className="relative overflow-hidden rounded-2xl border border-border bg-surface-2 p-6 shadow-sm sm:p-8">
             {/* logo-gradient accent bar down the left edge */}
             <span

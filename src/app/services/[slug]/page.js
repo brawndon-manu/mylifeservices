@@ -81,7 +81,7 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
         aria-label="Sections on this page"
         className="hidden border-b border-border bg-surface/95 backdrop-blur lg:sticky lg:top-16 lg:z-30 lg:block"
       >
-        <div className="mx-auto max-w-5xl px-6 py-3">
+        <div className="mx-auto max-w-7xl px-6 py-3">
           <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted">
             {categories.map((cat) => (
               <li key={cat.name}>
@@ -99,7 +99,7 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
 
       {intro && (
         <section className="border-b border-border bg-surface">
-          <div className="mx-auto max-w-5xl px-6 py-10 sm:py-12">
+          <div className="mx-auto max-w-7xl px-6 py-10 sm:py-12">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               {intro.title}
             </h2>
@@ -119,7 +119,7 @@ function ServiceCategories({ categories, layout = "checklist", intro }) {
             id={categorySlug(category.name)}
             className={`scroll-mt-32 ${i % 2 === 0 ? "bg-surface" : "bg-surface-2"}`}
           >
-            <div className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
+            <div className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
               <h3 className="border-l-2 border-brand pl-3 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                 {category.name}
               </h3>

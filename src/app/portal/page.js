@@ -30,7 +30,7 @@ export default async function PortalDashboard() {
   const role = user?.role ?? "STAFF";
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Welcome back
       </p>

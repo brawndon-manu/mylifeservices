@@ -61,7 +61,7 @@ export default function ContactPage() {
         intro="Reach out about service inquiries, employment opportunities, or community partnerships."
       />
 
-      <section className="mx-auto max-w-5xl px-6 pt-16">
+      <section className="mx-auto max-w-7xl px-6 pt-16">
         <div className="mx-auto max-w-2xl">
           <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Send us a message
@@ -76,7 +76,7 @@ export default function ContactPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-6 py-16">
+      <section className="mx-auto max-w-7xl px-6 py-16">
         <h2 className="mb-8 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Or reach us directly
         </h2>
@@ -142,7 +142,7 @@ export default function ContactPage() {
       {/* Closing CTA - gradient card on white so it doesn't blend into the
           brand-light footer band right below it. */}
       <section className="bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-16">
+        <div className="mx-auto max-w-7xl px-6 py-16">
           <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-dark to-brand px-8 py-12 text-center text-white sm:px-12 sm:py-14">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               Prefer to talk it through?

@@ -14,7 +14,7 @@ export default function SkillsBrowser({ categories, chipGradient }) {
 
   return (
     <section id="skills" className="scroll-mt-24 border-t border-border bg-surface-2">
-      <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+      <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
         <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Everything we work on
         </h2>

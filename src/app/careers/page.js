@@ -69,7 +69,7 @@ export default function CareersPage() {
           priority
           className="pointer-events-none absolute -right-8 top-10 w-[240px] max-w-[45%] opacity-[0.12] sm:w-[360px]"
         />
-        <div className="relative mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="relative mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#cfeefc]">
             Careers
           </p>
@@ -100,7 +100,7 @@ export default function CareersPage() {
 
       {/* what the work actually is */}
       <section className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
           <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             What the work actually is
           </h2>
@@ -137,7 +137,7 @@ export default function CareersPage() {
 
       {/* the role we're hiring for */}
       <section id="roles" className="scroll-mt-24 border-b border-border bg-surface-2">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
           <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             The role
           </h2>
@@ -181,7 +181,7 @@ export default function CareersPage() {
 
       {/* what it takes, before they start a long form */}
       <section className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
           <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             What you&apos;ll need
           </h2>

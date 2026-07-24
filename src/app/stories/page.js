@@ -37,7 +37,7 @@ export default async function StoriesPage() {
 
       {/* RO - Integrity Cottages */}
       <section id="ro" className="scroll-mt-20 border-t border-border bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-5">
               <StoryPortrait photo={roPortrait} initials="RO" />
@@ -123,7 +123,7 @@ export default async function StoriesPage() {
 
       {/* RR - PBV voucher */}
       <section id="rr" className="scroll-mt-20 border-t border-border bg-surface-2">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <div className="grid gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-7">
               <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
@@ -173,7 +173,7 @@ export default async function StoriesPage() {
 
       {/* Closing CTA band */}
       <section className="bg-brand-light text-white">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
           <div className="grid gap-8 sm:grid-cols-12 sm:items-center">
             <div className="sm:col-span-7">
               <h2 className="text-3xl font-semibold tracking-tight">

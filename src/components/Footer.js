@@ -10,7 +10,7 @@ export default function Footer() {
   return (
     <footer>
       <div className="bg-brand-light text-white">
-        <div className="mx-auto grid max-w-5xl gap-10 px-6 py-14 sm:py-16 md:grid-cols-2 md:gap-16">
+        <div className="mx-auto grid max-w-7xl gap-10 px-6 py-14 sm:py-16 md:grid-cols-2 md:gap-16">
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">
               Get in touch
@@ -75,7 +75,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="border-t border-border bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-5 text-sm text-muted">
+        <div className="mx-auto max-w-7xl px-6 py-5 text-sm text-muted">
           &copy; {year} My Life Services Inc. All rights reserved.
         </div>
       </div>

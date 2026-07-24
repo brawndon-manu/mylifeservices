@@ -41,7 +41,7 @@ export default async function PortalLayout({ children }) {
         />
       )}
       <div className="border-b border-border bg-background">
-        <div className="mx-auto flex max-w-5xl items-start justify-between gap-4 px-6 py-4">
+        <div className="mx-auto flex max-w-7xl items-start justify-between gap-4 px-6 py-4">
           <div className="flex flex-col gap-2">
             {/* portal brand: logo + "Employee portal", links to the dashboard */}
             <Link

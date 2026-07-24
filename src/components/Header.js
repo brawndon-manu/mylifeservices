@@ -118,7 +118,7 @@ export default function Header() {
 
   return (
     <header className={`sticky top-0 z-40 pt-3 ${isHome ? HEADER_PULL : "mb-2"}`}>
-      <div className="relative mx-auto max-w-5xl px-4 sm:px-6">
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
         <div
           className={`flex h-14 items-center gap-4 rounded-full border pl-4 pr-4 backdrop-blur-md transition-colors duration-300 sm:gap-5 sm:pl-5 sm:pr-6 ${pill}`}
         >

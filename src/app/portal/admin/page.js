@@ -19,7 +19,7 @@ export default async function AdminPage() {
   }
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href="/portal">Back to Dashboard</BackLink>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Admin

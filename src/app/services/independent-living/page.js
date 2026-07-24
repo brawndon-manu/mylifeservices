@@ -40,7 +40,7 @@ export default function IndependentLivingPage() {
           priority
           className="pointer-events-none absolute -right-8 top-10 w-[240px] max-w-[45%] opacity-[0.12] sm:w-[360px]"
         />
-        <div className="relative mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="relative mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <Link
             href="/services"
             className="text-sm font-medium text-[#cfeefc] transition hover:text-white"
@@ -77,7 +77,7 @@ export default function IndependentLivingPage() {
 
       {/* the day */}
       <section className="bg-surface">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
           <div className="space-y-0">
             {day.map((m, i) => (
               <div
@@ -117,7 +117,7 @@ export default function IndependentLivingPage() {
 
       {umbrella && (
         <section className="border-t border-border bg-surface-2">
-          <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+          <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
               {umbrella.title}
             </h2>

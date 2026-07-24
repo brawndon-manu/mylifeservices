@@ -42,7 +42,7 @@ export default function PageHeader({
 
   return (
     <header className="border-b border-border bg-surface-2">
-      <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+      <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
         {hasImage ? (
           <div className="grid items-center gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-7">{textBlock}</div>

@@ -142,7 +142,7 @@ export default async function HomePage() {
               "radial-gradient(circle, rgba(120,220,250,0.5), transparent 66%)",
           }}
         />
-        <div className="relative mx-auto max-w-5xl px-6 pb-40 pt-32 sm:pb-48 sm:pt-40">
+        <div className="relative mx-auto max-w-7xl px-6 pb-40 pt-32 sm:pb-48 sm:pt-40">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#cfeefc]">
             My Life. My Way.
           </p>
@@ -177,7 +177,7 @@ export default async function HomePage() {
       </section>
 
       {/* stat strip, lifted up so it overlaps the bottom of the hero */}
-      <div className="relative z-10 mx-auto -mt-16 mb-4 max-w-5xl px-6 sm:-mt-20 sm:mb-6">
+      <div className="relative z-10 mx-auto -mt-16 mb-4 max-w-7xl px-6 sm:-mt-20 sm:mb-6">
         <dl className="grid grid-cols-2 rounded-2xl border border-border bg-surface p-6 shadow-xl sm:grid-cols-4 sm:divide-x sm:divide-border">
           {stats.map(({ value, label }) => (
             <div key={label} className="px-2 py-3 text-center sm:py-1">
@@ -190,7 +190,7 @@ export default async function HomePage() {
         </dl>
       </div>
       <section className="border-t border-border bg-surface-2 night:!bg-background">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
               How we work
@@ -233,7 +233,7 @@ export default async function HomePage() {
         </div>
       </section>
       <section className="border-t border-border bg-background">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           {/* the logo-gradient panel is constant across themes - it's the page's
               "hero echo", so the service area pops the same in Light / Dim / Night */}
           <div
@@ -278,7 +278,7 @@ export default async function HomePage() {
       </section>
       <ServicesOverview />
       <section className="border-t border-border bg-surface night:!bg-background">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <header className="mb-12 max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
               Real stories
@@ -295,7 +295,7 @@ export default async function HomePage() {
         </div>
       </section>
       <section className="border-t border-border bg-background">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           {/* closing CTA, changelog-style: heading + a peek at the latest This
               Week items (pulled live from the newsletter) */}
           <div className="rounded-3xl border border-border bg-surface-2 p-8 shadow-sm sm:p-12">

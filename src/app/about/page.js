@@ -33,7 +33,7 @@ export default async function AboutPage() {
     <>
       {/* Hero */}
       <section className="bg-gradient-to-b from-surface-2 to-background">
-        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
           <div className="grid items-center gap-10 sm:grid-cols-12 sm:gap-12">
             <div className="sm:col-span-7">
               <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
@@ -157,7 +157,7 @@ export default async function AboutPage() {
 
       {/* Closing CTA band */}
       <section className="bg-brand-light text-white">
-        <div className="mx-auto max-w-5xl px-6 py-14 sm:py-16">
+        <div className="mx-auto max-w-7xl px-6 py-14 sm:py-16">
           <div className="grid gap-8 sm:grid-cols-12 sm:items-center">
             <div className="sm:col-span-7">
               <h2 className="text-3xl font-semibold tracking-tight">
@@ -195,7 +195,7 @@ function Section({ bg, children }) {
   const bgClass = bg === "slate" ? "bg-surface-2" : "bg-surface";
   return (
     <section className={`${bgClass} border-t border-border`}>
-      <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">{children}</div>
+      <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">{children}</div>
     </section>
   );
 }

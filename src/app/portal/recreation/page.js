@@ -75,7 +75,7 @@ export default async function RecreationPage({ searchParams }) {
           : null;
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
+    <section className="mx-auto max-w-7xl px-6 py-10 sm:py-14">
       <BackLink href="/portal">Back to Dashboard</BackLink>
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div>

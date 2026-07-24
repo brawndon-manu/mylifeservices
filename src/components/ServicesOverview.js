@@ -23,7 +23,7 @@ export default function ServicesOverview() {
 
   return (
     <section className="border-t border-border bg-background">
-      <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+      <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
         <header className="max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
             What we do

@@ -115,7 +115,7 @@ export default async function ContactsPage({ searchParams }) {
           : null;
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
+    <section className="mx-auto max-w-7xl px-6 py-10 sm:py-14">
       <BackLink href="/portal">Back to Dashboard</BackLink>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Portal
