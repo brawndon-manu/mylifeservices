@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isAdminUp } from "@/lib/roles";
+import { isElevated, isAdminUp, isIT } from "@/lib/roles";
+import { getMaintenanceState } from "@/lib/maintenance";
+import { toggleMaintenance } from "./maintenance-actions";
 import BackLink from "@/components/BackLink";
 import NewBadge from "@/components/NewBadge";
 
@@ -17,6 +19,10 @@ export default async function AdminPage() {
   if (!isElevated(user?.role)) {
     redirect("/portal");
   }
+
+  // maintenance switch is IT / SUPER only; skip the redis read for others.
+  const canMaintain = isIT(user.role);
+  const maintenanceOn = canMaintain ? await getMaintenanceState() : false;
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
@@ -72,7 +78,61 @@ export default async function AdminPage() {
           />
         )}
       </div>
+
+      {canMaintain && <MaintenanceControl on={maintenanceOn} />}
     </section>
+  );
+}
+
+// IT / SUPER only. flips the public site into the maintenance splash. the portal
+// stays reachable and staff can still get in with the bypass password.
+function MaintenanceControl({ on }) {
+  return (
+    <div
+      className={`mt-10 rounded-xl border p-6 ${
+        on
+          ? "border-amber-400/60 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-950/30"
+          : "border-border bg-surface"
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              Site maintenance
+            </h2>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${
+                on
+                  ? "bg-amber-500 text-white"
+                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              }`}
+            >
+              {on ? "Site is down" : "Site is live"}
+            </span>
+          </div>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
+            {on
+              ? "The public site is showing the maintenance page right now. The portal stays open, and staff can still get in with the bypass password."
+              : "Turns the public site into a maintenance page. The portal stays open, and staff can still get in with the bypass password. Takes a few seconds to apply."}
+          </p>
+        </div>
+
+        <form action={toggleMaintenance}>
+          <input type="hidden" name="next" value={on ? "off" : "on"} />
+          <button
+            type="submit"
+            className={`inline-flex items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 ${
+              on
+                ? "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600"
+                : "bg-amber-600 hover:bg-amber-700 focus-visible:outline-amber-600"
+            }`}
+          >
+            {on ? "Bring the site back" : "Take the site down"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
