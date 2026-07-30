@@ -379,7 +379,7 @@ export default function FormFiller({
             </div>
             <div>
               <label htmlFor="empEmail" className="block text-sm font-medium text-foreground">
-                Your email <span className="text-rose-500">*</span>
+                Your work email <span className="text-rose-500">*</span>
               </label>
               <input
                 id="empEmail"
@@ -391,8 +391,8 @@ export default function FormFiller({
                 className="mt-1.5 w-full rounded-lg border border-border-strong bg-background px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none"
               />
               <p className="mt-1 text-xs text-faint">
-                So the reviewer can reply to you. Use the email you normally get MLS
-                mail at.
+                We&apos;ll cc you a copy at this address, and the reviewer can reply
+                here. Use the email you normally get MLS mail at.
               </p>
             </div>
           </div>

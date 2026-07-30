@@ -32,10 +32,16 @@ export default auth(async (req) => {
   const isPortal = pathname.startsWith("/portal");
   const isLogin = pathname === "/login";
   const isMaintenancePage = pathname === "/maintenance";
+  // unguessable public share links stay reachable during maintenance: forms
+  // (/f/<slug>) and resources (/r/<id>). they're direct links handed to specific
+  // people, not the public marketing site, so a maintenance window shouldn't
+  // break a form you shared with, say, a new hire.
+  const isShareLink = pathname.startsWith("/f/") || pathname.startsWith("/r/");
 
-  // 1. MAINTENANCE GATE - public pages only. the portal, the login page, and
-  // the maintenance splash itself are always exempt so staff can still get in.
-  if (!isPortal && !isLogin && !isMaintenancePage) {
+  // 1. MAINTENANCE GATE - public pages only. the portal, the login page, the
+  // maintenance splash, and shared /f/ + /r/ links are always exempt so staff
+  // and the people they've shared links with can still get through.
+  if (!isPortal && !isLogin && !isMaintenancePage && !isShareLink) {
     if (await isMaintenanceOn()) {
       const token = req.cookies.get(BYPASS_COOKIE)?.value;
       if (!(await verifyBypassToken(token))) {
