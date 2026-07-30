@@ -35,6 +35,14 @@ export const FORM_EMAIL_ROUTES = [
     recipientTitle: "Field Supervisor",
     cc: [{ name: "Jessica Zermeno", email: "mls.jessicazermeno@gmail.com" }],
   },
+  {
+    key: "rest-meal-break",
+    // "Rest & Meal Period Policy and Acknowledgement"
+    match: (title) => /rest\b.*\bmeal\b/i.test(title || ""),
+    // goes to the HR Administrator (Britny holds that title). the submitter is
+    // always cc'd, so whoever sends it keeps a copy - no fixed cc needed.
+    recipientTitle: "HR Administrator",
+  },
 ];
 
 // the review route for a form title, or null if it can't be submitted by email.
