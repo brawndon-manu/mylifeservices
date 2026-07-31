@@ -85,6 +85,7 @@ model User {
   announcementComments AnnouncementComment[]
   announcementLikes    AnnouncementLike[]
   announcementAcks     AnnouncementAck[]
+  formSubmissions      FormSubmission[]
   announcementMeetingChoices AnnouncementMeetingChoice[]
   announcementMeetingResponses AnnouncementMeetingResponse[]
   announcementEventRsvps AnnouncementEventRsvp[]
@@ -345,6 +346,10 @@ model Announcement {
   // specific individuals to target (in addition to ackTitles), used when the
   // poster narrows a title role to certain people. unioned with ackTitles.
   ackUserIds  String[]  @default([])
+  // an optional fillable form attached to this announcement: acknowledging it
+  // means filling + submitting the form, which writes the ack (see FormSubmission).
+  formId      String?
+  form        Form?     @relation(fields: [formId], references: [id])
   // Company Meeting fields (used when tag = "Company Meeting").
   meetingKind      String?  // Training | Team meeting | All-hands | Orientation | Other
   meetingFormat    String?  // zoom | in_person | hybrid
@@ -541,7 +546,39 @@ model Form {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  submissions   FormSubmission[]
+  announcements Announcement[]
+
   @@index([category])
+}
+
+// a stored, signed form submission - the durable record behind the forms admin
+// panel + retention, and (when tied to an announcement) the proof that completes
+// an acknowledgment. the signed PDF lives in Blob under an unguessable key and is
+// streamed back through a gated route, never linked to the browser.
+model FormSubmission {
+  id             String   @id @default(cuid())
+  formId         String
+  form           Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  // set when this submission fulfills an announcement's required acknowledgment
+  announcementId String?
+  // who it's attributed to: set immediately for signed-in submits; set later for
+  // no-login submits (email-match or a manual assign in the admin panel).
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // how it got attributed: signed-in | email-match | assigned | unassigned
+  attribution    String   @default("unassigned")
+  // what the submitter typed - drives reconciliation for no-login submits
+  submitterName  String
+  submitterEmail String
+  pdfUrl         String
+  pdfName        String?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  @@index([formId, createdAt])
+  @@index([announcementId])
+  @@index([userId])
 }
 
 // a job application submitted through the public careers form. we still email it

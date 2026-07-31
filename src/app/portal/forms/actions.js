@@ -11,6 +11,7 @@ import { formEmailRoute } from "@/lib/forms";
 import { prisma } from "@/lib/prisma";
 import { resolveRecipient } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
+import { storeFormSubmission } from "@/lib/form-store";
 
 export async function submitFormByEmail({ formId, message, pdfBase64, pdfName, recipientId }) {
   const user = await getCurrentUser();
@@ -28,7 +29,7 @@ export async function submitFormByEmail({ formId, message, pdfBase64, pdfName, r
   const recipient = await resolveRecipient(route.recipientTitle, recipientId);
   if (!recipient) return { ok: false, error: "norecipient" };
 
-  return sendFilledForm({
+  const result = await sendFilledForm({
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
@@ -40,4 +41,25 @@ export async function submitFormByEmail({ formId, message, pdfBase64, pdfName, r
     pdfBase64,
     pdfName,
   });
+
+  // best-effort: keep a stored copy for the forms admin panel + retention. a
+  // signed-in submit is attributed straight to their account. never let a storage
+  // hiccup fail a submission that already emailed.
+  if (result?.ok) {
+    try {
+      await storeFormSubmission({
+        formId: form.id,
+        pdfBase64,
+        pdfName,
+        submitterName: preferredName(user) || user.email,
+        submitterEmail: user.email,
+        userId: user.id,
+        attribution: "signed-in",
+      });
+    } catch (e) {
+      console.error("form submission store failed (email already sent):", e);
+    }
+  }
+
+  return result;
 }

@@ -11,6 +11,7 @@ import { cleanEmail, cleanDisplayName, checkRateLimit } from "@/lib/security";
 import { formEmailRoute } from "@/lib/forms";
 import { resolveRecipient } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
+import { storeFormSubmission } from "@/lib/form-store";
 
 export async function submitPublicFormByEmail({
   formId,
@@ -42,7 +43,7 @@ export async function submitPublicFormByEmail({
   const recipient = await resolveRecipient(route.recipientTitle, recipientId);
   if (!recipient) return { ok: false, error: "norecipient" };
 
-  return sendFilledForm({
+  const result = await sendFilledForm({
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
@@ -54,4 +55,26 @@ export async function submitPublicFormByEmail({
     pdfBase64,
     pdfName,
   });
+
+  // best-effort: store a copy for the forms admin panel + retention. no login, so
+  // it lands unassigned - reconciled later by email-match or a manual assign. the
+  // typed name/email + ip are what the admin panel matches on. never let a storage
+  // hiccup fail a submission that already emailed.
+  if (result?.ok) {
+    try {
+      await storeFormSubmission({
+        formId: form.id,
+        pdfBase64,
+        pdfName,
+        submitterName: name,
+        submitterEmail: email,
+        attribution: "unassigned",
+        ip,
+      });
+    } catch (e) {
+      console.error("public form submission store failed (email already sent):", e);
+    }
+  }
+
+  return result;
 }
