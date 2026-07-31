@@ -1,5 +1,5 @@
 // builds the HTML for announcement + meeting + sign-in emails. email-safe: a
-// solid dark hero band (logo + title block) over a white body, inline styles
+// soft azure hero band (logo + title block) over a white body, inline styles
 // only, no radial gradients (email clients strip them). all email types share
 // one shell so they look consistent.
 
@@ -28,8 +28,8 @@ const BTN =
 const BTN_GHOST =
   "display:inline-block;background:#ffffff;color:#2f6feb;text-decoration:none;padding:11px 20px;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #cdd9ec;";
 
-// the shared shell: dark logo hero + white card + footer. `subtitle` is raw HTML
-// (built by the caller); `eyebrow` + `title` are escaped here. `footer` lets a
+// the shared shell: soft azure logo hero + white card + footer. `subtitle` is raw
+// HTML (built by the caller); `eyebrow` + `title` are escaped here. `footer` lets a
 // caller swap the footer line (sign-in emails aren't "staff announcements").
 function emailShell({
   logoUrl,
@@ -45,10 +45,10 @@ function emailShell({
   return `
   <div style="background:#eef1f5;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
     <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e3e8ef;">
-      <div style="background:#0b1020;padding:30px 28px 26px;text-align:center;">
+      <div style="background:#eaf4fb;padding:30px 28px 26px;text-align:center;border-bottom:1px solid #d5e6f2;">
         ${logo}
-        <div style="color:#58a6ff;font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;">${esc(eyebrow)}</div>
-        <h1 style="color:#f0f3f8;font-size:24px;line-height:1.25;font-weight:600;margin:10px 0 0;">${esc(title)}</h1>
+        <div style="color:#15719e;font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;">${esc(eyebrow)}</div>
+        <h1 style="color:#0f2230;font-size:24px;line-height:1.25;font-weight:600;margin:10px 0 0;">${esc(title)}</h1>
         ${subtitle}
       </div>
       <div style="padding:26px 28px 30px;color:#33414f;font-size:15px;line-height:1.7;">
@@ -265,8 +265,8 @@ export function buildFormEmailHtml({
   eyebrow = "Form submission",
 }) {
   const subtitle = `
-    <div style="margin-top:12px;color:#e6edf3;font-size:14px;">Submitted by ${esc(submitterName)} <span style="color:#9aa4b2;">(${esc(submitterEmail)})</span></div>
-    <div style="margin-top:4px;color:#9aa4b2;font-size:13px;">${esc(dateStr)}</div>`;
+    <div style="margin-top:12px;color:#334155;font-size:14px;">Submitted by ${esc(submitterName)} <span style="color:#64748b;">(${esc(submitterEmail)})</span></div>
+    <div style="margin-top:4px;color:#64748b;font-size:13px;">${esc(dateStr)}</div>`;
   const noteBlock = note
     ? `<div style="margin:0 0 16px;padding:14px 16px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:10px;"><div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Additional info from the submitter</div><div style="color:#33414f;">${esc(note).replace(/\n/g, "<br>")}</div></div>`
     : "";
@@ -295,12 +295,12 @@ export function buildAnnouncementEmailHtml({
   footer,
 }) {
   const role = authorTitle
-    ? `<span style="color:#8ab4f0;font-style:italic;"> &middot; ${esc(authorTitle)}</span>`
+    ? `<span style="color:#5b7688;font-style:italic;"> &middot; ${esc(authorTitle)}</span>`
     : "";
   const subtitle = `
-    <div style="margin-top:12px;color:#e6edf3;font-size:14px;">${esc(authorName)}${role}</div>
-    <div style="margin-top:4px;color:#9aa4b2;font-size:13px;">${esc(dateStr)}</div>
-    ${requireAck ? `<div style="margin-top:8px;color:#f85149;font-size:13px;font-weight:600;">Acknowledgment required</div>` : ""}`;
+    <div style="margin-top:12px;color:#334155;font-size:14px;">${esc(authorName)}${role}</div>
+    <div style="margin-top:4px;color:#64748b;font-size:13px;">${esc(dateStr)}</div>
+    ${requireAck ? `<div style="margin-top:8px;color:#dc2626;font-size:13px;font-weight:600;">Acknowledgment required</div>` : ""}`;
   const ackButton =
     requireAck && ackUrl
       ? `<div style="margin-top:24px;"><a href="${ackUrl}" style="${BTN}">Acknowledge that I've read this</a><div style="margin-top:8px;color:#8a93a0;font-size:12px;">One click confirms it, no login needed.</div></div>`
