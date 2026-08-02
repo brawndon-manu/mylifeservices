@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import SignaturePad from "@/app/portal/forms/[id]/fill/SignaturePad";
+import PdfPreview from "./PdfPreview";
 
 const ERRORS = {
   auth: "You don't have permission to approve this.",
@@ -47,19 +48,7 @@ export default function ApproveSigner({ timesheetId, fileUrl, submitAction, back
 
   return (
     <div className="mt-6">
-      <object
-        data={fileUrl}
-        type="application/pdf"
-        className="h-[60vh] w-full rounded-lg border border-border bg-surface-2"
-        aria-label="The signed timesheet"
-      >
-        <p className="p-4 text-sm text-muted">
-          <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-brand">
-            Open the signed timesheet
-          </a>{" "}
-          to review it.
-        </p>
-      </object>
+      <PdfPreview fileUrl={fileUrl} label="signed timesheet" />
 
       <div className="mt-5 rounded-xl border border-border bg-surface p-5">
         <p className="text-sm font-medium text-foreground">Your approval signature</p>
