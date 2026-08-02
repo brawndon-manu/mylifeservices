@@ -109,15 +109,25 @@ export default async function TimesheetStatsPage({ params }) {
 
       {/* where it happens */}
       <Section title="When breaks get missed" hint="Missed meal periods and rest breaks by day of the week. A spike on one day usually means a scheduling problem rather than individual choices.">
+        {/* each shift can trigger at most one meal premium and one rest premium,
+            so the denominator is shifts x 2 - spelled out in the header because
+            "92 of 95 shifts" invites reading it as 97% when it isn't. */}
+        <div className="mb-2 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wider text-faint">
+          <span className="w-20 flex-none">Day</span>
+          <span className="flex-1" />
+          <span className="w-24 flex-none whitespace-nowrap text-right">Missed</span>
+          <span className="w-12 flex-none whitespace-nowrap text-right">Rate</span>
+        </div>
         <div className="space-y-1.5">
           {s.byDow
             .filter((d) => d.worked > 0)
             .map((d) => {
               const total = d.meal + d.rest;
-              const rate = d.worked ? Math.round((total / (d.worked * 2)) * 100) : 0;
+              const possible = d.worked * 2;
+              const rate = possible ? Math.round((total / possible) * 100) : 0;
               return (
                 <div key={d.label} className="flex items-center gap-3">
-                  <span className="w-20 flex-none text-xs text-muted">{d.label}</span>
+                  <span className="w-20 flex-none truncate text-xs text-muted">{d.label}</span>
                   <span className="flex h-4 flex-1 overflow-hidden rounded bg-surface-3">
                     <span
                       className="bg-amber-400"
@@ -130,19 +140,25 @@ export default async function TimesheetStatsPage({ params }) {
                       title={`${d.rest} missed rest breaks`}
                     />
                   </span>
-                  <span className="w-32 flex-none text-right text-xs text-muted">
-                    {total} over {d.worked} shifts · {rate}%
+                  <span className="w-24 flex-none whitespace-nowrap text-right text-xs tabular-nums text-muted">
+                    {total} / {possible}
+                  </span>
+                  <span className="w-12 flex-none whitespace-nowrap text-right text-xs font-semibold tabular-nums text-foreground">
+                    {rate}%
                   </span>
                 </div>
               );
             })}
         </div>
-        <p className="mt-3 flex flex-wrap gap-4 text-xs text-muted">
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" /> missed meal period
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-rose-400" /> missed rest break
+          </span>
+          <span className="text-faint">
+            each shift allows one of each, so a day of 95 shifts has 190 possible
           </span>
         </p>
 
