@@ -99,6 +99,8 @@ model User {
   resourcesVerified  Resource[]   @relation("ResourceVerifiedBy")
   sitePhotos    SitePhoto[]   @relation("SitePhotoUploadedBy")
   notifications Notification[]
+  timesheetBatches TimesheetBatch[] @relation("TimesheetBatchUploadedBy")
+  timesheets       Timesheet[]      @relation("TimesheetEmployee")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -579,6 +581,85 @@ model FormSubmission {
   @@index([formId, createdAt])
   @@index([announcementId])
   @@index([userId])
+}
+
+// one upload of the QSP "Simple Timesheet" export - a single PDF holding every
+// employee for a pay period. parsing it produces one Timesheet row per person.
+model TimesheetBatch {
+  id           String   @id @default(cuid())
+  // the pay period exactly as QSP printed it, e.g. "07/16/26" / "07/31/26".
+  periodFrom   String
+  periodTo     String
+  // the uploaded source PDF, kept for audit (Blob, streamed back through a
+  // gated route like every other stored document here).
+  sourceUrl    String?
+  sourceName   String?
+  // whether sends from this batch were redirected to the test inbox. recorded
+  // per batch so a test run can never be mistaken for a real one later.
+  testMode     Boolean  @default(true)
+  uploadedById String
+  uploadedBy   User     @relation("TimesheetBatchUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  timesheets   Timesheet[]
+
+  @@index([createdAt])
+}
+
+// one employee's corrected timesheet for a pay period: the computed figures, the
+// generated PDF, who it went to, and the signed copy that comes back.
+model Timesheet {
+  id          String         @id @default(cuid())
+  batchId     String
+  batch       TimesheetBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  // the name exactly as QSP printed it, e.g. "Miranda, Gabriel". kept even after
+  // matching so the operator can always see what the source said.
+  sourceName  String
+  // the matched portal account. null until someone is picked - nothing sends
+  // without it.
+  userId      String?
+  user        User?          @relation("TimesheetEmployee", fields: [userId], references: [id], onDelete: SetNull)
+  // how the match happened: exact | fuzzy | manual | unmatched
+  matchMethod String         @default("unmatched")
+
+  // computed figures (also in `data`, duplicated here for lists + sorting)
+  rawHours     Float @default(0)  // as exported by QSP
+  paidHours    Float @default(0)  // corrected: rest breaks counted as worked
+  regularHours Float @default(0)
+  otHours      Float @default(0)
+  doubleHours  Float @default(0)
+  premiumHours Float @default(0)  // CA 226.7 meal + rest premiums owed
+  // true when a workweek in this period is cut off by the pay-period boundary,
+  // so its >40 overtime is provisional until the neighbouring period is known.
+  partialWeek  Boolean @default(false)
+  // the full analyzed breakdown (days, punches, breaks, violations) for audit.
+  data         Json
+
+  // the generated corrected PDF
+  pdfUrl      String?
+
+  // delivery
+  sentAt      DateTime?
+  // the address it actually went to - in test mode this is the tester, which is
+  // why intendedEmail is stored separately.
+  sentToEmail String?
+  intendedEmail String?
+  dueAt       DateTime?
+  message     String?
+
+  // signing
+  signedAt     DateTime?
+  signedPdfUrl String?
+  // what the signer typed/drew, for the audit trail
+  signedName   String?
+  signedIp     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([userId])
+  @@index([signedAt])
 }
 
 // a job application submitted through the public careers form. we still email it

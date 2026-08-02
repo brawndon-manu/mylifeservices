@@ -52,7 +52,7 @@ export async function sendFilledForm({
   const subject = `${formTitle} - submitted by ${submitterName}`;
 
   const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
-  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_white.png`;
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
   const html = buildFormEmailHtml({
     logoUrl,
     formTitle,

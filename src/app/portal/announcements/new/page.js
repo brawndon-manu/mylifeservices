@@ -5,6 +5,7 @@ import { isElevated, isIT, isSupervisorUp, canSeeRoles, ROLE_LABELS } from "@/li
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
 import { IMAGE_MAX_BYTES } from "@/lib/hub";
 import { preferredName } from "@/lib/contacts";
+import { formEmailRoute } from "@/lib/forms";
 import {
   getStaffByTitle,
   getAckStaffByTitle,
@@ -51,12 +52,21 @@ export default async function NewAnnouncementPage({ searchParams }) {
 
   const canProxy = isElevated(user.role);
   const showRoles = canSeeRoles(user.role);
-  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }] =
+  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }, allForms] =
     await Promise.all([
       getAckStaffByTitle(),
       getStaffByTitle(),
       getAudienceTotals(),
+      prisma.form.findMany({
+        where: { fillable: true },
+        select: { id: true, title: true },
+        orderBy: { title: "asc" },
+      }),
     ]);
+  // only forms that can actually be submitted by email are eligible to attach -
+  // that submission is what completes the acknowledgment, so a form with nowhere
+  // to send wouldn't work.
+  const forms = allForms.filter((f) => !!formEmailRoute(f.title)?.recipientTitle);
   let people = [];
   if (canProxy) {
     const rows = await prisma.user.findMany({
@@ -107,6 +117,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
           emailStaffByTitle={emailStaffByTitle}
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
+          forms={forms}
           submitLabel="Preview"
         />
       </div>

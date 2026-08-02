@@ -13,8 +13,9 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function FillFormPage({ params }) {
+export default async function FillFormPage({ params, searchParams }) {
   const { id } = await params;
+  const sp = await searchParams;
   await getCurrentUser();
 
   const form = await prisma.form.findUnique({
@@ -23,6 +24,20 @@ export default async function FillFormPage({ params }) {
   });
   if (!form) notFound();
   if (!form.fillable) redirect("/portal/forms");
+
+  // arrived here to complete an announcement's acknowledgment - only honor it if
+  // the announcement is real, still requires ack, and actually points at this
+  // form (never trust the query param blindly).
+  let announcement = null;
+  if (typeof sp?.announcementId === "string" && sp.announcementId) {
+    const a = await prisma.announcement.findUnique({
+      where: { id: sp.announcementId },
+      select: { id: true, title: true, content: true, formId: true, requireAck: true, deletedAt: true },
+    });
+    if (a && !a.deletedAt && a.requireAck && a.formId === form.id) {
+      announcement = a;
+    }
+  }
 
   // if this form has a review route, offer "submit by email": the recipient
   // options (holders of the route's recipientTitle) + the fixed cc names for the
@@ -68,6 +83,8 @@ export default async function FillFormPage({ params }) {
         formId={form.id}
         reviewTeam={reviewTeam}
         submitAction={submitFormByEmail}
+        announcementId={announcement?.id || null}
+        announcementTitle={announcement?.title || null}
       />
     </section>
   );

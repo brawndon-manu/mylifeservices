@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf } from "@/lib/contacts";
+import { recordAnnouncementAck } from "@/lib/announcement-ack";
 
 // the landing page for the one-click email ack link. lives outside /portal so
 // proxy.js doesnt bounce it to login - the signed token IS the credential. it
@@ -55,19 +56,10 @@ export default async function AckPage({ params }) {
       !user.deactivatedAt
     ) {
       try {
-        await prisma.announcementAck.upsert({
-          where: {
-            announcementId_userId: {
-              announcementId: announcement.id,
-              userId: user.id,
-            },
-          },
-          create: {
-            announcementId: announcement.id,
-            userId: user.id,
-            viaEmail: true,
-          },
-          update: {},
+        await recordAnnouncementAck({
+          announcementId: announcement.id,
+          userId: user.id,
+          viaEmail: true,
         });
         ok = true;
         firstName = firstNameOf(user) || "there";

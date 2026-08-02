@@ -125,6 +125,7 @@ export default function AnnouncementForm({
   meName,
   ackStaffByTitle = {},
   ackEveryoneTotal = null,
+  forms = [],
   cancelHref = "/portal/announcements",
   submitLabel = "Preview",
 }) {
@@ -134,6 +135,7 @@ export default function AnnouncementForm({
   const meeting = isCompanyMeeting(tag);
   const event = isEvent(tag);
   const [requireAck, setRequireAck] = useState(!!d.requireAck);
+  const [formId, setFormId] = useState(d.formId || "");
   const [content, setContent] = useState(d.content || "");
   const onContent = (e) => setContent(e.target.value);
 
@@ -353,6 +355,33 @@ export default function AnnouncementForm({
                   defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
                 />
               </div>
+
+              {forms.length > 0 && (
+                <div>
+                  <label htmlFor="formId" className={LABEL}>
+                    Attach a form <span className="text-faint">(optional)</span>
+                  </label>
+                  <select
+                    id="formId"
+                    name="formId"
+                    value={formId}
+                    onChange={(e) => setFormId(e.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="">None - just the checkbox</option>
+                    {forms.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.title}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted">
+                    When set, staff fill and submit this form instead of just
+                    checking a box - submitting it is what records their
+                    acknowledgment.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

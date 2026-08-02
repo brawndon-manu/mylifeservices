@@ -30,6 +30,10 @@ const nextConfig = {
       bodySizeLimit: "5mb",
     },
   },
+  // keep the PDF stack out of the bundler - pdfjs/pdf-lib are only used in
+  // server code (timesheet parsing + rendering) and bundling them breaks their
+  // dynamic requires.
+  serverExternalPackages: ["pdfjs-dist", "pdf-lib"],
   // allow rendering remote images from Vercel Blob (hub post images).
   // host pattern matches any blob store — Vercel doesnt pin a fixed
   // subdomain so we use a wildcard.

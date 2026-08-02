@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isIT, isElevated, canSeeRoles, ROLE_LABELS, isSuper } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { ANNOUNCEMENT_TAGS, CHANGELOG_TAG } from "@/lib/announcements";
+import { formEmailRoute } from "@/lib/forms";
 import {
   getStaffByTitle,
   getAckStaffByTitle,
@@ -51,6 +52,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      formId: true,
       deletedAt: true,
       publishedAt: true,
       // meeting fields - so editing a draft/meeting reloads everything the author
@@ -106,12 +108,18 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
   // proxy "post as" - same as create, but only while it's still a draft.
   const canProxy = isElevated(user.role) && isDraft;
   const showRoles = canSeeRoles(user.role);
-  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }] =
+  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }, allForms] =
     await Promise.all([
       getAckStaffByTitle(),
       getStaffByTitle(),
       getAudienceTotals(),
+      prisma.form.findMany({
+        where: { fillable: true },
+        select: { id: true, title: true },
+        orderBy: { title: "asc" },
+      }),
     ]);
+  const forms = allForms.filter((f) => !!formEmailRoute(f.title)?.recipientTitle);
   let people = [];
   if (canProxy) {
     const rows = await prisma.user.findMany({
@@ -162,6 +170,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
           emailStaffByTitle={emailStaffByTitle}
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
+          forms={forms}
           cancelHref={`/portal/announcements/${id}`}
           submitLabel={isDraft ? "Save changes and preview" : "Save changes"}
         />

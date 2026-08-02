@@ -61,6 +61,21 @@ function emailShell({
   </div>`;
 }
 
+// the shared shell, exposed for other email builders (e.g. timesheets) so they
+// inherit the same look instead of re-implementing it. logo resolution matches
+// the other senders: Blob-hosted when configured, else the on-site gradient mark.
+export function buildTimesheetShell({ title, bodyHtml, eyebrow = "Payroll" }) {
+  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
+  return emailShell({
+    logoUrl,
+    eyebrow,
+    title,
+    bodyHtml,
+    footer: "My Life Services &middot; payroll",
+  });
+}
+
 // a "See original post" ghost button.
 export function seeOriginalButton(url) {
   return `<div style="margin-top:18px;"><a href="${url}" style="${BTN_GHOST}">See original post</a></div>`;

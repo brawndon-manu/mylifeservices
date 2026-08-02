@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isAdminUp, isIT } from "@/lib/roles";
+import {
+  isElevated,
+  isAdminUp,
+  isIT,
+  canViewFormRecords,
+  canManageTimesheets,
+} from "@/lib/roles";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { toggleMaintenance } from "./maintenance-actions";
 import BackLink from "@/components/BackLink";
@@ -70,6 +76,20 @@ export default async function AdminPage() {
           isNew
           body="Job applications submitted through the website: preview each one, then open the full application and resume."
         />
+        {canViewFormRecords(user.role) && (
+          <LinkCard
+            href="/portal/admin/forms"
+            title="Form submissions"
+            body="Every signed form on file: who submitted it, how it was attributed, and a gated download. Reconcile the no-login ones."
+          />
+        )}
+        {canManageTimesheets(user.role) && (
+          <LinkCard
+            href="/portal/admin/timesheets"
+            title="Timesheets"
+            body="Upload the QSP payroll export: hours are recalculated with paid rest breaks and CA overtime, then sent to staff to sign."
+          />
+        )}
         {isAdminUp(user.role) && (
           <LinkCard
             href="/portal/site-photos"

@@ -110,7 +110,7 @@ export async function GET(request) {
 
   // Blob-hosted logo so reminder/nudge emails show it in every mail client
   // (base is localhost in dev); falls back to the on-site logo.
-  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_white.png`;
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
 
   // going recipients for a session (optionId "" = single-session meeting).
   const goingRecipients = async (m, optionId, hasOptions) => {

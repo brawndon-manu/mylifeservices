@@ -22,6 +22,8 @@ import {
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import { signAckToken } from "@/lib/ack-token";
+import { recordAnnouncementAck } from "@/lib/announcement-ack";
+import { formEmailRoute } from "@/lib/forms";
 import { signRsvpToken } from "@/lib/rsvp-token";
 import { renderMarkdown } from "@/lib/markdown";
 import {
@@ -90,6 +92,23 @@ function parseAckAudience(formData, active) {
 // post that requires acknowledgment but didn't pick who.
 function ackAudienceEmpty({ ackEveryone, ackTitles, ackUserIds }) {
   return !ackEveryone && !ackTitles.length && !ackUserIds.length;
+}
+
+// the optional form attached to an ack-required post - completing it is what
+// records the acknowledgment (see AnnouncementForm's "Attach a form" picker).
+// only meaningful when requireAck is on; never trust the posted id blindly -
+// it has to be a real, fillable form with somewhere to send it.
+async function resolveFormId(formData, requireAck) {
+  if (!requireAck) return null;
+  const raw = formData.get("formId");
+  if (typeof raw !== "string" || !raw) return null;
+  const form = await prisma.form.findUnique({
+    where: { id: raw },
+    select: { id: true, title: true, fillable: true },
+  });
+  if (!form || !form.fillable) return null;
+  if (!formEmailRoute(form.title)?.recipientTitle) return null;
+  return form.id;
 }
 
 // the Company Meeting fields. only meaningful when tag = "Company Meeting";
@@ -353,6 +372,7 @@ export async function createPost(formData) {
     redirect(`/portal/announcements/new?error=${err}`);
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
+  const formId = await resolveFormId(formData, requireAck);
 
   let imageUrl = null;
   const file = formData.get("image");
@@ -383,6 +403,7 @@ export async function createPost(formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      formId,
       ...parseMeetingFields(formData, tag),
       ...parseEventFields(formData, tag),
     },
@@ -570,6 +591,7 @@ export async function editPost(postId, formData) {
     redirect(`/portal/announcements/${postId}/edit?error=${err}`);
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
+  const formId = await resolveFormId(formData, requireAck);
 
   const meetingFields = parseMeetingFields(formData, tag);
   await prisma.announcement.update({
@@ -583,6 +605,7 @@ export async function editPost(postId, formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      formId,
       ...authorUpdate,
       ...meetingFields,
       ...parseEventFields(formData, tag),
@@ -829,13 +852,7 @@ export async function acknowledge(postId) {
     redirect(`/portal/announcements/${postId}`);
   }
   if (!isAckExempt(user)) {
-    await prisma.announcementAck.upsert({
-      where: {
-        announcementId_userId: { announcementId: postId, userId: user.id },
-      },
-      create: { announcementId: postId, userId: user.id, viaEmail: false },
-      update: {},
-    });
+    await recordAnnouncementAck({ announcementId: postId, userId: user.id });
   }
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}`);
@@ -854,13 +871,7 @@ function meetingInAudience(post, user) {
 // so a meeting that requires ack is satisfied by responding.
 async function markMeetingAck(postId, user, requireAck) {
   if (requireAck && !isAckExempt(user)) {
-    await prisma.announcementAck.upsert({
-      where: {
-        announcementId_userId: { announcementId: postId, userId: user.id },
-      },
-      create: { announcementId: postId, userId: user.id, viaEmail: false },
-      update: {},
-    });
+    await recordAnnouncementAck({ announcementId: postId, userId: user.id });
   }
 }
 
@@ -1292,11 +1303,7 @@ export async function markAttendance(postId, userId, status, optionId = null) {
 // record an acknowledgment on someone's behalf. keeps an existing self/email ack
 // as-is (only stamps recordedById when creating a fresh one).
 async function recordAckFor(postId, userId, adminId) {
-  await prisma.announcementAck.upsert({
-    where: { announcementId_userId: { announcementId: postId, userId } },
-    create: { announcementId: postId, userId, viaEmail: false, recordedById: adminId },
-    update: {},
-  });
+  await recordAnnouncementAck({ announcementId: postId, userId, recordedById: adminId });
 }
 
 // gate an admin roster action + load the meeting. returns the post or redirects.
@@ -1797,7 +1804,7 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
   });
   // Blob-hosted logo so it renders in every mail client (base is localhost in
   // dev, which recipients can't reach); falls back to the on-site logo.
-  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_white.png`;
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
   const authorName = preferredName(post.author);
   const authorTitle = post.author?.title || null;
   const isMeeting = isCompanyMeeting(post.tag);

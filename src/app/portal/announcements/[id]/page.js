@@ -198,6 +198,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     include: {
       author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, image: true, title: true } },
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
+      form: { select: { id: true, title: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       acks: { where: { userId: user.id }, select: { viaEmail: true, createdAt: true } },
       meetingChoices: { where: { userId: user.id }, select: { optionId: true, attended: true } },
@@ -1230,6 +1231,27 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   })}
                   {myAck.viaEmail && " (via email)"}.
                 </span>
+              </div>
+            ) : post.formId ? (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-5 py-4 dark:border-sky-900 dark:bg-sky-950/40">
+                <div className="flex items-start gap-3">
+                  <CheckboxIcon className="h-6 w-6 shrink-0 text-brand" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-brand-dark dark:text-sky-100">
+                      This one needs the attached form filled out and submitted.
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-brand-dark/80 dark:text-sky-200/80">
+                      Submitting &ldquo;{post.form?.title}&rdquo; is what records your
+                      acknowledgment.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href={`/portal/forms/${post.formId}/fill?announcementId=${post.id}`}
+                  className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand sm:w-auto"
+                >
+                  Fill &amp; submit the form
+                </Link>
               </div>
             ) : (
               <form

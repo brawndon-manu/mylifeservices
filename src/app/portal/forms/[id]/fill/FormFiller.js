@@ -73,6 +73,11 @@ export default function FormFiller({
   reviewTeam = null,
   publicMode = false,
   submitAction,
+  announcementId = null,
+  announcementTitle = null,
+  // sign-only mode (timesheets): there's no reviewer to pick and no recipient
+  // dialog - the reader just signs their own document and submits it back.
+  signMode = false,
 }) {
   const [status, setStatus] = useState("loading");
   const [pages, setPages] = useState([]); // { url, w, h }
@@ -306,12 +311,13 @@ export default function FormFiller({
 
   async function sendToTeam() {
     if (!bytesRef.current || !submitAction) return;
-    // need someone to send to; on the public link also need the submitter's info.
-    if (!recipientId) {
+    // sign-only mode goes straight back to whoever issued the document, so
+    // there's no reviewer to choose and no name/email to collect.
+    if (!signMode && !recipientId) {
       setSendErr(sendErrorText("norecipient"));
       return;
     }
-    if (publicMode && (!empName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail.trim()))) {
+    if (!signMode && publicMode && (!empName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail.trim()))) {
       setSendErr(sendErrorText("info"));
       return;
     }
@@ -326,6 +332,7 @@ export default function FormFiller({
         pdfBase64,
         pdfName: `${slugify(title)}-filled.pdf`,
         recipientId,
+        announcementId,
       };
       if (publicMode) {
         payload.employeeName = empName.trim();
@@ -347,11 +354,29 @@ export default function FormFiller({
 
   return (
     <div ref={wrapRef} className="mt-4">
+      {announcementId && (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-200">
+          <CheckIcon className="mt-0.5 h-4 w-4 flex-none" />
+          <p>
+            Submitting this completes your acknowledgment
+            {announcementTitle ? (
+              <>
+                {" "}
+                for &ldquo;<strong>{announcementTitle}</strong>&rdquo;
+              </>
+            ) : (
+              ""
+            )}
+            .
+          </p>
+        </div>
+      )}
       <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
         <LockIcon className="mt-0.5 h-4 w-4 flex-none" />
         <p>
-          Nothing is saved here. Fill it in, then{" "}
-          {reviewTeam ? "submit it to the review team or download the PDF." : "download the official PDF to your device."}
+          {signMode
+            ? "Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
+            : `Nothing is saved here. Fill it in, then ${reviewTeam ? "submit it to the review team or download the PDF." : "download the official PDF to your device."}`}
         </p>
       </div>
 
@@ -531,7 +556,17 @@ export default function FormFiller({
             </div>
           ) : (
             <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-5">
-              {reviewTeam && (
+              {signMode ? (
+                <button
+                  type="button"
+                  onClick={() => { setSendErr(null); sendToTeam(); }}
+                  disabled={busy || sendBusy}
+                  className="inline-flex items-center gap-2 rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:opacity-60"
+                >
+                  <SendIcon className="h-4 w-4" />
+                  {sendBusy ? "Submitting…" : "Sign & submit"}
+                </button>
+              ) : reviewTeam ? (
                 <button
                   type="button"
                   onClick={() => { setSendErr(null); setSendOpen(true); }}
@@ -541,13 +576,13 @@ export default function FormFiller({
                   <SendIcon className="h-4 w-4" />
                   Submit to review team
                 </button>
-              )}
+              ) : null}
               <button
                 type="button"
                 onClick={download}
                 disabled={busy}
                 className={`inline-flex items-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-60 ${
-                  reviewTeam
+                  reviewTeam || signMode
                     ? "border border-border-strong text-muted hover:text-foreground"
                     : "bg-brand-light text-white hover:bg-brand"
                 }`}

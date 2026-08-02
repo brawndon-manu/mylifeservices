@@ -13,7 +13,14 @@ import { resolveRecipient } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
 import { storeFormSubmission } from "@/lib/form-store";
 
-export async function submitFormByEmail({ formId, message, pdfBase64, pdfName, recipientId }) {
+export async function submitFormByEmail({
+  formId,
+  message,
+  pdfBase64,
+  pdfName,
+  recipientId,
+  announcementId,
+}) {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "auth" };
 
@@ -22,6 +29,19 @@ export async function submitFormByEmail({ formId, message, pdfBase64, pdfName, r
     select: { id: true, title: true, fillable: true },
   });
   if (!form || !form.fillable) return { ok: false, error: "norecipients" };
+
+  // only thread the announcement link through if it's real and actually asks
+  // for this form - never trust the client's claim as-is.
+  let validAnnouncementId = null;
+  if (typeof announcementId === "string" && announcementId) {
+    const a = await prisma.announcement.findUnique({
+      where: { id: announcementId },
+      select: { formId: true, requireAck: true, deletedAt: true },
+    });
+    if (a && !a.deletedAt && a.requireAck && a.formId === form.id) {
+      validAnnouncementId = announcementId;
+    }
+  }
 
   const route = formEmailRoute(form.title);
   if (!route || !route.recipientTitle) return { ok: false, error: "norecipients" };
@@ -55,6 +75,7 @@ export async function submitFormByEmail({ formId, message, pdfBase64, pdfName, r
         submitterEmail: user.email,
         userId: user.id,
         attribution: "signed-in",
+        announcementId: validAnnouncementId,
       });
     } catch (e) {
       console.error("form submission store failed (email already sent):", e);

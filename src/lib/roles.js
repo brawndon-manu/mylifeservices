@@ -168,6 +168,19 @@ export function canSeeRoles(role) {
   return isAdminUp(role);
 }
 
+// forms admin panel (stored submissions + retention/reconciliation) - Admin/IT/
+// Super plus HR specifically, since HR owns this record-keeping desk today.
+// deliberately narrower than isElevated - Manager doesn't get it.
+export function canViewFormRecords(role) {
+  return isAdminUp(role) || role === "HR";
+}
+
+// timesheets: upload the payroll export, review the matches, send them out and
+// collect signatures. HR + Manager + Admin/IT/Super, per Mánu.
+export function canManageTimesheets(role) {
+  return isAdminUp(role) || role === "HR" || role === "MANAGER";
+}
+
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {
