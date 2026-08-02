@@ -9,6 +9,27 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
 const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// how many premiums a single shift could possibly owe. NOT always two: a meal
+// is only owed past 5 hours, and a rest break only once the shift reaches the
+// 4-hour mark (restRequired). counting every shift as 2 would understate how
+// often breaks are actually being missed.
+// mirrors RULES.mealRequiredAfterHours / restPerHours in parse.js.
+function possiblePremiums(day) {
+  const mealOwed = (day.paidHours || 0) > 5 ? 1 : 0;
+  const restOwed = (day.restRequired || 0) > 0 ? 1 : 0;
+  return { mealOwed, restOwed, total: mealOwed + restOwed };
+}
+
+// did this shift show any evidence the person clocks out for breaks?
+// careful: mealViolation is only ever true when a meal was REQUIRED, so
+// "!mealViolation" on a short shift means none was owed - not that one was
+// taken. only count a meal as taken when it was actually owed.
+function showsAnyBreak(day) {
+  if ((day.restCount || 0) > 0) return true;
+  const mealOwed = (day.paidHours || 0) > 5;
+  return mealOwed && !day.mealViolation;
+}
+
 // "07/16/26" -> Date (QSP prints 2-digit years, always 20xx)
 function parseSheetDate(mmddyy) {
   const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(mmddyy || "");
@@ -31,7 +52,7 @@ export function buildBatchStats(rows) {
 
   // day-of-week violation counts - a violation clustering on one weekday is a
   // scheduling problem, not 60 individual mistakes.
-  const byDow = DOW.map((label) => ({ label, meal: 0, rest: 0, worked: 0 }));
+  const byDow = DOW.map((label) => ({ label, meal: 0, rest: 0, worked: 0, possible: 0 }));
   // per-date, so a single bad day (short staffing, an event) stands out
   const byDate = new Map();
 
@@ -70,8 +91,14 @@ export function buildBatchStats(rows) {
       const slot = dt ? byDow[dt.getDay()] : null;
       if (slot) slot.worked++;
 
-      if (!byDate.has(d.date)) byDate.set(d.date, { date: d.date, meal: 0, rest: 0, worked: 0 });
+      const poss = possiblePremiums(d);
+      if (slot) slot.possible += poss.total;
+
+      if (!byDate.has(d.date)) {
+        byDate.set(d.date, { date: d.date, meal: 0, rest: 0, worked: 0, possible: 0 });
+      }
       const dayEntry = byDate.get(d.date);
+      dayEntry.possible += poss.total;
       dayEntry.worked++;
 
       if (d.mealViolation) {
@@ -84,8 +111,7 @@ export function buildBatchStats(rows) {
         if (slot) slot.rest++;
         dayEntry.rest++;
       }
-      // a detected rest break, or a meal gap, means they do punch for breaks
-      if ((d.restCount || 0) > 0 || !d.mealViolation) daysWithAnyBreak++;
+      if (showsAnyBreak(d)) daysWithAnyBreak++;
     }
 
     affected.push({
@@ -119,13 +145,20 @@ export function buildBatchStats(rows) {
     .filter((d) => d.worked > 0)
     .sort((a, b) => b.meal + b.rest - (a.meal + a.rest));
 
+  // rank by RATE, not raw count - a 56-person day will always out-count a
+  // 20-person one without being any worse for the people on it. a small
+  // headcount floor keeps a two-person Saturday off the top of the list.
   const worstDates = [...byDate.values()]
-    .sort((a, b) => b.meal + b.rest - (a.meal + a.rest))
+    .map((d) => ({ ...d, rate: d.possible ? (d.meal + d.rest) / d.possible : 0 }))
+    .filter((d) => d.worked >= 5 && d.possible > 0)
+    .sort((a, b) => b.rate - a.rate || b.meal + b.rest - (a.meal + a.rest))
     .slice(0, 5);
 
   // people whose premiums are probably a punching habit rather than a denied
   // break. their share of the total is the number to verify before paying out.
-  const neverPunched = affected.filter((a) => a.neverPunchedBreaks);
+  // only worth surfacing when there's actually a premium to verify - someone
+  // who never punched a break but worked one short shift owes nothing.
+  const neverPunched = affected.filter((a) => a.neverPunchedBreaks && a.premiumHours > 0);
   const neverPunchedPremiumHours = r2(
     neverPunched.reduce((n, a) => n + a.premiumHours, 0),
   );

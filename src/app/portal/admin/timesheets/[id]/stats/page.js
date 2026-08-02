@@ -123,7 +123,9 @@ export default async function TimesheetStatsPage({ params }) {
             .filter((d) => d.worked > 0)
             .map((d) => {
               const total = d.meal + d.rest;
-              const possible = d.worked * 2;
+              // real count of premiums a shift could owe - a short shift owes
+              // no meal and sometimes no rest, so this is not simply worked x 2
+              const possible = d.possible;
               const rate = possible ? Math.round((total / possible) * 100) : 0;
               return (
                 <div key={d.label} className="flex items-center gap-3">
@@ -158,21 +160,25 @@ export default async function TimesheetStatsPage({ params }) {
             <span className="h-2.5 w-2.5 rounded-sm bg-rose-400" /> missed rest break
           </span>
           <span className="text-faint">
-            each shift allows one of each, so a day of 95 shifts has 190 possible
+            &ldquo;possible&rdquo; counts what each shift actually owed - a meal past 5
+            hours, a rest break past 4 - so short shifts don&apos;t inflate it
           </span>
         </p>
 
         {s.worstDates.length > 0 && (
           <div className="mt-5 border-t border-border pt-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Hardest days this period
+              Hardest days this period <span className="normal-case tracking-normal text-faint">(by rate, 5+ people working)</span>
             </p>
             <ul className="mt-2 space-y-1 text-sm">
               {s.worstDates.map((d) => (
                 <li key={d.date} className="flex items-center justify-between gap-3">
                   <span className="text-foreground">{d.date}</span>
-                  <span className="text-muted">
-                    {d.meal} meal · {d.rest} rest · {d.worked} people working
+                  <span className="whitespace-nowrap text-muted">
+                    {d.meal} meal · {d.rest} rest · {d.worked} working ·{" "}
+                    <span className="font-semibold text-foreground">
+                      {Math.round(d.rate * 100)}%
+                    </span>
                   </span>
                 </li>
               ))}
@@ -217,16 +223,21 @@ export default async function TimesheetStatsPage({ params }) {
           <Mini label="Staff with overtime" value={`${t.employeesWithOt} of ${t.employees}`} />
         </div>
         {s.withOt.length > 0 && (
-          <ul className="mt-4 divide-y divide-border">
-            {s.withOt.slice(0, 8).map((a) => (
-              <li key={a.id} className="flex items-center justify-between gap-3 py-2">
-                <span className="text-sm text-foreground">{a.name}</span>
-                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-                  {n2(a.otHours)} hrs
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-faint">
+              Overtime + double time combined
+            </p>
+            <ul className="mt-1 divide-y divide-border">
+              {s.withOt.slice(0, 8).map((a) => (
+                <li key={a.id} className="flex items-center justify-between gap-3 py-2">
+                  <span className="text-sm text-foreground">{a.name}</span>
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    {n2(a.otHours)} hrs
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
         <p className="mt-3 text-xs leading-relaxed text-faint">
           Pay periods run 1st-15th and 16th to month end, but the workweek runs

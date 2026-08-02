@@ -214,9 +214,21 @@ export function analyzeDay(day) {
   const mealCount = breaks.filter((b) => b.kind === "meal").length;
   const restCount = breaks.filter((b) => b.kind === "rest").length;
 
+  // what QSP printed for this day, if we have it
+  const printedDailyForFloor = day.printed?.daily ?? null;
+
   // paid time = time on the clock + the paid rest breaks. meal stays unpaid.
   const paidMin = workedMin + restMin;
-  const paidHours = paidMin / 60;
+  // the correction only ever ADDS unpaid rest time back, so the corrected hours
+  // must never come out below what payroll already exported. QSP rounds each
+  // punch segment its own way, which can leave our exact figure a hundredth or
+  // two short - handing someone a signed timesheet showing fewer hours than
+  // payroll reported is indefensible, so floor it at their number.
+  const computedPaidHours = paidMin / 60;
+  const paidHours =
+    printedDailyForFloor !== null && computedPaidHours < printedDailyForFloor
+      ? printedDailyForFloor
+      : computedPaidHours;
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
 
@@ -226,7 +238,7 @@ export function analyzeDay(day) {
   // sanity check against QSP's own printed figure for the day. small gaps are
   // their rounding; a real gap means we misread the punches and must not be
   // trusted silently on a payroll document.
-  const printedDaily = day.printed?.daily ?? null;
+  const printedDaily = printedDailyForFloor;
   const drift = printedDaily === null ? null : Math.abs(workedMin / 60 - printedDaily);
   const oddPunches = p.length % 2 !== 0;
 

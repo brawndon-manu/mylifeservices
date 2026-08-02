@@ -325,7 +325,7 @@ export async function renderCorrected(sheet, opts = {}) {
   if (p.totalHours > 0) {
     // header + both rows + total, kept on one page
     ensure(40 + (p.mealDays.length ? 22 : 0) + (p.restDays.length ? 30 : 0) + 40);
-    text("Break Premium (Penalty) Payments Due - California Labor Code \u00A7226.7", L, y, {
+    text("Break Premium Payments Due - California Labor Code \u00A7226.7", L, y, {
       size: 10.5, f: bold, color: BRAND,
     });
     y -= 16;
