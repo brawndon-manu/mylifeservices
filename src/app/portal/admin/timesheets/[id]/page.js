@@ -93,6 +93,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
+        <Link
+          href={`/portal/admin/timesheets/${batch.id}/stats`}
+          className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+        >
+          Insights &amp; stats →
+        </Link>
         {signed > 0 && (
           <Link
             href={`/portal/admin/timesheets/${batch.id}/download`}
