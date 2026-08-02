@@ -30,13 +30,20 @@ const ADMIN_ONLY = /^\/portal\/admin(\/.*)?$/;
 export default auth(async (req) => {
   const { pathname } = req.nextUrl;
   const isPortal = pathname.startsWith("/portal");
-  const isLogin = pathname === "/login";
+  // the whole sign-in flow, not just the form: /login/check-email ("if you have
+  // an account you'll get an email") and /login/error are part of it, and
+  // bouncing someone to the maintenance splash right after they hit submit
+  // makes it look like the sign-in failed.
+  const isLogin = pathname === "/login" || pathname.startsWith("/login/");
   const isMaintenancePage = pathname === "/maintenance";
   // unguessable public share links stay reachable during maintenance: forms
   // (/f/<slug>) and resources (/r/<id>). they're direct links handed to specific
   // people, not the public marketing site, so a maintenance window shouldn't
   // break a form you shared with, say, a new hire.
-  const isShareLink = pathname.startsWith("/f/") || pathname.startsWith("/r/");
+  // /t/<token> is a personal timesheet sign link - payroll deadlines don't pause
+  // for a maintenance window, so it stays reachable too.
+  const isShareLink =
+    pathname.startsWith("/f/") || pathname.startsWith("/r/") || pathname.startsWith("/t/");
 
   // 1. MAINTENANCE GATE - public pages only. the portal, the login page, the
   // maintenance splash, and shared /f/ + /r/ links are always exempt so staff
