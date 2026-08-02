@@ -93,7 +93,6 @@ export default async function ApproveTimesheetPage({ params }) {
           <ApproveSigner
             timesheetId={ts.id}
             fileUrl={`/portal/admin/timesheets/sheet/${ts.id}/download`}
-            title={`approval-${period.replace(/[^\w]+/g, "-")}`}
             submitAction={approveTimesheet}
             backHref={backHref}
           />

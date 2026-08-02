@@ -145,10 +145,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
       {missingPdf > 0 && (
         <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-          <strong>{missingPdf}</strong> timesheet{missingPdf === 1 ? "" : "s"} in this
-          batch {missingPdf === 1 ? "has" : "have"} no stored PDF - file storage was
-          failing when it was uploaded. Those can&apos;t be sent (the link would
-          404). Refresh the Blob token with{" "}
+          <strong>{missingPdf}</strong>{" "}
+          {missingPdf === 1 ? "timesheet has" : "timesheets have"} no stored PDF
+          in this batch - file storage was failing when it was uploaded. Those
+          can&apos;t be sent (the link would 404). Refresh the Blob token with{" "}
           <code className="rounded bg-rose-100 px-1 py-0.5 text-xs dark:bg-rose-900/50">
             vercel env pull .env.local
           </code>{" "}
@@ -158,9 +158,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
       {unmatched > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          <strong>{unmatched}</strong> timesheet{unmatched === 1 ? " has" : "s have"} no
-          matched employee yet. Those can&apos;t be sent until you pick who they
-          belong to.
+          <strong>{unmatched}</strong>{" "}
+          {unmatched === 1 ? "timesheet has" : "timesheets have"} no matched
+          employee yet. Those can&apos;t be sent until you pick who they belong
+          to.
         </div>
       )}
 

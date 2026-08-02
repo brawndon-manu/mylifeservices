@@ -419,14 +419,28 @@ export async function renderCorrected(sheet, opts = {}) {
   const dt = form.createTextField("Signature Date");
   dt.addToPage(sigPage, { ...dateRect, borderWidth: 0, backgroundColor: undefined });
 
-  // management's sign-off. named so FormFiller renders a draw box for the
-  // signature and a plain input for the date, same as the employee fields.
-  const appr = form.createTextField("Approval Signature");
-  appr.addToPage(apprPage, { ...apprRect, borderWidth: 0, backgroundColor: undefined });
-  const apprDt = form.createTextField("Approval Date");
-  apprDt.addToPage(apprPage, { ...apprDateRect, borderWidth: 0, backgroundColor: undefined });
+  // deliberately NO form field for the approval line. signing flattens the
+  // whole AcroForm, so an approval field would be gone by the time the employee
+  // has signed - and while it existed, the filler would happily offer the
+  // employee their manager's signature box. management's signature is stamped
+  // at approvalRect instead.
 
-  return doc.save();
+  // hand back where the approval line sits. management's signature is stamped
+  // here server-side rather than through a form field: signing flattens the
+  // whole AcroForm, so by the time an employee has signed there is no field
+  // left for anyone else to fill.
+  const approvalRect = {
+    pageIndex: pages.indexOf(apprPage),
+    x: apprRect.x,
+    y: apprRect.y,
+    width: apprRect.width,
+    height: apprRect.height,
+    dateX: apprDateRect.x,
+    dateY: apprDateRect.y,
+    dateWidth: apprDateRect.width,
+  };
+
+  return { bytes: await doc.save(), approvalRect };
 }
 
 // left-aligned word wrap; returns the y after the last line

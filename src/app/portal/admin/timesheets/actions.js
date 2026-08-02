@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -94,14 +95,16 @@ export async function uploadBatch(formData) {
 
     // render the corrected PDF now so the review screen can preview it
     let pdfUrl = null;
+    let approvalRect = null;
     try {
-      const pdf = await renderCorrected(t, {
+      const rendered = await renderCorrected(t, {
         printedBy: t.employee,
         generatedOn: new Date().toLocaleDateString("en-US"),
       });
+      approvalRect = rendered.approvalRect;
       if (hasBlobStorage()) {
         const key = `timesheets/${batch.id}/${randomBytes(8).toString("hex")}.pdf`;
-        const blob = await putBlob(key, Buffer.from(pdf), {
+        const blob = await putBlob(key, Buffer.from(rendered.bytes), {
           access: "public",
           contentType: "application/pdf",
         });
@@ -126,6 +129,7 @@ export async function uploadBatch(formData) {
         partialWeek: t.partialWeekDates.length > 0,
         pdfUrl,
         data: {
+          approvalRect,
           suggestions: m.suggestions,
           confidence: m.confidence,
           premiums: t.premiums,
@@ -255,21 +259,64 @@ export async function sendTimesheets(batchId, formData) {
 
 // management sign-off, after the employee has signed. stores the approved copy
 // as the final record - that's what the batch downloads hand back for filing.
-export async function approveTimesheet({ timesheetId, pdfBase64 }) {
+export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
-    select: { id: true, batchId: true, signedAt: true, approvedAt: true },
+    select: {
+      id: true, batchId: true, signedAt: true, approvedAt: true,
+      signedPdfUrl: true, pdfUrl: true, data: true,
+    },
   });
   if (!ts) return { ok: false, error: "auth" };
   // approving something the employee hasn't signed would put management's
   // signature on an unattested document
   if (!ts.signedAt) return { ok: false, error: "notsigned" };
   if (ts.approvedAt) return { ok: false, error: "already" };
-  if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
-  if (pdfBase64.length > 8_000_000) return { ok: false, error: "toobig" };
+  if (typeof signatureDataUrl !== "string" || !signatureDataUrl.startsWith("data:image")) {
+    return { ok: false, error: "nosignature" };
+  }
+
+  const sourceUrl = ts.signedPdfUrl || ts.pdfUrl;
+  if (!sourceUrl) return { ok: false, error: "nofile" };
+  const rect = ts.data?.approvalRect;
+  // batches generated before the approval work don't carry the coordinates, so
+  // there's nowhere to place the signature - say so plainly instead of silently
+  // approving a document with no visible sign-off on it.
+  if (!rect) return { ok: false, error: "norect" };
+
+  // stamp the signature onto the employee-signed copy
+  let pdfBase64;
+  try {
+    const res = await fetch(sourceUrl);
+    if (!res.ok) return { ok: false, error: "nofile" };
+    const doc = await PDFDocument.load(await res.arrayBuffer());
+    const page = doc.getPages()[rect.pageIndex] || doc.getPages()[0];
+    const png = await doc.embedPng(signatureDataUrl);
+    // fit inside the line without distorting the drawing
+    const k = Math.min(rect.width / png.width, rect.height / png.height);
+    const w = png.width * k;
+    const h = png.height * k;
+    page.drawImage(png, {
+      x: rect.x + (rect.width - w) / 2,
+      y: rect.y + (rect.height - h) / 2,
+      width: w,
+      height: h,
+    });
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    page.drawText(new Date().toLocaleDateString("en-US"), {
+      x: rect.dateX + 4,
+      y: rect.dateY + 4,
+      size: 9,
+      font,
+    });
+    pdfBase64 = Buffer.from(await doc.save()).toString("base64");
+  } catch (e) {
+    console.error("approval stamp failed:", e);
+    return { ok: false, error: "stamp" };
+  }
 
   let approvedPdfUrl = null;
   if (hasBlobStorage()) {
