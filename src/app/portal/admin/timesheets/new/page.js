@@ -23,6 +23,7 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
   if (!canManageTimesheets(user?.role)) redirect("/portal");
   const sp = await searchParams;
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
+  const why = typeof sp?.why === "string" ? sp.why : null;
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-12 sm:py-16">
@@ -38,7 +39,10 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
 
       {error && (
         <div role="alert" className="mt-6 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-          {error}
+          <p>{error}</p>
+          {why && (
+            <p className="mt-2 font-mono text-xs opacity-80">Details: {why}</p>
+          )}
         </div>
       )}
 

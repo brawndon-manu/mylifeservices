@@ -407,7 +407,16 @@ export function analyzeTimesheet(parsed) {
 export async function parseTimesheetPdf(bytes) {
   const pdfjs = await getPdfjs();
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise;
+  // we only read text positions, never rasterise, so no fonts need loading.
+  // useSystemFonts makes pdfjs go looking at the host's font files, which is
+  // fine on a laptop and a good way to fail on a serverless host that has
+  // none. isEvalSupported off keeps it away from eval under a strict CSP.
+  const doc = await pdfjs.getDocument({
+    data,
+    useSystemFonts: false,
+    isEvalSupported: false,
+    disableFontFace: true,
+  }).promise;
 
   const sheets = [];
   for (let i = 1; i <= doc.numPages; i++) {

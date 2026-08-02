@@ -41,15 +41,30 @@ export async function uploadBatch(formData) {
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   let sheets;
+  let parseError = null;
   try {
     sheets = await parseTimesheetPdf(bytes);
   } catch (e) {
     console.error("timesheet parse failed:", e);
-    redirect("/portal/admin/timesheets/new?error=parse");
+    // carry a short reason to the screen. "couldn't read that PDF" on its own
+    // sends people hunting for a bad file when the real cause was something
+    // else entirely.
+    parseError = (e?.message || String(e)).slice(0, 120);
+  }
+  if (parseError) {
+    redirect(
+      `/portal/admin/timesheets/new?error=parse&why=${encodeURIComponent(parseError)}`,
+    );
   }
   const withHours = sheets.filter((s) => !s.empty);
   if (!withHours.length) {
-    redirect("/portal/admin/timesheets/new?error=empty");
+    // it read fine but held no timesheet rows - usually the wrong export, or a
+    // corrected sheet uploaded back into the tool by mistake.
+    redirect(
+      `/portal/admin/timesheets/new?error=empty&why=${encodeURIComponent(
+        `read ${sheets.length} page group(s), none with hours`,
+      )}`,
+    );
   }
 
   const period = withHours[0].payPeriod || { from: "", to: "" };
