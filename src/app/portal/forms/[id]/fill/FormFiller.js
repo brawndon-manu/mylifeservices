@@ -173,6 +173,19 @@ export default function FormFiller({
         if (active) {
           setPlacements(pls);
           setPages(imgs);
+          // sign-only documents (timesheets) date themselves - the only date on
+          // them is the one beside the signature, and making someone type
+          // today's date is just a step to get wrong. still editable if they
+          // want to change it. left alone on regular forms, where a "Date"
+          // field is as likely to be an incident date as a signing date.
+          if (signMode) {
+            const today = new Date().toLocaleDateString("en-US");
+            const dated = {};
+            for (const p of pls) {
+              if (p.kind === "text" && /date/i.test(p.name)) dated[p.name] = today;
+            }
+            if (Object.keys(dated).length) setValues((v) => ({ ...dated, ...v }));
+          }
           setStatus("ready");
         }
       } catch {
@@ -182,7 +195,7 @@ export default function FormFiller({
     return () => {
       active = false;
     };
-  }, [fileUrl]);
+  }, [fileUrl, signMode]);
 
   function setVal(name, v) {
     setValues((prev) => ({ ...prev, [name]: v }));
