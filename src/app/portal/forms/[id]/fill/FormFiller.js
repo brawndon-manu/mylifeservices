@@ -78,6 +78,7 @@ export default function FormFiller({
   // sign-only mode (timesheets): there's no reviewer to pick and no recipient
   // dialog - the reader just signs their own document and submits it back.
   signMode = false,
+  signLabel = null,
 }) {
   const [status, setStatus] = useState("loading");
   const [pages, setPages] = useState([]); // { url, w, h }
@@ -564,7 +565,7 @@ export default function FormFiller({
                   className="inline-flex items-center gap-2 rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:opacity-60"
                 >
                   <SendIcon className="h-4 w-4" />
-                  {sendBusy ? "Submitting…" : "Sign & submit"}
+                  {sendBusy ? "Submitting…" : signLabel || "Sign & submit"}
                 </button>
               ) : reviewTeam ? (
                 <button

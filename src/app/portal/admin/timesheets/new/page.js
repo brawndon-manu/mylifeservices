@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { sendModeSummary } from "@/lib/timesheet-send";
 import BackLink from "@/components/BackLink";
-import SendModeBanner from "../_components/SendModeBanner";
 import { uploadBatch } from "../actions";
 import UploadForm from "./UploadForm";
 
@@ -37,8 +35,6 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
         period - the one big PDF with every employee in it. Drop it here and each
         person&apos;s corrected timesheet is generated automatically.
       </p>
-
-      <SendModeBanner mode={sendModeSummary()} />
 
       {error && (
         <div role="alert" className="mt-6 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">

@@ -101,6 +101,7 @@ model User {
   notifications Notification[]
   timesheetBatches TimesheetBatch[] @relation("TimesheetBatchUploadedBy")
   timesheets       Timesheet[]      @relation("TimesheetEmployee")
+  timesheetsApproved Timesheet[]    @relation("TimesheetApprovedBy")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -653,6 +654,13 @@ model Timesheet {
   // what the signer typed/drew, for the audit trail
   signedName   String?
   signedIp     String?
+
+  // management sign-off, after the employee has signed. the approved copy is
+  // the final record - it's what the batch downloads hand back for filing.
+  approvedAt     DateTime?
+  approvedById   String?
+  approvedBy     User?     @relation("TimesheetApprovedBy", fields: [approvedById], references: [id])
+  approvedPdfUrl String?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

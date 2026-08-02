@@ -26,11 +26,13 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
     needsMatch: rows.filter((r) => !r.user).length,
     unsent: rows.filter((r) => r.user && !r.sentAt).length,
     signed: rows.filter((r) => r.signedAt).length,
+    toApprove: rows.filter((r) => r.signedAt && !r.approvedAt).length,
   };
   const shown = rows.filter((r) => {
     if (filter === "needsMatch") return !r.user;
     if (filter === "unsent") return r.user && !r.sentAt;
     if (filter === "signed") return !!r.signedAt;
+    if (filter === "toApprove") return r.signedAt && !r.approvedAt;
     return true;
   });
 
@@ -38,6 +40,7 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
     ["all", "All"],
     ["needsMatch", "Needs a match"],
     ["unsent", "Not sent yet"],
+    ["toApprove", "Needs approval"],
     ["signed", "Signed"],
   ];
 
@@ -108,7 +111,11 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                 </div>
 
                 <div className="flex flex-none flex-col items-end gap-1.5">
-                  {r.signedAt ? (
+                  {r.approvedAt ? (
+                    <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                      Approved {dt(r.approvedAt)}
+                    </span>
+                  ) : r.signedAt ? (
                     <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                       Signed {dt(r.signedAt)}
                     </span>
@@ -120,6 +127,14 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                   ) : (
                     <span className="text-[11px] text-faint">Not sent</span>
                   )}
+                  {r.signedAt && !r.approvedAt && (
+                    <a
+                      href={`/portal/admin/timesheets/sheet/${r.id}/approve`}
+                      className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      Review &amp; approve →
+                    </a>
+                  )}
                   {r.hasPdf && (
                     <a
                       href={`/portal/admin/timesheets/sheet/${r.id}/download`}
@@ -127,7 +142,7 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                       rel="noopener noreferrer"
                       className="text-xs font-medium text-brand transition hover:text-brand-dark"
                     >
-                      Preview PDF →
+                      {r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : "Preview PDF"} →
                     </a>
                   )}
                 </div>

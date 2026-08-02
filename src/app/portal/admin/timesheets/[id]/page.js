@@ -74,6 +74,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     sentToEmail: t.sentToEmail,
     intendedEmail: t.intendedEmail,
     signedAt: t.signedAt ? t.signedAt.toISOString() : null,
+    approvedAt: t.approvedAt ? t.approvedAt.toISOString() : null,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
   }));
 
@@ -82,6 +83,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const unmatched = total - matched;
   const sent = rows.filter((r) => r.sentAt).length;
   const signed = rows.filter((r) => r.signedAt).length;
+  const approved = rows.filter((r) => r.approvedAt).length;
+  const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
@@ -100,12 +103,20 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           Insights &amp; stats →
         </Link>
         {signed > 0 && (
-          <Link
-            href={`/portal/admin/timesheets/${batch.id}/download`}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-          >
-            Download all signed ({signed}) →
-          </Link>
+          <span className="flex flex-wrap items-center gap-2">
+            <a
+              href={`/portal/admin/timesheets/${batch.id}/download`}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+            >
+              Download all as one PDF ({signed})
+            </a>
+            <a
+              href={`/portal/admin/timesheets/${batch.id}/download-zip`}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+            >
+              Download as separate PDFs (.zip)
+            </a>
+          </span>
         )}
       </div>
 
@@ -119,6 +130,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <Stat label="matched" value={matched} tone={unmatched ? "warn" : "ok"} />
         <Stat label="sent" value={sent} />
         <Stat label="signed" value={signed} tone={signed === total && total > 0 ? "ok" : undefined} />
+        <Stat label="approved" value={approved} tone={approved === signed && signed > 0 ? "ok" : undefined} />
       </div>
 
       <SendModeBanner mode={mode} />

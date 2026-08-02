@@ -253,6 +253,48 @@ export async function sendTimesheets(batchId, formData) {
   redirect(`/portal/admin/timesheets/${batchId}?sent=${sent}${failed ? `&failed=${failed}` : ""}`);
 }
 
+// management sign-off, after the employee has signed. stores the approved copy
+// as the final record - that's what the batch downloads hand back for filing.
+export async function approveTimesheet({ timesheetId, pdfBase64 }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, batchId: true, signedAt: true, approvedAt: true },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  // approving something the employee hasn't signed would put management's
+  // signature on an unattested document
+  if (!ts.signedAt) return { ok: false, error: "notsigned" };
+  if (ts.approvedAt) return { ok: false, error: "already" };
+  if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
+  if (pdfBase64.length > 8_000_000) return { ok: false, error: "toobig" };
+
+  let approvedPdfUrl = null;
+  if (hasBlobStorage()) {
+    try {
+      const key = `timesheets/approved/${randomBytes(12).toString("hex")}.pdf`;
+      const blob = await putBlob(key, Buffer.from(pdfBase64, "base64"), {
+        access: "public",
+        contentType: "application/pdf",
+      });
+      approvedPdfUrl = blob.url;
+    } catch (e) {
+      console.error("approved timesheet upload failed:", e);
+      return { ok: false, error: "store" };
+    }
+  }
+
+  await prisma.timesheet.update({
+    where: { id: timesheetId },
+    data: { approvedAt: new Date(), approvedById: user.id, approvedPdfUrl },
+  });
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  return { ok: true };
+}
+
 // employee-side: store the signed PDF against their timesheet. called from the
 // token page, so it takes the token rather than a session.
 export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {

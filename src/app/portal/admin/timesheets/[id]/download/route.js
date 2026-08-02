@@ -20,9 +20,9 @@ export async function GET(_req, { params }) {
       periodFrom: true,
       periodTo: true,
       timesheets: {
-        where: { signedPdfUrl: { not: null } },
+        where: { OR: [{ signedPdfUrl: { not: null } }, { approvedPdfUrl: { not: null } }] },
         orderBy: { sourceName: "asc" },
-        select: { signedPdfUrl: true, sourceName: true },
+        select: { signedPdfUrl: true, approvedPdfUrl: true, sourceName: true },
       },
     },
   });
@@ -35,7 +35,7 @@ export async function GET(_req, { params }) {
   let added = 0;
   for (const ts of batch.timesheets) {
     try {
-      const res = await fetch(ts.signedPdfUrl);
+      const res = await fetch(ts.approvedPdfUrl || ts.signedPdfUrl);
       if (!res.ok) continue;
       const src = await PDFDocument.load(await res.arrayBuffer());
       const pages = await merged.copyPages(src, src.getPageIndices());

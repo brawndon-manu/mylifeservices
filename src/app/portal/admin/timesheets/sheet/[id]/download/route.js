@@ -16,12 +16,12 @@ export async function GET(req, { params }) {
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },
-    select: { pdfUrl: true, signedPdfUrl: true, sourceName: true, signedAt: true },
+    select: { pdfUrl: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true, signedAt: true, approvedAt: true },
   });
   if (!ts) return new NextResponse("Not found", { status: 404 });
 
   const wantOriginal = new URL(req.url).searchParams.get("original") === "1";
-  const url = wantOriginal ? ts.pdfUrl : ts.signedPdfUrl || ts.pdfUrl;
+  const url = wantOriginal ? ts.pdfUrl : ts.approvedPdfUrl || ts.signedPdfUrl || ts.pdfUrl;
   if (!url) return new NextResponse("Not found", { status: 404 });
 
   const res = await fetch(url);
@@ -29,7 +29,7 @@ export async function GET(req, { params }) {
 
   const buf = await res.arrayBuffer();
   const safe = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
-  const suffix = !wantOriginal && ts.signedPdfUrl ? "-signed" : "";
+  const suffix = wantOriginal ? "" : ts.approvedPdfUrl ? "-approved" : ts.signedPdfUrl ? "-signed" : "";
   return new NextResponse(buf, {
     headers: {
       "Content-Type": "application/pdf",

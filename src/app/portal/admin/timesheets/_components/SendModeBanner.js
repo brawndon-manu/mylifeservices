@@ -1,17 +1,14 @@
-// always-visible statement of where timesheet emails actually go. this screen
-// can mail 60+ people their own payroll document, so the mode is never implicit.
+// where timesheet emails actually go. once live this is just a quiet status
+// line - the real check before mailing 60 people is the confirm on Send all.
+// it only gets loud when sends are being redirected, because a redirected batch
+// that looks sent is the genuinely confusing state.
 export default function SendModeBanner({ mode }) {
   if (mode.live) {
     return (
-      <div className="mt-6 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 dark:border-rose-900/60 dark:bg-rose-950/30">
-        <p className="text-sm font-semibold text-rose-800 dark:text-rose-300">
-          LIVE SENDING IS ON
-        </p>
-        <p className="mt-1 text-sm text-rose-700 dark:text-rose-200/80">
-          Emails go to staff at their real addresses. Double-check the matches
-          before you send.
-        </p>
-      </div>
+      <p className="mt-4 flex items-center gap-2 text-xs text-muted">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Sending is live - staff receive these at their own email address.
+      </p>
     );
   }
   return (
@@ -21,12 +18,7 @@ export default function SendModeBanner({ mode }) {
       </p>
       <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
         Every timesheet email is redirected to{" "}
-        <span className="font-medium">{mode.recipients.join(", ")}</span>. The
-        message shows who it was meant for. To send for real, set{" "}
-        <code className="rounded bg-amber-100 px-1 py-0.5 text-xs dark:bg-amber-900/50">
-          TIMESHEET_LIVE_SEND
-        </code>{" "}
-        in the environment.
+        <span className="font-medium">{mode.recipients.join(", ")}</span>.
       </p>
     </div>
   );

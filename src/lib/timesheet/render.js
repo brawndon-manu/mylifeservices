@@ -299,8 +299,11 @@ export async function renderCorrected(sheet, opts = {}) {
   const apprY = y - adminBoxH + 12;
   text("Approval Signature:", L + 6, apprY, { size: 8.5 });
   text("Date:", L + 322, apprY, { size: 8.5 });
-  line(L + 100, apprY - 3, L + 300, apprY - 3, BLACK, 0.7);
-  line(L + 356, apprY - 3, L + 536, apprY - 3, BLACK, 0.7);
+  // fillable, like the employee block - management signs off in the portal once
+  // the employee has signed, and the approved copy is what gets filed.
+  const apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
+  const apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
+  const apprPage = page;
   y = adminBoxTop - adminBoxH - 16;
 
   // dotted separator + the notes block. reserve room for the heading and at
@@ -415,6 +418,13 @@ export async function renderCorrected(sheet, opts = {}) {
   sig.addToPage(sigPage, { ...sigRect, borderWidth: 0, backgroundColor: undefined });
   const dt = form.createTextField("Signature Date");
   dt.addToPage(sigPage, { ...dateRect, borderWidth: 0, backgroundColor: undefined });
+
+  // management's sign-off. named so FormFiller renders a draw box for the
+  // signature and a plain input for the date, same as the employee fields.
+  const appr = form.createTextField("Approval Signature");
+  appr.addToPage(apprPage, { ...apprRect, borderWidth: 0, backgroundColor: undefined });
+  const apprDt = form.createTextField("Approval Date");
+  apprDt.addToPage(apprPage, { ...apprDateRect, borderWidth: 0, backgroundColor: undefined });
 
   return doc.save();
 }
