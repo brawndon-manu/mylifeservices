@@ -306,7 +306,14 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
       height: h,
     });
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    page.drawText(new Date().toLocaleDateString("en-US"), {
+    // pinned to Pacific, not the server clock. Vercel runs UTC, so an approval
+    // signed at 11:30pm Pacific would otherwise print tomorrow's date on a
+    // payroll document - and disagree with the employee's date, which their
+    // browser writes in local time.
+    const approvedOn = new Date().toLocaleDateString("en-US", {
+      timeZone: "America/Los_Angeles",
+    });
+    page.drawText(approvedOn, {
       x: rect.dateX + 4,
       y: rect.dateY + 4,
       size: 9,

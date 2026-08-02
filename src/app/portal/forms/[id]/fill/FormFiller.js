@@ -179,7 +179,12 @@ export default function FormFiller({
           // want to change it. left alone on regular forms, where a "Date"
           // field is as likely to be an incident date as a signing date.
           if (signMode) {
-            const today = new Date().toLocaleDateString("en-US");
+            // pinned to Pacific rather than the device clock, so this agrees
+            // with the approval date stamped on the server and a phone left on
+            // another timezone can't date a payroll document a day out.
+            const today = new Date().toLocaleDateString("en-US", {
+              timeZone: "America/Los_Angeles",
+            });
             const dated = {};
             for (const p of pls) {
               if (p.kind === "text" && /date/i.test(p.name)) dated[p.name] = today;
