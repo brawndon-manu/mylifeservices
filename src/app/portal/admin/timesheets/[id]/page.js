@@ -127,22 +127,51 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             Repeat patterns →
           </Link>
         </span>
-        {signed > 0 && (
-          <span className="flex flex-wrap items-center gap-2">
-            <a
-              href={`/portal/admin/timesheets/${batch.id}/download`}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-            >
-              Download all as one PDF ({signed})
-            </a>
-            <a
-              href={`/portal/admin/timesheets/${batch.id}/download-zip`}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-            >
-              Download as separate PDFs (.zip)
-            </a>
-          </span>
-        )}
+      </div>
+
+      {/* the corrected sheets themselves. these used to appear only once
+          somebody had signed, which is backwards - reading the batch over is
+          exactly what you want to do BEFORE anyone is emailed. */}
+      <div className="mt-4 rounded-lg border border-border bg-surface-2 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+          Download the corrected timesheets
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <a
+            href={`/portal/admin/timesheets/${batch.id}/download?all=1`}
+            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
+          >
+            All {total} as one PDF
+          </a>
+          <a
+            href={`/portal/admin/timesheets/${batch.id}/download-zip?all=1`}
+            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
+          >
+            All {total} separately (.zip)
+          </a>
+          {signed > 0 && (
+            <>
+              <span className="text-xs text-faint">or signed only:</span>
+              <a
+                href={`/portal/admin/timesheets/${batch.id}/download`}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                {signed} as one PDF
+              </a>
+              <a
+                href={`/portal/admin/timesheets/${batch.id}/download-zip`}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                {signed} separately (.zip)
+              </a>
+            </>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          Every sheet carries the break highlighting, the color key and the
+          premium section. Where someone has signed or been approved, that copy
+          is used instead of the blank one.
+        </p>
       </div>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Pay period</p>
