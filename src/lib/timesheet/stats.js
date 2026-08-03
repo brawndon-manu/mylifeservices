@@ -10,10 +10,10 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // how many premiums a single shift could possibly owe. NOT always two: a meal
-// is only owed past 5 hours, and a rest break only once the shift reaches the
-// 4-hour mark (restRequired). counting every shift as 2 would understate how
-// often breaks are actually being missed.
-// mirrors RULES.mealRequiredAfterHours / restPerHours in parse.js.
+// is only owed past 5 hours, and a rest break only once the shift passes 3.5
+// hours (restRequired). counting every shift as 2 would understate how often
+// breaks are actually being missed.
+// mirrors RULES.mealRequiredAfterHours / restsRequired() in parse.js.
 function possiblePremiums(day) {
   const mealOwed = (day.paidHours || 0) > 5 ? 1 : 0;
   const restOwed = (day.restRequired || 0) > 0 ? 1 : 0;
@@ -27,7 +27,14 @@ function possiblePremiums(day) {
 function showsAnyBreak(day) {
   if ((day.restCount || 0) > 0) return true;
   const mealOwed = (day.paidHours || 0) > 5;
-  return mealOwed && !day.mealViolation;
+  if (!mealOwed) return false;
+  // a LATE meal is still a meal - the person clearly does clock out, they just
+  // did it past the fifth hour. that's a violation but not evidence of never
+  // punching, so this asks whether one is missing, not whether one is owed.
+  // mealMissing only exists on batches parsed after meal timing shipped; older
+  // rows fall back to the old meaning, which was the same thing back then.
+  if (day.mealMissing != null) return !day.mealMissing;
+  return !day.mealViolation;
 }
 
 // "07/16/26" -> Date (QSP prints 2-digit years, always 20xx)

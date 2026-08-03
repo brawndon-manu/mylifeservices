@@ -65,7 +65,11 @@ function getPdfjs() {
   return pdfjsPromise;
 }
 
-// ---- rules (reverse-engineered from the sample, tune in one place) ----
+// ---- rules (tune in one place) ----
+//
+// these started out reverse-engineered from two sample exports. they now follow
+// the written spec David has been running by hand, which is the source of truth
+// where the two ever disagreed - see docs/week8/week8.md.
 export const RULES = {
   // a gap this short is a punch artifact (clock-out/in at the same minute), not
   // a break - it neither counts as a rest break nor costs unpaid time.
@@ -76,10 +80,17 @@ export const RULES = {
   // unpaid 30-minute meal period.
   mealMinMin: 21,
   mealMaxMin: 90,
-  // one rest break per 4 hours worked (CA: "major fraction thereof" ~ per 3.5h).
+  // one rest break per 4 hours worked "or major fraction thereof". a major
+  // fraction of a 4-hour block is anything over 2 hours, which is what produces
+  // the DLSE's bands - see restsRequired() below. the figure is kept here for
+  // anything that still wants the plain block size.
   restPerHours: 4,
-  // a meal period is owed once the day passes 5 hours worked.
+  // a meal period is owed once the day passes 5 hours worked...
   mealRequiredAfterHours: 5,
+  // ...and it has to BEGIN by the end of the fifth hour worked (Lab. Code §512,
+  // Brinker). a meal that was taken but taken late is still a violation, which
+  // is why counting meals alone isn't enough.
+  mealMustStartByMin: 300,
   // §226.7: max one meal premium + one rest premium per workday, 1 hr each.
   premiumHoursPerViolation: 1,
   // CA overtime. nobody is supposed to run over, but it still has to be
@@ -239,24 +250,44 @@ function parsePage(rows) {
 }
 
 // classify one day's punches into worked segments + typed breaks
+// how many 10-minute rest periods a shift owes.
+//
+// CA is "per four hours worked OR MAJOR FRACTION THEREOF". a major fraction of
+// a 4-hour block is anything over two hours, so the bands land at 3.5 / 6 / 10 /
+// 14 rather than on clean multiples of four - a 7-hour shift owes two rests,
+// not one. counting whole 4-hour blocks (floor(h/4)) quietly under-counts every
+// shift between 6 and 8 hours, which is most of them.
+export function restsRequired(hours) {
+  const h = hours || 0;
+  if (h <= 3.5) return 0;
+  if (h <= 6) return 1;
+  return 1 + Math.ceil((h - 6) / 4);
+}
+
 export function analyzeDay(day) {
   const p = day.punches;
   const segments = [];
   const breaks = [];
 
+  // running total of time actually on the clock, so each break knows how much
+  // work came before it. that's what the meal-timing rule turns on.
+  let workedBefore = 0;
   for (let i = 0; i + 1 < p.length; i += 2) {
-    segments.push({ start: p[i], end: p[i + 1], min: p[i + 1].min - p[i].min });
+    const seg = { start: p[i], end: p[i + 1], min: p[i + 1].min - p[i].min };
+    segments.push(seg);
+    workedBefore += seg.min;
     // the gap to the next segment, if there is one
     const next = p[i + 2];
     if (next) {
       const gap = next.min - p[i + 1].min;
       if (gap <= RULES.ignoreGapMaxMin) continue;
+      const at = { min: gap, start: p[i + 1], end: next, workedBefore };
       if (gap >= RULES.restMinMin && gap <= RULES.restMaxMin) {
-        breaks.push({ kind: "rest", min: gap, start: p[i + 1], end: next });
+        breaks.push({ kind: "rest", ...at });
       } else if (gap >= RULES.mealMinMin && gap <= RULES.mealMaxMin) {
-        breaks.push({ kind: "meal", min: gap, start: p[i + 1], end: next });
+        breaks.push({ kind: "meal", ...at });
       } else {
-        breaks.push({ kind: "other", min: gap, start: p[i + 1], end: next });
+        breaks.push({ kind: "other", ...at });
       }
     }
   }
@@ -284,8 +315,18 @@ export function analyzeDay(day) {
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
 
-  const restRequired = Math.floor(paidHours / RULES.restPerHours);
+  const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
+
+  // the first meal has to START by the end of the fifth hour worked. a late
+  // lunch is its own violation - the break happened, but not when it was owed -
+  // and it was invisible while we only counted whether a meal existed at all.
+  const firstMeal = breaks.find((b) => b.kind === "meal") || null;
+  const mealStartedAfterMin = firstMeal ? firstMeal.workedBefore : null;
+  const mealLate =
+    mealRequired &&
+    !!firstMeal &&
+    firstMeal.workedBefore > RULES.mealMustStartByMin;
 
   // sanity check against QSP's own printed figure for the day. small gaps are
   // their rounding; a real gap means we misread the punches and must not be
@@ -312,7 +353,12 @@ export function analyzeDay(day) {
     restCount,
     restRequired,
     mealRequired,
-    mealViolation: mealRequired && mealCount === 0,
+    // never taken, or taken too late - §226.7 pays one premium either way, so
+    // these collapse into the single meal violation rather than stacking.
+    mealMissing: mealRequired && mealCount === 0,
+    mealLate,
+    mealStartedAfterMin,
+    mealViolation: mealRequired && (mealCount === 0 || mealLate),
     restViolation: restCount < restRequired,
   };
 }

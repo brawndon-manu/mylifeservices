@@ -210,7 +210,8 @@ export async function renderCorrected(sheet, opts = {}) {
         centerIn(f2(d.paidHours), xs[IDX.daily], base, { size: 7.5 });
 
         const notes = [];
-        if (d.mealViolation) notes.push("no meal period");
+        if (d.mealLate) notes.push("meal period started late");
+        else if (d.mealViolation) notes.push("no meal period");
         if (d.restViolation) notes.push(`rest ${d.restCount}/${d.restRequired}`);
         if (d.seventhDay) notes.push("7th day");
         if (notes.length) {
@@ -355,7 +356,12 @@ export async function renderCorrected(sheet, opts = {}) {
       line(L, y + 3, R, y + 3);
       y -= 9;
     };
-    premRow("Meal period premium", p.mealDays, p.mealHours, "(no meal period taken)");
+    premRow(
+      "Meal period premium",
+      p.mealDays,
+      p.mealHours,
+      "(no meal period taken, or not started by the end of the fifth hour)",
+    );
     premRow("Rest break premium", p.restDays, p.restHours, "");
 
     const totH = 15;
