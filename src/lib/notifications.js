@@ -31,6 +31,12 @@ export const NOTIFICATION_TYPES = {
     accent: "border-l-violet-600",
     dot: "bg-violet-600",
   },
+  TIMESHEET_DISPUTED: {
+    label: "Timesheet",
+    chip: "bg-rose-100 text-rose-700",
+    accent: "border-l-rose-600",
+    dot: "bg-rose-600",
+  },
 };
 
 export function notifConfig(type) {

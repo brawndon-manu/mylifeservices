@@ -10,11 +10,20 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { parseTimesheetPdf, analyzeTimesheet } from "@/lib/timesheet/parse";
+import { parseTimesheetPdf, analyzeTimesheet, applyOvertime } from "@/lib/timesheet/parse";
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { sendTimesheet, isLiveSend } from "@/lib/timesheet-send";
+import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
+import { notifyOversight } from "@/lib/notify";
+import {
+  isCorrectionKind,
+  CORRECTION_KINDS,
+  patchFor,
+  mergeOverride,
+  recomputeSheet,
+} from "@/lib/timesheet/corrections";
 
 async function requireTimesheetAccess() {
   const user = await getCurrentUser();
@@ -149,6 +158,11 @@ export async function uploadBatch(formData) {
           confidence: m.confidence,
           premiums: t.premiums,
           partialWeekDates: t.partialWeekDates,
+          payPeriod: t.payPeriod || null,
+          comments: t.comments || null,
+          // punches + breaks are kept so a sheet can be recomputed and
+          // re-rendered after a correction without going back to the source
+          // export. mealMin is what a worked-through meal would add back.
           days: t.days.map((d) => ({
             date: d.date,
             paidHours: r2(d.paidHours),
@@ -158,8 +172,22 @@ export async function uploadBatch(formData) {
             doubleHours: r2(d.doubleHours),
             mealViolation: d.mealViolation,
             restViolation: d.restViolation,
+            mealMissing: d.mealMissing,
+            mealLate: d.mealLate,
+            mealStartedAfterMin: d.mealStartedAfterMin,
+            mealCount: d.mealCount,
             restCount: d.restCount,
             restRequired: d.restRequired,
+            mealRequired: d.mealRequired,
+            seventhDay: d.seventhDay || false,
+            weekPartial: d.weekPartial || false,
+            mealMin: d.breaks
+              .filter((b) => b.kind === "meal")
+              .reduce((n, b) => n + b.min, 0),
+            restMin: d.restMin,
+            workedMin: d.workedMin,
+            punches: d.punches,
+            breaks: d.breaks,
           })),
         },
       },
@@ -214,8 +242,15 @@ export async function sendTimesheets(batchId, formData) {
   if (!batch) redirect("/portal/admin/timesheets");
 
   // a row with no generated PDF would email someone a link to a 404, so it is
-  // never sendable - the review screen flags those separately.
-  const where = { batchId, userId: { not: null }, pdfUrl: { not: null } };
+  // never sendable - the review screen flags those separately. a sheet with an
+  // open dispute isn't sendable either: asking someone to sign again while
+  // their report sits unanswered is exactly the chasing this replaces.
+  const where = {
+    batchId,
+    userId: { not: null },
+    pdfUrl: { not: null },
+    disputedAt: null,
+  };
   if (onlyId) where.id = onlyId.toString();
   else if (!resend) where.sentAt = null;
 
@@ -364,6 +399,269 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   return { ok: true };
 }
 
+// employee-side: report that something on the timesheet is wrong. takes the
+// token, like signing does - the person reporting has no portal login.
+//
+// this records claims and nothing more. no figure on the timesheet moves here;
+// that only happens when someone with access accepts a correction. the sheet is
+// marked disputed so it can't be signed in the meantime.
+export async function submitTimesheetCorrections({ token, items }) {
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const id = verifyTimesheetToken(token);
+  if (!id) return { ok: false, error: "auth" };
+
+  if (!Array.isArray(items) || !items.length) return { ok: false, error: "empty" };
+  // a generous cap - a fortnight has at most ~14 days and a couple of issues
+  // each. this is only here so a malformed client can't write unbounded rows.
+  if (items.length > 40) return { ok: false, error: "empty" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id },
+    include: {
+      batch: { select: { id: true, periodFrom: true, periodTo: true, uploadedById: true } },
+      user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  // signing attests the document is right, so a signed sheet is closed to this
+  if (ts.signedAt) return { ok: false, error: "already" };
+  if (ts.corrections.length) return { ok: false, error: "reported" };
+
+  const knownDates = new Set((ts.data?.days || []).map((d) => d.date));
+
+  const clean = [];
+  for (const raw of items) {
+    const kind = String(raw?.kind || "");
+    if (!isCorrectionKind(kind)) continue;
+    const spec = CORRECTION_KINDS[kind];
+
+    // a date has to be one this sheet actually lists, otherwise an accepted
+    // correction would patch a day that doesn't exist. "a day that isn't
+    // listed" carries its date in the note instead, for a human to read.
+    let date = raw?.date ? String(raw.date).slice(0, 12) : null;
+    if (date && !knownDates.has(date)) date = null;
+    if (spec.scope === "day" && !date) continue;
+
+    let claimedHours = null;
+    if (spec.asksHours && raw?.claimedHours != null) {
+      const n = Number(raw.claimedHours);
+      if (Number.isFinite(n) && n >= 0 && n <= 24) claimedHours = Math.round(n * 100) / 100;
+    }
+
+    const note = raw?.note ? String(raw.note).trim().slice(0, 1000) : null;
+    if (spec.needsNote && !note) continue;
+
+    clean.push({ date, kind, claimedHours, note });
+  }
+  if (!clean.length) return { ok: false, error: "empty" };
+
+  await prisma.$transaction([
+    prisma.timesheetCorrection.createMany({
+      data: clean.map((c) => ({ ...c, timesheetId: ts.id })),
+    }),
+    prisma.timesheet.update({
+      where: { id: ts.id },
+      data: { disputedAt: new Date() },
+    }),
+  ]);
+
+  const who = ts.user ? preferredName(ts.user) : ts.sourceName;
+  const periodLabel = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
+  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+  const reviewUrl = `${base}/portal/admin/timesheets/${ts.batchId}/corrections`;
+
+  // who hears about it. an explicit address list wins; otherwise it goes to
+  // whoever uploaded the batch, since they're the one running this period.
+  let to = (process.env.TIMESHEET_ALERT_TO || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!to.length && ts.batch.uploadedById) {
+    const uploader = await prisma.user.findUnique({
+      where: { id: ts.batch.uploadedById },
+      select: { email: true },
+    });
+    if (uploader?.email) to = [uploader.email];
+  }
+
+  // best-effort, like every other notification here: a mail hiccup must not
+  // lose the report itself, which is already safely written above.
+  try {
+    if (to.length) {
+      await sendCorrectionAlert({
+        to,
+        employeeName: who,
+        periodLabel,
+        items: clean,
+        reviewUrl,
+      });
+    }
+  } catch (e) {
+    console.error("correction alert failed:", e);
+  }
+
+  await notifyOversight({
+    type: "TIMESHEET_DISPUTED",
+    title: `${who} reported a timesheet problem`,
+    body: `${clean.length} item${clean.length === 1 ? "" : "s"} on the ${periodLabel} timesheet. Their signature is on hold.`,
+    link: `/portal/admin/timesheets/${ts.batchId}/corrections`,
+  });
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  return { ok: true };
+}
+
+// accept or decline one reported problem. accepting stores a per-day override;
+// the figures don't move until recomputeTimesheet runs, which the caller does
+// once all the open items are dealt with.
+export async function resolveCorrection(correctionId, decision, formData) {
+  const user = await requireTimesheetAccess();
+  if (decision !== "accepted" && decision !== "declined") return;
+
+  const note = formData
+    ? (formData.get("resolutionNote") || "").toString().trim().slice(0, 1000) || null
+    : null;
+
+  const c = await prisma.timesheetCorrection.findUnique({
+    where: { id: correctionId },
+    include: { timesheet: { select: { id: true, batchId: true, data: true, overrides: true } } },
+  });
+  if (!c || c.status !== "open") return;
+
+  let overrides = c.timesheet.overrides || {};
+  if (decision === "accepted") {
+    const day = (c.timesheet.data?.days || []).find((d) => d.date === c.date) || null;
+    const patch = patchFor(c.kind, day, c.claimedHours);
+    if (c.date) overrides = mergeOverride(overrides, c.date, patch);
+  }
+
+  await prisma.$transaction([
+    prisma.timesheetCorrection.update({
+      where: { id: correctionId },
+      data: {
+        status: decision,
+        resolvedAt: new Date(),
+        resolvedById: user.id,
+        resolutionNote: note,
+      },
+    }),
+    prisma.timesheet.update({
+      where: { id: c.timesheet.id },
+      data: { overrides },
+    }),
+  ]);
+
+  revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}/corrections`);
+}
+
+// re-run one employee's figures from their stored days plus whatever overrides
+// were accepted, regenerate the PDF, and clear the dispute so it can be sent
+// again for signature.
+//
+// only this one sheet is touched. the batch, and everyone else in it, is left
+// exactly as it was.
+export async function recomputeTimesheet(timesheetId) {
+  await requireTimesheetAccess();
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    include: {
+      batch: { select: { id: true, periodFrom: true, periodTo: true } },
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  // recomputing with items still open would produce a sheet that's about to
+  // change again - deal with all of them first.
+  if (ts.corrections.length) return { ok: false, error: "openitems" };
+
+  const stored = ts.data || {};
+  const days = stored.days || [];
+  // batches uploaded before corrections existed don't carry the punch detail the
+  // renderer needs, so there's nothing to rebuild from. say so plainly rather
+  // than emit a sheet with an empty punch column.
+  if (!days.length || !days.some((d) => Array.isArray(d.punches))) {
+    return { ok: false, error: "nodetail" };
+  }
+
+  const payPeriod =
+    stored.payPeriod || { from: ts.batch.periodFrom, to: ts.batch.periodTo };
+
+  const next = recomputeSheet(
+    { days, payPeriod, overrides: ts.overrides },
+    applyOvertime,
+  );
+
+  let pdfUrl = ts.pdfUrl;
+  let approvalRect = stored.approvalRect || null;
+  try {
+    const rendered = await renderCorrected(
+      {
+        employee: ts.sourceName,
+        payPeriod,
+        days: next.days,
+        totals: next.totals,
+        premiums: next.premiums,
+        comments: stored.comments || null,
+      },
+      {
+        printedBy: ts.sourceName,
+        generatedOn: new Date().toLocaleDateString("en-US", {
+          timeZone: "America/Los_Angeles",
+        }),
+      },
+    );
+    approvalRect = rendered.approvalRect;
+    const key = `timesheets/${ts.batchId}/${randomBytes(8).toString("hex")}.pdf`;
+    const blob = await putBlob(key, Buffer.from(rendered.bytes), {
+      access: "public",
+      contentType: "application/pdf",
+    });
+    pdfUrl = blob.url;
+  } catch (e) {
+    console.error(`timesheet recompute render failed for ${ts.sourceName}:`, e);
+    return { ok: false, error: "render" };
+  }
+
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: {
+      rawHours: r2(next.totals.rawHours),
+      paidHours: r2(next.totals.paidHours),
+      regularHours: r2(next.totals.regularHours),
+      otHours: r2(next.totals.otHours),
+      doubleHours: r2(next.totals.doubleHours),
+      premiumHours: r2(next.premiums.totalHours),
+      partialWeek: next.partialWeekDates.length > 0,
+      pdfUrl,
+      // the corrected sheet is a different document, so the old signature and
+      // sign-off can't carry over to it. it goes back out unsigned.
+      signedAt: null,
+      signedPdfUrl: null,
+      signedName: null,
+      signedIp: null,
+      approvedAt: null,
+      approvedById: null,
+      approvedPdfUrl: null,
+      sentAt: null,
+      disputedAt: null,
+      recomputedAt: new Date(),
+      data: {
+        ...stored,
+        approvalRect,
+        premiums: next.premiums,
+        partialWeekDates: next.partialWeekDates,
+        days: next.days,
+      },
+    },
+  });
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/corrections`);
+  return { ok: true };
+}
+
 // employee-side: store the signed PDF against their timesheet. called from the
 // token page, so it takes the token rather than a session.
 export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
@@ -373,10 +671,13 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },
-    select: { id: true, batchId: true, signedAt: true },
+    select: { id: true, batchId: true, signedAt: true, disputedAt: true },
   });
   if (!ts) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
+  // you shouldn't attest to a document you've told us is wrong. the page hides
+  // the signer while a report is open; this is the server-side half of that.
+  if (ts.disputedAt) return { ok: false, error: "disputed" };
   if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
   if (pdfBase64.length > 8_000_000) return { ok: false, error: "toobig" };
 

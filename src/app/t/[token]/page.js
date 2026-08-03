@@ -3,7 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { preferredName } from "@/lib/contacts";
 import TimesheetSigner from "./TimesheetSigner";
-import { submitSignedTimesheet } from "@/app/portal/admin/timesheets/actions";
+import ReportProblem from "./ReportProblem";
+import {
+  submitSignedTimesheet,
+  submitTimesheetCorrections,
+} from "@/app/portal/admin/timesheets/actions";
+import { correctionLabel } from "@/lib/timesheet/corrections";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
 // outside /portal so proxy.js doesn't bounce it to login - the signed token IS
@@ -25,6 +30,11 @@ export default async function SignTimesheetPage({ params }) {
     include: {
       batch: { select: { periodFrom: true, periodTo: true } },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      corrections: {
+        where: { status: "open" },
+        select: { id: true, date: true, kind: true, note: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
   if (!ts) notFound();
@@ -51,7 +61,10 @@ export default async function SignTimesheetPage({ params }) {
   const period = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
 
   return (
-    <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
+    // wider than a reading column on purpose: the main thing on this page is a
+    // dense letter-size timesheet, and squeezing it into 768px put its 7pt table
+    // text at roughly 7 pixels tall.
+    <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         My Life Services
       </p>
@@ -100,13 +113,50 @@ export default async function SignTimesheetPage({ params }) {
             . Payroll has your copy - nothing else to do.
           </p>
         </div>
+      ) : ts.corrections.length > 0 ? (
+        // they've told us something is wrong, so there's nothing to sign until
+        // it's sorted. show what we have on record so they can see it landed.
+        <div className="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Payroll is looking at this one.
+          </p>
+          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
+            You reported{" "}
+            {ts.corrections.length === 1
+              ? "a problem"
+              : `${ts.corrections.length} problems`}{" "}
+            on{" "}
+            {new Date(ts.corrections[0].createdAt).toLocaleDateString("en-US", {
+              month: "long", day: "numeric", year: "numeric",
+            })}
+            . Don&apos;t sign this version - once it&apos;s sorted you&apos;ll get
+            a corrected timesheet to sign.
+          </p>
+          <ul className="mt-3 space-y-1">
+            {ts.corrections.map((c) => (
+              <li key={c.id} className="text-sm text-amber-800 dark:text-amber-200/80">
+                <span className="font-semibold">{c.date || "This timesheet"}</span>
+                {" - "}
+                {correctionLabel(c.kind)}
+                {c.note && <span className="block text-xs opacity-80">{c.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
-        <TimesheetSigner
-          token={token}
-          fileUrl={`/t/${token}/pdf`}
-          title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
-          submitAction={submitSignedTimesheet}
-        />
+        <>
+          <TimesheetSigner
+            token={token}
+            fileUrl={`/t/${token}/pdf`}
+            title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
+            submitAction={submitSignedTimesheet}
+          />
+          <ReportProblem
+            token={token}
+            days={ts.data?.days || []}
+            submitAction={submitTimesheetCorrections}
+          />
+        </>
       )}
     </section>
   );

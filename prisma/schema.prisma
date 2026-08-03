@@ -102,6 +102,7 @@ model User {
   timesheetBatches TimesheetBatch[] @relation("TimesheetBatchUploadedBy")
   timesheets       Timesheet[]      @relation("TimesheetEmployee")
   timesheetsApproved Timesheet[]    @relation("TimesheetApprovedBy")
+  timesheetCorrectionsResolved TimesheetCorrection[] @relation("TimesheetCorrectionResolvedBy")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -662,12 +663,58 @@ model Timesheet {
   approvedBy     User?     @relation("TimesheetApprovedBy", fields: [approvedById], references: [id])
   approvedPdfUrl String?
 
+  // set when the employee reports something wrong. a disputed sheet can't be
+  // signed - you shouldn't attest to a document you're contesting - so this
+  // holds the signature until management resolves every open correction.
+  disputedAt  DateTime?
+  // per-day adjustments accepted by management, keyed by the date as QSP prints
+  // it: { "07/20/26": { mealViolation, restViolation, paidHours, removed } }.
+  // kept separate from `data` so the original computation is never overwritten
+  // and you can always see what was changed by hand.
+  overrides   Json?
+  // when the figures above were last recomputed from those overrides
+  recomputedAt DateTime?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  corrections TimesheetCorrection[]
 
   @@index([batchId])
   @@index([userId])
   @@index([signedAt])
+  @@index([disputedAt])
+}
+
+// one thing an employee says is wrong with their timesheet. scoped to a single
+// day where it makes sense, because that's how people actually report it ("the
+// 20th is wrong"), and because accepting one has to adjust exactly one day.
+model TimesheetCorrection {
+  id          String    @id @default(cuid())
+  timesheetId String
+  timesheet   Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  // the day it's about, exactly as QSP prints it ("07/20/26"). null = the whole
+  // sheet (used by the catch-all "something else" kind).
+  date        String?
+  // see CORRECTION_KINDS in src/lib/timesheet/corrections.js
+  kind        String
+  // what they say they actually worked that day, when the kind calls for it
+  claimedHours Float?
+  note        String?
+
+  // open | accepted | declined
+  status         String    @default("open")
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolvedBy     User?     @relation("TimesheetCorrectionResolvedBy", fields: [resolvedById], references: [id])
+  resolutionNote String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([timesheetId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // a job application submitted through the public careers form. we still email it
