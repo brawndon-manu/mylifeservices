@@ -27,12 +27,14 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
     unsent: rows.filter((r) => r.user && !r.sentAt).length,
     signed: rows.filter((r) => r.signedAt).length,
     toApprove: rows.filter((r) => r.signedAt && !r.approvedAt).length,
+    disputed: rows.filter((r) => r.disputed).length,
   };
   const shown = rows.filter((r) => {
     if (filter === "needsMatch") return !r.user;
     if (filter === "unsent") return r.user && !r.sentAt;
     if (filter === "signed") return !!r.signedAt;
     if (filter === "toApprove") return r.signedAt && !r.approvedAt;
+    if (filter === "disputed") return !!r.disputed;
     return true;
   });
 
@@ -40,6 +42,7 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
     ["all", "All"],
     ["needsMatch", "Needs a match"],
     ["unsent", "Not sent yet"],
+    ["disputed", "Reported a problem"],
     ["toApprove", "Needs approval"],
     ["signed", "Signed"],
   ];
@@ -111,7 +114,11 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                 </div>
 
                 <div className="flex flex-none flex-col items-end gap-1.5">
-                  {r.approvedAt ? (
+                  {r.disputed ? (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                      Reported a problem
+                    </span>
+                  ) : r.approvedAt ? (
                     <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] font-semibold text-white">
                       Approved {dt(r.approvedAt)}
                     </span>
@@ -145,6 +152,14 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                       {r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : "Preview PDF"} →
                     </a>
                   )}
+                  <a
+                    href={`/portal/admin/timesheets/sheet/${r.id}/report`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-muted transition hover:text-brand"
+                  >
+                    Hours &amp; penalties →
+                  </a>
                 </div>
               </div>
 

@@ -32,6 +32,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               preferredFirstName: true, preferredLastName: true, title: true, image: true,
             },
           },
+          corrections: { where: { status: "open" }, select: { id: true } },
         },
       },
     },
@@ -76,6 +77,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     signedAt: t.signedAt ? t.signedAt.toISOString() : null,
     approvedAt: t.approvedAt ? t.approvedAt.toISOString() : null,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    disputed: t.corrections.length > 0,
   }));
 
   const total = rows.length;
@@ -85,7 +87,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const signed = rows.filter((r) => r.signedAt).length;
   const approved = rows.filter((r) => r.approvedAt).length;
   const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
-  const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt).length;
+  const disputed = rows.filter((r) => r.disputed).length;
+  const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
 
@@ -96,12 +99,34 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
-        <Link
-          href={`/portal/admin/timesheets/${batch.id}/stats`}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-        >
-          Insights &amp; stats →
-        </Link>
+        <span className="flex flex-wrap items-center gap-2">
+          <a
+            href={`/portal/admin/timesheets/${batch.id}/penalties`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
+          >
+            Penalty hours for payroll (PDF) →
+          </a>
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/report`}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Payout report →
+          </Link>
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/stats`}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Insights &amp; stats →
+          </Link>
+          <Link
+            href="/portal/admin/timesheets/patterns"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Repeat patterns →
+          </Link>
+        </span>
         {signed > 0 && (
           <span className="flex flex-wrap items-center gap-2">
             <a
@@ -134,6 +159,22 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       </div>
 
       <SendModeBanner mode={mode} />
+
+      {disputed > 0 && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <strong>{disputed}</strong>{" "}
+          {disputed === 1 ? "person says their timesheet is" : "people say their timesheets are"}{" "}
+          wrong. Their signatures are on hold and they won&apos;t be sent again
+          until it&apos;s resolved.{" "}
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/corrections`}
+            className="font-semibold underline underline-offset-4"
+          >
+            Review what they reported
+          </Link>
+          .
+        </div>
+      )}
 
       {sentCount !== null && (
         <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
