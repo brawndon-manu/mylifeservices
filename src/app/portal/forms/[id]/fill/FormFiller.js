@@ -18,7 +18,11 @@ import SignaturePad from "./SignaturePad";
 
 const RICH_TEXT_FLAG = 1 << 25;
 const WORKER_SRC = "/pdf.worker.min.mjs";
-const MAX_WIDTH = 880;
+// a letter page is 8.5in wide, so this width IS the reading resolution: 880px
+// worked out to ~103 dpi, and the timesheet's table text is 7.2pt (6pt in the
+// comments column), which lands around 9 pixels tall. legible-ish on a retina
+// screen, mush on a 1x one.
+const MAX_WIDTH = 1100;
 
 // a real AcroForm signature field always gets a draw box. some forms instead use
 // a plain text field named "...signature..." for the signature, so match those
@@ -156,7 +160,11 @@ export default function FormFiller({
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = WORKER_SRC;
         const pdf = await pdfjs.getDocument({ data: buf.slice(0) }).promise;
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        // render at 2x the display size even on a 1x screen. without this the
+        // bitmap matches the element pixel for pixel, so small type has nothing
+        // to anti-alias against and dense documents come out muddy. capped so a
+        // 3x phone doesn't build a canvas we then have to base64 into a data url.
+        const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
         const imgs = [];
         for (let i = 0; i < pdf.numPages; i++) {
           const page = await pdf.getPage(i + 1);

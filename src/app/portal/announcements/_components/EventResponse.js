@@ -47,6 +47,7 @@ export default function EventResponse({ postId, isClientEvent, myRsvp }) {
           </label>
           <input
             type="number"
+            inputMode="numeric"
             name="clientCount"
             min="0"
             max="999"

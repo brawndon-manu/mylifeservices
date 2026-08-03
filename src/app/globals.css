@@ -80,6 +80,22 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* number inputs never get the little up/down spinner arrows. site-wide rule, on
+   purpose: they invite click-click-click on values that should just be typed,
+   the step never matches how people actually think about the number (hours are
+   7.17, not multiples of 0.25), and they're a fiddly target on touch. set here
+   rather than per-field so it holds for anything added later too. */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* accent tints in dark. the colored chips / callouts / badges across the site
    use light Tailwind tints (bg-amber-50, text-rose-700, etc.); rather than add
    dark: variants to ~150 scattered usages (many in lib constant strings), this
