@@ -10,7 +10,9 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { parseTimesheetPdf, analyzeTimesheet, applyOvertime } from "@/lib/timesheet/parse";
+import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
+import { reviewSheet } from "@/lib/timesheet/anomalies";
+import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
 import { signTimesheetToken } from "@/lib/timesheet-token";
@@ -97,6 +99,25 @@ export async function uploadBatch(formData) {
     redirect("/portal/admin/timesheets/new?error=blob");
   }
 
+  // the schedule export, if one was given. it's the second record of the same
+  // time, and the only way to catch a punch that was typed into the wrong box -
+  // those are invisible in the timesheet alone, especially when two of them
+  // cancel out and leave a total that looks perfectly ordinary.
+  let schedules = null;
+  let scheduleError = null;
+  const schedFile = formData.get("schedule");
+  if (schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0) {
+    try {
+      const sbytes = new Uint8Array(await schedFile.arrayBuffer());
+      const people = await parseSchedulePdf(sbytes);
+      schedules = new Map(people.map((p) => [scheduleKey(p.employee), p]));
+    } catch (e) {
+      console.error("schedule parse failed:", e);
+      // never lose the whole upload over the optional second file
+      scheduleError = (e?.message || String(e)).slice(0, 160);
+    }
+  }
+
   const staff = await prisma.user.findMany({
     where: { deactivatedAt: null },
     select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
@@ -116,6 +137,14 @@ export async function uploadBatch(formData) {
   for (const raw of withHours) {
     const t = analyzeTimesheet(raw);
     const m = matchEmployee(t.employee, staff);
+
+    // two independent quality checks, both recorded rather than acted on. the
+    // figures are never altered here - somebody looks at these and decides.
+    const punchIssues = reviewSheet(t.days, analyzeDay);
+    const sched = schedules ? schedules.get(scheduleKey(t.employee)) || null : null;
+    const scheduleCheck = sched
+      ? compareToSchedule(t.days, sched.days, { toleranceHours: 1 })
+      : null;
 
     // render the corrected PDF now so the review screen can preview it
     let pdfUrl = null;
@@ -160,6 +189,16 @@ export async function uploadBatch(formData) {
           partialWeekDates: t.partialWeekDates,
           payPeriod: t.payPeriod || null,
           comments: t.comments || null,
+          // data-quality findings. stored, surfaced, never auto-applied.
+          punchIssues,
+          scheduleCheck: scheduleCheck
+            ? {
+                matched: true,
+                timesheetTotal: scheduleCheck.timesheetTotal,
+                scheduleTotal: scheduleCheck.scheduleTotal,
+                flagged: scheduleCheck.flagged,
+              }
+            : { matched: false },
           // punches + breaks are kept so a sheet can be recomputed and
           // re-rendered after a correction without going back to the source
           // export. mealMin is what a worked-through meal would add back.
@@ -195,7 +234,11 @@ export async function uploadBatch(formData) {
   }
 
   revalidatePath("/portal/admin/timesheets");
-  redirect(`/portal/admin/timesheets/${batch.id}`);
+  redirect(
+    `/portal/admin/timesheets/${batch.id}${
+      scheduleError ? `?schedfail=${encodeURIComponent(scheduleError)}` : ""
+    }`,
+  );
 }
 
 // correct or set the employee a timesheet belongs to

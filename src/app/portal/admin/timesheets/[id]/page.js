@@ -78,6 +78,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     approvedAt: t.approvedAt ? t.approvedAt.toISOString() : null,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     disputed: t.corrections.length > 0,
+    punchIssues: (t.data?.punchIssues || []).length,
+    scheduleFlags: (t.data?.scheduleCheck?.flagged || []).length,
+    scheduleMatched: !!t.data?.scheduleCheck?.matched,
   }));
 
   const total = rows.length;
@@ -88,6 +91,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const approved = rows.filter((r) => r.approvedAt).length;
   const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
   const disputed = rows.filter((r) => r.disputed).length;
+  const punchIssueRows = rows.filter((r) => r.punchIssues > 0).length;
+  const scheduleFlagRows = rows.filter((r) => r.scheduleFlags > 0).length;
+  const anyScheduleChecked = rows.some((r) => r.scheduleMatched);
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
@@ -188,6 +194,51 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       </div>
 
       <SendModeBanner mode={mode} />
+
+      {(punchIssueRows > 0 || scheduleFlagRows > 0) && (
+        <div className="mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40">
+          <p className="text-base font-semibold text-rose-900 dark:text-rose-200">
+            Check these before you send anything
+          </p>
+          <p className="mt-1 text-sm text-rose-800 dark:text-rose-200/90">
+            {punchIssueRows > 0 && (
+              <>
+                <strong>{punchIssueRows}</strong>{" "}
+                {punchIssueRows === 1 ? "person has" : "people have"} punch entries
+                that can&apos;t be right - a clock-out before the clock-in, or a
+                stretch of 10+ hours that is almost certainly a rest break with the
+                wrong AM/PM on it.{" "}
+              </>
+            )}
+            {scheduleFlagRows > 0 && (
+              <>
+                <strong>{scheduleFlagRows}</strong>{" "}
+                {scheduleFlagRows === 1 ? "person has" : "people have"} days where
+                the timesheet and the schedule disagree.{" "}
+              </>
+            )}
+            The figures below are computed from that data as it stands.
+          </p>
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/checks`}
+            className="mt-3 inline-block rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+          >
+            See what looks wrong →
+          </Link>
+        </div>
+      )}
+
+      {!anyScheduleChecked && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          No schedule export was uploaded with this batch, so the hours are only
+          checked against themselves. A punch typed into the wrong box stays
+          invisible that way.{" "}
+          <Link href="/portal/admin/timesheets/new" className="font-semibold underline underline-offset-4">
+            Upload again with the schedule PDF
+          </Link>{" "}
+          to get the second check.
+        </div>
+      )}
 
       {disputed > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
