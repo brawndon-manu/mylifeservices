@@ -9,6 +9,7 @@ import BackLink from "@/components/BackLink";
 import SendModeBanner from "../_components/SendModeBanner";
 import ReviewTable from "../_components/ReviewTable";
 import SendPanel from "../_components/SendPanel";
+import DeleteBatchButton from "../_components/DeleteBatchButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
 
 export const metadata = { title: "Timesheet batch", robots: { index: false, follow: false } };
@@ -81,6 +82,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     punchIssues: (t.data?.punchIssues || []).length,
     scheduleFlags: (t.data?.scheduleCheck?.flagged || []).length,
     scheduleMatched: !!t.data?.scheduleCheck?.matched,
+    scheduleStatus: t.data?.scheduleCheck?.status || "no-file",
+    scheduleError: t.data?.scheduleCheck?.error || null,
   }));
 
   const total = rows.length;
@@ -94,6 +97,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const punchIssueRows = rows.filter((r) => r.punchIssues > 0).length;
   const scheduleFlagRows = rows.filter((r) => r.scheduleFlags > 0).length;
   const anyScheduleChecked = rows.some((r) => r.scheduleMatched);
+  const scheduleMatchedCount = rows.filter((r) => r.scheduleMatched).length;
+  const scheduleNotFound = rows.filter((r) => r.scheduleStatus === "name-not-found").length;
+  const scheduleFailed = rows.find((r) => r.scheduleStatus === "parse-failed");
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
@@ -178,6 +184,15 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           premium section. Where someone has signed or been approved, that copy
           is used instead of the blank one.
         </p>
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
+          <p className="text-xs text-muted">
+            Uploaded the wrong export, or need to redo it after correcting QSP?
+          </p>
+          <DeleteBatchButton
+            batchId={batch.id}
+            period={`${batch.periodFrom} to ${batch.periodTo}`}
+          />
+        </div>
       </div>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Pay period</p>
@@ -200,24 +215,25 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           <p className="text-base font-semibold text-rose-900 dark:text-rose-200">
             Check these before you send anything
           </p>
+          {/* built as strings rather than interleaved JSX - mixing expressions
+              and wrapped text is how "people have" and "punch entries" ended up
+              rendering as "havepunch". */}
           <p className="mt-1 text-sm text-rose-800 dark:text-rose-200/90">
             {punchIssueRows > 0 && (
-              <>
-                <strong>{punchIssueRows}</strong>{" "}
-                {punchIssueRows === 1 ? "person has" : "people have"} punch entries
-                that can&apos;t be right - a clock-out before the clock-in, or a
-                stretch of 10+ hours that is almost certainly a rest break with the
-                wrong AM/PM on it.{" "}
-              </>
+              <span className="block">
+                <strong>{punchIssueRows}</strong>
+                {` ${punchIssueRows === 1 ? "person has" : "people have"} punch entries that can't be right - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it.`}
+              </span>
             )}
             {scheduleFlagRows > 0 && (
-              <>
-                <strong>{scheduleFlagRows}</strong>{" "}
-                {scheduleFlagRows === 1 ? "person has" : "people have"} days where
-                the timesheet and the schedule disagree.{" "}
-              </>
+              <span className="mt-1 block">
+                <strong>{scheduleFlagRows}</strong>
+                {` ${scheduleFlagRows === 1 ? "person has" : "people have"} days where the timesheet and the schedule disagree.`}
+              </span>
             )}
-            The figures below are computed from that data as it stands.
+            <span className="mt-1 block">
+              The figures below are computed from that data as it stands.
+            </span>
           </p>
           <Link
             href={`/portal/admin/timesheets/${batch.id}/checks`}
@@ -228,15 +244,43 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         </div>
       )}
 
-      {!anyScheduleChecked && (
+      {/* three different things, and they used to all read as "no schedule
+          uploaded" - which is useless when the truth is that one WAS given and
+          silently failed to parse. */}
+      {scheduleFailed ? (
+        <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+          <strong>A schedule PDF was uploaded but couldn&apos;t be read</strong>, so
+          the hours were only checked against themselves.
+          {scheduleFailed.scheduleError && (
+            <span className="mt-1 block font-mono text-xs opacity-80">
+              {scheduleFailed.scheduleError}
+            </span>
+          )}
+          <span className="mt-1 block">
+            It needs to be the QSP <em>Employee Schedules</em> export - the month
+            calendar with one page per person, not a payroll report.
+          </span>
+        </div>
+      ) : !anyScheduleChecked ? (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          No schedule export was uploaded with this batch, so the hours are only
-          checked against themselves. A punch typed into the wrong box stays
+          No schedule export reached the server with this batch, so the hours are
+          only checked against themselves. A punch typed into the wrong box stays
           invisible that way.{" "}
           <Link href="/portal/admin/timesheets/new" className="font-semibold underline underline-offset-4">
             Upload again with the schedule PDF
           </Link>{" "}
           to get the second check.
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+          Checked against the schedule: <strong>{scheduleMatchedCount}</strong> of{" "}
+          {total} matched to a schedule page.
+          {scheduleNotFound > 0 && (
+            <span className="mt-1 block">
+              <strong>{scheduleNotFound}</strong> had no page in the schedule
+              export under a matching name, so those hours have no second opinion.
+            </span>
+          )}
         </div>
       )}
 

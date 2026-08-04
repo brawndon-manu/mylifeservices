@@ -11,6 +11,10 @@ const ERRORS = {
   nofile: "Pick the QSP export PDF first.",
   notpdf: "That needs to be the PDF export from QSP.",
   parse: "Couldn't read that PDF. Make sure it's the Simple Timesheet export, not a scan.",
+  future:
+    "That export contains days that haven't happened yet. QSP prints scheduled shifts exactly like worked ones, so those would become timesheets asking people to sign for time they haven't worked. Pull the period again once it has ended.",
+  twoperiods:
+    "That export covers more than one pay period, so every employee appears twice. QSP snaps to whole pay periods - asking for a range that crosses a boundary returns both of them. Request a single period.",
   empty: "No employee hours found in that file. Is it the right export?",
   noblob:
     "File storage isn't configured (BLOB_READ_WRITE_TOKEN is missing), so the generated timesheets couldn't be saved. Nothing was created.",
@@ -31,10 +35,21 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Upload a pay period
       </h1>
+      {/* strings rather than text wrapped around <strong> - JSX eats the space
+          where a tag meets a line break, which is how "Timesheetexport" happened */}
       <p className="mt-3 text-base leading-relaxed text-muted">
-        In QSP, download the <strong>Simple Timesheet</strong> export for the pay
-        period - the one big PDF with every employee in it. Drop it here and each
-        person&apos;s corrected timesheet is generated automatically.
+        {"In QSP, download the "}
+        <strong>Simple Timesheet</strong>
+        {" export for the pay period - the one big PDF with every employee in it. Each person's corrected timesheet is generated from it automatically."}
+      </p>
+      <p className="mt-2 text-base leading-relaxed text-muted">
+        {"Download the "}
+        <strong>Employee Schedules</strong>
+        {" export for the same month as well. It is a second record of the same time, and the only thing that can catch a punch typed into the wrong box."}
+      </p>
+      <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+        Only upload a pay period after it has ended. QSP prints scheduled shifts
+        that haven&apos;t been worked yet exactly like real ones.
       </p>
 
       {error && (

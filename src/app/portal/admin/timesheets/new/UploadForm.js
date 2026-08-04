@@ -2,54 +2,91 @@
 
 // upload form with a pending state - parsing + rendering 60 PDFs takes a while,
 // and without feedback people click the button twice.
-import { useState } from "react";
+//
+// both file rows are built by the same component on purpose. the schedule input
+// originally had a pair of conditional siblings toggling around it that the
+// timesheet input didn't, and selections on it wouldn't stick - so they are kept
+// structurally identical and the status line is always present rather than
+// appearing and disappearing.
+import { useRef, useState } from "react";
+
+function FileRow({ id, label, required, hint, selected, onPick, tone }) {
+  return (
+    <div className={required ? "" : "mt-6"}>
+      <label htmlFor={id} className="block text-sm font-medium text-muted">
+        {label}{" "}
+        {required ? (
+          <span className="text-rose-600">*</span>
+        ) : (
+          <span className="font-normal text-faint">- strongly recommended</span>
+        )}
+      </label>
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      <input
+        id={id}
+        name={id}
+        type="file"
+        accept="application/pdf,.pdf"
+        required={required}
+        onChange={onPick}
+        className={`mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-semibold ${
+          tone === "primary"
+            ? "file:bg-brand-light file:text-white hover:file:bg-brand"
+            : "file:bg-surface-3 file:text-foreground hover:file:bg-surface-2"
+        }`}
+      />
+      <p
+        className={`mt-2 text-xs ${
+          selected ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"
+        }`}
+      >
+        {selected ? `Selected: ${selected}` : "Nothing selected yet."}
+      </p>
+    </div>
+  );
+}
 
 export default function UploadForm({ action }) {
   const [name, setName] = useState("");
   const [schedName, setSchedName] = useState("");
   const [busy, setBusy] = useState(false);
+  const formRef = useRef(null);
+
+  // read the DOM rather than trust state - if a selection ever fails to stick
+  // again, this is what will disagree and show it
+  function onSubmit(e) {
+    const f = formRef.current;
+    const sched = f?.querySelector("#schedule");
+    if (sched && sched.files.length === 0) {
+      const go = window.confirm(
+        "No Employee Schedules PDF is attached.\n\nWithout it the hours can only be checked against themselves, and a punch typed into the wrong box stays invisible.\n\nUpload anyway?",
+      );
+      if (!go) {
+        e.preventDefault();
+        return;
+      }
+    }
+    setBusy(true);
+  }
 
   return (
-    <form action={action} onSubmit={() => setBusy(true)}>
-      <label htmlFor="file" className="block text-sm font-medium text-muted">
-        QSP Simple Timesheet export (PDF) <span className="text-rose-600">*</span>
-      </label>
-      <input
+    <form ref={formRef} action={action} onSubmit={onSubmit}>
+      <FileRow
         id="file"
-        name="file"
-        type="file"
-        accept="application/pdf,.pdf"
+        label="QSP Simple Timesheet export (PDF)"
         required
-        onChange={(e) => setName(e.target.files?.[0]?.name || "")}
-        className="mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
+        tone="primary"
+        selected={name}
+        onPick={(e) => setName(e.target.files?.[0]?.name || "")}
       />
-      {name && <p className="mt-2 text-xs text-muted">Selected: {name}</p>}
 
-      {/* the second record. punch data gets typed into the wrong boxes and there
-          is no way to catch that from the punches alone - two sources
-          disagreeing is the only reliable signal. */}
-      <label htmlFor="schedule" className="mt-6 block text-sm font-medium text-muted">
-        Employee Schedules export (PDF){" "}
-        <span className="font-normal text-faint">- strongly recommended</span>
-      </label>
-      <p className="mt-1 text-xs text-muted">
-        Checked against the timesheet day by day. This is what catches a punch
-        typed into the wrong box, which the timesheet on its own cannot show.
-      </p>
-      <input
+      <FileRow
         id="schedule"
-        name="schedule"
-        type="file"
-        accept="application/pdf,.pdf"
-        onChange={(e) => setSchedName(e.target.files?.[0]?.name || "")}
-        className="mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-foreground hover:file:bg-surface-2"
+        label="Employee Schedules export (PDF)"
+        hint="Checked against the timesheet day by day. This is what catches a punch typed into the wrong box, which the timesheet on its own cannot show."
+        selected={schedName}
+        onPick={(e) => setSchedName(e.target.files?.[0]?.name || "")}
       />
-      {schedName && <p className="mt-2 text-xs text-muted">Selected: {schedName}</p>}
-      {!schedName && (
-        <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-          Without it the hours can only be checked against themselves.
-        </p>
-      )}
 
       <button
         type="submit"

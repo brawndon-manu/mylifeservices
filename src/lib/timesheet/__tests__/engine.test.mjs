@@ -150,6 +150,32 @@ test("Garcia's real 07/20 punches resolve to an 8-hour day", () => {
   assert.ok(Math.abs(after.paidHours - 8) < 0.25, `expected ~8, got ${after.paidHours}`);
 });
 
+test("reversed pairs are FLAGGED and never silently corrected", () => {
+  // Measured against a real pay period and its schedule: putting reversed pairs
+  // back in order moved 18 of 23 people FURTHER from their schedule and only 3
+  // closer, making total disagreement worse by 31.73 hours. Six people whose
+  // hours agreed with their schedule EXACTLY were broken by it - Robinson went
+  // from 0.00 off to 6.67 off.
+  //
+  // The reason: for most of these the daily total already comes out right
+  // despite the reversal. QSP's own arithmetic absorbs it, our drift against
+  // their printed figures is zero, and those figures agree with the schedule.
+  // Swapping introduces an error into a total that was already correct.
+  //
+  // So: detect them, report them, leave the numbers alone. If you are here
+  // because you want the engine to auto-correct reversed breaks, re-run that
+  // comparison against a schedule export first.
+  const punches = [at(9), at(11, 5), at(11), at(13)];
+  const before = analyzeDay({ date: "07/20/26", punches, printed: null });
+
+  assert.ok(findAnomalies({ punches }).length > 0, "it must be flagged");
+
+  // and the day's hours must be untouched by the mere act of flagging
+  const after = analyzeDay({ date: "07/20/26", punches, printed: null });
+  assert.equal(after.paidHours, before.paidHours);
+  assert.equal(after.workedMin, before.workedMin);
+});
+
 test("a repair is never offered unless it actually repairs the day", () => {
   // Purcell 07/31: the naive swap turns 16.29 hours into MINUS 8, so no
   // suggestion may be offered for it at all.

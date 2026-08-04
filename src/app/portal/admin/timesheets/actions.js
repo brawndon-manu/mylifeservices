@@ -78,6 +78,48 @@ export async function uploadBatch(formData) {
     );
   }
 
+  // ---- two guards on the export itself, both from real near-misses ----
+
+  // QSP prints SCHEDULED shifts exactly like worked ones. pull a period before
+  // it has ended and most of the file is time nobody has worked - one real pull
+  // on the 3rd had 454 of 510 day-cases in the future, all carrying punch times.
+  // generating timesheets from that asks people to attest to shifts that
+  // haven't happened.
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const futureDates = new Set();
+  for (const s of withHours) {
+    for (const d of s.days) {
+      const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d.date || "");
+      if (!m) continue;
+      if (new Date(2000 + +m[3], +m[1] - 1, +m[2]) > today) futureDates.add(d.date);
+    }
+  }
+  if (futureDates.size) {
+    const sample = [...futureDates].sort().slice(0, 3).join(", ");
+    redirect(
+      `/portal/admin/timesheets/new?error=future&why=${encodeURIComponent(
+        `${futureDates.size} dated after today (${sample}). Wait until the pay period has ended.`,
+      )}`,
+    );
+  }
+
+  // asking QSP for a range that spans two pay periods returns BOTH, as separate
+  // sheets - 118 for 60 people. uploading that gives everyone two timesheets.
+  const nameCounts = new Map();
+  for (const s of withHours) {
+    const k = (s.employee || "").trim().toLowerCase();
+    nameCounts.set(k, (nameCounts.get(k) || 0) + 1);
+  }
+  const dupes = [...nameCounts].filter(([, n]) => n > 1);
+  if (dupes.length) {
+    redirect(
+      `/portal/admin/timesheets/new?error=twoperiods&why=${encodeURIComponent(
+        `${dupes.length} employees appear more than once. QSP returns whole pay periods, so a range spanning two gives you both. Ask for one period only.`,
+      )}`,
+    );
+  }
+
   const period = withHours[0].payPeriod || { from: "", to: "" };
 
   // storage has to work BEFORE we create anything. a batch whose PDFs failed to
@@ -105,16 +147,27 @@ export async function uploadBatch(formData) {
   // cancel out and leave a total that looks perfectly ordinary.
   let schedules = null;
   let scheduleError = null;
+  // "no-file" | "parse-failed" | "parsed" - these three look identical from the
+  // batch screen otherwise, and a file that silently failed to parse is exactly
+  // the case you most need to be told about.
+  let scheduleStatus = "no-file";
   const schedFile = formData.get("schedule");
+  console.log(
+    `timesheet upload: timesheet=${file?.name || "?"} (${file?.size || 0}b), ` +
+    `schedule=${schedFile?.name || "none"} (${schedFile?.size || 0}b)`,
+  );
   if (schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0) {
     try {
       const sbytes = new Uint8Array(await schedFile.arrayBuffer());
       const people = await parseSchedulePdf(sbytes);
       schedules = new Map(people.map((p) => [scheduleKey(p.employee), p]));
+      scheduleStatus = "parsed";
+      console.log(`schedule parsed: ${people.length} employee pages`);
     } catch (e) {
       console.error("schedule parse failed:", e);
       // never lose the whole upload over the optional second file
       scheduleError = (e?.message || String(e)).slice(0, 160);
+      scheduleStatus = "parse-failed";
     }
   }
 
@@ -194,11 +247,18 @@ export async function uploadBatch(formData) {
           scheduleCheck: scheduleCheck
             ? {
                 matched: true,
+                status: "parsed",
                 timesheetTotal: scheduleCheck.timesheetTotal,
                 scheduleTotal: scheduleCheck.scheduleTotal,
                 flagged: scheduleCheck.flagged,
               }
-            : { matched: false },
+            : {
+                matched: false,
+                // a schedule that parsed but had no page for this person is a
+                // different problem from no schedule at all
+                status: schedules ? "name-not-found" : scheduleStatus,
+                error: scheduleError || null,
+              },
           // punches + breaks are kept so a sheet can be recomputed and
           // re-rendered after a correction without going back to the source
           // export. mealMin is what a worked-through meal would add back.
@@ -239,6 +299,53 @@ export async function uploadBatch(formData) {
       scheduleError ? `?schedfail=${encodeURIComponent(scheduleError)}` : ""
     }`,
   );
+}
+
+// bin a whole batch. a bad upload used to mean clearing it out of the database
+// by hand, which is not a thing anyone should need help with.
+//
+// this destroys signatures, so the count of them is handed back to the button
+// and named in the confirm rather than being discovered afterwards.
+export async function deleteBatch(batchId) {
+  const user = await requireTimesheetAccess();
+
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: {
+      id: true,
+      periodFrom: true,
+      periodTo: true,
+      _count: { select: { timesheets: true } },
+    },
+  });
+  if (!batch) return { ok: false, error: "gone" };
+
+  const signed = await prisma.timesheet.count({
+    where: { batchId, OR: [{ signedAt: { not: null } }, { approvedAt: { not: null } }] },
+  });
+
+  // the timesheets and their corrections cascade from the batch row
+  await prisma.timesheetBatch.delete({ where: { id: batchId } });
+
+  console.log(
+    `timesheet batch deleted by ${user.id}: ${batch.periodFrom}-${batch.periodTo}, ` +
+    `${batch._count.timesheets} sheets, ${signed} of them signed or approved`,
+  );
+
+  revalidatePath("/portal/admin/timesheets");
+  redirect("/portal/admin/timesheets?deleted=1");
+}
+
+// how much would be lost - read before showing the confirm, never after
+export async function batchDeletionImpact(batchId) {
+  await requireTimesheetAccess();
+  const [sheets, signed, approved, sent] = await Promise.all([
+    prisma.timesheet.count({ where: { batchId } }),
+    prisma.timesheet.count({ where: { batchId, signedAt: { not: null } } }),
+    prisma.timesheet.count({ where: { batchId, approvedAt: { not: null } } }),
+    prisma.timesheet.count({ where: { batchId, sentAt: { not: null } } }),
+  ]);
+  return { sheets, signed, approved, sent };
 }
 
 // correct or set the employee a timesheet belongs to
