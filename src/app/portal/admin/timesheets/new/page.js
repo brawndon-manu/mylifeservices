@@ -53,17 +53,27 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
               of how to pull a pay period - without it the job belongs to
               whoever did it last. */}
           <dl className="mt-2 space-y-2.5">
-            <Step name="Simple Timesheet" path="Reports → Timesheets" />
+            <Step
+              name="Simple Timesheet"
+              path="Reports → Timesheets"
+              what="Every punch for every employee in the period. All the hours come from here."
+            />
             <Step
               name="Employee Schedules"
               path="Scheduling → Reports → Print/Email Schedules"
+              what="The month's calendar: who was booked with which client, and when."
               note="Report type: Employee, and pick the month the pay period falls in."
             />
             <Step
               name="QSClock Time and Attendance"
               path="Scheduling → Reports → Shift Audit → QSClock Time and Attendance"
+              what="One row per shift, saying whether it was actually clocked or typed in later."
             />
-            <Step name="Rest Periods Report" path="Reports → Rest Periods Report" />
+            <Step
+              name="Rest Periods Report"
+              path="Reports → Rest Periods Report"
+              what="One row per rest break taken, with the time it started and ended."
+            />
           </dl>
           <p className="mt-3 text-amber-700 dark:text-amber-400">
             Only pull a period after it has ended. QSP prints shifts that
@@ -112,7 +122,7 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
 }
 
 // one QSP export and where to find it
-function Step({ name, path, note }) {
+function Step({ name, path, what, note }) {
   return (
     <div>
       <dt className="font-medium text-foreground">{name}</dt>
@@ -120,7 +130,8 @@ function Step({ name, path, note }) {
         <span className="inline-block rounded border border-border-strong bg-surface-3 px-1.5 py-0.5 font-mono text-[11px] leading-tight text-foreground">
           {path}
         </span>
-        {note && <span className="mt-1 block text-xs text-muted">{note}</span>}
+        {what && <span className="mt-1 block text-xs">{what}</span>}
+        {note && <span className="mt-0.5 block text-xs text-faint">{note}</span>}
       </dd>
     </div>
   );

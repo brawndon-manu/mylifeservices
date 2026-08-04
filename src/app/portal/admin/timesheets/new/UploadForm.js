@@ -12,25 +12,12 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
 
-function FileRow({ id, label, path, note, hint, selected, onPick, tone, accept = "application/pdf,.pdf" }) {
+function FileRow({ id, label, selected, onPick, tone, accept = "application/pdf,.pdf" }) {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-muted">
         {label} <span className="text-rose-600">*</span>
       </label>
-      {/* where it lives in QSP. the whole point of writing these down is that
-          somebody other than Mánu can pull a pay period, so the path gets its
-          own line rather than being buried in the sentence. */}
-      {path && (
-        <p className="mt-1.5 inline-block rounded border border-border-strong bg-surface-3 px-2 py-1 font-mono text-[11px] leading-none text-foreground">
-          {path}
-        </p>
-      )}
-      {/* what the document IS, in one line. the reason we want it is on the
-          card above; down here you are picking a file and just need to know
-          which one. */}
-      {hint && <p className="mt-2 text-xs text-muted">{hint}</p>}
-      {note && <p className="mt-1 text-xs text-faint">{note}</p>}
       <input
         id={id}
         name={id}
@@ -143,9 +130,7 @@ export default function UploadForm({ action, aside }) {
       <FileRow
         id="file"
         label="QSP Simple Timesheet export (PDF)"
-        path="Reports → Timesheets"
         tone="primary"
-        hint="Every punch for every employee in the period. All the hours come from here."
         selected={name}
         onPick={(e) => setName(e.target.files?.[0]?.name || "")}
       />
@@ -153,9 +138,6 @@ export default function UploadForm({ action, aside }) {
       <FileRow
         id="schedule"
         label="Employee Schedules export (PDF)"
-        path="Scheduling → Reports → Print/Email Schedules"
-        hint="The month's calendar: who was booked with which client, and when."
-        note="Report type: Employee. Pick the month the pay period falls in."
         selected={schedName}
         onPick={(e) => setSchedName(e.target.files?.[0]?.name || "")}
       />
@@ -163,9 +145,7 @@ export default function UploadForm({ action, aside }) {
       <FileRow
         id="clock"
         label="QSClock Time and Attendance report (.xls)"
-        path="Scheduling → Reports → Shift Audit → QSClock Time and Attendance"
         accept=".xls,application/vnd.ms-excel"
-        hint="One row per shift, saying whether it was actually clocked or typed in later."
         selected={clockName}
         onPick={(e) => setClockName(e.target.files?.[0]?.name || "")}
       />
@@ -173,9 +153,7 @@ export default function UploadForm({ action, aside }) {
       <FileRow
         id="rests"
         label="Rest Periods Report (.xls)"
-        path="Reports → Rest Periods Report"
         accept=".xls,application/vnd.ms-excel"
-        hint="One row per rest break taken, with the time it started and ended."
         selected={restsName}
         onPick={(e) => setRestsName(e.target.files?.[0]?.name || "")}
       />
