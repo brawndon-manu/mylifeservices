@@ -210,12 +210,18 @@ export async function renderCorrected(sheet, opts = {}) {
         centerIn(f2(d.paidHours), xs[IDX.daily], base, { size: 7.5 });
 
         const notes = [];
-        if (d.mealLate) notes.push("meal period started late");
+        if (d.mealLate) notes.push("meal started late");
         else if (d.mealViolation) notes.push("no meal period");
         if (d.restViolation) notes.push(`rest ${d.restCount}/${d.restRequired}`);
         if (d.seventhDay) notes.push("7th day");
         if (notes.length) {
-          text(notes.join(", "), xs[IDX.comments].x + 3, base, { size: 6, color: PREM });
+          // the column is narrow and these notes vary in length, so shrink to
+          // fit and only clip as a last resort. running past the column edge on
+          // a document someone signs looks like a broken form.
+          const col = xs[IDX.comments];
+          const maxW = col.w - 6;
+          const { str, size } = fitText(notes.join(", "), maxW, font, 6, 4.4);
+          text(str, col.x + 3, base, { size, color: PREM });
         }
       }
 
@@ -447,6 +453,22 @@ export async function renderCorrected(sheet, opts = {}) {
   };
 
   return { bytes: await doc.save(), approvalRect };
+}
+
+// shrink a single line until it fits `maxW`, then clip with an ellipsis if it
+// still doesn't. returns the string and the size to draw it at.
+function fitText(str, maxW, font, startSize, minSize) {
+  let size = startSize;
+  while (size > minSize && font.widthOfTextAtSize(str, size) > maxW) {
+    size -= 0.2;
+  }
+  if (font.widthOfTextAtSize(str, size) <= maxW) return { str, size };
+
+  let out = str;
+  while (out.length > 1 && font.widthOfTextAtSize(`${out}…`, size) > maxW) {
+    out = out.slice(0, -1);
+  }
+  return { str: `${out}…`, size };
 }
 
 // left-aligned word wrap; returns the y after the last line
