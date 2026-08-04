@@ -103,7 +103,7 @@ export default async function PatternsPage() {
     .sort((a, b) => b.restMissed - a.restMissed);
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
