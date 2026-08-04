@@ -1,7 +1,7 @@
 "use client";
 
 // correcting a day by hand. deliberately not a one-click "accept the schedule"
-// button: both figures are shown, the schedule's value is pre-filled, and the
+// button: both figures are shown, the TIMESHEET's value is pre-filled, and the
 // number has to be confirmed before it moves. the point of this screen is a
 // human deciding which record is right, and a button that agrees for you defeats
 // it.
@@ -12,7 +12,14 @@ const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
 export default function CorrectDay({ timesheetId, date, timesheet, schedule, existing }) {
   const [open, setOpen] = useState(false);
-  const [hours, setHours] = useState(schedule != null ? String(schedule) : "");
+  // pre-filled from the TIMESHEET, not the schedule.
+  //
+  // It used to seed the schedule's figure, which quietly made the schedule the
+  // default answer - and the schedule is not the record we go by. People work
+  // different hours than they were scheduled all the time. The page-break bug
+  // showed the cost: accepting the prefill on Rotter's 07/28 would have written
+  // 5.00 over a correct 8.00. Changing a day should take a deliberate edit.
+  const [hours, setHours] = useState(timesheet != null ? String(timesheet) : "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);

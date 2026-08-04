@@ -7,6 +7,7 @@ import { preferredName } from "@/lib/contacts";
 import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
+import Evidence from "./Evidence";
 import RecomputeButton from "../corrections/RecomputeButton";
 
 export const metadata = { title: "Data checks", robots: { index: false, follow: false } };
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
 const FLAG_COPY = {
-  mismatch: "Hours don't match the schedule",
+  mismatch: "Worked different hours than scheduled",
   "not-on-schedule": "Worked, but nothing on the schedule",
   "missing-from-timesheet": "On the schedule, but no punches",
 };
@@ -59,6 +60,13 @@ export default async function ChecksPage({ params }) {
       // days the timesheet actually holds, so a correction can be offered
       // against the right figure
       dayHours: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d.paidHours])),
+      // the whole day, keyed by date - the evidence snippets need the punches
+      // and the page numbers, not just the total
+      dayByDate: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d])),
+      // what the schedule said for each day. empty for batches uploaded before
+      // the shifts were kept, which the snippet says out loud rather than
+      // rendering an empty box.
+      schedByDate: sched.byDate || {},
     });
   }
 
@@ -79,7 +87,7 @@ export default async function ChecksPage({ params }) {
   const totalSched = rows.reduce((n, r) => n + r.flagged.length, 0);
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href={`/portal/admin/timesheets/${batch.id}`}>Back to the batch</BackLink>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
@@ -90,16 +98,19 @@ export default async function ChecksPage({ params }) {
       </h1>
       <p className="mt-2 max-w-3xl text-sm text-muted">
         Nothing here has changed a figure. These are days where the punch record
-        contradicts itself, or where the timesheet and the schedule disagree. The
-        engine reproduces what QSP exported to the hundredth of an hour, so
-        anything on this page is a problem in the source data, not the arithmetic.
+        contradicts itself. The engine reproduces what QSP exported to the
+        hundredth of an hour, so anything flagged here is a problem in the source
+        data, not the arithmetic.
+        {" "}Days where someone worked hours other than the ones scheduled are
+        listed too, as context only - that is ordinary, and the timesheet is the
+        record we go by.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Staff affected" value={rows.length} of={batch.timesheets.length} />
         <Stat label="Punch entries that can't be right" value={totalPunch} tone="warn" />
         <Stat
-          label="Days disagreeing with the schedule"
+          label="Days worked differently to plan"
           value={anySchedule ? totalSched : "-"}
           tone={anySchedule ? "warn" : undefined}
         />
@@ -152,7 +163,7 @@ export default async function ChecksPage({ params }) {
               {r.flagged.length > 0 && (
                 <div className="mt-4">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                    Against the schedule
+                    Worked differently to what was scheduled
                   </p>
                   <div className="mt-2 overflow-x-auto">
                     <table className="w-full min-w-[520px] text-sm">
@@ -180,26 +191,37 @@ export default async function ChecksPage({ params }) {
                       </tbody>
                     </table>
                   </div>
-                  {/* correcting is offered per day, against the figure that day
-                      actually holds - not as a blanket "trust the schedule" */}
-                  {!r.signed && (
-                    <div className="mt-2 space-y-2">
-                      {r.flagged
-                        .filter((f) => f.timesheet != null && r.dayHours[f.date] != null)
-                        .map((f, i) => (
-                          <div key={i} className="rounded-md border border-border bg-surface-2 p-2">
-                            <p className="text-xs font-semibold text-foreground">{f.date}</p>
-                            <CorrectDay
-                              timesheetId={r.id}
-                              date={f.date}
-                              timesheet={f.timesheet}
-                              schedule={f.schedule}
-                              existing={r.overrides[f.date] || null}
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  )}
+                  {/* the evidence behind each flagged day, and only then the
+                      option to change it. correcting is offered per day against
+                      the figure that day actually holds - never as a blanket
+                      "trust the schedule", which is exactly what turned a
+                      page-break bug into an offer to overwrite a correct 8.00 */}
+                  <div className="mt-3 space-y-2">
+                    {r.flagged.map((f, i) => (
+                      <div key={i} className="rounded-md border border-border bg-surface-2 p-2">
+                        <p className="text-xs font-semibold text-foreground">{f.date}</p>
+                        <Evidence
+                          batchId={batch.id}
+                          timesheetId={r.id}
+                          date={f.date}
+                          day={r.dayByDate[f.date] || null}
+                          shifts={r.schedByDate[f.date]?.shifts}
+                          schedulePages={r.schedByDate[f.date]?.pages}
+                          hasSource={!!batch.sourceUrl}
+                          hasSchedule={!!batch.scheduleUrl}
+                        />
+                        {!r.signed && f.timesheet != null && r.dayHours[f.date] != null && (
+                          <CorrectDay
+                            timesheetId={r.id}
+                            date={f.date}
+                            timesheet={f.timesheet}
+                            schedule={f.schedule}
+                            existing={r.overrides[f.date] || null}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -264,6 +286,18 @@ export default async function ChecksPage({ params }) {
                             out by hand.
                           </p>
                         )}
+                        {/* working it out by hand means reading the source, so
+                            the source is right here rather than a hunt */}
+                        <Evidence
+                          batchId={batch.id}
+                          timesheetId={r.id}
+                          date={p.date}
+                          day={r.dayByDate[p.date] || null}
+                          shifts={r.schedByDate[p.date]?.shifts}
+                          schedulePages={r.schedByDate[p.date]?.pages}
+                          hasSource={!!batch.sourceUrl}
+                          hasSchedule={!!batch.scheduleUrl}
+                        />
                           </div>
                         </details>
                       </li>

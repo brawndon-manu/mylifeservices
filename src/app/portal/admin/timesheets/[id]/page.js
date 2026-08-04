@@ -84,6 +84,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     scheduleMatched: !!t.data?.scheduleCheck?.matched,
     scheduleStatus: t.data?.scheduleCheck?.status || "no-file",
     scheduleError: t.data?.scheduleCheck?.error || null,
+    support: t.data?.premiumSupport?.totals || null,
   }));
 
   const total = rows.length;
@@ -100,6 +101,18 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const scheduleMatchedCount = rows.filter((r) => r.scheduleMatched).length;
   const scheduleNotFound = rows.filter((r) => r.scheduleStatus === "name-not-found").length;
   const scheduleFailed = rows.find((r) => r.scheduleStatus === "parse-failed");
+  // premium hours split by how well the day behind each one is evidenced. only
+  // batches uploaded with the clock report carry this.
+  const support = rows.reduce(
+    (a, r) => (r.support
+      ? { recorded: a.recorded + (r.support.recorded || 0),
+          supported: a.supported + (r.support.supported || 0),
+          unverified: a.unverified + (r.support.unverified || 0) }
+      : a),
+    { recorded: 0, supported: 0, unverified: 0 },
+  );
+  const hasSupport = support.recorded + support.supported + support.unverified > 0;
+
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
@@ -108,7 +121,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const failedCount = sp?.failed ? Number(sp.failed) : null;
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
         <span className="flex flex-wrap items-center gap-2">
@@ -210,7 +223,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
       <SendModeBanner mode={mode} />
 
-      {(punchIssueRows > 0 || scheduleFlagRows > 0) && (
+      {punchIssueRows > 0 && (
         <div className="mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40">
           <p className="text-base font-semibold text-rose-900 dark:text-rose-200">
             Check these before you send anything
@@ -223,12 +236,6 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               <span className="block">
                 <strong>{punchIssueRows}</strong>
                 {` ${punchIssueRows === 1 ? "person has" : "people have"} punch entries that can't be right - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it.`}
-              </span>
-            )}
-            {scheduleFlagRows > 0 && (
-              <span className="mt-1 block">
-                <strong>{scheduleFlagRows}</strong>
-                {` ${scheduleFlagRows === 1 ? "person has" : "people have"} days where the timesheet and the schedule disagree.`}
               </span>
             )}
             <span className="mt-1 block">
@@ -275,12 +282,55 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
           Checked against the schedule: <strong>{scheduleMatchedCount}</strong> of{" "}
           {total} matched to a schedule page.
+          {scheduleFlagRows > 0 && (
+            <span className="mt-1 block">
+              <strong>{scheduleFlagRows}</strong>
+              {` ${scheduleFlagRows === 1 ? "person" : "people"} worked hours that differ from what was scheduled. That is ordinary and nothing is wrong with it - the timesheet is what counts. It is listed on the checks screen only as context.`}
+            </span>
+          )}
           {scheduleNotFound > 0 && (
             <span className="mt-1 block">
               <strong>{scheduleNotFound}</strong> had no page in the schedule
               export under a matching name, so those hours have no second opinion.
             </span>
           )}
+        </div>
+      )}
+
+      {/* the thing management actually has to sign: how much of the premium
+          total stands on evidence, and how much needs a person. */}
+      {hasSupport && (
+        <div className="mt-4 rounded-xl border border-border bg-surface p-5">
+          <p className="text-sm font-semibold text-foreground">
+            Premium hours, by what stands behind them
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Evidenced
+              value={support.recorded}
+              label="Recorded by QSP"
+              detail="A rest break QSP's own report accounts for, or a day clocked in and out of every shift."
+              tone="good"
+            />
+            <Evidenced
+              value={support.supported}
+              label="Corroborated"
+              detail="A meal premium on a day the schedule gave them no meal period at all."
+              tone="ok"
+            />
+            <Evidenced
+              value={support.unverified}
+              label="Needs somebody to look"
+              detail="Nothing behind it: not clocked, and no corroborating record."
+              tone={support.unverified > 0 ? "bad" : "good"}
+            />
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            Graded per premium, not per day - a rest question and a meal question
+            have different witnesses, and the schedule holds meal breaks but not
+            one rest period. Hours differing from the schedule is not counted
+            against anything here: people work different hours than they were
+            scheduled, and the timesheet is the record we go by.
+          </p>
         </div>
       )}
 
@@ -361,5 +411,30 @@ function Stat({ label, value, tone }) {
     <span className={`rounded-md border px-2.5 py-1 ${cls}`}>
       {label} <b className="font-semibold">{value}</b>
     </span>
+  );
+}
+
+// one column of the premium-evidence panel
+function Evidenced({ value, label, detail, tone }) {
+  const cls =
+    tone === "good"
+      ? "border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20"
+      : tone === "ok"
+        ? "border-sky-300/60 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20"
+        : "border-rose-300/60 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/20";
+  const num =
+    tone === "good"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : tone === "ok"
+        ? "text-sky-700 dark:text-sky-400"
+        : "text-rose-700 dark:text-rose-400";
+  return (
+    <div className={`rounded-lg border p-3 ${cls}`}>
+      <p className={`text-2xl font-semibold tabular-nums ${num}`}>
+        {value.toFixed(2)}
+      </p>
+      <p className="mt-0.5 text-xs font-semibold text-foreground">{label}</p>
+      <p className="mt-1 text-xs text-muted">{detail}</p>
+    </div>
   );
 }

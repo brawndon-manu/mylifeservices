@@ -13,12 +13,17 @@ import { preferredName } from "@/lib/contacts";
 import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
 import { reviewSheet } from "@/lib/timesheet/anomalies";
 import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
+import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
+import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
+import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { sendTimesheet, isLiveSend } from "@/lib/timesheet-send";
 import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
 import { notifyOversight } from "@/lib/notify";
+import { progressKey, setProgress } from "@/lib/timesheet-progress";
+import { pushRecent } from "@/lib/timesheet-stages";
 import {
   isCorrectionKind,
   CORRECTION_KINDS,
@@ -49,6 +54,39 @@ export async function uploadBatch(formData) {
     redirect("/portal/admin/timesheets/new?error=notpdf");
   }
 
+  // All three exports are required now, and that is a deliberate change.
+  //
+  // Measured on 07/16-07/31: of 622 premium hours, the clock export evidences
+  // 386 and the schedule corroborates a further 215, leaving 21 that need a
+  // person. Without both files that same batch is 622 hours resting on one
+  // source. An upload that can't be stood behind isn't worth the time it takes
+  // to generate, so it's refused rather than half-done.
+  const schedFile = formData.get("schedule");
+  const hasSched = schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0;
+  if (!hasSched) redirect("/portal/admin/timesheets/new?error=noschedule");
+
+  const clockFile = formData.get("clock");
+  const hasClock = clockFile && typeof clockFile === "object" && "size" in clockFile && clockFile.size > 0;
+  if (!hasClock) redirect("/portal/admin/timesheets/new?error=noclock");
+
+  // the Rest Periods Report decides whether a rest break was actually taken.
+  // Rest premiums are the bigger half of the total (356 of 622 last period) and
+  // the schedule carries no rest periods at all, so without this they rest
+  // entirely on gaps between punches - which cannot tell a break from travel
+  // between two clients.
+  const restFile = formData.get("rests");
+  const hasRests = restFile && typeof restFile === "object" && "size" in restFile && restFile.size > 0;
+  if (!hasRests) redirect("/portal/admin/timesheets/new?error=norests");
+
+  // the browser made this id up before submitting, so it can poll for progress
+  // while this action runs. namespaced under the user inside progressKey - it is
+  // never trusted as a key by itself. A null key makes every write a no-op, so
+  // an upload with no id behaves exactly as it did before.
+  const prog = progressKey(user.id, formData.get("uploadId"));
+  // the whole reported state, held here so each write is a single set
+  const P = { stage: "reading", done: 0, total: null, recent: [] };
+  await setProgress(prog, P);
+
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   let sheets;
@@ -77,6 +115,11 @@ export async function uploadBatch(formData) {
       )}`,
     );
   }
+
+  P.stage = "checking";
+  P.total = withHours.length;
+  P.pages = sheets.reduce((n, s) => n + (s.pages?.length || 0), 0);
+  await setProgress(prog, P);
 
   // ---- two guards on the export itself, both from real near-misses ----
 
@@ -121,6 +164,9 @@ export async function uploadBatch(formData) {
   }
 
   const period = withHours[0].payPeriod || { from: "", to: "" };
+  // the waiting screen names the period it is working on
+  P.period = period;
+  await setProgress(prog, P);
 
   // storage has to work BEFORE we create anything. a batch whose PDFs failed to
   // upload looks fine in the list but emails staff a link to a 404, so the whole
@@ -147,18 +193,39 @@ export async function uploadBatch(formData) {
   // cancel out and leave a total that looks perfectly ordinary.
   let schedules = null;
   let scheduleError = null;
+  let scheduleUrl = null;
   // "no-file" | "parse-failed" | "parsed" - these three look identical from the
   // batch screen otherwise, and a file that silently failed to parse is exactly
   // the case you most need to be told about.
   let scheduleStatus = "no-file";
-  const schedFile = formData.get("schedule");
   console.log(
     `timesheet upload: timesheet=${file?.name || "?"} (${file?.size || 0}b), ` +
-    `schedule=${schedFile?.name || "none"} (${schedFile?.size || 0}b)`,
+    `schedule=${schedFile?.name || "none"} (${schedFile?.size || 0}b), ` +
+    `clock=${clockFile?.name || "none"} (${clockFile?.size || 0}b)`,
   );
-  if (schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0) {
+  if (hasSched) {
+    P.stage = "schedule";
+    await setProgress(prog, P);
+    const sbytes = new Uint8Array(await schedFile.arrayBuffer());
+
+    // keep the file itself, not just what we read out of it. the checks screen
+    // quotes this document back at people and asks them to act on it, so they
+    // need to be able to open the page it came off. stored before the parse so
+    // a file that FAILED to parse can still be looked at.
     try {
-      const sbytes = new Uint8Array(await schedFile.arrayBuffer());
+      const key = `timesheets/schedule/${randomBytes(10).toString("hex")}.pdf`;
+      const blob = await putBlob(key, Buffer.from(sbytes), {
+        access: "public",
+        contentType: "application/pdf",
+      });
+      scheduleUrl = blob.url;
+    } catch (e) {
+      // the schedule is the optional second file - losing the copy of it must
+      // never cost the whole upload, and the comparison still works without it
+      console.error("schedule source upload failed:", e);
+    }
+
+    try {
       const people = await parseSchedulePdf(sbytes);
       schedules = new Map(people.map((p) => [scheduleKey(p.employee), p]));
       scheduleStatus = "parsed";
@@ -168,6 +235,73 @@ export async function uploadBatch(formData) {
       // never lose the whole upload over the optional second file
       scheduleError = (e?.message || String(e)).slice(0, 160);
       scheduleStatus = "parse-failed";
+    }
+  }
+
+  // the clock export. unlike the other two this one is REFUSED if it won't
+  // parse: it's required precisely so every premium can be graded, and a batch
+  // that silently lost it would grade everything as unevidenced and look like a
+  // data disaster rather than a missing file.
+  let clocks = null;
+  let clockUrl = null;
+  {
+    P.stage = "clock";
+    await setProgress(prog, P);
+    const cbytes = new Uint8Array(await clockFile.arrayBuffer());
+    try {
+      const key = `timesheets/clock/${randomBytes(10).toString("hex")}.xls`;
+      const blob = await putBlob(key, Buffer.from(cbytes), {
+        access: "public",
+        contentType: "application/vnd.ms-excel",
+      });
+      clockUrl = blob.url;
+    } catch (e) {
+      console.error("clock source upload failed:", e);
+    }
+    try {
+      clocks = parseClockReport(Buffer.from(cbytes));
+      console.log(`clock parsed: ${clocks.size} employees`);
+    } catch (e) {
+      console.error("clock parse failed:", e);
+      redirect(
+        `/portal/admin/timesheets/new?error=clockparse&why=${encodeURIComponent(
+          (e?.message || String(e)).slice(0, 160),
+        )}`,
+      );
+    }
+  }
+
+  // the rest report. same treatment as the clock export: refused rather than
+  // skipped, because a batch missing it would silently fall back to the weaker
+  // punch-gap guess with nothing on screen to say so.
+  let rests = null;
+  let restsUrl = null;
+  let restsMalformed = [];
+  {
+    P.stage = "rests";
+    await setProgress(prog, P);
+    const rbytes = new Uint8Array(await restFile.arrayBuffer());
+    try {
+      const key = `timesheets/rests/${randomBytes(10).toString("hex")}.xls`;
+      const blob = await putBlob(key, Buffer.from(rbytes), {
+        access: "public",
+        contentType: "application/vnd.ms-excel",
+      });
+      restsUrl = blob.url;
+    } catch (e) {
+      console.error("rest report upload failed:", e);
+    }
+    try {
+      rests = parseRestReport(Buffer.from(rbytes));
+      restsMalformed = malformedRows(Buffer.from(rbytes));
+      console.log(`rest report parsed: ${rests.size} employees, ${restsMalformed.length} broken rows`);
+    } catch (e) {
+      console.error("rest report parse failed:", e);
+      redirect(
+        `/portal/admin/timesheets/new?error=restparse&why=${encodeURIComponent(
+          (e?.message || String(e)).slice(0, 160),
+        )}`,
+      );
     }
   }
 
@@ -182,14 +316,64 @@ export async function uploadBatch(formData) {
       periodTo: period.to || "",
       sourceUrl,
       sourceName: file.name || null,
+      scheduleUrl,
+      scheduleName: scheduleUrl ? schedFile?.name || null : null,
+      clockUrl,
+      clockName: clockUrl ? clockFile?.name || null : null,
+      restsUrl,
+      restsName: restsUrl ? restFile?.name || null : null,
       testMode: !isLiveSend(),
       uploadedById: user.id,
     },
   });
 
+  P.stage = "generating";
+  P.done = 0;
+  P.recent = [];
+  await setProgress(prog, P);
+
+  // QSP prints different names for the same person across its own reports, so
+  // both spellings are resolved through the portal account rather than compared
+  // to each other. See identity.js.
+  const clockNames = clocks ? [...clocks.values()].map((p) => p.name) : [];
+  const restNames = rests ? [...rests.values()].map((p) => p.name) : [];
+  const clockByUser = indexByAccount(clockNames, staff);
+  const restByUser = indexByAccount(restNames, staff);
+  // people we could not place in one of the other reports, with the best guess
+  // and how sure it is. shown, never acted on.
+  const aliasQuestions = [];
+
+  // what the finished screen says. gathered as we go rather than re-queried
+  // afterwards, so the summary is of exactly the sheets that were just written.
+  const sum = {
+    employees: 0, paidHours: 0, premiumHours: 0,
+    punchPeople: 0, punchDays: 0, schedulePeople: 0, scheduleDays: 0,
+    scheduleMatched: 0, failed: [],
+    support: { recorded: 0, supported: 0, unverified: 0 },
+  };
+
   for (const raw of withHours) {
-    const t = analyzeTimesheet(raw);
-    const m = matchEmployee(t.employee, staff);
+    // hand each day QSP's own count of rest breaks taken, where the report
+    // covers this person. `analyzeDay` uses it to decide the violation and
+    // nothing else - hours still come from the punches on the timesheet.
+    // the account first, so the other reports can be found under whatever name
+    // they used for the same person
+    const m = matchEmployee(raw.employee, staff);
+
+    const restHit = rests
+      ? lookupAcross(raw.employee, m, {
+          get: (k) => rests.get(k) || null,
+          keyOf: restKey,
+          byUser: restByUser,
+        })
+      : { value: null, via: null };
+    const rest = restHit.value;
+
+    const withRests = rest
+      ? { ...raw, days: raw.days.map((d) => ({ ...d, restRecorded: rest.byDate[d.date]?.taken ?? 0 })) }
+      : raw;
+
+    const t = analyzeTimesheet(withRests);
 
     // two independent quality checks, both recorded rather than acted on. the
     // figures are never altered here - somebody looks at these and decides.
@@ -198,6 +382,60 @@ export async function uploadBatch(formData) {
     const scheduleCheck = sched
       ? compareToSchedule(t.days, sched.days, { toleranceHours: 1 })
       : null;
+
+    // how well each premium-bearing day is evidenced. computed here so the
+    // grade is stored with the batch rather than recalculated from files that
+    // may be gone by the time anyone reads it.
+    const clockHit = clocks
+      ? lookupAcross(t.employee, m, {
+          get: (k) => clocks.get(k) || null,
+          keyOf: clockKey,
+          byUser: clockByUser,
+        })
+      : { value: null, via: null };
+    const clk = clockHit.value;
+
+    // matched under another spelling, but not a certain one. applied, and said
+    // out loud - a 50% link must never read as a fact.
+    for (const [report, hit] of [["clock", clockHit], ["rests", restHit]]) {
+      if (hit.via && !hit.exact) {
+        aliasQuestions.push({
+          kind: "estimated",
+          sourceName: t.employee,
+          report,
+          candidate: hit.via,
+          confidence: hit.confidence,
+          premiumHours: r2(t.premiums.totalHours),
+        });
+      }
+    }
+
+    // nothing found under any spelling: the best guess, for the screen only
+    if (clocks && !clk) {
+      const guess = suggestAlias(t.employee, clockNames, staff);
+      if (guess) {
+        aliasQuestions.push({
+          kind: "unmatched",
+          sourceName: t.employee,
+          report: "clock",
+          candidate: guess.name,
+          confidence: guess.confidence,
+          premiumHours: r2(t.premiums.totalHours),
+        });
+      }
+    }
+    const scheduleByDate = scheduleCheck
+      ? Object.fromEntries(
+          scheduleCheck.rows.filter((r) => r.shifts?.length).map((r) => [r.date, { shifts: r.shifts }]),
+        )
+      : {};
+    const support = gradePremiums(t.days, {
+      clockDays: clk?.byDate || null,
+      // whether QSP's rest report holds this person at all. if it does, its
+      // count is what decided every rest violation on the sheet.
+      restCovered: !!rest,
+      scheduleByDate,
+    });
 
     // render the corrected PDF now so the review screen can preview it
     let pdfUrl = null;
@@ -242,6 +480,36 @@ export async function uploadBatch(formData) {
           partialWeekDates: t.partialWeekDates,
           payPeriod: t.payPeriod || null,
           comments: t.comments || null,
+          // which pages of each source PDF this person is on. the parsers have
+          // always known - it just went nowhere, so the checks screen could
+          // quote a document without being able to point at it.
+          sourcePages: t.pages || [],
+          schedulePages: sched?.pages || [],
+          // premium hours split by how well the day behind them is evidenced,
+          // plus the raw clock picture for this person
+          premiumSupport: {
+            totals: support.totals,
+            byDate: support.byDate,
+            // the spelling the other reports used, when it differed. shown
+            // rather than silently substituted.
+            readAs: {
+              clock: clockHit.via
+                ? { name: clockHit.via, confidence: clockHit.confidence, exact: clockHit.exact }
+                : null,
+              rests: restHit.via
+                ? { name: restHit.via, confidence: restHit.confidence, exact: restHit.exact }
+                : null,
+            },
+            clock: clk
+              ? {
+                  matched: true,
+                  shifts: clk.shifts,
+                  missingIn: clk.missingIn,
+                  missingOut: clk.missingOut,
+                  byDate: clk.byDate,
+                }
+              : { matched: false },
+          },
           // data-quality findings. stored, surfaced, never auto-applied.
           punchIssues,
           scheduleCheck: scheduleCheck
@@ -250,7 +518,21 @@ export async function uploadBatch(formData) {
                 status: "parsed",
                 timesheetTotal: scheduleCheck.timesheetTotal,
                 scheduleTotal: scheduleCheck.scheduleTotal,
-                flagged: scheduleCheck.flagged,
+                // the flags stay lean - they're a table of figures, and the
+                // batch screen only counts them
+                flagged: scheduleCheck.flagged.map(
+                  ({ shifts, schedulePages, ...rest }) => rest,
+                ),
+                // the shifts themselves, by date, for EVERY day the schedule
+                // covered - not just the flagged ones. A day with a bad punch
+                // often agrees with the schedule on total while disagreeing on
+                // shape, and the scheduled times are what make a 5:15a that
+                // should be 5:15p obvious.
+                byDate: Object.fromEntries(
+                  scheduleCheck.rows
+                    .filter((r) => r.shifts?.length)
+                    .map((r) => [r.date, { shifts: r.shifts, pages: r.schedulePages }]),
+                ),
               }
             : {
                 matched: false,
@@ -264,6 +546,7 @@ export async function uploadBatch(formData) {
           // export. mealMin is what a worked-through meal would add back.
           days: t.days.map((d) => ({
             date: d.date,
+            pages: d.pages || [],
             paidHours: r2(d.paidHours),
             rawHours: r2(d.rawHours),
             regularHours: r2(d.regularHours),
@@ -276,6 +559,8 @@ export async function uploadBatch(formData) {
             mealStartedAfterMin: d.mealStartedAfterMin,
             mealCount: d.mealCount,
             restCount: d.restCount,
+            restRecorded: d.restRecorded ?? null,
+            restSource: d.restSource || "punches",
             restRequired: d.restRequired,
             mealRequired: d.mealRequired,
             seventhDay: d.seventhDay || false,
@@ -291,14 +576,72 @@ export async function uploadBatch(formData) {
         },
       },
     });
+
+    // the name is the point: a bare number climbing tells you it's alive, a
+    // name tells you WHERE it is, so a sheet that hangs the render names itself
+    // instead of being guessed at.
+    sum.employees += 1;
+    sum.paidHours += t.totals.paidHours;
+    sum.premiumHours += t.premiums.totalHours;
+    if (punchIssues.length) { sum.punchPeople += 1; sum.punchDays += punchIssues.length; }
+    if (scheduleCheck?.flagged?.length) { sum.schedulePeople += 1; sum.scheduleDays += scheduleCheck.flagged.length; }
+    if (scheduleCheck) sum.scheduleMatched += 1;
+    if (!pdfUrl) sum.failed.push(t.employee || "(unknown)");
+    sum.support.recorded += support.totals.recorded;
+    sum.support.supported += support.totals.supported;
+    sum.support.unverified += support.totals.unverified;
+
+    P.done += 1;
+    P.recent = pushRecent(P.recent, {
+      name: t.employee || "(unknown)",
+      hours: r2(t.totals.paidHours),
+      premium: r2(t.premiums.totalHours),
+      // a render failure leaves pdfUrl null and is worth seeing as it happens
+      failed: !pdfUrl,
+    });
+    // throttled: the screen polls once a second, so writing faster than that
+    // buys nothing and costs a round-trip inside the slow loop
+    await setProgress(prog, P, { minGapMs: 300 });
   }
 
+  P.stage = "saving";
+  await setProgress(prog, P);
+
   revalidatePath("/portal/admin/timesheets");
-  redirect(
-    `/portal/admin/timesheets/${batch.id}${
+
+  const summary = {
+    ...sum,
+    aliasQuestions,
+    paidHours: r2(sum.paidHours),
+    premiumHours: r2(sum.premiumHours),
+    pages: P.pages || 0,
+    periodFrom: batch.periodFrom,
+    periodTo: batch.periodTo,
+    scheduleError: scheduleError || null,
+  };
+
+  P.stage = "done";
+  P.batchId = batch.id;
+  P.summary = summary;
+  await setProgress(prog, P);
+
+  // deliberately NOT a redirect.
+  //
+  // It used to throw you straight at the batch page the instant the last sheet
+  // was written, which threw away everything the upload had just learned - and
+  // landed you on a screen whose main button is "Send all". The page now shows
+  // what it found, then moves on by itself.
+  //
+  // The href is returned rather than navigated to here so the screen can decide
+  // when to follow it. If anything on the client fails, the link is still on
+  // screen to click.
+  return {
+    ok: true,
+    href: `/portal/admin/timesheets/${batch.id}${
       scheduleError ? `?schedfail=${encodeURIComponent(scheduleError)}` : ""
     }`,
-  );
+    summary,
+  };
 }
 
 // bin a whole batch. a bad upload used to mean clearing it out of the database
