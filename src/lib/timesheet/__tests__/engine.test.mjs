@@ -13,7 +13,10 @@ import assert from "node:assert/strict";
 import { restsRequired, analyzeDay, applyOvertime, RULES } from "../parse.js";
 import { findAnomalies, suggestPunches, reviewSheet } from "../anomalies.js";
 import { recomputeSheet, patchFor, mergeOverride, CORRECTION_KINDS } from "../corrections.js";
-import { compareToSchedule, scheduleKey } from "../schedule.js";
+import { compareToSchedule, scheduleKey, readSchedulePages } from "../schedule.js";
+import { normalizeDate, clockKey, gradePremium, gradePremiums } from "../clock.js";
+import { matchEmployee } from "../match.js";
+import { indexByAccount, lookupAcross, suggestAlias } from "../identity.js";
 
 // minutes from midnight, the way the parser holds a punch
 const at = (h, m = 0) => ({ min: h * 60 + m });
@@ -271,4 +274,582 @@ test("small differences are not flagged", () => {
     [{ date: "07/20/26", workHours: 8 }],
   );
   assert.equal(cmp.flagged.length, 0);
+});
+
+// ------------------------------------------------------- schedule page breaks
+//
+// The QSP export has now broken parsing the same way three times: employees
+// spanning pages, comments spilling onto their own page, and this one - a month
+// calendar running onto a second page with the split landing MID-WEEK. The
+// entries that don't fit carry on at the top of the next page with no day
+// number above them and no "Employee:" header, so read page-by-page they look
+// like nothing and get dropped. The scheduled total then comes out short and
+// the checks screen accuses a day that was fine.
+//
+// The fixture is Ilean Solorzano, July 2026, off the real export. Her week of
+// the 19th is the cut one: the 20th through the 23rd each have entries stranded
+// on page 2. All four are genuinely 8.00 hour days. Before the fix they read
+// 6.00 / 4.00 / 6.00 / 5.48, and every one of those raised a false anomaly -
+// worse, "Correct this day" offered the short figure as the suggested fix, so
+// accepting it would have used the tool to INTRODUCE a payroll error.
+
+// lay text out the way pdfjs hands it over: {str, transform:[a,b,c,d,x,y], width}
+const COLS = [100, 250, 400, 550, 700, 850, 1000]; // sun..sat, centres
+const item = (str, x, y, width = 0) => ({ str, transform: [1, 0, 0, 1, x, y], width });
+// day numbers are CENTRED in their cell - that centring is what broke an earlier
+// attempt at this parser, so the fixture reproduces it rather than faking it
+const dayNum = (n, col, y) => {
+  const w = String(n).length * 8;
+  return item(String(n), COLS[col] - w / 2, y, w);
+};
+// entries are left-aligned in the cell and sit below the day number
+const entry = (text, col, y) => item(text, COLS[col] - 8, y);
+
+const ROWS = [800, 650, 500, 350, 200];
+
+function solorzanoPage1() {
+  const items = [
+    item("Employee: Ilean Solorzano", 400, 950),
+    item("July 2026", 400, 920),
+  ];
+  // the grid: July 2026 opens on a Wednesday
+  const grid = [
+    [null, null, null, 1, 2, 3, 4],
+    [5, 6, 7, 8, 9, 10, 11],
+    [12, 13, 14, 15, 16, 17, 18],
+    [19, 20, 21, 22, 23, 24, 25],
+  ];
+  grid.forEach((week, r) =>
+    week.forEach((d, c) => d && items.push(dayNum(d, c, ROWS[r]))),
+  );
+
+  // only the cut week is filled in - the rest of the month is grid, and the
+  // grid is all the parser needs from it
+  const y = ROWS[3] - 15;
+  const add = (col, lines) =>
+    lines.forEach((t, i) => items.push(entry(t, col, y - i * 12)));
+
+  add(0, ["10:30a-11:30a Huerta, F-ILS Service(1:00)"]);
+  add(1, [
+    "8:30a-10:30a Montiel, A-ILS Service(2:00)",
+    "10:30a-12:30p Hernandez, T-ILS Service(2:00)",
+    "12:30p-2:30p Velasquez, F-ILS Service(2:00)",
+  ]);
+  add(2, [
+    "8a-9:30a Tran, N-ILS Service(1:30)",
+    "9:30a-10a Soriano, R-ILS Service(0:30)",
+    "10a-11:30a -ILS Admin(1:30)",
+    "12p-12:30p Flores, E-ILS Service(0:30)",
+  ]);
+  add(3, [
+    "7:30a-9:30a Gonzalez, G-ILS Service(2:00)",
+    "9:30a-11:30a Uribe, P-ILS Service(2:00)",
+    "11:30a-12:45p -ILS Admin(1:15)",
+    "1:30p-2:15p Gonzalez, A-ILS Service(0:45)",
+  ]);
+  add(4, [
+    "8:37a-10:37a Lorenzana, S-ILS Service(2:00)",
+    "10:37a-12:06p Flores, E-ILS Service(1:29)",
+    "12:06p-2:06p Hernandez, J-ILS Service(2:00)",
+  ]);
+  add(5, [
+    "8:30a-10:30a Mino, J-ILS Service(2:00)",
+    "10:30a-12:30p Huerta, S-ILS Service(2:00)",
+    "12:30p-2:30p -ILS Admin(2:00)",
+    "4:30p-6:30p Ho, C-ILS Service(2:00)",
+  ]);
+  return items;
+}
+
+function solorzanoPage2() {
+  // NO "Employee:" header and NO month - this is the whole difficulty
+  const items = [];
+
+  // the tail of the week of the 19th, stranded above everything, with no day
+  // number anywhere near it to say which day it belongs to
+  const spillY = 900;
+  const spill = (col, lines) =>
+    lines.forEach((t, i) => items.push(entry(t, col, spillY - i * 12)));
+
+  spill(1, [
+    "2:30p-3:30p Botello, I-ILS Service(1:00)",
+    "3:30p-4:30p Gonzalez, G-ILS Service(1:00)",
+  ]);
+  spill(2, [
+    "12:30p-1:30p Munoz, O-ILS Service(1:00)",
+    "1:30p-3:30p Gonzalez, C-ILS Service(2:00)",
+    "3:30p-4:30p Burkey, K-ILS Service(1:00)",
+  ]);
+  spill(3, [
+    "2:30p-3:30p Martinez-Andraca, M-ILS Service(1:00)",
+    "4p-5p Villa, E-ILS Service(1:00)",
+  ]);
+  spill(4, [
+    "2:06p-2:44p Martinez, M-ILS Service(0:38)",
+    "3p-3:35p Gonzalez, G-ILS Service(0:35)",
+    "3:35p-3:50p Botello, I-ILS Service(0:15)",
+    "4p-4:49p Sosa, A-ILS Service(0:49)",
+    "4:50p-5:04p Zambrano, D-ILS Service(0:14)",
+  ]);
+
+  // then the last week of the month, a normal row that happens to be on page 2
+  [26, 27, 28, 29, 30, 31].forEach((d, c) => items.push(dayNum(d, c, ROWS[0])));
+  const y = ROWS[0] - 15;
+  const add = (col, lines) =>
+    lines.forEach((t, i) => items.push(entry(t, col, y - i * 12)));
+  add(0, [
+    "8:30a-8:50a Tran, N-ILS Service(0:20)",
+    "8:50a-9:26a Zambrano, D-ILS Service(0:36)",
+    "9:30a-9:45a Gonzalez, A-ILS Service(0:15)",
+    "9:45a-10:45a Pina, A-ILS Service(1:00)",
+  ]);
+  add(5, [
+    "8:30a-10:30a Tran, N-ILS Service(2:00)",
+    "10:30a-11:30a Le, T-ILS Service(1:00)",
+    "1p-1:30p -Meal Break(0:30)",
+    "1:30p-2:30p Gonzalez, G-ILS Service(1:00)",
+    "2:30p-4:30p Burkey, K-ILS Service(2:00)",
+    "4:30p-6:30p Zambrano, D-ILS Service(2:00)",
+  ]);
+  return items;
+}
+
+const solorzano = () => {
+  const [person] = readSchedulePages([solorzanoPage1(), solorzanoPage2()]);
+  return { person, byDate: new Map(person.days.map((d) => [d.date, d])) };
+};
+
+test("a page with no header continues the person before it", () => {
+  const { person } = solorzano();
+  assert.equal(person.employee, "Ilean Solorzano");
+  assert.deepEqual(person.pages, [1, 2], "both pages belong to the one person");
+});
+
+test("a week cut by the page break is stitched back to full days", () => {
+  const { byDate } = solorzano();
+  // every one of these is really an 8-hour day. the number in the comment is
+  // what the parser used to report when it read page 2 as nothing.
+  assert.equal(byDate.get("07/20/26").workHours, 8, "was 6.00");
+  assert.equal(byDate.get("07/21/26").workHours, 8, "was 4.00");
+  assert.equal(byDate.get("07/22/26").workHours, 8, "was 6.00");
+  assert.equal(byDate.get("07/23/26").workHours, 8, "was 5.48");
+  // the 24th sits in the same cut week but had nothing stranded, so it must be
+  // untouched - the stitching has to be able to add nothing
+  assert.equal(byDate.get("07/24/26").workHours, 8);
+});
+
+test("the stitched day keeps the shifts from both pages, in order", () => {
+  const { byDate } = solorzano();
+  const texts = byDate.get("07/21/26").entries.map((e) => e.text);
+  assert.equal(texts.length, 7, "four off page 1, three off page 2");
+  assert.match(texts[0], /^8a-9:30a Tran/);
+  assert.match(texts.at(-1), /^3:30p-4:30p Burkey/);
+});
+
+test("a day split across pages records both pages", () => {
+  const { byDate } = solorzano();
+  assert.deepEqual(byDate.get("07/21/26").pages, [1, 2], "the cut day is on both");
+  assert.deepEqual(byDate.get("07/24/26").pages, [1], "an intact day is on one");
+  assert.deepEqual(byDate.get("07/31/26").pages, [2], "a whole week can start on page 2");
+});
+
+test("a whole row living on the continuation page still reads", () => {
+  const { byDate } = solorzano();
+  // 0:20 + 0:36 + 0:15 + 1:00
+  assert.equal(byDate.get("07/26/26").workHours, 2.18);
+  // and meals stay excluded from work even on a continuation page
+  const d31 = byDate.get("07/31/26");
+  assert.equal(d31.workHours, 8, "the half-hour meal is not paid time");
+  assert.equal(d31.mealHours, 0.5);
+});
+
+test("the page-break bug would have raised four false anomalies", () => {
+  // the end-to-end point of all of the above: with the week stitched, Solorzano's
+  // timesheet agrees with her schedule and nothing is flagged. Without it, four
+  // correct days get accused - and the suggested "fix" is the short figure.
+  const { byDate } = solorzano();
+  const dates = ["07/20/26", "07/21/26", "07/22/26", "07/23/26"];
+  const cmp = compareToSchedule(
+    dates.map((date) => ({ date, paidHours: 8 })),
+    dates.map((date) => byDate.get(date)),
+  );
+  assert.equal(cmp.flagged.length, 0, "a correct timesheet must not be accused");
+});
+
+// B. Rotter, July 2026, the case section 0b of the checklist is written around.
+//
+// Structurally different from Solorzano and worth its own fixture: her page 2
+// carries NO day numbers whatsoever - it is nothing but the tail of the last
+// week. So the column grid has to come from the page before (there is nothing to
+// derive it from), there is no "first day-number row" to measure spill against,
+// and the whole page has to be recognised as belonging to the previous person's
+// last row. A page like this is the one that used to be discarded outright.
+function rotterPage1() {
+  const items = [
+    item("Employee: B. Rotter", 400, 950),
+    item("July 2026", 400, 920),
+  ];
+  const grid = [
+    [null, null, null, 1, 2, 3, 4],
+    [5, 6, 7, 8, 9, 10, 11],
+    [12, 13, 14, 15, 16, 17, 18],
+    [19, 20, 21, 22, 23, 24, 25],
+    [26, 27, 28, 29, 30, 31, null],
+  ];
+  grid.forEach((week, r) =>
+    week.forEach((d, c) => d && items.push(dayNum(d, c, ROWS[r]))),
+  );
+
+  // only the last week is filled in - that's the cut one
+  const y = ROWS[4] - 15;
+  const add = (col, lines) =>
+    lines.forEach((t, i) => items.push(entry(t, col, y - i * 12)));
+
+  // the 26th is genuinely empty, on both pages
+  add(1, [
+    "8a-9a Slade, G-ILS Service(1:00)",
+    "9a-11:30a Weiner, C-ILS Service(2:30)",
+    "11:30a-1:30p Reyes, N-ILS Service(2:00)",
+  ]);
+  add(2, [
+    "9a-11:30a Bedard, P-ILS Service(2:30)",
+    "11:30a-2p Auger, L-ILS Service(2:30)",
+    "2p-2:30p -Meal Break(0:30)",
+  ]);
+  add(3, [
+    "10a-11a -ILS Admin(1:00)",
+    "11a-2p Jemison, J-ILS Service(3:00)",
+    "2p-4p Fuerte, J-ILS Service(2:00)",
+  ]);
+  add(4, [
+    "10a-1p Durfey, S-ILS Service(3:00)",
+    "1p-4p Blaes, H-ILS Service(3:00)",
+    "4:30p-5p -Meal Break(0:30)",
+  ]);
+  add(5, [
+    "11:30a-1p Jemison, J-ILS Service(1:30)",
+    "1p-2p Hurtado, N-ILS Service(1:00)",
+    "2p-5p Mc Carter Jr., W-ILS Service(3:00)",
+  ]);
+  return items;
+}
+
+function rotterPage2() {
+  // no header, no month, and no day numbers anywhere. read on its own this page
+  // is unattributable - it only means anything relative to the page before it.
+  const items = [];
+  const y = 900;
+  const add = (col, lines) =>
+    lines.forEach((t, i) => items.push(entry(t, col, y - i * 12)));
+
+  add(1, [
+    "1:30p-2p -Meal Break(0:30)",
+    "2p-3p Hurtado, N-ILS Service(1:00)",
+    "5p-6:30p Sanchez, P-ILS Service(1:30)",
+  ]);
+  // the shift the checklist is named after: without it the 28th reads 5.00
+  add(2, ["2:30p-5:30p Dawson, N-ILS Service(3:00)"]);
+  add(3, [
+    "4:30p-5p -Meal Break(0:30)",
+    "5p-6p Fisher, J-ILS Service(1:00)",
+    "6p-7p Schuster, J-ILS Service(1:00)",
+  ]);
+  add(4, [
+    "5p-6p Fuerte, J-ILS Service(1:00)",
+    "6p-7p Dawson, N-ILS Service(1:00)",
+  ]);
+  add(5, [
+    "5p-5:30p -Meal Break(0:30)",
+    "5:30p-6:30p Martinez, O-ILS Service(1:00)",
+    "6:30p-7p Dawson, N-ILS Service(0:30)",
+    "7p-8p Schuster, J-ILS Service(1:00)",
+  ]);
+  return items;
+}
+
+const rotter = () => {
+  const [person] = readSchedulePages([rotterPage1(), rotterPage2()]);
+  return { person, byDate: new Map(person.days.map((d) => [d.date, d])) };
+};
+
+test("a continuation page with NO day numbers still attaches", () => {
+  // there is nothing on this page to derive a column grid from, so it has to be
+  // carried forward from the page before or every entry lands in no column
+  const { person } = rotter();
+  assert.equal(person.employee, "B. Rotter");
+  assert.deepEqual(person.pages, [1, 2]);
+});
+
+test("Rotter's last week reads 8.00 every day once stitched", () => {
+  const { byDate } = rotter();
+  // the figures in the comments are what the checks screen showed before the fix
+  assert.equal(byDate.get("07/27/26").workHours, 8, "was 5.50");
+  assert.equal(byDate.get("07/28/26").workHours, 8, "was 5.00 - the missing Dawson");
+  assert.equal(byDate.get("07/29/26").workHours, 8, "was 6.00");
+  assert.equal(byDate.get("07/30/26").workHours, 8, "was 6.00");
+  assert.equal(byDate.get("07/31/26").workHours, 8, "was 5.50");
+});
+
+test("the 2:30p-5:30p Dawson shift is the one that was being lost", () => {
+  const { byDate } = rotter();
+  const d28 = byDate.get("07/28/26");
+  assert.ok(
+    d28.entries.some((e) => /Dawson/.test(e.text) && e.minutes === 180),
+    "the 3-hour Dawson shift must survive the page break",
+  );
+  assert.equal(d28.mealHours, 0.5, "and the meal stays unpaid");
+  assert.deepEqual(d28.pages, [1, 2]);
+});
+
+test("a day empty on both pages never appears", () => {
+  // the 26th is a genuinely unscheduled Sunday. it must not turn into a
+  // zero-hour day that then reads as "on the schedule, but no punches".
+  const { byDate } = rotter();
+  assert.equal(byDate.get("07/26/26"), undefined);
+});
+
+test("the comparison carries the scheduled shifts, not just the total", () => {
+  // "schedule has 4.12" says the two disagree but not how. The shifts are what
+  // make a wrong reading obvious at a glance.
+  const { byDate } = solorzano();
+  const cmp = compareToSchedule(
+    [{ date: "07/21/26", paidHours: 16.5 }],
+    [byDate.get("07/21/26")],
+  );
+  const [row] = cmp.flagged;
+  assert.equal(row.shifts.length, 7);
+  assert.match(row.shifts[0].text, /8a-9:30a/);
+  assert.deepEqual(row.schedulePages, [1, 2], "so the snippet can link to both");
+});
+
+// ------------------------------------------------------- premium evidence
+//
+// Every premium hour is graded by how well the day behind it is evidenced, so
+// the number handed to management splits into "stands up on its own" and
+// "somebody needs to look at this". On 07/16-07/31 that was 386 clock-confirmed,
+// 215 corroborated by the schedule, and 21 with neither.
+//
+// The grading must NEVER change an hour or a premium. It only labels them.
+
+test("the two exports print dates differently and both have to line up", () => {
+  assert.equal(normalizeDate("7/16/2026"), "07/16/26", "clock report style");
+  assert.equal(normalizeDate("07/16/26"), "07/16/26", "timesheet style");
+  assert.equal(normalizeDate("12/1/2026"), "12/01/26");
+  assert.equal(normalizeDate(""), null);
+  assert.equal(normalizeDate("nonsense"), null);
+});
+
+test("employee names line up between the clock report and the timesheet", () => {
+  assert.equal(clockKey("Rotter, B."), clockKey("rotter,  b."));
+  assert.notEqual(clockKey("Garcia, Stephanie"), clockKey("Garcia, Steven"));
+});
+
+test("a rest premium is recorded when QSP's rest report covers the person", () => {
+  // the rest report decided the violation, so the violation carries its authority
+  const opts = { clockDays: null, restCovered: true, scheduleByDate: {} };
+  assert.equal(gradePremium("rest", "07/20/26", opts), "recorded");
+});
+
+test("a rest premium with no rest report falls back to the clock", () => {
+  assert.equal(
+    gradePremium("rest", "07/20/26", { clockDays: { "07/20/26": "full" }, restCovered: false }),
+    "recorded",
+    "a fully clocked day makes the punch gaps real",
+  );
+  assert.equal(
+    gradePremium("rest", "07/20/26", { clockDays: { "07/20/26": "none" }, restCovered: false }),
+    "unverified",
+    "typed-in times with no rest report behind them prove nothing",
+  );
+});
+
+test("the schedule can corroborate a MEAL premium but never a rest one", () => {
+  // the schedule holds meal breaks and not one rest period in 1,986 entries
+  const scheduled = { scheduleByDate: { "07/20/26": { shifts: [{ text: "9a-5p Smith", meal: false }] } } };
+  assert.equal(
+    gradePremium("meal", "07/20/26", { clockDays: null, restCovered: false, ...scheduled }),
+    "supported",
+    "a full day with no meal period scheduled is evidence none was taken",
+  );
+  assert.equal(
+    gradePremium("rest", "07/20/26", { clockDays: null, restCovered: false, ...scheduled }),
+    "unverified",
+    "the same schedule says nothing at all about rest breaks",
+  );
+});
+
+test("a meal that WAS scheduled but never punched is not corroborated", () => {
+  const g = gradePremium("meal", "07/20/26", {
+    clockDays: null,
+    restCovered: false,
+    scheduleByDate: { "07/20/26": { shifts: [{ text: "1p-1:30p -Meal Break", meal: true }] } },
+  });
+  assert.equal(g, "unverified", "they may well have taken it and not clocked it");
+});
+
+test("hours differing from the schedule never affects the grade", () => {
+  // people work different hours than they were scheduled. That is ordinary, and
+  // the timesheet is the record we go by - it must not weaken any premium.
+  const base = { clockDays: { "07/20/26": "full" }, restCovered: true, scheduleByDate: {} };
+  assert.equal(gradePremium("meal", "07/20/26", base), "recorded");
+  assert.equal(gradePremium("rest", "07/20/26", base), "recorded");
+});
+
+test("meal and rest on the same day are graded separately", () => {
+  const days = [{ date: "07/20/26", mealViolation: true, restViolation: true }];
+  const { totals, byDate } = gradePremiums(days, {
+    clockDays: null,
+    restCovered: true,
+    scheduleByDate: { "07/20/26": { shifts: [{ text: "9a-5p", meal: false }] } },
+  });
+  assert.equal(byDate["07/20/26"].rest, "recorded", "rest report covers it");
+  assert.equal(byDate["07/20/26"].meal, "supported", "no meal was scheduled");
+  assert.equal(totals.recorded + totals.supported + totals.unverified, 2);
+});
+
+// ---------------------------------------------------- one person, many names
+//
+// QSP does not print one name per person across its own reports. The Simple
+// Timesheet says "Delgado Pineda, Ruth"; the clock and rest reports say
+// "Delgado Pineda, Angel". Her portal account settles it - she is Ruth, and her
+// preferred name is Angel - so both spellings are resolved through the staff
+// list rather than compared to each other.
+//
+// Getting this wrong is expensive in both directions: miss the link and 37
+// premium hours sit in "needs somebody to look" over spelling; guess at it and
+// somebody's payroll evidence is attributed from another person's record.
+
+const STAFF = [
+  { id: "u-ruth", name: "Ruth Delgado Pineda", preferredFirstName: "Angel" },
+  { id: "u-jen", name: "Jennifer Delgado Pineda" },
+  { id: "u-frank", name: "Frank Velasquez" },
+  { id: "u-jess", name: "Jessica Zermeno" },
+];
+
+test("a preferred name links the same person across two reports", () => {
+  const byUser = indexByAccount(["Delgado Pineda, Angel", "Delgado Pineda, Jennifer"], STAFF);
+  const hit = lookupAcross("Delgado Pineda, Ruth", matchEmployee("Delgado Pineda, Ruth", STAFF), {
+    get: (k) => (k === "delgado pineda, angel" ? { shifts: 40 } : null),
+    keyOf: clockKey,
+    byUser,
+  });
+  assert.ok(hit.value, "her clock record must be found under her preferred name");
+  assert.equal(hit.via, "Delgado Pineda, Angel", "and the screen must be told which spelling was used");
+});
+
+test("the name as printed always wins - no alias hop when it matches", () => {
+  const hit = lookupAcross("Velasco, Brenda", matchEmployee("Velasco, Brenda", STAFF), {
+    get: () => ({ shifts: 121 }),
+    keyOf: clockKey,
+    byUser: new Map([["anyone", "Someone, Else"]]),
+  });
+  assert.ok(hit.value);
+  assert.equal(hit.via, null, "nothing was substituted, so nothing to declare");
+});
+
+test("a PARTIAL name match IS followed, but never silently", () => {
+  // "Velasquez, Francisco" scores 50% against an account named Frank Velasquez.
+  // With no other candidate in the building that is who it is, so the link is
+  // made - Mánu's call, and the safe direction, since the alternative is
+  // throwing away her evidence over a nickname.
+  //
+  // What a partial does not get is silence. The confidence rides along with the
+  // result so a 50% link always reads as a 50% link.
+  const m = matchEmployee("Velasquez, Francisco", STAFF);
+  assert.equal(m.userId, "u-frank");
+  assert.notEqual(m.method, "exact", "it is only a partial match");
+
+  const byUser = indexByAccount(["Velasquez, Frank"], STAFF);
+  const hit = lookupAcross("Velasquez, Francisco", m, {
+    get: (k) => (k === "velasquez, frank" ? { shifts: 10 } : null),
+    keyOf: clockKey,
+    byUser,
+  });
+  assert.ok(hit.value, "the record is found");
+  assert.equal(hit.via, "Velasquez, Frank");
+  assert.equal(hit.exact, false, "and it must not claim to be certain");
+  assert.equal(hit.confidence, 50, "the estimate travels with it");
+});
+
+test("a name that matches as printed is reported as certain", () => {
+  const hit = lookupAcross("Velasco, Brenda", matchEmployee("Velasco, Brenda", STAFF), {
+    get: () => ({ shifts: 121 }),
+    keyOf: clockKey,
+    byUser: new Map(),
+  });
+  assert.equal(hit.exact, true);
+  assert.equal(hit.confidence, 100);
+});
+
+test("the guess that IS offered reports the weaker of the two links", () => {
+  // "Velasquez, Frank" matches its own account 100%. Saying so would be true
+  // and beside the point - the open question is whether Francisco is Frank.
+  const g = suggestAlias("Velasquez, Francisco", ["Velasquez, Frank"], STAFF);
+  assert.equal(g.name, "Velasquez, Frank");
+  assert.equal(g.confidence, 50, "the uncertain side is the one to report");
+});
+
+test("nobody is offered when there is no candidate", () => {
+  assert.equal(suggestAlias("Zermeno, Jessica", ["Velasquez, Frank"], STAFF), null);
+});
+
+test("two people sharing a surname never collapse into one", () => {
+  const byUser = indexByAccount(["Delgado Pineda, Jennifer"], STAFF);
+  const hit = lookupAcross("Delgado Pineda, Ruth", matchEmployee("Delgado Pineda, Ruth", STAFF), {
+    get: (k) => (k === "delgado pineda, jennifer" ? { shifts: 43 } : null),
+    keyOf: clockKey,
+    byUser,
+  });
+  assert.equal(hit.value, null, "Ruth must never be handed Jennifer's record");
+});
+
+// -------------------------------------------- the timesheet is the record
+//
+// Mánu's ruling: the QSP Simple Timesheet is what we go off, because it is the
+// document staff sign. The schedule, clock and rest reports are support for what
+// the timesheet cannot answer, and a supporting document must never overrule it
+// to somebody's cost.
+//
+// For rest breaks that means: whichever source shows FEWER breaks decides, so
+// the support can only ever ADD a premium.
+
+const restDay = (punches, recorded) =>
+  analyzeDay({ date: "07/20/26", punches, printed: null, restRecorded: recorded });
+
+test("the rest report can ADD a premium the punches would have missed", () => {
+  // 8 hours with two ten-minute gaps reads as two rests taken, so nothing owed.
+  // QSP's own record says only one was a break - the other was travel.
+  const punches = [at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)];
+  assert.equal(restDay(punches, null).restViolation, false, "punches alone see two rests");
+  assert.equal(restDay(punches, 1).restViolation, true, "the report says one, so a premium is owed");
+});
+
+test("the rest report can NEVER take a premium away", () => {
+  // the punches show no break at all; the report claims two. The timesheet is
+  // the record, so the premium stands.
+  const punches = [at(8), at(17)];
+  assert.equal(restDay(punches, null).restViolation, true);
+  assert.equal(restDay(punches, 2).restViolation, true,
+    "a supporting document must not overrule the signed timesheet against the employee");
+});
+
+test("with no rest report at all, nothing changes", () => {
+  const punches = [at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)];
+  const withReport = restDay(punches, null);
+  assert.equal(withReport.restSource, "punches");
+  assert.equal(withReport.restViolation, false);
+});
+
+test("hours are never touched by the rest report", () => {
+  // two ten-minute gaps: enough rests by the punches, one short by the report.
+  // The violation moves, the hours must not - the ten minutes stay paid time
+  // either way, because that comes off the timesheet.
+  const punches = [at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)];
+  const a = restDay(punches, null);
+  const b = restDay(punches, 1);
+  assert.equal(a.paidHours, b.paidHours, "paid hours come from the timesheet, full stop");
+  assert.equal(a.workedMin, b.workedMin);
+  assert.equal(a.restMin, b.restMin, "and the rest time added back is unchanged");
+  assert.equal(a.restViolation, false);
+  assert.equal(b.restViolation, true, "only the violation moves");
 });

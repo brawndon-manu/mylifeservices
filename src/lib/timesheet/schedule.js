@@ -78,7 +78,7 @@ function isMeal(text) {
 // "Employee:" header either. read on its own it looks like nothing, so those
 // shifts used to be dropped - the scheduled total came out short and the checks
 // screen then accused a day that was fine.
-function readPage(items, prev = null) {
+function readPage(items, prev = null, pageNum = 0) {
   const header = items.map((i) => i.str).join(" ").replace(/\s+/g, " ");
   const who = /Employee:\s*(.+?)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i.exec(header);
   const when = /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i.exec(header);
@@ -198,6 +198,9 @@ function readPage(items, prev = null) {
       workHours: Math.round((workMin / 60) * 100) / 100,
       mealHours: Math.round((mealMin / 60) * 100) / 100,
       entries,
+      // which page of the export this day was read off. a day cut by a page
+      // break ends up with two, which is exactly the case worth showing.
+      pages: [pageNum],
     });
   }
 
@@ -224,6 +227,7 @@ function readPage(items, prev = null) {
         workHours: Math.round((workMin / 60) * 100) / 100,
         mealHours: Math.round((mealMin / 60) * 100) / 100,
         entries,
+        pages: [pageNum],
       });
     }
   }
@@ -248,6 +252,7 @@ function readPage(items, prev = null) {
     days,
     isContinuation,
     spillDays,
+    pages: [pageNum],
     // carried forward so the next page can read a grid it may not have itself
     cols,
     colWidth,
@@ -255,17 +260,13 @@ function readPage(items, prev = null) {
   };
 }
 
-export async function parseSchedulePdf(bytes) {
-  const pdfjs = await getPdfjs();
-  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const doc = await pdfjs.getDocument({ data }).promise;
-
+// the stitching, separated from pdfjs so it can be tested without a PDF.
+// `pages` is one array of text items per page, in order.
+export function readSchedulePages(pages) {
   const people = [];
   let last = null;
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const parsed = readPage(content.items, last);
+  for (let i = 1; i <= pages.length; i++) {
+    const parsed = readPage(pages[i - 1], last, i);
     if (!parsed) continue;
 
     if (parsed.isContinuation && people.length) {
@@ -274,6 +275,8 @@ export async function parseSchedulePdf(bytes) {
       const person = people[people.length - 1];
       const byDay = new Map(person.days.map((d) => [d.day, d]));
 
+      person.pages.push(...parsed.pages);
+
       // the cut week's tail first - these add to a day that already exists
       for (const s of parsed.spillDays) {
         const existing = byDay.get(s.day);
@@ -281,6 +284,9 @@ export async function parseSchedulePdf(bytes) {
           existing.workHours = Math.round((existing.workHours + s.workHours) * 100) / 100;
           existing.mealHours = Math.round((existing.mealHours + s.mealHours) * 100) / 100;
           existing.entries.push(...s.entries);
+          // this is the day the page break cut in half, so it now reads off two
+          // pages. both are worth linking to from the checks screen.
+          for (const p of s.pages) if (!existing.pages.includes(p)) existing.pages.push(p);
         } else {
           const dd = String(s.day).padStart(2, "0");
           const day = {
@@ -298,6 +304,7 @@ export async function parseSchedulePdf(bytes) {
           existing.workHours = Math.round((existing.workHours + d.workHours) * 100) / 100;
           existing.mealHours = Math.round((existing.mealHours + d.mealHours) * 100) / 100;
           existing.entries.push(...d.entries);
+          for (const p of d.pages) if (!existing.pages.includes(p)) existing.pages.push(p);
         } else {
           person.days.push(d);
           byDay.set(d.day, d);
@@ -313,6 +320,19 @@ export async function parseSchedulePdf(bytes) {
   return people;
 }
 
+export async function parseSchedulePdf(bytes) {
+  const pdfjs = await getPdfjs();
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const doc = await pdfjs.getDocument({ data }).promise;
+
+  const pages = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const content = await (await doc.getPage(i)).getTextContent();
+    pages.push(content.items);
+  }
+  return readSchedulePages(pages);
+}
+
 // "Stephanie Garcia" and "Garcia, Stephanie" are the same person. the schedule
 // prints first-last, the timesheet prints last-first.
 export function scheduleKey(name) {
@@ -322,6 +342,29 @@ export function scheduleKey(name) {
     return `${first} ${last}`.toLowerCase().replace(/\s+/g, " ");
   }
   return n.toLowerCase().replace(/\s+/g, " ");
+}
+
+// the scheduled shifts themselves, kept alongside the total.
+//
+// "schedule has 4.12" tells you the two records disagree but not HOW, and the
+// figure is our transcription of a document the reader can't see. The shifts are
+// what make a wrong reading obvious: a page-break bug once printed a perfectly
+// plausible 5.00 for a day that was really 8.00, and nothing but opening the
+// source PDF by hand would have caught it. The missing 2:30p-5:30p shows here.
+//
+// Kept verbatim, client initial and all. The whole point is to let someone check
+// our transcription against the document, and a tidied-up version can't do that.
+function scheduleEvidence(s) {
+  const shifts = (s?.entries || []).map((e) => ({
+    text: String(e.text || "").replace(/\s+/g, " ").trim(),
+    minutes: e.minutes || 0,
+    meal: !!e.meal,
+  }));
+  return {
+    shifts,
+    // a day cut by a page break carries both pages
+    schedulePages: s?.pages || [],
+  };
 }
 
 // line the two records up. only days present in the timesheet are compared -
@@ -347,6 +390,7 @@ export function compareToSchedule(timesheetDays, scheduleDays, { toleranceHours 
       schedule: s.workHours,
       diff,
       flag: Math.abs(diff) > toleranceHours ? "mismatch" : null,
+      ...scheduleEvidence(s),
     });
   }
 
@@ -362,7 +406,14 @@ export function compareToSchedule(timesheetDays, scheduleDays, { toleranceHours 
     for (const s of scheduleDays || []) {
       if (seen.has(s.date) || s.workHours <= 0) continue;
       if (s.date < first || s.date > last) continue;
-      rows.push({ date: s.date, timesheet: null, schedule: s.workHours, diff: null, flag: "missing-from-timesheet" });
+      rows.push({
+        date: s.date,
+        timesheet: null,
+        schedule: s.workHours,
+        diff: null,
+        flag: "missing-from-timesheet",
+        ...scheduleEvidence(s),
+      });
     }
   }
 

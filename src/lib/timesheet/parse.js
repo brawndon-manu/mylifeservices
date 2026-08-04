@@ -318,6 +318,11 @@ export function analyzeDay(day) {
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
 
+  // `day.restRecorded` is set by the caller from QSP's Rest Periods Report when
+  // that report covers this person. null means we have nothing better than the
+  // punch gaps, which is what this always used.
+  const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
+
   // the first meal has to START by the end of the fifth hour worked. a late
   // lunch is its own violation - the break happened, but not when it was owed -
   // and it was invisible while we only counted whether a meal existed at all.
@@ -351,6 +356,15 @@ export function analyzeDay(day) {
     needsReview: oddPunches || (drift !== null && drift > 0.05),
     mealCount,
     restCount,
+    // what QSP's Rest Periods Report says was actually taken that day, when we
+    // have it. `restCount` above is inferred from gaps between punches, which
+    // can't tell a break from travel between two clients - so where the report
+    // covers someone, its count is the one that decides the violation.
+    //
+    // Note this only ever moves the VIOLATION. Paid hours still come from the
+    // punches, because the timesheet is the document staff sign.
+    restRecorded: recorded,
+    restSource: recorded === null ? "punches" : "rest-report",
     restRequired,
     mealRequired,
     // never taken, or taken too late - §226.7 pays one premium either way, so
@@ -359,7 +373,17 @@ export function analyzeDay(day) {
     mealLate,
     mealStartedAfterMin,
     mealViolation: mealRequired && (mealCount === 0 || mealLate),
-    restViolation: restCount < restRequired,
+    // The timesheet is the record. QSP's Rest Periods Report is support for the
+    // one thing the timesheet cannot answer - whether a short gap between
+    // punches was actually a break, or travel between two clients.
+    //
+    // So it can only ever ADD a premium, never take one away. Whichever source
+    // shows FEWER breaks taken decides, which is the reading that pays the
+    // employee. On 07/16-07/31 the two rules give an identical answer (389 rest
+    // premium days) because the report never once showed a break the punches
+    // missed - but that is this data being kind, not a rule. This makes it one.
+    restViolation:
+      (recorded === null ? restCount : Math.min(restCount, recorded)) < restRequired,
   };
 }
 
@@ -521,6 +545,11 @@ export async function parseTimesheetPdf(bytes) {
     const rows = await pageRows(await doc.getPage(i));
     const parsed = parsePage(rows);
 
+    // which page a day was read off, so anyone reading a figure on the checks
+    // screen can open the page it came from. a day whose row is split by the
+    // page break ends up with two.
+    for (const d of parsed.days) d.pages = [i];
+
     if (parsed.employee) {
       sheets.push({ ...parsed, pages: [i] });
       continue;
@@ -536,6 +565,7 @@ export async function parseTimesheetPdf(bytes) {
       if (existing) {
         existing.punches.push(...d.punches);
         Object.assign(existing.printed, d.printed);
+        if (!existing.pages.includes(i)) existing.pages.push(i);
       } else {
         prev.days.push(d);
       }

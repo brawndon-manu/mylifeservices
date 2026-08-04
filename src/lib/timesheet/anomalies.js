@@ -30,7 +30,10 @@ export const ANOMALY_KINDS = {
   },
 };
 
-const hm = (m) => {
+// minutes-from-midnight back to the way QSP prints a punch. exported because the
+// checks screen shows raw punches for schedule disagreements too, and those
+// aren't anomalies - two formatters would drift.
+export const hm = (m) => {
   const h24 = Math.floor(((m % 1440) + 1440) % 1440 / 60);
   const mm = Math.round(((m % 60) + 60) % 60);
   const ap = h24 >= 12 ? "p" : "a";
