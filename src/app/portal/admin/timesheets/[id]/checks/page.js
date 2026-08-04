@@ -6,6 +6,8 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import BackLink from "@/components/BackLink";
+import CorrectDay from "./CorrectDay";
+import RecomputeButton from "../corrections/RecomputeButton";
 
 export const metadata = { title: "Data checks", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -52,6 +54,11 @@ export default async function ChecksPage({ params }) {
       flagged,
       scheduleTotal: sched.scheduleTotal ?? null,
       timesheetTotal: sched.timesheetTotal ?? null,
+      overrides: t.overrides || {},
+      signed: !!t.signedAt,
+      // days the timesheet actually holds, so a correction can be offered
+      // against the right figure
+      dayHours: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d.paidHours])),
     });
   }
 
@@ -173,6 +180,26 @@ export default async function ChecksPage({ params }) {
                       </tbody>
                     </table>
                   </div>
+                  {/* correcting is offered per day, against the figure that day
+                      actually holds - not as a blanket "trust the schedule" */}
+                  {!r.signed && (
+                    <div className="mt-2 space-y-2">
+                      {r.flagged
+                        .filter((f) => f.timesheet != null && r.dayHours[f.date] != null)
+                        .map((f, i) => (
+                          <div key={i} className="rounded-md border border-border bg-surface-2 p-2">
+                            <p className="text-xs font-semibold text-foreground">{f.date}</p>
+                            <CorrectDay
+                              timesheetId={r.id}
+                              date={f.date}
+                              timesheet={f.timesheet}
+                              schedule={f.schedule}
+                              existing={r.overrides[f.date] || null}
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -217,6 +244,15 @@ export default async function ChecksPage({ params }) {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {Object.keys(r.overrides).length > 0 && !r.signed && (
+                <div className="mt-4 border-t border-border pt-3">
+                  <RecomputeButton
+                    timesheetId={r.id}
+                    accepted={Object.keys(r.overrides).length}
+                  />
                 </div>
               )}
             </div>

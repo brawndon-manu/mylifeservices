@@ -705,6 +705,72 @@ export async function resolveCorrection(correctionId, decision, formData) {
   revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}/corrections`);
 }
 
+// correct a single day by hand, from the data-checks screen.
+//
+// this is the admin-side twin of accepting an employee's correction: same
+// override store, same recompute, same audit trail. it exists because the checks
+// screen can already see that a day is wrong and what it probably should be, and
+// there was no way to act on that without an employee reporting it first.
+//
+// provenance is written alongside the figure. a corrected timesheet has to be
+// able to say who changed it, when, from what, and why - a bare number appearing
+// in a payroll document with no explanation is worse than the error.
+export async function overrideDayHours(timesheetId, formData) {
+  const user = await requireTimesheetAccess();
+
+  const date = (formData.get("date") || "").toString().slice(0, 12);
+  const raw = (formData.get("hours") || "").toString().trim();
+  const note = (formData.get("note") || "").toString().trim().slice(0, 500) || null;
+  const hours = Number(raw);
+  if (!date) return { ok: false, error: "nodate" };
+  if (!Number.isFinite(hours) || hours < 0 || hours > 24) {
+    return { ok: false, error: "badhours" };
+  }
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, batchId: true, data: true, overrides: true, signedAt: true },
+  });
+  if (!ts) return { ok: false, error: "gone" };
+  // changing the figures under a signature would leave them attesting to a
+  // document that no longer says what they signed
+  if (ts.signedAt) return { ok: false, error: "signed" };
+
+  const day = (ts.data?.days || []).find((d) => d.date === date);
+  if (!day) return { ok: false, error: "noday" };
+
+  const overrides = mergeOverride(ts.overrides, date, {
+    paidHours: Math.round(hours * 100) / 100,
+    _was: day.paidHours,
+    _by: preferredName(user) || user.id,
+    _at: new Date().toISOString(),
+    _note: note,
+    _source: "data-check",
+  });
+
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: { overrides },
+  });
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  return { ok: true };
+}
+
+export async function clearDayOverride(timesheetId, date) {
+  await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, batchId: true, overrides: true },
+  });
+  if (!ts?.overrides) return { ok: false, error: "gone" };
+  const next = { ...ts.overrides };
+  delete next[date];
+  await prisma.timesheet.update({ where: { id: ts.id }, data: { overrides: next } });
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  return { ok: true };
+}
+
 // re-run one employee's figures from their stored days plus whatever overrides
 // were accepted, regenerate the PDF, and clear the dispute so it can be sent
 // again for signature.
