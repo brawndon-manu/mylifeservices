@@ -72,14 +72,23 @@ function isMeal(text) {
 }
 
 // group a page's text items into calendar cells and pull the entries out of each
-function readPage(items) {
+// `prev` is the page before this one. a month can run over onto a second page,
+// and the split lands MID-WEEK: the entries that don't fit carry on at the top
+// of the next page with no day number above them, and that page has no
+// "Employee:" header either. read on its own it looks like nothing, so those
+// shifts used to be dropped - the scheduled total came out short and the checks
+// screen then accused a day that was fine.
+function readPage(items, prev = null) {
   const header = items.map((i) => i.str).join(" ").replace(/\s+/g, " ");
   const who = /Employee:\s*(.+?)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i.exec(header);
   const when = /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i.exec(header);
-  if (!who || !when) return null;
 
-  const month = MONTHS.indexOf(when[1].toLowerCase());
-  const year = +when[2];
+  // no header = a continuation of whoever was on the last page
+  const isContinuation = (!who || !when) && !!prev;
+  if ((!who || !when) && !isContinuation) return null;
+
+  const month = isContinuation ? prev.month : MONTHS.indexOf(when[1].toLowerCase());
+  const year = isContinuation ? prev.year : +when[2];
 
   const pos = items
     .filter((i) => i.str && i.str.trim())
@@ -87,7 +96,10 @@ function readPage(items) {
 
   // the day numbers are bare integers and they define the grid
   const dayCells = pos.filter((p) => /^\d{1,2}$/.test(p.s.trim()) && +p.s <= 31);
-  if (dayCells.length < 20) return null; // not a calendar page
+  // a full page needs a real grid; a continuation may carry only a row or two,
+  // and can legitimately have none at all if only the spill-over fits.
+  if (!isContinuation && dayCells.length < 20) return null;
+  if (isContinuation && !dayCells.length && !prev.lastRow) return null;
 
   // day numbers are CENTRED in their cell, so "10" starts further left than "1".
   // taking transform[4] at face value splits every column in two - cluster on the
@@ -103,9 +115,12 @@ function readPage(items) {
       colCentres.push({ sum: c, n: 1 });
     }
   }
-  const cols = colCentres.map((c) => c.sum / c.n);
+  // a continuation page may carry no day numbers of its own, so the column grid
+  // comes from the page it continues.
+  const cols =
+    colCentres.length > 1 ? colCentres.map((c) => c.sum / c.n) : (prev?.cols ?? colCentres.map((c) => c.sum / c.n));
   const rowYs = [...new Set(dayCells.map((d) => Math.round(d.y)))].sort((a, b) => b - a);
-  const colWidth = cols.length > 1 ? cols[1] - cols[0] : 123;
+  const colWidth = cols.length > 1 ? cols[1] - cols[0] : (prev?.colWidth ?? 123);
 
   const colIndex = (x) => {
     // entries are left-aligned, so measure from the cell's left edge
@@ -129,11 +144,28 @@ function readPage(items) {
     if (ci < 0) continue;
     cells.set(`${ci}|${ry}`, { day: +d.s, items: [] });
   }
+  // anything sitting ABOVE this page's first day-number row is the tail of the
+  // week that got cut by the page break. it belongs to the matching column of
+  // the previous page's last row, not to anything on this page.
+  const topRowY = rowYs.length ? rowYs[0] : null;
+  const spill = new Map(); // date -> items
+
   for (const p of pos) {
     if (/^\d{1,2}$/.test(p.s.trim()) && +p.s <= 31) continue;
     const ci = colIndex(p.x);
+    if (ci < 0) continue;
+
+    const isSpill = isContinuation && (topRowY === null || p.y > topRowY + 2);
+    if (isSpill) {
+      const day = prev?.lastRow?.[ci];
+      if (!day) continue;
+      if (!spill.has(day)) spill.set(day, []);
+      spill.get(day).push(p);
+      continue;
+    }
+
     const ry = rowOf(p.y);
-    if (ci < 0 || ry === null) continue;
+    if (ry === null) continue;
     const key = `${ci}|${ry}`;
     if (!cells.has(key)) continue;
     cells.get(key).items.push(p);
@@ -169,8 +201,58 @@ function readPage(items) {
     });
   }
 
+  // the spilled tail, shaped the same way so the caller can fold it into the
+  // day it belongs to on the previous page
+  const spillDays = [];
+  for (const [day, items] of spill) {
+    items.sort((a, b) => (Math.abs(b.y - a.y) > 2 ? b.y - a.y : a.x - b.x));
+    const text = items.map((i) => i.s).join(" ").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    let workMin = 0, mealMin = 0;
+    const entries = [];
+    for (const chunk of text.split(ENTRY_START)) {
+      const d = DURATION.exec(chunk);
+      if (!d) continue;
+      const mins = (+d[1]) * 60 + (+d[2]);
+      if (isMeal(chunk)) mealMin += mins;
+      else workMin += mins;
+      entries.push({ text: chunk.trim(), minutes: mins, meal: isMeal(chunk) });
+    }
+    if (entries.length) {
+      spillDays.push({
+        day,
+        workHours: Math.round((workMin / 60) * 100) / 100,
+        mealHours: Math.round((mealMin / 60) * 100) / 100,
+        entries,
+      });
+    }
+  }
+
+  // which date sits in each column of the LAST row on this page - that's what a
+  // following continuation page needs to attribute its spill-over to.
+  const lastRow = {};
+  if (rowYs.length) {
+    const bottomY = rowYs[rowYs.length - 1];
+    for (const d of dayCells) {
+      if (Math.round(d.y) !== bottomY) continue;
+      const ci = colIndex(d.x + d.w / 2 - 8);
+      if (ci >= 0) lastRow[ci] = +d.s;
+    }
+  }
+
   days.sort((a, b) => a.day - b.day);
-  return { employee: who[1].trim(), month, year, days };
+  return {
+    employee: isContinuation ? prev.employee : who[1].trim(),
+    month,
+    year,
+    days,
+    isContinuation,
+    spillDays,
+    // carried forward so the next page can read a grid it may not have itself
+    cols,
+    colWidth,
+    lastRow: rowYs.length ? lastRow : prev?.lastRow ?? {},
+  };
 }
 
 export async function parseSchedulePdf(bytes) {
@@ -179,11 +261,53 @@ export async function parseSchedulePdf(bytes) {
   const doc = await pdfjs.getDocument({ data }).promise;
 
   const people = [];
+  let last = null;
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    const parsed = readPage(content.items);
-    if (parsed) people.push(parsed);
+    const parsed = readPage(content.items, last);
+    if (!parsed) continue;
+
+    if (parsed.isContinuation && people.length) {
+      // same person, second page of their month: fold it into what we already
+      // have rather than starting a new record.
+      const person = people[people.length - 1];
+      const byDay = new Map(person.days.map((d) => [d.day, d]));
+
+      // the cut week's tail first - these add to a day that already exists
+      for (const s of parsed.spillDays) {
+        const existing = byDay.get(s.day);
+        if (existing) {
+          existing.workHours = Math.round((existing.workHours + s.workHours) * 100) / 100;
+          existing.mealHours = Math.round((existing.mealHours + s.mealHours) * 100) / 100;
+          existing.entries.push(...s.entries);
+        } else {
+          const dd = String(s.day).padStart(2, "0");
+          const day = {
+            ...s,
+            date: `${String(parsed.month + 1).padStart(2, "0")}/${dd}/${String(parsed.year).slice(2)}`,
+          };
+          person.days.push(day);
+          byDay.set(s.day, day);
+        }
+      }
+      // then whole days that only appear on this page
+      for (const d of parsed.days) {
+        const existing = byDay.get(d.day);
+        if (existing) {
+          existing.workHours = Math.round((existing.workHours + d.workHours) * 100) / 100;
+          existing.mealHours = Math.round((existing.mealHours + d.mealHours) * 100) / 100;
+          existing.entries.push(...d.entries);
+        } else {
+          person.days.push(d);
+          byDay.set(d.day, d);
+        }
+      }
+      person.days.sort((a, b) => a.day - b.day);
+    } else {
+      people.push(parsed);
+    }
+    last = parsed;
   }
   if (!people.length) throw new Error("no schedule pages found in that PDF");
   return people;

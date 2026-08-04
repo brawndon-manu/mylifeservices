@@ -208,12 +208,35 @@ export default async function ChecksPage({ params }) {
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                     Punch entries that can&apos;t be right
                   </p>
-                  <ul className="mt-2 space-y-3">
+                  <ul className="mt-2 space-y-2">
                     {r.punches.map((p, i) => (
-                      <li key={i} className="rounded-lg border border-amber-300/60 bg-amber-50/40 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
-                        <p className="text-sm font-semibold text-foreground">
-                          {p.date} · reads {f2(p.hoursNow)} hrs
-                        </p>
+                      <li key={i} className="rounded-lg border border-amber-300/60 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20">
+                        {/* collapsed by default - three of these filled a screen
+                            for one person. the ones with no safe reading start
+                            open, since those are the only ones that actually
+                            need somebody to do something. */}
+                        <details open={!p.suggestion} className="group">
+                          <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm">
+                            <span
+                              aria-hidden="true"
+                              className="text-xs text-muted transition-transform group-open:rotate-90"
+                            >
+                              ▶
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {p.date} · reads {f2(p.hoursNow)} hrs
+                            </span>
+                            {p.suggestion ? (
+                              <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
+                                likely {f2(p.suggestion.hours)} hrs
+                              </span>
+                            ) : (
+                              <span className="ml-auto whitespace-nowrap text-xs font-semibold text-rose-700 dark:text-rose-400">
+                                needs working out by hand
+                              </span>
+                            )}
+                          </summary>
+                          <div className="border-t border-amber-300/40 px-3 pb-3 pt-2 dark:border-amber-900/40">
                         {p.anomalies.map((a, j) => (
                           <p key={j} className="mt-1 text-xs text-muted">
                             <span className="font-semibold text-foreground">{anomalyLabel(a.kind)}:</span>{" "}
@@ -241,6 +264,8 @@ export default async function ChecksPage({ params }) {
                             out by hand.
                           </p>
                         )}
+                          </div>
+                        </details>
                       </li>
                     ))}
                   </ul>
