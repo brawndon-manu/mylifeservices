@@ -173,6 +173,69 @@ export function reviewSheet(days, analyzeDay) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// A repair a SECOND DOCUMENT confirms, which is the only kind safe to apply.
+//
+// Mánu's rule was "if the two times of a break are inverted, assume a reversal".
+// Measured on 07/16-07/31 that is wrong more often than it is right: of the 24
+// reversed breaks the schedule could judge, swapping was correct on 9 and WRONG
+// on 15, and applying it blind would have stripped 15.58 hours off eleven
+// people - Flores 07/26 from 7.07 down to 1.07, Devine 07/23 from 9.00 to 4.67.
+// The engine can see the shape `12:10p, 12:00p`, but it cannot tell a reversed
+// ten-minute break from punches that are out of order for some other reason.
+//
+// Size does not separate them either, which was the obvious next idea: Aranda
+// 07/21 is a 0.08 hr change and the schedule still says leave it alone.
+//
+// What does separate them is the schedule agreeing with the repaired figure and
+// not with the current one. That was right 9 times out of 9. Every one is the
+// same shape as Mánu's own 07/27: two punch pairs that overlap, so ten minutes
+// get billed twice and the day reads high by 0.17.
+export function scheduleConfirmsRepair(row, scheduledHours, tolerance = 0.05) {
+  if (!row || !row.suggestion || scheduledHours == null) return false;
+  // only ever the reversed-break shape. a backwards segment or an AM/PM slip is
+  // a different animal and none of them were confirmed on the real period.
+  const kinds = row.anomalies || [];
+  if (!kinds.length || !kinds.every((a) => a.kind === "reversed_break")) return false;
+
+  const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tolerance;
+  // the schedule has to back the repair AND disagree with what we hold now.
+  // agreeing with both means it can't tell them apart and settles nothing.
+  return near(row.suggestion.hours, scheduledHours) && !near(row.hoursNow, scheduledHours);
+}
+
+// the confirmed subset of a sheet's review rows, given the schedule's own paid
+// hours per date. returns [] when there is no schedule, which is the safe
+// answer - no second opinion, no automatic change.
+export function confirmedRepairs(rows, scheduledHoursByDate) {
+  if (!rows?.length || !scheduledHoursByDate) return [];
+  return rows.filter((r) => scheduleConfirmsRepair(r, scheduledHoursByDate[r.date] ?? null));
+}
+
+// QSP's own way of writing a punch: no ":00" on the hour. worth matching,
+// because a repaired punch sits in a row beside untouched ones and "12:00p"
+// next to "1p" reads like two different documents.
+export function qspTime(min) {
+  const h24 = Math.floor((((min % 1440) + 1440) % 1440) / 60);
+  const mm = ((min % 60) + 60) % 60;
+  const ap = h24 >= 12 ? "p" : "a";
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return mm === 0 ? `${h}${ap}` : `${h}:${String(mm).padStart(2, "0")}${ap}`;
+}
+
+// the repaired punches for a day, with `raw` restamped on the ones that moved.
+//
+// THIS IS THE BIT THAT BITES: suggestPunches swaps the `.min` values and leaves
+// each punch's `.raw` string on the object it started on. The renderer prints
+// `raw`, so applying a repair without this shows the ORIGINAL times beside
+// corrected hours - a sheet that looks like the arithmetic is broken. Caught in
+// a mock, not by the build, the linter or the tests.
+export function repairedPunches(day) {
+  const { punches } = suggestPunches(day);
+  const before = day.punches || [];
+  return punches.map((p, i) => (p.min === before[i]?.min ? p : { ...p, raw: qspTime(p.min) }));
+}
+
 export function anomalyLabel(kind) {
   return ANOMALY_KINDS[kind]?.label || "Punch entry looks wrong";
 }

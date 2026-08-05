@@ -11,7 +11,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
-import { reviewSheet } from "@/lib/timesheet/anomalies";
+import { reviewSheet, confirmedRepairs, repairedPunches } from "@/lib/timesheet/anomalies";
 import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
@@ -373,12 +373,52 @@ export async function uploadBatch(formData) {
       ? { ...raw, days: raw.days.map((d) => ({ ...d, restRecorded: rest.byDate[d.date]?.taken ?? 0 })) }
       : raw;
 
-    const t = analyzeTimesheet(withRests);
+    let t = analyzeTimesheet(withRests);
+    const sched = schedules ? schedules.get(scheduleKey(t.employee)) || null : null;
+
+    // ---- the one repair we make on our own ----
+    //
+    // A reversed rest break makes two punch pairs overlap, so the same ten
+    // minutes get billed twice and the day reads high. We only fix it when the
+    // SCHEDULE independently agrees with the repaired figure: measured on
+    // 07/16-07/31, swapping every reversed break would have been wrong on 15 of
+    // the 24 days the schedule can judge and stripped 15.58 hours off eleven
+    // people. With that gate it was right 9 times out of 9.
+    //
+    // Applied to the parsed punches and then re-analyzed from scratch, so the
+    // totals, overtime and premiums are the pipeline's own and never patched.
+    let punchCorrections = [];
+    if (sched) {
+      const scheduledHours = {};
+      for (const d of sched.days || []) scheduledHours[d.date] = d.workHours;
+
+      const confirmed = confirmedRepairs(reviewSheet(t.days, analyzeDay), scheduledHours);
+      if (confirmed.length) {
+        const fixDates = new Set(confirmed.map((r) => r.date));
+        const byDate = new Map(t.days.map((d) => [d.date, d]));
+        t = analyzeTimesheet({
+          ...withRests,
+          days: withRests.days.map((d) =>
+            fixDates.has(d.date) ? { ...d, punches: repairedPunches(byDate.get(d.date) || d) } : d,
+          ),
+        });
+        punchCorrections = confirmed.map((r) => ({
+          date: r.date,
+          was: r.shownPunches,
+          now: r.suggestion.punches,
+          hoursBefore: r.hoursNow,
+          hoursAfter: r.suggestion.hours,
+          applied: r.suggestion.applied,
+          confirmedBy: "schedule",
+          scheduleHours: scheduledHours[r.date] ?? null,
+        }));
+      }
+    }
 
     // two independent quality checks, both recorded rather than acted on. the
     // figures are never altered here - somebody looks at these and decides.
+    // re-run against the repaired days so a fixed one stops being flagged.
     const punchIssues = reviewSheet(t.days, analyzeDay);
-    const sched = schedules ? schedules.get(scheduleKey(t.employee)) || null : null;
     const scheduleCheck = sched
       ? compareToSchedule(t.days, sched.days, { toleranceHours: 1 })
       : null;
@@ -441,7 +481,7 @@ export async function uploadBatch(formData) {
     let pdfUrl = null;
     let approvalRect = null;
     try {
-      const rendered = await renderCorrected(t, {
+      const rendered = await renderCorrected({ ...t, punchCorrections }, {
         printedBy: t.employee,
         generatedOn: new Date().toLocaleDateString("en-US"),
       });
@@ -512,6 +552,10 @@ export async function uploadBatch(formData) {
           },
           // data-quality findings. stored, surfaced, never auto-applied.
           punchIssues,
+          // the one exception: reversed breaks the schedule independently
+          // confirmed. these WERE applied, so what was changed is kept beside
+          // the figures it produced and printed on the sheet the employee signs.
+          punchCorrections,
           scheduleCheck: scheduleCheck
             ? {
                 matched: true,

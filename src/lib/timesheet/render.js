@@ -1,8 +1,14 @@
-// render a corrected timesheet PDF, matching the format approved by MLS
-// one-for-one: MLS logo, the full QSP column set, colour-coded breaks, the
-// attestation, the admin approval block, and the CA 226.7 premium table.
-// paginates when a pay period runs long, and embeds real AcroForm signature
-// fields so the portal's existing signature pad can sign it unchanged.
+// render a corrected timesheet PDF: MLS logo, the full QSP column set,
+// colour-coded breaks, the CA 226.7 premium table, the attestation and the
+// admin approval block. paginates when a pay period runs long, and embeds real
+// AcroForm signature fields so the portal's existing signature pad can sign it
+// unchanged.
+//
+// the order is deliberate and it is NOT the order of the approved sample. the
+// sample put the premium table below the signature, so somebody signed "unless
+// otherwise recorded above, I received all my breaks" before the sheet had told
+// them which days it was paying them a premium for. the colour key moved for
+// the same reason - it explains the punch cells, so it belongs under them.
 import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -212,7 +218,16 @@ export async function renderCorrected(sheet, opts = {}) {
         const notes = [];
         if (d.mealLate) notes.push("meal started late");
         else if (d.mealViolation) notes.push("no meal period");
-        if (d.restViolation) notes.push(`rest ${d.restCount}/${d.restRequired}`);
+        // print the count the VIOLATION was decided on, not the punch-gap count.
+        // those differ whenever QSP's Rest Periods Report saw fewer breaks than
+        // the gaps suggest, and the punch count is the one the engine
+        // deliberately doesn't trust - so days were printing "rest 3/2" beside a
+        // premium for missing rest breaks. 39 rows across 16 people did that.
+        if (d.restViolation) {
+          const taken =
+            d.restRecorded == null ? d.restCount : Math.min(d.restCount, d.restRecorded);
+          notes.push(`rest ${taken}/${d.restRequired}`);
+        }
         if (d.seventhDay) notes.push("7th day");
         if (notes.length) {
           // the column is narrow and these notes vary in length, so shrink to
@@ -247,21 +262,12 @@ export async function renderCorrected(sheet, opts = {}) {
   closeTable();
   y -= 14;
 
-  // ---------- attestation ----------
-  // everything from here down is the signable trailer; keep it together rather
-  // than splitting a signature block across a page break.
-  const TRAILER_H = 150;
-  ensure(TRAILER_H);
-
-  const attest =
-    "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
-    "I attest that I have received all my meal, rest and recovery periods consistent with My Life Services's policy and applicable law. I also attest that I reported every injury sustained on " +
-    "the job during the pay period, if there were any.";
-  y = wrapCentered(page, attest, L, y, R - L, { font, size: 6.5, color: INK, leading: 8.5 });
-  y -= 14;
-
   // ---------- color key ----------
+  // sits right under the table it explains - those highlights are in the punch
+  // cells and nowhere else, so the legend belongs next to them rather than
+  // three sections further down.
   const keyH = 20;
+  ensure(keyH + 18);
   page.drawRectangle({
     x: L, y: y - keyH + 6, width: R - L, height: keyH,
     borderColor: BLACK, borderWidth: 0.8,
@@ -275,60 +281,56 @@ export async function renderCorrected(sheet, opts = {}) {
   text("Hours include paid rest break time.", L + 428, keyY, { size: 7, color: MUTED });
   y -= keyH + 18;
 
-  // ---------- employee signature ----------
-  // drawn as real AcroForm fields so the portal's existing filler can sign it
-  text("Employee Signature:", L + 6, y, { size: 8.5 });
-  text("Date:", L + 322, y, { size: 8.5 });
-  // no underline drawn here - the AcroForm widgets added at the end sit in these
-  // rects and provide their own boxes.
-  const sigRect = { x: L + 100, y: y - 4, width: 200, height: 15 };
-  const dateRect = { x: L + 356, y: y - 4, width: 180, height: 15 };
-  // pin the page these rects belong to - later sections may start a new page,
-  // and the form widgets have to land on the page they were drawn for.
-  const sigPage = page;
-  y -= 20;
+  // ---------- punch corrections ----------
+  // days where a rest break's two times were recorded in reverse AND the
+  // schedule independently agreed with the corrected figure. it sits above the
+  // signature because we changed somebody's punches, and they should read that
+  // before they sign rather than after.
+  const fixes = sheet.punchCorrections || [];
+  if (fixes.length) {
+    ensure(34 + fixes.length * 15 + 34);
+    text("Punch Corrections", L, y, { size: 10.5, f: bold, color: BRAND });
+    y -= 16;
 
-  // ---------- admin block ----------
-  const barH = 14;
-  page.drawRectangle({ x: L, y: y - barH + 4, width: R - L, height: barH, color: BLACK });
-  const adminLabel = "Below for Admin Use Only";
-  text(adminLabel, (PAGE_W - bold.widthOfTextAtSize(adminLabel, 8)) / 2, y - barH + 8, {
-    size: 8, f: bold, color: WHITE,
-  });
-  y -= barH + 4;
+    const kw = [58, 176, 176, R - L - 58 - 176 - 176];
+    const kx = [L, L + kw[0], L + kw[0] + kw[1], L + kw[0] + kw[1] + kw[2]];
+    const khH = 15;
+    page.drawRectangle({ x: L, y: y - khH + 4, width: R - L, height: khH, color: HEADBG });
+    text("Date", kx[0] + 6, y - khH + 8, { size: 7.5, f: bold, color: WHITE });
+    text("Recorded by QSP", kx[1] + 6, y - khH + 8, { size: 7.5, f: bold, color: WHITE });
+    text("Read as", kx[2] + 6, y - khH + 8, { size: 7.5, f: bold, color: WHITE });
+    text("Day total", kx[3] + 6, y - khH + 8, { size: 7.5, f: bold, color: WHITE });
+    y -= khH + 4;
 
-  const adminBoxTop = y;
-  const adminBoxH = 42;
-  page.drawRectangle({
-    x: L, y: y - adminBoxH, width: R - L, height: adminBoxH,
-    borderColor: BLACK, borderWidth: 0.8,
-  });
-  const apprY = y - adminBoxH + 12;
-  text("Approval Signature:", L + 6, apprY, { size: 8.5 });
-  text("Date:", L + 322, apprY, { size: 8.5 });
-  // fillable, like the employee block - management signs off in the portal once
-  // the employee has signed, and the approved copy is what gets filed.
-  const apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
-  const apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
-  const apprPage = page;
-  y = adminBoxTop - adminBoxH - 16;
+    for (const fx of fixes) {
+      // a day can carry more than one reversed break, so each moved pair gets
+      // its own line. one row listing every punch on the day ran straight
+      // through the next column.
+      const pairs = movedPairs(fx.was, fx.now);
+      pairs.forEach((pr, i) => {
+        ensure(14);
+        if (i === 0) text(fx.date, kx[0] + 6, y, { size: 7.5 });
+        text(pr.was, kx[1] + 6, y, { size: 7, color: PREM });
+        text(pr.now, kx[2] + 6, y, { size: 7 });
+        if (i === 0) {
+          text(`${f2(fx.hoursBefore)} to ${f2(fx.hoursAfter)}`, kx[3] + 6, y, { size: 7.5, f: bold });
+        }
+        y -= 11;
+      });
+      line(L, y + 3, R, y + 3);
+      y -= 5;
+    }
+    y -= 3;
 
-  // dotted separator + the notes block. reserve room for the heading and at
-  // least a couple of note lines so the heading never lands on the footer.
-  const comments = (sheet.comments || []).filter(Boolean);
-  ensure(34 + Math.min(comments.length, 3) * 9);
-  for (let x = L; x < R; x += 6) line(x, y, Math.min(x + 3, R), y, GRID, 0.6);
-  y -= 14;
-
-  text("Comments Details:", L, y, { size: 8.5, f: bold });
-  y -= 12;
-
-  for (const c of comments) {
-    ensure(11);
-    y = wrap(page, c, L, y, R - L, { font, size: 6.5, color: INK, leading: 8 });
-    y -= 1;
+    y = wrap(
+      page,
+      "A rest break's two times were recorded in reverse, so the same minutes were counted twice and the day read " +
+        "high. The schedule for each day above agrees with the corrected figure, and your break premiums are " +
+        "unchanged. When you clock a rest break, enter the time you stop first, then the time you start again.",
+      L, y, R - L, { font, size: 6.5, color: MUTED, leading: 8.5 },
+    );
+    y -= 10;
   }
-  y -= 8;
 
   // ---------- premium table ----------
   const p = sheet.premiums;
@@ -378,8 +380,11 @@ export async function renderCorrected(sheet, opts = {}) {
     text(`${f2(p.totalHours)} hrs`, cx[2] + 6, y - totH + 9, { size: 7.5, f: bold, color: PREM });
     y -= totH + 10;
 
+    // "verify before payout" used to live here. it's aimed at payroll, and this
+    // table now sits above the employee's signature, so it reads as an
+    // instruction to the person signing. moved down to the admin trailer.
     text(
-      "One additional hour of pay per workday for a missed meal period and for missed rest break(s) - max one of each per day. Verify before payout.",
+      "One additional hour of pay per workday for a missed meal period and for missed rest break(s) - max one of each per day.",
       L, y, { size: 6.5, color: MUTED },
     );
     y -= 14;
@@ -389,6 +394,92 @@ export async function renderCorrected(sheet, opts = {}) {
     });
     y -= 16;
   }
+
+  // ---------- attestation ----------
+  // everything from here down is the signable trailer; keep it together rather
+  // than splitting a signature block across a page break. the colour key used
+  // to be part of this block, which is why the reservation is smaller than it
+  // was - it now sits above, with the table it describes.
+  //
+  // counted rather than guessed: attestation 3 lines at 8.5 leading + 14 = 40,
+  // signature 20, admin bar 18, admin box 42 + 16 = 58. that's 136, so 140
+  // leaves a little slack. the old figure reserved less than the block actually
+  // draws, and a sheet landing exactly on the boundary would have started the
+  // trailer with too little room and tripped the footer guard below.
+  y -= 12;
+  const TRAILER_H = 140;
+  ensure(TRAILER_H);
+
+  const attest =
+    "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
+    "I attest that I have received all my meal, rest and recovery periods consistent with My Life Services's policy and applicable law. I also attest that I reported every injury sustained on " +
+    "the job during the pay period, if there were any.";
+  y = wrapCentered(page, attest, L, y, R - L, { font, size: 6.5, color: INK, leading: 8.5 });
+  y -= 14;
+
+  // ---------- employee signature ----------
+  // drawn as real AcroForm fields so the portal's existing filler can sign it
+  text("Employee Signature:", L + 6, y, { size: 8.5 });
+  text("Date:", L + 322, y, { size: 8.5 });
+  // no underline drawn here - the AcroForm widgets added at the end sit in these
+  // rects and provide their own boxes.
+  const sigRect = { x: L + 100, y: y - 4, width: 200, height: 15 };
+  const dateRect = { x: L + 356, y: y - 4, width: 180, height: 15 };
+  // pin the page these rects belong to - later sections may start a new page,
+  // and the form widgets have to land on the page they were drawn for.
+  const sigPage = page;
+  y -= 20;
+
+  // ---------- admin block ----------
+  const barH = 14;
+  page.drawRectangle({ x: L, y: y - barH + 4, width: R - L, height: barH, color: BLACK });
+  const adminLabel = "Below for Admin Use Only";
+  text(adminLabel, (PAGE_W - bold.widthOfTextAtSize(adminLabel, 8)) / 2, y - barH + 8, {
+    size: 8, f: bold, color: WHITE,
+  });
+  y -= barH + 4;
+
+  const adminBoxTop = y;
+  const adminBoxH = 42;
+  page.drawRectangle({
+    x: L, y: y - adminBoxH, width: R - L, height: adminBoxH,
+    borderColor: BLACK, borderWidth: 0.8,
+  });
+  // the payout note lives in here rather than under the premium table. that
+  // table now sits above the employee's signature, and "verify before payout"
+  // is aimed at payroll, not at the person signing. the box already had the
+  // empty space, so this costs no page length.
+  if (p.totalHours > 0) {
+    text(`Verify the ${f2(p.totalHours)} premium hours above before payout.`, L + 6, adminBoxTop - 12, {
+      size: 6.5, color: MUTED,
+    });
+  }
+  const apprY = y - adminBoxH + 12;
+  text("Approval Signature:", L + 6, apprY, { size: 8.5 });
+  text("Date:", L + 322, apprY, { size: 8.5 });
+  // fillable, like the employee block - management signs off in the portal once
+  // the employee has signed, and the approved copy is what gets filed.
+  const apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
+  const apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
+  const apprPage = page;
+  y = adminBoxTop - adminBoxH - 16;
+
+  // dotted separator + the notes block. reserve room for the heading and at
+  // least a couple of note lines so the heading never lands on the footer.
+  const comments = (sheet.comments || []).filter(Boolean);
+  ensure(34 + Math.min(comments.length, 3) * 9);
+  for (let x = L; x < R; x += 6) line(x, y, Math.min(x + 3, R), y, GRID, 0.6);
+  y -= 14;
+
+  text("Comments Details:", L, y, { size: 8.5, f: bold });
+  y -= 12;
+
+  for (const c of comments) {
+    ensure(11);
+    y = wrap(page, c, L, y, R - L, { font, size: 6.5, color: INK, leading: 8 });
+    y -= 1;
+  }
+  y -= 8;
 
   // reconciliation line so payroll can tie this back to the QSP export
   text(
@@ -453,6 +544,22 @@ export async function renderCorrected(sheet, opts = {}) {
   };
 
   return { bytes: await doc.save(), approvalRect };
+}
+
+// which punches actually moved, as out/in pairs. showing the whole day's punch
+// list instead is unreadable and overflows the column.
+function movedPairs(was, now) {
+  const a = was || [], b = now || [];
+  const idx = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) idx.push(i);
+  const pairs = [];
+  for (let i = 0; i + 1 < idx.length; i += 2) {
+    const x = idx[i], z = idx[i + 1];
+    pairs.push({ was: `${a[x]} out, ${a[z]} in`, now: `${b[x]} out, ${b[z]} in` });
+  }
+  // odd number of moved punches shouldn't happen for a swap, but never render
+  // nothing - fall back to the two lists.
+  return pairs.length ? pairs : [{ was: a.join(" "), now: b.join(" ") }];
 }
 
 // shrink a single line until it fits `maxW`, then clip with an ellipsis if it

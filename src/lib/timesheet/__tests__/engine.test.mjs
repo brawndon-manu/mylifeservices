@@ -10,8 +10,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { restsRequired, analyzeDay, applyOvertime, RULES } from "../parse.js";
-import { findAnomalies, suggestPunches, reviewSheet } from "../anomalies.js";
+import { PDFDocument } from "pdf-lib";
+
+import { restsRequired, analyzeDay, applyOvertime, RULES, parseTimesheetPdf } from "../parse.js";
+import { parseSchedulePdf } from "../schedule.js";
+import {
+  findAnomalies, suggestPunches, reviewSheet,
+  scheduleConfirmsRepair, confirmedRepairs,
+} from "../anomalies.js";
 import { recomputeSheet, patchFor, mergeOverride, CORRECTION_KINDS } from "../corrections.js";
 import { compareToSchedule, scheduleKey, readSchedulePages } from "../schedule.js";
 import { normalizeDate, clockKey, gradePremium, gradePremiums } from "../clock.js";
@@ -839,6 +845,121 @@ test("with no rest report at all, nothing changes", () => {
   assert.equal(withReport.restSource, "punches");
   assert.equal(withReport.restViolation, false);
 });
+
+// ---------------------------------------------------------------------------
+// only a repair a second document confirms may be applied on its own
+//
+// The numbers in these cases are the real ones off 07/16-07/31. The whole point
+// of the rule is that "always assume a reversal" was measured and found wrong on
+// 15 of 24 judgeable days, so the cases that must NOT auto-apply matter more
+// than the ones that must.
+const revRow = (over) => ({
+  date: "07/27/26",
+  anomalies: [{ kind: "reversed_break", at: 1 }],
+  hoursNow: 7.17,
+  suggestion: { hours: 7, rests: 1 },
+  ...over,
+});
+
+test("a reversal the schedule agrees with is confirmed", () => {
+  // Mánu's own 07/27: 10:00a-12:10p and 12:00p-2:00p overlap, so ten minutes
+  // are billed twice. Schedule says 7.00 and so does the repair.
+  assert.equal(scheduleConfirmsRepair(revRow(), 7), true);
+});
+
+test("a reversal the schedule contradicts is NOT confirmed", () => {
+  // Devine 07/23: swapping would cut a 9.00 hr day to 4.67 and the schedule
+  // says 9.00. This is the case that makes blanket auto-repair unsafe.
+  const devine = revRow({ date: "07/23/26", hoursNow: 9, suggestion: { hours: 4.67, rests: 1 } });
+  assert.equal(scheduleConfirmsRepair(devine, 9), false);
+});
+
+test("a small change is not the same as a safe one", () => {
+  // Aranda 07/21 moves the day by 0.08 and is still wrong - the schedule backs
+  // the figure we already hold. Nothing may key off the size of the change.
+  const aranda = revRow({ hoursNow: 8.08, suggestion: { hours: 8, rests: 1 } });
+  assert.equal(scheduleConfirmsRepair(aranda, 8.08), false);
+});
+
+test("no schedule means no automatic repair", () => {
+  // Delgado Pineda 07/19 has no schedule row at all, and the repair would take
+  // her from 7.28 to 1.38. With no second opinion it must stay a suggestion.
+  const ruth = revRow({ hoursNow: 7.28, suggestion: { hours: 1.38, rests: 0 } });
+  assert.equal(scheduleConfirmsRepair(ruth, null), false);
+  assert.deepEqual(confirmedRepairs([ruth], {}), []);
+});
+
+test("a schedule that agrees with both figures settles nothing", () => {
+  const row = revRow({ hoursNow: 7, suggestion: { hours: 7, rests: 1 } });
+  assert.equal(scheduleConfirmsRepair(row, 7), false);
+});
+
+test("only the reversed-break shape can auto-apply", () => {
+  // a backwards segment is a different animal, and none were confirmed on the
+  // real period. it stays a suggestion however well the schedule lines up.
+  const backwards = revRow({ anomalies: [{ kind: "backwards_segment", at: 0 }] });
+  assert.equal(scheduleConfirmsRepair(backwards, 7), false);
+  // and a day carrying a reversal PLUS something else is not a clean case
+  const mixed = revRow({
+    anomalies: [{ kind: "reversed_break", at: 1 }, { kind: "long_segment", at: 0 }],
+  });
+  assert.equal(scheduleConfirmsRepair(mixed, 7), false);
+});
+
+test("a day with no credible repair is never confirmed", () => {
+  assert.equal(scheduleConfirmsRepair(revRow({ suggestion: null }), 7), false);
+});
+
+test("confirmedRepairs picks out only the corroborated days", () => {
+  const rows = [
+    revRow(),
+    revRow({ date: "07/23/26", hoursNow: 9, suggestion: { hours: 4.67, rests: 1 } }),
+    revRow({ date: "07/30/26", hoursNow: 8.34, suggestion: { hours: 8, rests: 2 } }),
+  ];
+  const got = confirmedRepairs(rows, { "07/27/26": 7, "07/23/26": 9, "07/30/26": 8 });
+  assert.deepEqual(got.map((r) => r.date), ["07/27/26", "07/30/26"]);
+});
+
+// ---------------------------------------------------------------------------
+// the PDF parsers must not eat the caller's bytes
+//
+// pdfjs takes ownership of the array it's handed and DETACHES the buffer. the
+// upload parses the timesheet and then uploads the same array to Blob, so this
+// silently wrote a zero-byte file for every batch ever uploaded, and "open the
+// QSP export at this page" opened a 0-page PDF. nothing caught it: it builds,
+// it lints, the parse works fine, and the batch page looks completely normal.
+// the only visible symptom is a blank PDF viewer.
+async function tinyPdf() {
+  const doc = await PDFDocument.create();
+  doc.addPage([200, 200]).drawText("x", { x: 10, y: 10, size: 12 });
+  return new Uint8Array(await doc.save());
+}
+
+for (const [name, parse] of [
+  ["parseTimesheetPdf", parseTimesheetPdf],
+  ["parseSchedulePdf", parseSchedulePdf],
+]) {
+  test(`${name} leaves the caller's bytes intact`, async () => {
+    const bytes = await tinyPdf();
+    const before = bytes.length;
+    assert.ok(before > 0);
+
+    // it may well throw - a blank page is not a QSP export. the point is what
+    // the array looks like afterwards, not whether the parse succeeded.
+    try {
+      await parse(bytes);
+    } catch {
+      // expected for a document with no timesheet in it
+    }
+
+    assert.equal(bytes.length, before, `${name} detached the caller's buffer`);
+    assert.equal(
+      Buffer.from(bytes).length,
+      before,
+      "the bytes have to still be uploadable to Blob after parsing",
+    );
+  });
+}
 
 test("hours are never touched by the rest report", () => {
   // two ten-minute gaps: enough rests by the punches, one short by the report.
