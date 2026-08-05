@@ -11,6 +11,8 @@
 // spot it, say what it probably should have been, and let a person decide. we
 // never rewrite a punch on our own.
 
+const r2 = (n) => Math.round((n || 0) * 100) / 100;
+
 // one continuous stretch on the clock longer than this is not a real shift
 const LONG_SEGMENT_MIN = 600; // 10 hours
 const HALF_DAY_MIN = 720; // the 12 hours an AM/PM slip moves a time by
@@ -145,11 +147,33 @@ export function reviewSheet(days, analyzeDay) {
 
     let after = null;
     try {
-      after = analyzeDay({ ...d, punches, printed: null });
+      // `repaired` rather than `printed: null`: it skips the floor at QSP's
+      // printed figure the same way, but keeps the printed figure itself, so the
+      // number offered here is computed exactly as the applied one will be.
+      after = analyzeDay({ ...d, punches, repaired: true });
     } catch {
       after = null;
     }
     const credible = isCredible(after ? { ...after, punches } : null);
+
+    // what the repair would actually MOVE. bad source data that changes no
+    // figure is still worth fixing in QSP, but it costs nobody anything here,
+    // and on a screen where every card looks identical that needs saying out
+    // loud - 4 of the 55 flags on 07/16-07/31 are inert like this. Without it
+    // people spend the same attention on a day that pays the same either way as
+    // on one that is 4 hours out.
+    const moved = (b, a) => (b === a ? "same" : a ? "added" : "removed");
+    const effect = credible
+      ? {
+          hours: r2(after.paidHours - before.paidHours),
+          restPremium: moved(before.restViolation, after.restViolation),
+          mealPremium: moved(before.mealViolation, after.mealViolation),
+        }
+      : null;
+    if (effect) {
+      effect.changesNothing =
+        effect.hours === 0 && effect.restPremium === "same" && effect.mealPremium === "same";
+    }
 
     rows.push({
       date: d.date,
@@ -167,6 +191,7 @@ export function reviewSheet(days, analyzeDay) {
             rests: after.restCount,
           }
         : null,
+      effect,
       needsHuman: !credible,
     });
   }

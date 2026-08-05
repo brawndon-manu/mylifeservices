@@ -861,6 +861,43 @@ const revRow = (over) => ({
   ...over,
 });
 
+test("a flag whose repair moves no figure is marked as such", () => {
+  // Mánu's real 07/28. The punches are genuinely out of order, but reading them
+  // either way gives 6.50 hrs and the same premiums, so there is nothing for a
+  // person to decide. It used to present exactly like a day that was hours out.
+  const punches = [at(10), at(12), at(12, 10), at(12), at(12, 15), at(14, 15), at(14, 30), at(16, 30)];
+  const [row] = reviewSheet([{ date: "07/28/26", punches, restRecorded: 1 }], analyzeDay);
+
+  assert.ok(row.suggestion, "a repair is still offered");
+  assert.equal(row.effect.hours, 0, "the day pays the same either way");
+  assert.equal(row.effect.restPremium, "same");
+  assert.equal(row.effect.mealPremium, "same");
+  assert.equal(row.effect.changesNothing, true);
+});
+
+test("a flag that DOES move a figure is not marked inert", () => {
+  // Mánu's 07/31: the same shape, but this one is worth 0.17 hrs.
+  const punches = [at(8), at(9, 30), at(10), at(12), at(12, 10), at(12), at(13), at(16)];
+  const [row] = reviewSheet([{ date: "07/31/26", punches, restRecorded: 1 }], analyzeDay);
+
+  assert.ok(row.effect.hours > 0, `expected a gain, got ${row.effect.hours}`);
+  assert.equal(row.effect.changesNothing, false);
+});
+
+test("a day with no safe reading carries no effect at all", () => {
+  // Aranda 07/16, off the real export. The obvious swap doesn't clear the day,
+  // so no repair is offered and there is nothing to describe the effect of.
+  // A muted "pays the same either way" on one of these would be a lie.
+  const punches = [
+    at(9), at(10), at(10), at(12, 30), at(12, 30), at(13),
+    at(13), at(15), at(15, 10), at(14, 30), at(14, 30), at(17),
+  ];
+  const [row] = reviewSheet([{ date: "07/16/26", punches }], analyzeDay);
+  assert.equal(row.needsHuman, true, "this one genuinely needs a person");
+  assert.equal(row.suggestion, null);
+  assert.equal(row.effect, null);
+});
+
 test("a repaired day is exempt from the floor at QSP's printed figure", () => {
   // Mánu's real 07/27. The two middle punches are reversed, so 10:00a-12:10p and
   // 12:00p-2:00p overlap and the same ten minutes are billed twice. QSP printed

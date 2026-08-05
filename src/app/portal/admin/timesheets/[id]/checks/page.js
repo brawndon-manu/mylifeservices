@@ -248,7 +248,15 @@ export default async function ChecksPage({ params }) {
                             <span className="font-semibold text-foreground">
                               {p.date} · reads {f2(p.hoursNow)} hrs
                             </span>
-                            {p.suggestion ? (
+                            {p.effect?.changesNothing ? (
+                              /* bad source data that moves no figure. still worth
+                                 fixing in QSP, but it costs nobody anything here
+                                 and it used to look identical to a day that was
+                                 hours out. */
+                              <span className="ml-auto whitespace-nowrap text-xs text-muted">
+                                pays the same either way
+                              </span>
+                            ) : p.suggestion ? (
                               <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
                                 likely {f2(p.suggestion.hours)} hrs
                               </span>
@@ -274,11 +282,31 @@ export default async function ChecksPage({ params }) {
                             <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
                               Likely: {p.suggestion.punches.join("  ")}
                             </p>
-                            <p className="mt-1 text-xs text-foreground">
-                              That would make the day{" "}
-                              <span className="font-semibold">{f2(p.suggestion.hours)} hrs</span>{" "}
-                              instead of {f2(p.hoursNow)} ({p.suggestion.applied.join("; ")}).
-                            </p>
+                            {p.effect?.changesNothing ? (
+                              <p className="mt-1 text-xs text-muted">
+                                Read either way the day is{" "}
+                                <span className="font-semibold text-foreground">
+                                  {f2(p.suggestion.hours)} hrs
+                                </span>{" "}
+                                with the same premiums, so nothing on this sheet turns on
+                                it. Worth correcting in QSP so the next export is clean,
+                                but there is nothing to decide here.
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs text-foreground">
+                                That would make the day{" "}
+                                <span className="font-semibold">{f2(p.suggestion.hours)} hrs</span>{" "}
+                                instead of {f2(p.hoursNow)} ({p.suggestion.applied.join("; ")}).
+                                {p.effect?.restPremium !== "same" && (
+                                  <> The rest premium would be{" "}
+                                    <span className="font-semibold">{p.effect.restPremium}</span>.</>
+                                )}
+                                {p.effect?.mealPremium !== "same" && (
+                                  <> The meal premium would be{" "}
+                                    <span className="font-semibold">{p.effect.mealPremium}</span>.</>
+                                )}
+                              </p>
+                            )}
                           </>
                         ) : (
                           <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
