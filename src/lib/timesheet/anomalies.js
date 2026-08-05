@@ -237,6 +237,51 @@ export function confirmedRepairs(rows, scheduledHoursByDate) {
   return rows.filter((r) => scheduleConfirmsRepair(r, scheduledHoursByDate[r.date] ?? null));
 }
 
+// The whole apply step, in one place so a test can drive exactly what the upload
+// drives. It used to live inside uploadBatch, where nothing could reach it - and
+// the first version silently did nothing, because the repaired days still hit
+// the floor at QSP's printed figure and were pushed straight back to the number
+// the repair exists to correct. Every flag cleared, every correction recorded,
+// not one hour moved.
+//
+// `parsedDays` are the raw days (punches + QSP's printed figures), `analyzedDays`
+// the same days after analyzeDay. Returns the parsed days with confirmed repairs
+// applied, plus a record of what changed. Returns them untouched when there is no
+// schedule, which is the safe answer: no second opinion, no automatic change.
+export function repairConfirmedDays(parsedDays, analyzedDays, scheduleDays, analyzeDay) {
+  const none = { days: parsedDays, corrections: [] };
+  if (!scheduleDays?.length || !parsedDays?.length) return none;
+
+  const scheduledHours = {};
+  for (const d of scheduleDays) scheduledHours[d.date] = d.workHours;
+
+  const confirmed = confirmedRepairs(reviewSheet(analyzedDays, analyzeDay), scheduledHours);
+  if (!confirmed.length) return none;
+
+  const fixDates = new Set(confirmed.map((r) => r.date));
+  const byDate = new Map(analyzedDays.map((d) => [d.date, d]));
+
+  return {
+    days: parsedDays.map((d) =>
+      fixDates.has(d.date)
+        ? // `repaired` exempts the day from the floor. Without it this function
+          // returns days that look corrected and analyze to the old figure.
+          { ...d, punches: repairedPunches(byDate.get(d.date) || d), repaired: true }
+        : d,
+    ),
+    corrections: confirmed.map((r) => ({
+      date: r.date,
+      was: r.shownPunches,
+      now: r.suggestion.punches,
+      hoursBefore: r.hoursNow,
+      hoursAfter: r.suggestion.hours,
+      applied: r.suggestion.applied,
+      confirmedBy: "schedule",
+      scheduleHours: scheduledHours[r.date] ?? null,
+    })),
+  };
+}
+
 // scheduled PAID hours for one day, off the stored shift list. meals are unpaid
 // so they stay out of it, the same way compareToSchedule builds its own figure.
 export function scheduledPaidHours(entry) {
@@ -260,6 +305,48 @@ export function scheduleAgreesWithCurrent(row, scheduledHours, tolerance = 0.05)
   // different conversation, and `effect` already describes that one.
   if (!row || row.suggestion || scheduledHours == null) return false;
   return Math.abs((row.hoursNow ?? 0) - scheduledHours) <= tolerance;
+}
+
+// Which of the four things a flagged day is, decided once, in one place.
+//
+// This used to be a chain of ternaries inside the JSX, and it shipped a crash:
+// `row.effect?.restPremium !== "same"` is TRUE when `effect` is missing, which
+// is every batch stored before `effect` existed. The guard read as "this changes
+// a premium", the branch ran, and the next line dereferenced the thing that
+// wasn't there. It took the whole checks screen down for every existing batch,
+// and the build, the linter and 68 tests all went straight past it.
+//
+// Pulling the decision out means the shapes can be tested without rendering
+// anything, and the JSX only has to switch on `tone`.
+//
+//   repair   a credible repair that moves a figure
+//   inert    a credible repair that moves nothing
+//   settled  no repair holds up, but the schedule agrees with what we hold
+//   human    no repair, and nothing else settles it either
+export function describePunchIssue(row, scheduledHours = null) {
+  if (!row) return null;
+
+  if (!row.suggestion) {
+    return scheduleAgreesWithCurrent(row, scheduledHours)
+      ? { tone: "settled", open: false, hours: row.hoursNow }
+      : { tone: "human", open: true };
+  }
+
+  // `effect` is absent on anything stored before it existed. that is "we don't
+  // know", not "nothing changed" and not "a premium moved" - say nothing.
+  const e = row.effect || null;
+  if (e?.changesNothing) return { tone: "inert", open: false, hours: row.suggestion.hours };
+
+  return {
+    tone: "repair",
+    open: false,
+    hours: row.suggestion.hours,
+    was: row.hoursNow,
+    applied: row.suggestion.applied || [],
+    // only ever set when we actually have a reading
+    restPremium: e && e.restPremium !== "same" ? e.restPremium : null,
+    mealPremium: e && e.mealPremium !== "same" ? e.mealPremium : null,
+  };
 }
 
 // QSP's own way of writing a punch: no ":00" on the hour. worth matching,

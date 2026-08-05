@@ -7,7 +7,7 @@ import { preferredName } from "@/lib/contacts";
 import {
   anomalyLabel,
   ANOMALY_KINDS,
-  scheduleAgreesWithCurrent,
+  describePunchIssue,
   scheduledPaidHours,
 } from "@/lib/timesheet/anomalies";
 import BackLink from "@/components/BackLink";
@@ -58,12 +58,11 @@ export default async function ChecksPage({ params }) {
       hours: t.paidHours,
       // computed here rather than at upload, so batches stored before any of
       // this still get the calmer label without needing a re-upload
+      // computed here rather than at upload, so batches stored before any of
+      // this still get the right label without needing a re-upload
       punches: punches.map((p) => ({
         ...p,
-        scheduleAgrees: scheduleAgreesWithCurrent(
-          p,
-          scheduledPaidHours((sched.byDate || {})[p.date]),
-        ),
+        say: describePunchIssue(p, scheduledPaidHours((sched.byDate || {})[p.date])),
       })),
       flagged,
       scheduleTotal: sched.scheduleTotal ?? null,
@@ -252,7 +251,7 @@ export default async function ChecksPage({ params }) {
                             need somebody to do something. NOT the ones the
                             schedule already settles: 11 of the 14 on this period
                             were opening a card nobody had to act on. */}
-                        <details open={!p.suggestion && !p.scheduleAgrees} className="group">
+                        <details open={p.say.open} className="group">
                           <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm">
                             <span
                               aria-hidden="true"
@@ -263,24 +262,17 @@ export default async function ChecksPage({ params }) {
                             <span className="font-semibold text-foreground">
                               {p.date} · reads {f2(p.hoursNow)} hrs
                             </span>
-                            {p.effect?.changesNothing ? (
-                              /* bad source data that moves no figure. still worth
-                                 fixing in QSP, but it costs nobody anything here
-                                 and it used to look identical to a day that was
-                                 hours out. */
+                            {p.say.tone === "inert" ? (
                               <span className="ml-auto whitespace-nowrap text-xs text-muted">
                                 pays the same either way
                               </span>
-                            ) : p.suggestion ? (
-                              <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
-                                likely {f2(p.suggestion.hours)} hrs
-                              </span>
-                            ) : p.scheduleAgrees ? (
-                              /* no repair holds up, but the schedule already
-                                 agrees with the total. still worth fixing in
-                                 QSP, just not unresolved. */
+                            ) : p.say.tone === "settled" ? (
                               <span className="ml-auto whitespace-nowrap text-xs text-muted">
-                                schedule agrees with {f2(p.hoursNow)} hrs
+                                schedule agrees with {f2(p.say.hours)} hrs
+                              </span>
+                            ) : p.say.tone === "repair" ? (
+                              <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
+                                likely {f2(p.say.hours)} hrs
                               </span>
                             ) : (
                               <span className="ml-auto whitespace-nowrap text-xs font-semibold text-rose-700 dark:text-rose-400">
@@ -304,11 +296,11 @@ export default async function ChecksPage({ params }) {
                             <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
                               Likely: {p.suggestion.punches.join("  ")}
                             </p>
-                            {p.effect?.changesNothing ? (
+                            {p.say.tone === "inert" ? (
                               <p className="mt-1 text-xs text-muted">
                                 Read either way the day is{" "}
                                 <span className="font-semibold text-foreground">
-                                  {f2(p.suggestion.hours)} hrs
+                                  {f2(p.say.hours)} hrs
                                 </span>{" "}
                                 with the same premiums, so nothing on this sheet turns on
                                 it. Worth correcting in QSP so the next export is clean,
@@ -317,43 +309,35 @@ export default async function ChecksPage({ params }) {
                             ) : (
                               <p className="mt-1 text-xs text-foreground">
                                 That would make the day{" "}
-                                <span className="font-semibold">{f2(p.suggestion.hours)} hrs</span>{" "}
-                                instead of {f2(p.hoursNow)} ({p.suggestion.applied.join("; ")}).
-                                {/* batches stored before `effect` existed carry
-                                    no premium reading at all. say nothing rather
-                                    than guess - `p.effect?.x !== "same"` is TRUE
-                                    when effect is missing, which read as "this
-                                    changes a premium" and then threw on the
-                                    next line. */}
-                                {p.effect && p.effect.restPremium !== "same" && (
+                                <span className="font-semibold">{f2(p.say.hours)} hrs</span>{" "}
+                                instead of {f2(p.say.was)} ({p.say.applied.join("; ")}).
+                                {p.say.restPremium && (
                                   <> The rest premium would be{" "}
-                                    <span className="font-semibold">{p.effect.restPremium}</span>.</>
+                                    <span className="font-semibold">{p.say.restPremium}</span>.</>
                                 )}
-                                {p.effect && p.effect.mealPremium !== "same" && (
+                                {p.say.mealPremium && (
                                   <> The meal premium would be{" "}
-                                    <span className="font-semibold">{p.effect.mealPremium}</span>.</>
+                                    <span className="font-semibold">{p.say.mealPremium}</span>.</>
                                 )}
                               </p>
                             )}
                           </>
+                        ) : p.say.tone === "settled" ? (
+                          <p className="mt-2 text-xs text-muted">
+                            No single swap puts these punches in order, so nothing is
+                            suggested. But the day comes to{" "}
+                            <span className="font-semibold text-foreground">
+                              {f2(p.say.hours)} hrs
+                            </span>{" "}
+                            and the schedule independently says the same, so the total
+                            is not in question. Worth correcting in QSP so the next
+                            export is clean.
+                          </p>
                         ) : (
-                          p.scheduleAgrees ? (
-                            <p className="mt-2 text-xs text-muted">
-                              No single swap puts these punches in order, so nothing is
-                              suggested. But the day comes to{" "}
-                              <span className="font-semibold text-foreground">
-                                {f2(p.hoursNow)} hrs
-                              </span>{" "}
-                              and the schedule independently says the same, so the total
-                              is not in question. Worth correcting in QSP so the next
-                              export is clean.
-                            </p>
-                          ) : (
-                            <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                              No safe reading of these punches, and the schedule does not
-                              settle it either - this one needs working out by hand.
-                            </p>
-                          )
+                          <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
+                            No safe reading of these punches, and the schedule does not
+                            settle it either - this one needs working out by hand.
+                          </p>
                         )}
                         {/* working it out by hand means reading the source, so
                             the source is right here rather than a hunt */}

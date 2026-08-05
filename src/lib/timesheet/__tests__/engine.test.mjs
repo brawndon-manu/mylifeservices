@@ -12,12 +12,14 @@ import assert from "node:assert/strict";
 
 import { PDFDocument } from "pdf-lib";
 
-import { restsRequired, analyzeDay, applyOvertime, RULES, parseTimesheetPdf } from "../parse.js";
+import {
+  restsRequired, analyzeDay, applyOvertime, analyzeTimesheet, RULES, parseTimesheetPdf,
+} from "../parse.js";
 import { parseSchedulePdf } from "../schedule.js";
 import {
   findAnomalies, suggestPunches, reviewSheet,
   scheduleConfirmsRepair, confirmedRepairs,
-  scheduleAgreesWithCurrent, scheduledPaidHours,
+  scheduleAgreesWithCurrent, scheduledPaidHours, repairConfirmedDays, describePunchIssue,
 } from "../anomalies.js";
 import { recomputeSheet, patchFor, mergeOverride, CORRECTION_KINDS } from "../corrections.js";
 import { compareToSchedule, scheduleKey, readSchedulePages } from "../schedule.js";
@@ -845,6 +847,220 @@ test("with no rest report at all, nothing changes", () => {
   const withReport = restDay(punches, null);
   assert.equal(withReport.restSource, "punches");
   assert.equal(withReport.restViolation, false);
+});
+
+// ---------------------------------------------------------------------------
+// what the checks screen SAYS about a flagged day
+//
+// These exist because the screen crashed on every batch that already existed.
+// The label was a chain of ternaries in the JSX, and
+// `row.effect?.restPremium !== "same"` is TRUE when effect is missing, so the
+// branch ran and dereferenced it. Build, lint and 68 tests all passed.
+//
+// The shapes below are the ones that actually turn up in storage, including the
+// old ones. If a row shape can reach the screen, it belongs here.
+const REPAIR = { hours: 7, punches: [], applied: ["swapped a break's two times"] };
+
+test("screen: a day stored before `effect` existed does not blow up", () => {
+  // THE ONE THAT BROKE. No effect key at all - it must read as "we don't know",
+  // never as "a premium moved".
+  const say = describePunchIssue({ date: "07/27/26", hoursNow: 7.17, suggestion: REPAIR }, 7);
+  assert.equal(say.tone, "repair");
+  assert.equal(say.restPremium, null, "no reading is not the same as a change");
+  assert.equal(say.mealPremium, null);
+  assert.equal(say.hours, 7);
+  assert.equal(say.was, 7.17);
+});
+
+test("screen: a premium change is named when we actually know", () => {
+  const say = describePunchIssue(
+    {
+      date: "07/27/26", hoursNow: 7.17, suggestion: REPAIR,
+      effect: { hours: -0.17, restPremium: "removed", mealPremium: "same", changesNothing: false },
+    },
+    7,
+  );
+  assert.equal(say.tone, "repair");
+  assert.equal(say.restPremium, "removed");
+  assert.equal(say.mealPremium, null, "unchanged premiums stay quiet");
+});
+
+test("screen: a repair that moves nothing is inert and stays shut", () => {
+  const say = describePunchIssue({
+    date: "07/28/26", hoursNow: 6.5, suggestion: { ...REPAIR, hours: 6.5 },
+    effect: { hours: 0, restPremium: "same", mealPremium: "same", changesNothing: true },
+  }, 6);
+  assert.equal(say.tone, "inert");
+  assert.equal(say.open, false);
+});
+
+test("screen: no repair but the schedule agrees reads settled, and stays shut", () => {
+  // Rotter 07/28
+  const say = describePunchIssue({ date: "07/28/26", hoursNow: 8, suggestion: null }, 8);
+  assert.equal(say.tone, "settled");
+  assert.equal(say.open, false, "nobody has to act on this one");
+  assert.equal(say.hours, 8);
+});
+
+test("screen: no repair and no schedule still opens red", () => {
+  // Urena 07/27, and the no-schedule case
+  assert.equal(describePunchIssue({ hoursNow: 8.25, suggestion: null }, 7.92).tone, "human");
+  assert.equal(describePunchIssue({ hoursNow: 8.25, suggestion: null }, null).tone, "human");
+  assert.equal(describePunchIssue({ hoursNow: 8.25, suggestion: null }, null).open, true);
+});
+
+test("screen: every stored row shape produces a label without throwing", () => {
+  // the crash was a shape nobody had rendered. so: throw the whole cross product
+  // at it, including the half-populated ones.
+  const shapes = [
+    {},
+    { hoursNow: 8 },
+    { hoursNow: 8, suggestion: null },
+    { hoursNow: 8, suggestion: REPAIR },
+    { hoursNow: 8, suggestion: REPAIR, effect: null },
+    { hoursNow: 8, suggestion: REPAIR, effect: {} },
+    { hoursNow: 8, suggestion: { hours: 8 }, effect: { changesNothing: true } },
+    { hoursNow: 8, suggestion: { hours: 8, applied: undefined } },
+    { hoursNow: undefined, suggestion: null },
+  ];
+  for (const s of shapes) {
+    for (const sched of [null, undefined, 8, 7.5]) {
+      const say = describePunchIssue(s, sched);
+      assert.ok(say, `no label for ${JSON.stringify(s)} @ ${sched}`);
+      assert.ok(
+        ["repair", "inert", "settled", "human"].includes(say.tone),
+        `bad tone ${say.tone} for ${JSON.stringify(s)}`,
+      );
+      // the screen calls .join on this whenever tone is "repair"
+      if (say.tone === "repair") assert.ok(Array.isArray(say.applied));
+    }
+  }
+  assert.equal(describePunchIssue(null), null);
+});
+
+// ---------------------------------------------------------------------------
+// THE PIPELINE, end to end
+//
+// Every browser-shaped check passed the day the apply step shipped doing
+// nothing. The parse worked, the schedule matched, the repairs were found, the
+// flags cleared, the corrections were recorded on the sheet - and not one hour
+// moved, because the repaired days still hit the floor at QSP's printed figure.
+// No screen would have caught that. Only asserting the figures does.
+//
+// Fixture is Zuchniak's real shape off 07/16-07/31: 10:00a-12:10p then
+// 12:00p-1:00p, two pairs overlapping by ten minutes, printed by QSP as 8.17.
+//
+//   8a -> 12:10p   250 min        the noon break's two times went in reversed,
+//   12p -> 2p      120 min        so these two pairs overlap 12:00-12:10 and
+//   2:30p -> 4:30p 120 min        the same ten minutes are billed twice
+//                  ------- 490 min = 8.17, which is what QSP prints
+//
+// read the other way it is 8:00a-12:00p, a ten minute rest, 12:10p-2:00p, a
+// meal, then 2:30p-4:30p = 480 min = exactly 8.00, which the schedule says.
+const zDay = (date) => ({
+  date,
+  punches: [
+    { min: 480, raw: "8a" }, { min: 730, raw: "12:10p" },
+    { min: 720, raw: "12p" }, { min: 840, raw: "2p" },
+    { min: 870, raw: "2:30p" }, { min: 990, raw: "4:30p" },
+  ],
+  printed: { daily: 8.17 },
+});
+const zSchedule = (date) => ({ date, workHours: 8 });
+const PERIOD = { from: "07/16/26", to: "07/17/26" };
+
+function runPipeline({ days, schedule }) {
+  const parsed = { employee: "Zuchniak, Mariel", payPeriod: PERIOD, days };
+  const first = analyzeTimesheet(parsed);
+  const repair = repairConfirmedDays(parsed.days, first.days, schedule, analyzeDay);
+  const final = repair.corrections.length
+    ? analyzeTimesheet({ ...parsed, days: repair.days })
+    : first;
+  return { before: first, after: final, corrections: repair.corrections };
+}
+
+test("pipeline: a schedule-confirmed repair actually moves the hours", () => {
+  const dates = ["07/16/26", "07/17/26"];
+  const out = runPipeline({
+    days: dates.map(zDay),
+    schedule: dates.map(zSchedule),
+  });
+
+  assert.equal(out.corrections.length, 2, "both days confirmed by the schedule");
+  assert.ok(
+    Math.abs(out.before.totals.paidHours - 16.34) < 0.02,
+    `as exported it reads 16.34, got ${out.before.totals.paidHours}`,
+  );
+  // THE ASSERTION THAT WOULD HAVE CAUGHT IT
+  assert.ok(
+    Math.abs(out.after.totals.paidHours - 16) < 0.02,
+    `the repair has to reach the total, got ${out.after.totals.paidHours}`,
+  );
+  for (const d of out.after.days) {
+    assert.ok(Math.abs(d.paidHours - 8) < 0.01, `${d.date} should be 8.00, got ${d.paidHours}`);
+  }
+});
+
+test("pipeline: the overtime that only existed because of the double count goes", () => {
+  // 8.17 tips past 8 and books 0.17 of daily OT. Corrected, the day is exactly
+  // 8.00 and the OT was never real. On the live batch this removed every one of
+  // Zuchniak's 1.19 OT hours.
+  const dates = ["07/16/26", "07/17/26"];
+  const out = runPipeline({ days: dates.map(zDay), schedule: dates.map(zSchedule) });
+
+  assert.ok(out.before.totals.otHours > 0.3, "as exported both days carry OT");
+  assert.equal(out.after.totals.otHours, 0, "corrected, there is none");
+});
+
+test("pipeline: a repaired day's punch times match its own hours", () => {
+  // suggestPunches swaps the .min values and leaves .raw where it was, so a
+  // repaired sheet can print the ORIGINAL times beside corrected hours. The
+  // renderer prints raw, so this is what the reader would actually see.
+  const out = runPipeline({ days: [zDay("07/16/26")], schedule: [zSchedule("07/16/26")] });
+  const day = out.after.days[0];
+
+  const raws = day.punches.map((p) => p.raw);
+  assert.deepEqual(raws, ["8a", "12p", "12:10p", "2p", "2:30p", "4:30p"]);
+
+  // and the printed strings have to agree with the figure beside them
+  const mins = day.punches.map((p) => p.min);
+  assert.deepEqual(mins, [480, 720, 730, 840, 870, 990], "raw and min must not disagree");
+});
+
+test("pipeline: no schedule means nothing is applied", () => {
+  const out = runPipeline({ days: [zDay("07/16/26")], schedule: null });
+  assert.equal(out.corrections.length, 0);
+  assert.ok(
+    Math.abs(out.after.totals.paidHours - 8.17) < 0.01,
+    "with no second opinion the day stands as QSP printed it",
+  );
+});
+
+test("pipeline: a schedule that disagrees with the repair blocks it", () => {
+  // the schedule says 8.17 too, so the repair is not corroborated and the day is
+  // left alone. This is the 15-of-24 case that makes blanket repair unsafe.
+  const out = runPipeline({
+    days: [zDay("07/16/26")],
+    schedule: [{ date: "07/16/26", workHours: 8.17 }],
+  });
+  assert.equal(out.corrections.length, 0);
+  assert.ok(Math.abs(out.after.totals.paidHours - 8.17) < 0.01);
+});
+
+test("pipeline: premiums are unchanged by a repair", () => {
+  // the repair moves hours, never what someone is owed. On the live batch all
+  // nine confirmed repairs left every premium exactly where it was.
+  const dates = ["07/16/26", "07/17/26"];
+  const out = runPipeline({ days: dates.map(zDay), schedule: dates.map(zSchedule) });
+  assert.equal(out.after.premiums.totalHours, out.before.premiums.totalHours);
+  assert.deepEqual(out.after.premiums.mealDays, out.before.premiums.mealDays);
+  assert.deepEqual(out.after.premiums.restDays, out.before.premiums.restDays);
+});
+
+test("pipeline: a repaired day stops being flagged", () => {
+  const out = runPipeline({ days: [zDay("07/16/26")], schedule: [zSchedule("07/16/26")] });
+  assert.ok(reviewSheet(out.before.days, analyzeDay).length > 0, "flagged before");
+  assert.equal(reviewSheet(out.after.days, analyzeDay).length, 0, "and not after");
 });
 
 // ---------------------------------------------------------------------------

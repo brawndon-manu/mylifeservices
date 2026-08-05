@@ -11,7 +11,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
-import { reviewSheet, confirmedRepairs, repairedPunches } from "@/lib/timesheet/anomalies";
+import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
@@ -387,38 +387,9 @@ export async function uploadBatch(formData) {
     //
     // Applied to the parsed punches and then re-analyzed from scratch, so the
     // totals, overtime and premiums are the pipeline's own and never patched.
-    let punchCorrections = [];
-    if (sched) {
-      const scheduledHours = {};
-      for (const d of sched.days || []) scheduledHours[d.date] = d.workHours;
-
-      const confirmed = confirmedRepairs(reviewSheet(t.days, analyzeDay), scheduledHours);
-      if (confirmed.length) {
-        const fixDates = new Set(confirmed.map((r) => r.date));
-        const byDate = new Map(t.days.map((d) => [d.date, d]));
-        t = analyzeTimesheet({
-          ...withRests,
-          // `repaired` exempts the day from the floor at QSP's printed figure.
-          // Without it the floor puts the double-counted minutes straight back
-          // and the correction is announced but never actually applied.
-          days: withRests.days.map((d) =>
-            fixDates.has(d.date)
-              ? { ...d, punches: repairedPunches(byDate.get(d.date) || d), repaired: true }
-              : d,
-          ),
-        });
-        punchCorrections = confirmed.map((r) => ({
-          date: r.date,
-          was: r.shownPunches,
-          now: r.suggestion.punches,
-          hoursBefore: r.hoursNow,
-          hoursAfter: r.suggestion.hours,
-          applied: r.suggestion.applied,
-          confirmedBy: "schedule",
-          scheduleHours: scheduledHours[r.date] ?? null,
-        }));
-      }
-    }
+    const repair = repairConfirmedDays(withRests.days, t.days, sched?.days, analyzeDay);
+    const punchCorrections = repair.corrections;
+    if (punchCorrections.length) t = analyzeTimesheet({ ...withRests, days: repair.days });
 
     // two independent quality checks, both recorded rather than acted on. the
     // figures are never altered here - somebody looks at these and decides.
