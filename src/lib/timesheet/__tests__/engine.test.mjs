@@ -17,6 +17,7 @@ import { parseSchedulePdf } from "../schedule.js";
 import {
   findAnomalies, suggestPunches, reviewSheet,
   scheduleConfirmsRepair, confirmedRepairs,
+  scheduleAgreesWithCurrent, scheduledPaidHours,
 } from "../anomalies.js";
 import { recomputeSheet, patchFor, mergeOverride, CORRECTION_KINDS } from "../corrections.js";
 import { compareToSchedule, scheduleKey, readSchedulePages } from "../schedule.js";
@@ -896,6 +897,56 @@ test("a day with no safe reading carries no effect at all", () => {
   assert.equal(row.needsHuman, true, "this one genuinely needs a person");
   assert.equal(row.suggestion, null);
   assert.equal(row.effect, null);
+});
+
+test("an unrepairable day the schedule already settles is not left shouting", () => {
+  // B. Rotter 07/28, off the real export. Five pairs, one running 30 minutes
+  // backwards, and no single swap clears it - fixing the backwards pair creates
+  // a reversed break after it. Her day still comes to 8.00 and her schedule
+  // independently says 8.00.
+  const punches = [
+    at(9), at(11, 30), at(11, 30), at(11), at(11, 10),
+    at(14), at(14, 30), at(17, 20), at(17, 30), at(17, 30),
+  ];
+  const [row] = reviewSheet([{ date: "07/28/26", punches }], analyzeDay);
+
+  assert.equal(row.needsHuman, true, "no repair holds up, which is correct");
+  assert.ok(Math.abs(row.hoursNow - 8) < 0.01, `expected 8.00, got ${row.hoursNow}`);
+  assert.equal(scheduleAgreesWithCurrent(row, 8), true, "but the schedule settles the total");
+});
+
+test("a day the schedule does NOT settle keeps shouting", () => {
+  // Urena 07/27: no repair on offer and the schedule says 7.92 against our 8.25.
+  // This is one of the three that genuinely needs a person.
+  const row = { date: "07/27/26", hoursNow: 8.25, suggestion: null, needsHuman: true };
+  assert.equal(scheduleAgreesWithCurrent(row, 7.92), false);
+});
+
+test("a day with a credible repair is never marked settled", () => {
+  // that case is described by `effect`, not by this. offering both readings at
+  // once would be two different answers on the same card.
+  const row = { date: "07/27/26", hoursNow: 7.17, suggestion: { hours: 7 } };
+  assert.equal(scheduleAgreesWithCurrent(row, 7.17), false);
+});
+
+test("no schedule for the day settles nothing", () => {
+  const row = { date: "07/19/26", hoursNow: 7.28, suggestion: null, needsHuman: true };
+  assert.equal(scheduleAgreesWithCurrent(row, null), false);
+  assert.equal(scheduledPaidHours(null), null);
+  assert.equal(scheduledPaidHours({ shifts: [] }), null);
+});
+
+test("scheduled paid hours leave the meal out", () => {
+  // same figure compareToSchedule builds, so the two can be compared at all
+  const entry = {
+    shifts: [
+      { minutes: 150, meal: false },
+      { minutes: 150, meal: false },
+      { minutes: 30, meal: true },
+      { minutes: 180, meal: false },
+    ],
+  };
+  assert.equal(scheduledPaidHours(entry), 8);
 });
 
 test("a repaired day is exempt from the floor at QSP's printed figure", () => {

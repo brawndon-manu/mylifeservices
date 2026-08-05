@@ -237,6 +237,31 @@ export function confirmedRepairs(rows, scheduledHoursByDate) {
   return rows.filter((r) => scheduleConfirmsRepair(r, scheduledHoursByDate[r.date] ?? null));
 }
 
+// scheduled PAID hours for one day, off the stored shift list. meals are unpaid
+// so they stay out of it, the same way compareToSchedule builds its own figure.
+export function scheduledPaidHours(entry) {
+  if (!entry?.shifts?.length) return null;
+  return r2(entry.shifts.reduce((n, s) => n + (s.meal ? 0 : s.minutes || 0), 0) / 60);
+}
+
+// No repair could be offered, but the schedule already agrees with the figure we
+// hold. The punches are still a mess and still worth fixing in QSP; the day just
+// isn't unresolved, and "needs working out by hand" says it is.
+//
+// B. Rotter 07/28 is the case: five punch pairs, one running 30 minutes
+// backwards, and no single-pass swap clears it - fixing the backwards pair just
+// creates a reversed break after it, so `isCredible` refuses and the day falls
+// through to the loudest label on the screen. Her total is 8.00 and her schedule
+// independently says 8.00. On 07/16-07/31 that is true of 11 of the 14 days
+// marked for hand-working, so the label was sending people to check ten days
+// that a second document had already settled.
+export function scheduleAgreesWithCurrent(row, scheduledHours, tolerance = 0.05) {
+  // only for days with no repair on offer - a day WITH a credible repair is a
+  // different conversation, and `effect` already describes that one.
+  if (!row || row.suggestion || scheduledHours == null) return false;
+  return Math.abs((row.hoursNow ?? 0) - scheduledHours) <= tolerance;
+}
+
 // QSP's own way of writing a punch: no ":00" on the hour. worth matching,
 // because a repaired punch sits in a row beside untouched ones and "12:00p"
 // next to "1p" reads like two different documents.

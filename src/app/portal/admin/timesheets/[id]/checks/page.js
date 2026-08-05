@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
+import {
+  anomalyLabel,
+  ANOMALY_KINDS,
+  scheduleAgreesWithCurrent,
+  scheduledPaidHours,
+} from "@/lib/timesheet/anomalies";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
 import Evidence from "./Evidence";
@@ -51,7 +56,15 @@ export default async function ChecksPage({ params }) {
       id: t.id,
       who: t.user ? preferredName(t.user) : t.sourceName,
       hours: t.paidHours,
-      punches,
+      // computed here rather than at upload, so batches stored before any of
+      // this still get the calmer label without needing a re-upload
+      punches: punches.map((p) => ({
+        ...p,
+        scheduleAgrees: scheduleAgreesWithCurrent(
+          p,
+          scheduledPaidHours((sched.byDate || {})[p.date]),
+        ),
+      })),
       flagged,
       scheduleTotal: sched.scheduleTotal ?? null,
       timesheetTotal: sched.timesheetTotal ?? null,
@@ -236,8 +249,10 @@ export default async function ChecksPage({ params }) {
                         {/* collapsed by default - three of these filled a screen
                             for one person. the ones with no safe reading start
                             open, since those are the only ones that actually
-                            need somebody to do something. */}
-                        <details open={!p.suggestion} className="group">
+                            need somebody to do something. NOT the ones the
+                            schedule already settles: 11 of the 14 on this period
+                            were opening a card nobody had to act on. */}
+                        <details open={!p.suggestion && !p.scheduleAgrees} className="group">
                           <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm">
                             <span
                               aria-hidden="true"
@@ -259,6 +274,13 @@ export default async function ChecksPage({ params }) {
                             ) : p.suggestion ? (
                               <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
                                 likely {f2(p.suggestion.hours)} hrs
+                              </span>
+                            ) : p.scheduleAgrees ? (
+                              /* no repair holds up, but the schedule already
+                                 agrees with the total. still worth fixing in
+                                 QSP, just not unresolved. */
+                              <span className="ml-auto whitespace-nowrap text-xs text-muted">
+                                schedule agrees with {f2(p.hoursNow)} hrs
                               </span>
                             ) : (
                               <span className="ml-auto whitespace-nowrap text-xs font-semibold text-rose-700 dark:text-rose-400">
@@ -315,10 +337,23 @@ export default async function ChecksPage({ params }) {
                             )}
                           </>
                         ) : (
-                          <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                            No safe reading of these punches - this one needs working
-                            out by hand.
-                          </p>
+                          p.scheduleAgrees ? (
+                            <p className="mt-2 text-xs text-muted">
+                              No single swap puts these punches in order, so nothing is
+                              suggested. But the day comes to{" "}
+                              <span className="font-semibold text-foreground">
+                                {f2(p.hoursNow)} hrs
+                              </span>{" "}
+                              and the schedule independently says the same, so the total
+                              is not in question. Worth correcting in QSP so the next
+                              export is clean.
+                            </p>
+                          ) : (
+                            <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
+                              No safe reading of these punches, and the schedule does not
+                              settle it either - this one needs working out by hand.
+                            </p>
+                          )
                         )}
                         {/* working it out by hand means reading the source, so
                             the source is right here rather than a hunt */}
