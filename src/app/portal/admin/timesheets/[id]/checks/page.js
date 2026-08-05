@@ -297,11 +297,17 @@ export default async function ChecksPage({ params }) {
                                 That would make the day{" "}
                                 <span className="font-semibold">{f2(p.suggestion.hours)} hrs</span>{" "}
                                 instead of {f2(p.hoursNow)} ({p.suggestion.applied.join("; ")}).
-                                {p.effect?.restPremium !== "same" && (
+                                {/* batches stored before `effect` existed carry
+                                    no premium reading at all. say nothing rather
+                                    than guess - `p.effect?.x !== "same"` is TRUE
+                                    when effect is missing, which read as "this
+                                    changes a premium" and then threw on the
+                                    next line. */}
+                                {p.effect && p.effect.restPremium !== "same" && (
                                   <> The rest premium would be{" "}
                                     <span className="font-semibold">{p.effect.restPremium}</span>.</>
                                 )}
-                                {p.effect?.mealPremium !== "same" && (
+                                {p.effect && p.effect.mealPremium !== "same" && (
                                   <> The meal premium would be{" "}
                                     <span className="font-semibold">{p.effect.mealPremium}</span>.</>
                                 )}
