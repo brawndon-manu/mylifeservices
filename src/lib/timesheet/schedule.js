@@ -322,7 +322,12 @@ export function readSchedulePages(pages) {
 
 export async function parseSchedulePdf(bytes) {
   const pdfjs = await getPdfjs();
-  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // same ownership trap as parseTimesheetPdf - pdfjs detaches what it's given,
+  // so the caller's bytes have to be copied first. the schedule only survived
+  // this because its upload happens before its parse, which is luck rather than
+  // design and would break the moment those two lines swapped.
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const data = view.slice();
   const doc = await pdfjs.getDocument({ data }).promise;
 
   const pages = [];

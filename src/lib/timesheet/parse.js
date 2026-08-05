@@ -528,7 +528,13 @@ export function analyzeTimesheet(parsed) {
 // any page without one continues whoever came before.
 export async function parseTimesheetPdf(bytes) {
   const pdfjs = await getPdfjs();
-  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // pdfjs TAKES OWNERSHIP of whatever array it's handed and detaches the
+  // underlying buffer, so the caller's bytes come back length 0. hand it a copy.
+  // this cost us the stored copy of every timesheet export: the upload parsed
+  // first and uploaded second, so `Buffer.from(bytes)` wrote an empty file and
+  // "open the QSP export at this page" opened a 0-page PDF.
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const data = view.slice();
   // we only read text positions, never rasterise, so no fonts need loading.
   // useSystemFonts makes pdfjs go looking at the host's font files, which is
   // fine on a laptop and a good way to fail on a serverless host that has
