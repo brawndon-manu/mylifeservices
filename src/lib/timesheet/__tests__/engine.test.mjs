@@ -861,6 +861,40 @@ const revRow = (over) => ({
   ...over,
 });
 
+test("a repaired day is exempt from the floor at QSP's printed figure", () => {
+  // Mánu's real 07/27. The two middle punches are reversed, so 10:00a-12:10p and
+  // 12:00p-2:00p overlap and the same ten minutes are billed twice. QSP printed
+  // 7.17 off those same punches.
+  const punches = [at(10), at(12, 10), at(12), at(14), at(14, 30), at(17, 30)];
+  const printed = { daily: 7.17 };
+
+  const asExported = analyzeDay({ date: "07/27/26", punches, printed });
+  assert.ok(Math.abs(asExported.paidHours - 7.17) < 0.01, "reproduces QSP exactly");
+
+  // repaired, but still carrying QSP's printed figure: the floor would undo it
+  const fixed = suggestPunches({ punches }).punches;
+  const floored = analyzeDay({ date: "07/27/26", punches: fixed, printed });
+  assert.ok(
+    Math.abs(floored.paidHours - 7.17) < 0.01,
+    "without the exemption the floor puts the double count straight back",
+  );
+
+  // with the exemption it lands on the true figure, which the schedule agrees with
+  const repaired = analyzeDay({ date: "07/27/26", punches: fixed, printed, repaired: true });
+  assert.ok(
+    Math.abs(repaired.paidHours - 7) < 0.01,
+    `a repaired day may pay under the export, got ${repaired.paidHours}`,
+  );
+});
+
+test("the floor still protects every day we did NOT repair", () => {
+  // the guard exists because QSP rounds each segment its own way and ours can
+  // land a hundredth short. that must keep working for ordinary days.
+  const punches = [at(8), at(12), at(12, 30), at(16, 30)];
+  const d = analyzeDay({ date: "07/20/26", punches, printed: { daily: 8.25 } });
+  assert.equal(d.paidHours, 8.25, "an unrepaired day never pays under the export");
+});
+
 test("a reversal the schedule agrees with is confirmed", () => {
   // Mánu's own 07/27: 10:00a-12:10p and 12:00p-2:00p overlap, so ten minutes
   // are billed twice. Schedule says 7.00 and so does the repair.

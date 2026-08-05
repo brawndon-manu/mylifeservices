@@ -398,8 +398,13 @@ export async function uploadBatch(formData) {
         const byDate = new Map(t.days.map((d) => [d.date, d]));
         t = analyzeTimesheet({
           ...withRests,
+          // `repaired` exempts the day from the floor at QSP's printed figure.
+          // Without it the floor puts the double-counted minutes straight back
+          // and the correction is announced but never actually applied.
           days: withRests.days.map((d) =>
-            fixDates.has(d.date) ? { ...d, punches: repairedPunches(byDate.get(d.date) || d) } : d,
+            fixDates.has(d.date)
+              ? { ...d, punches: repairedPunches(byDate.get(d.date) || d), repaired: true }
+              : d,
           ),
         });
         punchCorrections = confirmed.map((r) => ({

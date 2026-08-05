@@ -307,11 +307,17 @@ export function analyzeDay(day) {
   // punch segment its own way, which can leave our exact figure a hundredth or
   // two short - handing someone a signed timesheet showing fewer hours than
   // payroll reported is indefensible, so floor it at their number.
+  //
+  // ONE EXCEPTION: a day whose punches we corrected. QSP's printed figure was
+  // computed from the punches we just fixed, so flooring at it puts the error
+  // straight back and the repair does nothing at all. A reversed break makes two
+  // punch pairs overlap, so the printed figure counts the same ten minutes
+  // twice - paying less than that is the whole point, and it is the only case
+  // where paying under the export is right rather than indefensible.
   const computedPaidHours = paidMin / 60;
+  const floorAt = day.repaired ? null : printedDailyForFloor;
   const paidHours =
-    printedDailyForFloor !== null && computedPaidHours < printedDailyForFloor
-      ? printedDailyForFloor
-      : computedPaidHours;
+    floorAt !== null && computedPaidHours < floorAt ? floorAt : computedPaidHours;
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
 
