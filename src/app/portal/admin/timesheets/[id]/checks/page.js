@@ -97,6 +97,13 @@ export default async function ChecksPage({ params }) {
 
   const totalPunch = rows.reduce((n, r) => n + r.punches.length, 0);
   const totalSched = rows.reduce((n, r) => n + r.flagged.length, 0);
+  // the headline used to be the raw flag count, which on this period is 55
+  // against a single day that actually needs deciding. the number at the top
+  // should be the one somebody can act on.
+  const openPunch = rows.reduce(
+    (n, r) => n + r.punches.filter((p) => p.say.tone === "human").length,
+    0,
+  );
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
@@ -115,16 +122,22 @@ export default async function ChecksPage({ params }) {
         data, not the arithmetic.
         {" "}Days where someone worked hours other than the ones scheduled are
         listed too, as context only - that is ordinary, and the timesheet is the
-        record we go by.
+        record we go by. A day the schedule has and the timesheet does not is a
+        different thing, and worth opening: it pays nothing at all.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Staff affected" value={rows.length} of={batch.timesheets.length} />
-        <Stat label="Punch entries that can't be right" value={totalPunch} tone="warn" />
         <Stat
-          label="Days worked differently to plan"
+          label="Days needing a decision"
+          value={openPunch}
+          of={totalPunch}
+          tone={openPunch > 0 ? "warn" : undefined}
+        />
+        <Stat
+          label="Days flagged against the schedule"
           value={anySchedule ? totalSched : "-"}
-          tone={anySchedule ? "warn" : undefined}
+          tone={anySchedule && totalSched > 0 ? "warn" : undefined}
         />
       </div>
 
