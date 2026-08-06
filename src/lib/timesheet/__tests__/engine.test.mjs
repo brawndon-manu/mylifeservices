@@ -30,6 +30,10 @@ import { indexByAccount, lookupAcross, suggestAlias } from "../identity.js";
 // minutes from midnight, the way the parser holds a punch
 const at = (h, m = 0) => ({ min: h * 60 + m });
 const day = (punches, date = "07/20/26") => analyzeDay({ date, punches, printed: null });
+// a day where the schedule actually rostered a "-Meal Break" block. Lateness
+// only means anything once a meal was genuinely rostered - a gap credits nothing.
+const mealDay = (punches, date = "07/20/26") =>
+  analyzeDay({ date, punches, printed: null, mealScheduled: true });
 
 // ---------------------------------------------------------------- rest periods
 
@@ -64,25 +68,25 @@ test("the old whole-block rule and the current one differ where it matters", () 
 
 test("a meal must BEGIN by the end of the fifth hour, not merely happen", () => {
   // 8h shift, lunch after 4 hours worked
-  const onTime = day([at(8), at(12), at(12, 30), at(16, 30)]);
+  const onTime = mealDay([at(8), at(12), at(12, 30), at(16, 30)]);
   assert.equal(onTime.mealCount, 1);
   assert.equal(onTime.mealLate, false);
   assert.equal(onTime.mealViolation, false);
   assert.equal(onTime.mealStartedAfterMin, 240);
 
   // same shift, lunch after six hours worked
-  const late = day([at(8), at(14), at(14, 30), at(16, 30)]);
+  const late = mealDay([at(8), at(14), at(14, 30), at(16, 30)]);
   assert.equal(late.mealLate, true);
   assert.equal(late.mealMissing, false, "it happened, it was just late");
   assert.equal(late.mealViolation, true);
 });
 
 test("the fifth-hour boundary is exact", () => {
-  const exactly300 = day([at(8), at(13), at(13, 30), at(16, 30)]);
+  const exactly300 = mealDay([at(8), at(13), at(13, 30), at(16, 30)]);
   assert.equal(exactly300.mealStartedAfterMin, 300);
   assert.equal(exactly300.mealLate, false, "300 minutes is the deadline, not past it");
 
-  const oneMinuteLate = day([at(8), at(13, 1), at(13, 31), at(16, 30)]);
+  const oneMinuteLate = mealDay([at(8), at(13, 1), at(13, 31), at(16, 30)]);
   assert.equal(oneMinuteLate.mealLate, true);
 });
 
@@ -99,6 +103,51 @@ test("a short day owes neither a meal nor a rest", () => {
   assert.equal(short.mealRequired, false);
   assert.equal(short.mealViolation, false);
   assert.equal(short.restRequired, 0);
+});
+
+// ---- a break only counts if something actually recorded it ----------------
+//
+// The Simple Timesheet is generated from the SCHEDULE, not from clock punches:
+// on 114 days where the two disagree about a start time, the timesheet followed
+// the schedule 93 times and the clock 0. A gap between punches is therefore a
+// gap in the roster and proves nothing. Cost of this rule on 07/16-07/31: meal
+// premium days 262 -> 319, rest 389 -> 399, total 651 -> 718.
+
+test("a gap where no meal was rostered credits nothing", () => {
+  const punches = [at(8), at(12), at(12, 30), at(16, 30)];
+  const d = analyzeDay({ date: "07/20/26", punches, printed: null, mealScheduled: false });
+  assert.equal(d.mealCount, 1, "the gap is still classified - that is what keeps it unpaid");
+  assert.equal(d.mealViolation, true, "but it credits no meal period");
+  assert.equal(d.mealMissing, true);
+});
+
+test("a rostered meal counts, and the gap still comes out of the hours", () => {
+  const punches = [at(8), at(12), at(12, 30), at(16, 30)];
+  const yes = analyzeDay({ date: "07/20/26", punches, printed: null, mealScheduled: true });
+  const no = analyzeDay({ date: "07/20/26", punches, printed: null, mealScheduled: false });
+  assert.equal(yes.mealViolation, false);
+  assert.equal(no.mealViolation, true);
+  assert.equal(yes.paidHours, no.paidHours, "HOURS DO NOT MOVE - only the violation does");
+  assert.equal(yes.workedMin, no.workedMin);
+});
+
+test("no schedule for the day goes to a person, not onto the bill", () => {
+  // 8 of these on 07/16-07/31. Charging them invents a violation we have no
+  // document for; passing them invents compliance.
+  const d = analyzeDay({ date: "07/20/26", punches: [at(8), at(16, 30)], printed: null, mealScheduled: null });
+  assert.equal(d.mealRequired, true);
+  assert.equal(d.mealUnknown, true);
+  assert.equal(d.mealViolation, false, "not charged");
+  assert.equal(d.mealMissing, false, "and not passed either");
+});
+
+test("a caller that forgets to say gets the answer that pays", () => {
+  // absent is "not rostered", never "unknown". A wiring mistake must not
+  // silently drop somebody's premium.
+  const d = analyzeDay({ date: "07/20/26", punches: [at(8), at(16, 30)], printed: null });
+  assert.equal(d.mealScheduled, false);
+  assert.equal(d.mealUnknown, false);
+  assert.equal(d.mealViolation, true);
 });
 
 // -------------------------------------------------------------------- overtime
@@ -825,28 +874,29 @@ test("two people sharing a surname never collapse into one", () => {
 const restDay = (punches, recorded) =>
   analyzeDay({ date: "07/20/26", punches, printed: null, restRecorded: recorded });
 
-test("the rest report can ADD a premium the punches would have missed", () => {
-  // 8 hours with two ten-minute gaps reads as two rests taken, so nothing owed.
-  // QSP's own record says only one was a break - the other was travel.
+test("the rest report is now the ONLY thing that credits a rest break", () => {
+  // 8 hours with two ten-minute gaps. Those are gaps in the ROSTER, since the
+  // timesheet is generated from the schedule, so they credit nothing.
   const punches = [at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)];
-  assert.equal(restDay(punches, null).restViolation, false, "punches alone see two rests");
-  assert.equal(restDay(punches, 1).restViolation, true, "the report says one, so a premium is owed");
+  assert.equal(restDay(punches, null).restViolation, true, "gaps are not evidence of a break");
+  assert.equal(restDay(punches, 2).restViolation, false, "the report recording two clears it");
+  assert.equal(restDay(punches, 1).restViolation, true, "one of two owed is still short");
 });
 
-test("the rest report can NEVER take a premium away", () => {
-  // the punches show no break at all; the report claims two. The timesheet is
-  // the record, so the premium stands.
+test("no rest report coverage means no record, so the premium is owed", () => {
+  // the change that costs 10 days on 07/16-07/31: somebody the report does not
+  // cover has nothing crediting a break, and the reading that pays is the one
+  // we take.
+  const d = restDay([at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)], null);
+  assert.equal(d.restSource, "none");
+  assert.equal(d.restTaken, 0);
+  assert.equal(d.restViolation, true);
+});
+
+test("the report can never credit more breaks than were owed", () => {
   const punches = [at(8), at(17)];
-  assert.equal(restDay(punches, null).restViolation, true);
-  assert.equal(restDay(punches, 2).restViolation, true,
-    "a supporting document must not overrule the signed timesheet against the employee");
-});
-
-test("with no rest report at all, nothing changes", () => {
-  const punches = [at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)];
-  const withReport = restDay(punches, null);
-  assert.equal(withReport.restSource, "punches");
-  assert.equal(withReport.restViolation, false);
+  assert.equal(restDay(punches, 2).restViolation, false, "two owed, two recorded");
+  assert.equal(restDay(punches, 1).restViolation, true, "two owed, one recorded");
 });
 
 // ---------------------------------------------------------------------------
@@ -1366,9 +1416,12 @@ test("hours are never touched by the rest report", () => {
   const punches = [at(8), at(11), at(11, 10), at(14), at(14, 10), at(17)];
   const a = restDay(punches, null);
   const b = restDay(punches, 1);
-  assert.equal(a.paidHours, b.paidHours, "paid hours come from the timesheet, full stop");
-  assert.equal(a.workedMin, b.workedMin);
-  assert.equal(a.restMin, b.restMin, "and the rest time added back is unchanged");
-  assert.equal(a.restViolation, false);
-  assert.equal(b.restViolation, true, "only the violation moves");
+  const c = restDay(punches, 2);
+  for (const x of [b, c]) {
+    assert.equal(a.paidHours, x.paidHours, "paid hours come from the timesheet, full stop");
+    assert.equal(a.workedMin, x.workedMin);
+    assert.equal(a.restMin, x.restMin, "and the rest time added back is unchanged");
+  }
+  assert.equal(a.restViolation, true);
+  assert.equal(c.restViolation, false, "only the violation moves");
 });

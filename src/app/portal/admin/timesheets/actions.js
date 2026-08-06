@@ -377,19 +377,36 @@ export async function uploadBatch(formData) {
       : { value: null, via: null };
     const rest = restHit.value;
 
-    const withRests = rest
-      ? { ...raw, days: raw.days.map((d) => ({ ...d, restRecorded: rest.byDate[d.date]?.taken ?? 0 })) }
-      : raw;
-
-    let t = analyzeTimesheet(withRests);
+    // the schedule has to be resolved BEFORE the days are analyzed now: whether
+    // a meal was actually rostered is what decides the meal violation, so it is
+    // an input to analyzeDay rather than something checked afterwards.
     const schedHit = schedules
-      ? lookupAcross(t.employee, m, {
+      ? lookupAcross(raw.employee, m, {
           get: (k) => schedules.get(k) || null,
           keyOf: scheduleKey,
           byUser: scheduleByUser,
         })
       : { value: null, via: null };
     const sched = schedHit.value;
+    const schedDay = new Map((sched?.days || []).map((d) => [d.date, d]));
+
+    const withRests = {
+      ...raw,
+      days: raw.days.map((d) => {
+        const sd = schedDay.get(d.date);
+        return {
+          ...d,
+          // no rest report coverage means no record, which means none taken
+          restRecorded: rest ? rest.byDate[d.date]?.taken ?? 0 : undefined,
+          // true = a "-Meal Break" block was rostered, false = the schedule
+          // covers the day and rosters none, null = no schedule for the day,
+          // which is unanswerable and goes to a person instead of being charged
+          mealScheduled: sd ? (sd.entries || []).some((e) => e.meal) : null,
+        };
+      }),
+    };
+
+    let t = analyzeTimesheet(withRests);
 
     // ---- the one repair we make on our own ----
     //

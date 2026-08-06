@@ -324,18 +324,47 @@ export function analyzeDay(day) {
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
 
-  // `day.restRecorded` is set by the caller from QSP's Rest Periods Report when
-  // that report covers this person. null means we have nothing better than the
-  // punch gaps, which is what this always used.
+  // ---- what counts as a break TAKEN -------------------------------------
+  //
+  // A GAP IS NOT A BREAK. This used to infer both kinds from gaps between
+  // punches, and that turned out to be reading the roster back at itself: the
+  // Simple Timesheet is generated from the schedule, not from clock punches.
+  // Measured on 114 days where the schedule and QSClock disagree about when
+  // somebody started, the timesheet followed the schedule 93 times and the
+  // clock 0. So a "break" found in the punches is just a gap in the roster, and
+  // it is evidence of nothing at all.
+  //
+  // A break now only counts if something actually recorded it:
+  //   meals - an explicit "-Meal Break" block on the schedule
+  //   rests - a row in QSP's Rest Periods Report
+  //
+  // Gaps are still classified above, because that is what decides PAID HOURS:
+  // a rest gap is paid time added back, a meal gap is unpaid. Hours come from
+  // the timesheet and none of this touches them.
+  //
+  // `day.restRecorded` is the Rest Periods Report's count. No coverage means no
+  // record, which means none taken - the reading that pays the employee.
   const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
+  const restTaken = recorded === null ? 0 : recorded;
 
-  // the first meal has to START by the end of the fifth hour worked. a late
-  // lunch is its own violation - the break happened, but not when it was owed -
-  // and it was invisible while we only counted whether a meal existed at all.
+  // `day.mealScheduled`: true = rostered, false = the schedule covers this day
+  // and rosters no meal, null = no schedule for this day so we cannot say.
+  // ABSENT is treated as false rather than null on purpose - a caller that
+  // forgets to wire it gets the conservative answer that pays the premium,
+  // never the silent one that drops it.
+  const mealScheduled = day.mealScheduled === undefined ? false : day.mealScheduled;
+  const mealTaken = mealScheduled === true;
+  // no schedule at all is not a violation and not a pass. it goes to a person.
+  const mealUnknown = mealRequired && mealScheduled === null;
+
+  // the meal has to START by the end of the fifth hour worked. a late lunch is
+  // its own violation - the break happened, but not when it was owed. only
+  // meaningful once we know a meal was actually rostered.
   const firstMeal = breaks.find((b) => b.kind === "meal") || null;
   const mealStartedAfterMin = firstMeal ? firstMeal.workedBefore : null;
   const mealLate =
     mealRequired &&
+    mealTaken &&
     !!firstMeal &&
     firstMeal.workedBefore > RULES.mealMustStartByMin;
 
@@ -370,26 +399,22 @@ export function analyzeDay(day) {
     // Note this only ever moves the VIOLATION. Paid hours still come from the
     // punches, because the timesheet is the document staff sign.
     restRecorded: recorded,
-    restSource: recorded === null ? "punches" : "rest-report",
+    restTaken,
+    restSource: recorded === null ? "none" : "rest-report",
     restRequired,
     mealRequired,
-    // never taken, or taken too late - §226.7 pays one premium either way, so
-    // these collapse into the single meal violation rather than stacking.
-    mealMissing: mealRequired && mealCount === 0,
+    mealScheduled,
+    // no schedule for the day, so whether a meal was provided is unanswerable
+    // from anything we hold. NOT charged and NOT passed - it goes to a person.
+    mealUnknown,
+    // never rostered, or rostered but started too late - §226.7 pays one
+    // premium either way, so these collapse into one violation rather than
+    // stacking.
+    mealMissing: mealRequired && !mealUnknown && !mealTaken,
     mealLate,
     mealStartedAfterMin,
-    mealViolation: mealRequired && (mealCount === 0 || mealLate),
-    // The timesheet is the record. QSP's Rest Periods Report is support for the
-    // one thing the timesheet cannot answer - whether a short gap between
-    // punches was actually a break, or travel between two clients.
-    //
-    // So it can only ever ADD a premium, never take one away. Whichever source
-    // shows FEWER breaks taken decides, which is the reading that pays the
-    // employee. On 07/16-07/31 the two rules give an identical answer (389 rest
-    // premium days) because the report never once showed a break the punches
-    // missed - but that is this data being kind, not a rule. This makes it one.
-    restViolation:
-      (recorded === null ? restCount : Math.min(restCount, recorded)) < restRequired,
+    mealViolation: mealRequired && !mealUnknown && (!mealTaken || mealLate),
+    restViolation: restTaken < restRequired,
   };
 }
 
