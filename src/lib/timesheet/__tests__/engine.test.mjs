@@ -45,7 +45,8 @@ test("rest periods follow the major-fraction bands, not whole 4-hour blocks", ()
   // multiples of four. Counting whole blocks under-counts every shift between
   // six and eight hours, which is most of them.
   assert.equal(restsRequired(0), 0);
-  assert.equal(restsRequired(3.5), 0, "exactly 3.5 owes nothing");
+  assert.equal(restsRequired(3.49), 0, "just under 3.5 owes nothing");
+  assert.equal(restsRequired(3.5), 1, "EXACTLY 3.5 owes one - the wage order excuses only UNDER 3.5");
   assert.equal(restsRequired(3.6), 1, "just past 3.5 owes one");
   assert.equal(restsRequired(6), 1, "exactly 6 still owes one");
   assert.equal(restsRequired(6.1), 2, "just past 6 owes two");
@@ -101,10 +102,21 @@ test("missing and late are tracked apart but pay one premium between them", () =
 });
 
 test("a short day owes neither a meal nor a rest", () => {
-  const short = day([at(9), at(12, 30)]); // 3.5 hours
+  const short = day([at(9), at(12)]); // 3.0 hours, under the 3.5 rest floor
   assert.equal(short.mealRequired, false);
   assert.equal(short.mealViolation, false);
   assert.equal(short.restRequired, 0);
+});
+
+// This one is here because we got it wrong. restsRequired read `h <= 3.5` and
+// gave a day of exactly 3.50 nothing. The wage order excuses a rest period only
+// when daily work time is "less than" 3.5 hours, so 3.50 on the nose owes one.
+// 11 day-cases across 10 people on 07/16-07/31, worth +11 premium hours.
+test("a day of exactly 3.5 hours owes a rest period", () => {
+  const d = day([at(9), at(12, 30)]); // 3.5 on the nose
+  assert.equal(d.restRequired, 1, "the wage order excuses only UNDER 3.5 hours");
+  assert.equal(d.restViolation, true, "nothing recorded a break, so it is owed");
+  assert.equal(d.mealRequired, false, "still no meal - that threshold is 5 hours");
 });
 
 // ---- a break only counts if something actually recorded it ----------------

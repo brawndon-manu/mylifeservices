@@ -257,9 +257,14 @@ function parsePage(rows) {
 // 14 rather than on clean multiples of four - a 7-hour shift owes two rests,
 // not one. counting whole 4-hour blocks (floor(h/4)) quietly under-counts every
 // shift between 6 and 8 hours, which is most of them.
+//
+// the bottom band is exclusive on purpose. the wage order excuses a rest period
+// only when daily work time is "less than three and one-half hours", and Brinker
+// puts the entitlement at "from three and one-half to six hours", so a day of
+// EXACTLY 3.5 owes one. we used to write this <= and gave those days nothing.
 export function restsRequired(hours) {
   const h = hours || 0;
-  if (h <= 3.5) return 0;
+  if (h < 3.5) return 0;
   if (h <= 6) return 1;
   return 1 + Math.ceil((h - 6) / 4);
 }
