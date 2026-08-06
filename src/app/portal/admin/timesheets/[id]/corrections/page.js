@@ -48,7 +48,7 @@ export default async function CorrectionsPage({ params }) {
   );
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-10">
+    <section className="mx-auto max-w-7xl px-6 py-10">
       <Link
         href={`/portal/admin/timesheets/${id}`}
         className="text-sm text-muted underline underline-offset-4 hover:text-foreground"

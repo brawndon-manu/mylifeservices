@@ -103,7 +103,7 @@ export default async function PatternsPage() {
     .sort((a, b) => b.restMissed - a.restMissed);
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
@@ -122,9 +122,13 @@ export default async function PatternsPage() {
 
       {periodCount < 2 && (
         <div className="mt-6 rounded-md border border-border bg-surface-2 px-4 py-3 text-sm text-muted">
-          Only {periodCount === 1 ? "one pay period has" : "no pay periods have"} been
-          uploaded, so there&apos;s no trend to read yet. This page gets useful
-          once a few periods have run.
+          {/* the space has to live INSIDE the expression. JSX eats the newline
+              after a {...} and this rendered as "hasbeen uploaded" on screen.
+              third time this file's shape has done it - build, lint and tests
+              all pass, it is only ever visible in a picture. */}
+          Only {periodCount === 1 ? "one pay period has " : "no pay periods have "}
+          been uploaded, so there&apos;s no trend to read yet. This page gets
+          useful once a few periods have run.
         </div>
       )}
 

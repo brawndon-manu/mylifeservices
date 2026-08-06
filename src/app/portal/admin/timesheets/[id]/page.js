@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { sendModeSummary } from "@/lib/timesheet-send";
+import { describePunchIssue, scheduledPaidHours } from "@/lib/timesheet/anomalies";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "../_components/SendModeBanner";
 import ReviewTable from "../_components/ReviewTable";
@@ -71,6 +72,14 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     doubleHours: t.doubleHours,
     premiumHours: t.premiumHours,
     partialWeek: t.partialWeek,
+    // a lunch that HAPPENED but started after the fifth hour still owes a
+    // premium, and it reads as an error to anyone who remembers taking it.
+    // worth naming on the row rather than only inside the sheet.
+    mealLateDays: (t.data?.days || []).filter((d) => d.mealLate).length,
+    // a day the schedule has and the timesheet does not - it pays nothing, so
+    // it is the one row state worth spotting from the list
+    missingDays: (t.data?.scheduleCheck?.flagged || [])
+      .filter((f) => f.flag === "missing-from-timesheet").length,
     hasPdf: !!t.pdfUrl,
     sentAt: t.sentAt ? t.sentAt.toISOString() : null,
     sentToEmail: t.sentToEmail,
@@ -80,10 +89,24 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     disputed: t.corrections.length > 0,
     punchIssues: (t.data?.punchIssues || []).length,
+    // how many of those flags actually need a person. the raw count sits
+    // directly above Send all and read "23 people have punch entries that
+    // can't be right" when one day in the whole batch was unresolved - most
+    // are either repairable, corroborated by the schedule, or move no figure
+    // at all. the number someone reads last should be the one they can act on.
+    punchOpen: (t.data?.punchIssues || []).filter((p) => {
+      const sc = t.data?.scheduleCheck?.byDate?.[p.date];
+      return describePunchIssue(p, scheduledPaidHours(sc))?.tone === "human";
+    }).length,
     scheduleFlags: (t.data?.scheduleCheck?.flagged || []).length,
+    // "worked hours that differ from what was scheduled" was counting days
+    // nobody worked AT ALL. those are a different question and a worse one.
+    scheduleMissing: (t.data?.scheduleCheck?.flagged || [])
+      .filter((f) => f.flag === "missing-from-timesheet").length,
     scheduleMatched: !!t.data?.scheduleCheck?.matched,
     scheduleStatus: t.data?.scheduleCheck?.status || "no-file",
     scheduleError: t.data?.scheduleCheck?.error || null,
+    support: t.data?.premiumSupport?.totals || null,
   }));
 
   const total = rows.length;
@@ -95,11 +118,29 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
   const disputed = rows.filter((r) => r.disputed).length;
   const punchIssueRows = rows.filter((r) => r.punchIssues > 0).length;
-  const scheduleFlagRows = rows.filter((r) => r.scheduleFlags > 0).length;
+  const punchOpenRows = rows.filter((r) => r.punchOpen > 0).length;
+  const punchOpenDays = rows.reduce((n, r) => n + r.punchOpen, 0);
+  const punchDays = rows.reduce((n, r) => n + r.punchIssues, 0);
+  // days on the schedule that were never worked, kept apart from days simply
+  // worked differently - the second is ordinary, the first is a missing day
+  const scheduleMissingRows = rows.filter((r) => r.scheduleMissing > 0).length;
+  const scheduleFlagRows = rows.filter((r) => r.scheduleFlags - r.scheduleMissing > 0).length;
   const anyScheduleChecked = rows.some((r) => r.scheduleMatched);
   const scheduleMatchedCount = rows.filter((r) => r.scheduleMatched).length;
   const scheduleNotFound = rows.filter((r) => r.scheduleStatus === "name-not-found").length;
   const scheduleFailed = rows.find((r) => r.scheduleStatus === "parse-failed");
+  // premium hours split by how well the day behind each one is evidenced. only
+  // batches uploaded with the clock report carry this.
+  const support = rows.reduce(
+    (a, r) => (r.support
+      ? { recorded: a.recorded + (r.support.recorded || 0),
+          supported: a.supported + (r.support.supported || 0),
+          unverified: a.unverified + (r.support.unverified || 0) }
+      : a),
+    { recorded: 0, supported: 0, unverified: 0 },
+  );
+  const hasSupport = support.recorded + support.supported + support.unverified > 0;
+
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
@@ -108,7 +149,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const failedCount = sp?.failed ? Number(sp.failed) : null;
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
         <span className="flex flex-wrap items-center gap-2">
@@ -210,34 +251,54 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
       <SendModeBanner mode={mode} />
 
-      {(punchIssueRows > 0 || scheduleFlagRows > 0) && (
-        <div className="mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40">
-          <p className="text-base font-semibold text-rose-900 dark:text-rose-200">
-            Check these before you send anything
+      {punchDays > 0 && (
+        <div
+          className={
+            punchOpenDays > 0
+              ? "mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40"
+              : "mt-4 rounded-lg border border-border bg-surface-2 p-4"
+          }
+        >
+          <p
+            className={
+              punchOpenDays > 0
+                ? "text-base font-semibold text-rose-900 dark:text-rose-200"
+                : "text-base font-semibold text-foreground"
+            }
+          >
+            {punchOpenDays > 0 ? "Check these before you send anything" : "Nothing here needs a decision"}
           </p>
           {/* built as strings rather than interleaved JSX - mixing expressions
               and wrapped text is how "people have" and "punch entries" ended up
               rendering as "havepunch". */}
-          <p className="mt-1 text-sm text-rose-800 dark:text-rose-200/90">
-            {punchIssueRows > 0 && (
+          <p
+            className={
+              punchOpenDays > 0
+                ? "mt-1 text-sm text-rose-800 dark:text-rose-200/90"
+                : "mt-1 text-sm text-muted"
+            }
+          >
+            {punchOpenDays > 0 ? (
               <span className="block">
-                <strong>{punchIssueRows}</strong>
-                {` ${punchIssueRows === 1 ? "person has" : "people have"} punch entries that can't be right - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it.`}
+                <strong>{punchOpenDays}</strong>
+                {` ${punchOpenDays === 1 ? "day needs" : "days need"} somebody to decide, across ${punchOpenRows} ${punchOpenRows === 1 ? "person" : "people"}. Nothing else can be settled from the records we hold.`}
               </span>
-            )}
-            {scheduleFlagRows > 0 && (
-              <span className="mt-1 block">
-                <strong>{scheduleFlagRows}</strong>
-                {` ${scheduleFlagRows === 1 ? "person has" : "people have"} days where the timesheet and the schedule disagree.`}
+            ) : (
+              <span className="block">
+                {`Every one of the ${punchDays} flagged ${punchDays === 1 ? "day" : "days"} either has a repair the schedule confirms, or pays the same whichever way it is read.`}
               </span>
             )}
             <span className="mt-1 block">
-              The figures below are computed from that data as it stands.
+              {`${punchDays} ${punchDays === 1 ? "day is" : "days are"} flagged in total, across ${punchIssueRows} ${punchIssueRows === 1 ? "person" : "people"} - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it. Most are repairable or already corroborated.`}
             </span>
           </p>
           <Link
             href={`/portal/admin/timesheets/${batch.id}/checks`}
-            className="mt-3 inline-block rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+            className={
+              punchOpenDays > 0
+                ? "mt-3 inline-block rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+                : "mt-3 inline-block rounded-md border border-border px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-3"
+            }
           >
             See what looks wrong →
           </Link>
@@ -275,12 +336,63 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
           Checked against the schedule: <strong>{scheduleMatchedCount}</strong> of{" "}
           {total} matched to a schedule page.
+          {scheduleFlagRows > 0 && (
+            <span className="mt-1 block">
+              <strong>{scheduleFlagRows}</strong>
+              {` ${scheduleFlagRows === 1 ? "person" : "people"} worked hours that differ from what was scheduled. That is ordinary and nothing is wrong with it - the timesheet is what counts. It is listed on the checks screen only as context.`}
+            </span>
+          )}
+          {/* a day on the schedule that was never punched is NOT "worked
+              differently" - it is a day missing from the timesheet, and it is
+              the more serious of the two. it was being counted as the first. */}
+          {scheduleMissingRows > 0 && (
+            <span className="mt-1 block font-semibold">
+              {`${scheduleMissingRows} ${scheduleMissingRows === 1 ? "person was" : "people were"} scheduled on a day the timesheet has no punches for at all, so it pays nothing. Worth opening before you send.`}
+            </span>
+          )}
           {scheduleNotFound > 0 && (
             <span className="mt-1 block">
               <strong>{scheduleNotFound}</strong> had no page in the schedule
               export under a matching name, so those hours have no second opinion.
             </span>
           )}
+        </div>
+      )}
+
+      {/* the thing management actually has to sign: how much of the premium
+          total stands on evidence, and how much needs a person. */}
+      {hasSupport && (
+        <div className="mt-4 rounded-xl border border-border bg-surface p-5">
+          <p className="text-sm font-semibold text-foreground">
+            Premium hours, by what stands behind them
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Evidenced
+              value={support.recorded}
+              label="Recorded by QSP"
+              detail="A rest break QSP's own report accounts for, or a day clocked in and out of every shift."
+              tone="good"
+            />
+            <Evidenced
+              value={support.supported}
+              label="Corroborated"
+              detail="A meal premium on a day the schedule gave them no meal period at all."
+              tone="ok"
+            />
+            <Evidenced
+              value={support.unverified}
+              label="Needs somebody to look"
+              detail="Nothing behind it: not clocked, and no corroborating record."
+              tone={support.unverified > 0 ? "bad" : "good"}
+            />
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            Graded per premium, not per day - a rest question and a meal question
+            have different witnesses, and the schedule holds meal breaks but not
+            one rest period. Hours differing from the schedule is not counted
+            against anything here: people work different hours than they were
+            scheduled, and the timesheet is the record we go by.
+          </p>
         </div>
       )}
 
@@ -361,5 +473,30 @@ function Stat({ label, value, tone }) {
     <span className={`rounded-md border px-2.5 py-1 ${cls}`}>
       {label} <b className="font-semibold">{value}</b>
     </span>
+  );
+}
+
+// one column of the premium-evidence panel
+function Evidenced({ value, label, detail, tone }) {
+  const cls =
+    tone === "good"
+      ? "border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20"
+      : tone === "ok"
+        ? "border-sky-300/60 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20"
+        : "border-rose-300/60 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/20";
+  const num =
+    tone === "good"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : tone === "ok"
+        ? "text-sky-700 dark:text-sky-400"
+        : "text-rose-700 dark:text-rose-400";
+  return (
+    <div className={`rounded-lg border p-3 ${cls}`}>
+      <p className={`text-2xl font-semibold tabular-nums ${num}`}>
+        {value.toFixed(2)}
+      </p>
+      <p className="mt-0.5 text-xs font-semibold text-foreground">{label}</p>
+      <p className="mt-1 text-xs text-muted">{detail}</p>
+    </div>
   );
 }

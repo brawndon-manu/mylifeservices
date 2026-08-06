@@ -31,7 +31,7 @@ export default async function ApproveTimesheetPage({ params }) {
   const backHref = `/portal/admin/timesheets/${ts.batch.id}`;
 
   return (
-    <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
+    <section className="mx-auto max-w-7xl px-6 py-10 sm:py-14">
       <BackLink href={backHref}>Back to the pay period</BackLink>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Approve timesheet

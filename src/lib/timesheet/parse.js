@@ -257,9 +257,14 @@ function parsePage(rows) {
 // 14 rather than on clean multiples of four - a 7-hour shift owes two rests,
 // not one. counting whole 4-hour blocks (floor(h/4)) quietly under-counts every
 // shift between 6 and 8 hours, which is most of them.
+//
+// the bottom band is exclusive on purpose. the wage order excuses a rest period
+// only when daily work time is "less than three and one-half hours", and Brinker
+// puts the entitlement at "from three and one-half to six hours", so a day of
+// EXACTLY 3.5 owes one. we used to write this <= and gave those days nothing.
 export function restsRequired(hours) {
   const h = hours || 0;
-  if (h <= 3.5) return 0;
+  if (h < 3.5) return 0;
   if (h <= 6) return 1;
   return 1 + Math.ceil((h - 6) / 4);
 }
@@ -307,24 +312,64 @@ export function analyzeDay(day) {
   // punch segment its own way, which can leave our exact figure a hundredth or
   // two short - handing someone a signed timesheet showing fewer hours than
   // payroll reported is indefensible, so floor it at their number.
+  //
+  // ONE EXCEPTION: a day whose punches we corrected. QSP's printed figure was
+  // computed from the punches we just fixed, so flooring at it puts the error
+  // straight back and the repair does nothing at all. A reversed break makes two
+  // punch pairs overlap, so the printed figure counts the same ten minutes
+  // twice - paying less than that is the whole point, and it is the only case
+  // where paying under the export is right rather than indefensible.
   const computedPaidHours = paidMin / 60;
+  const floorAt = day.repaired ? null : printedDailyForFloor;
   const paidHours =
-    printedDailyForFloor !== null && computedPaidHours < printedDailyForFloor
-      ? printedDailyForFloor
-      : computedPaidHours;
+    floorAt !== null && computedPaidHours < floorAt ? floorAt : computedPaidHours;
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
 
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
 
-  // the first meal has to START by the end of the fifth hour worked. a late
-  // lunch is its own violation - the break happened, but not when it was owed -
-  // and it was invisible while we only counted whether a meal existed at all.
+  // ---- what counts as a break TAKEN -------------------------------------
+  //
+  // A GAP IS NOT A BREAK. This used to infer both kinds from gaps between
+  // punches, and that turned out to be reading the roster back at itself: the
+  // Simple Timesheet is generated from the schedule, not from clock punches.
+  // Measured on 114 days where the schedule and QSClock disagree about when
+  // somebody started, the timesheet followed the schedule 93 times and the
+  // clock 0. So a "break" found in the punches is just a gap in the roster, and
+  // it is evidence of nothing at all.
+  //
+  // A break now only counts if something actually recorded it:
+  //   meals - an explicit "-Meal Break" block on the schedule
+  //   rests - a row in QSP's Rest Periods Report
+  //
+  // Gaps are still classified above, because that is what decides PAID HOURS:
+  // a rest gap is paid time added back, a meal gap is unpaid. Hours come from
+  // the timesheet and none of this touches them.
+  //
+  // `day.restRecorded` is the Rest Periods Report's count. No coverage means no
+  // record, which means none taken - the reading that pays the employee.
+  const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
+  const restTaken = recorded === null ? 0 : recorded;
+
+  // `day.mealScheduled`: true = rostered, false = the schedule covers this day
+  // and rosters no meal, null = no schedule for this day so we cannot say.
+  // ABSENT is treated as false rather than null on purpose - a caller that
+  // forgets to wire it gets the conservative answer that pays the premium,
+  // never the silent one that drops it.
+  const mealScheduled = day.mealScheduled === undefined ? false : day.mealScheduled;
+  const mealTaken = mealScheduled === true;
+  // no schedule at all is not a violation and not a pass. it goes to a person.
+  const mealUnknown = mealRequired && mealScheduled === null;
+
+  // the meal has to START by the end of the fifth hour worked. a late lunch is
+  // its own violation - the break happened, but not when it was owed. only
+  // meaningful once we know a meal was actually rostered.
   const firstMeal = breaks.find((b) => b.kind === "meal") || null;
   const mealStartedAfterMin = firstMeal ? firstMeal.workedBefore : null;
   const mealLate =
     mealRequired &&
+    mealTaken &&
     !!firstMeal &&
     firstMeal.workedBefore > RULES.mealMustStartByMin;
 
@@ -351,15 +396,30 @@ export function analyzeDay(day) {
     needsReview: oddPunches || (drift !== null && drift > 0.05),
     mealCount,
     restCount,
+    // what QSP's Rest Periods Report says was actually taken that day, when we
+    // have it. `restCount` above is inferred from gaps between punches, which
+    // can't tell a break from travel between two clients - so where the report
+    // covers someone, its count is the one that decides the violation.
+    //
+    // Note this only ever moves the VIOLATION. Paid hours still come from the
+    // punches, because the timesheet is the document staff sign.
+    restRecorded: recorded,
+    restTaken,
+    restSource: recorded === null ? "none" : "rest-report",
     restRequired,
     mealRequired,
-    // never taken, or taken too late - §226.7 pays one premium either way, so
-    // these collapse into the single meal violation rather than stacking.
-    mealMissing: mealRequired && mealCount === 0,
+    mealScheduled,
+    // no schedule for the day, so whether a meal was provided is unanswerable
+    // from anything we hold. NOT charged and NOT passed - it goes to a person.
+    mealUnknown,
+    // never rostered, or rostered but started too late - §226.7 pays one
+    // premium either way, so these collapse into one violation rather than
+    // stacking.
+    mealMissing: mealRequired && !mealUnknown && !mealTaken,
     mealLate,
     mealStartedAfterMin,
-    mealViolation: mealRequired && (mealCount === 0 || mealLate),
-    restViolation: restCount < restRequired,
+    mealViolation: mealRequired && !mealUnknown && (!mealTaken || mealLate),
+    restViolation: restTaken < restRequired,
   };
 }
 
@@ -504,7 +564,13 @@ export function analyzeTimesheet(parsed) {
 // any page without one continues whoever came before.
 export async function parseTimesheetPdf(bytes) {
   const pdfjs = await getPdfjs();
-  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // pdfjs TAKES OWNERSHIP of whatever array it's handed and detaches the
+  // underlying buffer, so the caller's bytes come back length 0. hand it a copy.
+  // this cost us the stored copy of every timesheet export: the upload parsed
+  // first and uploaded second, so `Buffer.from(bytes)` wrote an empty file and
+  // "open the QSP export at this page" opened a 0-page PDF.
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const data = view.slice();
   // we only read text positions, never rasterise, so no fonts need loading.
   // useSystemFonts makes pdfjs go looking at the host's font files, which is
   // fine on a laptop and a good way to fail on a serverless host that has
@@ -521,6 +587,11 @@ export async function parseTimesheetPdf(bytes) {
     const rows = await pageRows(await doc.getPage(i));
     const parsed = parsePage(rows);
 
+    // which page a day was read off, so anyone reading a figure on the checks
+    // screen can open the page it came from. a day whose row is split by the
+    // page break ends up with two.
+    for (const d of parsed.days) d.pages = [i];
+
     if (parsed.employee) {
       sheets.push({ ...parsed, pages: [i] });
       continue;
@@ -536,6 +607,7 @@ export async function parseTimesheetPdf(bytes) {
       if (existing) {
         existing.punches.push(...d.punches);
         Object.assign(existing.printed, d.printed);
+        if (!existing.pages.includes(i)) existing.pages.push(i);
       } else {
         prev.days.push(d);
       }

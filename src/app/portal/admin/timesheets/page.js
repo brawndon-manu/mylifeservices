@@ -25,7 +25,7 @@ export default async function TimesheetBatchesPage() {
   const mode = sendModeSummary();
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href="/portal/admin">Back to Admin</BackLink>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">

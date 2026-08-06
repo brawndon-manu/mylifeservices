@@ -4,9 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
+import {
+  anomalyLabel,
+  ANOMALY_KINDS,
+  describePunchIssue,
+  scheduledPaidHours,
+} from "@/lib/timesheet/anomalies";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
+import Evidence from "./Evidence";
 import RecomputeButton from "../corrections/RecomputeButton";
 
 export const metadata = { title: "Data checks", robots: { index: false, follow: false } };
@@ -15,7 +21,7 @@ export const dynamic = "force-dynamic";
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
 const FLAG_COPY = {
-  mismatch: "Hours don't match the schedule",
+  mismatch: "Worked different hours than scheduled",
   "not-on-schedule": "Worked, but nothing on the schedule",
   "missing-from-timesheet": "On the schedule, but no punches",
 };
@@ -50,7 +56,14 @@ export default async function ChecksPage({ params }) {
       id: t.id,
       who: t.user ? preferredName(t.user) : t.sourceName,
       hours: t.paidHours,
-      punches,
+      // computed here rather than at upload, so batches stored before any of
+      // this still get the calmer label without needing a re-upload
+      // computed here rather than at upload, so batches stored before any of
+      // this still get the right label without needing a re-upload
+      punches: punches.map((p) => ({
+        ...p,
+        say: describePunchIssue(p, scheduledPaidHours((sched.byDate || {})[p.date])),
+      })),
       flagged,
       scheduleTotal: sched.scheduleTotal ?? null,
       timesheetTotal: sched.timesheetTotal ?? null,
@@ -59,6 +72,13 @@ export default async function ChecksPage({ params }) {
       // days the timesheet actually holds, so a correction can be offered
       // against the right figure
       dayHours: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d.paidHours])),
+      // the whole day, keyed by date - the evidence snippets need the punches
+      // and the page numbers, not just the total
+      dayByDate: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d])),
+      // what the schedule said for each day. empty for batches uploaded before
+      // the shifts were kept, which the snippet says out loud rather than
+      // rendering an empty box.
+      schedByDate: sched.byDate || {},
     });
   }
 
@@ -77,9 +97,16 @@ export default async function ChecksPage({ params }) {
 
   const totalPunch = rows.reduce((n, r) => n + r.punches.length, 0);
   const totalSched = rows.reduce((n, r) => n + r.flagged.length, 0);
+  // the headline used to be the raw flag count, which on this period is 55
+  // against a single day that actually needs deciding. the number at the top
+  // should be the one somebody can act on.
+  const openPunch = rows.reduce(
+    (n, r) => n + r.punches.filter((p) => p.say.tone === "human").length,
+    0,
+  );
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href={`/portal/admin/timesheets/${batch.id}`}>Back to the batch</BackLink>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
@@ -90,18 +117,27 @@ export default async function ChecksPage({ params }) {
       </h1>
       <p className="mt-2 max-w-3xl text-sm text-muted">
         Nothing here has changed a figure. These are days where the punch record
-        contradicts itself, or where the timesheet and the schedule disagree. The
-        engine reproduces what QSP exported to the hundredth of an hour, so
-        anything on this page is a problem in the source data, not the arithmetic.
+        contradicts itself. The engine reproduces what QSP exported to the
+        hundredth of an hour, so anything flagged here is a problem in the source
+        data, not the arithmetic.
+        {" "}Days where someone worked hours other than the ones scheduled are
+        listed too, as context only - that is ordinary, and the timesheet is the
+        record we go by. A day the schedule has and the timesheet does not is a
+        different thing, and worth opening: it pays nothing at all.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Staff affected" value={rows.length} of={batch.timesheets.length} />
-        <Stat label="Punch entries that can't be right" value={totalPunch} tone="warn" />
         <Stat
-          label="Days disagreeing with the schedule"
+          label="Days needing a decision"
+          value={openPunch}
+          of={totalPunch}
+          tone={openPunch > 0 ? "warn" : undefined}
+        />
+        <Stat
+          label="Days flagged against the schedule"
           value={anySchedule ? totalSched : "-"}
-          tone={anySchedule ? "warn" : undefined}
+          tone={anySchedule && totalSched > 0 ? "warn" : undefined}
         />
       </div>
 
@@ -152,7 +188,7 @@ export default async function ChecksPage({ params }) {
               {r.flagged.length > 0 && (
                 <div className="mt-4">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                    Against the schedule
+                    Worked differently to what was scheduled
                   </p>
                   <div className="mt-2 overflow-x-auto">
                     <table className="w-full min-w-[520px] text-sm">
@@ -180,26 +216,37 @@ export default async function ChecksPage({ params }) {
                       </tbody>
                     </table>
                   </div>
-                  {/* correcting is offered per day, against the figure that day
-                      actually holds - not as a blanket "trust the schedule" */}
-                  {!r.signed && (
-                    <div className="mt-2 space-y-2">
-                      {r.flagged
-                        .filter((f) => f.timesheet != null && r.dayHours[f.date] != null)
-                        .map((f, i) => (
-                          <div key={i} className="rounded-md border border-border bg-surface-2 p-2">
-                            <p className="text-xs font-semibold text-foreground">{f.date}</p>
-                            <CorrectDay
-                              timesheetId={r.id}
-                              date={f.date}
-                              timesheet={f.timesheet}
-                              schedule={f.schedule}
-                              existing={r.overrides[f.date] || null}
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  )}
+                  {/* the evidence behind each flagged day, and only then the
+                      option to change it. correcting is offered per day against
+                      the figure that day actually holds - never as a blanket
+                      "trust the schedule", which is exactly what turned a
+                      page-break bug into an offer to overwrite a correct 8.00 */}
+                  <div className="mt-3 space-y-2">
+                    {r.flagged.map((f, i) => (
+                      <div key={i} className="rounded-md border border-border bg-surface-2 p-2">
+                        <p className="text-xs font-semibold text-foreground">{f.date}</p>
+                        <Evidence
+                          batchId={batch.id}
+                          timesheetId={r.id}
+                          date={f.date}
+                          day={r.dayByDate[f.date] || null}
+                          shifts={r.schedByDate[f.date]?.shifts}
+                          schedulePages={r.schedByDate[f.date]?.pages}
+                          hasSource={!!batch.sourceUrl}
+                          hasSchedule={!!batch.scheduleUrl}
+                        />
+                        {!r.signed && f.timesheet != null && r.dayHours[f.date] != null && (
+                          <CorrectDay
+                            timesheetId={r.id}
+                            date={f.date}
+                            timesheet={f.timesheet}
+                            schedule={f.schedule}
+                            existing={r.overrides[f.date] || null}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -214,8 +261,10 @@ export default async function ChecksPage({ params }) {
                         {/* collapsed by default - three of these filled a screen
                             for one person. the ones with no safe reading start
                             open, since those are the only ones that actually
-                            need somebody to do something. */}
-                        <details open={!p.suggestion} className="group">
+                            need somebody to do something. NOT the ones the
+                            schedule already settles: 11 of the 14 on this period
+                            were opening a card nobody had to act on. */}
+                        <details open={p.say.open} className="group">
                           <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm">
                             <span
                               aria-hidden="true"
@@ -226,9 +275,17 @@ export default async function ChecksPage({ params }) {
                             <span className="font-semibold text-foreground">
                               {p.date} · reads {f2(p.hoursNow)} hrs
                             </span>
-                            {p.suggestion ? (
+                            {p.say.tone === "inert" ? (
+                              <span className="ml-auto whitespace-nowrap text-xs text-muted">
+                                pays the same either way
+                              </span>
+                            ) : p.say.tone === "settled" ? (
+                              <span className="ml-auto whitespace-nowrap text-xs text-muted">
+                                schedule agrees with {f2(p.say.hours)} hrs
+                              </span>
+                            ) : p.say.tone === "repair" ? (
                               <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
-                                likely {f2(p.suggestion.hours)} hrs
+                                likely {f2(p.say.hours)} hrs
                               </span>
                             ) : (
                               <span className="ml-auto whitespace-nowrap text-xs font-semibold text-rose-700 dark:text-rose-400">
@@ -252,18 +309,61 @@ export default async function ChecksPage({ params }) {
                             <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
                               Likely: {p.suggestion.punches.join("  ")}
                             </p>
-                            <p className="mt-1 text-xs text-foreground">
-                              That would make the day{" "}
-                              <span className="font-semibold">{f2(p.suggestion.hours)} hrs</span>{" "}
-                              instead of {f2(p.hoursNow)} ({p.suggestion.applied.join("; ")}).
-                            </p>
+                            {p.say.tone === "inert" ? (
+                              <p className="mt-1 text-xs text-muted">
+                                Read either way the day is{" "}
+                                <span className="font-semibold text-foreground">
+                                  {f2(p.say.hours)} hrs
+                                </span>{" "}
+                                with the same premiums, so nothing on this sheet turns on
+                                it. Worth correcting in QSP so the next export is clean,
+                                but there is nothing to decide here.
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs text-foreground">
+                                That would make the day{" "}
+                                <span className="font-semibold">{f2(p.say.hours)} hrs</span>{" "}
+                                instead of {f2(p.say.was)} ({p.say.applied.join("; ")}).
+                                {p.say.restPremium && (
+                                  <> The rest premium would be{" "}
+                                    <span className="font-semibold">{p.say.restPremium}</span>.</>
+                                )}
+                                {p.say.mealPremium && (
+                                  <> The meal premium would be{" "}
+                                    <span className="font-semibold">{p.say.mealPremium}</span>.</>
+                                )}
+                              </p>
+                            )}
                           </>
+                        ) : p.say.tone === "settled" ? (
+                          <p className="mt-2 text-xs text-muted">
+                            No single swap puts these punches in order, so nothing is
+                            suggested. But the day comes to{" "}
+                            <span className="font-semibold text-foreground">
+                              {f2(p.say.hours)} hrs
+                            </span>{" "}
+                            and the schedule this timesheet was built from says the
+                            same, so the total is not in question. Worth correcting
+                            in QSP so the next export is clean.
+                          </p>
                         ) : (
                           <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                            No safe reading of these punches - this one needs working
-                            out by hand.
+                            No safe reading of these punches, and the schedule does not
+                            settle it either - this one needs working out by hand.
                           </p>
                         )}
+                        {/* working it out by hand means reading the source, so
+                            the source is right here rather than a hunt */}
+                        <Evidence
+                          batchId={batch.id}
+                          timesheetId={r.id}
+                          date={p.date}
+                          day={r.dayByDate[p.date] || null}
+                          shifts={r.schedByDate[p.date]?.shifts}
+                          schedulePages={r.schedByDate[p.date]?.pages}
+                          hasSource={!!batch.sourceUrl}
+                          hasSchedule={!!batch.scheduleUrl}
+                        />
                           </div>
                         </details>
                       </li>

@@ -596,6 +596,21 @@ model TimesheetBatch {
   // gated route like every other stored document here).
   sourceUrl    String?
   sourceName   String?
+  // the Employee Schedules calendar PDF, when one was uploaded alongside. it's
+  // the second opinion the checks screen leans on, and until now it was parsed
+  // in memory and thrown away - so the screen could say "schedule has 74.30"
+  // with no way for anyone to check that reading against the document.
+  scheduleUrl  String?
+  scheduleName String?
+  // the QSClock Time and Attendance export. the only source that separates a
+  // punch someone clocked from one typed in afterwards, which is what decides
+  // whether a premium can be signed off or needs a person to look at it.
+  clockUrl     String?
+  clockName    String?
+  // the Rest Periods Report. decides whether a rest break was actually taken,
+  // which is what the bigger half of the premium total turns on.
+  restsUrl     String?
+  restsName    String?
   // whether sends from this batch were redirected to the test inbox. recorded
   // per batch so a test run can never be mistaken for a real one later.
   testMode     Boolean  @default(true)

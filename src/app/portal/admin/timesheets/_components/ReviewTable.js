@@ -97,6 +97,29 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                         partial week
                       </span>
                     )}
+                    {/* a lunch that happened but started too late still owes an
+                        hour. it reads as a mistake to anyone who remembers
+                        taking their lunch, so it gets named on the row. */}
+                    {r.mealLateDays > 0 && (
+                      <span
+                        title="A meal period has to BEGIN before the end of the fifth hour worked. Taken later, it still owes a premium under §226.7."
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                      >
+                        {/* §226.7 pays exactly one hour per day, so days and
+                            hours are the same number - no decimals needed */}
+                        lunch started late · {r.mealLateDays} {r.mealLateDays === 1 ? "day" : "days"} · {r.mealLateDays} {r.mealLateDays === 1 ? "hr" : "hrs"}
+                      </span>
+                    )}
+                    {/* pays nothing at all, so it is the one thing worth
+                        spotting without opening anything */}
+                    {r.missingDays > 0 && (
+                      <span
+                        title="A day the schedule has that the timesheet has no punches for. It pays nothing."
+                        className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"
+                      >
+                        {r.missingDays} scheduled {r.missingDays === 1 ? "day" : "days"} with no hours
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">

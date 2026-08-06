@@ -39,7 +39,7 @@ export default async function TimesheetStatsPage({ params }) {
   const maxDow = Math.max(1, ...s.byDow.map((d) => d.meal + d.rest));
 
   return (
-    <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
+    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href={`/portal/admin/timesheets/${batch.id}`}>Back to the pay period</BackLink>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Pay period insights
