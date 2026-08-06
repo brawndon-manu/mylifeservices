@@ -27,6 +27,7 @@ import { normalizeDate, clockKey, gradePremium, gradePremiums } from "../clock.j
 import { matchEmployee } from "../match.js";
 import { indexByAccount, lookupAcross, suggestAlias } from "../identity.js";
 import { buildEmployeeChecks, checkSummaryLine } from "../employee-checks.js";
+import { storedDay, REQUIRED_DAY_FIELDS } from "../stored.js";
 
 // minutes from midnight, the way the parser holds a punch
 const at = (h, m = 0) => ({ min: h * 60 + m });
@@ -899,6 +900,72 @@ test("the report can never credit more breaks than were owed", () => {
   const punches = [at(8), at(17)];
   assert.equal(restDay(punches, 2).restViolation, false, "two owed, two recorded");
   assert.equal(restDay(punches, 1).restViolation, true, "two owed, one recorded");
+});
+
+// ---------------------------------------------------------------------------
+// the stored day has to carry everything that reads it back
+//
+// This was an inline object literal inside uploadBatch. Three fields were added
+// to analyzeDay - restTaken, mealScheduled, mealUnknown - and nobody added them
+// to the projection. The engine computed correctly and the premium totals were
+// right; the stored day quietly lost the three fields the email and every
+// recompute read. Build, lint and 100 tests passed. It surfaced as
+// nothing on screen changing - every consumer defends itself with `?? 0`. The
+// exposure is a recompute after a correction: mealScheduled comes back absent,
+// absent means "not rostered", so a rostered meal gets a premium it does not owe.
+
+test("a stored day carries every field a consumer reads", () => {
+  const analyzed = analyzeDay({
+    date: "07/16/26",
+    punches: [at(8), at(12), at(12, 30), at(16, 30)],
+    printed: null,
+    restRecorded: 1,
+    mealScheduled: true,
+  });
+  const stored = storedDay(analyzed);
+  for (const f of REQUIRED_DAY_FIELDS) {
+    assert.ok(f in stored, `stored day is missing "${f}"`);
+    assert.notEqual(stored[f], undefined, `stored day has undefined "${f}"`);
+  }
+});
+
+test("the three fields that were actually dropped survive the round trip", () => {
+  const analyzed = analyzeDay({
+    date: "07/16/26",
+    punches: [at(8), at(11), at(11, 10), at(17)],
+    printed: null,
+    restRecorded: 1,
+    mealScheduled: false,
+  });
+  const stored = storedDay(analyzed);
+  assert.equal(stored.restTaken, 1, "what the violation was decided on");
+  assert.equal(stored.mealScheduled, false, "false must not collapse to null");
+  assert.equal(stored.mealUnknown, false);
+  assert.equal(stored.restSource, "rest-report");
+});
+
+test("an unknown meal day stores null, not false", () => {
+  // the difference between "no meal was rostered" and "we have no schedule" is
+  // the difference between charging somebody and asking them
+  const stored = storedDay(analyzeDay({
+    date: "07/16/26", punches: [at(8), at(16, 30)], printed: null, mealScheduled: null,
+  }));
+  assert.equal(stored.mealScheduled, null);
+  assert.equal(stored.mealUnknown, true);
+  assert.equal(stored.mealViolation, false, "not charged");
+});
+
+test("a stored day is enough for the email to render from", () => {
+  // the real consumer, on the real shape
+  const days = [storedDay(analyzeDay({
+    date: "07/16/26", punches: [at(8), at(11), at(11, 10), at(17)],
+    printed: null, restRecorded: 0, mealScheduled: false,
+  }))];
+  const checks = buildEmployeeChecks({ days, scheduleCheck: { byDate: {}, flagged: [] } });
+  const rest = checks.find((c) => c.kind === "restNoGap");
+  assert.ok(rest, "the rest block has to render");
+  assert.equal(rest.rows[0].taken, 0, "a real number, not undefined");
+  assert.equal(typeof rest.rows[0].owed, "number");
 });
 
 // ---------------------------------------------------------------------------

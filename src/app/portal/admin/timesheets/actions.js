@@ -13,6 +13,7 @@ import { preferredName } from "@/lib/contacts";
 import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
+import { storedDay } from "@/lib/timesheet/stored";
 import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
@@ -611,35 +612,7 @@ export async function uploadBatch(formData) {
           // punches + breaks are kept so a sheet can be recomputed and
           // re-rendered after a correction without going back to the source
           // export. mealMin is what a worked-through meal would add back.
-          days: t.days.map((d) => ({
-            date: d.date,
-            pages: d.pages || [],
-            paidHours: r2(d.paidHours),
-            rawHours: r2(d.rawHours),
-            regularHours: r2(d.regularHours),
-            otHours: r2(d.otHours),
-            doubleHours: r2(d.doubleHours),
-            mealViolation: d.mealViolation,
-            restViolation: d.restViolation,
-            mealMissing: d.mealMissing,
-            mealLate: d.mealLate,
-            mealStartedAfterMin: d.mealStartedAfterMin,
-            mealCount: d.mealCount,
-            restCount: d.restCount,
-            restRecorded: d.restRecorded ?? null,
-            restSource: d.restSource || "punches",
-            restRequired: d.restRequired,
-            mealRequired: d.mealRequired,
-            seventhDay: d.seventhDay || false,
-            weekPartial: d.weekPartial || false,
-            mealMin: d.breaks
-              .filter((b) => b.kind === "meal")
-              .reduce((n, b) => n + b.min, 0),
-            restMin: d.restMin,
-            workedMin: d.workedMin,
-            punches: d.punches,
-            breaks: d.breaks,
-          })),
+          days: t.days.map(storedDay),
         },
       },
     });
