@@ -29,6 +29,7 @@ export async function sendTimesheet({
   dueAt,
   signUrl,
   summary,
+  checks = [],
 }) {
   if (!intendedEmail) return { ok: false, error: "norecipient" };
   const from =
@@ -51,6 +52,7 @@ export async function sendTimesheet({
     dueAt,
     signUrl,
     summary,
+    checks,
     redirectedFrom: redirected ? intendedEmail : null,
   });
 

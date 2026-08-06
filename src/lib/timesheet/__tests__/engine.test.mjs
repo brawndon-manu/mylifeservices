@@ -26,6 +26,7 @@ import { compareToSchedule, scheduleKey, readSchedulePages } from "../schedule.j
 import { normalizeDate, clockKey, gradePremium, gradePremiums } from "../clock.js";
 import { matchEmployee } from "../match.js";
 import { indexByAccount, lookupAcross, suggestAlias } from "../identity.js";
+import { buildEmployeeChecks, checkSummaryLine } from "../employee-checks.js";
 
 // minutes from midnight, the way the parser holds a punch
 const at = (h, m = 0) => ({ min: h * 60 + m });
@@ -897,6 +898,117 @@ test("the report can never credit more breaks than were owed", () => {
   const punches = [at(8), at(17)];
   assert.equal(restDay(punches, 2).restViolation, false, "two owed, two recorded");
   assert.equal(restDay(punches, 1).restViolation, true, "two owed, one recorded");
+});
+
+// ---------------------------------------------------------------------------
+// what the employee is actually told
+//
+// The email used to say "Break premium hours owed: 12 hrs" and stop. A number
+// with no basis cannot be checked, argued with, or learned from - and these are
+// the only people who know whether a break really happened.
+
+const sheet = (over) => ({
+  days: [],
+  scheduleCheck: { byDate: {}, flagged: [] },
+  punchCorrections: [],
+  ...over,
+});
+
+test("a day that pays nothing is the first thing they are told", () => {
+  // Romero-Alba 07/30 and Rotter 07/27. Every other item on the list PAYS them
+  // something; this one is hours they may simply not be getting, so it leads.
+  const checks = buildEmployeeChecks(sheet({
+    days: [{ date: "07/29/26", paidHours: 8, mealViolation: true, restViolation: true,
+             restTaken: 0, restRequired: 2 }],
+    scheduleCheck: {
+      byDate: {},
+      flagged: [{ date: "07/30/26", flag: "missing-from-timesheet", schedule: 8 }],
+    },
+  }));
+  assert.equal(checks[0].kind, "missingDay", "it has to come first");
+  assert.equal(checks[0].tone, "urgent");
+  assert.deepEqual(checks[0].rows, [{ date: "07/30/26", hours: 8 }]);
+});
+
+test("rest days split by whether there is a gap to point at", () => {
+  // with a gap the question answers itself - you look at "1p-1:15p" and you
+  // know whether you stopped. without one there is nothing to show them.
+  const checks = buildEmployeeChecks(sheet({
+    days: [
+      { date: "07/16/26", paidHours: 6.5, restViolation: true, restTaken: 0, restRequired: 2 },
+      { date: "07/24/26", paidHours: 7, restViolation: true, restTaken: 0, restRequired: 2 },
+    ],
+    scheduleCheck: {
+      flagged: [],
+      byDate: {
+        "07/16/26": { shifts: [
+          { text: "11a-1p Rincon, R-ILS Service (2:00)", minutes: 120, meal: false },
+          { text: "1:15p-3:15p Moore, R-ILS Service(2:00)", minutes: 120, meal: false },
+        ] },
+        "07/24/26": { shifts: [
+          { text: "7a-9a Rincon, R-ILS Service (2:00)", minutes: 120, meal: false },
+          { text: "12:15p-5:15p -ILS Admin(5:00)", minutes: 300, meal: false },
+        ] },
+      },
+    },
+  }));
+  const gap = checks.find((c) => c.kind === "restGap");
+  const noGap = checks.find((c) => c.kind === "restNoGap");
+  assert.deepEqual(gap.rows.map((r) => r.date), ["07/16/26"]);
+  assert.deepEqual(gap.rows[0].gaps, ["1p-1:15p"]);
+  assert.deepEqual(noGap.rows.map((r) => r.date), ["07/24/26"],
+    "a 3-hour hole between two clients is not a rest break and is not offered as one");
+});
+
+test("a rostered meal break is never offered as an unexplained gap", () => {
+  const checks = buildEmployeeChecks(sheet({
+    days: [{ date: "07/27/26", paidHours: 7, restViolation: true, restTaken: 0, restRequired: 2 }],
+    scheduleCheck: { flagged: [], byDate: { "07/27/26": { shifts: [
+      { text: "10a-2p -ILS Admin(4:00)", minutes: 240, meal: false },
+      { text: "2p-2:30p -Meal Break(0:30)", minutes: 30, meal: true },
+      { text: "2:30p-5:30p -ILS Admin(3:00)", minutes: 180, meal: false },
+    ] } } },
+  }));
+  assert.equal(checks.find((c) => c.kind === "restGap"), undefined);
+  assert.ok(checks.find((c) => c.kind === "restNoGap"), "it is still a missed rest");
+});
+
+test("a missed meal and a late meal are different messages", () => {
+  const checks = buildEmployeeChecks(sheet({
+    days: [
+      { date: "07/16/26", paidHours: 6.5, mealViolation: true, mealLate: false },
+      { date: "07/27/26", paidHours: 8, mealViolation: true, mealLate: true, mealStartedAfterMin: 370 },
+    ],
+  }));
+  const missed = checks.find((c) => c.kind === "mealMissing");
+  const late = checks.find((c) => c.kind === "mealLate");
+  assert.deepEqual(missed.rows.map((r) => r.date), ["07/16/26"]);
+  assert.deepEqual(late.rows.map((r) => r.date), ["07/27/26"]);
+  assert.equal(late.rows[0].startedAfter, 370, "so the email can say how late");
+});
+
+test("a day we could not check is asked about, not asserted", () => {
+  const checks = buildEmployeeChecks(sheet({
+    days: [{ date: "07/20/26", paidHours: 8, mealUnknown: true }],
+  }));
+  const u = checks.find((c) => c.kind === "mealUnknown");
+  assert.equal(u.tone, "ask");
+  assert.match(checkSummaryLine(u), /could not check/);
+});
+
+test("a clean sheet is told nothing at all", () => {
+  assert.deepEqual(buildEmployeeChecks(sheet({
+    days: [{ date: "07/16/26", paidHours: 8, mealViolation: false, restViolation: false }],
+  })), []);
+  assert.deepEqual(buildEmployeeChecks(null), [], "and a missing sheet does not throw");
+});
+
+test("punches we changed are declared, not slipped in", () => {
+  const checks = buildEmployeeChecks(sheet({
+    punchCorrections: [{ date: "07/27/26", hoursBefore: 7.17, hoursAfter: 7 }],
+  }));
+  const c = checks.find((x) => x.kind === "corrected");
+  assert.deepEqual(c.rows, [{ date: "07/27/26", before: 7.17, after: 7 }]);
 });
 
 // ---------------------------------------------------------------------------

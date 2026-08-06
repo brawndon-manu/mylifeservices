@@ -1,6 +1,6 @@
 // the "your timesheet is ready to sign" email. reuses the shared portal email
 // shell so it matches every other message we send.
-import { buildTimesheetShell } from "@/lib/announcement-email";
+import { buildTimesheetShell } from "./announcement-email.js";
 
 function esc(s) {
   return String(s ?? "")

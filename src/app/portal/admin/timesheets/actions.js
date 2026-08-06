@@ -12,6 +12,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
+import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
 import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
@@ -833,6 +834,10 @@ export async function sendTimesheets(batchId, formData) {
         doubleHours: ts.doubleHours,
         premiumHours: ts.premiumHours,
       },
+      // what their own sheet needs them to look at. a premium total with no
+      // basis is not something anyone can check, and these are the only people
+      // who know whether a break actually happened.
+      checks: buildEmployeeChecks(ts.data),
     });
     if (res.ok) {
       sent++;
