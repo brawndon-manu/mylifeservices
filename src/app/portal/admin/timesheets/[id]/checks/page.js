@@ -13,6 +13,7 @@ import {
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
 import Evidence from "./Evidence";
+import ChecksFilter from "./ChecksFilter";
 import RecomputeButton from "../corrections/RecomputeButton";
 
 export const metadata = { title: "Data checks", robots: { index: false, follow: false } };
@@ -20,11 +21,76 @@ export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
-const FLAG_COPY = {
-  mismatch: "Worked different hours than scheduled",
-  "not-on-schedule": "Worked, but nothing on the schedule",
-  "missing-from-timesheet": "On the schedule, but no punches",
-};
+// One row per DAY, not per person. This screen used to be a card per employee
+// with every flag inside it at equal weight, so on this period the 3 days that
+// actually need somebody sat inside 55 that mostly do not. What a person
+// opening this screen wants to know is "what do I have to do", and that is a
+// property of a day, not of an employee.
+//
+// Every headline carries a figure AND what is known about it. "reads 9.00 hrs"
+// on its own invites the obvious question: as opposed to what?
+function describePunchRow(p) {
+  const t = p.say?.tone;
+  if (t === "human") {
+    return {
+      group: "decide",
+      head: `${f2(p.hoursNow)} hrs, not settled`,
+      tone: "text-rose-700 dark:text-rose-400",
+      lead:
+        "The punches contradict themselves, no single swap puts them back in order, and the schedule does not settle it either. The day could land above or below this figure once somebody reads the source.",
+    };
+  }
+  if (t === "settled") {
+    return {
+      group: "settled",
+      head: `${f2(p.say.hours)} hrs, confirmed`,
+      tone: "text-emerald-700 dark:text-emerald-400",
+      lead: `The punches contradict themselves, but the schedule this timesheet was built from independently says ${f2(p.say.hours)} hrs, so the total is not in question. Worth correcting in QSP so the next export is clean.`,
+    };
+  }
+  if (t === "inert") {
+    return {
+      group: "settled",
+      head: `${f2(p.say.hours)} hrs either way`,
+      tone: "text-muted",
+      lead:
+        "A repair is available and it moves neither the hours nor the premiums, so nothing on this sheet turns on it. Worth correcting in QSP, but there is nothing to decide.",
+    };
+  }
+  return {
+    group: "settled",
+    head: `${f2(p.say.was)} → ${f2(p.say.hours)} hrs`,
+    tone: "text-emerald-700 dark:text-emerald-400",
+    lead: `Repaired: ${(p.say.applied || []).join("; ") || "punches reordered"}. The schedule agrees with the repaired figure, which is the only reason it was applied.`,
+  };
+}
+
+function describeFlagRow(f) {
+  if (f.timesheet == null) {
+    return {
+      group: "unworked",
+      head: "pays 0.00",
+      tone: "text-amber-700 dark:text-amber-400",
+      lead: `The schedule has ${f2(f.schedule)} hrs for this day and the timesheet has no punches at all, so the corrected sheet pays nothing for it. Somebody has to ask whether they worked it.`,
+    };
+  }
+  if (f.schedule == null) {
+    return {
+      group: "settled",
+      head: `${f2(f.timesheet)} hrs worked`,
+      tone: "text-muted",
+      lead:
+        "Worked, but the schedule has nothing for this day. The timesheet is the record we pay from, so this is context rather than a problem.",
+    };
+  }
+  return {
+    group: "settled",
+    head: `${f2(f.timesheet)} worked, ${f2(f.schedule)} scheduled`,
+    tone: "text-muted",
+    lead:
+      "People work hours other than the ones they were scheduled. The timesheet is the record we pay from, so this never moves a figure. It is here as context.",
+  };
+}
 
 export default async function ChecksPage({ params }) {
   const user = await getCurrentUser();
@@ -44,66 +110,53 @@ export default async function ChecksPage({ params }) {
   });
   if (!batch) notFound();
 
-  const rows = [];
+  const entries = [];
   let anySchedule = false;
+
   for (const t of batch.timesheets) {
-    const punches = t.data?.punchIssues || [];
     const sched = t.data?.scheduleCheck || { matched: false };
     if (sched.matched) anySchedule = true;
-    const flagged = sched.flagged || [];
-    if (!punches.length && !flagged.length) continue;
-    rows.push({
-      id: t.id,
+    const byDate = sched.byDate || {};
+    const common = {
+      timesheetId: t.id,
       who: t.user ? preferredName(t.user) : t.sourceName,
-      hours: t.paidHours,
-      // computed here rather than at upload, so batches stored before any of
-      // this still get the calmer label without needing a re-upload
-      // computed here rather than at upload, so batches stored before any of
-      // this still get the right label without needing a re-upload
-      punches: punches.map((p) => ({
-        ...p,
-        say: describePunchIssue(p, scheduledPaidHours((sched.byDate || {})[p.date])),
-      })),
-      flagged,
-      scheduleTotal: sched.scheduleTotal ?? null,
-      timesheetTotal: sched.timesheetTotal ?? null,
-      overrides: t.overrides || {},
       signed: !!t.signedAt,
-      // days the timesheet actually holds, so a correction can be offered
-      // against the right figure
-      dayHours: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d.paidHours])),
-      // the whole day, keyed by date - the evidence snippets need the punches
-      // and the page numbers, not just the total
+      overrides: t.overrides || {},
       dayByDate: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d])),
-      // what the schedule said for each day. empty for batches uploaded before
-      // the shifts were kept, which the snippet says out loud rather than
-      // rendering an empty box.
-      schedByDate: sched.byDate || {},
-    });
+      dayHours: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d.paidHours])),
+      byDate,
+    };
+
+    for (const p of t.data?.punchIssues || []) {
+      const withSay = { ...p, say: describePunchIssue(p, scheduledPaidHours(byDate[p.date])) };
+      entries.push({ ...common, kind: "punch", date: p.date, p: withSay, d: describePunchRow(withSay) });
+    }
+    for (const f of sched.flagged || []) {
+      entries.push({ ...common, kind: "flag", date: f.date, f, d: describeFlagRow(f) });
+    }
   }
 
-  // biggest disagreement first - that's the order you'd work them in
-  const worstOf = (r) =>
-    Math.max(
-      ...r.flagged.map((f) => Math.abs(f.diff ?? 99)),
-      ...r.punches.map((p) => {
-        const now = p.hoursNow || 0;
-        const then = p.suggestion ? p.suggestion.hours : now;
-        return Math.abs(now - then);
-      }),
-      0,
-    );
-  rows.sort((a, b) => worstOf(b) - worstOf(a));
-
-  const totalPunch = rows.reduce((n, r) => n + r.punches.length, 0);
-  const totalSched = rows.reduce((n, r) => n + r.flagged.length, 0);
-  // the headline used to be the raw flag count, which on this period is 55
-  // against a single day that actually needs deciding. the number at the top
-  // should be the one somebody can act on.
-  const openPunch = rows.reduce(
-    (n, r) => n + r.punches.filter((p) => p.say.tone === "human").length,
-    0,
+  const ORDER = { decide: 0, unworked: 1, settled: 2 };
+  entries.sort(
+    (a, b) =>
+      ORDER[a.d.group] - ORDER[b.d.group] ||
+      a.who.localeCompare(b.who) ||
+      String(a.date).localeCompare(String(b.date)),
   );
+
+  const counts = { decide: 0, unworked: 0, settled: 0 };
+  for (const e of entries) counts[e.d.group]++;
+  const needsPerson = counts.decide + counts.unworked;
+
+  // the recompute prompt belongs to a SHEET, not a day, so it rides on the
+  // first row that sheet contributes rather than repeating on every one
+  const recomputeShown = new Set();
+  for (const e of entries) {
+    if (Object.keys(e.overrides).length > 0 && !e.signed && !recomputeShown.has(e.timesheetId)) {
+      recomputeShown.add(e.timesheetId);
+      e.showRecompute = true;
+    }
+  }
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
@@ -115,31 +168,21 @@ export default async function ChecksPage({ params }) {
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         {batch.periodFrom} to {batch.periodTo}
       </h1>
-      <p className="mt-2 max-w-3xl text-sm text-muted">
-        Nothing here has changed a figure. These are days where the punch record
-        contradicts itself. The engine reproduces what QSP exported to the
-        hundredth of an hour, so anything flagged here is a problem in the source
-        data, not the arithmetic.
-        {" "}Days where someone worked hours other than the ones scheduled are
-        listed too, as context only - that is ordinary, and the timesheet is the
-        record we go by. A day the schedule has and the timesheet does not is a
-        different thing, and worth opening: it pays nothing at all.
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
+        Nothing here has changed anybody&apos;s hours. The engine reproduces what
+        QSP exported to the hundredth of an hour, so everything below is a problem
+        in the source data rather than in the arithmetic.{" "}
+        {entries.length === 0 ? (
+          "Nothing was flagged in this batch."
+        ) : (
+          <>
+            <span className="font-semibold text-foreground">
+              {needsPerson} of these need a person.
+            </span>{" "}
+            The rest are here so you can audit them.
+          </>
+        )}
       </p>
-
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Stat label="Staff affected" value={rows.length} of={batch.timesheets.length} />
-        <Stat
-          label="Days needing a decision"
-          value={openPunch}
-          of={totalPunch}
-          tone={openPunch > 0 ? "warn" : undefined}
-        />
-        <Stat
-          label="Days flagged against the schedule"
-          value={anySchedule ? totalSched : "-"}
-          tone={anySchedule && totalSched > 0 ? "warn" : undefined}
-        />
-      </div>
 
       {!anySchedule && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -151,7 +194,7 @@ export default async function ChecksPage({ params }) {
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="mt-10 rounded-xl border border-emerald-300/60 bg-emerald-50 p-6 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200">
           Nothing looks wrong in this batch. Every punch pair runs forwards, no
           stretch on the clock is impossibly long, and
@@ -160,229 +203,106 @@ export default async function ChecksPage({ params }) {
             : " no schedule was provided to compare against."}
         </p>
       ) : (
-        <div className="mt-8 space-y-5">
-          {rows.map((r) => (
-            <div key={r.id} className="rounded-xl border border-border bg-surface p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">{r.who}</h2>
-                  <p className="text-sm text-muted">
-                    {f2(r.hours)} hrs on the corrected sheet
-                    {r.scheduleTotal != null && (
-                      <>
-                        {" · "}schedule has {f2(r.scheduleTotal)} for the same days
-                      </>
-                    )}
-                  </p>
+        <ChecksFilter counts={counts} groups={entries.map((e) => e.d.group)}>
+          {entries.map((e) => (
+            <div
+              key={`${e.timesheetId}-${e.kind}-${e.date}`}
+              className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
+                e.d.group === "decide"
+                  ? "border-l-rose-500"
+                  : e.d.group === "unworked"
+                    ? "border-l-amber-500"
+                    : "border-l-emerald-600/70"
+              }`}
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <p className="text-sm">
+                  <span className="font-semibold text-foreground">{e.who}</span>
+                  <span className="ml-2 text-xs text-faint">{e.date}</span>
+                </p>
+                <p className={`text-sm font-semibold ${e.d.tone}`}>{e.d.head}</p>
+              </div>
+
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">{e.d.lead}</p>
+
+              <details className="group mt-2">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-brand">
+                  <span aria-hidden="true" className="transition-transform group-open:rotate-90">
+                    ▶
+                  </span>
+                  What the documents say
+                </summary>
+                <div className="mt-2 rounded-md border border-border bg-surface-2 p-3">
+                  {e.kind === "punch" && (
+                    <>
+                      {e.p.anomalies.map((a, j) => (
+                        <p key={j} className="mb-1 text-xs leading-relaxed text-muted">
+                          <span className="font-semibold text-foreground">
+                            {anomalyLabel(a.kind)}:
+                          </span>{" "}
+                          {a.shown} - {a.note}
+                          <span className="block italic">{ANOMALY_KINDS[a.kind]?.why}</span>
+                        </p>
+                      ))}
+                      <p className="mt-2 font-mono text-xs text-muted">
+                        QSP has: {e.p.shownPunches.join("  ")}
+                      </p>
+                      {e.p.suggestion && (
+                        <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                          Likely: {e.p.suggestion.punches.join("  ")}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  <Evidence
+                    batchId={batch.id}
+                    timesheetId={e.timesheetId}
+                    date={e.date}
+                    day={e.dayByDate[e.date] || null}
+                    shifts={e.byDate[e.date]?.shifts}
+                    schedulePages={e.byDate[e.date]?.pages}
+                    hasSource={!!batch.sourceUrl}
+                    hasSchedule={!!batch.scheduleUrl}
+                  />
                 </div>
+              </details>
+
+              {/* correcting is offered per day against the figure that day
+                  actually holds, never as a blanket "trust the schedule" - that
+                  is what would have turned a page-break bug into an offer to
+                  overwrite a correct 8.00 */}
+              {e.kind === "flag" &&
+                !e.signed &&
+                e.f.timesheet != null &&
+                e.dayHours[e.date] != null && (
+                  <CorrectDay
+                    timesheetId={e.timesheetId}
+                    date={e.date}
+                    timesheet={e.f.timesheet}
+                    schedule={e.f.schedule}
+                    existing={e.overrides[e.date] || null}
+                  />
+                )}
+
+              <div className="mt-2 flex flex-wrap items-center gap-4">
                 <a
-                  href={`/portal/admin/timesheets/sheet/${r.id}/download`}
+                  href={`/portal/admin/timesheets/sheet/${e.timesheetId}/download`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs font-medium text-brand hover:text-brand-dark"
                 >
                   Open their sheet →
                 </a>
-              </div>
-
-              {r.flagged.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                    Worked differently to what was scheduled
-                  </p>
-                  <div className="mt-2 overflow-x-auto">
-                    <table className="w-full min-w-[520px] text-sm">
-                      <thead className="text-xs uppercase tracking-wider text-faint">
-                        <tr>
-                          <th className="py-1 text-left font-semibold">Day</th>
-                          <th className="py-1 text-right font-semibold">Timesheet</th>
-                          <th className="py-1 text-right font-semibold">Schedule</th>
-                          <th className="py-1 text-right font-semibold">Difference</th>
-                          <th className="py-1 pl-4 text-left font-semibold">What it means</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {r.flagged.map((f, i) => (
-                          <tr key={i} className="border-t border-border">
-                            <td className="py-1.5 text-foreground">{f.date}</td>
-                            <td className="py-1.5 text-right tabular-nums text-foreground">{f2(f.timesheet)}</td>
-                            <td className="py-1.5 text-right tabular-nums text-foreground">{f2(f.schedule)}</td>
-                            <td className="py-1.5 text-right tabular-nums font-semibold text-rose-600 dark:text-rose-400">
-                              {f.diff == null ? "-" : `${f.diff > 0 ? "+" : ""}${f2(f.diff)}`}
-                            </td>
-                            <td className="py-1.5 pl-4 text-xs text-muted">{FLAG_COPY[f.flag] || f.flag}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {/* the evidence behind each flagged day, and only then the
-                      option to change it. correcting is offered per day against
-                      the figure that day actually holds - never as a blanket
-                      "trust the schedule", which is exactly what turned a
-                      page-break bug into an offer to overwrite a correct 8.00 */}
-                  <div className="mt-3 space-y-2">
-                    {r.flagged.map((f, i) => (
-                      <div key={i} className="rounded-md border border-border bg-surface-2 p-2">
-                        <p className="text-xs font-semibold text-foreground">{f.date}</p>
-                        <Evidence
-                          batchId={batch.id}
-                          timesheetId={r.id}
-                          date={f.date}
-                          day={r.dayByDate[f.date] || null}
-                          shifts={r.schedByDate[f.date]?.shifts}
-                          schedulePages={r.schedByDate[f.date]?.pages}
-                          hasSource={!!batch.sourceUrl}
-                          hasSchedule={!!batch.scheduleUrl}
-                        />
-                        {!r.signed && f.timesheet != null && r.dayHours[f.date] != null && (
-                          <CorrectDay
-                            timesheetId={r.id}
-                            date={f.date}
-                            timesheet={f.timesheet}
-                            schedule={f.schedule}
-                            existing={r.overrides[f.date] || null}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {r.punches.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                    Punch entries that can&apos;t be right
-                  </p>
-                  <ul className="mt-2 space-y-2">
-                    {r.punches.map((p, i) => (
-                      <li key={i} className="rounded-lg border border-amber-300/60 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20">
-                        {/* collapsed by default - three of these filled a screen
-                            for one person. the ones with no safe reading start
-                            open, since those are the only ones that actually
-                            need somebody to do something. NOT the ones the
-                            schedule already settles: 11 of the 14 on this period
-                            were opening a card nobody had to act on. */}
-                        <details open={p.say.open} className="group">
-                          <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm">
-                            <span
-                              aria-hidden="true"
-                              className="text-xs text-muted transition-transform group-open:rotate-90"
-                            >
-                              ▶
-                            </span>
-                            <span className="font-semibold text-foreground">
-                              {p.date} · reads {f2(p.hoursNow)} hrs
-                            </span>
-                            {p.say.tone === "inert" ? (
-                              <span className="ml-auto whitespace-nowrap text-xs text-muted">
-                                pays the same either way
-                              </span>
-                            ) : p.say.tone === "settled" ? (
-                              <span className="ml-auto whitespace-nowrap text-xs text-muted">
-                                schedule agrees with {f2(p.say.hours)} hrs
-                              </span>
-                            ) : p.say.tone === "repair" ? (
-                              <span className="ml-auto whitespace-nowrap text-xs text-emerald-700 dark:text-emerald-400">
-                                likely {f2(p.say.hours)} hrs
-                              </span>
-                            ) : (
-                              <span className="ml-auto whitespace-nowrap text-xs font-semibold text-rose-700 dark:text-rose-400">
-                                needs working out by hand
-                              </span>
-                            )}
-                          </summary>
-                          <div className="border-t border-amber-300/40 px-3 pb-3 pt-2 dark:border-amber-900/40">
-                        {p.anomalies.map((a, j) => (
-                          <p key={j} className="mt-1 text-xs text-muted">
-                            <span className="font-semibold text-foreground">{anomalyLabel(a.kind)}:</span>{" "}
-                            {a.shown} - {a.note}
-                            <span className="block italic">{ANOMALY_KINDS[a.kind]?.why}</span>
-                          </p>
-                        ))}
-                        <p className="mt-2 font-mono text-xs text-muted">
-                          QSP has: {p.shownPunches.join("  ")}
-                        </p>
-                        {p.suggestion ? (
-                          <>
-                            <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
-                              Likely: {p.suggestion.punches.join("  ")}
-                            </p>
-                            {p.say.tone === "inert" ? (
-                              <p className="mt-1 text-xs text-muted">
-                                Read either way the day is{" "}
-                                <span className="font-semibold text-foreground">
-                                  {f2(p.say.hours)} hrs
-                                </span>{" "}
-                                with the same premiums, so nothing on this sheet turns on
-                                it. Worth correcting in QSP so the next export is clean,
-                                but there is nothing to decide here.
-                              </p>
-                            ) : (
-                              <p className="mt-1 text-xs text-foreground">
-                                That would make the day{" "}
-                                <span className="font-semibold">{f2(p.say.hours)} hrs</span>{" "}
-                                instead of {f2(p.say.was)} ({p.say.applied.join("; ")}).
-                                {p.say.restPremium && (
-                                  <> The rest premium would be{" "}
-                                    <span className="font-semibold">{p.say.restPremium}</span>.</>
-                                )}
-                                {p.say.mealPremium && (
-                                  <> The meal premium would be{" "}
-                                    <span className="font-semibold">{p.say.mealPremium}</span>.</>
-                                )}
-                              </p>
-                            )}
-                          </>
-                        ) : p.say.tone === "settled" ? (
-                          <p className="mt-2 text-xs text-muted">
-                            No single swap puts these punches in order, so nothing is
-                            suggested. But the day comes to{" "}
-                            <span className="font-semibold text-foreground">
-                              {f2(p.say.hours)} hrs
-                            </span>{" "}
-                            and the schedule this timesheet was built from says the
-                            same, so the total is not in question. Worth correcting
-                            in QSP so the next export is clean.
-                          </p>
-                        ) : (
-                          <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
-                            No safe reading of these punches, and the schedule does not
-                            settle it either - this one needs working out by hand.
-                          </p>
-                        )}
-                        {/* working it out by hand means reading the source, so
-                            the source is right here rather than a hunt */}
-                        <Evidence
-                          batchId={batch.id}
-                          timesheetId={r.id}
-                          date={p.date}
-                          day={r.dayByDate[p.date] || null}
-                          shifts={r.schedByDate[p.date]?.shifts}
-                          schedulePages={r.schedByDate[p.date]?.pages}
-                          hasSource={!!batch.sourceUrl}
-                          hasSchedule={!!batch.scheduleUrl}
-                        />
-                          </div>
-                        </details>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {Object.keys(r.overrides).length > 0 && !r.signed && (
-                <div className="mt-4 border-t border-border pt-3">
+                {e.showRecompute && (
                   <RecomputeButton
-                    timesheetId={r.id}
-                    accepted={Object.keys(r.overrides).length}
+                    timesheetId={e.timesheetId}
+                    accepted={Object.keys(e.overrides).length}
                   />
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ))}
-        </div>
+        </ChecksFilter>
       )}
 
       <div className="mt-8 rounded-lg border border-border bg-surface-2 p-4 text-sm text-muted">
@@ -403,23 +323,5 @@ export default async function ChecksPage({ params }) {
         </p>
       </div>
     </section>
-  );
-}
-
-function Stat({ label, value, of, tone }) {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <p className="text-xs uppercase tracking-wider text-muted">{label}</p>
-      <p
-        className={`mt-1 text-2xl font-semibold tabular-nums ${
-          tone === "warn" && value !== 0 && value !== "-"
-            ? "text-rose-600 dark:text-rose-400"
-            : "text-foreground"
-        }`}
-      >
-        {value}
-        {of != null && <span className="text-base font-normal text-muted"> of {of}</span>}
-      </p>
-    </div>
   );
 }
