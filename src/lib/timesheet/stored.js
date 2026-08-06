@@ -28,6 +28,12 @@ export const REQUIRED_DAY_FIELDS = [
   "mealCount", "mealScheduled", "mealUnknown",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
+  // these two travel together and MUST NOT be separated. `printed` is what
+  // analyzeDay floors a day at; `repaired` is what exempts a corrected day from
+  // that floor. store printed without repaired and every repaired day gets
+  // pushed back up to the figure the repair exists to correct, which is the bug
+  // 2f0b194 fixed. store repaired without printed and the floor never applies.
+  "printed", "repaired",
 ];
 
 export function storedDay(d) {
@@ -64,5 +70,14 @@ export function storedDay(d) {
     workedMin: d.workedMin,
     punches: d.punches,
     breaks: d.breaks,
+    // QSP's own printed figures for the day. `daily` is what analyzeDay floors
+    // the day at, and without it here a recompute cannot floor at all - two days
+    // on 07/16-07/31 fell 7.49 -> 7.4833 when re-analyzed. The rest of the
+    // object is QSP's printed overtime/holiday/double, which the parser has
+    // always captured and thrown away; TASKS.md #69 wants exactly this.
+    printed: d.printed || null,
+    // set when this day's punches were corrected. it exempts the day from the
+    // floor above, so a repair is not pushed back to the figure it corrects.
+    repaired: d.repaired || false,
   };
 }
