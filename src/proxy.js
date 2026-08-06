@@ -37,13 +37,20 @@ export default auth(async (req) => {
   const isLogin = pathname === "/login" || pathname.startsWith("/login/");
   const isMaintenancePage = pathname === "/maintenance";
   // unguessable public share links stay reachable during maintenance: forms
-  // (/f/<slug>) and resources (/r/<id>). they're direct links handed to specific
+  // (/f/<slug>), resources (/r/<id>) and guidebook pages (/g/<slug>). they're
+  // direct links handed to specific
   // people, not the public marketing site, so a maintenance window shouldn't
   // break a form you shared with, say, a new hire.
   // /t/<token> is a personal timesheet sign link - payroll deadlines don't pause
   // for a maintenance window, so it stays reachable too.
+  // /g/<slug> is a guidebook page shared by its random link. break policy is
+  // exactly the sort of thing somebody needs to read on a phone during a
+  // maintenance window, and the people it is shared with may have no account.
   const isShareLink =
-    pathname.startsWith("/f/") || pathname.startsWith("/r/") || pathname.startsWith("/t/");
+    pathname.startsWith("/f/") ||
+    pathname.startsWith("/r/") ||
+    pathname.startsWith("/t/") ||
+    pathname.startsWith("/g/");
 
   // 1. MAINTENANCE GATE - public pages only. the portal, the login page, the
   // maintenance splash, and shared /f/ + /r/ links are always exempt so staff
