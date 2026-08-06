@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/current-user";
-import { sharePath, shareSlug } from "@/lib/guidebook";
+import { sharePath } from "@/lib/guidebook";
 import BackLink from "@/components/BackLink";
 import ShareMenu from "@/components/ShareMenu";
 import BreaksContent from "./_components/BreaksContent";
@@ -21,13 +21,7 @@ export default async function BreaksPage() {
       <BackLink href="/portal/guidebook">Back to Employee Guidebook</BackLink>
       <BreaksContent
         action={
-          <ShareMenu
-            path={sharePath("breaks")}
-            label="Share link"
-            // says which link you are getting, so an unset slug announces
-            // itself instead of looking like a working public link
-            scope={shareSlug("breaks") ? "public" : "portal"}
-          />
+          <ShareMenu path={sharePath("breaks")} label="Share link" scope="public" />
         }
       />
     </section>

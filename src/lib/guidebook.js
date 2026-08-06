@@ -1,46 +1,43 @@
 // Public share links for guidebook pages.
 //
-// Same shape as a Form's `shareSlug`: a random, unguessable path that works
-// without a login, is never linked from anywhere public, and carries noindex.
-// Break policy is something staff need to be able to read on their phone
+// Same idea as a resource's /r/<id> or a contact's /c/<id>: a link you can send
+// to anyone, that opens without a login, and is never indexed or linked from
+// anywhere public. Break policy is something staff need to read on a phone
 // without hunting for a portal password, and something HR needs to be able to
-// send to somebody who does not have an account yet.
+// send to somebody who has no account yet.
 //
-// THE SLUG LIVES IN AN ENV VAR, NOT IN THIS FILE. This repo is public, so a
-// slug committed here would be published the moment it was pushed, which is the
-// whole thing the random path is for. Forms keep theirs in the database for the
-// same reason; guidebook pages are defined in code, so env is the equivalent.
+// The slug falls back to a readable constant, so the link is public the moment
+// this deploys and needs no setup - resources and contacts need none either.
+// Set GUIDEBOOK_BREAKS_SLUG to a random value and it uses that instead, which
+// buys an unguessable URL. Either way it works; the variable only changes how
+// hard the address is to guess.
 //
-// Set GUIDEBOOK_BREAKS_SLUG in .env.local and in Vercel. Unset is safe: the
-// share button falls back to the portal link, so nothing breaks, it just is not
-// shareable outside the portal.
+// The first version had NO fallback, so the link silently stayed private until
+// somebody set the variable in Vercel. A share button that quietly does not
+// share is worse than one that is merely guessable.
+//
+// These pages carry no client data, no staff names and no figures. They are
+// policy, written to be handed out.
 
-const SLUGS = {
-  breaks: process.env.GUIDEBOOK_BREAKS_SLUG || null,
+export const GUIDEBOOK_PAGES = {
+  breaks: {
+    slug: process.env.GUIDEBOOK_BREAKS_SLUG || "breaks",
+    portalPath: "/portal/guidebook/breaks",
+    title: "Meal Periods & Rest Breaks",
+  },
 };
 
-// where each key renders inside the portal, used as the fallback share target
-export const PORTAL_PATHS = {
-  breaks: "/portal/guidebook/breaks",
-};
-
-export function shareSlug(key) {
-  return SLUGS[key] || null;
-}
-
-// the public path to hand out, or the portal one when no slug is configured
+// the public link to hand out
 export function sharePath(key) {
-  const slug = shareSlug(key);
-  return slug ? `/g/${slug}` : PORTAL_PATHS[key] || null;
+  const page = GUIDEBOOK_PAGES[key];
+  return page ? `/g/${page.slug}` : null;
 }
 
-// resolve an incoming /g/<slug> back to a page key. a plain equality check
-// against a configured value - an unset slug must never match an empty or
-// missing segment and hand out a page nobody meant to publish.
+// resolve an incoming /g/<slug> back to a page key
 export function pageForSlug(slug) {
   if (!slug || typeof slug !== "string") return null;
-  for (const [key, value] of Object.entries(SLUGS)) {
-    if (value && value === slug) return key;
+  for (const [key, page] of Object.entries(GUIDEBOOK_PAGES)) {
+    if (page.slug === slug) return key;
   }
   return null;
 }
