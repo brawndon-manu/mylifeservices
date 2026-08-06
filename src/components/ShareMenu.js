@@ -5,7 +5,12 @@
 // portal login. closes on outside-click / Escape.
 import { useEffect, useRef, useState } from "react";
 
-export default function ShareMenu({ path, label = "Share" }) {
+// `scope` says what the link you are about to copy actually does. Optional, so
+// every existing caller is unchanged. It exists because the guidebook share link
+// silently falls back to the gated portal path when no public slug is
+// configured, and the button looked identical either way - you only found out
+// by pasting the link somewhere and watching it ask for a login.
+export default function ShareMenu({ path, label = "Share", scope = null }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef(null);
@@ -51,10 +56,25 @@ export default function ShareMenu({ path, label = "Share" }) {
         </svg>
       </button>
       {open && (
-        <div className="absolute left-0 top-9 z-30 w-48 rounded-xl border border-border bg-surface p-1.5 shadow-lg">
+        <div
+          className={`absolute left-0 top-9 z-30 rounded-xl border border-border bg-surface p-1.5 shadow-lg ${
+            scope ? "w-64" : "w-48"
+          }`}
+        >
           <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
             {label}
           </p>
+          {scope === "public" && (
+            <p className="px-2 pb-1.5 text-[11px] leading-snug text-emerald-700 dark:text-emerald-400">
+              Anyone with this link can open it. No sign in needed.
+            </p>
+          )}
+          {scope === "portal" && (
+            <p className="px-2 pb-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+              Only works for staff already signed in to the portal. There is no
+              public link set up for this page yet.
+            </p>
+          )}
           <button
             type="button"
             onClick={copy}
