@@ -72,6 +72,14 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     doubleHours: t.doubleHours,
     premiumHours: t.premiumHours,
     partialWeek: t.partialWeek,
+    // a lunch that HAPPENED but started after the fifth hour still owes a
+    // premium, and it reads as an error to anyone who remembers taking it.
+    // worth naming on the row rather than only inside the sheet.
+    mealLateDays: (t.data?.days || []).filter((d) => d.mealLate).length,
+    // a day the schedule has and the timesheet does not - it pays nothing, so
+    // it is the one row state worth spotting from the list
+    missingDays: (t.data?.scheduleCheck?.flagged || [])
+      .filter((f) => f.flag === "missing-from-timesheet").length,
     hasPdf: !!t.pdfUrl,
     sentAt: t.sentAt ? t.sentAt.toISOString() : null,
     sentToEmail: t.sentToEmail,
