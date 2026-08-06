@@ -956,6 +956,39 @@ test("the three fields that were actually dropped survive the round trip", () =>
   assert.equal(stored.restSource, "rest-report");
 });
 
+// `printed` and `repaired` were both missing from the projection, so a recompute
+// had nothing to floor at and nothing to exempt. Found on the live 07/16-07/31
+// batch: Flores 07/18 and Romero-Alba 07/24 both fell 7.49 -> 7.4833 when
+// re-analyzed, because 449 minutes is 7.4833 and QSP printed 7.49.
+test("a stored day keeps QSP's floor when it is analyzed again", () => {
+  const analyzed = analyzeDay({
+    date: "07/18/26",
+    punches: [at(8), at(15, 29)], // 449 minutes = 7.4833
+    printed: { daily: 7.49, regular: 7.49 },
+  });
+  assert.equal(analyzed.paidHours, 7.49, "the floor lifts it to QSP's own figure");
+  assert.equal(
+    analyzeDay(storedDay(analyzed)).paidHours, 7.49,
+    "and the round trip must not drop it back to 7.4833",
+  );
+});
+
+// The other half, and the reason the two fields cannot be separated. Storing
+// `printed` without `repaired` would push every corrected day back up to the
+// figure the correction exists to fix - the bug 2f0b194 fixed.
+test("a repaired day stays exempt from the floor across the round trip", () => {
+  const analyzed = analyzeDay({
+    date: "07/23/26",
+    punches: [at(8), at(15, 29)],
+    printed: { daily: 9.0 }, // QSP printed more than the corrected punches show
+    repaired: true,
+  });
+  assert.ok(analyzed.paidHours < 9, "a repaired day is not lifted to the printed figure");
+  const again = analyzeDay(storedDay(analyzed));
+  assert.ok(again.paidHours < 9, "and storing printed must not quietly undo the repair");
+  assert.equal(again.paidHours, analyzed.paidHours, "the repaired figure survives intact");
+});
+
 test("an unknown meal day stores null, not false", () => {
   // the difference between "no meal was rostered" and "we have no schedule" is
   // the difference between charging somebody and asking them
