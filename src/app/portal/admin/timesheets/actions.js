@@ -337,8 +337,16 @@ export async function uploadBatch(formData) {
   // to each other. See identity.js.
   const clockNames = clocks ? [...clocks.values()].map((p) => p.name) : [];
   const restNames = rests ? [...rests.values()].map((p) => p.name) : [];
+  const scheduleNames = schedules ? [...schedules.values()].map((p) => p.employee) : [];
   const clockByUser = indexByAccount(clockNames, staff);
   const restByUser = indexByAccount(restNames, staff);
+  // the schedule was the one support file still looked up by plain name, so a
+  // person QSP spells differently across its own exports got NO schedule
+  // cross-check at all. On 07/16-07/31 that was Ruth Delgado Pineda (Angel on
+  // the other reports) and Francisco Velasquez (Frank): 97 hours and 14 premium
+  // hours with no second opinion, and a 5.9-hour punch question nothing could
+  // settle - all of it over a spelling.
+  const scheduleByUser = indexByAccount(scheduleNames, staff);
   // people we could not place in one of the other reports, with the best guess
   // and how sure it is. shown, never acted on.
   const aliasQuestions = [];
@@ -374,7 +382,14 @@ export async function uploadBatch(formData) {
       : raw;
 
     let t = analyzeTimesheet(withRests);
-    const sched = schedules ? schedules.get(scheduleKey(t.employee)) || null : null;
+    const schedHit = schedules
+      ? lookupAcross(t.employee, m, {
+          get: (k) => schedules.get(k) || null,
+          keyOf: scheduleKey,
+          byUser: scheduleByUser,
+        })
+      : { value: null, via: null };
+    const sched = schedHit.value;
 
     // ---- the one repair we make on our own ----
     //
@@ -413,7 +428,7 @@ export async function uploadBatch(formData) {
 
     // matched under another spelling, but not a certain one. applied, and said
     // out loud - a 50% link must never read as a fact.
-    for (const [report, hit] of [["clock", clockHit], ["rests", restHit]]) {
+    for (const [report, hit] of [["clock", clockHit], ["rests", restHit], ["schedule", schedHit]]) {
       if (hit.via && !hit.exact) {
         aliasQuestions.push({
           kind: "estimated",
@@ -514,6 +529,9 @@ export async function uploadBatch(formData) {
                 : null,
               rests: restHit.via
                 ? { name: restHit.via, confidence: restHit.confidence, exact: restHit.exact }
+                : null,
+              schedule: schedHit.via
+                ? { name: schedHit.via, confidence: schedHit.confidence, exact: schedHit.exact }
                 : null,
             },
             clock: clk

@@ -850,6 +850,66 @@ test("with no rest report at all, nothing changes", () => {
 });
 
 // ---------------------------------------------------------------------------
+// the schedule has to be found under the OTHER spelling too
+//
+// The clock and rest reports were converted to resolve a person through their
+// portal account; the schedule was left on a plain name lookup and nobody
+// noticed. On 07/16-07/31 that cost Ruth Delgado Pineda (Angel elsewhere) and
+// Francisco Velasquez (Frank) their schedule cross-check entirely: 97 hours and
+// 14 premium hours with no second opinion, and one 5.9-hour punch question that
+// nothing could settle. All of it over a spelling.
+
+test("the schedule resolves through the account, like the other two reports", () => {
+  const staff = [
+    { id: "u1", name: "Ruth Delgado Pineda", preferredFirstName: "Angel" },
+    { id: "u2", name: "Jennifer Delgado Pineda" },
+  ];
+  // the schedule PDF spells her the way the OTHER reports do
+  const scheduleNames = ["Delgado Pineda, Angel"];
+  const byUser = indexByAccount(scheduleNames, staff);
+  const schedules = new Map([[scheduleKey("Delgado Pineda, Angel"), { employee: "Delgado Pineda, Angel" }]]);
+
+  // the timesheet spells her Ruth, so the direct key misses
+  assert.equal(schedules.get(scheduleKey("Delgado Pineda, Ruth")) ?? null, null);
+
+  const hit = lookupAcross("Delgado Pineda, Ruth", matchEmployee("Delgado Pineda, Ruth", staff), {
+    get: (k) => schedules.get(k) || null,
+    keyOf: scheduleKey,
+    byUser,
+  });
+  assert.ok(hit.value, "her schedule has to be found under Angel");
+  assert.equal(hit.via, "Delgado Pineda, Angel", "and the screen must be able to say which spelling");
+});
+
+test("a schedule found under an exact name reports no alias", () => {
+  const staff = [{ id: "u1", name: "Kristy Hatt" }];
+  const schedules = new Map([[scheduleKey("Hatt, Kristy"), { employee: "Hatt, Kristy" }]]);
+  const hit = lookupAcross("Hatt, Kristy", matchEmployee("Hatt, Kristy", staff), {
+    get: (k) => schedules.get(k) || null,
+    keyOf: scheduleKey,
+    byUser: indexByAccount(["Hatt, Kristy"], staff),
+  });
+  assert.ok(hit.value);
+  assert.equal(hit.via, null, "nothing to say when the name matched outright");
+  assert.equal(hit.exact, true);
+});
+
+test("a schedule is never handed to the wrong person of the same surname", () => {
+  // the guard that makes the loose matching safe at all
+  const staff = [
+    { id: "u1", name: "Ruth Delgado Pineda" },
+    { id: "u2", name: "Jennifer Delgado Pineda" },
+  ];
+  const schedules = new Map([[scheduleKey("Delgado Pineda, Jennifer"), { employee: "Delgado Pineda, Jennifer" }]]);
+  const hit = lookupAcross("Delgado Pineda, Ruth", matchEmployee("Delgado Pineda, Ruth", staff), {
+    get: (k) => schedules.get(k) || null,
+    keyOf: scheduleKey,
+    byUser: indexByAccount(["Delgado Pineda, Jennifer"], staff),
+  });
+  assert.equal(hit.value, null, "Ruth must never be given Jennifer's schedule");
+});
+
+// ---------------------------------------------------------------------------
 // what the checks screen SAYS about a flagged day
 //
 // These exist because the screen crashed on every batch that already existed.
