@@ -200,7 +200,8 @@ test("an ordinary day is not flagged", () => {
 });
 
 test("Garcia's real 07/20 punches resolve to an 8-hour day", () => {
-  // the exact sequence from the export, and the schedule independently says 8.00
+  // the exact sequence from the export, and the schedule it was generated
+  // from says 8.00
   const punches = [
     at(8, 30), at(11, 30), at(11, 30), at(23, 20), at(11, 30), at(13, 30),
     at(13, 30), at(15, 30), at(15, 30), at(16, 20), at(16, 30), at(16, 30),
@@ -1341,7 +1342,7 @@ test("an unrepairable day the schedule already settles is not left shouting", ()
   // B. Rotter 07/28, off the real export. Five pairs, one running 30 minutes
   // backwards, and no single swap clears it - fixing the backwards pair creates
   // a reversed break after it. Her day still comes to 8.00 and her schedule
-  // independently says 8.00.
+  // says 8.00 too, and the timesheet was generated from it.
   const punches = [
     at(9), at(11, 30), at(11, 30), at(11), at(11, 10),
     at(14), at(14, 30), at(17, 20), at(17, 30), at(17, 30),

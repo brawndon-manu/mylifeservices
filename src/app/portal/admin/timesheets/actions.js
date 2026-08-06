@@ -413,7 +413,10 @@ export async function uploadBatch(formData) {
     //
     // A reversed rest break makes two punch pairs overlap, so the same ten
     // minutes get billed twice and the day reads high. We only fix it when the
-    // SCHEDULE independently agrees with the repaired figure: measured on
+    // SCHEDULE agrees with the repaired figure. Not corroboration - the
+    // timesheet is generated FROM the schedule - but the schedule is the
+    // clean original and the timesheet is the copy that got mangled during
+    // entry, so a match means we recovered what was entered. Measured on
     // 07/16-07/31, swapping every reversed break would have been wrong on 15 of
     // the 24 days the schedule can judge and stripped 15.58 hours off eleven
     // people. With that gate it was right 9 times out of 9.
@@ -424,9 +427,16 @@ export async function uploadBatch(formData) {
     const punchCorrections = repair.corrections;
     if (punchCorrections.length) t = analyzeTimesheet({ ...withRests, days: repair.days });
 
-    // two independent quality checks, both recorded rather than acted on. the
-    // figures are never altered here - somebody looks at these and decides.
-    // re-run against the repaired days so a fixed one stops being flagged.
+    // two quality checks, both recorded rather than acted on. the figures are
+    // never altered here - somebody looks at these and decides. re-run against
+    // the repaired days so a fixed one stops being flagged.
+    //
+    // NOT independent of each other: the timesheet is generated from the
+    // schedule, so compareToSchedule is a document against its own source. It
+    // catches mangling that happened during entry, not a second observation of
+    // the day. `scheduleDiff` came out 0 across all 59 people on 07/16-07/31,
+    // which is not everyone working exactly to plan - it is the two files being
+    // the same data.
     const punchIssues = reviewSheet(t.days, analyzeDay);
     const scheduleCheck = sched
       ? compareToSchedule(t.days, sched.days, { toleranceHours: 1 })
@@ -564,9 +574,10 @@ export async function uploadBatch(formData) {
           },
           // data-quality findings. stored, surfaced, never auto-applied.
           punchIssues,
-          // the one exception: reversed breaks the schedule independently
-          // confirmed. these WERE applied, so what was changed is kept beside
-          // the figures it produced and printed on the sheet the employee signs.
+          // the one exception: reversed breaks where the repaired figure
+          // matches the schedule the timesheet was generated from. these WERE
+          // applied, so what changed is kept beside the figures it produced
+          // and printed on the sheet the employee signs.
           punchCorrections,
           scheduleCheck: scheduleCheck
             ? {

@@ -342,9 +342,9 @@ export default async function ChecksPage({ params }) {
                             <span className="font-semibold text-foreground">
                               {f2(p.say.hours)} hrs
                             </span>{" "}
-                            and the schedule independently says the same, so the total
-                            is not in question. Worth correcting in QSP so the next
-                            export is clean.
+                            and the schedule this timesheet was built from says the
+                            same, so the total is not in question. Worth correcting
+                            in QSP so the next export is clean.
                           </p>
                         ) : (
                           <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-400">

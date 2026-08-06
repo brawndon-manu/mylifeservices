@@ -297,7 +297,8 @@ export function scheduledPaidHours(entry) {
 // backwards, and no single-pass swap clears it - fixing the backwards pair just
 // creates a reversed break after it, so `isCredible` refuses and the day falls
 // through to the loudest label on the screen. Her total is 8.00 and her schedule
-// independently says 8.00. On 07/16-07/31 that is true of 11 of the 14 days
+// says 8.00 too - and the timesheet was generated from that schedule, so a
+// match means the mangling happened after. On 07/16-07/31 that is true of 11 of the 14 days
 // marked for hand-working, so the label was sending people to check ten days
 // that a second document had already settled.
 export function scheduleAgreesWithCurrent(row, scheduledHours, tolerance = 0.05) {

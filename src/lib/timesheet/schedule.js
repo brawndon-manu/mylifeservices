@@ -1,10 +1,24 @@
 // the QSP "Employee Schedules" export: one month-calendar page per employee.
 //
-// this is a second, independent record of the same time. it matters because the
-// punch data has typos in it - times entered in the wrong box, or with the wrong
-// meridiem - and there is no way to spot those from the punches alone when the
-// errors happen to cancel out. two sources disagreeing is a signal one page
-// cannot give you.
+// IT IS NOT AN INDEPENDENT WITNESS, and this file used to claim it was.
+//
+// The Simple Timesheet is generated FROM the schedule, not from clock punches.
+// Measured on 07/16-07/31: of 114 days where the schedule and QSClock disagree
+// about when somebody started, the timesheet followed the schedule 93 times and
+// the clock 0. Across 632 day-cases the two agree to a rounding hundredth 63% of
+// the time and differ by more than an hour exactly once. The "Time In / Time
+// Out" columns on the timesheet are rostered shift times wearing punch clothes.
+//
+// So comparing the two is not corroboration - it is comparing a document to its
+// own source. That still earns its keep, because the schedule is the CLEAN
+// original and the timesheet is the copy that gets mangled during entry: times
+// typed into the wrong box, or with the wrong meridiem, in ways that cancel out
+// and hide from the punches alone. When a repaired day matches the schedule we
+// have recovered what was originally entered. What we have NOT done is confirm
+// it against a second observation of the same day.
+//
+// The only files holding actual behaviour are QSClock and the Rest Periods
+// Report. Anything read here is the plan.
 //
 // what it holds: dated entries like "8:30a-11:30a Chapman, J-ILS Service(3:00)",
 // each printing its own length, plus meal breaks. what it does NOT hold: rest

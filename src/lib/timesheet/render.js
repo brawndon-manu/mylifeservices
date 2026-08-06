@@ -283,7 +283,8 @@ export async function renderCorrected(sheet, opts = {}) {
 
   // ---------- punch corrections ----------
   // days where a rest break's two times were recorded in reverse AND the
-  // schedule independently agreed with the corrected figure. it sits above the
+  // schedule the timesheet was generated from agrees with the corrected
+  // figure. it sits above the
   // signature because we changed somebody's punches, and they should read that
   // before they sign rather than after.
   const fixes = sheet.punchCorrections || [];
