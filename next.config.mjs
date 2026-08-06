@@ -34,6 +34,17 @@ const nextConfig = {
   // server code (timesheet parsing + rendering) and bundling them breaks their
   // dynamic requires.
   serverExternalPackages: ["pdfjs-dist", "pdf-lib"],
+  // pdfjs loads its worker through a dynamic import built from a path string,
+  // which the file tracer can't follow, so the worker was never shipped to the
+  // lambda. locally it works because node_modules is all there; on vercel the
+  // parse dies with "Cannot find module .../pdf.worker.mjs" the moment anyone
+  // uploads. force it into the trace. verify after any pdfjs bump with:
+  //   grep -rl "pdf.worker.mjs" .next/server --include=*.nft.json
+  outputFileTracingIncludes: {
+    "/portal/admin/timesheets/**": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    ],
+  },
   // allow rendering remote images from Vercel Blob (hub post images).
   // host pattern matches any blob store — Vercel doesnt pin a fixed
   // subdomain so we use a wildcard.
