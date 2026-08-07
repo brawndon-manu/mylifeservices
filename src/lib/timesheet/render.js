@@ -194,12 +194,26 @@ export async function renderCorrected(sheet, opts = {}) {
       const base = y - rowH + 4.5;
       const isLast = ci === chunks.length - 1;
 
-      // break highlights sit behind the two punches that bound the gap
+      // Break highlights sit behind the two punches that bound the gap - but
+      // ONLY where something actually recorded the break.
+      //
+      // This used to colour any gap the classifier called a break, which meant
+      // the signed sheet asserted breaks nobody recorded: 297 of 658 days on
+      // 07/16-07/31, including 105 where it highlighted a blue meal break and
+      // charged a meal premium for having no meal, on the same page. A gap
+      // cannot tell a break from travel between two clients, and printing it as
+      // one both overstates the record and undercuts the premium below it.
+      //
+      // A meal counts when the schedule rostered it. A rest counts when the
+      // Rest Periods Report logged it.
+      const mealEvidenced = d.mealScheduled === true;
+      const restEvidenced = Number.isFinite(d.restRecorded) && d.restRecorded > 0;
       for (const b of d.breaks) {
         if (b.kind !== "rest" && b.kind !== "meal") continue;
+        if (b.kind === "meal" && !mealEvidenced) continue;
+        if (b.kind === "rest" && !restEvidenced) continue;
         const color = b.kind === "rest" ? REST : MEAL;
-        for (const p of [b.start, b.end]) {
-          const pos = at.get(p);
+        for (const pos of breakCells(d.punches, at, b)) {
           if (!pos || pos.row !== ci) continue;
           const col = xs[IDX.punch[pos.col]];
           page.drawRectangle({ x: col.x, y: top - rowH, width: col.w, height: rowH, color });
@@ -223,11 +237,29 @@ export async function renderCorrected(sheet, opts = {}) {
         // the gaps suggest, and the punch count is the one the engine
         // deliberately doesn't trust - so days were printing "rest 3/2" beside a
         // premium for missing rest breaks. 39 rows across 16 people did that.
-        if (d.restViolation) {
+        if (d.restUnknown) {
+          // "0 taken" and "nothing recorded it" are different claims, and only
+          // one of them is a finding. Printing 0 for the second is asserting
+          // something no source supports.
+          notes.push(`rest: no record (${d.restRequired} owed)`);
+        } else if (d.restViolation) {
           const taken =
             d.restRecorded == null ? d.restCount : Math.min(d.restCount, d.restRecorded);
           notes.push(`rest ${taken}/${d.restRequired}`);
         }
+        // hours credited exceed the window they sit in, so two client bookings
+        // overlap. flagged rather than adjusted: entitlement follows hours
+        // worked, and quietly paying less because the arithmetic looks odd is
+        // the move this engine exists to avoid.
+        // Marked here, explained in full under the table. The sentence this
+        // deserves does not fit a 78pt column: at 4.4pt, the smallest size the
+        // fitter will go to, it needed 117pt, so it was being truncated to
+        // "overlappi…" on 15 of the 16 days that carry it. Shortening the
+        // wording does not rescue it either - "overlap 8.00h" still only fits 2
+        // of 16 once the meal and rest notes are in front of it. A day whose
+        // hours are questioned is exactly the day whose explanation has to be
+        // readable, so the marker stays in the cell and the sentence moves.
+        if (d.compressedDay && d.onSiteMin != null) notes.push("overlap *");
         if (d.seventhDay) notes.push("7th day");
         if (notes.length) {
           // the column is narrow and these notes vary in length, so shrink to
@@ -280,6 +312,45 @@ export async function renderCorrected(sheet, opts = {}) {
   text("30-Minute Unpaid Meal Break", L + 278, keyY, { size: 8 });
   text("Hours include paid rest break time.", L + 428, keyY, { size: 7, color: MUTED });
   y -= keyH + 18;
+
+  // ---------- overlapping client bookings ----------
+  // The days marked "overlap *" in the Comments column. Two client bookings run
+  // over each other and QSP credits both in full, so the hours credited exceed
+  // the time the person was actually on site.
+  //
+  // The entitlement is NOT reduced to fit the window. California measures a meal
+  // and rest entitlement on hours worked, and quietly paying less because the
+  // arithmetic looks odd is the move this whole engine exists to avoid. So the
+  // day is stated plainly, above the signature, and a person decides.
+  const overlaps = sheet.days.filter((d) => d.compressedDay && d.onSiteMin != null);
+  if (overlaps.length) {
+    ensure(30 + overlaps.length * 11);
+    // "bookings", NOT "client bookings". The renderer only sees punches, so it
+    // cannot know WHAT overlapped - and on 07/16-07/31 only 2 of 17 were two
+    // clients. The other 15 were a client visit running over travel, training or
+    // admin time. Naming a cause this document cannot verify is how a wage
+    // statement ends up asserting something untrue.
+    text("* Overlapping bookings", L, y, { size: 9.5, f: bold, color: BRAND });
+    y -= 13;
+    y = wrap(
+      page,
+      "On these days two bookings overlap, so more hours are credited than the " +
+      "time between the first and last punch. Both bookings are paid in full, and break " +
+      "premiums are worked out on hours worked.",
+      L, y, R - L, { font, size: 7.5, color: MUTED, leading: 9.5 },
+    );
+    y -= 4;
+    for (const d of overlaps) {
+      ensure(12);
+      text(d.date, L + 8, y, { size: 7.5, f: bold });
+      text(
+        `${f2(d.paidHours)} hrs credited, ${f2(d.onSiteMin / 60)} hrs between first and last punch`,
+        L + 60, y, { size: 7.5 },
+      );
+      y -= 11;
+    }
+    y -= 8;
+  }
 
   // ---------- punch corrections ----------
   // days where a rest break's two times were recorded in reverse AND the
@@ -482,9 +553,18 @@ export async function renderCorrected(sheet, opts = {}) {
   }
   y -= 8;
 
-  // reconciliation line so payroll can tie this back to the QSP export
+  // Reconciliation line so payroll can tie this back to the QSP export.
+  //
+  // This used to say the correction adds paid rest breaks into hours worked.
+  // QSP stopped deducting them on 2026-08-06, so on a current export there is
+  // usually nothing to add and the two figures match - describing a correction
+  // that did not happen is worse than saying nothing. Say what is actually true
+  // of THIS sheet instead.
+  const moved = Math.abs(sheet.totals.paidHours - sheet.totals.rawHours) >= 0.005;
   text(
-    `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Corrected to ${f2(sheet.totals.paidHours)} hrs - paid 10-minute rest breaks are included in hours worked.`,
+    moved
+      ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Corrected to ${f2(sheet.totals.paidHours)} hrs - rest breaks the export left out are paid time and have been added back.`
+      : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export. This sheet corrects break premiums only.`,
     L, y, { size: 6.5, color: MUTED, f: italic },
   );
 
@@ -565,6 +645,32 @@ function movedPairs(was, now) {
 
 // shrink a single line until it fits `maxW`, then clip with an ellipsis if it
 // still doesn't. returns the string and the size to draw it at.
+// which two cells a break's highlight belongs behind.
+//
+// At upload time `b.start` IS the object sitting in `punches`, so identity finds
+// it. A sheet rendered from STORED days has been through JSON, so `b.start` is a
+// copy and identity finds nothing - which silently dropped every meal and rest
+// highlight the moment anyone pressed Recompute (0 of 441 breaks resolved, 54 of
+// 59 sheets), while the colour key underneath carried on explaining colours that
+// were no longer on the page.
+//
+// Matching on value alone is NOT enough: a punch out and the next punch in
+// routinely share a time, so one key matches two different cells - Ruth Delgado
+// Pineda 07/20 has 3:15p twice. A break always spans two ADJACENT punches
+// (parse.js builds it from p[i+1] and p[i+2]), so it is the PAIR that identifies
+// the position, not either punch on its own.
+export function breakCells(punches, at, b) {
+  const byId = [at.get(b.start), at.get(b.end)];
+  if (byId[0] && byId[1]) return byId;
+  const same = (x, z) => x && z && x.min === z.min && x.raw === z.raw;
+  for (let i = 0; i + 1 < punches.length; i++) {
+    if (same(punches[i], b.start) && same(punches[i + 1], b.end)) {
+      return [at.get(punches[i]), at.get(punches[i + 1])];
+    }
+  }
+  return [];
+}
+
 function fitText(str, maxW, font, startSize, minSize) {
   let size = startSize;
   while (size > minSize && font.widthOfTextAtSize(str, size) > maxW) {
