@@ -393,6 +393,22 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             against anything here: people work different hours than they were
             scheduled, and the timesheet is the record we go by.
           </p>
+
+          {/* the three figures above say how well evidenced the premiums are.
+              this is the other question people ask straight afterwards - where
+              they fall, who carries them, and what caused each one. */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+            <p className="text-xs text-muted">
+              Where the {(support.recorded + support.supported + support.unverified).toFixed(2)}{" "}
+              hours fall, who carries them, and the reason behind every one.
+            </p>
+            <Link
+              href={`/portal/admin/timesheets/${batch.id}/penalty-hours`}
+              className="shrink-0 rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+            >
+              View the breakdown →
+            </Link>
+          </div>
         </div>
       )}
 
