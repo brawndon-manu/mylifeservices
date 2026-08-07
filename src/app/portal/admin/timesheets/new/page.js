@@ -18,14 +18,14 @@ const ERRORS = {
   empty: "No employee hours found in that file. Is it the right export?",
   noschedule:
     "The Employee Schedules export is required. It's what corroborates the days nobody clocked, and without it those premium hours have nothing behind them at all.",
-  noclock:
-    "The QSClock Time and Attendance export is required. It's the only file that separates a punch someone clocked from one typed in afterwards, which is what decides whether a premium can be signed off.",
   norests:
-    "The Rest Periods Report is required. It's QSP's own record of which rest breaks were taken, and rest premiums are the bigger half of the total. Without it they're inferred from gaps between punches, which can't tell a break from travel between clients.",
+    "The Rest Periods Report is required. It's the only thing that records whether a rest break was actually taken, and rest premiums are the bigger half of the total. Without it every qualifying day comes back unanswerable.",
   restparse:
     "Couldn't read that as the QSP Rest Periods Report. It needs to be the .xls straight from Reports → Rest Periods Report.",
-  clockparse:
-    "Couldn't read that as the QSClock Time and Attendance report. It needs to be the .xls straight from Scheduling → Reports → Shift Audit, not a re-saved copy.",
+  nopayroll:
+    "The Simple Payroll Processing Report is required. It carries QSP's own regular and overtime totals per person, which is the only way to check the corrected sheets against what payroll already produced.",
+  payrollparse:
+    "Couldn't read that as the QSP Simple Payroll Processing Report. It needs to be the .xls straight from Reports → Payroll Reports → Simple Payroll Processing Report, not a re-saved copy.",
   noblob:
     "File storage isn't configured (BLOB_READ_WRITE_TOKEN is missing), so the generated timesheets couldn't be saved. Nothing was created.",
   blob:
@@ -65,14 +65,16 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
               note="Report type: Employee, and pick the month the pay period falls in."
             />
             <Step
-              name="QSClock Time and Attendance"
-              path="Scheduling → Reports → Shift Audit → QSClock Time and Attendance"
-              what="One row per shift, saying whether it was actually clocked or typed in later."
-            />
-            <Step
               name="Rest Periods Report"
               path="Reports → Rest Periods Report"
-              what="One row per rest break taken, with the time it started and ended."
+              what="One row per rest break taken, with the time it started and ended. The only record that a rest break happened."
+              note="An .xls, not a PDF."
+            />
+            <Step
+              name="Simple Payroll Processing Report"
+              path="Reports → Payroll Reports → Simple Payroll Processing Report"
+              what="One row per employee with QSP's own regular, overtime and double-time totals. What the corrected sheets get checked against."
+              note="An .xls, not a PDF."
             />
           </dl>
           <p className="mt-3 text-amber-700 dark:text-amber-400">
@@ -83,11 +85,11 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
         <div>
           <p className="font-medium text-foreground">What happens on upload</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
-            <li>Each 10-minute rest break becomes <strong>paid</strong> time (QSP leaves it out).</li>
+            <li>Rest breaks are already paid in the export, so hours are taken as QSP reports them.</li>
             <li>30-minute meal breaks stay unpaid.</li>
             <li>A missed meal or rest break adds a 1-hour premium under CA Labor Code 226.7.</li>
             <li>Overtime per California rules, Monday-Sunday workweek.</li>
-            <li>The four exports together decide which premium hours can be stood behind.</li>
+            <li>A break only counts if something recorded it: a meal rostered on the schedule, a rest break in the Rest Periods Report.</li>
             <li>Nothing is emailed yet - you review the name matches first.</li>
           </ul>
         </div>

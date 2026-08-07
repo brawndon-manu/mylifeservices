@@ -27,6 +27,7 @@ export const REQUIRED_DAY_FIELDS = [
   "mealRequired", "mealViolation", "mealMissing", "mealLate", "mealStartedAfterMin",
   "mealCount", "mealScheduled", "mealUnknown",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
+  "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
   // these two travel together and MUST NOT be separated. `printed` is what
   // analyzeDay floors a day at; `repaired` is what exempts a corrected day from
@@ -56,6 +57,17 @@ export function storedDay(d) {
     // what actually credited a break, and what the violation was decided on
     restTaken: d.restTaken ?? 0,
     restSource: d.restSource || "none",
+    // true when NO source could speak to whether a rest break happened, which
+    // since the export set was cut to three reports is most days. Not a
+    // violation and not a clean day: a day nobody can answer. Same shape as
+    // mealScheduled: null - the difference between "no break" and "no record"
+    // is the difference between charging somebody and asking them.
+    restUnknown: d.restUnknown || false,
+    // credited hours exceed the window they sit in, so two client bookings
+    // overlap. the entitlement is still worked out from hours worked; this only
+    // marks the day so somebody looks at it.
+    compressedDay: d.compressedDay || false,
+    onSiteMin: d.onSiteMin ?? null,
     restRequired: d.restRequired,
     mealRequired: d.mealRequired,
     // true = a meal was rostered, false = the schedule covers the day and

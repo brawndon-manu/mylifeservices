@@ -24,6 +24,13 @@
   --faint: #94a3b8;        /* tertiary / labels (slate-400) */
   --accent: #196e93;       /* links + accent text */
   --accent-strong: #0e5379;
+  /* the two premium series, and they mean what the signed timesheet's colour
+     key means: blue is a meal period, yellow is a rest break. Steps validated
+     against both surfaces - on white the yellow sits under 3:1, which is why
+     every bar that uses it carries a visible label rather than relying on the
+     fill alone. */
+  --pen-meal: #2a78d6;
+  --pen-rest: #eda100;
 }
 
 /* Dim: soft, layered dark grays. the default dark appearance, surfaces step
@@ -40,6 +47,9 @@
   --faint: #6f7682;
   --accent: #38b6ef;       /* lightened so links read on dark */
   --accent-strong: #7dd3fc;
+  /* the same two hues, stepped for a dark surface rather than flipped */
+  --pen-meal: #3987e5;
+  --pen-rest: #c98500;
 }
 
 /* Night: pure OLED black. layered on top of .dark, overriding just the

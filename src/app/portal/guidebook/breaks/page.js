@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/current-user";
+import { preferredName } from "@/lib/contacts";
 import { sharePath } from "@/lib/guidebook";
 import BackLink from "@/components/BackLink";
 import ShareMenu from "@/components/ShareMenu";
@@ -14,12 +15,13 @@ export const metadata = {
 // says something different depending on who is reading it would be worse than
 // having no page.
 export default async function BreaksPage() {
-  await getCurrentUser();
+  const user = await getCurrentUser();
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-10 sm:py-14">
       <BackLink href="/portal/guidebook">Back to Employee Guidebook</BackLink>
       <BreaksContent
+        employeeName={preferredName(user) || undefined}
         action={
           <ShareMenu path={sharePath("breaks")} label="Share link" scope="public" />
         }

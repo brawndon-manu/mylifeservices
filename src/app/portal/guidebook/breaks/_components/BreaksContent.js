@@ -8,6 +8,7 @@
 // `action` is the slot the share button sits in. The public copy passes
 // nothing, because there is nothing left to share from there.
 import { QspPunch, QspSchedule } from "./QspScreens";
+import PracticeApp from "./PracticeApp";
 
 function SectionHead({ n, title, tag, tagTone }) {
   return (
@@ -29,7 +30,10 @@ function SectionHead({ n, title, tag, tagTone }) {
   );
 }
 
-export default function BreaksContent({ action = null }) {
+// `employeeName` is whoever is signed in, so the practice app shows their own
+// name the way the real one does. The public copy has no session, so it falls
+// back to a placeholder rather than putting a stranger's name on the screen.
+export default function BreaksContent({ action = null, employeeName = "Your Name" }) {
   return (
     <>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
@@ -432,6 +436,18 @@ export default function BreaksContent({ action = null }) {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* 5. practice */}
+      <div className="mt-6 rounded-xl border border-border bg-surface p-6 shadow-sm">
+        <SectionHead n="5" title="Try it yourself" />
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted">
+          Most people record their breaks on their phone, so this is the QSP app
+          as it looks there. Work through a full 8 hour day and put in a rest
+          period the way you would on a normal shift. Nothing here is real and
+          nothing is saved.
+        </p>
+        <PracticeApp employeeName={employeeName} />
       </div>
 
       <p className="mt-8 border-t border-border pt-5 text-xs leading-relaxed text-faint">

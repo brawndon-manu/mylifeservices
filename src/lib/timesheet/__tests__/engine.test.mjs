@@ -28,6 +28,22 @@ import { matchEmployee } from "../match.js";
 import { indexByAccount, lookupAcross, suggestAlias } from "../identity.js";
 import { buildEmployeeChecks, checkSummaryLine } from "../employee-checks.js";
 import { storedDay, REQUIRED_DAY_FIELDS } from "../stored.js";
+import { renderCorrected, breakCells } from "../render.js";
+
+// the text a rendered sheet actually puts on the page, one drawn string per
+// line. asserting on a figure cannot see a document that prints it truncated.
+async function pdfWords(bytes) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(bytes), useSystemFonts: false, isEvalSupported: false,
+  }).promise;
+  const out = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const content = await (await doc.getPage(i)).getTextContent();
+    for (const item of content.items) if (item.str?.trim()) out.push(item.str.trim());
+  }
+  return out.join("\n");
+}
 
 // minutes from midnight, the way the parser holds a punch
 const at = (h, m = 0) => ({ min: h * 60 + m });
@@ -989,6 +1005,61 @@ test("a repaired day stays exempt from the floor across the round trip", () => {
   assert.equal(again.paidHours, analyzed.paidHours, "the repaired figure survives intact");
 });
 
+// Two client bookings can overlap, and QSP credits both in full. Delgado Pineda
+// 07/19: 12:10p-3:27p with one client and 12:30p-4:30p with another, 7.28 hours
+// credited inside a 4.33 hour window. The entitlement still follows hours
+// worked, because California measures it that way and paying less on a hunch is
+// the thing this engine exists to avoid. It gets flagged so a person looks.
+test("a day crediting more hours than the window it sits in is flagged", () => {
+  // 12:10p-3:27p and 12:30p-4:30p, exactly the real case
+  const d = analyzeDay({
+    date: "07/19/26",
+    punches: [{ min: 730 }, { min: 927 }, { min: 750 }, { min: 990 }],
+    printed: null,
+  });
+  assert.equal(d.compressedDay, true, "437 minutes credited in a 260 minute window");
+  assert.equal(d.onSiteMin, 260, "12:10p to 4:30p");
+  assert.equal(d.restRequired, 2, "entitlement still follows hours worked, not the window");
+});
+
+test("an ordinary day is not flagged as compressed", () => {
+  const d = analyzeDay({
+    date: "07/20/26",
+    punches: [at(8), at(12), at(12, 30), at(16, 30)],
+    printed: null,
+  });
+  assert.equal(d.compressedDay, false);
+  assert.equal(d.onSiteMin, 510, "8:00a to 4:30p");
+});
+
+// The export set was cut to three reports on 2026-08-06, taking the Rest
+// Periods Report with it, and QSP stopped punching rest breaks at the same
+// time. Nothing left can say whether a break happened. Charging every one of
+// those days would have taken the period from 410 rest premium hours to 961.
+test("an export that cannot record rests marks the day unknown, not owed", () => {
+  const punches = [at(8), at(12), at(12, 30), at(16, 30)]; // 8 hrs, two rests owed
+  const cannot = analyzeDay({ date: "07/20/26", punches, printed: null, restsAlreadyPaid: true, restSourceAvailable: false });
+  assert.equal(cannot.restRequired, 2);
+  assert.equal(cannot.restUnknown, true, "no source can speak to it");
+  assert.equal(cannot.restViolation, false, "unanswerable is not the same as owed");
+
+  // and a batch where the report WAS collected but does not cover this person
+  // is not unanswerable - it is a day with no record, which is a premium
+  const uncovered = analyzeDay({ date: "07/20/26", punches, printed: null, restsAlreadyPaid: true, restSourceAvailable: true });
+  assert.equal(uncovered.restUnknown, false, "the report exists, it just does not cover them");
+  assert.equal(uncovered.restViolation, true, "staff are expected to punch, so it stands");
+});
+
+// QSP stopped deducting rest breaks on 2026-08-06. Adding them back on top of
+// an export that already pays them was worth +23.58 hours over 07/16-07/31.
+test("rest time is not added back to an export that already pays it", () => {
+  const punches = [at(8), at(10), at(10, 10), at(12)]; // a ten punched out
+  const old = analyzeDay({ date: "07/20/26", punches, printed: null });
+  const now = analyzeDay({ date: "07/20/26", punches, printed: null, restsAlreadyPaid: true });
+  assert.ok(old.paidHours > now.paidHours, "the old export needs the break added back");
+  assert.equal(Math.round((old.paidHours - now.paidHours) * 60), 10, "exactly the ten minutes");
+});
+
 test("an unknown meal day stores null, not false", () => {
   // the difference between "no meal was rostered" and "we have no schedule" is
   // the difference between charging somebody and asking them
@@ -1649,4 +1720,91 @@ test("hours are never touched by the rest report", () => {
   }
   assert.equal(a.restViolation, true);
   assert.equal(c.restViolation, false, "only the violation moves");
+});
+
+// ---- the signed document, rendered ----
+//
+// Both of these are here because the build, the linter and 111 tests passed
+// straight through them. Neither is visible in a figure; both are visible the
+// moment you render a sheet and look at it.
+
+test("break highlighting survives a JSON round trip", () => {
+  // The renderer used to find a break's cells by OBJECT IDENTITY. At upload time
+  // b.start IS the punch in punches[], so it worked. Every render from STORED
+  // days goes through JSON first, so b.start is a COPY - and recomputeSheet
+  // spreads stored days rather than re-running analyzeDay. Measured on the live
+  // batch: 0 of 441 breaks resolved, 54 of 59 sheets lost every highlight, while
+  // the colour key underneath carried on explaining colours that were gone.
+  const punches = [at(8), at(11), at(11, 10), at(14)];
+  const day = analyzeDay({ date: "07/20/26", punches, printed: null, restRecorded: 1 });
+  const rest = day.breaks.find((b) => b.kind === "rest");
+  assert.ok(rest, "the 10 minute gap should classify as a rest break");
+
+  const cellsOf = (d, b) => {
+    const at_ = new Map();
+    d.punches.forEach((p, i) => at_.set(p, { row: Math.floor(i / 6), col: i % 6 }));
+    return breakCells(d.punches, at_, b);
+  };
+
+  const live = cellsOf(day, rest);
+  assert.equal(live.length, 2, "identity still resolves at upload time");
+
+  const stored = JSON.parse(JSON.stringify(day));
+  const storedRest = stored.breaks.find((b) => b.kind === "rest");
+  const after = cellsOf(stored, storedRest);
+  assert.equal(after.length, 2, "a stored day must still find both cells");
+  assert.deepEqual(after, live, "and land them in exactly the same two cells");
+});
+
+test("a repeated punch time does not send the highlight to the wrong cell", () => {
+  // Value matching alone is not enough. A punch out and the next punch in
+  // routinely share a time - Ruth Delgado Pineda 07/20 has 3:15p twice - so one
+  // key matches two different cells. The break spans two ADJACENT punches, and
+  // the pair is what identifies the position.
+  const punches = [
+    { min: 660, raw: "11a" }, { min: 915, raw: "3:15p" },
+    { min: 915, raw: "3:15p" }, { min: 925, raw: "3:25p" },
+    { min: 930, raw: "3:30p" }, { min: 1110, raw: "6:30p" },
+  ];
+  const at_ = new Map();
+  punches.forEach((p, i) => at_.set(p, { row: 0, col: i }));
+
+  // the real break here is the 3:25p -> 3:30p gap, punches 3 and 4
+  const b = { kind: "rest", start: { min: 925, raw: "3:25p" }, end: { min: 930, raw: "3:30p" } };
+  const cells = breakCells(punches, at_, b);
+  assert.deepEqual(cells.map((c) => c.col), [3, 4], "the adjacent pair pins the columns");
+
+  // and the ambiguous one still lands on the FIRST 3:15p, not an arbitrary one
+  const dup = { kind: "meal", start: { min: 915, raw: "3:15p" }, end: { min: 915, raw: "3:15p" } };
+  assert.deepEqual(breakCells(punches, at_, dup).map((c) => c.col), [1, 2]);
+});
+
+test("an overlapping-clients day says so in full, not truncated", async () => {
+  // 7.28 hours credited inside a 4.33 hour window, from the real Delgado Pineda
+  // 07/19 shape. The note used to be built into the Comments column, where it
+  // needed 117pt of a 72pt column and was clipped to "overlappi…" on 15 of the
+  // 16 days that carry it - the disclosure the whole "flag it, never adjust it"
+  // decision rests on, cut off the document people sign.
+  const punches = [
+    { min: 730, raw: "12:10p" }, { min: 927, raw: "3:27p" },
+    { min: 750, raw: "12:30p" }, { min: 990, raw: "4:30p" },
+  ];
+  const day = analyzeDay({ date: "07/19/26", punches, printed: null, mealScheduled: false });
+  assert.equal(day.compressedDay, true, "hours credited exceed the window they sit in");
+
+  const sheet = analyzeTimesheet({
+    employee: "Test, Person",
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days: [{ date: "07/19/26", punches, printed: null, mealScheduled: false }],
+  });
+  const { bytes } = await renderCorrected(sheet, { printedBy: "Test", generatedOn: "8/6/2026" });
+  const words = await pdfWords(bytes);
+
+  assert.ok(words.includes("overlap *"), "the cell carries a marker that fits");
+  assert.ok(!words.includes("overlappi…"), "and nothing is left truncated");
+  assert.ok(
+    words.includes("* Overlapping bookings"),
+    "the sentence gets its own section under the table",
+  );
+  assert.match(words, /hrs credited, 4\.33 hrs between first and last punch/);
 });

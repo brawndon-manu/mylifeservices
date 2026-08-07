@@ -51,7 +51,7 @@ export default function UploadForm({ action, aside }) {
   );
   const [name, setName] = useState("");
   const [schedName, setSchedName] = useState("");
-  const [clockName, setClockName] = useState("");
+  const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
   const [busy, setBusy] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -72,7 +72,7 @@ export default function UploadForm({ action, aside }) {
   const sourceFiles = [
     { role: "Timesheet", kind: "pdf", name },
     { role: "Schedule", kind: "pdf", name: schedName },
-    { role: "Clock", kind: "xls", name: clockName },
+    { role: "Payroll", kind: "xls", name: payrollName },
     { role: "Rest breaks", kind: "xls", name: restsName },
   ];
 
@@ -87,7 +87,7 @@ export default function UploadForm({ action, aside }) {
   // again, this is what will disagree and show it
   function onSubmit(e) {
     const f = formRef.current;
-    for (const [id, what] of [["schedule", "Employee Schedules"], ["clock", "QSClock Time and Attendance"], ["rests", "Rest Periods"]]) {
+    for (const [id, what] of [["schedule", "Employee Schedules"], ["payroll", "Simple Payroll Processing Report"], ["rests", "Rest Periods Report"]]) {
       const el = f?.querySelector(`#${id}`);
       if (el && el.files.length === 0) {
         e.preventDefault();
@@ -143,11 +143,11 @@ export default function UploadForm({ action, aside }) {
       />
 
       <FileRow
-        id="clock"
-        label="QSClock Time and Attendance report (.xls)"
+        id="payroll"
+        label="Simple Payroll Processing Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
-        selected={clockName}
-        onPick={(e) => setClockName(e.target.files?.[0]?.name || "")}
+        selected={payrollName}
+        onPick={(e) => setPayrollName(e.target.files?.[0]?.name || "")}
       />
 
       <FileRow

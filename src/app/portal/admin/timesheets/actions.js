@@ -17,6 +17,7 @@ import { storedDay } from "@/lib/timesheet/stored";
 import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
+import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
@@ -67,18 +68,27 @@ export async function uploadBatch(formData) {
   const hasSched = schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0;
   if (!hasSched) redirect("/portal/admin/timesheets/new?error=noschedule");
 
-  const clockFile = formData.get("clock");
-  const hasClock = clockFile && typeof clockFile === "object" && "size" in clockFile && clockFile.size > 0;
-  if (!hasClock) redirect("/portal/admin/timesheets/new?error=noclock");
+  // The Simple Payroll Processing Report: QSP's OWN regular, overtime and
+  // double-time totals per employee. It is what settles a disagreement about
+  // overtime without anybody re-reading a PDF, and it reconciles with the
+  // timesheet exactly - so a mismatch means one of the two files is from a
+  // different pull, which is worth knowing before 59 sheets go out.
+  const payFile = formData.get("payroll");
+  const hasPay = payFile && typeof payFile === "object" && "size" in payFile && payFile.size > 0;
+  if (!hasPay) redirect("/portal/admin/timesheets/new?error=nopayroll");
 
-  // the Rest Periods Report decides whether a rest break was actually taken.
-  // Rest premiums are the bigger half of the total (356 of 622 last period) and
-  // the schedule carries no rest periods at all, so without this they rest
-  // entirely on gaps between punches - which cannot tell a break from travel
-  // between two clients.
+  // The Rest Periods Report is back. It was briefly dropped with the move to
+  // three reports, and that took every rest premium with it: nothing else
+  // records a rest break, so all 549 qualifying days came back unanswerable.
+  // It is the only definitive source for the bigger half of the premium total.
   const restFile = formData.get("rests");
   const hasRests = restFile && typeof restFile === "object" && "size" in restFile && restFile.size > 0;
   if (!hasRests) redirect("/portal/admin/timesheets/new?error=norests");
+
+  // QSClock stays out for now - the decision was "hold, we may add it later".
+  // null means no punch is graded clocked-vs-typed, which every reader below
+  // already handles.
+  const clockFile = null;
 
   // the browser made this id up before submitting, so it can poll for progress
   // while this action runs. namespaced under the user inside progressKey - it is
@@ -240,42 +250,16 @@ export async function uploadBatch(formData) {
     }
   }
 
-  // the clock export. unlike the other two this one is REFUSED if it won't
-  // parse: it's required precisely so every premium can be graded, and a batch
-  // that silently lost it would grade everything as unevidenced and look like a
-  // data disaster rather than a missing file.
+  // QSClock and the Rest Periods Report were dropped on 2026-08-06. Both stay
+  // null, and every reader below already handles that: `clocks` null means no
+  // premium gets graded clocked-vs-typed, `rests` null means nothing can say a
+  // rest break happened, which analyzeDay turns into restUnknown rather than
+  // charging for it.
   let clocks = null;
   let clockUrl = null;
-  {
-    P.stage = "clock";
-    await setProgress(prog, P);
-    const cbytes = new Uint8Array(await clockFile.arrayBuffer());
-    try {
-      const key = `timesheets/clock/${randomBytes(10).toString("hex")}.xls`;
-      const blob = await putBlob(key, Buffer.from(cbytes), {
-        access: "public",
-        contentType: "application/vnd.ms-excel",
-      });
-      clockUrl = blob.url;
-    } catch (e) {
-      console.error("clock source upload failed:", e);
-    }
-    try {
-      clocks = parseClockReport(Buffer.from(cbytes));
-      console.log(`clock parsed: ${clocks.size} employees`);
-    } catch (e) {
-      console.error("clock parse failed:", e);
-      redirect(
-        `/portal/admin/timesheets/new?error=clockparse&why=${encodeURIComponent(
-          (e?.message || String(e)).slice(0, 160),
-        )}`,
-      );
-    }
-  }
 
-  // the rest report. same treatment as the clock export: refused rather than
-  // skipped, because a batch missing it would silently fall back to the weaker
-  // punch-gap guess with nothing on screen to say so.
+  // the rest report. refused rather than skipped: a batch missing it silently
+  // loses every rest premium, and nothing on screen would say why.
   let rests = null;
   let restsUrl = null;
   let restsMalformed = [];
@@ -307,6 +291,45 @@ export async function uploadBatch(formData) {
     }
   }
 
+  // The Simple Payroll Processing Report. Refused rather than skipped, the same
+  // way the clock export used to be: it is the only thing that can say what QSP
+  // itself thinks each person is owed, and a batch generated without it is a
+  // batch nobody can check.
+  let payroll = null;
+  let payrollUrl = null;
+  let payrollSummary = null;
+  {
+    P.stage = "payroll";
+    await setProgress(prog, P);
+    const pbytes = new Uint8Array(await payFile.arrayBuffer());
+    try {
+      const key = `timesheets/payroll/${randomBytes(10).toString("hex")}.xls`;
+      const blob = await putBlob(key, Buffer.from(pbytes), {
+        access: "public",
+        contentType: "application/vnd.ms-excel",
+      });
+      payrollUrl = blob.url;
+    } catch (e) {
+      console.error("payroll report upload failed:", e);
+    }
+    try {
+      payroll = parsePayrollReport(Buffer.from(pbytes));
+      payrollSummary = payrollTotals(payroll);
+      console.log(
+        `payroll parsed: ${payroll.size} employees, ` +
+          `${payrollSummary.regular.toFixed(2)} reg + ${payrollSummary.overtime.toFixed(2)} ot ` +
+          `= ${payrollSummary.paid.toFixed(2)} paid`,
+      );
+    } catch (e) {
+      console.error("payroll parse failed:", e);
+      redirect(
+        `/portal/admin/timesheets/new?error=payrollparse&why=${encodeURIComponent(
+          (e?.message || String(e)).slice(0, 160),
+        )}`,
+      );
+    }
+  }
+
   const staff = await prisma.user.findMany({
     where: { deactivatedAt: null },
     select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
@@ -324,6 +347,8 @@ export async function uploadBatch(formData) {
       clockName: clockUrl ? clockFile?.name || null : null,
       restsUrl,
       restsName: restsUrl ? restFile?.name || null : null,
+      payrollUrl,
+      payrollName: payrollUrl ? payFile?.name || null : null,
       testMode: !isLiveSend(),
       uploadedById: user.id,
     },
@@ -398,8 +423,19 @@ export async function uploadBatch(formData) {
         const sd = schedDay.get(d.date);
         return {
           ...d,
-          // no rest report coverage means no record, which means none taken
+          // no rest report coverage means no record. Since 2026-08-06 there is
+          // no rest report at all, so this is undefined on every day and the
+          // day comes back restUnknown instead of owing a premium.
           restRecorded: rest ? rest.byDate[d.date]?.taken ?? 0 : undefined,
+          // QSP stopped deducting rest breaks on 2026-08-06: they sit inside the
+          // work segments already, so adding them back would pay them twice
+          // (+23.58 hours over 07/16-07/31). This is about HOURS only. Whether a
+          // break happened is a separate question, answered by the rest report.
+          restsAlreadyPaid: true,
+          // whether a rest source was collected AT ALL. Not the same as whether
+          // it covers this person: uncovered means no break was recorded, which
+          // is a premium. Only a batch with no report at all is unanswerable.
+          restSourceAvailable: !!rests,
           // true = a "-Meal Break" block was rostered, false = the schedule
           // covers the day and rosters none, null = no schedule for the day,
           // which is unanswerable and goes to a person instead of being charged
