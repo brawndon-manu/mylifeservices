@@ -21,6 +21,148 @@ export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
+// Two client bookings that overlap in time are not a punch error. QSP writes
+// them as one run of punches, so the second booking's start lands before the
+// first one's end and the engine reads a break running backwards.
+//
+// On 07/16-07/31 EVERY punch issue in the batch was this - 17 of 17 - and every
+// one of them offered a "repair" that cut hours, 23.59 in total. Delgado Pineda
+// 07/19 proposed 7.28 down to 1.38 on a day the schedule confirms at 7.28.
+// None was applied, because a repair has to be confirmed by the schedule first,
+// but they were being shown as though they had been.
+const RANGE = /^(\d{1,2}(?::\d{2})?[ap])-(\d{1,2}(?::\d{2})?[ap])/i;
+function toMin(t) {
+  const m = /^(\d{1,2})(?::(\d{2}))?([ap])$/i.exec(t);
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  if (m[3].toLowerCase() === "p") h += 12;
+  return h * 60 + Number(m[2] || 0);
+}
+// What a scheduled block actually IS, read off the text QSP prints:
+// "10:30a-2:06p Duff, E-ILS Service (3:36)" is a client visit, "2p-2:30p -ILS
+// Travel(0:30)" is not.
+//
+// This matters because the row used to say "two client bookings overlap" on
+// every one of these, and on 07/16-07/31 that was true of exactly 2 of 17. The
+// other 15 are a client visit running over travel (12), training (2), admin (1)
+// or misc. Telling somebody two clients were double-booked when one of them was
+// the drive between them sends them looking for a scheduling problem that isn't
+// there.
+function blockKind(text) {
+  const m = /^\s*(.*?)-(?:ILS\s*)?([A-Za-z ]+?)\s*\(/.exec(String(text || "").replace(RANGE, ""));
+  if (!m) return "another scheduled block";
+  const client = m[1].trim();
+  const type = m[2].trim().toLowerCase();
+  if (type === "service") return client ? "a client booking" : "a service block";
+  if (type === "travel") return "a travel block";
+  if (type === "training") return "a training block";
+  if (type === "admin") return "an admin block";
+  if (type === "misc") return "a miscellaneous block";
+  if (type === "meal break") return "a meal break";
+  return "another scheduled block";
+}
+
+// null when nothing overlaps; otherwise the phrase naming the two blocks that do
+function overlapInfo(shifts) {
+  const r = (shifts || [])
+    .map((s) => {
+      const m = RANGE.exec(String(s.text || "").trim());
+      return m ? { a: toMin(m[1]), b: toMin(m[2]), text: s.text } : null;
+    })
+    .filter((x) => x && x.a != null && x.b != null)
+    .sort((x, y) => x.a - y.a);
+
+  for (let i = 1; i < r.length; i++) {
+    if (r[i].a >= r[i - 1].b) continue;
+    const one = blockKind(r[i - 1].text);
+    const two = blockKind(r[i].text);
+    if (one === two) {
+      const plural =
+        one === "another scheduled block" ? "scheduled blocks" : `${one.replace(/^an? /, "")}s`;
+      return { subject: `Two ${plural}` };
+    }
+    return { subject: `${one.charAt(0).toUpperCase()}${one.slice(1)} and ${two}` };
+  }
+  return null;
+}
+
+// The findings that are not about a single day, so they get no row.
+//
+// Every figure here is a query over what the batch already stored - nothing is
+// re-parsed and no source file is fetched. That is only possible because
+// `day.printed` carries QSP's own printed overtime alongside its daily total;
+// summing it per person reproduces the payroll report's overtime column exactly
+// (verified against all four disagreements on 07/16-07/31), which is what
+// TASKS.md #69 was asking for.
+function batchNotes(sheets) {
+  const out = [];
+
+  // 1. people the Rest Periods Report never mentions. Under the rule that a
+  // break only counts if something recorded it, every qualifying day of theirs
+  // owes a premium. It is the single biggest assumption in the period's total
+  // and it is the one David will ask about, so it does not get to stay implicit.
+  let noSourceDays = 0;
+  const noSourcePeople = new Set();
+  for (const t of sheets) {
+    for (const d of t.data?.days || []) {
+      if (d.restViolation && d.restSource === "none") {
+        noSourceDays++;
+        noSourcePeople.add(t.sourceName);
+      }
+    }
+  }
+  if (noSourceDays) {
+    out.push({
+      n: String(noSourceDays),
+      unit: noSourceDays === 1 ? "hour" : "hours",
+      head: `${noSourcePeople.size} ${noSourcePeople.size === 1 ? "person is" : "people are"} not in the Rest Periods Report at all`,
+      why: "Nothing recorded a break for them, so every qualifying day is charged a rest premium. One flag would move all of it either way, so it is a decision rather than a defect.",
+    });
+  }
+
+  // 2. our regular/overtime split against QSP's own printed overtime. The TOTAL
+  // agrees in every case - this is only about which side of the line the hours
+  // fall, which is what #67 has been stuck on.
+  const otOff = [];
+  for (const t of sheets) {
+    const printedOt = (t.data?.days || []).reduce((n, d) => n + (d.printed?.overtime || 0), 0);
+    if (Math.abs(printedOt - (t.otHours ?? 0)) > 0.03) {
+      otOff.push({ name: t.sourceName, ours: t.otHours ?? 0, qsp: printedOt });
+    }
+  }
+  if (otOff.length) {
+    const gap = otOff.reduce((n, x) => n + Math.abs(x.qsp - x.ours), 0);
+    out.push({
+      n: gap.toFixed(2),
+      unit: "hours",
+      head: `${otOff.length} ${otOff.length === 1 ? "person's" : "people's"} overtime split disagrees with what QSP printed`,
+      why:
+        otOff
+          .map((x) => `${x.name.split(",")[0]} ${f2(x.ours)} against ${f2(x.qsp)}`)
+          .join(", ") + ". The total hours agree in every case; only the split between regular and overtime differs.",
+    });
+  }
+
+  // 3. a person QSP spells differently across its own exports. Applied, and said
+  // out loud - a 50% link must never read as a fact.
+  const aliases = [];
+  for (const t of sheets) {
+    for (const [report, v] of Object.entries(t.data?.premiumSupport?.readAs || {})) {
+      if (v && !v.exact) aliases.push(`${t.sourceName} reads "${v.name}" on the ${report}`);
+    }
+  }
+  if (aliases.length) {
+    out.push({
+      n: String(aliases.length),
+      unit: aliases.length === 1 ? "name" : "names",
+      head: "A name is spelled differently across the exports",
+      why: `${aliases.join("; ")}. Matched on the portal account rather than by comparing the exports to each other, applied, and shown rather than silently substituted.`,
+    });
+  }
+
+  return out;
+}
+
 // One row per DAY, not per person. This screen used to be a card per employee
 // with every flag inside it at equal weight, so on this period the 3 days that
 // actually need somebody sat inside 55 that mostly do not. What a person
@@ -29,8 +171,25 @@ const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 //
 // Every headline carries a figure AND what is known about it. "reads 9.00 hrs"
 // on its own invites the obvious question: as opposed to what?
-function describePunchRow(p) {
+function describePunchRow(p, ctx = {}) {
   const t = p.say?.tone;
+
+  // an overlap the schedule accounts for is not a problem with the punches
+  if (ctx.overlapping) {
+    const agrees = ctx.scheduledHours != null && Math.abs((ctx.paidHours ?? 0) - ctx.scheduledHours) < 0.05;
+    return {
+      // NOT "settled". The figures are right, but "no action" is exactly what
+      // this is not - two bookings billed over the top of each other is a thing
+      // somebody should know about, and filing it under settled buried it.
+      group: "anomaly",
+      head: `${f2(p.hoursNow)} hrs${agrees ? ", confirmed" : ""}`,
+      tone: agrees ? "text-emerald-700 dark:text-emerald-400" : "text-muted",
+      lead: agrees
+        ? `${ctx.overlapping.subject} overlap in time, which QSP writes as one run of punches, so one reads as a break running backwards. It is not. The schedule has both and they come to ${f2(ctx.scheduledHours)} hrs, which is what this day pays. Nothing to do.`
+        : `${ctx.overlapping.subject} overlap in time, so one reads as a break running backwards. That part is expected. The schedule comes to ${f2(ctx.scheduledHours)} hrs against the ${f2(p.hoursNow)} paid here, so this one is worth opening.`,
+    };
+  }
+
   if (t === "human") {
     return {
       group: "decide",
@@ -57,11 +216,18 @@ function describePunchRow(p) {
         "A repair is available and it moves neither the hours nor the premiums, so nothing on this sheet turns on it. Worth correcting in QSP, but there is nothing to decide.",
     };
   }
+  // A SUGGESTION, not something that happened. This said "Repaired... which is
+  // the only reason it was applied", which was untrue on every count and was
+  // inviting somebody to accept a cut of nearly six hours.
+  const applied = !!ctx.wasApplied;
+  const cuts = (p.say.hours ?? 0) < (p.say.was ?? 0) - 0.005;
   return {
     group: "settled",
-    head: `${f2(p.say.was)} → ${f2(p.say.hours)} hrs`,
-    tone: "text-emerald-700 dark:text-emerald-400",
-    lead: `Repaired: ${(p.say.applied || []).join("; ") || "punches reordered"}. The schedule agrees with the repaired figure, which is the only reason it was applied.`,
+    head: applied ? `${f2(p.say.was)} → ${f2(p.say.hours)} hrs` : `${f2(p.hoursNow)} hrs as it stands`,
+    tone: applied ? "text-emerald-700 dark:text-emerald-400" : "text-muted",
+    lead: applied
+      ? `Repaired: ${(p.say.applied || []).join("; ") || "punches reordered"}. Applied because the schedule independently agrees with the repaired figure.`
+      : `A possible repair was found (${(p.say.applied || []).join("; ") || "punches reordered"}). It would make the day ${f2(p.say.hours)} hrs instead of ${f2(p.say.was)}${cuts ? ", which is less" : ""}. It has NOT been applied and nothing here has changed the pay.`,
   };
 }
 
@@ -128,15 +294,32 @@ export default async function ChecksPage({ params }) {
     };
 
     for (const p of t.data?.punchIssues || []) {
-      const withSay = { ...p, say: describePunchIssue(p, scheduledPaidHours(byDate[p.date])) };
-      entries.push({ ...common, kind: "punch", date: p.date, p: withSay, d: describePunchRow(withSay) });
+      const schedDay = byDate[p.date];
+      const withSay = { ...p, say: describePunchIssue(p, scheduledPaidHours(schedDay)) };
+      entries.push({
+        ...common,
+        kind: "punch",
+        date: p.date,
+        p: withSay,
+        overlapping: !!overlapInfo(schedDay?.shifts),
+        d: describePunchRow(withSay, {
+          overlapping: overlapInfo(schedDay?.shifts),
+          scheduledHours: scheduledPaidHours(schedDay),
+          paidHours: common.dayHours[p.date],
+          // a repair only counts as applied if the stored day actually moved to it
+          wasApplied:
+            withSay.say?.hours != null &&
+            common.dayHours[p.date] != null &&
+            Math.abs(common.dayHours[p.date] - withSay.say.hours) < 0.005,
+        }),
+      });
     }
     for (const f of sched.flagged || []) {
       entries.push({ ...common, kind: "flag", date: f.date, f, d: describeFlagRow(f) });
     }
   }
 
-  const ORDER = { decide: 0, unworked: 1, settled: 2 };
+  const ORDER = { decide: 0, unworked: 1, anomaly: 2, settled: 3 };
   entries.sort(
     (a, b) =>
       ORDER[a.d.group] - ORDER[b.d.group] ||
@@ -144,9 +327,11 @@ export default async function ChecksPage({ params }) {
       String(a.date).localeCompare(String(b.date)),
   );
 
-  const counts = { decide: 0, unworked: 0, settled: 0 };
+  const counts = { decide: 0, unworked: 0, anomaly: 0, settled: 0 };
   for (const e of entries) counts[e.d.group]++;
   const needsPerson = counts.decide + counts.unworked;
+
+  const notes = batchNotes(batch.timesheets);
 
   // the recompute prompt belongs to a SHEET, not a day, so it rides on the
   // first row that sheet contributes rather than repeating on every one
@@ -203,7 +388,7 @@ export default async function ChecksPage({ params }) {
             : " no schedule was provided to compare against."}
         </p>
       ) : (
-        <ChecksFilter counts={counts} groups={entries.map((e) => e.d.group)}>
+        <ChecksFilter counts={counts} groups={entries.map((e) => e.d.group)} notes={notes}>
           {entries.map((e) => (
             <div
               key={`${e.timesheetId}-${e.kind}-${e.date}`}
@@ -247,7 +432,19 @@ export default async function ChecksPage({ params }) {
                       <p className="mt-2 font-mono text-xs text-muted">
                         QSP has: {e.p.shownPunches.join("  ")}
                       </p>
-                      {e.p.suggestion && (
+                      {/* No "Likely" on a day the schedule explains as two
+                          overlapping bookings. The suggester only knows three
+                          shapes, and on this day it fires the reversed-break
+                          rule - which assumes the four times are ONE shift with
+                          a break in the middle. They are not: they are two jobs
+                          that overlap. Delgado Pineda 07/19 came out as 7.28 ->
+                          1.38, deleting 5.90 paid hours on a day the schedule
+                          independently confirms at 7.28. It was never applied,
+                          because a repair has to be schedule-confirmed first -
+                          but printing it in the affirmative colour directly
+                          under a headline that says "It is not" tells the
+                          reader to believe something the row has just denied. */}
+                      {e.p.suggestion && !e.overlapping && (
                         <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">
                           Likely: {e.p.suggestion.punches.join("  ")}
                         </p>
