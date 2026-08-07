@@ -305,8 +305,21 @@ export function analyzeDay(day) {
   // what QSP printed for this day, if we have it
   const printedDailyForFloor = day.printed?.daily ?? null;
 
-  // paid time = time on the clock + the paid rest breaks. meal stays unpaid.
-  const paidMin = workedMin + restMin;
+  // Paid time = time on the clock, plus any rest break QSP punched OUT of it.
+  //
+  // On 2026-08-06 QSP stopped deducting rest breaks: they are simply no longer
+  // punched, so they sit inside the work segments and are already paid. Adding
+  // them back on top would pay them twice - measured at +23.58 hours across the
+  // 07/16-07/31 period, on a total the timesheet and the payroll report agree on
+  // to the penny (4049.41).
+  //
+  // `restsArePaidBySource` says the export already pays them. It is derived, not
+  // configured: if no rest break was punched out on the day, there is nothing to
+  // add back and the sum is the same either way. The flag exists so the intent
+  // is legible rather than an accident of the arithmetic.
+  const restsArePaidBySource = day.restsAlreadyPaid === true;
+  const restMinToAddBack = restsArePaidBySource ? 0 : restMin;
+  const paidMin = workedMin + restMinToAddBack;
   // the correction only ever ADDS unpaid rest time back, so the corrected hours
   // must never come out below what payroll already exported. QSP rounds each
   // punch segment its own way, which can leave our exact figure a hundredth or
@@ -325,6 +338,24 @@ export function analyzeDay(day) {
     floorAt !== null && computedPaidHours < floorAt ? floorAt : computedPaidHours;
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
+
+  // Hours credited against time actually on site.
+  //
+  // Two client bookings can overlap, and QSP credits both in full: Delgado
+  // Pineda 07/19 is 7.28 hours inside a window running 12:10p to 4:30p, which is
+  // 4.33 hours. Flores 07/26 is 7.07 in 4.07. Break entitlement is worked out
+  // from hours worked, so a compressed day can earn a second rest period and a
+  // meal that nobody could physically have taken in the time available.
+  //
+  // The entitlement is NOT adjusted here. California measures it on hours
+  // worked, and quietly paying less because the arithmetic looks odd is exactly
+  // the move this engine exists to avoid. It is flagged instead, so a person
+  // looks: 16 such days on 07/16-07/31, 4 of them gaining a rest period and 3
+  // gaining a meal.
+  const firstPunch = p.length ? p[0].min : null;
+  const lastPunch = p.length ? p[p.length - 1].min : null;
+  const onSiteMin = firstPunch != null && lastPunch != null ? lastPunch - firstPunch : null;
+  const compressedDay = onSiteMin != null && workedMin > onSiteMin + 1;
 
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
@@ -351,6 +382,40 @@ export function analyzeDay(day) {
   // record, which means none taken - the reading that pays the employee.
   const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
   const restTaken = recorded === null ? 0 : recorded;
+
+  // Can ANY source speak to whether a rest break happened on this day?
+  //
+  // Until 2026-08-06 two could: the Rest Periods Report, and the punches
+  // themselves when a break was punched out. With the export set cut to three
+  // reports the first is gone, and QSP no longer punches rest breaks at all, so
+  // on most days nothing can say either way.
+  //
+  // That is NOT the same as "no break was taken". Charging a premium because we
+  // stopped receiving the evidence would have taken this period from 410 rest
+  // premium hours to 961. Marking it unknown keeps the day visible and out of
+  // the total, which is the same thing `mealUnknown` does when there is no
+  // schedule for a day. The engine's job here is to flag, not to decide.
+  // Only the Rest Periods Report can say a break happened. A gap between
+  // punches is a gap in the roster and proves nothing - that was settled on
+  // 2026-08-06 and it has not changed. So evidence means the report, and
+  // nothing else.
+  const restEvidence = recorded !== null;
+  //
+  // Unanswerable ONLY when no rest source was collected for the batch at all.
+  //
+  // This was briefly keyed to whether the export pays rest breaks, which
+  // conflated two different questions - whether the hours already include the
+  // break, and whether anything recorded that it happened. The result was that
+  // 18 people the Rest Periods Report simply does not cover came back
+  // "unknown" instead of owed, dropping 125 premium hours on a batch where the
+  // report WAS uploaded.
+  //
+  // If the report was collected and does not cover somebody, Mánu's ruling of
+  // 2026-08-03 applies: staff are expected to punch, so the premium stands and
+  // the gap is a training problem. Defaults to "a source exists", so the only
+  // way to get an unknown day is to say outright that none was collected.
+  const restSourceCollected = day.restSourceAvailable !== false;
+  const restUnknown = restRequired > 0 && !restEvidence && !restSourceCollected;
 
   // `day.mealScheduled`: true = rostered, false = the schedule covers this day
   // and rosters no meal, null = no schedule for this day so we cannot say.
@@ -419,7 +484,13 @@ export function analyzeDay(day) {
     mealLate,
     mealStartedAfterMin,
     mealViolation: mealRequired && !mealUnknown && (!mealTaken || mealLate),
-    restViolation: restTaken < restRequired,
+    restUnknown,
+    // hours credited exceed the clock window they sit in, so two bookings
+    // overlap. flagged, never silently corrected.
+    compressedDay,
+    onSiteMin,
+    // an unverifiable day is not a violation. it is a day we cannot answer.
+    restViolation: !restUnknown && restTaken < restRequired,
   };
 }
 

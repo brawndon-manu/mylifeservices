@@ -609,8 +609,19 @@ model TimesheetBatch {
   clockName    String?
   // the Rest Periods Report. decides whether a rest break was actually taken,
   // which is what the bigger half of the premium total turns on.
+  //
+  // NOT COLLECTED SINCE 2026-08-06, when the export set was cut to three
+  // reports. Kept, along with the clock columns above, because the decision was
+  // "hold for now, we may add it back" - and dropping the columns would mean a
+  // second migration to undo. Existing batches still hold theirs.
   restsUrl     String?
   restsName    String?
+  // the Simple Payroll Processing Report (.xls). one row per employee carrying
+  // QSP's OWN regular, overtime and double-time figures - the numbers payroll
+  // actually runs on. This is what settles an overtime disagreement without
+  // anybody re-reading a PDF, and it reconciles with the timesheet exactly.
+  payrollUrl   String?
+  payrollName  String?
   // whether sends from this batch were redirected to the test inbox. recorded
   // per batch so a test run can never be mistaken for a real one later.
   testMode     Boolean  @default(true)
