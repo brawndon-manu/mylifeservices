@@ -243,3 +243,25 @@ test("a rostered meal is not a seam between bookings", () => {
   assert.equal(d.mealGapKind, "scheduled-transition", "the two WORK blocks still bracket it");
   assert.equal(d.mealViolation, false, "and the rostered meal clears the premium as before");
 });
+
+// ------------------------------------------------- worked time before a rest
+
+test("worked minutes before an instant are not elapsed minutes", async () => {
+  const { workedBeforeMin, RULES } = await import("../parse.js");
+
+  // a straight 8a-5p shift: 4 hours of work by noon, either way you count it
+  const straight = [at(8), at(17)];
+  assert.equal(workedBeforeMin(straight, 12 * 60), 240);
+
+  // a split shift: 8a-10a, off for three hours, back 1p-5p. At 2pm the clock
+  // says six hours have passed and the person has worked three.
+  const split = [at(8), at(10), at(13), at(17)];
+  assert.equal(workedBeforeMin(split, 14 * 60), 180, "three hours worked, six elapsed");
+  assert.ok(14 * 60 - split[0].min > RULES.restWindowMin, "and elapsed would call it late");
+  assert.ok(workedBeforeMin(split, 14 * 60) <= RULES.restWindowMin, "worked time does not");
+
+  // nothing yet, and nothing after the last punch beyond the hours worked
+  assert.equal(workedBeforeMin(split, 7 * 60), 0);
+  assert.equal(workedBeforeMin(split, 23 * 60), 360);
+  assert.equal(workedBeforeMin([], 12 * 60), 0);
+});

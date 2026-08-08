@@ -46,7 +46,7 @@ export function isSaneRest(totalRestTime) {
 }
 
 // "3:50 PM" -> minutes past midnight. null when it cannot be read.
-function clockMin(s) {
+export function clockMin(s) {
   const m = /^(\d{1,2}):(\d{2})\s*([AP])M?$/i.exec(String(s ?? "").trim());
   if (!m) return null;
   const h = Number(m[1]) % 12;

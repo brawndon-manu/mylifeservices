@@ -104,6 +104,14 @@ export const RULES = {
   // how close a punch has to land to a rostered time before we call it the same
   // moment. real punches drift a few minutes either side of the roster.
   gapSeamToleranceMin: 10,
+  // a rest period belongs in the first four hours of work, and the second in
+  // the last four. Unlike the meal deadline this is NOT a hard statutory line -
+  // the standard is the middle of each work period "insofar as practicable" -
+  // so a rest past this mark is FLAGGED and never charged. Mánu's call
+  // 2026-08-08: a hard cutoff here would manufacture premiums the statute does
+  // not clearly require, and 7 of the 13 candidates sit within half an hour of
+  // the mark, which is the zone that wording exists to cover.
+  restWindowMin: 240,
   // §226.7: max one meal premium + one rest premium per workday, 1 hr each.
   premiumHoursPerViolation: 1,
   // CA overtime. nobody is supposed to run over, but it still has to be
@@ -280,6 +288,21 @@ export function restsRequired(hours) {
   if (h < 3.5) return 0;
   if (h <= 6) return 1;
   return 1 + Math.ceil((h - 6) / 4);
+}
+
+// Minutes actually ON the clock before an instant, from punches in document
+// order. This is the measure every timing question here uses, and it is not
+// the same as elapsed time from the first punch: a split shift with a two hour
+// unpaid hole makes a rest look five hours into the day when it is three hours
+// of work in. Measuring the wrong one turned 45 late rests into 54.
+export function workedBeforeMin(punches, at) {
+  const p = (punches || []).map((x) => x.min);
+  let n = 0;
+  for (let i = 0; i + 1 < p.length; i += 2) {
+    const [a, b] = [p[i], p[i + 1]];
+    if (b > a) n += Math.max(0, Math.min(b, at) - a);
+  }
+  return n;
 }
 
 export function analyzeDay(day) {

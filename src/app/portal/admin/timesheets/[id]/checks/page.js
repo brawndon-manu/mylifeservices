@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { restKey } from "@/lib/timesheet/rests";
+import { restKey, clockMin } from "@/lib/timesheet/rests";
+import { workedBeforeMin, RULES } from "@/lib/timesheet/parse";
 import {
   anomalyLabel,
   ANOMALY_KINDS,
@@ -393,6 +394,66 @@ export default async function ChecksPage({ params }) {
       date: r.date,
       r,
       d: describeRestRow(r),
+    });
+  }
+
+  // A rest that WAS taken, but taken late.
+  //
+  // Flagged and never charged, on purpose. The meal deadline is statutory and
+  // hard; this one is "the middle of each work period, insofar as practicable",
+  // and a hard cutoff would manufacture premiums the statute does not clearly
+  // require - 7 of the 13 candidates on 07/16-07/31 sat within half an hour of
+  // the mark, which is the zone that wording exists to cover.
+  //
+  // Measured in WORKED minutes, never elapsed. A split shift with a long unpaid
+  // hole makes a rest look five hours into the day when it is three hours of
+  // work in, and measuring the wrong one reported 54 of these instead of 45.
+  const firstRestAt = new Map(); // "restKey|date" -> earliest counted rest, in minutes
+  for (const r of batch.restsByDate || []) {
+    if (!r.counted || !r.date) continue;
+    const out = clockMin(r.out);
+    if (out == null) continue;
+    const k = `${restKey(r.name)}|${r.date}`;
+    const cur = firstRestAt.get(k);
+    if (cur == null || out < cur) firstRestAt.set(k, out);
+  }
+  for (const [k, out] of firstRestAt) {
+    const [name, date] = k.split("|");
+    const t = restByName.get(name);
+    const day = (t?.data?.days || []).find((x) => x.date === date);
+    if (!day) continue;
+    const worked = workedBeforeMin(day.punches, out);
+    if (worked <= RULES.restWindowMin) continue;
+    // A day that already owes a rest premium cannot owe a second one, so a late
+    // rest there changes nothing and only adds noise to a screen used to find
+    // what matters. 32 of the 45 on 07/16-07/31 were that shape. Only the days
+    // that are otherwise compliant are worth a person's eyes.
+    if (day.restViolation) continue;
+    const over = worked - RULES.restWindowMin;
+    const hrs = Math.round((worked / 60) * 10) / 10;
+    entries.push({
+      timesheetId: t.id,
+      rowKey: `rest-late-${name}-${date}`,
+      who: t.sourceName,
+      signed: !!t.signedAt,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "rest-late",
+      date,
+      d: {
+        group: "anomaly",
+        head: `first rest ${over} min late`,
+        tone: "text-violet-700 dark:text-violet-300",
+        lead:
+          `They did take a rest break, ${hrs} hours of work into a ${day.paidHours} hour day, ` +
+          `where a first rest belongs in the first four. Nothing is charged for it: the rule is the ` +
+          `middle of each work period "insofar as practicable" rather than a deadline, so this is ` +
+          `a scheduling pattern to fix rather than a premium to pay. The day is otherwise ` +
+          `compliant, which is why it is here at all: days that already owe a rest premium are ` +
+          `left out, because a late rest cannot cost anything on top of one.`,
+      },
     });
   }
 
