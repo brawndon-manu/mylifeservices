@@ -472,6 +472,21 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               View the breakdown →
             </Link>
           </div>
+
+          {/* the breakdown above answers where the hours fall. this one answers
+              the question that decides whether any of them can be sent: what
+              stands behind each one, and which of them nobody has settled. */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+            <p className="text-xs text-muted">
+              What each premium rests on, and which ones are still waiting on a person.
+            </p>
+            <Link
+              href={`/portal/admin/timesheets/${batch.id}/evidence`}
+              className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
+            >
+              What they rest on →
+            </Link>
+          </div>
         </div>
       )}
 
