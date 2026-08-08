@@ -448,16 +448,28 @@ export function analyzeDay(day) {
   const outsideShift = (r) =>
     shiftStart != null && (r.out < shiftStart || r.in > shiftEnd);
 
+  // And the third way a recorded rest is not a rest: it fell inside a
+  // punched-OUT gap, so the person was off the clock for it. Same principle
+  // again, Mánu 2026-08-08 - a rest period is paid time, and unpaid minutes
+  // were never one, wherever in the day they sit.
+  const unpaidRest = (r) => {
+    if (shiftStart == null || outsideShift(r)) return false;
+    for (let i = 1; i + 1 < shiftMins.length; i += 2) {
+      if (shiftMins[i] <= r.out && shiftMins[i + 1] >= r.in) return true;
+    }
+    return false;
+  };
+
   const restsInsideMeal = restTimes && rosteredMeals
     ? usableRests.filter(insideMeal).length
     : null;
   const restsOutsideShift = restTimes && shiftStart != null
     ? usableRests.filter(outsideShift).length
     : null;
-  // the UNION, because a rest could in principle be both and must only be
-  // discounted once.
+  // the UNION of all three, because one rest can be more than one of these and
+  // must only be discounted once. Inside the lunch is usually also unpaid.
   const restsNotCounted = restTimes
-    ? usableRests.filter((r) => insideMeal(r) || outsideShift(r)).length
+    ? usableRests.filter((r) => insideMeal(r) || outsideShift(r) || unpaidRest(r)).length
     : 0;
 
   // ---- what counts as a break TAKEN -------------------------------------
@@ -585,22 +597,15 @@ export function analyzeDay(day) {
   // the rostered meals are worked out further up, because `restsInsideMeal`
   // has to be known before `restTaken` is decided.
   //
-  // UNPAID. A rest sitting inside a punched-out gap, during the shift, was not
-  // paid - and a rest period is paid time. That is WAGES rather than a premium,
-  // a different kind of wrong from the two above, so it is shown and the hours
-  // are left alone. Adding paid time on top of what QSP exported is the one
-  // direction this engine has never gone.
-  let restsUnpaid = null;
-  if (restTimes && p.length) {
-    const mins = p.map((x) => x.min);
-    restsUnpaid = usableRests.filter((r) => {
-      if (outsideShift(r)) return false;
-      for (let i = 1; i + 1 < mins.length; i += 2) {
-        if (mins[i] <= r.out && mins[i + 1] >= r.in) return true;
-      }
-      return false;
-    }).length;
-  }
+  // UNPAID, reported. The count is kept so the screen can name the days; the
+  // discount itself happens in `restsNotCounted` above, alongside the other two.
+  //
+  // NOTE the hours are still NOT adjusted. Those ten minutes were worked and
+  // went unpaid, which is wages owed on top of the premium, and paying above
+  // what the export says is the one direction this engine has never gone. The
+  // premium follows from the rest not having been taken; the wages are a
+  // separate thing somebody still has to decide about.
+  const restsUnpaid = restTimes && p.length ? usableRests.filter(unpaidRest).length : null;
 
   // Adjacent, but NOT inside. The two are mutually exclusive now: one is
   // reported and still counts, the other is discounted and pays a premium, so

@@ -468,6 +468,11 @@ test("a rest inside a punched-out gap was not paid, and is reported as such", ()
   });
   assert.equal(d.restsUnpaid, 1);
   assert.equal(d.restsOutsideShift, 0, "it is inside the shift, just not on the clock");
+  // and it does not count, same principle as the other two: unpaid minutes were
+  // never a rest period. Uribe 07/28 and 07/29 are exactly this and each gains
+  // an hour; his 07/31 already owed one, and the cap is one a day.
+  assert.equal(d.restTaken, 0, "the report said 1, the person was off the clock for it");
+  assert.equal(d.restViolation, true);
 
   // the same rest taken while still clocked in is paid, and not flagged
   const onClock = analyzeDay({
