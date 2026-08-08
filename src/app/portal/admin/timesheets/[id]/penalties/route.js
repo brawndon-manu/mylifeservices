@@ -40,6 +40,9 @@ export async function GET(_req, { params }) {
         periodTo: batch.periodTo,
         rows: batch.timesheets.map((t) => ({
           who: t.user ? preferredName(t.user) : t.sourceName,
+          // carried so the sheet can show QSP's spelling beside it where the
+          // two differ, because this is the document payroll reconciles.
+          sourceName: t.sourceName,
           premiumHours: t.premiumHours,
         })),
       },
