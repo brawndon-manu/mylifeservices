@@ -118,6 +118,11 @@ export const RULES = {
   // not clearly require, and 7 of the 13 candidates sit within half an hour of
   // the mark, which is the zone that wording exists to cover.
   restWindowMin: 240,
+  // how close a rest has to sit to the rostered lunch before the two are really
+  // one break. Measured on 07/16-07/31: the six real cases are EXACTLY
+  // contiguous, and the count is identical anywhere from 0 to 5 minutes. Past
+  // 10 it starts catching rests that are merely nearby, so it stays tight.
+  restTackedOnToleranceMin: 2,
   // §226.7: max one meal premium + one rest premium per workday, 1 hr each.
   premiumHoursPerViolation: 1,
   // CA overtime. nobody is supposed to run over, but it still has to be
@@ -509,6 +514,30 @@ export function analyzeDay(day) {
   const secondMealViolation =
     secondMealRequired && !secondMealUnknown && (!secondMealTaken || secondMealLate);
 
+  // ---- a rest taken right up against the lunch ---------------------------
+  //
+  // Ten minutes abutting a thirty minute lunch is a forty minute break, not a
+  // lunch and a rest. FLAGGED, never charged, and the reason is that the
+  // schedule cannot roster a rest period at all - it holds meal breaks only -
+  // so an adjacency here is always the employee's choice against a standalone
+  // lunch the employer did roster. Where the opportunity was provided the
+  // premium is not owed, so `restTaken` is left alone and this only reports.
+  //
+  // `day.restTimes` is [{out, in}] in minutes, from the Rest Periods Report.
+  // Absent, the question is unanswerable and the count stays null.
+  const restTimes = Array.isArray(day.restTimes) ? day.restTimes : null;
+  const rosteredMeals = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => b.meal)
+    : null;
+  let restTackedOn = null;
+  if (restTimes && rosteredMeals) {
+    const tol = RULES.restTackedOnToleranceMin;
+    restTackedOn = restTimes.filter((r) =>
+      r && Number.isFinite(r.out) && Number.isFinite(r.in) &&
+      rosteredMeals.some((m) => r.out <= m.end + tol && r.in >= m.start - tol),
+    ).length;
+  }
+
   // a signed waiver clears the day, but only the narrow case the statute
   // allows: the day is 6 hours or less AND no meal was provided at all. a late
   // meal is never waivable, and neither is a day past 6 hours, so both fall
@@ -630,6 +659,9 @@ export function analyzeDay(day) {
     secondMealLate,
     secondMealUnknown,
     secondMealViolation,
+    // how many of the day's rests were taken hard against the rostered lunch.
+    // reported, never charged - see the note above. null when unanswerable.
+    restTackedOn,
     // what the day's longest lunch-shaped gap actually is, per the roster.
     // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
     // "unclear" | "no-schedule", or null when there is no such gap. Evidence

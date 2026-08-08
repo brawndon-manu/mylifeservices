@@ -358,3 +358,68 @@ test("the sheet says which meal was missed, not just that one was", async () => 
   assert.ok(words.includes("no second meal period"), "the sheet names the one they missed");
   assert.ok(!words.includes("no meal period,"), "and does not claim they got none at all");
 });
+
+// ------------------------------------------- a rest tacked onto the lunch
+
+// 8a-5:30p with a rostered 12:00-12:30 lunch
+const LUNCH_DAY = [at(8), at(12), at(12, 30), at(17, 30)];
+const LUNCH_BLOCKS = [
+  { start: 8 * 60, end: 12 * 60, meal: false },
+  { start: 12 * 60, end: 12 * 60 + 30, meal: true },
+  { start: 12 * 60 + 30, end: 17 * 60 + 30, meal: false },
+];
+const withRests = (restTimes) =>
+  analyzeDay({
+    date: "07/20/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: restTimes.length, restTimes,
+  });
+
+test("a rest butted against the lunch is spotted, at either end", () => {
+  // ends exactly when lunch starts: 11:50-12:00
+  const before = withRests([{ out: 11 * 60 + 50, in: 12 * 60 }]);
+  assert.equal(before.restTackedOn, 1);
+  // starts exactly when lunch ends: 12:30-12:40
+  const after = withRests([{ out: 12 * 60 + 30, in: 12 * 60 + 40 }]);
+  assert.equal(after.restTackedOn, 1);
+});
+
+test("a rest in the middle of a work period is not tacked on", () => {
+  // 10:00-10:10, two hours clear of the lunch. without this the test above
+  // proves nothing, because a check that always says yes says nothing.
+  const clear = withRests([{ out: 10 * 60, in: 10 * 60 + 10 }]);
+  assert.equal(clear.restTackedOn, 0);
+
+  // and 20 minutes short of the lunch is still its own break. the six real
+  // cases were EXACTLY contiguous; widening the tolerance to 10 started
+  // catching rests like this one, which is why it is 2.
+  const near = withRests([{ out: 11 * 60 + 30, in: 11 * 60 + 40 }]);
+  assert.equal(near.restTackedOn, 0);
+});
+
+test("a tacked-on rest is reported and never charged", () => {
+  // an 9.5 hour day owes 2 rests. one of them is butted against lunch, and the
+  // premium must NOT move: the schedule cannot roster a rest at all, so the
+  // employer gave a standalone lunch and the employee stacked against it.
+  const d = withRests([
+    { out: 12 * 60 + 30, in: 12 * 60 + 40 },
+    { out: 15 * 60, in: 15 * 60 + 10 },
+  ]);
+  assert.equal(d.restTackedOn, 1);
+  assert.equal(d.restTaken, 2, "still counted as taken");
+  assert.equal(d.restRequired, 2);
+  assert.equal(d.restViolation, false, "reported, not charged");
+});
+
+test("without rest times or without a rostered lunch there is no answer", () => {
+  const noTimes = analyzeDay({
+    date: "07/20/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 1,
+  });
+  assert.equal(noTimes.restTackedOn, null);
+
+  const noLunch = analyzeDay({
+    date: "07/20/26", punches: LUNCH_DAY, printed: null, restRecorded: 1,
+    restTimes: [{ out: 12 * 60 + 30, in: 12 * 60 + 40 }],
+  });
+  assert.equal(noLunch.restTackedOn, null, "nothing to be tacked onto");
+});

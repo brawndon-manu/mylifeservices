@@ -18,7 +18,7 @@ import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
-import { parseRestReport, restKey, allRestRows } from "@/lib/timesheet/rests";
+import { parseRestReport, restKey, allRestRows, clockMin } from "@/lib/timesheet/rests";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -399,6 +399,21 @@ export async function uploadBatch(formData) {
     support: { recorded: 0, supported: 0, unverified: 0 },
   };
 
+  // Counted rest windows in minutes, per person and date. Built once from the
+  // report rows so the engine can tell a rest taken hard against the rostered
+  // lunch from one taken in the middle of a work period. Keyed on the report's
+  // own spelling; the day builder looks it up under the same key.
+  const restWindows = new Map();
+  for (const row of restsByDate) {
+    if (!row.counted || !row.date) continue;
+    const out = clockMin(row.out);
+    const inn = clockMin(row.in);
+    if (out == null || inn == null) continue;
+    const k = `${restKey(row.name)}|${row.date}`;
+    if (!restWindows.has(k)) restWindows.set(k, []);
+    restWindows.get(k).push({ out, in: inn });
+  }
+
   for (const raw of withHours) {
     // hand each day QSP's own count of rest breaks taken, where the report
     // covers this person. `analyzeDay` uses it to decide the violation and
@@ -456,6 +471,10 @@ export async function uploadBatch(formData) {
           // a punched gap is the seam between two client bookings or somebody
           // stepping away mid-booking. without this it only ever sees a hole.
           scheduleBlocks: sd ? scheduleBlocks(sd.entries) : null,
+          // the day's counted rest windows in minutes, so the engine can see a
+          // rest taken hard against the rostered lunch. a count could never
+          // show that.
+          restTimes: restWindows.get(`${restKey(t.employee)}|${d.date}`) || null,
         };
       }),
     };

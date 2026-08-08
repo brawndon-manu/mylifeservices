@@ -28,6 +28,7 @@ export const REQUIRED_DAY_FIELDS = [
   "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
   "mealGapKind", "mealGapMin",
   "mealsRostered", "secondMealRequired", "secondMealViolation", "secondMealUnknown",
+  "restTackedOn",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -64,6 +65,8 @@ export function storedDay(d) {
     secondMealRequired: !!d.secondMealRequired,
     secondMealViolation: !!d.secondMealViolation,
     secondMealUnknown: !!d.secondMealUnknown,
+    // rests taken hard against the rostered lunch. reported, never charged.
+    restTackedOn: d.restTackedOn ?? null,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,

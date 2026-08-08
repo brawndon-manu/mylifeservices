@@ -457,6 +457,42 @@ export default async function ChecksPage({ params }) {
     });
   }
 
+  // A rest taken hard against the rostered lunch, or recorded inside it.
+  //
+  // Reported, never charged. The schedule cannot roster a rest period at all -
+  // it holds meal breaks only - so the employer gave a standalone lunch in
+  // every one of these and the break was stacked against it afterwards. Where
+  // the opportunity was provided the premium is not owed.
+  for (const t of batch.timesheets) {
+    for (const d of t.data?.days || []) {
+      if (!d.restTackedOn) continue;
+      entries.push({
+        timesheetId: t.id,
+        rowKey: `rest-tacked-${t.id}-${d.date}`,
+        who: t.sourceName,
+        signed: !!t.signedAt,
+        overrides: {},
+        dayByDate: {},
+        dayHours: {},
+        byDate: {},
+        kind: "rest-tacked",
+        date: d.date,
+        d: {
+          group: "anomaly",
+          head: d.restTackedOn === 1 ? "a rest against the lunch" : `${d.restTackedOn} rests against the lunch`,
+          tone: "text-violet-700 dark:text-violet-300",
+          lead:
+            `The Rest Periods Report puts a rest break up against the rostered lunch, or inside it. ` +
+            `Ten minutes butted onto a thirty minute lunch is one long break rather than a lunch and ` +
+            `a rest, and a rest recorded inside the lunch usually means part of the lunch was logged ` +
+            `as one. Nothing is charged: the schedule cannot roster a rest period at all, so the lunch ` +
+            `they were given was a standalone one and this happened alongside it. Worth a word if it ` +
+            `is somebody's habit.`,
+        },
+      });
+    }
+  }
+
   const ORDER = { decide: 0, unworked: 1, anomaly: 2, settled: 3 };
   entries.sort(
     (a, b) =>
