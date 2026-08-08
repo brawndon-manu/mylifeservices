@@ -14,7 +14,9 @@ import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
 import { storedDay } from "@/lib/timesheet/stored";
-import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
+import {
+  parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
+} from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, allRestRows } from "@/lib/timesheet/rests";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
@@ -450,6 +452,10 @@ export async function uploadBatch(formData) {
           // covers the day and rosters none, null = no schedule for the day,
           // which is unanswerable and goes to a person instead of being charged
           mealScheduled: sd ? (sd.entries || []).some((e) => e.meal) : null,
+          // the day's rostered blocks as minutes, so the engine can say whether
+          // a punched gap is the seam between two client bookings or somebody
+          // stepping away mid-booking. without this it only ever sees a hole.
+          scheduleBlocks: sd ? scheduleBlocks(sd.entries) : null,
         };
       }),
     };

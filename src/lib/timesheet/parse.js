@@ -101,6 +101,9 @@ export const RULES = {
   // been rolled out to staff. once they are stored per person this flips to
   // reading the real submission and the default disappears.
   mealWaiverOnFileByDefault: true,
+  // how close a punch has to land to a rostered time before we call it the same
+  // moment. real punches drift a few minutes either side of the roster.
+  gapSeamToleranceMin: 10,
   // §226.7: max one meal premium + one rest premium per workday, 1 hr each.
   premiumHoursPerViolation: 1,
   // CA overtime. nobody is supposed to run over, but it still has to be
@@ -461,6 +464,55 @@ export function analyzeDay(day) {
     mealWaiverOnFile &&
     paidHours <= RULES.mealWaiverMaxHours;
 
+  // WHERE DOES THE DAY'S LONGEST GAP FALL, relative to what was rostered?
+  //
+  // Measured 2026-08-08 over the 67 days that carry a meal premium with a
+  // lunch-shaped gap on them: 63 sit exactly between two consecutive client
+  // bookings, 3 are days whose bookings overlap, and one is a genuine
+  // step-away. So a gap is nearly always the seam the ROSTER created, not a
+  // lunch anybody took. The control matters as much as the finding: over days
+  // where a meal WAS rostered the same test lands on a seam 6% of the time, so
+  // it is not answering "yes" by construction.
+  //
+  // This CLASSIFIES and never decides. `mealViolation` is untouched above: the
+  // premium still stands, and all this does is say what the evidence behind it
+  // looks like, so nobody has to re-derive it by hand next period.
+  const blocks = Array.isArray(day.scheduleBlocks) ? day.scheduleBlocks : null;
+  let longestGap = null;
+  for (let i = 1; i + 1 < p.length; i += 2) {
+    const min = p[i + 1].min - p[i].min;
+    if (min > 0 && (!longestGap || min > longestGap.min)) {
+      longestGap = { start: p[i].min, end: p[i + 1].min, min };
+    }
+  }
+  const mealShaped =
+    longestGap && longestGap.min >= RULES.mealMinMin && longestGap.min <= RULES.mealMaxMin;
+  let mealGapKind = null;
+  if (mealShaped) {
+    if (compressedDay) {
+      // two bookings running at once, which QSP writes as one run of punches.
+      // the "gap" is the seam between them and nobody was away for it.
+      mealGapKind = "overlap-artifact";
+    } else if (!blocks || !blocks.length) {
+      mealGapKind = "no-schedule";
+    } else {
+      // meal blocks are excluded: we are asking about the seams between WORK,
+      // and a rostered meal is not a seam, it is the break itself.
+      const work = blocks.filter((b) => !b.meal);
+      const tol = RULES.gapSeamToleranceMin;
+      const onSeam = work.some((b, i) => {
+        const next = work[i + 1];
+        return next &&
+          Math.abs(b.end - longestGap.start) <= tol &&
+          Math.abs(next.start - longestGap.end) <= tol;
+      });
+      const inside = work.some(
+        (b) => longestGap.start > b.start + tol && longestGap.end < b.end - tol,
+      );
+      mealGapKind = onSeam ? "scheduled-transition" : inside ? "inside-booking" : "unclear";
+    }
+  }
+
   // sanity check against QSP's own printed figure for the day. small gaps are
   // their rounding; a real gap means we misread the punches and must not be
   // trusted silently on a payroll document.
@@ -510,6 +562,12 @@ export function analyzeDay(day) {
     // kept as its own field rather than folded into mealMissing, because a
     // waived day and a compliant day are different claims and the sheet says so.
     mealWaived,
+    // what the day's longest lunch-shaped gap actually is, per the roster.
+    // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
+    // "unclear" | "no-schedule", or null when there is no such gap. Evidence
+    // about the premium, never a change to it.
+    mealGapKind,
+    mealGapMin: mealShaped ? longestGap.min : null,
     mealViolation: mealRequired && !mealUnknown && !mealWaived && (!mealTaken || mealLate),
     restUnknown,
     // hours credited exceed the clock window they sit in, so two bookings

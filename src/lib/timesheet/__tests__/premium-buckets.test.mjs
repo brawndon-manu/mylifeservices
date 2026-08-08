@@ -182,3 +182,64 @@ test("a waived day says so on the sheet, and does not look like a compliant day"
   assert.ok(words.includes("meal waived, waiver on file"), "the sheet says why");
   assert.ok(!words.includes("no meal period"), "and does not also claim a violation");
 });
+
+// ------------------------------------------- where the gap falls on the roster
+
+// 8a-12p, out 30 min, 12:30p-5p, with the roster expressed in minutes.
+const b = (h1, m1, h2, m2, meal = false) =>
+  ({ start: h1 * 60 + m1, end: h2 * 60 + m2, meal });
+const gapDay = (scheduleBlocks) =>
+  analyzeDay({ date: "07/20/26", punches: GAPPED, printed: null, scheduleBlocks });
+
+test("a gap between two consecutive bookings is a scheduled transition", () => {
+  // 63 of the 67 M3 days look exactly like this: one client ends at 12, the
+  // next starts at 12:30, and the punch-out sits in the seam.
+  const d = gapDay([b(8, 0, 12, 0), b(12, 30, 17, 0)]);
+  assert.equal(d.mealGapKind, "scheduled-transition");
+  assert.equal(d.mealGapMin, 30);
+  // and it changes nothing about what is owed
+  assert.equal(d.mealViolation, true, "classifying evidence must not move the premium");
+});
+
+test("a gap opening inside one booking is a step-away, not a transition", () => {
+  // Lazo 07/29 is the only day in the batch shaped like this.
+  const d = gapDay([b(8, 0, 17, 0)]);
+  assert.equal(d.mealGapKind, "inside-booking");
+  assert.equal(d.mealViolation, true);
+});
+
+test("punches that match no rostered seam are unclear rather than assumed", () => {
+  const d = gapDay([b(6, 0, 7, 0), b(19, 0, 20, 0)]);
+  assert.equal(d.mealGapKind, "unclear");
+});
+
+test("a day of overlapping bookings has no real gap to classify", () => {
+  // Devine 07/23, Hardin 07/23, McCulley 07/16. QSP serialises two bookings
+  // that ran at once, and the seam reads as a gap nobody was away for.
+  const punches = [at(7, 30), at(11), at(9), at(10)];   // 3.5 hrs inside a 2.5 hr window
+  const d = analyzeDay({ date: "07/23/26", punches, printed: null, scheduleBlocks: [] });
+  assert.equal(d.compressedDay, true, "the day is already flagged as overlapping");
+  if (d.mealGapKind !== null) assert.equal(d.mealGapKind, "overlap-artifact");
+});
+
+test("no schedule means no answer, and a rest-shaped gap is not classified at all", () => {
+  assert.equal(gapDay(null).mealGapKind, "no-schedule");
+  // a 15 minute gap is rest-shaped, not meal-shaped, so there is nothing here
+  const shortGap = analyzeDay({
+    date: "07/20/26", punches: [at(8), at(12), at(12, 15), at(17)],
+    printed: null, scheduleBlocks: [b(8, 0, 12, 0), b(12, 15, 17, 0)],
+  });
+  assert.equal(shortGap.mealGapKind, null);
+  assert.equal(shortGap.mealGapMin, null);
+});
+
+test("a rostered meal is not a seam between bookings", () => {
+  // the meal block itself must not count as the boundary, or every properly
+  // rostered lunch would read as a transition.
+  const d = analyzeDay({
+    date: "07/20/26", punches: GAPPED, printed: null, mealScheduled: true,
+    scheduleBlocks: [b(8, 0, 12, 0), b(12, 0, 12, 30, true), b(12, 30, 17, 0)],
+  });
+  assert.equal(d.mealGapKind, "scheduled-transition", "the two WORK blocks still bracket it");
+  assert.equal(d.mealViolation, false, "and the rostered meal clears the premium as before");
+});

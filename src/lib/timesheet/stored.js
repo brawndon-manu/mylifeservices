@@ -26,6 +26,7 @@ export const REQUIRED_DAY_FIELDS = [
   "date", "paidHours", "rawHours", "regularHours", "otHours", "doubleHours",
   "mealRequired", "mealViolation", "mealMissing", "mealLate", "mealStartedAfterMin",
   "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
+  "mealGapKind", "mealGapMin",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -52,6 +53,10 @@ export function storedDay(d) {
     // waiver is a fact about paperwork at the time the sheet was produced, and
     // the sheet has to keep saying what it said when it was signed.
     mealWaived: !!d.mealWaived,
+    // what the roster says the day's lunch-shaped gap was. stored because it is
+    // read off the SCHEDULE, and recompute never sees the schedule again.
+    mealGapKind: d.mealGapKind ?? null,
+    mealGapMin: d.mealGapMin ?? null,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,
