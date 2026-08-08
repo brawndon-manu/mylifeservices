@@ -27,6 +27,7 @@ export const REQUIRED_DAY_FIELDS = [
   "mealRequired", "mealViolation", "mealMissing", "mealLate", "mealStartedAfterMin",
   "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
   "mealGapKind", "mealGapMin",
+  "mealsRostered", "secondMealRequired", "secondMealViolation", "secondMealUnknown",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -57,6 +58,12 @@ export function storedDay(d) {
     // read off the SCHEDULE, and recompute never sees the schedule again.
     mealGapKind: d.mealGapKind ?? null,
     mealGapMin: d.mealGapMin ?? null,
+    // the second meal period. `mealsRostered` is how many the schedule gave
+    // them, which is the only thing that can witness a second one.
+    mealsRostered: d.mealsRostered ?? null,
+    secondMealRequired: !!d.secondMealRequired,
+    secondMealViolation: !!d.secondMealViolation,
+    secondMealUnknown: !!d.secondMealUnknown,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,

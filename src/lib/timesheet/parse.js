@@ -91,6 +91,12 @@ export const RULES = {
   // Brinker). a meal that was taken but taken late is still a violation, which
   // is why counting meals alone isn't enough.
   mealMustStartByMin: 300,
+  // a SECOND meal period is owed once the day passes 10 hours worked, and it
+  // has to begin by the end of the tenth hour. §226.7 still caps the day at one
+  // meal premium, so a missed second meal only ever costs anything on a day
+  // where the first one was actually provided.
+  secondMealRequiredAfterHours: 10,
+  secondMealMustStartByMin: 600,
   // a meal period can be waived by mutual written consent when the day is 6
   // hours or less (Lab. Code §512(a)). the waiver only reaches a day where no
   // meal was provided at all - it cannot excuse one that was provided late.
@@ -463,6 +469,14 @@ export function analyzeDay(day) {
   // no schedule at all is not a violation and not a pass. it goes to a person.
   const mealUnknown = mealRequired && mealScheduled === null;
 
+  // HOW MANY meals the schedule rostered, which is a different question from
+  // whether it rostered any. Only the blocks can answer it, so a caller that
+  // hands in `mealScheduled` alone leaves this null and the second meal goes to
+  // a person rather than being charged or silently passed.
+  const mealsRostered = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => b.meal).length
+    : null;
+
   // the meal has to START by the end of the fifth hour worked. a late lunch is
   // its own violation - the break happened, but not when it was owed. only
   // meaningful once we know a meal was actually rostered.
@@ -473,6 +487,27 @@ export function analyzeDay(day) {
     mealTaken &&
     !!firstMeal &&
     firstMeal.workedBefore > RULES.mealMustStartByMin;
+
+  // ---- the second meal period -------------------------------------------
+  //
+  // Owed past ten hours worked, and it has to begin by the end of the tenth.
+  // The statute allows it to be waived when the day is 12 hours or less AND the
+  // first meal was not waived, but no such waiver is held anywhere, so none is
+  // assumed - the day is charged and the paperwork can clear it later.
+  //
+  // Same evidence rule as the first meal: only the schedule can say a meal was
+  // provided, and here it has to say so TWICE.
+  const secondMealRequired = paidHours > RULES.secondMealRequiredAfterHours;
+  const secondMealUnknown = secondMealRequired && (mealUnknown || mealsRostered === null);
+  const secondMealTaken = mealsRostered !== null && mealsRostered >= 2;
+  const secondMeal = breaks.filter((b) => b.kind === "meal")[1] || null;
+  const secondMealLate =
+    secondMealRequired &&
+    secondMealTaken &&
+    !!secondMeal &&
+    secondMeal.workedBefore > RULES.secondMealMustStartByMin;
+  const secondMealViolation =
+    secondMealRequired && !secondMealUnknown && (!secondMealTaken || secondMealLate);
 
   // a signed waiver clears the day, but only the narrow case the statute
   // allows: the day is 6 hours or less AND no meal was provided at all. a late
@@ -585,13 +620,28 @@ export function analyzeDay(day) {
     // kept as its own field rather than folded into mealMissing, because a
     // waived day and a compliant day are different claims and the sheet says so.
     mealWaived,
+    // the second meal period, owed past ten hours. kept as its own set of
+    // fields rather than folded into the first, because "they got no lunch at
+    // all" and "they got the first one and not the second" are different things
+    // to say to somebody, even though §226.7 pays the same one hour for either.
+    mealsRostered,
+    secondMealRequired,
+    secondMealTaken,
+    secondMealLate,
+    secondMealUnknown,
+    secondMealViolation,
     // what the day's longest lunch-shaped gap actually is, per the roster.
     // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
     // "unclear" | "no-schedule", or null when there is no such gap. Evidence
     // about the premium, never a change to it.
     mealGapKind,
     mealGapMin: mealShaped ? longestGap.min : null,
-    mealViolation: mealRequired && !mealUnknown && !mealWaived && (!mealTaken || mealLate),
+    // ONE premium per workday however many meals were missed (§226.7), so this
+    // stays a single boolean. A day that misses both meals pays one hour, the
+    // same as a day that misses either.
+    mealViolation:
+      (mealRequired && !mealUnknown && !mealWaived && (!mealTaken || mealLate)) ||
+      secondMealViolation,
     restUnknown,
     // hours credited exceed the clock window they sit in, so two bookings
     // overlap. flagged, never silently corrected.

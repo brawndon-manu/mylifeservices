@@ -375,7 +375,13 @@ export async function renderCorrected(sheet, opts = {}) {
 
         const notes = [];
         if (d.mealLate) notes.push("meal started late");
-        else if (d.mealViolation) notes.push("no meal period");
+        // a day past ten hours owes a SECOND meal, and "you got the first one
+        // and not the second" is a different sentence from "you got no lunch".
+        // §226.7 pays the same hour either way; the sheet still has to say
+        // which one happened.
+        else if (d.secondMealViolation && d.mealsRostered >= 1) {
+          notes.push(d.secondMealLate ? "second meal started late" : "no second meal period");
+        } else if (d.mealViolation) notes.push("no meal period");
         // a waived day is not a violation, and the sheet has to say which one it
         // is. printing nothing would make a waived day look identical to a day
         // where lunch was actually taken, and the only record of why 63 hours

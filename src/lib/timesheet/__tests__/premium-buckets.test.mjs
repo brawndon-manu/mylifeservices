@@ -265,3 +265,96 @@ test("worked minutes before an instant are not elapsed minutes", async () => {
   assert.equal(workedBeforeMin(split, 23 * 60), 360);
   assert.equal(workedBeforeMin([], 12 * 60), 0);
 });
+
+// ------------------------------------------------------- the second meal
+
+// 6a-5:30p with a rostered lunch: 11.5 hours worked, so a second meal is owed.
+const LONG = [at(6), at(11), at(11, 30), at(17, 30)];
+const blocks2 = (meals) => [
+  { start: 6 * 60, end: 11 * 60, meal: false },
+  ...(meals >= 1 ? [{ start: 11 * 60, end: 11 * 60 + 30, meal: true }] : []),
+  { start: 11 * 60 + 30, end: 17 * 60 + 30, meal: false },
+  ...(meals >= 2 ? [{ start: 16 * 60, end: 16 * 60 + 30, meal: true }] : []),
+];
+
+test("a second meal is owed past ten hours, and only the schedule can witness it", () => {
+  const oneRostered = withSchedule(LONG, { mealScheduled: true, scheduleBlocks: blocks2(1) });
+  assert.ok(oneRostered.paidHours > 10);
+  assert.equal(oneRostered.secondMealRequired, true);
+  assert.equal(oneRostered.mealsRostered, 1);
+  assert.equal(oneRostered.secondMealTaken, false);
+  assert.equal(oneRostered.secondMealViolation, true);
+  assert.equal(oneRostered.mealViolation, true, "the first meal was fine, the second was not");
+
+  // roster the second one and the day is clean. without this the test above
+  // could be passing because nothing ever clears a second meal.
+  const twoRostered = withSchedule(LONG, { mealScheduled: true, scheduleBlocks: blocks2(2) });
+  assert.equal(twoRostered.mealsRostered, 2);
+  assert.equal(twoRostered.secondMealViolation, false);
+  assert.equal(twoRostered.mealViolation, false);
+});
+
+test("exactly ten hours owes no second meal", () => {
+  // 6a-4:30p with a 30 minute lunch: 10.0 hours worked, not 10.5.
+  const tenFlat = withSchedule([at(6), at(11), at(11, 30), at(16, 30)], {
+    mealScheduled: true, scheduleBlocks: blocks2(1),
+  });
+  assert.equal(tenFlat.paidHours, 10);
+  assert.equal(tenFlat.secondMealRequired, false);
+  assert.equal(tenFlat.secondMealViolation, false);
+  assert.equal(tenFlat.mealViolation, false);
+});
+
+test("missing both meals still pays exactly one premium", () => {
+  // §226.7 caps the workday at one meal premium however many were missed.
+  const none = withSchedule(LONG, { mealScheduled: false, scheduleBlocks: blocks2(0) });
+  assert.equal(none.mealViolation, true);
+  assert.equal(typeof none.mealViolation, "boolean", "a flag, never a count");
+  assert.equal(none.secondMealViolation, true);
+});
+
+test("a second meal taken after the tenth hour is late", () => {
+  // both rostered, but the second one opens at 10h20m of work
+  const late = withSchedule([at(6), at(11), at(11, 30), at(17), at(17, 30), at(19)], {
+    mealScheduled: true,
+    scheduleBlocks: [
+      { start: 6 * 60, end: 11 * 60, meal: false },
+      { start: 11 * 60, end: 11 * 60 + 30, meal: true },
+      { start: 11 * 60 + 30, end: 17 * 60, meal: false },
+      { start: 17 * 60, end: 17 * 60 + 30, meal: true },
+      { start: 17 * 60 + 30, end: 19 * 60, meal: false },
+    ],
+  });
+  assert.equal(late.secondMealTaken, true);
+  assert.ok(late.secondMealLate, "opened past the end of the tenth hour worked");
+  assert.equal(late.mealViolation, true);
+});
+
+test("without the roster blocks the second meal goes to a person, not to the total", () => {
+  // a caller that hands in mealScheduled alone cannot say how MANY were
+  // rostered, so the day must not be charged on a guess either way.
+  const noBlocks = withSchedule(LONG, { mealScheduled: true });
+  assert.equal(noBlocks.mealsRostered, null);
+  assert.equal(noBlocks.secondMealUnknown, true);
+  assert.equal(noBlocks.secondMealViolation, false, "unknown stays out of the total");
+  assert.equal(noBlocks.mealViolation, false);
+});
+
+test("the sheet says which meal was missed, not just that one was", async () => {
+  // a day past ten hours where the first lunch happened and the second did not.
+  // "no meal period" would be a false sentence on a day they were given one.
+  const sheet = analyzeTimesheet({
+    employee: "Test, Person",
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days: [{
+      date: "07/20/26", punches: LONG, printed: null,
+      mealScheduled: true, scheduleBlocks: blocks2(1),
+    }],
+  });
+  assert.equal(sheet.days[0].secondMealViolation, true);
+
+  const { bytes } = await renderCorrected(sheet, { printedBy: "Test", generatedOn: "8/8/2026" });
+  const words = await pdfWords(bytes);
+  assert.ok(words.includes("no second meal period"), "the sheet names the one they missed");
+  assert.ok(!words.includes("no meal period,"), "and does not claim they got none at all");
+});
