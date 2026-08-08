@@ -876,6 +876,40 @@ export function applyOvertime(days, payPeriod = null) {
       }
       straight += Math.min(d.regularHours, room);
     }
+
+    // pass 3 - on a PARTIAL week, take QSP's overtime where it is higher.
+    //
+    // A week cut by the pay-period boundary has days we cannot see: 07/13-07/15
+    // live in the previous export. Somebody who worked those days had already
+    // passed 40 by Sunday, and we have no way to know it. QSP does, because it
+    // holds both periods. On 07/16-07/31 every real overtime difference between
+    // us and QSP was exactly this - five days, all of them 07/19, worth 4.42
+    // hours - and on COMPLETE weeks the two agree to within 0.02 across all 59
+    // people. That is what says this is a visibility problem and not a rule
+    // one, and it is why #67 and #71 turned out to be the same item.
+    //
+    // MAX, never replace. Where our own figure is higher we keep it, so this
+    // can only ever move somebody up. Handing a person a corrected sheet paying
+    // less overtime than payroll already issued is the thing this engine exists
+    // to avoid, and trusting a number we cannot derive is the lesser evil only
+    // while it runs in their favour.
+    //
+    // Complete weeks are left alone on purpose: there we can prove the split
+    // from the punches, so we compute it rather than take it on trust.
+    if (partial) {
+      for (const d of week) {
+        const printedOt = Number(d.printed?.overtime || 0);
+        if (!(printedOt > d.otHours + 0.005)) continue;
+        // fund it from straight time first, then from double time, so the
+        // day's paid hours never change - only which bucket they sit in.
+        const gain = Math.min(printedOt - d.otHours, d.regularHours + d.doubleHours);
+        const fromRegular = Math.min(gain, d.regularHours);
+        d.regularHours -= fromRegular;
+        d.doubleHours -= gain - fromRegular;
+        d.otHours += gain;
+        d.otFromPrinted = true;
+      }
+    }
   }
 
   // days QSP printed without a parseable date still need the fields set

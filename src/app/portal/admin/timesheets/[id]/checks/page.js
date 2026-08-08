@@ -402,9 +402,21 @@ export default async function ChecksPage({ params }) {
   // 2:30-5:00, so the break happened, was paid, and counts. The ROW is wrong,
   // not the break, and saying so is the whole point of this group - it would
   // otherwise read as somebody skipping a rest.
+  // which punch pair the rest actually happened in, in the sheet's own words.
+  // "it happened during the 9a-11:30a booking" is the fact that makes a misfiled
+  // row obvious; without it the reader has to go and work it out.
+  const segmentAround = (day, out, inn) => {
+    const p = day?.punches || [];
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      if (p[i].min <= out && p[i + 1].min >= inn) return `${p[i].raw} to ${p[i + 1].raw}`;
+    }
+    return null;
+  };
+
   for (const r of (batch.restsByDate || []).filter((x) => x.offOwnShift)) {
     const t = restByName.get(restKey(r.name));
     const day = (t?.data?.days || []).find((x) => x.date === r.date);
+    const seg = day ? segmentAround(day, clockMin(r.out), clockMin(r.in)) : null;
     entries.push({
       timesheetId: t?.id || null,
       rowKey: `rest-offshift-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
@@ -421,13 +433,17 @@ export default async function ChecksPage({ params }) {
         head: "filed against the wrong shift",
         tone: "text-violet-700 dark:text-violet-300",
         lead:
-          `The report records this rest at ${r.out} to ${r.in}, on a shift of ${r.shift}. ` +
-          `It does not fall inside that shift. THAT IS A FILING PROBLEM, NOT A MISSED BREAK: ` +
-          (day
-            ? `this day reads ${day.restTaken} of ${day.restRequired}, worked out from the punches ` +
-              `rather than from the shift on this row.`
-            : `whether it counts is worked out from the punches, never from the shift on this row.`) +
-          ` Worth correcting in QSP so the next period files it against the shift it happened in.`,
+          `The report files this rest at ${r.out} to ${r.in} under a shift of ${r.shift}, which it ` +
+          `does not fall inside. ` +
+          (seg
+            ? `It happened during the ${seg} booking instead, so it was paid and it counts: this ` +
+              `day reads ${day.restTaken} of ${day.restRequired} rests. The row is misfiled, not ` +
+              `the break. `
+            : day
+              ? `It falls in no paid stretch of the day either, so it has not been counted and ` +
+                `this day reads ${day.restTaken} of ${day.restRequired} rests. `
+              : `Whether it counts is worked out from the punches, never from the shift on this row. `) +
+          `Worth correcting in QSP so the next period files it against the shift it happened in.`,
       },
     });
   }
@@ -482,12 +498,11 @@ export default async function ChecksPage({ params }) {
         head: `first rest ${over} min late`,
         tone: "text-violet-700 dark:text-violet-300",
         lead:
-          `They did take a rest break, ${hrs} hours of work into a ${day.paidHours} hour day, ` +
-          `where a first rest belongs in the first four. Nothing is charged for it: the rule is the ` +
-          `middle of each work period "insofar as practicable" rather than a deadline, so this is ` +
-          `a scheduling pattern to fix rather than a premium to pay. The day is otherwise ` +
-          `compliant, which is why it is here at all: days that already owe a rest premium are ` +
-          `left out, because a late rest cannot cost anything on top of one.`,
+          `The rest was taken ${hrs} hours of work into a ${day.paidHours} hour day. A first rest ` +
+          `belongs in the first four hours worked. Nothing is charged: the standard is the middle ` +
+          `of each work period "insofar as practicable", not a deadline, and ${over} minutes past ` +
+          `it is inside what that wording allows. Here so it can be seen if it turns out to be a ` +
+          `habit or a rostering problem.`,
       },
     });
   }
@@ -536,7 +551,7 @@ export default async function ChecksPage({ params }) {
           `The report puts a rest at ${restTimesText(t, d)}, inside the lunch the schedule rostered. ` +
           `A rest period is PAID time and a meal period is unpaid, so ten minutes inside the lunch ` +
           `cannot be a rest period - most often it is part of the lunch that got logged as one. ` +
-          `IT HAS NOT BEEN COUNTED as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `It has not been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
           `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. The opportunity to take ` +
           `a ten minute break always exists here, so this was not one the employer failed to provide.`));
       }
@@ -551,7 +566,7 @@ export default async function ChecksPage({ params }) {
           `${d.workedMin ? Math.round((d.workedMin / 60) * 100) / 100 : d.paidHours} hours. ` +
           `A break before clock-in or after clock-out is not paid time, so it was never a rest ` +
           `period - most often it is a default nobody changed rather than anything that happened. ` +
-          `IT HAS NOT BEEN COUNTED as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `It has not been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
           `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. That the entry was not ` +
           `caught during the work day is on us, not on them, so the premium is not theirs to lose. ` +
           `Worth fixing at source in QSP so the next period does not repeat it.`));
@@ -561,8 +576,8 @@ export default async function ChecksPage({ params }) {
         entries.push(restRow(t, d, "rest-unpaid",
           d.restsUnpaid === 1 ? "a rest that was not paid" : `${d.restsUnpaid} rests that were not paid`,
           `The report records a rest at ${restTimesText(t, d)}, and the punches have them off the ` +
-          `clock across it. A rest period is paid time, so unpaid minutes were not one - it HAS NOT ` +
-          `BEEN COUNTED as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `clock across it. A rest period is paid time, so unpaid minutes were not one, so it has not ` +
+          `been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
           `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. No hours are added ` +
           `back: the premium is what compensates a rest that did not happen, and paying for the ` +
           `minutes as well would be paying for a break we have just said was not taken. Wages would ` +

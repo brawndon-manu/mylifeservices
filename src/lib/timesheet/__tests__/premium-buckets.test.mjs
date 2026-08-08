@@ -589,3 +589,52 @@ test("a rostered lunch is not called a transition between bookings", () => {
   assert.equal(unrostered.mealGapKind, "scheduled-transition");
   assert.equal(unrostered.mealViolation, true);
 });
+
+// ------------------------------- overtime on a week cut by the period boundary
+
+// Mon-Sun workweek. 07/16/26 is a Thursday, so the week of 07/13 is cut by a
+// pay period starting 07/16 and its Mon-Wed live in the previous export.
+const boundaryWeek = (days) =>
+  analyzeTimesheet({
+    employee: "Test, Person",
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days,
+  });
+const plainDay = (date, punches, printed = null) => ({ date, punches, printed });
+
+test("a partial week takes QSP's overtime where ours cannot see the whole week", () => {
+  // Hardin's shape: Thu 8, Fri 8, Sun 2.25. We see 18.25 hours and no overtime.
+  // QSP printed the Sunday entirely as OT because he had already passed 40 on
+  // days that live in the previous pay period.
+  const t = boundaryWeek([
+    plainDay("07/16/26", [at(8), at(16)], { daily: 8, regular: 8 }),
+    plainDay("07/17/26", [at(8), at(16)], { daily: 8, regular: 8 }),
+    plainDay("07/19/26", [at(8), at(10, 15)], { daily: 2.25, overtime: 2.25 }),
+  ]);
+  const sun = t.days.find((d) => d.date === "07/19/26");
+  assert.equal(sun.weekPartial, true, "the week is cut by the boundary");
+  assert.equal(sun.otHours, 2.25, "QSP's figure is taken");
+  assert.equal(sun.regularHours, 0);
+  assert.equal(sun.otFromPrinted, true, "and the day says where the number came from");
+  // the day's paid hours must not move, only which bucket they sit in
+  assert.equal(sun.regularHours + sun.otHours + sun.doubleHours, sun.paidHours);
+});
+
+test("it never lowers overtime, and never touches a complete week", () => {
+  // ours higher than QSP's on a partial week: Solorzano 07/28 is 0.17 to 0.16.
+  const t = boundaryWeek([
+    plainDay("07/16/26", [at(8), at(16, 10)], { daily: 8.17, overtime: 0.16 }),
+  ]);
+  const d = t.days[0];
+  assert.equal(d.weekPartial, true);
+  assert.ok(d.otHours > 0.16, "our own figure is kept where it is higher");
+  assert.notEqual(d.otFromPrinted, true);
+
+  // a COMPLETE week is computed from the punches and QSP's column is ignored,
+  // however tempting it looks. Mon 07/20 to Sun 07/26 sits inside the period.
+  const full = boundaryWeek([
+    plainDay("07/20/26", [at(8), at(16)], { daily: 8, overtime: 5 }),
+  ]);
+  assert.equal(full.days[0].weekPartial, false);
+  assert.equal(full.days[0].otHours, 0, "we can prove this one, so we do not take it on trust");
+});
