@@ -3,7 +3,6 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { preferredName } from "@/lib/contacts";
 import { restKey } from "@/lib/timesheet/rests";
 import {
   anomalyLabel,
@@ -331,7 +330,12 @@ export default async function ChecksPage({ params }) {
     const byDate = sched.byDate || {};
     const common = {
       timesheetId: t.id,
-      who: t.user ? preferredName(t.user) : t.sourceName,
+      // the export's own spelling, "Martinez, Jose", NOT the portal's preferred
+      // name. this screen audits our figures against the source documents and
+      // every other column on it quotes those documents, so the name has to be
+      // the one a reader can find in the PDF. it also keeps the list in last
+      // name order, the way the batch list and the signed sheet already read.
+      who: t.sourceName,
       signed: !!t.signedAt,
       overrides: t.overrides || {},
       dayByDate: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d])),
@@ -377,7 +381,9 @@ export default async function ChecksPage({ params }) {
       // several - Zuchniak has eight.
       timesheetId: t?.id || null,
       rowKey: `rest-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
-      who: t ? (t.user ? preferredName(t.user) : t.sourceName) : r.name,
+      // same rule as above. an unmatched row keeps the report's own spelling,
+      // because that is the only name the document actually carries.
+      who: t ? t.sourceName : r.name,
       signed: false,
       overrides: {},
       dayByDate: {},
