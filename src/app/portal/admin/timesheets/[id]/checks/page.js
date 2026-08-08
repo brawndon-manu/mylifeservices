@@ -514,11 +514,12 @@ export default async function ChecksPage({ params }) {
           d.restsOutsideShift === 1 ? "a rest logged outside the shift" : `${d.restsOutsideShift} rests logged outside the shift`,
           `The Rest Periods Report records ${restTimesText(t, d)} on a day worked ` +
           `${d.workedMin ? Math.round((d.workedMin / 60) * 100) / 100 : d.paidHours} hours. ` +
-          `A break before clock-in or after clock-out was not a rest taken during work, and it is ` +
-          `most often a default nobody changed rather than anything that happened. ` +
-          `IT STILL COUNTS TOWARD THE REST TALLY on this sheet, which means it can be clearing a ` +
-          `premium that is owed. Nothing has been changed on the strength of it: that is a decision, ` +
-          `not something the engine should do on its own.`));
+          `A break before clock-in or after clock-out is not paid time, so it was never a rest ` +
+          `period - most often it is a default nobody changed rather than anything that happened. ` +
+          `IT HAS NOT BEEN COUNTED as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. That the entry was not ` +
+          `caught during the work day is on us, not on them, so the premium is not theirs to lose. ` +
+          `Worth fixing at source in QSP so the next period does not repeat it.`));
       }
       // A rest that fell inside a punched-out gap. Paid time that went unpaid.
       if (d.restsUnpaid) {

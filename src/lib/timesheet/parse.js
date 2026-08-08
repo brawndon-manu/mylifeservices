@@ -430,9 +430,35 @@ export function analyzeDay(day) {
   const usableRests = (restTimes || []).filter(
     (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
   );
+  const insideMeal = (r) =>
+    !!rosteredMeals && rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end);
+
+  // The same principle, applied to the other end of the day: a rest logged
+  // before clock-in or after clock-out is not paid time either, so it was not a
+  // rest period. Mánu 2026-08-08: "that is on us for not catching it during the
+  // work day" - the entry is a records failure on the employer's side, and the
+  // employee is not made to carry it.
+  //
+  // Eleven of the sixteen on 07/16-07/31 are one person's 7:00-7:10 on an 8:00
+  // shift, twelve days running. A default nobody changed, clearing a premium
+  // every single day.
+  const shiftMins = p.map((x) => x.min);
+  const shiftStart = shiftMins.length ? Math.min(...shiftMins) : null;
+  const shiftEnd = shiftMins.length ? Math.max(...shiftMins) : null;
+  const outsideShift = (r) =>
+    shiftStart != null && (r.out < shiftStart || r.in > shiftEnd);
+
   const restsInsideMeal = restTimes && rosteredMeals
-    ? usableRests.filter((r) => rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end)).length
+    ? usableRests.filter(insideMeal).length
     : null;
+  const restsOutsideShift = restTimes && shiftStart != null
+    ? usableRests.filter(outsideShift).length
+    : null;
+  // the UNION, because a rest could in principle be both and must only be
+  // discounted once.
+  const restsNotCounted = restTimes
+    ? usableRests.filter((r) => insideMeal(r) || outsideShift(r)).length
+    : 0;
 
   // ---- what counts as a break TAKEN -------------------------------------
   //
@@ -459,7 +485,7 @@ export function analyzeDay(day) {
   // were never rest periods. See the ruling above. This is the only place the
   // report's own count is reduced, and it can only ever move the day toward
   // owing a premium, never away from one.
-  const restTaken = Math.max(0, (recorded === null ? 0 : recorded) - (restsInsideMeal || 0));
+  const restTaken = Math.max(0, (recorded === null ? 0 : recorded) - restsNotCounted);
 
   // Can ANY source speak to whether a rest break happened on this day?
   //
@@ -559,29 +585,16 @@ export function analyzeDay(day) {
   // the rostered meals are worked out further up, because `restsInsideMeal`
   // has to be known before `restTaken` is decided.
   //
-  // ---- two more things the rest TIMES can show, both reported, neither charged
-  //
-  // OUTSIDE THE SHIFT. A rest logged before clock-in or after clock-out was not
-  // a rest taken during work. April Martinez carries one at 7:00-7:10 on a
-  // shift that starts at 8:00, twelve days running - a default nobody changed -
-  // and on every one of those days it takes her from 1 of 2 rests to 2 of 2 and
-  // clears a premium she is owed. It still COUNTS: Mánu's call 2026-08-08 was
-  // to surface it rather than move 13 premiums on the engine's say-so.
-  //
-  // UNPAID. A rest sitting inside a punched-out gap was not paid, and a rest
-  // period is paid time. That is wages rather than a premium, and it is the one
-  // direction this engine has never gone, so it is shown and left alone.
-  let restsOutsideShift = null;
+  // UNPAID. A rest sitting inside a punched-out gap, during the shift, was not
+  // paid - and a rest period is paid time. That is WAGES rather than a premium,
+  // a different kind of wrong from the two above, so it is shown and the hours
+  // are left alone. Adding paid time on top of what QSP exported is the one
+  // direction this engine has never gone.
   let restsUnpaid = null;
   if (restTimes && p.length) {
     const mins = p.map((x) => x.min);
-    const shiftStart = Math.min(...mins);
-    const shiftEnd = Math.max(...mins);
-    // a reversed row (in before out) is malformed, not a placement problem
-    const usable = usableRests;
-    restsOutsideShift = usable.filter((r) => r.out < shiftStart || r.in > shiftEnd).length;
-    restsUnpaid = usable.filter((r) => {
-      if (r.out < shiftStart || r.in > shiftEnd) return false;
+    restsUnpaid = usableRests.filter((r) => {
+      if (outsideShift(r)) return false;
       for (let i = 1; i + 1 < mins.length; i += 2) {
         if (mins[i] <= r.out && mins[i + 1] >= r.in) return true;
       }

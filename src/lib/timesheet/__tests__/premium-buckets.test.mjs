@@ -426,19 +426,21 @@ test("without rest times or without a rostered lunch there is no answer", () => 
 
 // --------------------------------- rests outside the shift, and unpaid rests
 
-test("a rest logged outside the shift is reported and still counts, for now", () => {
+test("a rest logged outside the shift does not count, and the premium follows", () => {
   // April Martinez's shape: a 7:00-7:10 rest on a shift that starts at 8:00,
-  // twelve days running. It is a default nobody changed, and it clears a
-  // premium she is owed - so it has to be visible. Mánu's call 2026-08-08 was
-  // to surface it rather than move 13 premiums on the engine's say-so.
+  // twelve days running. A default nobody changed, clearing a premium she is
+  // owed every one of those days. Same principle as a rest inside the lunch -
+  // those minutes are not paid, so they were never a rest period - and Mánu's
+  // ruling is that the entry is a records failure on the employer's side.
   const before = analyzeDay({
     date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
     scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
     restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 14 * 60, in: 14 * 60 + 10 }],
   });
   assert.equal(before.restsOutsideShift, 1);
-  assert.equal(before.restTaken, 2, "it still counts");
-  assert.equal(before.restViolation, false, "and still clears the premium, on purpose");
+  assert.equal(before.restTaken, 1, "the report said 2, one was before she clocked in");
+  assert.equal(before.restRequired, 2);
+  assert.equal(before.restViolation, true, "so an hour is owed");
 
   // after clock-out, the other direction
   const after = analyzeDay({
@@ -532,4 +534,23 @@ test("discounting a rest can never push the count below zero", () => {
     restTimes: [{ out: 12 * 60 + 10, in: 12 * 60 + 20 }],
   });
   assert.equal(d.restTaken, 0);
+});
+
+test("a rest that is both inside the lunch and outside the shift is discounted once", () => {
+  // contrived, but the two rules are independent and both subtract, so the
+  // union has to be taken or one rest would remove two from the tally.
+  const d = analyzeDay({
+    date: "07/20/26", punches: [at(12, 15), at(17)], printed: null, mealScheduled: true,
+    scheduleBlocks: [
+      { start: 8 * 60, end: 12 * 60, meal: false },
+      { start: 12 * 60, end: 12 * 60 + 30, meal: true },
+      { start: 12 * 60 + 30, end: 17 * 60, meal: false },
+    ],
+    restRecorded: 1,
+    // 12:05-12:10 is inside the rostered lunch AND before the first punch
+    restTimes: [{ out: 12 * 60 + 5, in: 12 * 60 + 10 }],
+  });
+  assert.equal(d.restsInsideMeal, 1);
+  assert.equal(d.restsOutsideShift, 1);
+  assert.equal(d.restTaken, 0, "1 recorded, 1 discounted, not 1 minus 2");
 });
