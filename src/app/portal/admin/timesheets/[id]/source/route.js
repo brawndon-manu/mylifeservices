@@ -14,9 +14,13 @@ import { canManageTimesheets } from "@/lib/roles";
 // Served inline on purpose: `#page=N` is a viewer instruction, handled entirely
 // in the browser and never sent to us, and it only does anything if the PDF
 // opens in a viewer rather than downloading.
+//
+// The Rest Periods Report is the exception: it is a spreadsheet, so it has no
+// pages to deep-link to and no viewer to open inline. It downloads.
 const DOCS = {
-  timesheet: { url: "sourceUrl", name: "sourceName", fallback: "qsp-export" },
-  schedule: { url: "scheduleUrl", name: "scheduleName", fallback: "schedule" },
+  timesheet: { url: "sourceUrl", name: "sourceName", fallback: "qsp-export", ext: "pdf", type: "application/pdf", inline: true },
+  schedule: { url: "scheduleUrl", name: "scheduleName", fallback: "schedule", ext: "pdf", type: "application/pdf", inline: true },
+  rests: { url: "restsUrl", name: "restsName", fallback: "rest-periods", ext: "xls", type: "application/vnd.ms-excel", inline: false },
 };
 
 export async function GET(req, { params }) {
@@ -33,31 +37,40 @@ export async function GET(req, { params }) {
 
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
-    select: { sourceUrl: true, sourceName: true, scheduleUrl: true, scheduleName: true },
+    select: {
+      sourceUrl: true, sourceName: true,
+      scheduleUrl: true, scheduleName: true,
+      restsUrl: true, restsName: true,
+    },
   });
   if (!batch) return new NextResponse("Not found", { status: 404 });
 
   const url = batch[doc.url];
   if (!url) {
-    // batches uploaded before the schedule was kept land here. say so, rather
+    // batches uploaded before a document was kept land here. say so, rather
     // than a bare 404 that reads like the whole feature is broken.
-    return new NextResponse(
-      which === "schedule"
-        ? "No schedule was stored with this batch. Uploads before 2026-08-04 kept only what was read out of the schedule, not the file. Re-upload the period to get it."
-        : "No source export was stored with this batch.",
-      { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } },
-    );
+    const why = {
+      schedule:
+        "No schedule was stored with this batch. Uploads before 2026-08-04 kept only what was read out of the schedule, not the file. Re-upload the period to get it.",
+      rests: "No Rest Periods Report was stored with this batch.",
+    };
+    return new NextResponse(why[which] || "No source export was stored with this batch.", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   }
 
   const res = await fetch(url);
   if (!res.ok) return new NextResponse("Not found", { status: 404 });
 
   const buf = await res.arrayBuffer();
-  const safe = (batch[doc.name] || doc.fallback).replace(/[^\w.\- ]/g, "_").replace(/\.pdf$/i, "");
+  const safe = (batch[doc.name] || doc.fallback)
+    .replace(/[^\w.\- ]/g, "_")
+    .replace(/\.(pdf|xlsx?)$/i, "");
   return new NextResponse(buf, {
     headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${safe}.pdf"`,
+      "Content-Type": doc.type,
+      "Content-Disposition": `${doc.inline ? "inline" : "attachment"}; filename="${safe}.${doc.ext}"`,
       "Cache-Control": "private, no-store",
     },
   });

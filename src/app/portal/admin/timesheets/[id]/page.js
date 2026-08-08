@@ -13,7 +13,20 @@ import SendPanel from "../_components/SendPanel";
 import DeleteBatchButton from "../_components/DeleteBatchButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
 
-export const metadata = { title: "Timesheet batch", robots: { index: false, follow: false } };
+// the tab is where the name is most visible, and "Timesheet batch" told you
+// nothing about WHICH one when three are open at once. `batch` is our word
+// anyway - payroll says "the July 16th to 31st period".
+export async function generateMetadata({ params }) {
+  const { id } = await params;
+  const b = await prisma.timesheetBatch.findUnique({
+    where: { id },
+    select: { periodFrom: true, periodTo: true },
+  });
+  return {
+    title: b ? `Pay period ${b.periodFrom} to ${b.periodTo}` : "Pay period",
+    robots: { index: false, follow: false },
+  };
+}
 export const dynamic = "force-dynamic";
 
 export default async function TimesheetBatchPage({ params, searchParams }) {
@@ -25,6 +38,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     include: {
+      uploadedBy: {
+        select: { name: true, preferredFirstName: true, preferredLastName: true },
+      },
       timesheets: {
         orderBy: { sourceName: "asc" },
         include: {
@@ -80,7 +96,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     // it is the one row state worth spotting from the list
     missingDays: (t.data?.scheduleCheck?.flagged || [])
       .filter((f) => f.flag === "missing-from-timesheet").length,
-    hasPdf: !!t.pdfUrl,
+    // the unsigned sheet is rendered on demand from `data`, so there is no
+    // stored file to look for - renderOk is what says it can be built at all,
+    // and it is set by a real render at upload rather than assumed.
+    hasPdf: t.renderOk !== false && (t.data?.days || []).length > 0,
     sentAt: t.sentAt ? t.sentAt.toISOString() : null,
     sentToEmail: t.sentToEmail,
     intendedEmail: t.intendedEmail,
@@ -107,7 +126,36 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     scheduleStatus: t.data?.scheduleCheck?.status || "no-file",
     scheduleError: t.data?.scheduleCheck?.error || null,
     support: t.data?.premiumSupport?.totals || null,
+    // what the two source documents say about this one person, so the row can
+    // link straight to the page its figures were read off
+    docs: {
+      sourcePages: t.data?.sourcePages || [],
+      schedulePages: t.data?.schedulePages || [],
+      days: (t.data?.days || []).length,
+      // QSP's own figure, before any of our corrections - it is what is
+      // actually printed on the page the link opens
+      clockHours: (Math.round((t.rawHours || 0) * 100) / 100).toFixed(2),
+      rosteredDays: Object.keys(t.data?.scheduleCheck?.byDate || {}).length,
+      missingDays: (t.data?.scheduleCheck?.flagged || [])
+        .filter((f) => f.flag === "missing-from-timesheet").length,
+      punchIssues: (t.data?.punchIssues || []).length,
+    },
   }));
+
+  // how many of the source exports this period was uploaded with. tells you at
+  // a glance whether a batch is missing a document it should have had.
+  const sourceDocs = [
+    batch.sourceUrl, batch.scheduleUrl, batch.clockUrl, batch.payrollUrl, batch.restsUrl,
+  ].filter(Boolean).length;
+  // pinned to Pacific rather than the server's zone. this renders on the
+  // server, so without a fixed zone it reads "Aug 6" on a dev box in
+  // California and "Aug 7" on Vercel, which runs UTC - the same upload,
+  // two dates, depending where the page was rendered. Payroll is in
+  // California, so California is the answer that means something.
+  const uploadedOn = batch.createdAt.toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles",
+  });
+  const uploadedByName = batch.uploadedBy ? preferredName(batch.uploadedBy) : null;
 
   const total = rows.length;
   const matched = rows.filter((r) => r.user).length;
@@ -182,6 +230,36 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         </span>
       </div>
 
+      {/* the period names itself before anything else on the page. it used to
+          sit below the download card, so the first thing you read was a row of
+          buttons and the first thing you could NAME was three inches down. */}
+      <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-brand-dark">Pay period</p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+        {batch.periodFrom} to {batch.periodTo}
+      </h1>
+      {/* two runs of the same dates are indistinguishable without this, and
+          nothing else on the page says when the export was pulled. */}
+      <p className="mt-2 text-sm text-muted">
+        Uploaded <span className="text-foreground">{uploadedOn}</span>
+        {uploadedByName && (
+          <>
+            {" by "}
+            <span className="text-foreground">{uploadedByName}</span>
+          </>
+        )}
+        {sourceDocs > 0 && ` · ${sourceDocs} source document${sourceDocs === 1 ? "" : "s"}`}
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-xs">
+        <Stat label="employees" value={total} />
+        <Stat label="matched" value={matched} tone={unmatched ? "warn" : "ok"} />
+        <Stat label="sent" value={sent} />
+        <Stat label="signed" value={signed} tone={signed === total && total > 0 ? "ok" : undefined} />
+        <Stat label="approved" value={approved} tone={approved === signed && signed > 0 ? "ok" : undefined} />
+      </div>
+
+      <SendModeBanner mode={mode} />
+
       {/* the corrected sheets themselves. these used to appear only once
           somebody had signed, which is backwards - reading the batch over is
           exactly what you want to do BEFORE anyone is emailed. */}
@@ -235,21 +313,6 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           />
         </div>
       </div>
-
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Pay period</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        {batch.periodFrom} to {batch.periodTo}
-      </h1>
-
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <Stat label="employees" value={total} />
-        <Stat label="matched" value={matched} tone={unmatched ? "warn" : "ok"} />
-        <Stat label="sent" value={sent} />
-        <Stat label="signed" value={signed} tone={signed === total && total > 0 ? "ok" : undefined} />
-        <Stat label="approved" value={approved} tone={approved === signed && signed > 0 ? "ok" : undefined} />
-      </div>
-
-      <SendModeBanner mode={mode} />
 
       {punchDays > 0 && (
         <div
@@ -473,6 +536,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         assign={assignTimesheet}
         clear={clearTimesheetAssignment}
         send={sendTimesheets}
+        hasSource={!!batch.sourceUrl}
+        hasSchedule={!!batch.scheduleUrl}
       />
     </section>
   );
