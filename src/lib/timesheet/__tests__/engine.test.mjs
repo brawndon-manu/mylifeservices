@@ -1808,3 +1808,30 @@ test("an overlapping-clients day says so in full, not truncated", async () => {
   );
   assert.match(words, /hrs credited, 4\.33 hrs between first and last punch/);
 });
+
+// A rebuild writes `recomputeSheet`'s output back into the stored days, so the
+// stored days come back already carrying the correction. Recomputing THOSE with
+// the override removed starts from the corrected figures and undoes nothing -
+// an override could be applied and never taken back.
+//
+// Found by an employee answering a rest question "yes" and then "no" on the
+// signing page: the premium went 16.00 -> 15.00 -> 15.00. The fix is to keep
+// the untouched days and always recompute from them, which is what
+// `data.daysOriginal` is for.
+test("recomputing from ALREADY-PATCHED days cannot undo an override", () => {
+  const pristine = [
+    { date: "07/23/26", paidHours: 5.92, rawHours: 5.92, mealViolation: true, restViolation: true, restCount: 0, restRequired: 1 },
+  ];
+  const overrides = mergeOverride(null, "07/23/26", patchFor("rest_taken", pristine[0], null));
+
+  const applied = recomputeSheet({ days: pristine, payPeriod: null, overrides }, applyOvertime);
+  assert.equal(applied.premiums.totalHours, 1, "rest premium comes off, meal premium stays");
+
+  // the trap: feed the patched days back in with the override cleared
+  const wrong = recomputeSheet({ days: applied.days, payPeriod: null, overrides: {} }, applyOvertime);
+  assert.equal(wrong.premiums.totalHours, 1, "still 1 - the rest premium never comes back");
+
+  // the fix: always recompute from the pristine set
+  const right = recomputeSheet({ days: pristine, payPeriod: null, overrides: {} }, applyOvertime);
+  assert.equal(right.premiums.totalHours, 2, "both premiums restored");
+});
