@@ -397,6 +397,41 @@ export default async function ChecksPage({ params }) {
     });
   }
 
+  // The report filed a rest against a shift it does not fall inside. Aranda
+  // 07/16 has one at 3:00-3:10 PM hung on a 1:00-2:30 PM shift; she was working
+  // 2:30-5:00, so the break happened, was paid, and counts. The ROW is wrong,
+  // not the break, and saying so is the whole point of this group - it would
+  // otherwise read as somebody skipping a rest.
+  for (const r of (batch.restsByDate || []).filter((x) => x.offOwnShift)) {
+    const t = restByName.get(restKey(r.name));
+    const day = (t?.data?.days || []).find((x) => x.date === r.date);
+    entries.push({
+      timesheetId: t?.id || null,
+      rowKey: `rest-offshift-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
+      who: t ? t.sourceName : r.name,
+      signed: false,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "rest-off-shift",
+      date: r.date,
+      d: {
+        group: "anomaly",
+        head: "filed against the wrong shift",
+        tone: "text-violet-700 dark:text-violet-300",
+        lead:
+          `The report records this rest at ${r.out} to ${r.in}, on a shift of ${r.shift}. ` +
+          `It does not fall inside that shift. THAT IS A FILING PROBLEM, NOT A MISSED BREAK: ` +
+          (day
+            ? `this day reads ${day.restTaken} of ${day.restRequired}, worked out from the punches ` +
+              `rather than from the shift on this row.`
+            : `whether it counts is worked out from the punches, never from the shift on this row.`) +
+          ` Worth correcting in QSP so the next period files it against the shift it happened in.`,
+      },
+    });
+  }
+
   // A rest that WAS taken, but taken late.
   //
   // Flagged and never charged, on purpose. The meal deadline is statutory and
@@ -569,11 +604,12 @@ export default async function ChecksPage({ params }) {
     punch: { label: "Punches that do not read", order: 0 },
     flag: { label: "Punches the schedule can settle", order: 1 },
     rest: { label: "Rest report entries that cannot be read", order: 2 },
-    "rest-in-meal": { label: "Rests recorded inside the lunch", order: 3 },
-    "rest-outside": { label: "Rests logged outside the shift", order: 4 },
-    "rest-unpaid": { label: "Rests that were never paid", order: 5 },
-    "rest-tacked": { label: "Rests taken against the lunch", order: 6 },
-    "rest-late": { label: "Rests taken late in the shift", order: 7 },
+    "rest-off-shift": { label: "Rests filed against the wrong shift", order: 3 },
+    "rest-in-meal": { label: "Rests recorded inside the lunch", order: 4 },
+    "rest-outside": { label: "Rests logged outside the shift", order: 5 },
+    "rest-unpaid": { label: "Rests that were never paid", order: 6 },
+    "rest-tacked": { label: "Rests taken against the lunch", order: 7 },
+    "rest-late": { label: "Rests taken late in the shift", order: 8 },
   };
   const kindOf = (e) => KINDS[e.kind] || { label: "Other", order: 9 };
 

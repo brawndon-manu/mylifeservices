@@ -162,6 +162,28 @@ export const REST_KIND_NOTE = {
   "no-times": "No out or in time was recorded, so nothing can say a break was taken.",
 };
 
+// Does this rest actually fall inside the shift the report filed it under?
+//
+// Often not, and it does NOT mean the break did not happen. Aranda 07/16 has a
+// rest at 3:00-3:10 PM hung on a shift of 1:00-2:30 PM; she was working
+// 2:30-5:00 that afternoon, so the break was real, paid, and counts. The ROW is
+// what is wrong. 40 rows in 07/16-07/31 are like this and 12 of them are that
+// exact shape.
+//
+// Whether a rest COUNTS is decided by the punches, never by this. This only
+// says the report filed it against the wrong shift, which is worth someone
+// fixing at source.
+export function restOffOwnShift(row) {
+  const shiftOut = clockMin(row?.["Shift Start Time"]);
+  const shiftIn = clockMin(row?.["Shift End Time"]);
+  const restOut = clockMin(row?.["Rest Period Time Out"]);
+  const restIn = clockMin(row?.["Rest Period Time In"]);
+  if (shiftOut == null || shiftIn == null || restOut == null || restIn == null) return false;
+  // a reversed rest is malformed, and the rest reader already handles it
+  if (restIn <= restOut) return false;
+  return restOut < shiftOut || restIn > shiftIn;
+}
+
 export function restKey(name) {
   return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -231,11 +253,27 @@ export function allRestRows(bytes) {
     // reach the checks screen as a person, however harmless it is to the total.
     if (!isRestRow(r)) continue;
     const c = classifyRest(r);
+    // The shift the report hung this rest on. Worth carrying because the two
+    // often disagree: Aranda 07/16 has a rest at 3:00-3:10 PM attached to a
+    // shift of 1:00-2:30 PM. She was working 2:30-5:00 that afternoon, so the
+    // break was real and paid and counts - the ROW is what is wrong, not the
+    // break. 40 rows in the period are like this and 12 of them are that shape.
+    const shiftOut = clockMin(r["Shift Start Time"]);
+    const shiftIn = clockMin(r["Shift End Time"]);
+    const offOwnShift = restOffOwnShift(r);
+
     out.push({
       name: String(r["Employee Name"] || "").trim(),
       date: normalizeDate(r["Start Date"]),
       out: String(r["Rest Period Time Out"] ?? "").trim(),
       in: String(r["Rest Period Time In"] ?? "").trim(),
+      // the shift as the report filed it, and whether the rest actually falls
+      // inside it. Whether the rest COUNTS is a separate question answered by
+      // the punches, not by this.
+      shift: shiftOut != null && shiftIn != null
+        ? `${String(r["Shift Start Time"]).trim()} to ${String(r["Shift End Time"]).trim()}`
+        : null,
+      offOwnShift,
       // the printed column, kept only so a reader can match our row to theirs.
       // it is rounded - never decide anything from it. `derivation` shows the
       // arithmetic ("-0.83 hr x 60 = -50 min") so nobody has to trust the jump.

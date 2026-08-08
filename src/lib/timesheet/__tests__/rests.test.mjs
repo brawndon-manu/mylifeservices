@@ -174,3 +174,28 @@ test("a pasted timesheet line is not a rest row, however Excel hands it over", a
   assert.equal(isRestRow({ "Employee Name": "", "Start Date": "7/16/2026" }), false);
   assert.equal(isRestRow({ "Employee Name": "Aranda, Jennifer", "Start Date": "" }), false);
 });
+
+test("a rest filed against the wrong shift is spotted, and it is not a missed break", async () => {
+  const { restOffOwnShift } = await import("../rests.js");
+  const row = (shiftA, shiftB, restA, restB) => ({
+    "Shift Start Time": shiftA, "Shift End Time": shiftB,
+    "Rest Period Time Out": restA, "Rest Period Time In": restB,
+  });
+
+  // Aranda 07/16: the break is half an hour past the shift it is hung on. She
+  // was working 2:30-5:00, so it happened and it counts - the ROW is wrong.
+  assert.equal(restOffOwnShift(row("1:00 PM", "2:30 PM", "3:00 PM", "3:10 PM")), true);
+  // and before the shift starts, the other direction
+  assert.equal(restOffOwnShift(row("11:30 AM", "2:30 PM", "11:20 AM", "11:30 AM")), true);
+
+  // a rest inside its own shift is the ordinary case, and must not be flagged
+  // or the check is just counting rest rows
+  assert.equal(restOffOwnShift(row("8:00 AM", "5:00 PM", "10:00 AM", "10:10 AM")), false);
+  // touching the edges still counts as inside
+  assert.equal(restOffOwnShift(row("8:00 AM", "5:00 PM", "8:00 AM", "8:10 AM")), false);
+
+  // a reversed rest is malformed, handled elsewhere, and not a placement problem
+  assert.equal(restOffOwnShift(row("8:00 AM", "5:00 PM", "11:45 AM", "11:35 AM")), false);
+  // nothing to compare against
+  assert.equal(restOffOwnShift(row("", "", "10:00 AM", "10:10 AM")), false);
+});
