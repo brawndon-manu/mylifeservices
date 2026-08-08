@@ -91,6 +91,16 @@ export const RULES = {
   // Brinker). a meal that was taken but taken late is still a violation, which
   // is why counting meals alone isn't enough.
   mealMustStartByMin: 300,
+  // a meal period can be waived by mutual written consent when the day is 6
+  // hours or less (Lab. Code §512(a)). the waiver only reaches a day where no
+  // meal was provided at all - it cannot excuse one that was provided late.
+  mealWaiverMaxHours: 6,
+  // every current member of staff has a signed waiver on file. that is Mánu's
+  // statement of fact 2026-08-08, not an assumption the engine made: the forms
+  // exist on paper and are not in the portal yet, because the portal has not
+  // been rolled out to staff. once they are stored per person this flips to
+  // reading the real submission and the default disappears.
+  mealWaiverOnFileByDefault: true,
   // §226.7: max one meal premium + one rest premium per workday, 1 hr each.
   premiumHoursPerViolation: 1,
   // CA overtime. nobody is supposed to run over, but it still has to be
@@ -438,6 +448,19 @@ export function analyzeDay(day) {
     !!firstMeal &&
     firstMeal.workedBefore > RULES.mealMustStartByMin;
 
+  // a signed waiver clears the day, but only the narrow case the statute
+  // allows: the day is 6 hours or less AND no meal was provided at all. a late
+  // meal is never waivable, and neither is a day past 6 hours, so both fall
+  // through to the violation below however the paperwork reads.
+  const mealWaiverOnFile =
+    day.mealWaiverOnFile === undefined ? RULES.mealWaiverOnFileByDefault : day.mealWaiverOnFile;
+  const mealWaived =
+    mealRequired &&
+    !mealUnknown &&
+    !mealTaken &&
+    mealWaiverOnFile &&
+    paidHours <= RULES.mealWaiverMaxHours;
+
   // sanity check against QSP's own printed figure for the day. small gaps are
   // their rounding; a real gap means we misread the punches and must not be
   // trusted silently on a payroll document.
@@ -483,7 +506,11 @@ export function analyzeDay(day) {
     mealMissing: mealRequired && !mealUnknown && !mealTaken,
     mealLate,
     mealStartedAfterMin,
-    mealViolation: mealRequired && !mealUnknown && (!mealTaken || mealLate),
+    // the meal was owed and not provided, but a signed waiver covers the day.
+    // kept as its own field rather than folded into mealMissing, because a
+    // waived day and a compliant day are different claims and the sheet says so.
+    mealWaived,
+    mealViolation: mealRequired && !mealUnknown && !mealWaived && (!mealTaken || mealLate),
     restUnknown,
     // hours credited exceed the clock window they sit in, so two bookings
     // overlap. flagged, never silently corrected.

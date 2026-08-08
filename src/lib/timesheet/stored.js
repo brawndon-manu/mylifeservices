@@ -25,7 +25,7 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 export const REQUIRED_DAY_FIELDS = [
   "date", "paidHours", "rawHours", "regularHours", "otHours", "doubleHours",
   "mealRequired", "mealViolation", "mealMissing", "mealLate", "mealStartedAfterMin",
-  "mealCount", "mealScheduled", "mealUnknown",
+  "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -48,6 +48,10 @@ export function storedDay(d) {
     doubleHours: r2(d.doubleHours),
     mealViolation: d.mealViolation,
     restViolation: d.restViolation,
+    // a signed waiver cleared the day. stored rather than recomputed because a
+    // waiver is a fact about paperwork at the time the sheet was produced, and
+    // the sheet has to keep saying what it said when it was signed.
+    mealWaived: !!d.mealWaived,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,

@@ -376,6 +376,11 @@ export async function renderCorrected(sheet, opts = {}) {
         const notes = [];
         if (d.mealLate) notes.push("meal started late");
         else if (d.mealViolation) notes.push("no meal period");
+        // a waived day is not a violation, and the sheet has to say which one it
+        // is. printing nothing would make a waived day look identical to a day
+        // where lunch was actually taken, and the only record of why 63 hours
+        // came off the period would live in the engine.
+        else if (d.mealWaived) notes.push("meal waived, waiver on file");
         // print the count the VIOLATION was decided on, not the punch-gap count.
         // those differ whenever QSP's Rest Periods Report saw fewer breaks than
         // the gaps suggest, and the punch count is the one the engine
@@ -418,7 +423,11 @@ export async function renderCorrected(sheet, opts = {}) {
           const col = xs[IDX.comments];
           const maxW = col.w - 6;
           const { str, size } = fitText(notes.join(", "), maxW, font, 6, 4.4);
-          text(str, col.x + 3, base, { size, color: PREM });
+          // red is the colour this sheet uses for something owed. a day whose
+          // only note is a waiver owes nothing, so it must not read as a
+          // finding - grey it instead of shouting it.
+          const owed = d.mealViolation || d.mealLate || d.restViolation || d.restUnknown;
+          text(str, col.x + 3, base, { size, color: owed ? PREM : MUTED });
         }
       }
 
