@@ -137,16 +137,24 @@ export default async function PatternsPage() {
           <h2 className="text-base font-semibold text-rose-900 dark:text-rose-200">
             Not clocking rest breaks at all
           </h2>
+          {/* This used to say the premium was owed BECAUSE there was no punch.
+              That stopped being true on 06 August, when QSP stopped punching
+              rest breaks: a punch witnesses nothing now and the Rest Periods
+              Report decides. Two people here never punch a rest and owe nothing
+              at all, because the report records theirs. Never punching is the
+              pattern; what it COSTS is a separate question the report answers. */}
           <p className="mt-1 text-sm text-rose-800 dark:text-rose-200/80">
-            These {notClockingRests.length} have never punched a single rest break.
-            Because there is no punch, there is nothing showing the break was
-            taken, so every qualifying day owes a premium - {" "}
+            These {notClockingRests.length} have never punched a single rest break,
+            and are also short on the Rest Periods Report - {" "}
             <strong>
               {notClockingRests.reduce((n, r) => n + r.restMissed, 0)} hours
             </strong>{" "}
-            between them so far. This is the group to talk to: the fix is
-            clocking the break when it happens, and it costs a premium every day
-            it doesn&apos;t.
+            between them so far. The punch is not what decides it: since the
+            export set changed, only the Rest Periods Report can say a break
+            happened, and people who never punch a rest but appear in the report
+            owe nothing. This is still the group to talk to, because a habit of
+            not recording a break is what turns into a premium when the report
+            misses it too.
           </p>
           <ul className="mt-3 grid gap-1 sm:grid-cols-2">
             {notClockingRests.map((r) => (

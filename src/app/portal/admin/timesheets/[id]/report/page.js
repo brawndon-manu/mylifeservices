@@ -127,11 +127,22 @@ export default async function PayoutReportPage({ params }) {
               are counted in the totals but named only as QSP printed them.
             </div>
           )}
+          {/* The two boundary weeks are NOT the same and this used to call both
+              provisional. The one at the START is missing days that already
+              happened, so QSP's export can see them and we now take its printed
+              overtime where it is higher - that is settled. The one at the END
+              is missing days that had not happened when anything was exported,
+              so nobody can know them yet. That one is genuinely still open. */}
           {partial > 0 && (
             <div className="rounded-md border border-border bg-surface-2 px-4 py-3 text-sm text-muted">
               <strong>{partial}</strong> sheet{partial === 1 ? "" : "s"} include a
-              workweek cut off by the pay-period boundary, so the overtime on
-              those weeks is provisional until the neighbouring period is known.
+              workweek cut off by the pay-period boundary. The week at the start
+              of the period is settled: its missing days sit in the previous
+              export, QSP could see them, and the overtime here takes QSP&apos;s
+              own figure wherever that is higher than ours. The week at the END
+              is still open - its last days fall after this period closes, so no
+              export holds them yet, and anyone sitting on 40.00 hours here would
+              go into overtime for any time worked on those days.
             </div>
           )}
         </div>
