@@ -526,9 +526,12 @@ export default async function ChecksPage({ params }) {
         entries.push(restRow(t, d, "rest-unpaid",
           d.restsUnpaid === 1 ? "a rest that was not paid" : `${d.restsUnpaid} rests that were not paid`,
           `The report records a rest at ${restTimesText(t, d)}, and the punches have them off the ` +
-          `clock across it. A rest period is PAID time, so those minutes are wages rather than a ` +
-          `premium. Hours have not been changed: adding paid time on top of what QSP exported is the ` +
-          `one direction this engine has never gone, and it needs a person to say so first.`));
+          `clock across it. A rest period is paid time, so unpaid minutes were not one - it HAS NOT ` +
+          `BEEN COUNTED as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. No hours are added ` +
+          `back: the premium is what compensates a rest that did not happen, and paying for the ` +
+          `minutes as well would be paying for a break we have just said was not taken. Wages would ` +
+          `only be owed if they were WORKING while off the clock, and nothing here says they were.`));
       }
       if (!d.restTackedOn) continue;
       entries.push({
