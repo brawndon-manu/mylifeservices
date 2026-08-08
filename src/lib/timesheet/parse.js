@@ -664,6 +664,17 @@ export function analyzeDay(day) {
       mealGapKind = "overlap-artifact";
     } else if (!blocks || !blocks.length) {
       mealGapKind = "no-schedule";
+    } else if (
+      mealTaken &&
+      rosteredMeals &&
+      rosteredMeals.some((m) => longestGap.start <= m.end && longestGap.end >= m.start)
+    ) {
+      // the gap IS the rostered lunch. it used to come back
+      // "scheduled-transition" on 130 days across 31 people, because the seam
+      // test excludes meal blocks and so the two work blocks either side of a
+      // lunch look exactly like two consecutive bookings. Calling somebody's
+      // lunch a transition between clients is a sentence nobody should read.
+      mealGapKind = "rostered-meal";
     } else {
       // meal blocks are excluded: we are asking about the seams between WORK,
       // and a rostered meal is not a seam, it is the break itself.

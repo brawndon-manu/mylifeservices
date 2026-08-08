@@ -240,7 +240,9 @@ test("a rostered meal is not a seam between bookings", () => {
     date: "07/20/26", punches: GAPPED, printed: null, mealScheduled: true,
     scheduleBlocks: [b(8, 0, 12, 0), b(12, 0, 12, 30, true), b(12, 30, 17, 0)],
   });
-  assert.equal(d.mealGapKind, "scheduled-transition", "the two WORK blocks still bracket it");
+  // the meal block must not count as the boundary, but neither should the gap
+  // then read as a transition between clients: it is the lunch itself.
+  assert.equal(d.mealGapKind, "rostered-meal");
   assert.equal(d.mealViolation, false, "and the rostered meal clears the premium as before");
 });
 
@@ -558,4 +560,32 @@ test("a rest that is both inside the lunch and outside the shift is discounted o
   assert.equal(d.restsInsideMeal, 1);
   assert.equal(d.restsOutsideShift, 1);
   assert.equal(d.restTaken, 0, "1 recorded, 1 discounted, not 1 minus 2");
+});
+
+test("a rostered lunch is not called a transition between bookings", () => {
+  // 130 days across 31 people came back "scheduled-transition" when the gap was
+  // simply the lunch. The seam test excludes meal blocks, so the two work
+  // blocks either side of a rostered lunch look like consecutive bookings.
+  const rostered = analyzeDay({
+    date: "07/20/26", punches: GAPPED, printed: null, mealScheduled: true,
+    scheduleBlocks: [
+      { start: 8 * 60, end: 12 * 60, meal: false },
+      { start: 12 * 60, end: 12 * 60 + 30, meal: true },
+      { start: 12 * 60 + 30, end: 17 * 60, meal: false },
+    ],
+  });
+  assert.equal(rostered.mealGapKind, "rostered-meal");
+  assert.equal(rostered.mealViolation, false, "and it is still a compliant day");
+
+  // the identical punches with NO meal rostered are the real M3 shape and must
+  // still read as a transition, or the fix has eaten the finding.
+  const unrostered = analyzeDay({
+    date: "07/20/26", punches: GAPPED, printed: null,
+    scheduleBlocks: [
+      { start: 8 * 60, end: 12 * 60, meal: false },
+      { start: 12 * 60 + 30, end: 17 * 60, meal: false },
+    ],
+  });
+  assert.equal(unrostered.mealGapKind, "scheduled-transition");
+  assert.equal(unrostered.mealViolation, true);
 });
