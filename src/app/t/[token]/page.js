@@ -4,11 +4,14 @@ import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { preferredName } from "@/lib/contacts";
 import TimesheetSigner from "./TimesheetSigner";
 import ReportProblem from "./ReportProblem";
+import RestRepairQuestion from "./RestRepairQuestion";
 import {
   submitSignedTimesheet,
   submitTimesheetCorrections,
+  answerRestRepair,
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
+import { restKey } from "@/lib/timesheet/rests";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
 // outside /portal so proxy.js doesn't bounce it to login - the signed token IS
@@ -28,16 +31,34 @@ export default async function SignTimesheetPage({ params }) {
   const ts = await prisma.timesheet.findUnique({
     where: { id },
     include: {
-      batch: { select: { periodFrom: true, periodTo: true } },
+      batch: { select: { periodFrom: true, periodTo: true, restsByDate: true } },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      // every correction, not just the open ones: the open ones block signing,
+      // and the resolved rest_taken rows are the answers already given to a
+      // rest-repair question. one relation, so it cannot be included twice.
       corrections: {
-        where: { status: "open" },
-        select: { id: true, date: true, kind: true, note: true, createdAt: true },
+        select: { id: true, date: true, kind: true, note: true, status: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       },
     },
   });
   if (!ts) notFound();
+
+  const openCorrections = ts.corrections.filter((c) => c.status === "open");
+  const restAnswers = new Map(
+    ts.corrections
+      .filter((c) => c.kind === "rest_taken" && c.status !== "open")
+      .map((c) => [c.date, c.status]),
+  );
+
+  // rest-report entries for THIS person that we could not read and can explain
+  // with one mis-picked field. only days the sheet actually lists, so an answer
+  // always has something to patch.
+  const sheetDates = new Set((ts.data?.days || []).map((d) => d.date));
+  const restQuestions = (ts.batch.restsByDate || []).filter(
+    (r) => restKey(r.name) === restKey(ts.sourceName) && r.repair && sheetDates.has(r.date),
+  );
+  const unanswered = restQuestions.filter((r) => !restAnswers.has(r.date));
 
   // the row exists but its PDF was never stored (storage was down at upload).
   // say so plainly - a bare 404 here looks like the link is fake and sends
@@ -113,7 +134,7 @@ export default async function SignTimesheetPage({ params }) {
             . Payroll has your copy - nothing else to do.
           </p>
         </div>
-      ) : ts.corrections.length > 0 ? (
+      ) : openCorrections.length > 0 ? (
         // they've told us something is wrong, so there's nothing to sign until
         // it's sorted. show what we have on record so they can see it landed.
         <div className="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/30">
@@ -122,18 +143,18 @@ export default async function SignTimesheetPage({ params }) {
           </p>
           <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
             You reported{" "}
-            {ts.corrections.length === 1
+            {openCorrections.length === 1
               ? "a problem"
-              : `${ts.corrections.length} problems`}{" "}
+              : `${openCorrections.length} problems`}{" "}
             on{" "}
-            {new Date(ts.corrections[0].createdAt).toLocaleDateString("en-US", {
+            {new Date(openCorrections[0].createdAt).toLocaleDateString("en-US", {
               month: "long", day: "numeric", year: "numeric",
             })}
             . Don&apos;t sign this version - once it&apos;s sorted you&apos;ll get
             a corrected timesheet to sign.
           </p>
           <ul className="mt-3 space-y-1">
-            {ts.corrections.map((c) => (
+            {openCorrections.map((c) => (
               <li key={c.id} className="text-sm text-amber-800 dark:text-amber-200/80">
                 <span className="font-semibold">{c.date || "This timesheet"}</span>
                 {" - "}
@@ -145,12 +166,36 @@ export default async function SignTimesheetPage({ params }) {
         </div>
       ) : (
         <>
-          <TimesheetSigner
-            token={token}
-            fileUrl={`/t/${token}/pdf`}
-            title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
-            submitAction={submitSignedTimesheet}
-          />
+          {/* asked BEFORE the signer, and the signer is withheld until it is
+              answered. an unanswered question leaves the premium in place, so
+              nothing is lost by making them choose - but a document signed
+              without the answer would be signed against figures that are about
+              to change. */}
+          {restQuestions.map((q) => (
+            <RestRepairQuestion
+              key={`${q.date}-${q.out}`}
+              token={token}
+              question={q}
+              premiumHours={ts.premiumHours}
+              answer={restAnswers.get(q.date) || null}
+              submitAction={answerRestRepair}
+            />
+          ))}
+
+          {unanswered.length > 0 ? (
+            <div className="mt-5 rounded-xl border border-dashed border-border-strong p-5">
+              <p className="text-sm text-muted">
+                Answer the question above and your timesheet will appear here to sign.
+              </p>
+            </div>
+          ) : (
+            <TimesheetSigner
+              token={token}
+              fileUrl={`/t/${token}/pdf`}
+              title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
+              submitAction={submitSignedTimesheet}
+            />
+          )}
           <ReportProblem
             token={token}
             days={ts.data?.days || []}
