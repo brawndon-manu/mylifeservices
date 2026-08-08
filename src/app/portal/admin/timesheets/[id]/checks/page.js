@@ -544,10 +544,26 @@ export default async function ChecksPage({ params }) {
     }
   }
 
+  // What each row is ABOUT, so the list can be grouped by it. The anomaly pile
+  // went from 21 to 69 in a day as the rest-timing work landed, and a flat list
+  // that long stops being something anybody reads - six kinds of finding
+  // interleaved by surname is a wall, not a screen.
+  const KINDS = {
+    punch: { label: "Punches that do not read", order: 0 },
+    flag: { label: "Punches the schedule can settle", order: 1 },
+    rest: { label: "Rest report entries that cannot be read", order: 2 },
+    "rest-outside": { label: "Rests logged outside the shift", order: 3 },
+    "rest-unpaid": { label: "Rests that were never paid", order: 4 },
+    "rest-tacked": { label: "Rests taken against the lunch", order: 5 },
+    "rest-late": { label: "Rests taken late in the shift", order: 6 },
+  };
+  const kindOf = (e) => KINDS[e.kind] || { label: "Other", order: 9 };
+
   const ORDER = { decide: 0, unworked: 1, anomaly: 2, settled: 3 };
   entries.sort(
     (a, b) =>
       ORDER[a.d.group] - ORDER[b.d.group] ||
+      kindOf(a).order - kindOf(b).order ||
       a.who.localeCompare(b.who) ||
       String(a.date).localeCompare(String(b.date)),
   );
@@ -613,7 +629,12 @@ export default async function ChecksPage({ params }) {
             : " no schedule was provided to compare against."}
         </p>
       ) : (
-        <ChecksFilter counts={counts} groups={entries.map((e) => e.d.group)} notes={notes}>
+        <ChecksFilter
+          counts={counts}
+          groups={entries.map((e) => e.d.group)}
+          kinds={entries.map((e) => kindOf(e).label)}
+          notes={notes}
+        >
           {entries.map((e) => (
             <div
               key={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
