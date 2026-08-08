@@ -407,6 +407,33 @@ export function analyzeDay(day) {
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
 
+  // ---- a "rest" recorded inside the lunch is not a rest period ------------
+  //
+  // A rest period is PAID and counts as hours worked. A meal period is unpaid.
+  // Ten minutes sitting inside an unpaid thirty minute meal cannot satisfy the
+  // rest obligation, whatever the report calls it - most often it is part of
+  // the lunch that got logged as a break.
+  //
+  // Mánu's ruling 2026-08-08: the opportunity to take a ten minute rest always
+  // exists here - staff are in the field, choose their own moment, and somebody
+  // chases anyone who has not taken one - so a rest that landed inside the
+  // lunch was not one the employer failed to provide. It simply was not taken,
+  // and the premium follows. THIS IS THE ONE PLACE A RECORDED REST IS
+  // DISCOUNTED, and it has to be computed before restTaken is decided below.
+  //
+  // Adjacent is a different thing and still counts: taking your ten right
+  // before or after lunch is a compliance habit, not an uncompensated break.
+  const restTimes = Array.isArray(day.restTimes) ? day.restTimes : null;
+  const rosteredMeals = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => b.meal)
+    : null;
+  const usableRests = (restTimes || []).filter(
+    (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
+  );
+  const restsInsideMeal = restTimes && rosteredMeals
+    ? usableRests.filter((r) => rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end)).length
+    : null;
+
   // ---- what counts as a break TAKEN -------------------------------------
   //
   // A GAP IS NOT A BREAK. This used to infer both kinds from gaps between
@@ -428,7 +455,11 @@ export function analyzeDay(day) {
   // `day.restRecorded` is the Rest Periods Report's count. No coverage means no
   // record, which means none taken - the reading that pays the employee.
   const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
-  const restTaken = recorded === null ? 0 : recorded;
+  // ...less any that landed inside the lunch, which are unpaid minutes and so
+  // were never rest periods. See the ruling above. This is the only place the
+  // report's own count is reduced, and it can only ever move the day toward
+  // owing a premium, never away from one.
+  const restTaken = Math.max(0, (recorded === null ? 0 : recorded) - (restsInsideMeal || 0));
 
   // Can ANY source speak to whether a rest break happened on this day?
   //
@@ -524,11 +555,10 @@ export function analyzeDay(day) {
   // premium is not owed, so `restTaken` is left alone and this only reports.
   //
   // `day.restTimes` is [{out, in}] in minutes, from the Rest Periods Report.
-  // Absent, the question is unanswerable and the count stays null.
-  const restTimes = Array.isArray(day.restTimes) ? day.restTimes : null;
-  const rosteredMeals = Array.isArray(day.scheduleBlocks)
-    ? day.scheduleBlocks.filter((b) => b.meal)
-    : null;
+  // Absent, the question is unanswerable and the count stays null. Both it and
+  // the rostered meals are worked out further up, because `restsInsideMeal`
+  // has to be known before `restTaken` is decided.
+  //
   // ---- two more things the rest TIMES can show, both reported, neither charged
   //
   // OUTSIDE THE SHIFT. A rest logged before clock-in or after clock-out was not
@@ -548,9 +578,7 @@ export function analyzeDay(day) {
     const shiftStart = Math.min(...mins);
     const shiftEnd = Math.max(...mins);
     // a reversed row (in before out) is malformed, not a placement problem
-    const usable = restTimes.filter(
-      (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
-    );
+    const usable = usableRests;
     restsOutsideShift = usable.filter((r) => r.out < shiftStart || r.in > shiftEnd).length;
     restsUnpaid = usable.filter((r) => {
       if (r.out < shiftStart || r.in > shiftEnd) return false;
@@ -561,11 +589,15 @@ export function analyzeDay(day) {
     }).length;
   }
 
+  // Adjacent, but NOT inside. The two are mutually exclusive now: one is
+  // reported and still counts, the other is discounted and pays a premium, so
+  // a row appearing under both headings would be telling two stories about the
+  // same ten minutes.
   let restTackedOn = null;
   if (restTimes && rosteredMeals) {
     const tol = RULES.restTackedOnToleranceMin;
-    restTackedOn = restTimes.filter((r) =>
-      r && Number.isFinite(r.out) && Number.isFinite(r.in) &&
+    restTackedOn = usableRests.filter((r) =>
+      !rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end) &&
       rosteredMeals.some((m) => r.out <= m.end + tol && r.in >= m.start - tol),
     ).length;
   }
@@ -694,6 +726,9 @@ export function analyzeDay(day) {
     // how many of the day's rests were taken hard against the rostered lunch.
     // reported, never charged - see the note above. null when unanswerable.
     restTackedOn,
+    // recorded inside the lunch, so discounted from restTaken above. the ONE
+    // rest finding that moves a figure.
+    restsInsideMeal,
     // rests logged outside the shift, and rests that fell in an unpaid gap.
     // both reported, both leave restTaken and paidHours alone.
     restsOutsideShift,

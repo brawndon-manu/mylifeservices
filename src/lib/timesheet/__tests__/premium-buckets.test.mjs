@@ -486,3 +486,50 @@ test("a reversed rest row is malformed, not a placement problem", () => {
   assert.equal(d.restsOutsideShift, 0);
   assert.equal(d.restsUnpaid, 0);
 });
+
+// ------------------------------- a rest inside the lunch is not a rest taken
+
+test("a rest recorded inside the lunch does not count, and the premium follows", () => {
+  // Jones 07/28: a 9.5 hour day owing 2 rests, one recorded 11:10-11:20 inside
+  // an 11:00-11:30 rostered lunch and one genuine. The report says 2 of 2; the
+  // inside one is unpaid meal time and was never a rest period.
+  const d = analyzeDay({
+    date: "07/28/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
+    restTimes: [
+      { out: 12 * 60 + 10, in: 12 * 60 + 20 },   // inside the 12:00-12:30 lunch
+      { out: 15 * 60, in: 15 * 60 + 10 },        // a real one
+    ],
+  });
+  assert.equal(d.restsInsideMeal, 1);
+  assert.equal(d.restTaken, 1, "the report said 2, one of them was lunch");
+  assert.equal(d.restRequired, 2);
+  assert.equal(d.restViolation, true, "so an hour is owed");
+});
+
+test("adjacent still counts, and the two groups never overlap", () => {
+  // taking your ten right after lunch is a compliance habit, not an
+  // uncompensated break. it must NOT be discounted, or the ruling above turns
+  // into a much bigger one nobody made.
+  const d = analyzeDay({
+    date: "07/28/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
+    restTimes: [
+      { out: 12 * 60 + 30, in: 12 * 60 + 40 },   // starts as lunch ends
+      { out: 15 * 60, in: 15 * 60 + 10 },
+    ],
+  });
+  assert.equal(d.restsInsideMeal, 0);
+  assert.equal(d.restTackedOn, 1);
+  assert.equal(d.restTaken, 2, "still taken");
+  assert.equal(d.restViolation, false, "and still no premium");
+});
+
+test("discounting a rest can never push the count below zero", () => {
+  const d = analyzeDay({
+    date: "07/28/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 0,
+    restTimes: [{ out: 12 * 60 + 10, in: 12 * 60 + 20 }],
+  });
+  assert.equal(d.restTaken, 0);
+});

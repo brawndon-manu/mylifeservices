@@ -492,6 +492,19 @@ export default async function ChecksPage({ params }) {
 
   for (const t of batch.timesheets) {
     for (const d of t.data?.days || []) {
+      // A rest recorded INSIDE the rostered lunch. The one rest finding that
+      // moves a figure: unpaid meal minutes were never a rest period, so it
+      // does not count and the premium follows.
+      if (d.restsInsideMeal) {
+        entries.push(restRow(t, d, "rest-in-meal",
+          d.restsInsideMeal === 1 ? "a rest recorded inside the lunch" : `${d.restsInsideMeal} rests recorded inside the lunch`,
+          `The report puts a rest at ${restTimesText(t, d)}, inside the lunch the schedule rostered. ` +
+          `A rest period is PAID time and a meal period is unpaid, so ten minutes inside the lunch ` +
+          `cannot be a rest period - most often it is part of the lunch that got logged as one. ` +
+          `IT HAS NOT BEEN COUNTED as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. The opportunity to take ` +
+          `a ten minute break always exists here, so this was not one the employer failed to provide.`));
+      }
       // A rest logged before clock-in or after clock-out. It was not a rest
       // taken during work, and it STILL COUNTS - Mánu's call was to surface it
       // rather than move premiums on the engine's say-so. Which makes saying it
@@ -552,10 +565,11 @@ export default async function ChecksPage({ params }) {
     punch: { label: "Punches that do not read", order: 0 },
     flag: { label: "Punches the schedule can settle", order: 1 },
     rest: { label: "Rest report entries that cannot be read", order: 2 },
-    "rest-outside": { label: "Rests logged outside the shift", order: 3 },
-    "rest-unpaid": { label: "Rests that were never paid", order: 4 },
-    "rest-tacked": { label: "Rests taken against the lunch", order: 5 },
-    "rest-late": { label: "Rests taken late in the shift", order: 6 },
+    "rest-in-meal": { label: "Rests recorded inside the lunch", order: 3 },
+    "rest-outside": { label: "Rests logged outside the shift", order: 4 },
+    "rest-unpaid": { label: "Rests that were never paid", order: 5 },
+    "rest-tacked": { label: "Rests taken against the lunch", order: 6 },
+    "rest-late": { label: "Rests taken late in the shift", order: 7 },
   };
   const kindOf = (e) => KINDS[e.kind] || { label: "Other", order: 9 };
 
