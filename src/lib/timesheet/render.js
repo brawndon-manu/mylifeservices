@@ -163,7 +163,23 @@ export async function renderCorrected(sheet, opts = {}) {
     sheet.scheduleByDate || null,
   );
 
-  const doc = await PDFDocument.create();
+  // No clock readings in the file. pdf-lib stamps CreationDate and ModDate from
+  // the system clock, so the same sheet rendered twice produced different bytes
+  // - which matters now that the unsigned sheet is BUILT ON REQUEST rather than
+  // stored. Every download would otherwise be a slightly different file, and
+  // "is this the document they signed" would have no clean answer.
+  //
+  // The dates come from the stamp already on the row, so the metadata says the
+  // same thing the footer does.
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const stampedAt = (() => {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(opts.generatedOn || "").trim());
+    return m ? new Date(Date.UTC(+m[3], +m[1] - 1, +m[2])) : new Date(0);
+  })();
+  doc.setCreationDate(stampedAt);
+  doc.setModificationDate(stampedAt);
+  doc.setProducer("My Life Services");
+  doc.setCreator("My Life Services");
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const italic = await doc.embedFont(StandardFonts.HelveticaOblique);
@@ -253,7 +269,7 @@ export async function renderCorrected(sheet, opts = {}) {
     y -= 18;
     text("Employee Name:", L, y, { size: 8.5 });
     text(sheet.employee ?? "", L + 74, y, { size: 8.5, f: bold });
-    y -= 16;
+    y -= 9;
   };
 
   const newPage = (continued) => {
@@ -269,10 +285,10 @@ export async function renderCorrected(sheet, opts = {}) {
     // period never spans two months and this is always exact.
     const title = periodTitle(sheet.payPeriod);
     if (title) {
-      text(title, (PAGE_W - bold.widthOfTextAtSize(title, 11)) / 2, y - 9, {
-        size: 11, f: bold, color: BRAND,
+      text(title, (PAGE_W - bold.widthOfTextAtSize(title, 12)) / 2, y - 8, {
+        size: 12, f: bold, color: BRAND,
       });
-      y -= 20;
+      y -= 17;
     }
     tableTop = y;
     COLUMNS.forEach(([label], i) => {
