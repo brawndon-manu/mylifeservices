@@ -168,6 +168,26 @@ export function restKey(name) {
 
 const REQUIRED = ["Employee Name", "Start Date", "Total Rest Time"];
 
+// Is this row a rest row at all?
+//
+// A workbook somebody had hand-worked their own timesheet in was uploaded as
+// the Rest Periods Report on 2026-08-08, and it carried 14 pasted TIMESHEET
+// lines: date, in, out, in, out, hours. Excel hands the date over as a serial,
+// so they surfaced on the checks screen as fourteen people called "46219"
+// through "46234" - which is 07/16/26 through 07/31/26.
+//
+// `parseRestReport` had always skipped them, because it needs a name AND a
+// date. `allRestRows` had no guard at all, and THAT difference is the entire
+// defect: the figures were right the whole time and the screen was not. One
+// guard, exported, used by both, so the two cannot drift apart again.
+export function isRestRow(r) {
+  const name = String(r["Employee Name"] ?? "").trim();
+  if (!name) return false;
+  // a bare number is a date serial or an id. never a person.
+  if (/^\d+(\.\d+)?$/.test(name)) return false;
+  return !!normalizeDate(r["Start Date"]);
+}
+
 // -> Map(restKey -> { name, byDate: {date: {taken, malformed}}, taken, malformed })
 export function parseRestReport(bytes) {
   const { headers, rows } = readXlsTable(bytes);
@@ -178,9 +198,9 @@ export function parseRestReport(bytes) {
 
   const people = new Map();
   for (const r of rows) {
+    if (!isRestRow(r)) continue;
     const name = r["Employee Name"];
     const date = normalizeDate(r["Start Date"]);
-    if (!name || !date) continue;
     const key = restKey(name);
     let p = people.get(key);
     if (!p) {
@@ -207,6 +227,9 @@ export function allRestRows(bytes) {
   const { rows } = readXlsTable(bytes);
   const out = [];
   for (const r of rows) {
+    // same guard parseRestReport uses. a row that is not a rest row must not
+    // reach the checks screen as a person, however harmless it is to the total.
+    if (!isRestRow(r)) continue;
     const c = classifyRest(r);
     out.push({
       name: String(r["Employee Name"] || "").trim(),

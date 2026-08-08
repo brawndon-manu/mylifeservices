@@ -147,3 +147,30 @@ test("isSaneRest still judges the printed column only", () => {
   assert.equal(isSaneRest(-0.17), false);
   assert.equal(isSaneRest(12.17), false);
 });
+
+// ---------------------------------------------------- rows that are not rests
+
+test("a pasted timesheet line is not a rest row, however Excel hands it over", async () => {
+  const { isRestRow } = await import("../rests.js");
+
+  // the real shape that got through on 2026-08-08: someone hand-worked their
+  // own timesheet in the rest report workbook and uploaded it. Excel gives the
+  // date as a serial, so 46219 is 07/16/26 and it read as a person's name.
+  const pasted = {
+    "Employee Name": 46219, "Employee Office": "11a", "Client Name": "1p",
+    "Service Type": "1:15p", "Start Date": "3:15p", "Shift Start Time": "3:30p",
+    "Rest Period Time Out": null, "Rest Period Time In": null, "Total Rest Time": null,
+  };
+  assert.equal(isRestRow(pasted), false, "a bare number is a date serial, never a person");
+
+  // and the ordinary row still passes, or the guard has eaten the report
+  const real = {
+    "Employee Name": "Aranda, Jennifer", "Start Date": "7/16/2026",
+    "Rest Period Time Out": "3:00 PM", "Rest Period Time In": "3:10 PM", "Total Rest Time": 0.17,
+  };
+  assert.equal(isRestRow(real), true);
+
+  // the two ways a row can be incomplete
+  assert.equal(isRestRow({ "Employee Name": "", "Start Date": "7/16/2026" }), false);
+  assert.equal(isRestRow({ "Employee Name": "Aranda, Jennifer", "Start Date": "" }), false);
+});
