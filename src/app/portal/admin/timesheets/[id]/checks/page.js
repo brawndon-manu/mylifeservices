@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
+import { restKey } from "@/lib/timesheet/rests";
 import {
   anomalyLabel,
   ANOMALY_KINDS,
@@ -258,6 +259,51 @@ function describeFlagRow(f) {
   };
 }
 
+// One row of the Rest Periods Report, placed in the same four groups as
+// everything else on this screen.
+//
+// The three that carry a proposed fix are the only ones that need a decision:
+// accepting one REMOVES a rest premium, so it is somebody's call and not ours.
+// The four with nothing to propose keep their premium either way - the engine
+// already errs towards paying - so they are an anomaly to go and correct in
+// QSP rather than a decision. The eleven we flipped are settled, and shown so
+// the repair can be audited rather than taken on trust.
+function describeRestRow(r) {
+  const len = r.minutes == null ? "no times" : `${r.minutes} min`;
+  if (r.counted) {
+    return r.reversed
+      ? {
+          group: "settled",
+          head: "read as a normal rest",
+          tone: "text-muted",
+          lead: `QSP has the out and in times the wrong way round, so its own total reads ${r.derivation}. Flipped, it is a ${r.minutes} minute break like any other, and it counts as one.`,
+        }
+      : {
+          group: "anomaly",
+          head: `${len}, counted`,
+          tone: "text-violet-700 dark:text-violet-300",
+          lead: `Longer than the ten minutes a paid rest period allows. It counts and owes nothing, but it is worth knowing about - fifteen minutes is one and a half times the entitlement.`,
+        };
+  }
+  if (r.repair) {
+    return {
+      group: "decide",
+      head: `${len}, probably a mis-pick`,
+      tone: "text-rose-700 dark:text-rose-400",
+      lead: `QSP reads ${r.derivation}, which is not a rest break. It looks like ${r.repair.why}: ${r.repair.from} should be ${r.repair.to}, which gives a normal ${r.repair.minutes} minute break. Accepting that REMOVES a rest premium, so it needs you rather than the engine.`,
+    };
+  }
+  return {
+    group: "anomaly",
+    head: r.minutes == null ? "no times recorded" : `${len}, not a rest`,
+    tone: "text-violet-700 dark:text-violet-300",
+    lead:
+      r.minutes == null
+        ? "Neither an out nor an in time was recorded, so nothing can say a break was taken. The premium stands. Worth fixing in QSP so the next period reads properly."
+        : `QSP reads ${r.derivation}. No single mis-picked field turns that into a rest break, so the engine will not guess at it. The premium stands and the entry should be corrected in QSP.`,
+  };
+}
+
 export default async function ChecksPage({ params }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) redirect("/portal");
@@ -317,6 +363,31 @@ export default async function ChecksPage({ params }) {
     for (const f of sched.flagged || []) {
       entries.push({ ...common, kind: "flag", date: f.date, f, d: describeFlagRow(f) });
     }
+  }
+
+  // Rows of the Rest Periods Report worth a person's attention. These belong to
+  // the BATCH rather than to a timesheet - the report is one document - so they
+  // are matched back to a person by name for display only.
+  const restByName = new Map(batch.timesheets.map((t) => [restKey(t.sourceName), t]));
+  for (const r of (batch.restsByDate || []).filter((x) => x.kind)) {
+    const t = restByName.get(restKey(r.name));
+    entries.push({
+      // the real sheet, so "Open their sheet" works. rest rows are keyed on the
+      // report row rather than the sheet, since one person can contribute
+      // several - Zuchniak has eight.
+      timesheetId: t?.id || null,
+      rowKey: `rest-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
+      who: t ? (t.user ? preferredName(t.user) : t.sourceName) : r.name,
+      signed: false,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "rest",
+      date: r.date,
+      r,
+      d: describeRestRow(r),
+    });
   }
 
   const ORDER = { decide: 0, unworked: 1, anomaly: 2, settled: 3 };
@@ -391,7 +462,7 @@ export default async function ChecksPage({ params }) {
         <ChecksFilter counts={counts} groups={entries.map((e) => e.d.group)} notes={notes}>
           {entries.map((e) => (
             <div
-              key={`${e.timesheetId}-${e.kind}-${e.date}`}
+              key={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
               className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
                 e.d.group === "decide"
                   ? "border-l-rose-500"
@@ -451,16 +522,48 @@ export default async function ChecksPage({ params }) {
                       )}
                     </>
                   )}
-                  <Evidence
-                    batchId={batch.id}
-                    timesheetId={e.timesheetId}
-                    date={e.date}
-                    day={e.dayByDate[e.date] || null}
-                    shifts={e.byDate[e.date]?.shifts}
-                    schedulePages={e.byDate[e.date]?.pages}
-                    hasSource={!!batch.sourceUrl}
-                    hasSchedule={!!batch.scheduleUrl}
-                  />
+                  {/* a rest row comes from a spreadsheet, not from punches, so
+                      the punch/schedule panel has nothing to say about it and
+                      would render "no punches were read for this day" - true,
+                      and about the wrong document entirely. */}
+                  {e.kind === "rest" ? (
+                    <>
+                      <p className="font-mono text-xs text-foreground">
+                        QSP has: out {e.r.out || "(blank)"} · in {e.r.in || "(blank)"} · total{" "}
+                        {e.r.printedHours}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {/* the printed column is rounded to two decimals, so the
+                            jump from it to minutes is shown rather than asserted */}
+                        {e.r.derivation}
+                        {e.r.reversed && " · out is after in, so the row runs backwards"}
+                      </p>
+                      {e.r.repair && (
+                        <p className="mt-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                          Likely: {e.r.repair.field === "out" ? "out" : "in"} {e.r.repair.from} →{" "}
+                          {e.r.repair.to} = {e.r.repair.minutes} min
+                        </p>
+                      )}
+                      <p className="mt-2 text-xs italic text-muted">{e.r.note}</p>
+                      <a
+                        href={`/portal/admin/timesheets/${batch.id}/source?doc=rests`}
+                        className="mt-2 inline-block text-xs font-medium text-brand hover:text-brand-dark"
+                      >
+                        Download the Rest Periods Report →
+                      </a>
+                    </>
+                  ) : (
+                    <Evidence
+                      batchId={batch.id}
+                      timesheetId={e.timesheetId}
+                      date={e.date}
+                      day={e.dayByDate[e.date] || null}
+                      shifts={e.byDate[e.date]?.shifts}
+                      schedulePages={e.byDate[e.date]?.pages}
+                      hasSource={!!batch.sourceUrl}
+                      hasSchedule={!!batch.scheduleUrl}
+                    />
+                  )}
                 </div>
               </details>
 
@@ -482,14 +585,23 @@ export default async function ChecksPage({ params }) {
                 )}
 
               <div className="mt-2 flex flex-wrap items-center gap-4">
-                <a
-                  href={`/portal/admin/timesheets/sheet/${e.timesheetId}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-brand hover:text-brand-dark"
-                >
-                  Open their sheet →
-                </a>
+                {/* a rest-report name that matched no timesheet has no sheet to
+                    open. say which name did not match rather than linking to
+                    /sheet/null/download. */}
+                {e.timesheetId ? (
+                  <a
+                    href={`/portal/admin/timesheets/sheet/${e.timesheetId}/download`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-brand hover:text-brand-dark"
+                  >
+                    Open their sheet →
+                  </a>
+                ) : (
+                  <span className="text-xs text-amber-700 dark:text-amber-400">
+                    No timesheet in this batch matches &ldquo;{e.r?.name}&rdquo;
+                  </span>
+                )}
                 {e.showRecompute && (
                   <RecomputeButton
                     timesheetId={e.timesheetId}
