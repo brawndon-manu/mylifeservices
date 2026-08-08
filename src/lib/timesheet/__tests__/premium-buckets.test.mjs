@@ -423,3 +423,66 @@ test("without rest times or without a rostered lunch there is no answer", () => 
   });
   assert.equal(noLunch.restTackedOn, null, "nothing to be tacked onto");
 });
+
+// --------------------------------- rests outside the shift, and unpaid rests
+
+test("a rest logged outside the shift is reported and still counts, for now", () => {
+  // April Martinez's shape: a 7:00-7:10 rest on a shift that starts at 8:00,
+  // twelve days running. It is a default nobody changed, and it clears a
+  // premium she is owed - so it has to be visible. Mánu's call 2026-08-08 was
+  // to surface it rather than move 13 premiums on the engine's say-so.
+  const before = analyzeDay({
+    date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
+    restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 14 * 60, in: 14 * 60 + 10 }],
+  });
+  assert.equal(before.restsOutsideShift, 1);
+  assert.equal(before.restTaken, 2, "it still counts");
+  assert.equal(before.restViolation, false, "and still clears the premium, on purpose");
+
+  // after clock-out, the other direction
+  const after = analyzeDay({
+    date: "07/20/26", punches: [at(8), at(16, 30)], printed: null, restRecorded: 1,
+    restTimes: [{ out: 21 * 60 + 40, in: 21 * 60 + 50 }],
+  });
+  assert.equal(after.restsOutsideShift, 1);
+
+  // and a rest in the middle of the shift is not flagged, or the check says
+  // nothing at all
+  const normal = analyzeDay({
+    date: "07/20/26", punches: [at(8), at(17)], printed: null, restRecorded: 1,
+    restTimes: [{ out: 10 * 60, in: 10 * 60 + 10 }],
+  });
+  assert.equal(normal.restsOutsideShift, 0);
+});
+
+test("a rest inside a punched-out gap was not paid, and is reported as such", () => {
+  // Uribe 07/31: punched out 12:00-13:00 with the rest recorded 12:00-12:10.
+  const d = analyzeDay({
+    date: "07/31/26",
+    punches: [at(8), at(9, 30), at(10), at(12), at(13), at(16)],
+    printed: null, restRecorded: 1,
+    restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }],
+  });
+  assert.equal(d.restsUnpaid, 1);
+  assert.equal(d.restsOutsideShift, 0, "it is inside the shift, just not on the clock");
+
+  // the same rest taken while still clocked in is paid, and not flagged
+  const onClock = analyzeDay({
+    date: "07/31/26", punches: [at(8), at(16)], printed: null, restRecorded: 1,
+    restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }],
+  });
+  assert.equal(onClock.restsUnpaid, 0);
+});
+
+test("a reversed rest row is malformed, not a placement problem", () => {
+  // Devine 07/30 reads out 11:45, in 11:35. It must not be counted as either
+  // outside the shift or unpaid - it is junk, and the rest reader already
+  // handles it.
+  const d = analyzeDay({
+    date: "07/30/26", punches: [at(8), at(17)], printed: null, restRecorded: 0,
+    restTimes: [{ out: 11 * 60 + 45, in: 11 * 60 + 35 }],
+  });
+  assert.equal(d.restsOutsideShift, 0);
+  assert.equal(d.restsUnpaid, 0);
+});

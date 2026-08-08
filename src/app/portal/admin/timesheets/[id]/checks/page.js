@@ -463,8 +463,59 @@ export default async function ChecksPage({ params }) {
   // it holds meal breaks only - so the employer gave a standalone lunch in
   // every one of these and the break was stacked against it afterwards. Where
   // the opportunity was provided the premium is not owed.
+  // the day's recorded rest windows, for quoting the actual times back
+  const restWindowsFor = new Map();
+  for (const r of batch.restsByDate || []) {
+    if (!r.counted || !r.date) continue;
+    const out = clockMin(r.out);
+    const inn = clockMin(r.in);
+    if (out == null || inn == null || inn <= out) continue;
+    const k = `${restKey(r.name)}|${r.date}`;
+    if (!restWindowsFor.has(k)) restWindowsFor.set(k, []);
+    restWindowsFor.get(k).push(`${r.out} to ${r.in}`);
+  }
+  const restTimesText = (t, d) =>
+    (restWindowsFor.get(`${restKey(t.sourceName)}|${d.date}`) || []).join(", ");
+  const restRow = (t, d, key, head, lead) => ({
+    timesheetId: t.id,
+    rowKey: `${key}-${t.id}-${d.date}`,
+    who: t.sourceName,
+    signed: !!t.signedAt,
+    overrides: {},
+    dayByDate: {},
+    dayHours: {},
+    byDate: {},
+    kind: key,
+    date: d.date,
+    d: { group: "anomaly", head, tone: "text-violet-700 dark:text-violet-300", lead },
+  });
+
   for (const t of batch.timesheets) {
     for (const d of t.data?.days || []) {
+      // A rest logged before clock-in or after clock-out. It was not a rest
+      // taken during work, and it STILL COUNTS - Mánu's call was to surface it
+      // rather than move premiums on the engine's say-so. Which makes saying it
+      // plainly the whole job of this row.
+      if (d.restsOutsideShift) {
+        entries.push(restRow(t, d, "rest-outside",
+          d.restsOutsideShift === 1 ? "a rest logged outside the shift" : `${d.restsOutsideShift} rests logged outside the shift`,
+          `The Rest Periods Report records ${restTimesText(t, d)} on a day worked ` +
+          `${d.workedMin ? Math.round((d.workedMin / 60) * 100) / 100 : d.paidHours} hours. ` +
+          `A break before clock-in or after clock-out was not a rest taken during work, and it is ` +
+          `most often a default nobody changed rather than anything that happened. ` +
+          `IT STILL COUNTS TOWARD THE REST TALLY on this sheet, which means it can be clearing a ` +
+          `premium that is owed. Nothing has been changed on the strength of it: that is a decision, ` +
+          `not something the engine should do on its own.`));
+      }
+      // A rest that fell inside a punched-out gap. Paid time that went unpaid.
+      if (d.restsUnpaid) {
+        entries.push(restRow(t, d, "rest-unpaid",
+          d.restsUnpaid === 1 ? "a rest that was not paid" : `${d.restsUnpaid} rests that were not paid`,
+          `The report records a rest at ${restTimesText(t, d)}, and the punches have them off the ` +
+          `clock across it. A rest period is PAID time, so those minutes are wages rather than a ` +
+          `premium. Hours have not been changed: adding paid time on top of what QSP exported is the ` +
+          `one direction this engine has never gone, and it needs a person to say so first.`));
+      }
       if (!d.restTackedOn) continue;
       entries.push({
         timesheetId: t.id,

@@ -529,6 +529,38 @@ export function analyzeDay(day) {
   const rosteredMeals = Array.isArray(day.scheduleBlocks)
     ? day.scheduleBlocks.filter((b) => b.meal)
     : null;
+  // ---- two more things the rest TIMES can show, both reported, neither charged
+  //
+  // OUTSIDE THE SHIFT. A rest logged before clock-in or after clock-out was not
+  // a rest taken during work. April Martinez carries one at 7:00-7:10 on a
+  // shift that starts at 8:00, twelve days running - a default nobody changed -
+  // and on every one of those days it takes her from 1 of 2 rests to 2 of 2 and
+  // clears a premium she is owed. It still COUNTS: Mánu's call 2026-08-08 was
+  // to surface it rather than move 13 premiums on the engine's say-so.
+  //
+  // UNPAID. A rest sitting inside a punched-out gap was not paid, and a rest
+  // period is paid time. That is wages rather than a premium, and it is the one
+  // direction this engine has never gone, so it is shown and left alone.
+  let restsOutsideShift = null;
+  let restsUnpaid = null;
+  if (restTimes && p.length) {
+    const mins = p.map((x) => x.min);
+    const shiftStart = Math.min(...mins);
+    const shiftEnd = Math.max(...mins);
+    // a reversed row (in before out) is malformed, not a placement problem
+    const usable = restTimes.filter(
+      (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
+    );
+    restsOutsideShift = usable.filter((r) => r.out < shiftStart || r.in > shiftEnd).length;
+    restsUnpaid = usable.filter((r) => {
+      if (r.out < shiftStart || r.in > shiftEnd) return false;
+      for (let i = 1; i + 1 < mins.length; i += 2) {
+        if (mins[i] <= r.out && mins[i + 1] >= r.in) return true;
+      }
+      return false;
+    }).length;
+  }
+
   let restTackedOn = null;
   if (restTimes && rosteredMeals) {
     const tol = RULES.restTackedOnToleranceMin;
@@ -662,6 +694,10 @@ export function analyzeDay(day) {
     // how many of the day's rests were taken hard against the rostered lunch.
     // reported, never charged - see the note above. null when unanswerable.
     restTackedOn,
+    // rests logged outside the shift, and rests that fell in an unpaid gap.
+    // both reported, both leave restTaken and paidHours alone.
+    restsOutsideShift,
+    restsUnpaid,
     // what the day's longest lunch-shaped gap actually is, per the roster.
     // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
     // "unclear" | "no-schedule", or null when there is no such gap. Evidence

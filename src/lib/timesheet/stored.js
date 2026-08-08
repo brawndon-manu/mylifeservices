@@ -28,7 +28,7 @@ export const REQUIRED_DAY_FIELDS = [
   "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
   "mealGapKind", "mealGapMin",
   "mealsRostered", "secondMealRequired", "secondMealViolation", "secondMealUnknown",
-  "restTackedOn",
+  "restTackedOn", "restsOutsideShift", "restsUnpaid",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -67,6 +67,10 @@ export function storedDay(d) {
     secondMealUnknown: !!d.secondMealUnknown,
     // rests taken hard against the rostered lunch. reported, never charged.
     restTackedOn: d.restTackedOn ?? null,
+    // a rest logged outside the shift, and a rest that fell in an unpaid
+    // gap. both reported only, neither moves a figure.
+    restsOutsideShift: d.restsOutsideShift ?? null,
+    restsUnpaid: d.restsUnpaid ?? null,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,
