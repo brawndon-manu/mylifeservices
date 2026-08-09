@@ -16,6 +16,8 @@ const ERRORS = {
   twoperiods:
     "That export covers more than one pay period, so every employee appears twice. QSP snaps to whole pay periods - asking for a range that crosses a boundary returns both of them. Request a single period.",
   empty: "No employee hours found in that file. Is it the right export?",
+  punches:
+    "The punch times in that timesheet don't add up to QSP's own totals printed beside them, which almost always means it's a print-to-PDF rather than the download. Printing merges two times into a single cell, so everything after the first punch of each pair never reaches us. The file itself is fine and complete - that's the problem, because every employee, every row and every daily total still look right, and the premium hours come out wrong anyway. Pull it again from Reports → Timesheets and save the download rather than printing. It's the SMALLER file, around 920KB against 4.9MB. Nothing was created.",
   noschedule:
     "The Employee Schedules export is required. It's what corroborates the days nobody clocked, and without it those premium hours have nothing behind them at all.",
   schedule:

@@ -10,7 +10,13 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "@/lib/timesheet/parse";
+import {
+  parseTimesheetPdf,
+  analyzeTimesheet,
+  applyOvertime,
+  analyzeDay,
+  punchCoverage,
+} from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
 import { storedDay } from "@/lib/timesheet/stored";
@@ -135,7 +141,7 @@ export async function uploadBatch(formData) {
   P.pages = sheets.reduce((n, s) => n + (s.pages?.length || 0), 0);
   await setProgress(prog, P);
 
-  // ---- two guards on the export itself, both from real near-misses ----
+  // ---- three guards on the export itself, all from real near-misses ----
 
   // QSP prints SCHEDULED shifts exactly like worked ones. pull a period before
   // it has ended and most of the file is time nobody has worked - one real pull
@@ -173,6 +179,21 @@ export async function uploadBatch(formData) {
     redirect(
       `/portal/admin/timesheets/new?error=twoperiods&why=${encodeURIComponent(
         `${dupes.length} employees appear more than once. QSP returns whole pay periods, so a range spanning two gives you both. Ask for one period only.`,
+      )}`,
+    );
+  }
+
+  // did we actually READ the punch grid, or only think we did? a print-to-PDF of
+  // the same export merges two times into one cell, so half the punches never
+  // reach us while every employee, every row and every printed daily total look
+  // perfectly intact. it parses clean to a premium figure that is 44 hours out.
+  // the arithmetic lives in punchCoverage() so it has tests; this only decides.
+  const cover = punchCoverage(withHours);
+  if (!cover.ok) {
+    redirect(
+      `/portal/admin/timesheets/new?error=punches&why=${encodeURIComponent(
+        `the punches account for ${cover.punchHours.toFixed(2)} hours against QSP's own printed ` +
+          `${cover.printedHours.toFixed(2)}, and ${cover.driftDays} of ${cover.comparedDays} days disagree with the total QSP printed beside them`,
       )}`,
     );
   }

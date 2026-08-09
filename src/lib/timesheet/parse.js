@@ -137,6 +137,10 @@ export const RULES = {
   workweekStartsOn: 1,
   // 7th consecutive day worked in one workweek: first 8 hrs OT, rest double.
   seventhDayRule: true,
+  // how much of QSP's own printed hours the punch grid has to account for
+  // before we believe we read the file. see punchCoverage() for why.
+  // 0.95 is miles clear of both sides of the real case, deliberately.
+  minPunchCoverage: 0.95,
 };
 
 const toMin = (t) => {
@@ -923,6 +927,82 @@ export function applyOvertime(days, payPeriod = null) {
     delete d._date;
   }
   return withDates;
+}
+
+// HOW MUCH OF QSP'S OWN HOURS DID WE ACTUALLY READ OFF THE PUNCH GRID?
+//
+// The punches and QSP's printed daily column are two independent readings of the
+// same day, so they should agree to a rounding error. When they do not, we
+// misread the file.
+//
+// The case this exists for: a print-to-PDF of the Simple Timesheet. It is a
+// COMPLETE document - every punch time is in it, 4,162 am/pm tokens, same as the
+// download - but printing merges adjacent text runs, so `10:53a 12:44p` arrives
+// as ONE text item sitting at the Time In column and everything after the first
+// value is lost. Nothing errors. Every employee, every row and every printed
+// daily figure survives, and because each day floors up to that printed figure
+// the batch lands on a plausible premium total that is simply wrong.
+//
+// Measured on 07/16-07/31/26, same export saved two ways:
+//
+//     download  punches account for 4049.35 of QSP's 4049.41    0 days drifting
+//     print     punches account for 3133.67 of QSP's 4049.41  248 days drifting
+//                                                             premium 724 not 680
+//
+// TWO KINDS OF DAY ARE DELIBERATELY NOT COUNTED, and picking them right is what
+// makes the threshold safe rather than lucky:
+//
+//   no printed figure  - nothing to compare against. silence is not a failure.
+//   NO PUNCHES AT ALL  - somebody who never clocked in is a QSClock setup
+//                        problem, surfaced elsewhere, and has nothing to do with
+//                        whether we read the file. Counting them would let three
+//                        non-punching staff drag a perfectly good export under
+//                        the line. The first draft of this did exactly that and
+//                        a test caught it.
+//
+// Over the days where somebody actually punched:
+//
+//     download  4049.35 of 4049.41 = 100.00%
+//     print     3133.67 of 3920.33 =  79.93%
+//
+// so the line sits at 95%, twenty points clear of the failure and on the nose
+// of the good file, with the false-positive case removed by construction rather
+// than by loosening the threshold.
+export function punchCoverage(sheets) {
+  let punchHours = 0;
+  let printedHours = 0;
+  let driftDays = 0;
+  let comparedDays = 0;
+  let neverPunchedDays = 0;
+  for (const s of sheets || []) {
+    for (const d of s.days || []) {
+      const printed = d.printed?.daily;
+      if (printed == null) continue;
+      const p = d.punches || [];
+      if (!p.length) {
+        neverPunchedDays++;
+        continue;
+      }
+      let worked = 0;
+      for (let i = 0; i + 1 < p.length; i += 2) worked += p[i + 1].min - p[i].min;
+      comparedDays++;
+      punchHours += worked / 60;
+      printedHours += printed;
+      if (Math.abs(worked / 60 - printed) > 0.03) driftDays++;
+    }
+  }
+  // nothing comparable is no evidence, not a failure. a ratio of 1 keeps this
+  // from refusing an export it is in no position to judge.
+  const ratio = printedHours > 0 ? punchHours / printedHours : 1;
+  return {
+    punchHours,
+    printedHours,
+    driftDays,
+    comparedDays,
+    neverPunchedDays,
+    ratio,
+    ok: ratio >= RULES.minPunchCoverage,
+  };
 }
 
 export function analyzeTimesheet(parsed) {
