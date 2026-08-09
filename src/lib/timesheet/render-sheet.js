@@ -14,6 +14,7 @@
 // rebuilding all 59 documents; now it means deploying.
 
 import { renderCorrected } from "./render.js";
+import { addedOvertimeHours } from "./parse.js";
 
 // Everything a render needs, so every caller selects the same fields and none
 // of them quietly omits one and produces a subtly different document.
@@ -50,6 +51,13 @@ export async function renderSheet(ts) {
         regularHours: sum(days, "regularHours"),
         otHours: sum(days, "otHours"),
         doubleHours: sum(days, "doubleHours"),
+        // WITHOUT THESE THE "ADDED" PARAGRAPH NEVER PRINTS, and every affected
+        // day carries "+0.17 added" with nothing on the page saying what it
+        // means. This is the render an employee actually opens - the sheet is
+        // built here, on demand, not at upload - so leaving them out meant the
+        // explanation existed only in a test.
+        addedHours: sum(days, "addedHours"),
+        addedOtHours: addedOvertimeHours(days, d.payPeriod || null),
       },
       premiums: d.premiums,
       comments: d.comments || null,

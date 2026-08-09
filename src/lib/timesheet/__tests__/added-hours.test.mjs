@@ -225,3 +225,33 @@ test("sheets of every ordinary length render with the added paragraph on them", 
   }
   assert.deepEqual(failures, [], "every length must produce a sheet");
 });
+
+// THE SHEET AN EMPLOYEE ACTUALLY OPENS is built on demand from stored days by
+// renderSheet, NOT by the upload. It assembles its own totals, and it was
+// assembling them without addedHours - so every affected day printed
+// "+0.17 added" and nothing on the page said what that meant. The explanation
+// existed only in the test above, which rendered from a fresh parse.
+test("the on-demand sheet carries the added paragraph too, not just the day marks", async () => {
+  const { renderSheet } = await import("../render-sheet.js");
+  const sheet = analyzeTimesheet({
+    employee: "Test, Person",
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days: [OFF_CLOCK_DAY, { ...OFF_CLOCK_DAY, date: "07/21/26" }],
+  });
+  // stored days are what renderSheet is handed, so hand it those
+  const { storedDay } = await import("../stored.js");
+  const ts = {
+    sourceName: "Test, Person",
+    data: {
+      days: sheet.days.map(storedDay),
+      payPeriod: { from: "07/16/26", to: "07/31/26" },
+      premiums: sheet.premiums,
+    },
+    batch: { periodFrom: "07/16/26", periodTo: "07/31/26", restsByDate: [] },
+  };
+  const out = await renderSheet(ts);
+  const words = await pdfWords(out.bytes);
+  assert.ok(/\+0\.17 added/.test(words), "the day marks");
+  assert.ok(/ADDED:/.test(words), "AND the sentence explaining them");
+  assert.ok(/paid as overtime/.test(words), "including the overtime split");
+});

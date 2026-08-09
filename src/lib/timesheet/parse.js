@@ -1131,6 +1131,18 @@ function overtimeWithout(days, payPeriod) {
   return applyOvertime(stripped, payPeriod).reduce((n, d) => n + d.otHours, 0);
 }
 
+// The same question asked of days that have ALREADY been through overtime -
+// stored days, in other words. `renderSheet` builds a sheet from the database
+// rather than from a fresh parse, and without this the ADDED paragraph could
+// not be assembled there, so every day carried "+0.17 added" and nothing on the
+// page said what that meant. That is the render an employee actually opens.
+export function addedOvertimeHours(days, payPeriod = null) {
+  const added = (days || []).reduce((n, d) => n + (d.addedHours || 0), 0);
+  if (!(added > 0)) return 0;
+  const nowOt = days.reduce((n, d) => n + (d.otHours || 0), 0);
+  return Math.max(0, round2(nowOt - overtimeWithout(days, payPeriod)));
+}
+
 export function analyzeTimesheet(parsed) {
   const analyzed = parsed.days.map(analyzeDay);
   const addedHours = round2(analyzed.reduce((n, d) => n + (d.addedHours || 0), 0));
