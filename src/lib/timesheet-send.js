@@ -1,9 +1,11 @@
 // sending timesheets out to staff. this is the one place in the app that can
 // email 60+ people their own payroll document, so it is deliberately fail-safe:
 //
-//   TEST MODE IS THE DEFAULT. every send is redirected to the test inbox unless
-//   TIMESHEET_LIVE_SEND is set to the exact opt-in phrase below. a missing,
-//   empty, typo'd or truthy-but-wrong value all keep it in test mode.
+//   TEST MODE IS THE DEFAULT, and it takes TWO things to leave it: the exact
+//   TIMESHEET_LIVE_SEND phrase, AND this being the real deployment. A missing,
+//   empty, typo'd or truthy-but-wrong phrase keeps it in test mode, and so does
+//   running anywhere that cannot prove it is production - a laptop above all.
+//   See src/lib/timesheet-mode.js for why the second lock exists.
 //
 // in test mode the mail still renders exactly as staff would see it, but the
 // TO line is the tester and the subject/body say who it was meant for, so a
@@ -15,6 +17,8 @@ import { buildTimesheetEmailHtml } from "@/lib/timesheet-email";
 // in isolation - see src/lib/timesheet-mode.js.
 export {
   isLiveSend,
+  liveSendConfigured,
+  isProductionDeployment,
   testRecipients,
   sendModeSummary,
   resolveRecipients,

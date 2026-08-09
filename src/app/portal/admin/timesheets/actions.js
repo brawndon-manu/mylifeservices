@@ -30,7 +30,7 @@ import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/iden
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
 import { signTimesheetToken } from "@/lib/timesheet-token";
-import { sendTimesheet, isLiveSend } from "@/lib/timesheet-send";
+import { sendTimesheet, isLiveSend, liveSendConfigured } from "@/lib/timesheet-send";
 import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
@@ -419,7 +419,12 @@ export async function uploadBatch(formData) {
       restsByDate: restsByDate.length ? restsByDate : null,
       payrollUrl,
       payrollName: payrollUrl ? payFile?.name || null : null,
-      testMode: !isLiveSend(),
+      // whether the live-send PHRASE was set when this batch was made. Not the
+      // send gate: that also requires being on the real deployment, and a big
+      // upload has to be run from localhost because of Vercel's 4.5MB body cap,
+      // so gating the badge on the environment would mark every real batch
+      // "test" purely because of where it was uploaded from.
+      testMode: !liveSendConfigured(),
       uploadedById: user.id,
     },
   });

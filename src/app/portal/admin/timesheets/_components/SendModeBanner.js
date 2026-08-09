@@ -11,14 +11,23 @@ export default function SendModeBanner({ mode }) {
       </p>
     );
   }
+  // "local" means the live phrase IS set and the environment is holding it
+  // shut. Without saying so this reads as a broken setting, and somebody goes
+  // looking for a switch to flip.
+  const local = mode.reason === "local";
   return (
     <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/30">
       <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">
-        Test mode - nothing reaches staff
+        {local
+          ? "This isn't the live site - nothing can reach staff from here"
+          : "Test mode - nothing reaches staff"}
       </p>
       <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
         Every timesheet email is redirected to{" "}
         <span className="font-medium">{mode.recipients.join(", ")}</span>.
+        {local
+          ? " Live sending is switched on, but it only applies on the deployed site. A sign-in link built here would point at localhost and be useless to whoever received it."
+          : ""}
       </p>
     </div>
   );
