@@ -7,10 +7,11 @@ import { useState } from "react";
 import Avatar from "@/components/Avatar";
 import EmployeePicker from "./EmployeePicker";
 import RowDocuments from "./RowDocuments";
+import { companyDate } from "@/lib/company-time";
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 const dt = (iso) =>
-  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
+  iso ? companyDate(iso, { month: "short", day: "numeric" }) : null;
 
 const METHOD = {
   exact: { label: "Exact", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" },

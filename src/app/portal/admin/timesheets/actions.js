@@ -35,6 +35,7 @@ import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
 import { pushRecent } from "@/lib/timesheet-stages";
+import { companyDate } from "@/lib/company-time";
 import {
   isCorrectionKind,
   CORRECTION_KINDS,
@@ -947,7 +948,7 @@ export async function sendTimesheets(batchId, formData) {
   const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
   const periodLabel = `${batch.periodFrom} to ${batch.periodTo}`;
   const dueLabel = dueAt && !Number.isNaN(dueAt.getTime())
-    ? dueAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    ? companyDate(dueAt, { month: "long", day: "numeric", year: "numeric" })
     : null;
 
   let sent = 0;

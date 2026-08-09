@@ -7,6 +7,7 @@
 // it.
 import { useState } from "react";
 import { overrideDayHours, clearDayOverride } from "@/app/portal/admin/timesheets/actions";
+import { companyDate } from "@/lib/company-time";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
@@ -67,7 +68,7 @@ export default function CorrectDay({ timesheetId, date, timesheet, schedule, exi
         </p>
         <p className="text-emerald-800 dark:text-emerald-200/80">
           by {existing._by}
-          {existing._at && ` on ${new Date(existing._at).toLocaleDateString("en-US")}`}
+          {existing._at && ` on ${companyDate(existing._at, { month: "numeric", day: "numeric", year: "numeric" })}`}
           {existing._note && ` - "${existing._note}"`}
         </p>
         <p className="mt-1 text-emerald-800 dark:text-emerald-200/80">

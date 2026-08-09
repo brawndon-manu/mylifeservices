@@ -12,6 +12,7 @@ import ReviewTable from "../_components/ReviewTable";
 import SendPanel from "../_components/SendPanel";
 import DeleteBatchButton from "../_components/DeleteBatchButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
+import { companyDate } from "@/lib/company-time";
 
 // the tab is where the name is most visible, and "Timesheet batch" told you
 // nothing about WHICH one when three are open at once. `batch` is our word
@@ -152,9 +153,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // California and "Aug 7" on Vercel, which runs UTC - the same upload,
   // two dates, depending where the page was rendered. Payroll is in
   // California, so California is the answer that means something.
-  const uploadedOn = batch.createdAt.toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles",
-  });
+  const uploadedOn = companyDate(batch.createdAt);
   const uploadedByName = batch.uploadedBy ? preferredName(batch.uploadedBy) : null;
 
   const total = rows.length;

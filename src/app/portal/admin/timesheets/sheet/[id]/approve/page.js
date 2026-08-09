@@ -7,6 +7,7 @@ import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import ApproveSigner from "./ApproveSigner";
 import { approveTimesheet } from "../../../actions";
+import { companyDate } from "@/lib/company-time";
 
 export const metadata = { title: "Approve timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -69,9 +70,7 @@ export default async function ApproveTimesheetPage({ params }) {
           <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-200/80">
             Signed off
             {ts.approvedBy ? ` by ${preferredName(ts.approvedBy)}` : ""} on{" "}
-            {new Date(ts.approvedAt).toLocaleDateString("en-US", {
-              month: "long", day: "numeric", year: "numeric",
-            })}
+            {companyDate(ts.approvedAt, { month: "long", day: "numeric", year: "numeric" })}
             . This is the copy the batch downloads hand back.
           </p>
           <a
@@ -87,7 +86,7 @@ export default async function ApproveTimesheetPage({ params }) {
         <>
           <p className="mt-6 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
             {who} signed this on{" "}
-            {new Date(ts.signedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+            {companyDate(ts.signedAt, { month: "long", day: "numeric", year: "numeric" })}
             . Review the hours below, then sign the approval line at the bottom.
           </p>
           <ApproveSigner

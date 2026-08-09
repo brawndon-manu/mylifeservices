@@ -6,6 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { sendModeSummary } from "@/lib/timesheet-send";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "./_components/SendModeBanner";
+import { companyDate } from "@/lib/company-time";
 
 export const metadata = { title: "Timesheets", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -74,9 +75,7 @@ export default async function TimesheetBatchesPage() {
                       </p>
                       <p className="mt-1 text-xs text-muted">
                         {total} employee{total === 1 ? "" : "s"} ·{" "}
-                        {new Date(b.createdAt).toLocaleDateString("en-US", {
-                          month: "short", day: "numeric", year: "numeric",
-                        })}
+                        {companyDate(b.createdAt)}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
