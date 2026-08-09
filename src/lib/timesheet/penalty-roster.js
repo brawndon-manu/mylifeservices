@@ -25,6 +25,24 @@ const PREM = rgb(0.7, 0.11, 0.11);
 const GRID = rgb(0.75, 0.79, 0.83);
 const TOTALBG = rgb(0.878, 0.949, 0.961);
 
+// Is "Taylor Adams" the same person as QSP's "Adams, Taylor"? Yes - it is the
+// same name written the other way round, and annotating every row with that
+// would be noise on all 59.
+//
+// "Angel Delgado Pineda" against "Delgado Pineda, Ruth" is NOT, and those are
+// the two worth calling out. So compare the words, not the formatting.
+function sameHuman(a, b) {
+  const words = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .sort()
+      .join(" ");
+  return words(a) === words(b);
+}
+
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
 export async function renderPenaltyRoster({ periodFrom, periodTo, rows }, opts = {}) {
@@ -110,7 +128,17 @@ export async function renderPenaltyRoster({ periodFrom, periodTo, rows }, opts =
     }
     alt = !alt;
 
+    // The name QSP uses, alongside the one the person goes by, when they are
+    // not the same. This sheet is reconciled against QSP, and two people here
+    // have set a preferred first name that appears nowhere in it - Ruth goes by
+    // Angel, Francisco by Frank. Printing only the preferred name leaves
+    // payroll hunting for somebody QSP has never heard of; printing only the
+    // QSP name calls a person something they have chosen not to be called.
     text(r.who, L, y, { size: 14 });
+    if (r.sourceName && !sameHuman(r.who, r.sourceName)) {
+      const w = font.widthOfTextAtSize(r.who, 14);
+      text(`(QSP: ${r.sourceName})`, L + w + 8, y, { size: 9.5, color: MUTED });
+    }
     const v = f2(r.premiumHours);
     text(v, R - bold.widthOfTextAtSize(v, 15), y, { size: 15, f: bold, color: PREM });
     y -= rowH;

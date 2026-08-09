@@ -616,6 +616,22 @@ model TimesheetBatch {
   // second migration to undo. Existing batches still hold theirs.
   restsUrl     String?
   restsName    String?
+  // SUPERSEDED by restsByDate, which holds these rows and every other one.
+  // Left in place rather than dropped in a second migration; nothing writes it
+  // any more and it can go whenever the schema is next touched.
+  restsAttention Json?
+  // EVERY row of that report, from `rests.allRestRows()`: the recorded out and
+  // in times, the length, whether it counted, and why if not.
+  //
+  // The times are the point. The signed sheet colours only what the two reports
+  // actually recorded - a punch gap is not evidence of a break - and a properly
+  // taken rest is PAID and stays ON the clock, so it leaves no gap to colour.
+  // 204 of the 226 days carrying a rest have no punch gap at all, which is why
+  // a count was never going to be enough.
+  //
+  // Stored on the BATCH because the report is one document covering everyone.
+  // Nullable: batches uploaded before this column exists have nothing here.
+  restsByDate    Json?
   // the Simple Payroll Processing Report (.xls). one row per employee carrying
   // QSP's OWN regular, overtime and double-time figures - the numbers payroll
   // actually runs on. This is what settles an overtime disagreement without
@@ -660,6 +676,16 @@ model Timesheet {
   // true when a workweek in this period is cut off by the pay-period boundary,
   // so its >40 overtime is provisional until the neighbouring period is known.
   partialWeek  Boolean @default(false)
+  // Did this sheet render? The unsigned PDF is no longer stored - it is built
+  // on demand from `data` - so `pdfUrl != null` stopped being the signal that a
+  // sheet is usable, and that signal guarded something that matters: sending
+  // emails 59 people a link, and a link to a sheet that cannot render is a link
+  // to an error page.
+  //
+  // Still rendered once at upload purely to find that out, so a render failure
+  // surfaces on the review screen where somebody sees it, rather than in front
+  // of an employee at 6pm.
+  renderOk     Boolean @default(true)
   // the full analyzed breakdown (days, punches, breaks, violations) for audit.
   data         Json
 

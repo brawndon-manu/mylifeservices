@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { recordedBreaksFor, insertRecordedBreaks } from "./recorded-breaks.js";
 
 // read straight off disk - this only ever runs server-side.
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
@@ -29,6 +30,12 @@ const PREM = rgb(0.7, 0.11, 0.11);
 const WHITE = rgb(1, 1, 1);
 const BLACK = rgb(0, 0, 0);
 
+// PORTRAIT. Most people open this on a phone, and a landscape page on a phone
+// is a page you pinch and drag.
+//
+// It fits now because the Breaks column is gone: recorded breaks are drawn back
+// onto the punch cells they happened in, which is where somebody looks for
+// them. That frees 86pt, and narrower punch columns buy the rest.
 const PAGE_W = 612;
 const PAGE_H = 792;
 const L = 28;
@@ -39,39 +46,140 @@ const f2 = (n) => r2(n).toFixed(2);
 // blank instead of 0.00 in the OT-style columns, like the source document
 const orBlank = (n) => (n && r2(n) > 0 ? f2(n) : "");
 
-// column layout: [label, width]. mirrors the QSP export column set.
-const COLUMNS = [
-  ["Date", 44],
-  ["Time\nIn", 32], ["Time\nOut", 32],
-  ["Time\nIn", 32], ["Time\nOut", 32],
-  ["Time\nIn", 32], ["Time\nOut", 32],
-  ["Regular\nHours", 46],
-  ["OT\nExempt", 40],
-  ["Over\nTime", 38],
-  ["Double\nTime", 40],
-  ["Holiday", 38],
-  ["Daily\nTotal", 40],
-  ["Comments", 78],
+// Column layout is built PER SHEET, not fixed.
+//
+// The form mirrored QSP's column set, which meant every sheet carried OT
+// Exempt, Double Time and Holiday whether or not anybody had one. Across the
+// whole 07/16-07/31 batch those three are blank on all 59 sheets and Over Time
+// appears on 12, so 47 sheets were spending 136pt of a 736pt page on four empty
+// columns - and paying for it in punch slots, where a day of more than seven
+// pairs wrapped onto a second row.
+//
+// A column is included when THIS sheet uses it. That is self-correcting: a
+// future period with a holiday or a double-time day gets the column back
+// automatically, because the test is on the days in hand rather than on a
+// belief about what QSP prints.
+const PUNCH_W = 25;
+// The date cell holds a day of the month now, not a whole date - the month and
+// year moved to a title above the table, where they are said once instead of
+// fourteen times.
+const FIXED = { date: 26, regular: 36, overtime: 34, daily: 36, comments: 70 };
+// Over Time is always shown: it is a column payroll expects to find, and 12 of
+// the 59 use it. The other three are still conditional, and that is
+// self-correcting - a future period with a holiday gets the column back
+// automatically, because the test is on the days in hand rather than on a
+// belief about what QSP prints. Across 07/16-07/31 all three are blank on all
+// 59 sheets.
+const OPTIONAL = [
+  ["otExempt", "OT\nExempt", 30, (d) => (d.otExempt || d.printed?.otExempt || 0) > 0],
+  ["double", "Double\nTime", 30, (d) => (d.doubleHours || 0) > 0],
+  ["holiday", "Holiday", 30, (d) => (d.holiday || d.printed?.holiday || 0) > 0],
 ];
 
-// resolve each column's x position from the widths
-function layout() {
-  const xs = [];
-  let x = L;
-  for (const [, w] of COLUMNS) {
-    xs.push({ x, w });
-    x += w;
-  }
-  return { xs, right: x };
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+// "07/16/26" -> 16, and "16" -> "16th". Ordinals because the column now holds a
+// day rather than a date, and "16" alone under a heading called Date reads like
+// a number rather than a day.
+export function dayOfMonth(date) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(String(date || "").trim());
+  return m ? Number(m[2]) : null;
+}
+export function ordinal(n) {
+  if (n == null) return "";
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] || "th"}`;
 }
 
-const IDX = {
-  date: 0, punch: [1, 2, 3, 4, 5, 6],
-  regular: 7, otExempt: 8, overtime: 9, double: 10, holiday: 11, daily: 12, comments: 13,
-};
+// "July 2nd Half 2026". Pay periods run the 1st-15th and the 16th to month end,
+// so a period never spans two months.
+export function periodTitle(payPeriod) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(String(payPeriod?.from || "").trim());
+  if (!m) return "";
+  const month = MONTHS[Number(m[1]) - 1];
+  if (!month) return "";
+  const yr = Number(m[3]);
+  const year = yr < 100 ? 2000 + yr : yr;
+  return `${month} ${Number(m[2]) <= 15 ? "1st" : "2nd"} Half ${year}`;
+}
+
+export function buildColumns(days, neededPunches = Infinity) {
+  const used = OPTIONAL.filter(([, , , test]) => (days || []).some(test));
+  const fixedW =
+    FIXED.date + FIXED.regular + FIXED.overtime + FIXED.daily + FIXED.comments +
+    used.reduce((n, [, , w]) => n + w, 0);
+  // Punch columns are sized to what THIS sheet uses, not to what the page could
+  // hold. Fourteen slots on a person whose longest day is four punches left ten
+  // empty cells on every row, which is ten columns of nothing to read past.
+  //
+  // Still in PAIRS - an in with no out is not a column, it is half a mistake -
+  // and still capped by what fits, so a 22-punch day wraps rather than shrinks
+  // the type to nothing.
+  const avail = PAGE_W - 2 * L - fixedW;
+  const canFit = Math.max(2, Math.floor(avail / (PUNCH_W * 2)));
+  const wanted = Math.max(2, Math.ceil(Math.min(neededPunches, canFit * 2) / 2));
+  const pairs = Math.min(canFit, wanted);
+  // whatever the punch block gives back widens the cells themselves before it
+  // goes anywhere else - a wider cell is a more readable one, and the table
+  // should still span the page rather than stop halfway across it.
+  const punchW = Math.min(38, Math.floor(avail / (pairs * 2)));
+
+  const cols = [["Date", FIXED.date]];
+  const IDX = { date: 0, punch: [] };
+  for (let i = 0; i < pairs * 2; i++) {
+    IDX.punch.push(cols.length);
+    cols.push([i % 2 === 0 ? "Time\nIn" : "Time\nOut", punchW]);
+  }
+  IDX.regular = cols.length; cols.push(["Reg\nHours", FIXED.regular]);
+  for (const [key, label, w] of used) {
+    IDX[key] = cols.length;
+    cols.push([label, w]);
+  }
+  IDX.overtime = cols.length; cols.push(["Over\nTime", FIXED.overtime]);
+  IDX.daily = cols.length; cols.push(["Daily\nTotal", FIXED.daily]);
+  // punches only come in pairs, so a sheet is left with up to 49pt that will
+  // not make another pair. it goes to Comments, which is the column that has
+  // actually run out of room before - the overlapping bookings note needed
+  // 117pt of a 72pt column and was clipped to "overlappi…" on 15 of 16 days.
+  const slack = avail - pairs * 2 * punchW;
+  IDX.comments = cols.length; cols.push(["Comments", FIXED.comments + Math.max(0, slack)]);
+
+  const xs = [];
+  let x = L;
+  for (const [, w] of cols) { xs.push({ x, w }); x += w; }
+  return { COLUMNS: cols, IDX, xs, right: x };
+}
 
 export async function renderCorrected(sheet, opts = {}) {
-  const doc = await PDFDocument.create();
+  // what the two reports recorded, per date. Empty when a batch predates the
+  // stored rest times, in which case the Breaks column simply stays blank -
+  // which is honest, and better than the old behaviour of colouring punch gaps
+  // that nothing had recorded.
+  const recorded = recordedBreaksFor(
+    sheet.employee,
+    sheet.restsByDate || [],
+    sheet.scheduleByDate || null,
+  );
+
+  // No clock readings in the file. pdf-lib stamps CreationDate and ModDate from
+  // the system clock, so the same sheet rendered twice produced different bytes
+  // - which matters now that the unsigned sheet is BUILT ON REQUEST rather than
+  // stored. Every download would otherwise be a slightly different file, and
+  // "is this the document they signed" would have no clean answer.
+  //
+  // The dates come from the stamp already on the row, so the metadata says the
+  // same thing the footer does.
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const stampedAt = (() => {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(opts.generatedOn || "").trim());
+    return m ? new Date(Date.UTC(+m[3], +m[1] - 1, +m[2])) : new Date(0);
+  })();
+  doc.setCreationDate(stampedAt);
+  doc.setModificationDate(stampedAt);
+  doc.setProducer("My Life Services");
+  doc.setCreator("My Life Services");
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const italic = await doc.embedFont(StandardFonts.HelveticaOblique);
@@ -83,7 +191,15 @@ export async function renderCorrected(sheet, opts = {}) {
     // logo is decorative - carry on without it rather than fail a payroll doc
   }
 
-  const { xs, right } = layout();
+  // how many punch cells this sheet actually needs, AFTER the recorded breaks
+  // are inserted - a rest that splits a worked segment adds four cells, so the
+  // count has to be taken from the row that gets drawn, not the raw punches.
+  const neededPunches = (sheet.days || []).reduce((n, d) => {
+    const { punches } = insertRecordedBreaks(d.punches || [], recorded.get(d.date)?.order || []);
+    return Math.max(n, punches.length);
+  }, 2);
+
+  const { COLUMNS, IDX, xs, right } = buildColumns(sheet.days, neededPunches);
   const FOOTER_TOP = 40;
   const rowH = 12.6;
   const headH = 24;
@@ -109,17 +225,28 @@ export async function renderCorrected(sheet, opts = {}) {
   const line = (x1, y1, x2, y2, color = GRID, thickness = 0.5) =>
     page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color });
 
+  // The rules QSP's own form draws heavier: where the punch block ends and the
+  // hours begin, and either side of Daily Total. They separate three different
+  // kinds of number - times, computed hours, and the figure that gets paid -
+  // and a uniform grid makes those read as one undifferentiated block.
+  const HEAVY = new Set([
+    IDX.punch[IDX.punch.length - 1] + 1, // after the last Time Out
+    IDX.daily,                            // before Daily Total
+    IDX.daily + 1,                        // after Daily Total
+  ]);
+
   // draw the grid for the table section currently on this page
   const closeTable = () => {
     if (tableTop === null) return;
     const bottom = rowTops[rowTops.length - 1];
     for (const ry of rowTops) line(L, ry, right, ry);
     let vx = L;
-    line(vx, tableTop, vx, bottom);
-    for (const [, w] of COLUMNS) {
+    line(vx, tableTop, vx, bottom, GRID, 1.2);
+    COLUMNS.forEach(([, w], i) => {
       vx += w;
-      line(vx, tableTop, vx, bottom);
-    }
+      const heavy = HEAVY.has(i + 1) || i === COLUMNS.length - 1;
+      line(vx, tableTop, vx, bottom, GRID, heavy ? 1.2 : 0.5);
+    });
     tableTop = null;
     rowTops = [];
   };
@@ -132,7 +259,7 @@ export async function renderCorrected(sheet, opts = {}) {
       page.drawImage(logo, { x: L + 24, y: y - lh + 14, width: lw, height: lh });
     }
     const title = continued ? "Employee Timesheet (continued)" : "Employee Timesheet";
-    text(title, (PAGE_W - bold.widthOfTextAtSize(title, 19)) / 2 + 30, y - 18, {
+    text(title, (PAGE_W - bold.widthOfTextAtSize(title, 19)) / 2, y - 18, {
       size: 19, f: bold, color: BRAND,
     });
     y -= 56;
@@ -142,7 +269,7 @@ export async function renderCorrected(sheet, opts = {}) {
     y -= 18;
     text("Employee Name:", L, y, { size: 8.5 });
     text(sheet.employee ?? "", L + 74, y, { size: 8.5, f: bold });
-    y -= 16;
+    y -= 9;
   };
 
   const newPage = (continued) => {
@@ -153,12 +280,26 @@ export async function renderCorrected(sheet, opts = {}) {
   };
 
   const openTableHead = () => {
+    // The month said once, above the table, instead of fourteen times down the
+    // date column. Pay periods are the 1st-15th and the 16th to month end, so a
+    // period never spans two months and this is always exact.
+    const title = periodTitle(sheet.payPeriod);
+    if (title) {
+      text(title, (PAGE_W - bold.widthOfTextAtSize(title, 12)) / 2, y - 8, {
+        size: 12, f: bold, color: BRAND,
+      });
+      y -= 17;
+    }
     tableTop = y;
     COLUMNS.forEach(([label], i) => {
       const col = xs[i];
-      label.split("\n").forEach((ln, li) => {
-        const w = bold.widthOfTextAtSize(ln, 7);
-        text(ln, col.x + (col.w - w) / 2, y - 10 - li * 8, { size: 7, f: bold });
+      const lines = label.split("\n");
+      // headers shrink to fit rather than run over the rule beside them
+      lines.forEach((ln, li) => {
+        let size = 6.5;
+        while (size > 4.5 && bold.widthOfTextAtSize(ln, size) > col.w - 3) size -= 0.2;
+        const w = bold.widthOfTextAtSize(ln, size);
+        text(ln, col.x + (col.w - w) / 2, y - 9 - li * 7.5, { size, f: bold });
       });
     });
     y -= headH;
@@ -175,16 +316,33 @@ export async function renderCorrected(sheet, opts = {}) {
   newPage(false);
   openTableHead();
 
+  const footnotes = [];
+
   for (const d of sheet.days) {
     const per = IDX.punch.length;
-    // >6 punches wraps to continuation rows, exactly like the source export -
+
+    // The recorded breaks go back onto the punch row, in the cells they
+    // happened in. A rest taken properly is PAID and never left the clock, so
+    // it splits a worked segment into three contiguous ones - 10a-2p becomes
+    // 10a-12p, 12p-12:10p, 12:10p-2p, and the day still totals four hours.
+    // Where the break sits inside a longer gap the bounding cells are coloured
+    // instead and the exact times go in a footnote, because putting punches
+    // inside unpaid time would claim hours nobody worked.
+    const rec = recorded.get(d.date);
+    const { punches: shown, unplaced } = insertRecordedBreaks(d.punches || [], rec?.order || []);
+    for (const u of unplaced) {
+      footnotes.push(
+        `${d.date}: ${u.kindOf} ${u.from}-${u.to} ${
+          u.why === "inside a longer gap" ? "falls inside the highlighted gap" : "matches no punch"
+        }`,
+      );
+    }
+
+    // a long day wraps to continuation rows, exactly like the source export -
     // every punch stays visible on a document someone signs.
     const chunks = [];
-    for (let i = 0; i < d.punches.length; i += per) chunks.push(d.punches.slice(i, i + per));
+    for (let i = 0; i < shown.length; i += per) chunks.push(shown.slice(i, i + per));
     if (!chunks.length) chunks.push([]);
-
-    const at = new Map();
-    d.punches.forEach((p, i) => at.set(p, { row: Math.floor(i / per), col: i % per }));
 
     // keep a day's continuation rows together on one page
     ensure(chunks.length * rowH, { inTable: true });
@@ -194,44 +352,41 @@ export async function renderCorrected(sheet, opts = {}) {
       const base = y - rowH + 4.5;
       const isLast = ci === chunks.length - 1;
 
-      // Break highlights sit behind the two punches that bound the gap - but
-      // ONLY where something actually recorded the break.
-      //
-      // This used to colour any gap the classifier called a break, which meant
-      // the signed sheet asserted breaks nobody recorded: 297 of 658 days on
-      // 07/16-07/31, including 105 where it highlighted a blue meal break and
-      // charged a meal premium for having no meal, on the same page. A gap
-      // cannot tell a break from travel between two clients, and printing it as
-      // one both overstates the record and undercuts the premium below it.
-      //
-      // A meal counts when the schedule rostered it. A rest counts when the
-      // Rest Periods Report logged it.
-      const mealEvidenced = d.mealScheduled === true;
-      const restEvidenced = Number.isFinite(d.restRecorded) && d.restRecorded > 0;
-      for (const b of d.breaks) {
-        if (b.kind !== "rest" && b.kind !== "meal") continue;
-        if (b.kind === "meal" && !mealEvidenced) continue;
-        if (b.kind === "rest" && !restEvidenced) continue;
-        const color = b.kind === "rest" ? REST : MEAL;
-        for (const pos of breakCells(d.punches, at, b)) {
-          if (!pos || pos.row !== ci) continue;
-          const col = xs[IDX.punch[pos.col]];
-          page.drawRectangle({ x: col.x, y: top - rowH, width: col.w, height: rowH, color });
-        }
-      }
+      // colour the cells the break actually happened in
+      chunk.forEach((p, i) => {
+        if (!p.mark) return;
+        const col = xs[IDX.punch[i]];
+        page.drawRectangle({
+          x: col.x, y: top - rowH, width: col.w, height: rowH,
+          color: p.mark === "rest" ? REST : MEAL,
+        });
+      });
 
-      centerIn(d.date, xs[IDX.date], base, { size: 7.5 });
-      chunk.forEach((p, i) => centerIn(p.raw, xs[IDX.punch[i]], base, { size: 7.5 }));
+      // the day only - the month is in the title above the table
+      if (ci === 0) centerIn(ordinal(dayOfMonth(d.date)), xs[IDX.date], base, { size: 7, f: bold });
+      chunk.forEach((p, i) => centerIn(p.raw, xs[IDX.punch[i]], base, { size: 6.5 }));
 
       if (isLast) {
         centerIn(f2(d.regularHours), xs[IDX.regular], base, { size: 7.5 });
-        centerIn(orBlank(d.otHours), xs[IDX.overtime], base, { size: 7.5 });
-        centerIn(orBlank(d.doubleHours), xs[IDX.double], base, { size: 7.5 });
+        // only drawn when the column exists on this sheet
+        if (IDX.overtime != null) centerIn(orBlank(d.otHours), xs[IDX.overtime], base, { size: 7.5 });
+        if (IDX.double != null) centerIn(orBlank(d.doubleHours), xs[IDX.double], base, { size: 7.5 });
         centerIn(f2(d.paidHours), xs[IDX.daily], base, { size: 7.5 });
 
         const notes = [];
         if (d.mealLate) notes.push("meal started late");
-        else if (d.mealViolation) notes.push("no meal period");
+        // a day past ten hours owes a SECOND meal, and "you got the first one
+        // and not the second" is a different sentence from "you got no lunch".
+        // §226.7 pays the same hour either way; the sheet still has to say
+        // which one happened.
+        else if (d.secondMealViolation && d.mealsRostered >= 1) {
+          notes.push(d.secondMealLate ? "second meal started late" : "no second meal period");
+        } else if (d.mealViolation) notes.push("no meal period");
+        // a waived day is not a violation, and the sheet has to say which one it
+        // is. printing nothing would make a waived day look identical to a day
+        // where lunch was actually taken, and the only record of why 63 hours
+        // came off the period would live in the engine.
+        else if (d.mealWaived) notes.push("meal waived, waiver on file");
         // print the count the VIOLATION was decided on, not the punch-gap count.
         // those differ whenever QSP's Rest Periods Report saw fewer breaks than
         // the gaps suggest, and the punch count is the one the engine
@@ -243,9 +398,15 @@ export async function renderCorrected(sheet, opts = {}) {
           // something no source supports.
           notes.push(`rest: no record (${d.restRequired} owed)`);
         } else if (d.restViolation) {
-          const taken =
-            d.restRecorded == null ? d.restCount : Math.min(d.restCount, d.restRecorded);
-          notes.push(`rest ${taken}/${d.restRequired}`);
+          // PRINT THE FIGURE THE PREMIUM WAS DECIDED ON. This used to be
+          // min(restCount, restRecorded), where restCount is the punch-gap
+          // count - the number the engine deliberately does not trust. The
+          // min() was added to stop days printing "rest 3/2", which it did,
+          // and it introduced the mirror error: 66 days printed FEWER rests
+          // than the engine had used and 22 printed more, across 31 people.
+          // Mánu's 07/31 read "rest 0/2" while the report logged one and the
+          // engine counted one.
+          notes.push(`rest ${d.restTaken ?? 0}/${d.restRequired}`);
         }
         // hours credited exceed the window they sit in, so two client bookings
         // overlap. flagged rather than adjusted: entitlement follows hours
@@ -268,7 +429,11 @@ export async function renderCorrected(sheet, opts = {}) {
           const col = xs[IDX.comments];
           const maxW = col.w - 6;
           const { str, size } = fitText(notes.join(", "), maxW, font, 6, 4.4);
-          text(str, col.x + 3, base, { size, color: PREM });
+          // red is the colour this sheet uses for something owed. a day whose
+          // only note is a waiver owes nothing, so it must not read as a
+          // finding - grey it instead of shouting it.
+          const owed = d.mealViolation || d.mealLate || d.restViolation || d.restUnknown;
+          text(str, col.x + 3, base, { size, color: owed ? PREM : MUTED });
         }
       }
 
@@ -277,21 +442,34 @@ export async function renderCorrected(sheet, opts = {}) {
     });
   }
 
-  // totals row
-  ensure(rowH, { inTable: true });
-  const tBase = y - rowH + 4.5;
-  const totalsLabel = "Totals:";
-  text(totalsLabel, xs[IDX.regular].x - bold.widthOfTextAtSize(totalsLabel, 8) - 6, tBase, {
-    size: 8, f: bold,
-  });
-  centerIn(f2(sheet.totals.regularHours), xs[IDX.regular], tBase, { size: 8, f: bold });
-  centerIn(orBlank(sheet.totals.otHours), xs[IDX.overtime], tBase, { size: 8, f: bold });
-  centerIn(orBlank(sheet.totals.doubleHours), xs[IDX.double], tBase, { size: 8, f: bold });
-  centerIn(f2(sheet.totals.paidHours), xs[IDX.daily], tBase, { size: 8, f: bold });
-  y -= rowH;
-  rowTops.push(y);
-
+  // TOTALS ROW, drawn outside the table grid.
+  //
+  // It used to be another row, so closeTable() ruled every punch column through
+  // it and the sheet ended on a line of empty boxes. QSP's own form boxes only
+  // the figures that carry a total and leaves the punch span open, which is
+  // also the honest shape: there is no such thing as a total of a clock-in.
+  ensure(rowH + 4, { inTable: true });
   closeTable();
+
+  const tTop = y;
+  const tBot = y - rowH;
+  const tBase = tBot + 4.5;
+  const from = xs[IDX.regular].x;
+  line(from, tTop, right, tTop, GRID, 1.2);
+  line(from, tBot, right, tBot, GRID, 1.2);
+  for (let i = IDX.regular; i <= IDX.comments; i++) {
+    const heavy = i === IDX.regular || i === IDX.daily || i === IDX.daily + 1;
+    line(xs[i].x, tTop, xs[i].x, tBot, GRID, heavy ? 1.2 : 0.5);
+  }
+  line(right, tTop, right, tBot, GRID, 1.2);
+
+  const totalsLabel = "Totals:";
+  text(totalsLabel, from - bold.widthOfTextAtSize(totalsLabel, 8) - 6, tBase, { size: 8, f: bold });
+  centerIn(f2(sheet.totals.regularHours), xs[IDX.regular], tBase, { size: 8, f: bold });
+  if (IDX.overtime != null) centerIn(orBlank(sheet.totals.otHours), xs[IDX.overtime], tBase, { size: 8, f: bold });
+  if (IDX.double != null) centerIn(orBlank(sheet.totals.doubleHours), xs[IDX.double], tBase, { size: 8, f: bold });
+  centerIn(f2(sheet.totals.paidHours), xs[IDX.daily], tBase, { size: 8, f: bold });
+  y = tBot;
   y -= 14;
 
   // ---------- color key ----------
@@ -305,13 +483,31 @@ export async function renderCorrected(sheet, opts = {}) {
     borderColor: BLACK, borderWidth: 0.8,
   });
   const keyY = y - keyH + 12;
-  text("Color Key:", L + 12, keyY, { size: 8.5, f: bold });
-  page.drawRectangle({ x: L + 70, y: keyY - 3, width: 26, height: 11, color: REST, borderColor: GRID, borderWidth: 0.4 });
-  text("10-Minute Paid Rest Break", L + 104, keyY, { size: 8 });
-  page.drawRectangle({ x: L + 244, y: keyY - 3, width: 26, height: 11, color: MEAL, borderColor: GRID, borderWidth: 0.4 });
-  text("30-Minute Unpaid Meal Break", L + 278, keyY, { size: 8 });
-  text("Hours include paid rest break time.", L + 428, keyY, { size: 7, color: MUTED });
-  y -= keyH + 18;
+  // reflowed for the portrait page: the old spacing was measured against a
+  // 736pt table and ran the last label off a 556pt one.
+  text("Color Key:", L + 8, keyY, { size: 8, f: bold });
+  page.drawRectangle({ x: L + 58, y: keyY - 3, width: 22, height: 10, color: REST, borderColor: GRID, borderWidth: 0.4 });
+  text("10-Minute Paid Rest Break", L + 86, keyY, { size: 7.5 });
+  page.drawRectangle({ x: L + 196, y: keyY - 3, width: 22, height: 10, color: MEAL, borderColor: GRID, borderWidth: 0.4 });
+  text("30-Minute Unpaid Meal Break", L + 224, keyY, { size: 7.5 });
+  text("Hours include paid rest break time.", L + 348, keyY, { size: 6.5, color: MUTED });
+  y -= keyH + 8;
+
+  // Breaks the record puts INSIDE a highlighted gap rather than matching it,
+  // and breaks that line up with no punch at all. The colour can only be
+  // approximate for those, so the exact times are stated rather than implied.
+  if (footnotes.length) {
+    ensure(12 + Math.min(footnotes.length, 7) * 8);
+    for (const fn of footnotes.slice(0, 6)) {
+      text("* " + fn, L, y, { size: 6, color: MUTED });
+      y -= 8;
+    }
+    if (footnotes.length > 6) {
+      text("* and " + (footnotes.length - 6) + " more, listed on the checks screen", L, y, { size: 6, color: MUTED });
+      y -= 8;
+    }
+    y -= 6;
+  }
 
   // ---------- overlapping client bookings ----------
   // The days marked "overlap *" in the Comments column. Two client bookings run
@@ -659,6 +855,15 @@ function movedPairs(was, now) {
 // Pineda 07/20 has 3:15p twice. A break always spans two ADJACENT punches
 // (parse.js builds it from p[i+1] and p[i+2]), so it is the PAIR that identifies
 // the position, not either punch on its own.
+// NO LONGER USED BY THE RENDERER. Breaks are not painted onto punch cells any
+// more - they are printed in the Breaks column from what the two reports
+// recorded, because a punch gap is not evidence of a break and a properly taken
+// rest leaves no gap at all.
+//
+// Kept, with its tests, because those tests record two real bugs: highlights
+// vanishing on recompute when identity was matched by object reference, and a
+// repeated punch time sending a highlight to the wrong cell. Delete both
+// together if punch-cell colouring is never coming back.
 export function breakCells(punches, at, b) {
   const byId = [at.get(b.start), at.get(b.end)];
   if (byId[0] && byId[1]) return byId;

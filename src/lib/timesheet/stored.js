@@ -25,7 +25,10 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 export const REQUIRED_DAY_FIELDS = [
   "date", "paidHours", "rawHours", "regularHours", "otHours", "doubleHours",
   "mealRequired", "mealViolation", "mealMissing", "mealLate", "mealStartedAfterMin",
-  "mealCount", "mealScheduled", "mealUnknown",
+  "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
+  "mealGapKind", "mealGapMin",
+  "mealsRostered", "secondMealRequired", "secondMealViolation", "secondMealUnknown",
+  "restTackedOn", "restsInsideMeal", "restsOutsideShift", "restsUnpaid",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -48,6 +51,28 @@ export function storedDay(d) {
     doubleHours: r2(d.doubleHours),
     mealViolation: d.mealViolation,
     restViolation: d.restViolation,
+    // a signed waiver cleared the day. stored rather than recomputed because a
+    // waiver is a fact about paperwork at the time the sheet was produced, and
+    // the sheet has to keep saying what it said when it was signed.
+    mealWaived: !!d.mealWaived,
+    // what the roster says the day's lunch-shaped gap was. stored because it is
+    // read off the SCHEDULE, and recompute never sees the schedule again.
+    mealGapKind: d.mealGapKind ?? null,
+    mealGapMin: d.mealGapMin ?? null,
+    // the second meal period. `mealsRostered` is how many the schedule gave
+    // them, which is the only thing that can witness a second one.
+    mealsRostered: d.mealsRostered ?? null,
+    secondMealRequired: !!d.secondMealRequired,
+    secondMealViolation: !!d.secondMealViolation,
+    secondMealUnknown: !!d.secondMealUnknown,
+    // rests taken hard against the rostered lunch. reported, never charged.
+    restTackedOn: d.restTackedOn ?? null,
+    // recorded inside the lunch, so not counted as a rest taken.
+    restsInsideMeal: d.restsInsideMeal ?? null,
+    // a rest logged outside the shift, and a rest that fell in an unpaid
+    // gap. both reported only, neither moves a figure.
+    restsOutsideShift: d.restsOutsideShift ?? null,
+    restsUnpaid: d.restsUnpaid ?? null,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,

@@ -14,9 +14,11 @@ import { parseTimesheetPdf, analyzeTimesheet, applyOvertime, analyzeDay } from "
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
 import { storedDay } from "@/lib/timesheet/stored";
-import { parseSchedulePdf, scheduleKey, compareToSchedule } from "@/lib/timesheet/schedule";
+import {
+  parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
+} from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
-import { parseRestReport, restKey, malformedRows } from "@/lib/timesheet/rests";
+import { parseRestReport, restKey, allRestRows, clockMin } from "@/lib/timesheet/rests";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -263,6 +265,7 @@ export async function uploadBatch(formData) {
   let rests = null;
   let restsUrl = null;
   let restsMalformed = [];
+  let restsByDate = [];
   {
     P.stage = "rests";
     await setProgress(prog, P);
@@ -279,8 +282,16 @@ export async function uploadBatch(formData) {
     }
     try {
       rests = parseRestReport(Buffer.from(rbytes));
-      restsMalformed = malformedRows(Buffer.from(rbytes));
-      console.log(`rest report parsed: ${rests.size} employees, ${restsMalformed.length} broken rows`);
+      // EVERY row, with the times it recorded. the signed sheet colours only
+      // what the two reports actually recorded, and a properly taken rest is
+      // paid and stays on the clock - so there is usually no punch gap to
+      // colour and a count was never going to be enough.
+      restsByDate = allRestRows(Buffer.from(rbytes));
+      restsMalformed = restsByDate.filter((r) => r.kind && !r.counted);
+      console.log(
+        `rest report parsed: ${rests.size} employees, ${restsByDate.length} rows, ` +
+        `${restsByDate.filter((r) => r.kind).length} needing attention, ${restsMalformed.length} not counted`,
+      );
     } catch (e) {
       console.error("rest report parse failed:", e);
       redirect(
@@ -347,6 +358,7 @@ export async function uploadBatch(formData) {
       clockName: clockUrl ? clockFile?.name || null : null,
       restsUrl,
       restsName: restsUrl ? restFile?.name || null : null,
+      restsByDate: restsByDate.length ? restsByDate : null,
       payrollUrl,
       payrollName: payrollUrl ? payFile?.name || null : null,
       testMode: !isLiveSend(),
@@ -374,6 +386,36 @@ export async function uploadBatch(formData) {
   // hours with no second opinion, and a 5.9-hour punch question nothing could
   // settle - all of it over a spelling.
   const scheduleByUser = indexByAccount(scheduleNames, staff);
+
+  // ---- does this schedule actually cover the people on the timesheet? ----
+  //
+  // On 2026-08-09 a schedule export holding ONE employee was uploaded against a
+  // 59-person timesheet. Nothing errored. 454 days came back mealUnknown,
+  // because a day with no schedule is unanswerable rather than a violation, and
+  // the batch landed at 426 premium hours instead of 680. It looked like a
+  // finished batch and was wrong by 254 hours, which is far worse than a
+  // refusal - the same export at 59 people is a 479KB file and the single
+  // person one is 184KB, so nothing about the file names or the screen said so.
+  //
+  // Refused rather than warned, on the same principle as an export with no
+  // timesheet rows: a number nobody can evidence should not reach a screen.
+  const scheduleCovers = withHours.filter((raw) => {
+    const m = matchEmployee(raw.employee, staff);
+    return !!lookupAcross(raw.employee, m, {
+      get: (k) => schedules.get(k) || null,
+      keyOf: scheduleKey,
+      byUser: scheduleByUser,
+    }).value;
+  }).length;
+  if (scheduleCovers * 2 < withHours.length) {
+    redirect(
+      `/portal/admin/timesheets/new?error=schedule&why=${encodeURIComponent(
+        `the schedule covers ${scheduleCovers} of the ${withHours.length} people on the timesheet` +
+          ` - meal periods cannot be evidenced for the rest, so the premium total would be far too low`,
+      )}`,
+    );
+  }
+
   // people we could not place in one of the other reports, with the best guess
   // and how sure it is. shown, never acted on.
   const aliasQuestions = [];
@@ -386,6 +428,21 @@ export async function uploadBatch(formData) {
     scheduleMatched: 0, failed: [],
     support: { recorded: 0, supported: 0, unverified: 0 },
   };
+
+  // Counted rest windows in minutes, per person and date. Built once from the
+  // report rows so the engine can tell a rest taken hard against the rostered
+  // lunch from one taken in the middle of a work period. Keyed on the report's
+  // own spelling; the day builder looks it up under the same key.
+  const restWindows = new Map();
+  for (const row of restsByDate) {
+    if (!row.counted || !row.date) continue;
+    const out = clockMin(row.out);
+    const inn = clockMin(row.in);
+    if (out == null || inn == null) continue;
+    const k = `${restKey(row.name)}|${row.date}`;
+    if (!restWindows.has(k)) restWindows.set(k, []);
+    restWindows.get(k).push({ out, in: inn });
+  }
 
   for (const raw of withHours) {
     // hand each day QSP's own count of rest breaks taken, where the report
@@ -440,6 +497,21 @@ export async function uploadBatch(formData) {
           // covers the day and rosters none, null = no schedule for the day,
           // which is unanswerable and goes to a person instead of being charged
           mealScheduled: sd ? (sd.entries || []).some((e) => e.meal) : null,
+          // the day's rostered blocks as minutes, so the engine can say whether
+          // a punched gap is the seam between two client bookings or somebody
+          // stepping away mid-booking. without this it only ever sees a hole.
+          scheduleBlocks: sd ? scheduleBlocks(sd.entries) : null,
+          // the day's counted rest windows in minutes, so the engine can see a
+          // rest taken hard against the rostered lunch, or one recorded outside
+          // the shift. a count could never show either.
+          //
+          // Keyed on the REST REPORT's own spelling of the name, via the person
+          // `lookupAcross` already matched - `restWindows` is built from that
+          // document, and QSP does not always spell somebody the same way in
+          // two exports. Falling back to the timesheet's name only matters when
+          // the report has no row for them, in which case there is nothing to
+          // find under either name.
+          restTimes: restWindows.get(`${restKey(rest?.name || raw.employee)}|${d.date}`) || null,
         };
       }),
     };
@@ -533,23 +605,28 @@ export async function uploadBatch(formData) {
       scheduleByDate,
     });
 
-    // render the corrected PDF now so the review screen can preview it
-    let pdfUrl = null;
+    // Render once, to find out whether this sheet CAN render and to capture the
+    // approval rectangle - then throw the bytes away. The unsigned PDF is a
+    // pure function of `data`, so it is built on demand instead of stored: 59
+    // blob writes per upload and another 59 per recompute, each orphaning the
+    // last, is what filled the store and exhausted the write allowance.
+    let renderOk = false;
     let approvalRect = null;
+    const generatedOn = new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" });
     try {
-      const rendered = await renderCorrected({ ...t, punchCorrections }, {
-        printedBy: t.employee,
-        generatedOn: new Date().toLocaleDateString("en-US"),
-      });
+      const rendered = await renderCorrected(
+        {
+          ...t,
+          punchCorrections,
+          // the Breaks column shows what the two reports RECORDED. it is not
+          // derived from the punches, so it has to be handed in.
+          restsByDate,
+          scheduleByDate,
+        },
+        { printedBy: t.employee, generatedOn },
+      );
       approvalRect = rendered.approvalRect;
-      if (hasBlobStorage()) {
-        const key = `timesheets/${batch.id}/${randomBytes(8).toString("hex")}.pdf`;
-        const blob = await putBlob(key, Buffer.from(rendered.bytes), {
-          access: "public",
-          contentType: "application/pdf",
-        });
-        pdfUrl = blob.url;
-      }
+      renderOk = rendered.bytes?.length > 0;
     } catch (e) {
       console.error(`timesheet render failed for ${t.employee}:`, e);
     }
@@ -567,9 +644,12 @@ export async function uploadBatch(formData) {
         doubleHours: r2(t.totals.doubleHours),
         premiumHours: r2(t.premiums.totalHours),
         partialWeek: t.partialWeekDates.length > 0,
-        pdfUrl,
+        renderOk,
         data: {
           approvalRect,
+          // frozen at upload. rendering on demand with today's date would put a
+          // different "generated on" on the same sheet every time it opened.
+          generatedOn,
           suggestions: m.suggestions,
           confidence: m.confidence,
           premiums: t.premiums,
@@ -662,7 +742,7 @@ export async function uploadBatch(formData) {
     if (punchIssues.length) { sum.punchPeople += 1; sum.punchDays += punchIssues.length; }
     if (scheduleCheck?.flagged?.length) { sum.schedulePeople += 1; sum.scheduleDays += scheduleCheck.flagged.length; }
     if (scheduleCheck) sum.scheduleMatched += 1;
-    if (!pdfUrl) sum.failed.push(t.employee || "(unknown)");
+    if (!renderOk) sum.failed.push(t.employee || "(unknown)");
     sum.support.recorded += support.totals.recorded;
     sum.support.supported += support.totals.supported;
     sum.support.unverified += support.totals.unverified;
@@ -672,8 +752,8 @@ export async function uploadBatch(formData) {
       name: t.employee || "(unknown)",
       hours: r2(t.totals.paidHours),
       premium: r2(t.premiums.totalHours),
-      // a render failure leaves pdfUrl null and is worth seeing as it happens
-      failed: !pdfUrl,
+      // a render failure is worth seeing as it happens
+      failed: !renderOk,
     });
     // throttled: the screen polls once a second, so writing faster than that
     // buys nothing and costs a round-trip inside the slow loop
@@ -817,7 +897,7 @@ export async function sendTimesheets(batchId, formData) {
   const where = {
     batchId,
     userId: { not: null },
-    pdfUrl: { not: null },
+    renderOk: true,
     disputedAt: null,
   };
   if (onlyId) where.id = onlyId.toString();
@@ -1206,7 +1286,7 @@ export async function recomputeTimesheet(timesheetId) {
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true } },
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
   });
@@ -1215,8 +1295,29 @@ export async function recomputeTimesheet(timesheetId) {
   // change again - deal with all of them first.
   if (ts.corrections.length) return { ok: false, error: "openitems" };
 
+  return rebuildSheetFor(ts, ts.overrides);
+}
+
+// Recompute one sheet against a set of overrides, re-render its PDF, and store
+// the result. Shared by the admin recompute above and by the employee answering
+// a rest-repair question on their own sheet, so there is exactly one place that
+// knows how a corrected document is produced.
+//
+// The caller does the authorisation and the guards. This does the work.
+async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   const stored = ts.data || {};
-  const days = stored.days || [];
+  // RECOMPUTE FROM THE PRISTINE DAYS, NOT THE STORED ONES.
+  //
+  // `recomputeSheet` returns the PATCHED days and we write them straight back
+  // into `data.days`, so after one rebuild the stored days already carry the
+  // correction. Recomputing from those with the override removed starts from
+  // the corrected figures and changes nothing - an override could be applied
+  // and never undone. Caught by an employee answering a rest question "yes"
+  // and then "no": the premium went 16.00 -> 15.00 -> 15.00.
+  //
+  // So the untouched set is kept once, the first time a sheet is rebuilt, and
+  // every rebuild starts from it.
+  const days = stored.daysOriginal || stored.days || [];
   // batches uploaded before corrections existed don't carry the punch detail the
   // renderer needs, so there's nothing to rebuild from. say so plainly rather
   // than emit a sheet with an empty punch column.
@@ -1227,13 +1328,18 @@ export async function recomputeTimesheet(timesheetId) {
   const payPeriod =
     stored.payPeriod || { from: ts.batch.periodFrom, to: ts.batch.periodTo };
 
-  const next = recomputeSheet(
-    { days, payPeriod, overrides: ts.overrides },
-    applyOvertime,
-  );
+  const next = recomputeSheet({ days, payPeriod, overrides }, applyOvertime);
 
-  let pdfUrl = ts.pdfUrl;
+  // A rebuild renders to CHECK, and to refresh the approval rectangle, then
+  // discards the bytes - the sheet itself is built on demand. This is the loop
+  // that used to write 59 blobs and orphan 59 more every time it ran.
+  //
+  // `generatedOn` is NOT refreshed. It records when the figures were produced,
+  // and a recompute of stored days does not make the timesheet new.
   let approvalRect = stored.approvalRect || null;
+  const generatedOn =
+    stored.generatedOn ||
+    new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" });
   try {
     const rendered = await renderCorrected(
       {
@@ -1243,21 +1349,14 @@ export async function recomputeTimesheet(timesheetId) {
         totals: next.totals,
         premiums: next.premiums,
         comments: stored.comments || null,
+        // same two sources as at upload, so a rebuilt sheet keeps its Breaks
+        // column rather than silently losing it on the first recompute
+        restsByDate: ts.batch.restsByDate || [],
+        scheduleByDate: stored.scheduleCheck?.byDate || null,
       },
-      {
-        printedBy: ts.sourceName,
-        generatedOn: new Date().toLocaleDateString("en-US", {
-          timeZone: "America/Los_Angeles",
-        }),
-      },
+      { printedBy: ts.sourceName, generatedOn },
     );
     approvalRect = rendered.approvalRect;
-    const key = `timesheets/${ts.batchId}/${randomBytes(8).toString("hex")}.pdf`;
-    const blob = await putBlob(key, Buffer.from(rendered.bytes), {
-      access: "public",
-      contentType: "application/pdf",
-    });
-    pdfUrl = blob.url;
   } catch (e) {
     console.error(`timesheet recompute render failed for ${ts.sourceName}:`, e);
     return { ok: false, error: "render" };
@@ -1273,7 +1372,11 @@ export async function recomputeTimesheet(timesheetId) {
       doubleHours: r2(next.totals.doubleHours),
       premiumHours: r2(next.premiums.totalHours),
       partialWeek: next.partialWeekDates.length > 0,
-      pdfUrl,
+      renderOk: true,
+      // the stored copy is gone: the sheet is rendered on demand now, and a
+      // stale blob would be a different document from the one on screen.
+      pdfUrl: null,
+      overrides,
       // the corrected sheet is a different document, so the old signature and
       // sign-off can't carry over to it. it goes back out unsigned.
       signedAt: null,
@@ -1283,7 +1386,11 @@ export async function recomputeTimesheet(timesheetId) {
       approvedAt: null,
       approvedById: null,
       approvedPdfUrl: null,
-      sentAt: null,
+      // an admin recompute has to go back OUT, so it stops counting as sent.
+      // an employee answering a question on the sheet in front of them is about
+      // to sign that same sheet - clearing sentAt there would put them back on
+      // the chase list for a document they are already looking at.
+      ...(keepSent ? {} : { sentAt: null }),
       disputedAt: null,
       recomputedAt: new Date(),
       data: {
@@ -1291,6 +1398,9 @@ export async function recomputeTimesheet(timesheetId) {
         approvalRect,
         premiums: next.premiums,
         partialWeekDates: next.partialWeekDates,
+        generatedOn,
+        // stashed on the first rebuild only, and never overwritten after
+        daysOriginal: days,
         days: next.days,
       },
     },
@@ -1299,6 +1409,99 @@ export async function recomputeTimesheet(timesheetId) {
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/corrections`);
   return { ok: true };
+}
+
+// Employee-side: answer a rest-repair question on your own sheet.
+//
+// The Rest Periods Report holds entries that cannot be read - out after in, an
+// AM/PM slip - and for a few of them a single mis-picked field explains it. We
+// never apply that guess: the person who would lose an hour of premium pay is
+// the one who knows whether the break happened, so they are asked.
+//
+// SAYING YES REDUCES SOMEBODY'S PAY, so this is careful about three things:
+//   - the question must be one WE asked. it is matched against the batch's
+//     stored restsByDate by name, date and out-time, and must carry a
+//     proposed repair. a client cannot invent a date and clear a premium.
+//   - the answer is recorded either way, as a resolved TimesheetCorrection, so
+//     "why is this figure not what the export said" has one answer in one place.
+//   - it is reversible until they sign, and the sheet is rebuilt each time so
+//     the document always matches the answer printed above it.
+export async function answerRestRepair({ token, date, out, accept }) {
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const id = verifyTimesheetToken(token);
+  if (!id) return { ok: false, error: "auth" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id },
+    include: {
+      batch: {
+        select: {
+          id: true, periodFrom: true, periodTo: true, restsByDate: true,
+        },
+      },
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  if (ts.signedAt) return { ok: false, error: "already" };
+  // they have told us something else is wrong; that gets sorted before this does
+  if (ts.corrections.length) return { ok: false, error: "reported" };
+
+  const row = (ts.batch.restsByDate || []).find(
+    (r) =>
+      restKey(r.name) === restKey(ts.sourceName) &&
+      r.date === date &&
+      String(r.out || "") === String(out || "") &&
+      r.repair,
+  );
+  if (!row) return { ok: false, error: "unknown" };
+  // the day has to exist on the sheet, or an accepted answer would patch nothing
+  if (!(ts.data?.days || []).some((d) => d.date === date)) {
+    return { ok: false, error: "unknown" };
+  }
+
+  const yes = accept === true;
+
+  // Rebuild against the overrides this answer implies. Computed from scratch
+  // rather than toggled, so changing the answer back really does put the
+  // premium back rather than leaving a half-applied override behind.
+  const overrides = { ...(ts.overrides || {}) };
+  const day = { ...(overrides[date] || {}) };
+  if (yes) day.restViolation = false;
+  else delete day.restViolation;
+  if (Object.keys(day).length) overrides[date] = day;
+  else delete overrides[date];
+
+  const rebuilt = await rebuildSheetFor(ts, overrides, { keepSent: true });
+  if (!rebuilt.ok) return rebuilt;
+
+  // one audit row per question, updated in place if they change their mind.
+  // never "open", so it does not put the sheet into the reported-a-problem
+  // state and block the signing it exists to precede.
+  const existing = await prisma.timesheetCorrection.findFirst({
+    where: { timesheetId: ts.id, date, kind: "rest_taken" },
+    select: { id: true },
+  });
+  const record = {
+    status: yes ? "accepted" : "declined",
+    resolvedAt: new Date(),
+    // the employee resolved it themselves - that is the whole point of asking
+    resolvedById: ts.userId || null,
+    note: `Asked about the ${row.date} rest entry (out ${row.out || "blank"}, in ${row.in || "blank"}, ${row.derivation}).`,
+    resolutionNote: yes
+      ? `Employee confirmed the break was taken; read as ${row.repair.from} to ${row.repair.to}. Rest premium removed for this day.`
+      : "Employee said the break was not taken. Premium stands and the QSP entry still needs correcting.",
+  };
+  if (existing) {
+    await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
+  } else {
+    await prisma.timesheetCorrection.create({
+      data: { timesheetId: ts.id, date, kind: "rest_taken", ...record },
+    });
+  }
+
+  revalidatePath(`/t/${token}`);
+  return { ok: true, accepted: yes };
 }
 
 // employee-side: store the signed PDF against their timesheet. called from the

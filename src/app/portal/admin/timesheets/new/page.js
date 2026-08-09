@@ -18,6 +18,8 @@ const ERRORS = {
   empty: "No employee hours found in that file. Is it the right export?",
   noschedule:
     "The Employee Schedules export is required. It's what corroborates the days nobody clocked, and without it those premium hours have nothing behind them at all.",
+  schedule:
+    "That schedule export covers almost nobody on the timesheet. QSP can produce a single-employee schedule that looks like the full one - the 59-person export is around 479KB and a one-person export around 184KB, and the file names are identical. Re-export it from Schedules with every employee selected. Nothing was created: without the schedule, meal periods cannot be evidenced for the people it misses, and the premium total would come out far too low rather than obviously wrong.",
   norests:
     "The Rest Periods Report is required. It's the only thing that records whether a rest break was actually taken, and rest premiums are the bigger half of the total. Without it every qualifying day comes back unanswerable.",
   restparse:

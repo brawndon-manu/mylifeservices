@@ -6,6 +6,7 @@
 import { useState } from "react";
 import Avatar from "@/components/Avatar";
 import EmployeePicker from "./EmployeePicker";
+import RowDocuments from "./RowDocuments";
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 const dt = (iso) =>
@@ -18,7 +19,16 @@ const METHOD = {
   unmatched: { label: "No match", cls: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" },
 };
 
-export default function ReviewTable({ rows, candidates, batchId, assign, clear, send }) {
+export default function ReviewTable({
+  rows,
+  candidates,
+  batchId,
+  assign,
+  clear,
+  send,
+  hasSource,
+  hasSchedule,
+}) {
   const [filter, setFilter] = useState("all");
 
   const counts = {
@@ -185,6 +195,15 @@ export default function ReviewTable({ rows, candidates, batchId, assign, clear, 
                   </a>
                 </div>
               </div>
+
+              {/* the two source documents, sitting with the figures they
+                  explain rather than at the bottom with the send controls */}
+              <RowDocuments
+                batchId={batchId}
+                docs={r.docs}
+                hasSource={hasSource}
+                hasSchedule={hasSchedule}
+              />
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
                 <div className="flex min-w-0 items-center gap-2.5">

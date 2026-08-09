@@ -61,10 +61,18 @@ export default async function TimesheetStatsPage({ params }) {
           value={n2(t.paidHours)}
           sub={`${n2(t.rawHours)} as exported`}
         />
+        {/* This read "Paid rest time added back" until 2026-08-08, and it had
+            been wrong since 06 August. QSP stopped deducting rest breaks then,
+            so rest time sits inside the work segments already and NOTHING is
+            added back - 1,406 minutes of rest are recorded in punch gaps this
+            period and not one of them moves an hour. What the figure actually
+            is: days where our exact arithmetic lands a hundredth under QSP's
+            printed daily total, floored up to theirs so a corrected sheet never
+            pays less than the export. 13 days, 0.20 hours, on this batch. */}
         <Card
-          label="Paid rest time added back"
+          label="Added above the export"
           value={n2(t.addedHours)}
-          sub={`avg ${n2(t.avgAdded)} per person`}
+          sub="floored up to QSP's printed daily figure"
           tone="good"
         />
         <Card

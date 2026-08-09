@@ -91,6 +91,38 @@ export const RULES = {
   // Brinker). a meal that was taken but taken late is still a violation, which
   // is why counting meals alone isn't enough.
   mealMustStartByMin: 300,
+  // a SECOND meal period is owed once the day passes 10 hours worked, and it
+  // has to begin by the end of the tenth hour. §226.7 still caps the day at one
+  // meal premium, so a missed second meal only ever costs anything on a day
+  // where the first one was actually provided.
+  secondMealRequiredAfterHours: 10,
+  secondMealMustStartByMin: 600,
+  // a meal period can be waived by mutual written consent when the day is 6
+  // hours or less (Lab. Code §512(a)). the waiver only reaches a day where no
+  // meal was provided at all - it cannot excuse one that was provided late.
+  mealWaiverMaxHours: 6,
+  // every current member of staff has a signed waiver on file. that is Mánu's
+  // statement of fact 2026-08-08, not an assumption the engine made: the forms
+  // exist on paper and are not in the portal yet, because the portal has not
+  // been rolled out to staff. once they are stored per person this flips to
+  // reading the real submission and the default disappears.
+  mealWaiverOnFileByDefault: true,
+  // how close a punch has to land to a rostered time before we call it the same
+  // moment. real punches drift a few minutes either side of the roster.
+  gapSeamToleranceMin: 10,
+  // a rest period belongs in the first four hours of work, and the second in
+  // the last four. Unlike the meal deadline this is NOT a hard statutory line -
+  // the standard is the middle of each work period "insofar as practicable" -
+  // so a rest past this mark is FLAGGED and never charged. Mánu's call
+  // 2026-08-08: a hard cutoff here would manufacture premiums the statute does
+  // not clearly require, and 7 of the 13 candidates sit within half an hour of
+  // the mark, which is the zone that wording exists to cover.
+  restWindowMin: 240,
+  // how close a rest has to sit to the rostered lunch before the two are really
+  // one break. Measured on 07/16-07/31: the six real cases are EXACTLY
+  // contiguous, and the count is identical anywhere from 0 to 5 minutes. Past
+  // 10 it starts catching rests that are merely nearby, so it stays tight.
+  restTackedOnToleranceMin: 2,
   // §226.7: max one meal premium + one rest premium per workday, 1 hr each.
   premiumHoursPerViolation: 1,
   // CA overtime. nobody is supposed to run over, but it still has to be
@@ -269,6 +301,21 @@ export function restsRequired(hours) {
   return 1 + Math.ceil((h - 6) / 4);
 }
 
+// Minutes actually ON the clock before an instant, from punches in document
+// order. This is the measure every timing question here uses, and it is not
+// the same as elapsed time from the first punch: a split shift with a two hour
+// unpaid hole makes a rest look five hours into the day when it is three hours
+// of work in. Measuring the wrong one turned 45 late rests into 54.
+export function workedBeforeMin(punches, at) {
+  const p = (punches || []).map((x) => x.min);
+  let n = 0;
+  for (let i = 0; i + 1 < p.length; i += 2) {
+    const [a, b] = [p[i], p[i + 1]];
+    if (b > a) n += Math.max(0, Math.min(b, at) - a);
+  }
+  return n;
+}
+
 export function analyzeDay(day) {
   const p = day.punches;
   const segments = [];
@@ -360,6 +407,71 @@ export function analyzeDay(day) {
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
 
+  // ---- a "rest" recorded inside the lunch is not a rest period ------------
+  //
+  // A rest period is PAID and counts as hours worked. A meal period is unpaid.
+  // Ten minutes sitting inside an unpaid thirty minute meal cannot satisfy the
+  // rest obligation, whatever the report calls it - most often it is part of
+  // the lunch that got logged as a break.
+  //
+  // Mánu's ruling 2026-08-08: the opportunity to take a ten minute rest always
+  // exists here - staff are in the field, choose their own moment, and somebody
+  // chases anyone who has not taken one - so a rest that landed inside the
+  // lunch was not one the employer failed to provide. It simply was not taken,
+  // and the premium follows. THIS IS THE ONE PLACE A RECORDED REST IS
+  // DISCOUNTED, and it has to be computed before restTaken is decided below.
+  //
+  // Adjacent is a different thing and still counts: taking your ten right
+  // before or after lunch is a compliance habit, not an uncompensated break.
+  const restTimes = Array.isArray(day.restTimes) ? day.restTimes : null;
+  const rosteredMeals = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => b.meal)
+    : null;
+  const usableRests = (restTimes || []).filter(
+    (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
+  );
+  const insideMeal = (r) =>
+    !!rosteredMeals && rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end);
+
+  // The same principle, applied to the other end of the day: a rest logged
+  // before clock-in or after clock-out is not paid time either, so it was not a
+  // rest period. Mánu 2026-08-08: "that is on us for not catching it during the
+  // work day" - the entry is a records failure on the employer's side, and the
+  // employee is not made to carry it.
+  //
+  // Eleven of the sixteen on 07/16-07/31 are one person's 7:00-7:10 on an 8:00
+  // shift, twelve days running. A default nobody changed, clearing a premium
+  // every single day.
+  const shiftMins = p.map((x) => x.min);
+  const shiftStart = shiftMins.length ? Math.min(...shiftMins) : null;
+  const shiftEnd = shiftMins.length ? Math.max(...shiftMins) : null;
+  const outsideShift = (r) =>
+    shiftStart != null && (r.out < shiftStart || r.in > shiftEnd);
+
+  // And the third way a recorded rest is not a rest: it fell inside a
+  // punched-OUT gap, so the person was off the clock for it. Same principle
+  // again, Mánu 2026-08-08 - a rest period is paid time, and unpaid minutes
+  // were never one, wherever in the day they sit.
+  const unpaidRest = (r) => {
+    if (shiftStart == null || outsideShift(r)) return false;
+    for (let i = 1; i + 1 < shiftMins.length; i += 2) {
+      if (shiftMins[i] <= r.out && shiftMins[i + 1] >= r.in) return true;
+    }
+    return false;
+  };
+
+  const restsInsideMeal = restTimes && rosteredMeals
+    ? usableRests.filter(insideMeal).length
+    : null;
+  const restsOutsideShift = restTimes && shiftStart != null
+    ? usableRests.filter(outsideShift).length
+    : null;
+  // the UNION of all three, because one rest can be more than one of these and
+  // must only be discounted once. Inside the lunch is usually also unpaid.
+  const restsNotCounted = restTimes
+    ? usableRests.filter((r) => insideMeal(r) || outsideShift(r) || unpaidRest(r)).length
+    : 0;
+
   // ---- what counts as a break TAKEN -------------------------------------
   //
   // A GAP IS NOT A BREAK. This used to infer both kinds from gaps between
@@ -381,7 +493,11 @@ export function analyzeDay(day) {
   // `day.restRecorded` is the Rest Periods Report's count. No coverage means no
   // record, which means none taken - the reading that pays the employee.
   const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
-  const restTaken = recorded === null ? 0 : recorded;
+  // ...less any that landed inside the lunch, which are unpaid minutes and so
+  // were never rest periods. See the ruling above. This is the only place the
+  // report's own count is reduced, and it can only ever move the day toward
+  // owing a premium, never away from one.
+  const restTaken = Math.max(0, (recorded === null ? 0 : recorded) - restsNotCounted);
 
   // Can ANY source speak to whether a rest break happened on this day?
   //
@@ -427,6 +543,14 @@ export function analyzeDay(day) {
   // no schedule at all is not a violation and not a pass. it goes to a person.
   const mealUnknown = mealRequired && mealScheduled === null;
 
+  // HOW MANY meals the schedule rostered, which is a different question from
+  // whether it rostered any. Only the blocks can answer it, so a caller that
+  // hands in `mealScheduled` alone leaves this null and the second meal goes to
+  // a person rather than being charged or silently passed.
+  const mealsRostered = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => b.meal).length
+    : null;
+
   // the meal has to START by the end of the fifth hour worked. a late lunch is
   // its own violation - the break happened, but not when it was owed. only
   // meaningful once we know a meal was actually rostered.
@@ -437,6 +561,137 @@ export function analyzeDay(day) {
     mealTaken &&
     !!firstMeal &&
     firstMeal.workedBefore > RULES.mealMustStartByMin;
+
+  // ---- the second meal period -------------------------------------------
+  //
+  // Owed past ten hours worked, and it has to begin by the end of the tenth.
+  // The statute allows it to be waived when the day is 12 hours or less AND the
+  // first meal was not waived, but no such waiver is held anywhere, so none is
+  // assumed - the day is charged and the paperwork can clear it later.
+  //
+  // Same evidence rule as the first meal: only the schedule can say a meal was
+  // provided, and here it has to say so TWICE.
+  const secondMealRequired = paidHours > RULES.secondMealRequiredAfterHours;
+  const secondMealUnknown = secondMealRequired && (mealUnknown || mealsRostered === null);
+  const secondMealTaken = mealsRostered !== null && mealsRostered >= 2;
+  const secondMeal = breaks.filter((b) => b.kind === "meal")[1] || null;
+  const secondMealLate =
+    secondMealRequired &&
+    secondMealTaken &&
+    !!secondMeal &&
+    secondMeal.workedBefore > RULES.secondMealMustStartByMin;
+  const secondMealViolation =
+    secondMealRequired && !secondMealUnknown && (!secondMealTaken || secondMealLate);
+
+  // ---- a rest taken right up against the lunch ---------------------------
+  //
+  // Ten minutes abutting a thirty minute lunch is a forty minute break, not a
+  // lunch and a rest. FLAGGED, never charged, and the reason is that the
+  // schedule cannot roster a rest period at all - it holds meal breaks only -
+  // so an adjacency here is always the employee's choice against a standalone
+  // lunch the employer did roster. Where the opportunity was provided the
+  // premium is not owed, so `restTaken` is left alone and this only reports.
+  //
+  // `day.restTimes` is [{out, in}] in minutes, from the Rest Periods Report.
+  // Absent, the question is unanswerable and the count stays null. Both it and
+  // the rostered meals are worked out further up, because `restsInsideMeal`
+  // has to be known before `restTaken` is decided.
+  //
+  // UNPAID, reported. The count is kept so the screen can name the days; the
+  // discount itself happens in `restsNotCounted` above, alongside the other two.
+  //
+  // NOTE the hours are still NOT adjusted. Those ten minutes were worked and
+  // went unpaid, which is wages owed on top of the premium, and paying above
+  // what the export says is the one direction this engine has never gone. The
+  // premium follows from the rest not having been taken; the wages are a
+  // separate thing somebody still has to decide about.
+  const restsUnpaid = restTimes && p.length ? usableRests.filter(unpaidRest).length : null;
+
+  // Adjacent, but NOT inside. The two are mutually exclusive now: one is
+  // reported and still counts, the other is discounted and pays a premium, so
+  // a row appearing under both headings would be telling two stories about the
+  // same ten minutes.
+  let restTackedOn = null;
+  if (restTimes && rosteredMeals) {
+    const tol = RULES.restTackedOnToleranceMin;
+    restTackedOn = usableRests.filter((r) =>
+      !rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end) &&
+      rosteredMeals.some((m) => r.out <= m.end + tol && r.in >= m.start - tol),
+    ).length;
+  }
+
+  // a signed waiver clears the day, but only the narrow case the statute
+  // allows: the day is 6 hours or less AND no meal was provided at all. a late
+  // meal is never waivable, and neither is a day past 6 hours, so both fall
+  // through to the violation below however the paperwork reads.
+  const mealWaiverOnFile =
+    day.mealWaiverOnFile === undefined ? RULES.mealWaiverOnFileByDefault : day.mealWaiverOnFile;
+  const mealWaived =
+    mealRequired &&
+    !mealUnknown &&
+    !mealTaken &&
+    mealWaiverOnFile &&
+    paidHours <= RULES.mealWaiverMaxHours;
+
+  // WHERE DOES THE DAY'S LONGEST GAP FALL, relative to what was rostered?
+  //
+  // Measured 2026-08-08 over the 67 days that carry a meal premium with a
+  // lunch-shaped gap on them: 63 sit exactly between two consecutive client
+  // bookings, 3 are days whose bookings overlap, and one is a genuine
+  // step-away. So a gap is nearly always the seam the ROSTER created, not a
+  // lunch anybody took. The control matters as much as the finding: over days
+  // where a meal WAS rostered the same test lands on a seam 6% of the time, so
+  // it is not answering "yes" by construction.
+  //
+  // This CLASSIFIES and never decides. `mealViolation` is untouched above: the
+  // premium still stands, and all this does is say what the evidence behind it
+  // looks like, so nobody has to re-derive it by hand next period.
+  const blocks = Array.isArray(day.scheduleBlocks) ? day.scheduleBlocks : null;
+  let longestGap = null;
+  for (let i = 1; i + 1 < p.length; i += 2) {
+    const min = p[i + 1].min - p[i].min;
+    if (min > 0 && (!longestGap || min > longestGap.min)) {
+      longestGap = { start: p[i].min, end: p[i + 1].min, min };
+    }
+  }
+  const mealShaped =
+    longestGap && longestGap.min >= RULES.mealMinMin && longestGap.min <= RULES.mealMaxMin;
+  let mealGapKind = null;
+  if (mealShaped) {
+    if (compressedDay) {
+      // two bookings running at once, which QSP writes as one run of punches.
+      // the "gap" is the seam between them and nobody was away for it.
+      mealGapKind = "overlap-artifact";
+    } else if (!blocks || !blocks.length) {
+      mealGapKind = "no-schedule";
+    } else if (
+      mealTaken &&
+      rosteredMeals &&
+      rosteredMeals.some((m) => longestGap.start <= m.end && longestGap.end >= m.start)
+    ) {
+      // the gap IS the rostered lunch. it used to come back
+      // "scheduled-transition" on 130 days across 31 people, because the seam
+      // test excludes meal blocks and so the two work blocks either side of a
+      // lunch look exactly like two consecutive bookings. Calling somebody's
+      // lunch a transition between clients is a sentence nobody should read.
+      mealGapKind = "rostered-meal";
+    } else {
+      // meal blocks are excluded: we are asking about the seams between WORK,
+      // and a rostered meal is not a seam, it is the break itself.
+      const work = blocks.filter((b) => !b.meal);
+      const tol = RULES.gapSeamToleranceMin;
+      const onSeam = work.some((b, i) => {
+        const next = work[i + 1];
+        return next &&
+          Math.abs(b.end - longestGap.start) <= tol &&
+          Math.abs(next.start - longestGap.end) <= tol;
+      });
+      const inside = work.some(
+        (b) => longestGap.start > b.start + tol && longestGap.end < b.end - tol,
+      );
+      mealGapKind = onSeam ? "scheduled-transition" : inside ? "inside-booking" : "unclear";
+    }
+  }
 
   // sanity check against QSP's own printed figure for the day. small gaps are
   // their rounding; a real gap means we misread the punches and must not be
@@ -483,7 +738,42 @@ export function analyzeDay(day) {
     mealMissing: mealRequired && !mealUnknown && !mealTaken,
     mealLate,
     mealStartedAfterMin,
-    mealViolation: mealRequired && !mealUnknown && (!mealTaken || mealLate),
+    // the meal was owed and not provided, but a signed waiver covers the day.
+    // kept as its own field rather than folded into mealMissing, because a
+    // waived day and a compliant day are different claims and the sheet says so.
+    mealWaived,
+    // the second meal period, owed past ten hours. kept as its own set of
+    // fields rather than folded into the first, because "they got no lunch at
+    // all" and "they got the first one and not the second" are different things
+    // to say to somebody, even though §226.7 pays the same one hour for either.
+    mealsRostered,
+    secondMealRequired,
+    secondMealTaken,
+    secondMealLate,
+    secondMealUnknown,
+    secondMealViolation,
+    // how many of the day's rests were taken hard against the rostered lunch.
+    // reported, never charged - see the note above. null when unanswerable.
+    restTackedOn,
+    // recorded inside the lunch, so discounted from restTaken above. the ONE
+    // rest finding that moves a figure.
+    restsInsideMeal,
+    // rests logged outside the shift, and rests that fell in an unpaid gap.
+    // both reported, both leave restTaken and paidHours alone.
+    restsOutsideShift,
+    restsUnpaid,
+    // what the day's longest lunch-shaped gap actually is, per the roster.
+    // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
+    // "unclear" | "no-schedule", or null when there is no such gap. Evidence
+    // about the premium, never a change to it.
+    mealGapKind,
+    mealGapMin: mealShaped ? longestGap.min : null,
+    // ONE premium per workday however many meals were missed (§226.7), so this
+    // stays a single boolean. A day that misses both meals pays one hour, the
+    // same as a day that misses either.
+    mealViolation:
+      (mealRequired && !mealUnknown && !mealWaived && (!mealTaken || mealLate)) ||
+      secondMealViolation,
     restUnknown,
     // hours credited exceed the clock window they sit in, so two bookings
     // overlap. flagged, never silently corrected.
@@ -585,6 +875,40 @@ export function applyOvertime(days, payPeriod = null) {
         d.otHours += toOt;
       }
       straight += Math.min(d.regularHours, room);
+    }
+
+    // pass 3 - on a PARTIAL week, take QSP's overtime where it is higher.
+    //
+    // A week cut by the pay-period boundary has days we cannot see: 07/13-07/15
+    // live in the previous export. Somebody who worked those days had already
+    // passed 40 by Sunday, and we have no way to know it. QSP does, because it
+    // holds both periods. On 07/16-07/31 every real overtime difference between
+    // us and QSP was exactly this - five days, all of them 07/19, worth 4.42
+    // hours - and on COMPLETE weeks the two agree to within 0.02 across all 59
+    // people. That is what says this is a visibility problem and not a rule
+    // one, and it is why #67 and #71 turned out to be the same item.
+    //
+    // MAX, never replace. Where our own figure is higher we keep it, so this
+    // can only ever move somebody up. Handing a person a corrected sheet paying
+    // less overtime than payroll already issued is the thing this engine exists
+    // to avoid, and trusting a number we cannot derive is the lesser evil only
+    // while it runs in their favour.
+    //
+    // Complete weeks are left alone on purpose: there we can prove the split
+    // from the punches, so we compute it rather than take it on trust.
+    if (partial) {
+      for (const d of week) {
+        const printedOt = Number(d.printed?.overtime || 0);
+        if (!(printedOt > d.otHours + 0.005)) continue;
+        // fund it from straight time first, then from double time, so the
+        // day's paid hours never change - only which bucket they sit in.
+        const gain = Math.min(printedOt - d.otHours, d.regularHours + d.doubleHours);
+        const fromRegular = Math.min(gain, d.regularHours);
+        d.regularHours -= fromRegular;
+        d.doubleHours -= gain - fromRegular;
+        d.otHours += gain;
+        d.otFromPrinted = true;
+      }
     }
   }
 

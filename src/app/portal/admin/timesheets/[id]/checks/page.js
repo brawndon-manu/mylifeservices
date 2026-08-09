@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { preferredName } from "@/lib/contacts";
+import { restKey, clockMin } from "@/lib/timesheet/rests";
+import { workedBeforeMin, RULES } from "@/lib/timesheet/parse";
 import {
   anomalyLabel,
   ANOMALY_KINDS,
@@ -258,6 +259,51 @@ function describeFlagRow(f) {
   };
 }
 
+// One row of the Rest Periods Report, placed in the same four groups as
+// everything else on this screen.
+//
+// The three that carry a proposed fix are the only ones that need a decision:
+// accepting one REMOVES a rest premium, so it is somebody's call and not ours.
+// The four with nothing to propose keep their premium either way - the engine
+// already errs towards paying - so they are an anomaly to go and correct in
+// QSP rather than a decision. The eleven we flipped are settled, and shown so
+// the repair can be audited rather than taken on trust.
+function describeRestRow(r) {
+  const len = r.minutes == null ? "no times" : `${r.minutes} min`;
+  if (r.counted) {
+    return r.reversed
+      ? {
+          group: "settled",
+          head: "read as a normal rest",
+          tone: "text-muted",
+          lead: `QSP has the out and in times the wrong way round, so its own total reads ${r.derivation}. Flipped, it is a ${r.minutes} minute break like any other, and it counts as one.`,
+        }
+      : {
+          group: "anomaly",
+          head: `${len}, counted`,
+          tone: "text-violet-700 dark:text-violet-300",
+          lead: `Longer than the ten minutes a paid rest period allows. It counts and owes nothing, but it is worth knowing about - fifteen minutes is one and a half times the entitlement.`,
+        };
+  }
+  if (r.repair) {
+    return {
+      group: "decide",
+      head: `${len}, probably a mis-pick`,
+      tone: "text-rose-700 dark:text-rose-400",
+      lead: `QSP reads ${r.derivation}, which is not a rest break. It looks like ${r.repair.why}: ${r.repair.from} should be ${r.repair.to}, which gives a normal ${r.repair.minutes} minute break. Accepting that REMOVES a rest premium, so it needs you rather than the engine.`,
+    };
+  }
+  return {
+    group: "anomaly",
+    head: r.minutes == null ? "no times recorded" : `${len}, not a rest`,
+    tone: "text-violet-700 dark:text-violet-300",
+    lead:
+      r.minutes == null
+        ? "Neither an out nor an in time was recorded, so nothing can say a break was taken. The premium stands. Worth fixing in QSP so the next period reads properly."
+        : `QSP reads ${r.derivation}. No single mis-picked field turns that into a rest break, so the engine will not guess at it. The premium stands and the entry should be corrected in QSP.`,
+  };
+}
+
 export default async function ChecksPage({ params }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) redirect("/portal");
@@ -285,7 +331,12 @@ export default async function ChecksPage({ params }) {
     const byDate = sched.byDate || {};
     const common = {
       timesheetId: t.id,
-      who: t.user ? preferredName(t.user) : t.sourceName,
+      // the export's own spelling, "Martinez, Jose", NOT the portal's preferred
+      // name. this screen audits our figures against the source documents and
+      // every other column on it quotes those documents, so the name has to be
+      // the one a reader can find in the PDF. it also keeps the list in last
+      // name order, the way the batch list and the signed sheet already read.
+      who: t.sourceName,
       signed: !!t.signedAt,
       overrides: t.overrides || {},
       dayByDate: Object.fromEntries((t.data?.days || []).map((d) => [d.date, d])),
@@ -319,10 +370,269 @@ export default async function ChecksPage({ params }) {
     }
   }
 
+  // Rows of the Rest Periods Report worth a person's attention. These belong to
+  // the BATCH rather than to a timesheet - the report is one document - so they
+  // are matched back to a person by name for display only.
+  const restByName = new Map(batch.timesheets.map((t) => [restKey(t.sourceName), t]));
+  for (const r of (batch.restsByDate || []).filter((x) => x.kind)) {
+    const t = restByName.get(restKey(r.name));
+    entries.push({
+      // the real sheet, so "Open their sheet" works. rest rows are keyed on the
+      // report row rather than the sheet, since one person can contribute
+      // several - Zuchniak has eight.
+      timesheetId: t?.id || null,
+      rowKey: `rest-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
+      // same rule as above. an unmatched row keeps the report's own spelling,
+      // because that is the only name the document actually carries.
+      who: t ? t.sourceName : r.name,
+      signed: false,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "rest",
+      date: r.date,
+      r,
+      d: describeRestRow(r),
+    });
+  }
+
+  // The report filed a rest against a shift it does not fall inside. Aranda
+  // 07/16 has one at 3:00-3:10 PM hung on a 1:00-2:30 PM shift; she was working
+  // 2:30-5:00, so the break happened, was paid, and counts. The ROW is wrong,
+  // not the break, and saying so is the whole point of this group - it would
+  // otherwise read as somebody skipping a rest.
+  // which punch pair the rest actually happened in, in the sheet's own words.
+  // "it happened during the 9a-11:30a booking" is the fact that makes a misfiled
+  // row obvious; without it the reader has to go and work it out.
+  const segmentAround = (day, out, inn) => {
+    const p = day?.punches || [];
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      if (p[i].min <= out && p[i + 1].min >= inn) return `${p[i].raw} to ${p[i + 1].raw}`;
+    }
+    return null;
+  };
+
+  for (const r of (batch.restsByDate || []).filter((x) => x.offOwnShift)) {
+    const t = restByName.get(restKey(r.name));
+    const day = (t?.data?.days || []).find((x) => x.date === r.date);
+    const seg = day ? segmentAround(day, clockMin(r.out), clockMin(r.in)) : null;
+    entries.push({
+      timesheetId: t?.id || null,
+      rowKey: `rest-offshift-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
+      who: t ? t.sourceName : r.name,
+      signed: false,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "rest-off-shift",
+      date: r.date,
+      d: {
+        group: "anomaly",
+        head: "filed against the wrong shift",
+        tone: "text-violet-700 dark:text-violet-300",
+        lead:
+          `The report files this rest at ${r.out} to ${r.in} under a shift of ${r.shift}, which it ` +
+          `does not fall inside. ` +
+          (seg
+            ? `It happened during the ${seg} booking instead, so it was paid and it counts: this ` +
+              `day reads ${day.restTaken} of ${day.restRequired} rests. The row is misfiled, not ` +
+              `the break. `
+            : day
+              ? `It falls in no paid stretch of the day either, so it has not been counted and ` +
+                `this day reads ${day.restTaken} of ${day.restRequired} rests. `
+              : `Whether it counts is worked out from the punches, never from the shift on this row. `) +
+          `Worth correcting in QSP so the next period files it against the shift it happened in.`,
+      },
+    });
+  }
+
+  // A rest that WAS taken, but taken late.
+  //
+  // Flagged and never charged, on purpose. The meal deadline is statutory and
+  // hard; this one is "the middle of each work period, insofar as practicable",
+  // and a hard cutoff would manufacture premiums the statute does not clearly
+  // require - 7 of the 13 candidates on 07/16-07/31 sat within half an hour of
+  // the mark, which is the zone that wording exists to cover.
+  //
+  // Measured in WORKED minutes, never elapsed. A split shift with a long unpaid
+  // hole makes a rest look five hours into the day when it is three hours of
+  // work in, and measuring the wrong one reported 54 of these instead of 45.
+  const firstRestAt = new Map(); // "restKey|date" -> earliest counted rest, in minutes
+  for (const r of batch.restsByDate || []) {
+    if (!r.counted || !r.date) continue;
+    const out = clockMin(r.out);
+    if (out == null) continue;
+    const k = `${restKey(r.name)}|${r.date}`;
+    const cur = firstRestAt.get(k);
+    if (cur == null || out < cur) firstRestAt.set(k, out);
+  }
+  for (const [k, out] of firstRestAt) {
+    const [name, date] = k.split("|");
+    const t = restByName.get(name);
+    const day = (t?.data?.days || []).find((x) => x.date === date);
+    if (!day) continue;
+    const worked = workedBeforeMin(day.punches, out);
+    if (worked <= RULES.restWindowMin) continue;
+    // A day that already owes a rest premium cannot owe a second one, so a late
+    // rest there changes nothing and only adds noise to a screen used to find
+    // what matters. 32 of the 45 on 07/16-07/31 were that shape. Only the days
+    // that are otherwise compliant are worth a person's eyes.
+    if (day.restViolation) continue;
+    const over = worked - RULES.restWindowMin;
+    const hrs = Math.round((worked / 60) * 10) / 10;
+    entries.push({
+      timesheetId: t.id,
+      rowKey: `rest-late-${name}-${date}`,
+      who: t.sourceName,
+      signed: !!t.signedAt,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "rest-late",
+      date,
+      d: {
+        group: "anomaly",
+        head: `first rest ${over} min late`,
+        tone: "text-violet-700 dark:text-violet-300",
+        lead:
+          `The rest was taken ${hrs} hours of work into a ${day.paidHours} hour day. A first rest ` +
+          `belongs in the first four hours worked. Nothing is charged: the standard is the middle ` +
+          `of each work period "insofar as practicable", not a deadline, and ${over} minutes past ` +
+          `it is inside what that wording allows. Here so it can be seen if it turns out to be a ` +
+          `habit or a rostering problem.`,
+      },
+    });
+  }
+
+  // A rest taken hard against the rostered lunch, or recorded inside it.
+  //
+  // Reported, never charged. The schedule cannot roster a rest period at all -
+  // it holds meal breaks only - so the employer gave a standalone lunch in
+  // every one of these and the break was stacked against it afterwards. Where
+  // the opportunity was provided the premium is not owed.
+  // the day's recorded rest windows, for quoting the actual times back
+  const restWindowsFor = new Map();
+  for (const r of batch.restsByDate || []) {
+    if (!r.counted || !r.date) continue;
+    const out = clockMin(r.out);
+    const inn = clockMin(r.in);
+    if (out == null || inn == null || inn <= out) continue;
+    const k = `${restKey(r.name)}|${r.date}`;
+    if (!restWindowsFor.has(k)) restWindowsFor.set(k, []);
+    restWindowsFor.get(k).push(`${r.out} to ${r.in}`);
+  }
+  const restTimesText = (t, d) =>
+    (restWindowsFor.get(`${restKey(t.sourceName)}|${d.date}`) || []).join(", ");
+  const restRow = (t, d, key, head, lead) => ({
+    timesheetId: t.id,
+    rowKey: `${key}-${t.id}-${d.date}`,
+    who: t.sourceName,
+    signed: !!t.signedAt,
+    overrides: {},
+    dayByDate: {},
+    dayHours: {},
+    byDate: {},
+    kind: key,
+    date: d.date,
+    d: { group: "anomaly", head, tone: "text-violet-700 dark:text-violet-300", lead },
+  });
+
+  for (const t of batch.timesheets) {
+    for (const d of t.data?.days || []) {
+      // A rest recorded INSIDE the rostered lunch. The one rest finding that
+      // moves a figure: unpaid meal minutes were never a rest period, so it
+      // does not count and the premium follows.
+      if (d.restsInsideMeal) {
+        entries.push(restRow(t, d, "rest-in-meal",
+          d.restsInsideMeal === 1 ? "a rest recorded inside the lunch" : `${d.restsInsideMeal} rests recorded inside the lunch`,
+          `The report puts a rest at ${restTimesText(t, d)}, inside the lunch the schedule rostered. ` +
+          `A rest period is PAID time and a meal period is unpaid, so ten minutes inside the lunch ` +
+          `cannot be a rest period - most often it is part of the lunch that got logged as one. ` +
+          `It has not been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. The opportunity to take ` +
+          `a ten minute break always exists here, so this was not one the employer failed to provide.`));
+      }
+      // A rest logged before clock-in or after clock-out. It was not a rest
+      // taken during work, and it STILL COUNTS - Mánu's call was to surface it
+      // rather than move premiums on the engine's say-so. Which makes saying it
+      // plainly the whole job of this row.
+      if (d.restsOutsideShift) {
+        entries.push(restRow(t, d, "rest-outside",
+          d.restsOutsideShift === 1 ? "a rest logged outside the shift" : `${d.restsOutsideShift} rests logged outside the shift`,
+          `The Rest Periods Report records ${restTimesText(t, d)} on a day worked ` +
+          `${d.workedMin ? Math.round((d.workedMin / 60) * 100) / 100 : d.paidHours} hours. ` +
+          `A break before clock-in or after clock-out is not paid time, so it was never a rest ` +
+          `period - most often it is a default nobody changed rather than anything that happened. ` +
+          `It has not been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. That the entry was not ` +
+          `caught during the work day is on us, not on them, so the premium is not theirs to lose. ` +
+          `Worth fixing at source in QSP so the next period does not repeat it.`));
+      }
+      // A rest that fell inside a punched-out gap. Paid time that went unpaid.
+      if (d.restsUnpaid) {
+        entries.push(restRow(t, d, "rest-unpaid",
+          d.restsUnpaid === 1 ? "a rest that was not paid" : `${d.restsUnpaid} rests that were not paid`,
+          `The report records a rest at ${restTimesText(t, d)}, and the punches have them off the ` +
+          `clock across it. A rest period is paid time, so unpaid minutes were not one, so it has not ` +
+          `been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. No hours are added ` +
+          `back: the premium is what compensates a rest that did not happen, and paying for the ` +
+          `minutes as well would be paying for a break we have just said was not taken. Wages would ` +
+          `only be owed if they were WORKING while off the clock, and nothing here says they were.`));
+      }
+      if (!d.restTackedOn) continue;
+      entries.push({
+        timesheetId: t.id,
+        rowKey: `rest-tacked-${t.id}-${d.date}`,
+        who: t.sourceName,
+        signed: !!t.signedAt,
+        overrides: {},
+        dayByDate: {},
+        dayHours: {},
+        byDate: {},
+        kind: "rest-tacked",
+        date: d.date,
+        d: {
+          group: "anomaly",
+          head: d.restTackedOn === 1 ? "a rest against the lunch" : `${d.restTackedOn} rests against the lunch`,
+          tone: "text-violet-700 dark:text-violet-300",
+          lead:
+            `The Rest Periods Report puts a rest break up against the rostered lunch, or inside it. ` +
+            `Ten minutes butted onto a thirty minute lunch is one long break rather than a lunch and ` +
+            `a rest, and a rest recorded inside the lunch usually means part of the lunch was logged ` +
+            `as one. Nothing is charged: the schedule cannot roster a rest period at all, so the lunch ` +
+            `they were given was a standalone one and this happened alongside it. Worth a word if it ` +
+            `is somebody's habit.`,
+        },
+      });
+    }
+  }
+
+  // What each row is ABOUT, so the list can be grouped by it. The anomaly pile
+  // went from 21 to 69 in a day as the rest-timing work landed, and a flat list
+  // that long stops being something anybody reads - six kinds of finding
+  // interleaved by surname is a wall, not a screen.
+  const KINDS = {
+    punch: { label: "Punches that do not read", order: 0 },
+    flag: { label: "Punches the schedule can settle", order: 1 },
+    rest: { label: "Rest report entries that cannot be read", order: 2 },
+    "rest-off-shift": { label: "Rests filed against the wrong shift", order: 3 },
+    "rest-in-meal": { label: "Rests recorded inside the lunch", order: 4 },
+    "rest-outside": { label: "Rests logged outside the shift", order: 5 },
+    "rest-unpaid": { label: "Rests that were never paid", order: 6 },
+    "rest-tacked": { label: "Rests taken against the lunch", order: 7 },
+    "rest-late": { label: "Rests taken late in the shift", order: 8 },
+  };
+  const kindOf = (e) => KINDS[e.kind] || { label: "Other", order: 9 };
+
   const ORDER = { decide: 0, unworked: 1, anomaly: 2, settled: 3 };
   entries.sort(
     (a, b) =>
       ORDER[a.d.group] - ORDER[b.d.group] ||
+      kindOf(a).order - kindOf(b).order ||
       a.who.localeCompare(b.who) ||
       String(a.date).localeCompare(String(b.date)),
   );
@@ -388,10 +698,15 @@ export default async function ChecksPage({ params }) {
             : " no schedule was provided to compare against."}
         </p>
       ) : (
-        <ChecksFilter counts={counts} groups={entries.map((e) => e.d.group)} notes={notes}>
+        <ChecksFilter
+          counts={counts}
+          groups={entries.map((e) => e.d.group)}
+          kinds={entries.map((e) => kindOf(e).label)}
+          notes={notes}
+        >
           {entries.map((e) => (
             <div
-              key={`${e.timesheetId}-${e.kind}-${e.date}`}
+              key={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
               className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
                 e.d.group === "decide"
                   ? "border-l-rose-500"
@@ -451,16 +766,48 @@ export default async function ChecksPage({ params }) {
                       )}
                     </>
                   )}
-                  <Evidence
-                    batchId={batch.id}
-                    timesheetId={e.timesheetId}
-                    date={e.date}
-                    day={e.dayByDate[e.date] || null}
-                    shifts={e.byDate[e.date]?.shifts}
-                    schedulePages={e.byDate[e.date]?.pages}
-                    hasSource={!!batch.sourceUrl}
-                    hasSchedule={!!batch.scheduleUrl}
-                  />
+                  {/* a rest row comes from a spreadsheet, not from punches, so
+                      the punch/schedule panel has nothing to say about it and
+                      would render "no punches were read for this day" - true,
+                      and about the wrong document entirely. */}
+                  {e.kind === "rest" ? (
+                    <>
+                      <p className="font-mono text-xs text-foreground">
+                        QSP has: out {e.r.out || "(blank)"} · in {e.r.in || "(blank)"} · total{" "}
+                        {e.r.printedHours}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {/* the printed column is rounded to two decimals, so the
+                            jump from it to minutes is shown rather than asserted */}
+                        {e.r.derivation}
+                        {e.r.reversed && " · out is after in, so the row runs backwards"}
+                      </p>
+                      {e.r.repair && (
+                        <p className="mt-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                          Likely: {e.r.repair.field === "out" ? "out" : "in"} {e.r.repair.from} →{" "}
+                          {e.r.repair.to} = {e.r.repair.minutes} min
+                        </p>
+                      )}
+                      <p className="mt-2 text-xs italic text-muted">{e.r.note}</p>
+                      <a
+                        href={`/portal/admin/timesheets/${batch.id}/source?doc=rests`}
+                        className="mt-2 inline-block text-xs font-medium text-brand hover:text-brand-dark"
+                      >
+                        Download the Rest Periods Report →
+                      </a>
+                    </>
+                  ) : (
+                    <Evidence
+                      batchId={batch.id}
+                      timesheetId={e.timesheetId}
+                      date={e.date}
+                      day={e.dayByDate[e.date] || null}
+                      shifts={e.byDate[e.date]?.shifts}
+                      schedulePages={e.byDate[e.date]?.pages}
+                      hasSource={!!batch.sourceUrl}
+                      hasSchedule={!!batch.scheduleUrl}
+                    />
+                  )}
                 </div>
               </details>
 
@@ -482,14 +829,23 @@ export default async function ChecksPage({ params }) {
                 )}
 
               <div className="mt-2 flex flex-wrap items-center gap-4">
-                <a
-                  href={`/portal/admin/timesheets/sheet/${e.timesheetId}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-brand hover:text-brand-dark"
-                >
-                  Open their sheet →
-                </a>
+                {/* a rest-report name that matched no timesheet has no sheet to
+                    open. say which name did not match rather than linking to
+                    /sheet/null/download. */}
+                {e.timesheetId ? (
+                  <a
+                    href={`/portal/admin/timesheets/sheet/${e.timesheetId}/download`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-brand hover:text-brand-dark"
+                  >
+                    Open their sheet →
+                  </a>
+                ) : (
+                  <span className="text-xs text-amber-700 dark:text-amber-400">
+                    No timesheet in this batch matches &ldquo;{e.r?.name}&rdquo;
+                  </span>
+                )}
                 {e.showRecompute && (
                   <RecomputeButton
                     timesheetId={e.timesheetId}

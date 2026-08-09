@@ -59,7 +59,7 @@ const TONE = {
   },
 };
 
-export default function ChecksFilter({ counts, groups, notes = [], children }) {
+export default function ChecksFilter({ counts, groups, kinds = [], notes = [], children }) {
   // The two that need a person are on; the rest are one click away.
   //
   // Unless there is nothing to decide at all, which is a real state and used to
@@ -77,8 +77,45 @@ export default function ChecksFilter({ counts, groups, notes = [], children }) {
   });
 
   const kids = Children.toArray(children);
-  const shown = kids.filter((_, i) => on[groups[i]]);
+  const visible = kids.map((_, i) => i).filter((i) => on[groups[i]]);
+  const shown = visible.map((i) => kids[i]);
   const total = kids.length;
+
+  // Rows arrive already sorted by kind, so a heading goes in wherever the kind
+  // changes. It carries its own count because "13 rests taken late" is a
+  // different sort of thing from "3 punch pairs that do not read", and a single
+  // running total of 69 says neither.
+  // Keyed by GROUP and kind together, not by kind alone. The same kind appears
+  // in two groups - a rest report row that needs a decision and one that is
+  // only an anomaly are the same kind of finding with different urgency - so
+  // keying on the label alone both collided in React and printed the same count
+  // under two headings that held different rows.
+  const perKind = {};
+  for (const i of visible) {
+    const key = `${groups[i]}|${kinds[i]}`;
+    perKind[key] = (perKind[key] || 0) + 1;
+  }
+  const withHeadings = [];
+  let lastKey = null;
+  for (const i of visible) {
+    const k = kinds[i];
+    const key = `${groups[i]}|${k}`;
+    if (k && key !== lastKey) {
+      withHeadings.push(
+        <h3
+          key={`kind-${key}`}
+          className="flex items-baseline gap-2 pt-3 text-xs font-bold uppercase tracking-wide text-faint first:pt-0"
+        >
+          {k}
+          <span className="text-[11px] font-semibold normal-case tracking-normal tabular-nums">
+            {perKind[key]}
+          </span>
+        </h3>,
+      );
+      lastKey = key;
+    }
+    withHeadings.push(kids[i]);
+  }
 
   return (
     <>
@@ -156,7 +193,7 @@ export default function ChecksFilter({ counts, groups, notes = [], children }) {
           Nothing selected. Click a box above to show a group.
         </p>
       ) : (
-        <div className="mt-5 space-y-3">{shown}</div>
+        <div className="mt-5 space-y-3">{withHeadings}</div>
       )}
     </>
   );

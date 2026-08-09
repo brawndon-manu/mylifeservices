@@ -20,6 +20,13 @@ function pageLink(href, pages) {
   return first ? `${href}#page=${first}` : href;
 }
 
+// a plain join(" and ") reads "54 and 55 and 56" once someone spans three
+// pages, which B. Rotter's timesheet does.
+function pageList(pages) {
+  if (pages.length <= 2) return pages.join(" and ");
+  return `${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+}
+
 function Snippet({ title, pages, href, linkText, missing, children }) {
   return (
     <details className="group border-t border-border first:border-t-0">
@@ -33,7 +40,7 @@ function Snippet({ title, pages, href, linkText, missing, children }) {
         <span className="font-semibold text-foreground">{title}</span>
         {pages?.length > 1 && (
           <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-            split across pages {pages.join(" and ")}
+            split across pages {pageList(pages)}
           </span>
         )}
         {pages?.length === 1 && <span className="text-faint">page {pages[0]}</span>}

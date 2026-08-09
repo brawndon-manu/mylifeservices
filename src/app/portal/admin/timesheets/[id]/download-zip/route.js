@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { renderSheet } from "@/lib/timesheet/render-sheet";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { buildZip, safeEntryName } from "@/lib/zip";
@@ -21,11 +22,14 @@ export async function GET(req, { params }) {
     where: { id },
     select: {
       periodFrom: true,
+      periodTo: true,
+      restsByDate: true,
       timesheets: {
         orderBy: { sourceName: "asc" },
         select: {
+          id: true,
           sourceName: true,
-          pdfUrl: true,
+          data: true,
           signedPdfUrl: true,
           approvedPdfUrl: true,
           signedAt: true,
@@ -37,8 +41,12 @@ export async function GET(req, { params }) {
 
   // ?all=1 includes unsigned sheets too; by default only what's come back
   const includeUnsigned = new URL(req.url).searchParams.get("all") === "1";
+  // an unsigned sheet no longer needs a stored file to be includable - it is
+  // rendered from `data`, so "has days" is the test.
   const wanted = batch.timesheets.filter((t) =>
-    includeUnsigned ? t.approvedPdfUrl || t.signedPdfUrl || t.pdfUrl : t.signedPdfUrl || t.approvedPdfUrl,
+    includeUnsigned
+      ? t.approvedPdfUrl || t.signedPdfUrl || (t.data?.days || []).length > 0
+      : t.signedPdfUrl || t.approvedPdfUrl,
   );
   if (!wanted.length) {
     return new NextResponse("Nothing to download yet", { status: 404 });
@@ -47,11 +55,18 @@ export async function GET(req, { params }) {
   const files = [];
   const seen = new Map();
   for (const t of wanted) {
-    const url = t.approvedPdfUrl || t.signedPdfUrl || t.pdfUrl;
+    const url = t.approvedPdfUrl || t.signedPdfUrl;
     try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const data = Buffer.from(await res.arrayBuffer());
+      let data;
+      if (url) {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        data = Buffer.from(await res.arrayBuffer());
+      } else {
+        const rendered = await renderSheet({ ...t, batch });
+        if (!rendered) continue;
+        data = Buffer.from(rendered.bytes);
+      }
 
       // two people can share a printed name - never let one silently overwrite
       // the other inside the archive.

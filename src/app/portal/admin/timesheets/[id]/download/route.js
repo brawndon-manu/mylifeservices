@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
+import { renderSheet } from "@/lib/timesheet/render-sheet";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 
@@ -25,18 +26,21 @@ export async function GET(req, { params }) {
     select: {
       periodFrom: true,
       periodTo: true,
+      restsByDate: true,
       timesheets: {
+        // an unsigned sheet is rendered from `data`, so it needs no stored
+        // file to be includable - renderOk is the signal that it can be built.
         where: includeUnsigned
           ? {
               OR: [
-                { pdfUrl: { not: null } },
+                { renderOk: true },
                 { signedPdfUrl: { not: null } },
                 { approvedPdfUrl: { not: null } },
               ],
             }
           : { OR: [{ signedPdfUrl: { not: null } }, { approvedPdfUrl: { not: null } }] },
         orderBy: { sourceName: "asc" },
-        select: { pdfUrl: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true },
+        select: { id: true, data: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true },
       },
     },
   });
@@ -52,10 +56,20 @@ export async function GET(req, { params }) {
   let added = 0;
   for (const ts of batch.timesheets) {
     try {
-      // always the best copy we hold: approved beats signed beats the blank
-      const res = await fetch(ts.approvedPdfUrl || ts.signedPdfUrl || ts.pdfUrl);
-      if (!res.ok) continue;
-      const src = await PDFDocument.load(await res.arrayBuffer());
+      // always the best copy we hold: approved beats signed beats a fresh
+      // render of the unsigned sheet
+      const url = ts.approvedPdfUrl || ts.signedPdfUrl;
+      let bytes;
+      if (url) {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        bytes = await res.arrayBuffer();
+      } else {
+        const rendered = await renderSheet({ ...ts, batch });
+        if (!rendered) continue;
+        bytes = rendered.bytes;
+      }
+      const src = await PDFDocument.load(bytes);
       const pages = await merged.copyPages(src, src.getPageIndices());
       pages.forEach((p) => merged.addPage(p));
       added++;

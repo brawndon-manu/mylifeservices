@@ -446,3 +446,37 @@ export function compareToSchedule(timesheetDays, scheduleDays, { toleranceHours 
     worstDiff: flagged.reduce((m, r) => (Math.abs(r.diff || 0) > Math.abs(m) ? r.diff : m), 0),
   };
 }
+
+// The times a rostered entry runs between.
+//
+// An entry prints as "8:30a-11:30a Chapman, J-ILS Service(3:00)", so the block
+// is on the front of the string. Returns null for anything that does not lead
+// with a time range, which includes the header and total lines.
+export function blockTimes(text) {
+  const m = /^(\d{1,2}(?::\d{2})?\s*[ap])\s*-\s*(\d{1,2}(?::\d{2})?\s*[ap])/i.exec(String(text || ""));
+  if (!m) return null;
+  const at = (s) => {
+    const p = /^(\d{1,2})(?::(\d{2}))?\s*([ap])$/i.exec(s.trim());
+    if (!p) return null;
+    let h = parseInt(p[1], 10);
+    const mm = p[2] ? parseInt(p[2], 10) : 0;
+    if (h === 12) h = 0;
+    return (p[3].toLowerCase() === "p" ? h + 12 : h) * 60 + mm;
+  };
+  const start = at(m[1]), end = at(m[2]);
+  return start == null || end == null ? null : { start, end };
+}
+
+// A day's rostered blocks as minutes, in order, so the engine can ask where a
+// punch gap falls relative to them. Meal blocks are kept and marked rather than
+// dropped: a gap that lines up with a rostered meal is a different animal from
+// one that lines up with the seam between two clients.
+export function scheduleBlocks(entries) {
+  return (entries || [])
+    .map((e) => {
+      const t = blockTimes(e.text);
+      return t ? { ...t, meal: !!e.meal } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+}
