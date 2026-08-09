@@ -45,6 +45,33 @@ export const REQUIRED_DAY_FIELDS = [
   "printed", "repaired",
 ];
 
+// THE TOTALS A SHEET PRINTS, AND THEREFORE THE TOTALS WE STORE.
+//
+// Mánu's ruling 2026-08-09: "the sheet wins". A timesheet is the document
+// somebody signs, and the first thing anyone does with one is add up the daily
+// column. If that sum does not equal the printed total the document is wrong in
+// the way that matters, whatever the database thinks.
+//
+// So totals are summed from the ROUNDED days rather than rounded once from the
+// unrounded ones. Those two differ: April's eleven days of 8.1667 round to 8.17
+// each and sum to 89.87, while the unrounded sum rounds once to 89.83. Her sheet
+// printed 89.87 against a stored 89.83, and 15 of 59 sheets in the batch
+// disagreed with themselves that way - a note in render-sheet.js records 11 of
+// 59 doing it before the added hours existed, so this predates them.
+//
+// Every caller that produces totals uses this, so the sheet, the stored columns
+// and the payout report cannot drift apart again.
+export function totalsFromDays(days) {
+  const sum = (k) => r2((days || []).reduce((n, d) => n + (d[k] || 0), 0));
+  return {
+    rawHours: sum("rawHours"),
+    paidHours: sum("paidHours"),
+    regularHours: sum("regularHours"),
+    otHours: sum("otHours"),
+    doubleHours: sum("doubleHours"),
+  };
+}
+
 export function storedDay(d) {
   return {
     date: d.date,

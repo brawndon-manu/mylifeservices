@@ -255,3 +255,38 @@ test("the on-demand sheet carries the added paragraph too, not just the day mark
   assert.ok(/ADDED:/.test(words), "AND the sentence explaining them");
   assert.ok(/paid as overtime/.test(words), "including the overtime split");
 });
+
+// THE SHEET WINS. Mánu 2026-08-09.
+//
+// A timesheet is signed by somebody who will add up the daily column, so the
+// printed total has to equal that column. It did not: April's eleven days of
+// 8.1667 print as 8.17 and sum to 89.87, while rounding the unrounded sum once
+// gives 89.83. Her sheet showed 89.87 against a stored 89.83, in three places
+// at once - the Totals row, the overtime column and the ADDED line - and 15 of
+// 59 sheets in the batch disagreed with themselves the same way.
+test("stored totals equal the sum of the days as printed, not the rounded true sum", async () => {
+  const { totalsFromDays } = await import("../stored.js");
+  const { storedDay } = await import("../stored.js");
+  // eleven eight-hour days, each gaining a ten-minute off-clock rest
+  const day = (date) => ({
+    date, punches: [at(8), at(16)], printed: { daily: 8 },
+    restRecorded: 2, restsAlreadyPaid: true,
+    restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 12 * 60, in: 12 * 60 + 10 }],
+  });
+  const dates = ["07/16/26","07/17/26","07/20/26","07/21/26","07/22/26","07/23/26",
+                 "07/24/26","07/27/26","07/28/26","07/29/26","07/30/26"];
+  const sheet = analyzeTimesheet({
+    payPeriod: { from: "07/16/26", to: "07/31/26" }, days: dates.map(day),
+  });
+  const days = sheet.days.map(storedDay);
+  const printed = totalsFromDays(days);
+
+  // every day prints 8.17, and eleven of them is 89.87
+  assert.deepEqual([...new Set(days.map((d) => d.paidHours))], [8.17]);
+  assert.equal(printed.paidHours, 89.87, "what the column adds up to");
+
+  // and that is NOT the same as rounding the unrounded sum once, which is the
+  // figure that used to be stored. If these ever match, this test is asleep.
+  assert.equal(Math.round(sheet.totals.paidHours * 100) / 100, 89.83);
+  assert.notEqual(printed.paidHours, Math.round(sheet.totals.paidHours * 100) / 100);
+});

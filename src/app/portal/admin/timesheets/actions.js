@@ -19,7 +19,7 @@ import {
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
-import { storedDay } from "@/lib/timesheet/stored";
+import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
@@ -666,17 +666,16 @@ export async function uploadBatch(formData) {
       console.error(`timesheet render failed for ${t.employee}:`, e);
     }
 
+    const storedDays = t.days.map(storedDay);
     await prisma.timesheet.create({
       data: {
         batchId: batch.id,
         sourceName: t.employee || "(unknown)",
         userId: m.userId,
         matchMethod: m.method,
-        rawHours: r2(t.totals.rawHours),
-        paidHours: r2(t.totals.paidHours),
-        regularHours: r2(t.totals.regularHours),
-        otHours: r2(t.totals.otHours),
-        doubleHours: r2(t.totals.doubleHours),
+        // summed from the ROUNDED days, so these columns equal what the sheet
+        // prints. Mánu 2026-08-09: the sheet wins. See totalsFromDays().
+        ...totalsFromDays(storedDays),
         premiumHours: r2(t.premiums.totalHours),
         partialWeek: t.partialWeekDates.length > 0,
         renderOk,
@@ -763,7 +762,7 @@ export async function uploadBatch(formData) {
           // punches + breaks are kept so a sheet can be recomputed and
           // re-rendered after a correction without going back to the source
           // export. mealMin is what a worked-through meal would add back.
-          days: t.days.map(storedDay),
+          days: storedDays,
         },
       },
     });

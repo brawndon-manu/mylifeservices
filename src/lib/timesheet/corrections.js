@@ -247,12 +247,15 @@ export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime) {
       otHours: r2(d.otHours),
       doubleHours: r2(d.doubleHours),
     })),
+    // summed from the days AS ROUNDED above, not from the unrounded ones, so a
+    // recomputed sheet totals to what it prints. Mánu 2026-08-09, "the sheet
+    // wins" - see totalsFromDays() in stored.js for why.
     totals: {
-      rawHours: r2(withOt.reduce((n, d) => n + (d.rawHours || 0), 0)),
-      paidHours: r2(withOt.reduce((n, d) => n + (d.paidHours || 0), 0)),
-      regularHours: r2(withOt.reduce((n, d) => n + (d.regularHours || 0), 0)),
-      otHours: r2(withOt.reduce((n, d) => n + (d.otHours || 0), 0)),
-      doubleHours: r2(withOt.reduce((n, d) => n + (d.doubleHours || 0), 0)),
+      rawHours: r2(withOt.reduce((n, d) => n + r2(d.rawHours || 0), 0)),
+      paidHours: r2(withOt.reduce((n, d) => n + r2(d.paidHours || 0), 0)),
+      regularHours: r2(withOt.reduce((n, d) => n + r2(d.regularHours || 0), 0)),
+      otHours: r2(withOt.reduce((n, d) => n + r2(d.otHours || 0), 0)),
+      doubleHours: r2(withOt.reduce((n, d) => n + r2(d.doubleHours || 0), 0)),
     },
     premiums: {
       mealDays,
