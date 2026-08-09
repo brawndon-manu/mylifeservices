@@ -353,6 +353,45 @@ export function analyzeDay(day) {
   const mealCount = breaks.filter((b) => b.kind === "meal").length;
   const restCount = breaks.filter((b) => b.kind === "rest").length;
 
+  // ---- a rest recorded while off the clock -------------------------------
+  //
+  // MÁNU'S RULING 2026-08-09, and he flagged it himself as going against what
+  // he said on 08/08:
+  //
+  //   "If there's a ten minute rest period and it's scheduled out of the shift
+  //    they put it in, it should be flagged, but no premium is warranted. ...
+  //    if their ten minute break is out of their shift, they put it in, but
+  //    it's not in the confines of another shift, then it needs be flagged,
+  //    and ten minutes need to be added to their overall hours for that day."
+  //
+  // So the rest ALWAYS counts as taken. What changes is pay: a ten that sits
+  // inside some worked segment was already paid, and a ten that sits outside
+  // every one of them was not, so those minutes are added.
+  //
+  // This REPLACES the three discounts of 08/08 (inside the rostered lunch,
+  // outside the shift, inside a punched-out gap). Those all took a premium for
+  // ten minutes nobody paid for; the ruling pays for them instead. Both cannot
+  // be right, and 08/08 said so in as many words: you cannot call the same ten
+  // minutes not-a-rest AND owed-as-paid-rest. The flags survive, the discount
+  // does not.
+  //
+  // Measured here, one shift ends up above what QSP exported for the first
+  // time: 25 rests over 25 days, 250 minutes, 4.17 hours.
+  //
+  // A rest must be wholly inside a segment to count as already paid. One that
+  // straddles the edge is treated as off the clock and paid in full, which
+  // slightly favours the employee on a case nobody has yet seen.
+  const restTimes = Array.isArray(day.restTimes) ? day.restTimes : null;
+  const usableRests = (restTimes || []).filter(
+    (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
+  );
+  const onClock = (r) => segments.some((s) => r.out >= s.start.min && r.in <= s.end.min);
+  const offClockRests = usableRests.filter((r) => !onClock(r));
+  const restsOffClock = restTimes && segments.length ? offClockRests.length : null;
+  const restsOffClockMin = restTimes && segments.length
+    ? offClockRests.reduce((n, r) => n + (r.in - r.out), 0)
+    : 0;
+
   // what QSP printed for this day, if we have it
   const printedDailyForFloor = day.printed?.daily ?? null;
 
@@ -370,7 +409,11 @@ export function analyzeDay(day) {
   // is legible rather than an accident of the arithmetic.
   const restsArePaidBySource = day.restsAlreadyPaid === true;
   const restMinToAddBack = restsArePaidBySource ? 0 : restMin;
-  const paidMin = workedMin + restMinToAddBack;
+  // ...plus any rest the report recorded while the person was off the clock.
+  // Nothing paid for those minutes and a rest period is paid time, so they are
+  // added here rather than taken out of the rest count. Mánu 2026-08-09.
+  // This is the first thing in this engine that can pay ABOVE what QSP exported.
+  const paidMin = workedMin + restMinToAddBack + restsOffClockMin;
   // the correction only ever ADDS unpaid rest time back, so the corrected hours
   // must never come out below what payroll already exported. QSP rounds each
   // punch segment its own way, which can leave our exact figure a hundredth or
@@ -427,13 +470,9 @@ export function analyzeDay(day) {
   //
   // Adjacent is a different thing and still counts: taking your ten right
   // before or after lunch is a compliance habit, not an uncompensated break.
-  const restTimes = Array.isArray(day.restTimes) ? day.restTimes : null;
   const rosteredMeals = Array.isArray(day.scheduleBlocks)
     ? day.scheduleBlocks.filter((b) => b.meal)
     : null;
-  const usableRests = (restTimes || []).filter(
-    (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
-  );
   const insideMeal = (r) =>
     !!rosteredMeals && rosteredMeals.some((m) => r.out >= m.start && r.in <= m.end);
 
@@ -470,11 +509,14 @@ export function analyzeDay(day) {
   const restsOutsideShift = restTimes && shiftStart != null
     ? usableRests.filter(outsideShift).length
     : null;
-  // the UNION of all three, because one rest can be more than one of these and
-  // must only be discounted once. Inside the lunch is usually also unpaid.
-  const restsNotCounted = restTimes
-    ? usableRests.filter((r) => insideMeal(r) || outsideShift(r) || unpaidRest(r)).length
-    : 0;
+  // NOTHING IS DISCOUNTED ANY MORE. Until 2026-08-09 this was the union of the
+  // three groups above and it came off `restTaken`, so a ten in unpaid time
+  // cost an hour's premium. The ruling pays for the ten minutes instead (see
+  // `restsOffClock` near the top), and doing both would compensate the same ten
+  // minutes twice. The three counts survive as FLAGS - the screens name them,
+  // and a rest logged an hour before the shift starts is still worth somebody's
+  // attention - but they no longer move a figure.
+  const restsNotCounted = 0;
 
   // ---- what counts as a break TAKEN -------------------------------------
   //
@@ -543,7 +585,34 @@ export function analyzeDay(day) {
   // forgets to wire it gets the conservative answer that pays the premium,
   // never the silent one that drops it.
   const mealScheduled = day.mealScheduled === undefined ? false : day.mealScheduled;
-  const mealTaken = mealScheduled === true;
+
+  // A LUNCH ROSTERED INSIDE A SCHEDULED SHIFT IS NOT A LUNCH.
+  //
+  // Mánu 2026-08-09: "if someone books their meal break, their lunch, during a
+  // shift scheduled, then that lunch doesn't count. And they owe that premium
+  // and needs to be flagged."
+  //
+  // The schedule is the only thing that can witness a meal, so until now a meal
+  // block was taken at face value. But QSP will happily roster the meal and a
+  // client booking over the same half hour, which is not an offer of a break -
+  // it is two things asked of one person at once. Found on Hatt 07/31 (meal
+  // 11:30-12:00 inside a booking 11:30-13:30) and then measured: 22 of the 162
+  // rostered-meal days in 07/16-07/31 look like this, 18 of them clearing a
+  // premium. Four are ten minutes long, which is not a meal period under
+  // §512 either, and all four sit inside those 18.
+  //
+  // Only a meal that is CLEAR of every rostered work block counts. Where the
+  // blocks are not supplied at all we cannot tell, and the boolean is trusted as
+  // before rather than guessed at.
+  const rosteredWork = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => !b.meal)
+    : null;
+  const cleanRosteredMeals = rosteredMeals && rosteredWork
+    ? rosteredMeals.filter((m) => !rosteredWork.some((w) => m.start < w.end && m.end > w.start))
+    : null;
+  const mealInsideBooking =
+    !!cleanRosteredMeals && rosteredMeals.length > 0 && cleanRosteredMeals.length === 0;
+  const mealTaken = mealScheduled === true && !mealInsideBooking;
   // no schedule at all is not a violation and not a pass. it goes to a person.
   const mealUnknown = mealRequired && mealScheduled === null;
 
@@ -551,8 +620,11 @@ export function analyzeDay(day) {
   // whether it rostered any. Only the blocks can answer it, so a caller that
   // hands in `mealScheduled` alone leaves this null and the second meal goes to
   // a person rather than being charged or silently passed.
+  // ...and only the ones that could actually be taken count here too, or a
+  // second meal buried inside a booking would clear the second-meal question
+  // the same way it used to clear the first.
   const mealsRostered = Array.isArray(day.scheduleBlocks)
-    ? day.scheduleBlocks.filter((b) => b.meal).length
+    ? (cleanRosteredMeals ? cleanRosteredMeals.length : 0)
     : null;
 
   // the meal has to START by the end of the fifth hour worked. a late lunch is
@@ -746,6 +818,9 @@ export function analyzeDay(day) {
     // kept as its own field rather than folded into mealMissing, because a
     // waived day and a compliant day are different claims and the sheet says so.
     mealWaived,
+    // the schedule rostered a meal but put a client booking over it, so it was
+    // never an offer of a break. Charged AND flagged, per the ruling.
+    mealInsideBooking,
     // the second meal period, owed past ten hours. kept as its own set of
     // fields rather than folded into the first, because "they got no lunch at
     // all" and "they got the first one and not the second" are different things
@@ -763,9 +838,17 @@ export function analyzeDay(day) {
     // rest finding that moves a figure.
     restsInsideMeal,
     // rests logged outside the shift, and rests that fell in an unpaid gap.
-    // both reported, both leave restTaken and paidHours alone.
+    // BOTH ARE FLAGS ONLY since 2026-08-09 - neither moves `restTaken`.
+    // `restsOutsideShift` is the sharper one and Mánu asked for it by name: a
+    // ten logged before the shift has even started is a different kind of wrong
+    // from one in a mid-day gap, and it is what April's 07:00-07:10 is.
     restsOutsideShift,
     restsUnpaid,
+    // the ruling's own category: a rest the report recorded while the person
+    // was off the clock, and the minutes added to their day because of it.
+    // Supersedes the three discounts - see the block near the top.
+    restsOffClock,
+    restsOffClockMin,
     // what the day's longest lunch-shaped gap actually is, per the roster.
     // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
     // "unclear" | "no-schedule", or null when there is no such gap. Evidence

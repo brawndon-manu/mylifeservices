@@ -272,11 +272,21 @@ test("worked minutes before an instant are not elapsed minutes", async () => {
 
 // 6a-5:30p with a rostered lunch: 11.5 hours worked, so a second meal is owed.
 const LONG = [at(6), at(11), at(11, 30), at(17, 30)];
+// NOTE the afternoon is split around the second meal rather than running
+// straight through it. Since Mánu's 2026-08-09 ruling a meal rostered ON TOP of
+// a client booking does not count, and this fixture used to bury the 16:00 one
+// inside an 11:30-17:30 block - so it stopped counting the moment the rule
+// landed, which is the rule working rather than the test being wrong.
 const blocks2 = (meals) => [
   { start: 6 * 60, end: 11 * 60, meal: false },
   ...(meals >= 1 ? [{ start: 11 * 60, end: 11 * 60 + 30, meal: true }] : []),
-  { start: 11 * 60 + 30, end: 17 * 60 + 30, meal: false },
-  ...(meals >= 2 ? [{ start: 16 * 60, end: 16 * 60 + 30, meal: true }] : []),
+  ...(meals >= 2
+    ? [
+        { start: 11 * 60 + 30, end: 16 * 60, meal: false },
+        { start: 16 * 60, end: 16 * 60 + 30, meal: true },
+        { start: 16 * 60 + 30, end: 17 * 60 + 30, meal: false },
+      ]
+    : [{ start: 11 * 60 + 30, end: 17 * 60 + 30, meal: false }]),
 ];
 
 test("a second meal is owed past ten hours, and only the schedule can witness it", () => {
@@ -294,6 +304,20 @@ test("a second meal is owed past ten hours, and only the schedule can witness it
   assert.equal(twoRostered.mealsRostered, 2);
   assert.equal(twoRostered.secondMealViolation, false);
   assert.equal(twoRostered.mealViolation, false);
+
+  // and a second meal rostered ON TOP of the afternoon booking does not count,
+  // exactly as the first one would not. Mánu 2026-08-09.
+  const buried = withSchedule(LONG, {
+    mealScheduled: true,
+    scheduleBlocks: [
+      { start: 6 * 60, end: 11 * 60, meal: false },
+      { start: 11 * 60, end: 11 * 60 + 30, meal: true },
+      { start: 11 * 60 + 30, end: 17 * 60 + 30, meal: false },
+      { start: 16 * 60, end: 16 * 60 + 30, meal: true },   // inside the booking
+    ],
+  });
+  assert.equal(buried.mealsRostered, 1, "the buried one is not a second meal");
+  assert.equal(buried.secondMealViolation, true);
 });
 
 test("exactly ten hours owes no second meal", () => {
@@ -428,21 +452,48 @@ test("without rest times or without a rostered lunch there is no answer", () => 
 
 // --------------------------------- rests outside the shift, and unpaid rests
 
-test("a rest logged outside the shift does not count, and the premium follows", () => {
+// MÁNU'S RULING 2026-08-09 REPLACED THE THREE DISCOUNTS THAT USED TO LIVE HERE,
+// and he named the reversal himself. A rest recorded off the clock still COUNTS
+// as taken; what was wrong was that nobody paid for the ten minutes, so the ten
+// minutes get added to the day instead of an hour's premium being charged for
+// them. Doing both would compensate the same ten minutes twice, which is the
+// contradiction he pointed at on 08/08.
+//
+// These four tests used to assert the discount. They now assert the payment,
+// and each still pairs the case with its opposite.
+
+test("a rest logged outside the shift counts, and its minutes are added to the day", () => {
   // April Martinez's shape: a 7:00-7:10 rest on a shift that starts at 8:00,
-  // twelve days running. A default nobody changed, clearing a premium she is
-  // owed every one of those days. Same principle as a rest inside the lunch -
-  // those minutes are not paid, so they were never a rest period - and Mánu's
-  // ruling is that the entry is a records failure on the employer's side.
+  // eleven days running. A QSClock default nobody changed. It used to clear
+  // itself off her count and charge an hour; now it is flagged, counted, and
+  // paid for.
   const before = analyzeDay({
     date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
     scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
     restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 14 * 60, in: 14 * 60 + 10 }],
   });
-  assert.equal(before.restsOutsideShift, 1);
-  assert.equal(before.restTaken, 1, "the report said 2, one was before she clocked in");
+  assert.equal(before.restsOutsideShift, 1, "still flagged - Mánu asked for this one by name");
+  assert.equal(before.restsOffClock, 1);
+  assert.equal(before.restsOffClockMin, 10);
+  assert.equal(before.restTaken, 2, "the report said 2 and both count now");
   assert.equal(before.restRequired, 2);
-  assert.equal(before.restViolation, true, "so an hour is owed");
+  assert.equal(before.restViolation, false, "so no premium");
+  // 9 hours on the clock plus the ten minutes nobody paid for.
+  // analyzeDay returns these unrounded; the r2 rounding happens on the way to
+  // storage, which is the "compare like for like" trap in the notes.
+  assert.equal(Number(before.paidHours.toFixed(2)), 9.17);
+
+  // THE OPPOSITE: the same two rests taken inside the shift add nothing, or the
+  // assertion above is just measuring that rests exist.
+  const onClock = analyzeDay({
+    date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
+    restTimes: [{ out: 10 * 60, in: 10 * 60 + 10 }, { out: 14 * 60, in: 14 * 60 + 10 }],
+  });
+  assert.equal(onClock.restsOutsideShift, 0);
+  assert.equal(onClock.restsOffClock, 0);
+  assert.equal(onClock.restsOffClockMin, 0);
+  assert.equal(onClock.paidHours, 9, "nothing added, those minutes were already paid");
 
   // after clock-out, the other direction
   const after = analyzeDay({
@@ -450,38 +501,35 @@ test("a rest logged outside the shift does not count, and the premium follows", 
     restTimes: [{ out: 21 * 60 + 40, in: 21 * 60 + 50 }],
   });
   assert.equal(after.restsOutsideShift, 1);
-
-  // and a rest in the middle of the shift is not flagged, or the check says
-  // nothing at all
-  const normal = analyzeDay({
-    date: "07/20/26", punches: [at(8), at(17)], printed: null, restRecorded: 1,
-    restTimes: [{ out: 10 * 60, in: 10 * 60 + 10 }],
-  });
-  assert.equal(normal.restsOutsideShift, 0);
+  assert.equal(after.restsOffClockMin, 10);
 });
 
-test("a rest inside a punched-out gap was not paid, and is reported as such", () => {
+test("a rest inside a punched-out gap is paid for, not deducted", () => {
   // Uribe 07/31: punched out 12:00-13:00 with the rest recorded 12:00-12:10.
   const d = analyzeDay({
     date: "07/31/26",
     punches: [at(8), at(9, 30), at(10), at(12), at(13), at(16)],
-    printed: null, restRecorded: 1,
-    restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }],
+    printed: null, restRecorded: 2,
+    restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }, { out: 15 * 60, in: 15 * 60 + 10 }],
   });
   assert.equal(d.restsUnpaid, 1);
   assert.equal(d.restsOutsideShift, 0, "it is inside the shift, just not on the clock");
-  // and it does not count, same principle as the other two: unpaid minutes were
-  // never a rest period. Uribe 07/28 and 07/29 are exactly this and each gains
-  // an hour; his 07/31 already owed one, and the cap is one a day.
-  assert.equal(d.restTaken, 0, "the report said 1, the person was off the clock for it");
-  assert.equal(d.restViolation, true);
+  assert.equal(d.restsOffClock, 1, "one of the two was off the clock");
+  assert.equal(d.restsOffClockMin, 10);
+  assert.equal(d.restTaken, 2, "both count");
+  assert.equal(d.restViolation, false);
+  // 6.5 hours on the clock plus the ten unpaid minutes
+  assert.equal(Number(d.paidHours.toFixed(2)), 6.67);
 
-  // the same rest taken while still clocked in is paid, and not flagged
+  // THE OPPOSITE: the same rest taken while still clocked in is neither flagged
+  // nor paid again.
   const onClock = analyzeDay({
     date: "07/31/26", punches: [at(8), at(16)], printed: null, restRecorded: 1,
     restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }],
   });
   assert.equal(onClock.restsUnpaid, 0);
+  assert.equal(onClock.restsOffClock, 0);
+  assert.equal(onClock.paidHours, 8);
 });
 
 test("a reversed rest row is malformed, not a placement problem", () => {
@@ -498,10 +546,11 @@ test("a reversed rest row is malformed, not a placement problem", () => {
 
 // ------------------------------- a rest inside the lunch is not a rest taken
 
-test("a rest recorded inside the lunch does not count, and the premium follows", () => {
-  // Jones 07/28: a 9.5 hour day owing 2 rests, one recorded 11:10-11:20 inside
-  // an 11:00-11:30 rostered lunch and one genuine. The report says 2 of 2; the
-  // inside one is unpaid meal time and was never a rest period.
+test("a rest recorded inside the lunch counts, and the lunch minutes are paid", () => {
+  // Jones 07/28: a rest recorded 12:10-12:20 inside a 12:00-12:30 rostered
+  // lunch he had punched out for. It used to be struck off his count and cost
+  // an hour. Now the ten minutes are paid, because the lunch is unpaid time and
+  // he spent ten of it on a rest.
   const d = analyzeDay({
     date: "07/28/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
     scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
@@ -510,10 +559,23 @@ test("a rest recorded inside the lunch does not count, and the premium follows",
       { out: 15 * 60, in: 15 * 60 + 10 },        // a real one
     ],
   });
-  assert.equal(d.restsInsideMeal, 1);
-  assert.equal(d.restTaken, 1, "the report said 2, one of them was lunch");
+  assert.equal(d.restsInsideMeal, 1, "still flagged");
+  assert.equal(d.restsOffClock, 1, "he was punched out for the lunch");
+  assert.equal(d.restsOffClockMin, 10);
+  assert.equal(d.restTaken, 2, "the report said 2 and both count");
   assert.equal(d.restRequired, 2);
-  assert.equal(d.restViolation, true, "so an hour is owed");
+  assert.equal(d.restViolation, false, "so no premium");
+
+  // THE OPPOSITE: a day with only ONE rest recorded still owes, so the pass
+  // above is the rule working and not the check having stopped discriminating.
+  const short = analyzeDay({
+    date: "07/28/26", punches: LUNCH_DAY, printed: null, mealScheduled: true,
+    scheduleBlocks: LUNCH_BLOCKS, restRecorded: 1,
+    restTimes: [{ out: 12 * 60 + 10, in: 12 * 60 + 20 }],
+  });
+  assert.equal(short.restTaken, 1);
+  assert.equal(short.restRequired, 2);
+  assert.equal(short.restViolation, true, "one of two is still a missed rest");
 });
 
 test("adjacent still counts, and the two groups never overlap", () => {
@@ -543,9 +605,52 @@ test("discounting a rest can never push the count below zero", () => {
   assert.equal(d.restTaken, 0);
 });
 
-test("a rest that is both inside the lunch and outside the shift is discounted once", () => {
-  // contrived, but the two rules are independent and both subtract, so the
-  // union has to be taken or one rest would remove two from the tally.
+test("ten minutes added past the eighth hour are OVERTIME, not straight time", () => {
+  // Mánu 2026-08-09, stating it as the rule: "if they did take their ten, and
+  // they have over eight hours, then they have to get those ten minutes of
+  // overtime." It falls out of paying the minutes before the overtime split
+  // rather than after, and that ordering is easy to break by moving one line.
+  const eightFlat = {
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days: [{
+      date: "07/20/26",
+      punches: [at(8), at(16)],           // exactly eight on the clock
+      printed: null,
+      restRecorded: 2,
+      restsAlreadyPaid: true,
+      // one taken while clocked in, one after clocking out
+      restTimes: [
+        { out: 10 * 60, in: 10 * 60 + 10 },
+        { out: 16 * 60 + 30, in: 16 * 60 + 40 },
+      ],
+    }],
+  };
+  const t = analyzeTimesheet(eightFlat);
+  const d = t.days[0];
+  assert.equal(d.restsOffClock, 1, "only the one after clock-out was unpaid");
+  assert.equal(d.restsOffClockMin, 10);
+  assert.equal(Number(d.paidHours.toFixed(4)), 8.1667);
+  assert.equal(Number(d.regularHours.toFixed(4)), 8, "the first eight stay straight time");
+  assert.equal(Number(d.otHours.toFixed(4)), 0.1667, "the added ten minutes are overtime");
+
+  // THE OPPOSITE: the same ten taken on the clock adds nothing and creates no
+  // overtime, so this is not just asserting that eight-hour days make OT.
+  const onClock = analyzeTimesheet({
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days: [{ ...eightFlat.days[0], restTimes: [
+      { out: 10 * 60, in: 10 * 60 + 10 },
+      { out: 14 * 60, in: 14 * 60 + 10 },
+    ] }],
+  });
+  assert.equal(onClock.days[0].restsOffClockMin, 0);
+  assert.equal(onClock.days[0].paidHours, 8);
+  assert.equal(onClock.days[0].otHours, 0, "nothing added, so nothing over eight");
+});
+
+test("a rest that is both inside the lunch and outside the shift is PAID once", () => {
+  // The union problem did not go away when the discount did, it moved. Two
+  // flags fire on this one rest, and if the payment followed the flags instead
+  // of the rest it would add its minutes twice.
   const d = analyzeDay({
     date: "07/20/26", punches: [at(12, 15), at(17)], printed: null, mealScheduled: true,
     scheduleBlocks: [
@@ -559,7 +664,9 @@ test("a rest that is both inside the lunch and outside the shift is discounted o
   });
   assert.equal(d.restsInsideMeal, 1);
   assert.equal(d.restsOutsideShift, 1);
-  assert.equal(d.restTaken, 0, "1 recorded, 1 discounted, not 1 minus 2");
+  assert.equal(d.restsOffClock, 1, "one rest, however many flags it trips");
+  assert.equal(d.restsOffClockMin, 5, "five minutes once, not ten");
+  assert.equal(d.restTaken, 1, "and it counts");
 });
 
 test("a rostered lunch is not called a transition between bookings", () => {

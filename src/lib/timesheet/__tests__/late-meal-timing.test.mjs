@@ -59,32 +59,45 @@ const hatt = (extra = {}) =>
     ...extra,
   });
 
-test("Hatt 07/31: worked through the rostered meal, only break at 360 minutes, premium OWED", () => {
+// UPDATED 2026-08-09 by Mánu's ruling that a lunch rostered inside a booking is
+// not a lunch. Her day still owes the hour, and now for the reason that was
+// staring at everyone: QSP gave her a meal at 11:30-12:00 and a client from
+// 11:30 to 13:30. The premium no longer depends on the timing test reading a
+// gap it never checked, which was the fragility this file was written to pin.
+test("Hatt 07/31: the rostered lunch is booked over, so it never counted. Premium OWED", () => {
   const d = hatt();
-  // she is on the clock for six hours before her first unpaid minute
+  assert.equal(d.mealInsideBooking, true, "meal 11:30-12:00 vs booking 11:30-13:30");
+  assert.equal(d.mealViolation, true, "withdrawing this takes an hour off a real person");
+  // and it is no longer reached through lateness at all
+  assert.equal(d.mealLate, false, "you cannot be late for a meal you were never given");
+  // she is still on the clock six hours before her first unpaid minute, which is
+  // what made the old route look right
   assert.equal(d.mealStartedAfterMin, 360);
   assert.ok(d.mealStartedAfterMin > RULES.mealMustStartByMin);
-  assert.equal(d.mealLate, true);
-  assert.equal(d.mealViolation, true, "withdrawing this takes an hour off a real person");
-  // and the gap being timed is NOT the meal the schedule rostered. this is the
-  // mismatch that looks like a bug. it is not one.
-  assert.equal(d.mealGapKind, "scheduled-transition");
 });
 
-test("the same shift with the meal actually taken when rostered owes nothing", () => {
-  // punched out 11:30-12:00, exactly where the schedule put it, 240 minutes in
+test("the same shift with a CLEAN rostered meal, taken on time, owes nothing", () => {
+  // the roster fixed: the 11:30-12:00 lunch with no booking over it, and she
+  // punches out for it 240 minutes in. If this ever stops clearing, the test
+  // above is passing because the day always owes.
+  const cleanRoster = [
+    b(7, 30, 11, 30),
+    b(11, 30, 12, 0, true),
+    b(12, 0, 16, 30),
+  ];
   const onTime = [at(7, 30), at(11, 30), at(12, 0), at(16, 30)];
   const d = analyzeDay({
     date: "07/31/26",
     punches: onTime,
     printed: { daily: 8 },
     mealScheduled: true,
-    scheduleBlocks: HATT_ROSTER,
+    scheduleBlocks: cleanRoster,
     restsAlreadyPaid: true,
   });
+  assert.equal(d.mealInsideBooking, false);
   assert.equal(d.mealStartedAfterMin, 240);
   assert.equal(d.mealLate, false);
-  assert.equal(d.mealViolation, false, "a meal taken on time clears the day");
+  assert.equal(d.mealViolation, false, "a meal actually given, and taken on time");
 });
 
 // 15 of the 16 look like this instead, and they must keep working.
