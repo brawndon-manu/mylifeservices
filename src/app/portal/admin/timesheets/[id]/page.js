@@ -177,17 +177,21 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const scheduleMatchedCount = rows.filter((r) => r.scheduleMatched).length;
   const scheduleNotFound = rows.filter((r) => r.scheduleStatus === "name-not-found").length;
   const scheduleFailed = rows.find((r) => r.scheduleStatus === "parse-failed");
-  // premium hours split by how well the day behind each one is evidenced. only
-  // batches uploaded with the clock report carry this.
-  const support = rows.reduce(
-    (a, r) => (r.support
-      ? { recorded: a.recorded + (r.support.recorded || 0),
-          supported: a.supported + (r.support.supported || 0),
-          unverified: a.unverified + (r.support.unverified || 0) }
-      : a),
-    { recorded: 0, supported: 0, unverified: 0 },
-  );
-  const hasSupport = support.recorded + support.supported + support.unverified > 0;
+  // RETIRED 2026-08-09: this page used to grade the premium total itself, in
+  // recorded / corroborated / needs-somebody-to-look, beside a link to the
+  // evidence page grading the SAME hours as witnessed / ruled / open. The two
+  // reconcile exactly and neither was wrong, but two answers to "how well
+  // evidenced is this" sitting inches apart is how the wrong figure ends up in
+  // front of David. The evidence page is the one that survived: it separates a
+  // document saying so from Mánu deciding, which the older grading could not.
+  //
+  // Its copy had also outlived its rule. "Recorded by QSP" read "a rest break
+  // QSP's own report accounts for, OR A DAY CLOCKED IN AND OUT OF EVERY SHIFT",
+  // and a punch has witnessed nothing since 2026-08-06.
+  //
+  // `premiumSupport` is still WRITTEN on upload and still read by the checks
+  // screen, so nothing is deleted from the data - only this second opinion.
+  const totalPremium = rows.reduce((n, r) => n + (r.premiumHours || 0), 0);
 
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
@@ -422,69 +426,47 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         </div>
       )}
 
-      {/* the thing management actually has to sign: how much of the premium
-          total stands on evidence, and how much needs a person. */}
-      {hasSupport && (
+      {/* the thing management actually has to sign. this card no longer grades
+          the total itself - see the note above the totalPremium calculation.
+          it points at the one screen that does. */}
+      {totalPremium > 0 && (
         <div className="mt-4 rounded-xl border border-border bg-surface p-5">
           <p className="text-sm font-semibold text-foreground">
             Premium hours, by what stands behind them
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Evidenced
-              value={support.recorded}
-              label="Recorded by QSP"
-              detail="A rest break QSP's own report accounts for, or a day clocked in and out of every shift."
-              tone="good"
-            />
-            <Evidenced
-              value={support.supported}
-              label="Corroborated"
-              detail="A meal premium on a day the schedule gave them no meal period at all."
-              tone="ok"
-            />
-            <Evidenced
-              value={support.unverified}
-              label="Needs somebody to look"
-              detail="Nothing behind it: not clocked, and no corroborating record."
-              tone={support.unverified > 0 ? "bad" : "good"}
-            />
-          </div>
-          <p className="mt-3 text-xs text-muted">
-            Graded per premium, not per day - a rest question and a meal question
-            have different witnesses, and the schedule holds meal breaks but not
-            one rest period. Hours differing from the schedule is not counted
-            against anything here: people work different hours than they were
-            scheduled, and the timesheet is the record we go by.
+          <p className="mt-1 text-xs text-muted">
+            {totalPremium.toFixed(2)} hours across this pay period. Nobody should
+            sign off on that figure without reading one of these.
           </p>
 
-          {/* the three figures above say how well evidenced the premiums are.
-              this is the other question people ask straight afterwards - where
-              they fall, who carries them, and what caused each one. */}
+          {/* what each premium rests on, and which ones nobody has settled.
+              this is the question that decides whether any of them can be sent,
+              so it leads. */}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
             <p className="text-xs text-muted">
-              Where the {(support.recorded + support.supported + support.unverified).toFixed(2)}{" "}
-              hours fall, who carries them, and the reason behind every one.
-            </p>
-            <Link
-              href={`/portal/admin/timesheets/${batch.id}/penalty-hours`}
-              className="shrink-0 rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-            >
-              View the breakdown →
-            </Link>
-          </div>
-
-          {/* the breakdown above answers where the hours fall. this one answers
-              the question that decides whether any of them can be sent: what
-              stands behind each one, and which of them nobody has settled. */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
-            <p className="text-xs text-muted">
-              What each premium rests on, and which ones are still waiting on a person.
+              What each premium rests on: witnessed by a document, settled by a
+              ruling, or still waiting on a person.
             </p>
             <Link
               href={`/portal/admin/timesheets/${batch.id}/evidence`}
-              className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
+              className="shrink-0 rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
             >
               What they rest on →
+            </Link>
+          </div>
+
+          {/* and the other question people ask straight afterwards: where the
+              hours fall, who carries them, and what caused each one. */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+            <p className="text-xs text-muted">
+              Where the {totalPremium.toFixed(2)} hours fall, who carries them,
+              and the reason behind every one.
+            </p>
+            <Link
+              href={`/portal/admin/timesheets/${batch.id}/penalty-hours`}
+              className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
+            >
+              View the breakdown →
             </Link>
           </div>
         </div>
@@ -572,27 +554,6 @@ function Stat({ label, value, tone }) {
   );
 }
 
-// one column of the premium-evidence panel
-function Evidenced({ value, label, detail, tone }) {
-  const cls =
-    tone === "good"
-      ? "border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20"
-      : tone === "ok"
-        ? "border-sky-300/60 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20"
-        : "border-rose-300/60 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/20";
-  const num =
-    tone === "good"
-      ? "text-emerald-700 dark:text-emerald-400"
-      : tone === "ok"
-        ? "text-sky-700 dark:text-sky-400"
-        : "text-rose-700 dark:text-rose-400";
-  return (
-    <div className={`rounded-lg border p-3 ${cls}`}>
-      <p className={`text-2xl font-semibold tabular-nums ${num}`}>
-        {value.toFixed(2)}
-      </p>
-      <p className="mt-0.5 text-xs font-semibold text-foreground">{label}</p>
-      <p className="mt-1 text-xs text-muted">{detail}</p>
-    </div>
-  );
-}
+// `Evidenced`, the three-column grading that used to sit on this page, was
+// removed 2026-08-09 along with the panel it filled. The evidence page grades
+// the same hours and is the only place that should.
