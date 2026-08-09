@@ -11,6 +11,9 @@
 // Ordering is deliberate: the item where somebody might be UNDERPAID comes
 // first. Everything else on this list pays them; a missing day pays nothing.
 
+import { restKey, isMealLengthRest } from "./rests.js";
+import { shortTime, recordedBreaksFor } from "./recorded-breaks.js";
+
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
 // "10a-12p Rincon..." -> { s, e } in minutes
@@ -56,7 +59,7 @@ function scheduleGaps(entry) {
   return out;
 }
 
-export function buildEmployeeChecks(data) {
+export function buildEmployeeChecks(data, { restRows, sourceName } = {}) {
   if (!data) return [];
   const days = data.days || [];
   const byDate = data.scheduleCheck?.byDate || {};
@@ -123,6 +126,46 @@ export function buildEmployeeChecks(data) {
   }));
   if (unknown.length) out.push({ kind: "mealUnknown", tone: "ask", rows: unknown });
 
+  // 7. a THIRTY minute entry sitting in the rest break report. Ten is a rest,
+  //    thirty is a meal, and nothing we hold says which this was. It is drawn on
+  //    the sheet as a striped meal and charged as neither, so the email has to
+  //    ask - saying "meal" would take a premium hour off them.
+  //
+  //    These live on the BATCH, not the sheet, so they arrive as an argument.
+  //    Without restRows the check simply does not appear, which is why the
+  //    caller has to select them.
+  const mealLen = (restRows || [])
+    .filter((r) => restKey(r.name) === restKey(sourceName || "") && isMealLengthRest(r))
+    .map((r) => ({
+      date: r.date,
+      from: shortTime(r.reversed ? r.in : r.out),
+      to: shortTime(r.reversed ? r.out : r.in),
+      minutes: r.minutes,
+    }));
+  if (mealLen.length) out.push({ kind: "restIsMealLength", tone: "ask", rows: mealLen });
+
+  // 8-10. everything the SHEET now draws differently, asked about in the same
+  //       words. Classified by recordedBreaksFor so the email and the document
+  //       cannot drift apart - one place decides what a break is.
+  // only days the sheet actually lists, so the email never asks about a date
+  // the person cannot see on their own timesheet
+  const dates = new Set(days.map((d) => d.date));
+  const rec = recordedBreaksFor(sourceName || "", restRows || [], byDate);
+  const outside = [], noTimes = [], ampm = [];
+  for (const [date, v] of rec) {
+    if (!dates.has(date)) continue;
+    for (const r of v.rests) {
+      if (r.unknown) noTimes.push({ date, shift: `${r.shiftFrom}-${r.shiftTo}` });
+      else if (r.outsideShift) outside.push({ date, from: r.from, to: r.to });
+    }
+    for (const m of v.meals) {
+      if (m.ampmFixed) ampm.push({ date, was: `${m.wasFrom}-${m.wasTo}`, now: `${m.from}-${m.to}` });
+    }
+  }
+  if (outside.length) out.push({ kind: "restOutsideShift", tone: "ask", rows: outside });
+  if (noTimes.length) out.push({ kind: "restNoTimes", tone: "ask", rows: noTimes });
+  if (ampm.length) out.push({ kind: "mealAmPm", tone: "ask", rows: ampm });
+
   return out;
 }
 
@@ -145,6 +188,14 @@ export function checkSummaryLine(check) {
       return `${days} where punch times were recorded in reverse and have been corrected`;
     case "mealUnknown":
       return `${days} we could not check, because no schedule was found for them`;
+    case "restIsMealLength":
+      return `${days} with a 30 minute break filed as a rest break - tell us whether it was your meal`;
+    case "restOutsideShift":
+      return `${days} where your rest break was recorded outside your shift - paid, no premium owed`;
+    case "restNoTimes":
+      return `${days} with a rest break recorded and no times on it - tell us when you took it`;
+    case "mealAmPm":
+      return `${days} where your schedule rosters a meal in the middle of the night`;
     default:
       return days;
   }

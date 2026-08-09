@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { recordedBreaksFor, insertRecordedBreaks } from "./recorded-breaks.js";
+import { recordedBreaksFor, insertRecordedBreaks, withStatedRest } from "./recorded-breaks.js";
 
 // read straight off disk - this only ever runs server-side.
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
@@ -20,6 +20,18 @@ const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
 // palette lifted from the approved sample
 const REST = rgb(1, 0.949, 0.6);        // 10-min paid rest break
 const MEAL = rgb(0.71, 0.85, 0.98);     // 30-min unpaid meal break
+// a rest the report recorded while the person was OFF the clock. Same yellow so
+// it still reads as a rest, hazard-striped so it does not read as one QSP
+// recorded: these minutes were added to the day by us, not punched by them.
+const ADDED_BAR = rgb(0.85, 0.68, 0.2);
+// a thirty-minute entry sitting in the REST report, drawn as the meal its length
+// says it is. Same blue so it reads as a meal, striped so it does not read as
+// one anybody has confirmed.
+const MEAL_BAR = rgb(0.18, 0.42, 0.66);
+// a rest rostered outside the whole working day - before the first shift starts
+// or after the last one ends. Blue with RED stripes, Mánu 2026-08-09: it is not
+// a break in the day, it is ten minutes recorded against no shift. Still paid.
+const OUTSIDE_BAR = rgb(0.75, 0.16, 0.16);
 const INK = rgb(0.05, 0.05, 0.05);
 const MUTED = rgb(0.45, 0.5, 0.55);
 const GRID = rgb(0.45, 0.5, 0.55);
@@ -27,6 +39,10 @@ const BRAND = rgb(0.086, 0.325, 0.529); // headline blue
 const HEADBG = rgb(0.106, 0.298, 0.404);// premium table header
 const TOTALBG = rgb(0.878, 0.949, 0.961);
 const PREM = rgb(0.7, 0.11, 0.11);
+// a day with nothing owed. Mánu 2026-08-09 asked for the waived note and the
+// clean day to read green and italic, so a person scanning the column can see
+// at a glance which days are settled without reading a word of it.
+const GOOD = rgb(0.06, 0.45, 0.24);
 const WHITE = rgb(1, 1, 1);
 const BLACK = rgb(0, 0, 0);
 
@@ -38,8 +54,43 @@ const BLACK = rgb(0, 0, 0);
 // them. That frees 86pt, and narrower punch columns buy the rest.
 const PAGE_W = 612;
 const PAGE_H = 792;
+// LANDSCAPE IS THE EXCEPTION, NOT THE DEFAULT. Mánu 2026-08-09, on days that
+// need more punch columns than portrait can hold: "for those the sheet has to
+// be landscape with those being the only exception."
+//
+// Showing an added rest as its own in and out costs two punch cells, so a day
+// that already filled the row now overflows it. The alternative was wrapping
+// onto a continuation line, which splits one day across two rows on the
+// document somebody signs. Turning the page is the smaller cost, and only the
+// sheets that need it turn.
+const LANDSCAPE_W = 792;
+const LANDSCAPE_H = 612;
 const L = 28;
 const R = PAGE_W - 28;
+
+// Diagonal hazard stripes across one cell, drawn over its fill.
+//
+// pdf-lib has no pattern fill and no clipping path worth the trouble, so each
+// stripe is a short line whose ends are clamped to the cell. A 45-degree line
+// x = c - y stays inside the box when both ends are clamped to the same edges,
+// which is why this is arithmetic rather than a clip.
+//
+// Kept coarse on purpose: at 4pt spacing the stripes moire against the grid
+// when a page is scaled down to fit a phone, and the point is that somebody
+// notices the cell is different, not that they can count the lines.
+function hazard(page, x, y, w, h, color = ADDED_BAR) {
+  const step = 5;
+  const thickness = 1.1;
+  for (let c = 0; c <= w + h; c += step) {
+    // the line runs from (x + c, y) up-left to (x, y + c), clamped to the box
+    const x1 = x + Math.min(c, w);
+    const y1 = y + Math.max(0, c - w);
+    const x2 = x + Math.max(0, c - h);
+    const y2 = y + Math.min(c, h);
+    if (x1 === x2 && y1 === y2) continue;
+    page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color });
+  }
+}
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const f2 = (n) => r2(n).toFixed(2);
@@ -105,7 +156,7 @@ export function periodTitle(payPeriod) {
   return `${month} ${Number(m[2]) <= 15 ? "1st" : "2nd"} Half ${year}`;
 }
 
-export function buildColumns(days, neededPunches = Infinity) {
+export function buildColumns(days, neededPunches = Infinity, pageWidth = PAGE_W) {
   const used = OPTIONAL.filter(([, , , test]) => (days || []).some(test));
   const fixedW =
     FIXED.date + FIXED.regular + FIXED.overtime + FIXED.daily + FIXED.comments +
@@ -117,7 +168,7 @@ export function buildColumns(days, neededPunches = Infinity) {
   // Still in PAIRS - an in with no out is not a column, it is half a mistake -
   // and still capped by what fits, so a 22-punch day wraps rather than shrinks
   // the type to nothing.
-  const avail = PAGE_W - 2 * L - fixedW;
+  const avail = pageWidth - 2 * L - fixedW;
   const canFit = Math.max(2, Math.floor(avail / (PUNCH_W * 2)));
   const wanted = Math.max(2, Math.ceil(Math.min(neededPunches, canFit * 2) / 2));
   const pairs = Math.min(canFit, wanted);
@@ -194,12 +245,39 @@ export async function renderCorrected(sheet, opts = {}) {
   // how many punch cells this sheet actually needs, AFTER the recorded breaks
   // are inserted - a rest that splits a worked segment adds four cells, so the
   // count has to be taken from the row that gets drawn, not the raw punches.
+  const entriesFor = (d) => withStatedRest(recorded.get(d.date)?.order || [], d.statedRest);
   const neededPunches = (sheet.days || []).reduce((n, d) => {
-    const { punches } = insertRecordedBreaks(d.punches || [], recorded.get(d.date)?.order || []);
+    const { punches } = insertRecordedBreaks(d.punches || [], entriesFor(d));
     return Math.max(n, punches.length);
   }, 2);
 
-  const { COLUMNS, IDX, xs, right } = buildColumns(sheet.days, neededPunches);
+  // LANDSCAPE IS FOR SHEETS THE ADDED REST PUSHED OVER, AND NOTHING ELSE.
+  //
+  // Measured on the live batch before wiring this: 16 of 59 sheets need more
+  // punch cells than portrait holds, and ALL SIXTEEN were already over the
+  // limit - Gutierrez and McCulley need 22 against a capacity of 14, because an
+  // on-clock rest splits a worked segment into three. Not one of them is caused
+  // by an added rest. Turning the page on all of them would flip 27% of the
+  // batch to landscape for a reason that predates this work, and against the
+  // deliberate portrait choice: people open these on a phone.
+  //
+  // So the test is not "does it overflow" but "did WE make it overflow". Today
+  // that is zero sheets, and it stays a safety valve rather than a redesign.
+  const portrait = buildColumns(sheet.days, neededPunches);
+  const withoutAdded = (sheet.days || []).reduce((n, d) => {
+    const { punches } = insertRecordedBreaks(d.punches || [], entriesFor(d));
+    return Math.max(n, punches.filter((x) => x.mark !== "added").length);
+  }, 2);
+  const needsLandscape =
+    portrait.IDX.punch.length < neededPunches && withoutAdded <= portrait.IDX.punch.length;
+  // these SHADOW the module-level portrait constants for the rest of this
+  // function, so every measurement below follows the page actually in use.
+  const PAGE_W = needsLandscape ? LANDSCAPE_W : 612;
+  const PAGE_H = needsLandscape ? LANDSCAPE_H : 792;
+  const R = PAGE_W - 28;
+  const { COLUMNS, IDX, xs, right } = needsLandscape
+    ? buildColumns(sheet.days, neededPunches, PAGE_W)
+    : portrait;
   const FOOTER_TOP = 40;
   const rowH = 12.6;
   const headH = 24;
@@ -317,6 +395,13 @@ export async function renderCorrected(sheet, opts = {}) {
   openTableHead();
 
   const footnotes = [];
+  // does this sheet have a rest we added? decides the third key entry.
+  let hasAdded = false;
+  // and a thirty-minute entry we have drawn as a meal? decides the fourth.
+  let hasAdjustedMeal = false;
+  // ten minutes recorded against no shift at all, and a break with no times
+  let hasOutside = false;
+  let hasUnknown = false;
 
   for (const d of sheet.days) {
     const per = IDX.punch.length;
@@ -325,17 +410,87 @@ export async function renderCorrected(sheet, opts = {}) {
     // happened in. A rest taken properly is PAID and never left the clock, so
     // it splits a worked segment into three contiguous ones - 10a-2p becomes
     // 10a-12p, 12p-12:10p, 12:10p-2p, and the day still totals four hours.
-    // Where the break sits inside a longer gap the bounding cells are coloured
-    // instead and the exact times go in a footnote, because putting punches
-    // inside unpaid time would claim hours nobody worked.
-    const rec = recorded.get(d.date);
-    const { punches: shown, unplaced } = insertRecordedBreaks(d.punches || [], rec?.order || []);
-    for (const u of unplaced) {
+    // A break with a start and an end always gets TWO cells, at its own times -
+    // rest or meal, paid or unpaid. The one exception is a break that IS the
+    // whole gap, where both punches are already on the row and repeating them
+    // would just cost two columns.
+    const entries = entriesFor(d);
+    const { punches: shown, unplaced } = insertRecordedBreaks(d.punches || [], entries);
+    if (shown.some((x) => x.mark === "added")) hasAdded = true;
+    // an entry in the rest report that is a meal long. Drawn as the meal its
+    // length says it is, and footnoted with what that would mean, but NOT
+    // decided: counting it would remove the meal premium this day owes.
+    //
+    // Taken off the ENTRIES rather than the drawn cells - a break paints two
+    // cells, and one footnote per cell would say everything twice.
+    if (shown.some((x) => x.mark === "added-outside")) hasOutside = true;
+    if (shown.some((x) => x.mark === "unknown-rest")) hasUnknown = true;
+
+    for (const e of entries) {
+      // ten minutes rostered before the day started or after it ended. Paid, and
+      // the day owes no rest premium for it, but it is not a break in a shift.
+      if (e.kindOf === "rest" && e.outsideShift) {
+        footnotes.push(
+          `${d.date}: the ${e.from}-${e.to} rest break falls outside the shifts ` +
+          `you were rostered for that day. Those ten minutes are paid time and have ` +
+          `been added, and no break premium is owed. Worth taking it inside your shift.`,
+        );
+      }
+      // the report says a break happened and holds neither end of it
+      if (e.kindOf === "rest" && e.unknown) {
+        footnotes.push(
+          `${d.date}: a rest break is recorded on your ${e.shiftFrom}-${e.shiftTo} shift ` +
+          `with no times on it, shown here as ???. Nothing is charged for it. Tell us ` +
+          `when you took it and we will put the times in.`,
+        );
+      }
+      // a meal the roster put at an hour nobody works, read twelve hours over
+      if (e.kindOf === "meal" && e.ampmFixed) {
+        footnotes.push(
+          `${d.date}: your schedule rosters a meal break at ${e.wasFrom}-${e.wasTo}, ` +
+          `which is the middle of the night. We have read that as ${e.from}-${e.to} and ` +
+          `shown it there. Tell us if that is wrong.`,
+        );
+      }
+      if (e.kindOf !== "meal" || !e.adjusted) continue;
+      hasAdjustedMeal = true;
       footnotes.push(
-        `${d.date}: ${u.kindOf} ${u.from}-${u.to} ${
-          u.why === "inside a longer gap" ? "falls inside the highlighted gap" : "matches no punch"
-        }`,
+        `${d.date}: the ${e.from}-${e.to} break is recorded as a REST but runs ` +
+        `${e.minutes} minutes, which is the length of a meal period. It is shown as a ` +
+        `meal and counted as neither, so nothing on this day has changed. Payroll will ` +
+        `confirm which it was.`,
       );
+    }
+    // said in words, not in a colour: the times came from the person signing
+    // rather than from either source document, and the sheet should not quietly
+    // present that as something QSP recorded.
+    if (d.statedRest?.from) {
+      footnotes.push(
+        `${d.date}: you told us you took this rest break at ${d.statedRest.from}, ` +
+        `so it is shown at that time rather than the one the report holds.`,
+      );
+    }
+    for (const u of unplaced) {
+      const why =
+        u.why === "added off the clock"
+          ? "recorded while you were clocked out. A rest period is paid time, so those minutes have been added to the day."
+          : u.why === "added outside the shift"
+            ? "recorded outside your shift. A rest period is paid time, so those minutes have been added to the day. Worth fixing in QSClock so it records inside the shift."
+            : u.why === "reversed in the report"
+              // says what we did AND that it was a judgement, not a fact. The
+              // report held the end before the start, which cannot happen, so we
+              // read it as the two boxes being filled in the wrong order. If
+              // that presumption is wrong the times are wrong, and the person
+              // signing is the one who would know.
+              ? "was entered with the start and end the wrong way round in QSP's report. We have presumed that a mistake and reversed it to the times shown here."
+            : u.why === "not counted as a rest"
+              // said out loud rather than drawn. It is not coloured, because
+              // nothing was added and the stripe means minutes were; it is not
+              // silent either, because "QSP holds something unreadable here" is
+              // worth telling the person who signs the page.
+              ? "is too long to be a rest break, so it has not been counted or added to your hours. Worth fixing in QSClock."
+              : "matches no punch";
+      footnotes.push(`${d.date}: ${u.kindOf} ${u.from}-${u.to} ${why}`);
     }
 
     // a long day wraps to continuation rows, exactly like the source export -
@@ -356,10 +511,18 @@ export async function renderCorrected(sheet, opts = {}) {
       chunk.forEach((p, i) => {
         if (!p.mark) return;
         const col = xs[IDX.punch[i]];
+        // blue for anything unpaid or unplaceable, yellow for a rest in the day
+        const isMeal = p.mark === "meal" || p.mark === "meal-adjusted"
+          || p.mark === "added-outside" || p.mark === "unknown-rest";
         page.drawRectangle({
           x: col.x, y: top - rowH, width: col.w, height: rowH,
-          color: p.mark === "rest" ? REST : MEAL,
+          color: isMeal ? MEAL : REST,
         });
+        // striped means "we changed something here": added minutes on a rest,
+        // an entry moved out of the rest report, or ten minutes against no shift
+        if (p.mark === "added") hazard(page, col.x, top - rowH, col.w, rowH);
+        if (p.mark === "meal-adjusted") hazard(page, col.x, top - rowH, col.w, rowH, MEAL_BAR);
+        if (p.mark === "added-outside") hazard(page, col.x, top - rowH, col.w, rowH, OUTSIDE_BAR);
       });
 
       // the day only - the month is in the title above the table
@@ -373,20 +536,28 @@ export async function renderCorrected(sheet, opts = {}) {
         if (IDX.double != null) centerIn(orBlank(d.doubleHours), xs[IDX.double], base, { size: 7.5 });
         centerIn(f2(d.paidHours), xs[IDX.daily], base, { size: 7.5 });
 
+        // Each note carries its own tone, because one row can hold both: the
+        // 16th is a waived meal AND a missed rest, and printing the whole line
+        // one colour makes the settled half look like a finding.
         const notes = [];
-        if (d.mealLate) notes.push("meal started late");
+        const bad = (t) => notes.push({ t, tone: "bad" });
+        const good = (t) => notes.push({ t, tone: "good" });
+        if (d.mealLate) bad("meal started late");
         // a day past ten hours owes a SECOND meal, and "you got the first one
         // and not the second" is a different sentence from "you got no lunch".
         // §226.7 pays the same hour either way; the sheet still has to say
         // which one happened.
         else if (d.secondMealViolation && d.mealsRostered >= 1) {
-          notes.push(d.secondMealLate ? "second meal started late" : "no second meal period");
-        } else if (d.mealViolation) notes.push("no meal period");
+          bad(d.secondMealLate ? "second meal started late" : "no second meal period");
+        } else if (d.mealViolation) bad("no meal period");
         // a waived day is not a violation, and the sheet has to say which one it
         // is. printing nothing would make a waived day look identical to a day
         // where lunch was actually taken, and the only record of why 63 hours
         // came off the period would live in the engine.
-        else if (d.mealWaived) notes.push("meal waived, waiver on file");
+        // "waiver on file" was the justification, not the outcome, and it made
+        // the note the longest thing in a 70pt column. The waiver is a fact
+        // about paperwork; the sheet only has to say the meal was waived.
+        else if (d.mealWaived) good("meal waived");
         // print the count the VIOLATION was decided on, not the punch-gap count.
         // those differ whenever QSP's Rest Periods Report saw fewer breaks than
         // the gaps suggest, and the punch count is the one the engine
@@ -396,7 +567,7 @@ export async function renderCorrected(sheet, opts = {}) {
           // "0 taken" and "nothing recorded it" are different claims, and only
           // one of them is a finding. Printing 0 for the second is asserting
           // something no source supports.
-          notes.push(`rest: no record (${d.restRequired} owed)`);
+          bad(`rest: no record (${d.restRequired} owed)`);
         } else if (d.restViolation) {
           // PRINT THE FIGURE THE PREMIUM WAS DECIDED ON. This used to be
           // min(restCount, restRecorded), where restCount is the punch-gap
@@ -406,7 +577,7 @@ export async function renderCorrected(sheet, opts = {}) {
           // than the engine had used and 22 printed more, across 31 people.
           // Mánu's 07/31 read "rest 0/2" while the report logged one and the
           // engine counted one.
-          notes.push(`rest ${d.restTaken ?? 0}/${d.restRequired}`);
+          bad(`rest ${d.restTaken ?? 0}/${d.restRequired}`);
         }
         // hours credited exceed the window they sit in, so two client bookings
         // overlap. flagged rather than adjusted: entitlement follows hours
@@ -420,27 +591,65 @@ export async function renderCorrected(sheet, opts = {}) {
         // of 16 once the meal and rest notes are in front of it. A day whose
         // hours are questioned is exactly the day whose explanation has to be
         // readable, so the marker stays in the cell and the sentence moves.
-        if (d.compressedDay && d.onSiteMin != null) notes.push("overlap *");
+        if (d.compressedDay && d.onSiteMin != null) notes.push({ t: "overlap *", tone: "muted" });
         // HOURS THIS DAY GAINED, said out loud. A rest recorded while the person
         // was off the clock is paid time nobody paid for, so the minutes are
         // added rather than a premium charged (Mánu 2026-08-09). An employee
         // reading a daily total a fraction above what they punched is owed the
         // reason on the same line, otherwise the only place it exists is the
         // engine. Reads "+0.17 added" against the Daily Total beside it.
-        if (d.addedHours > 0) notes.push(`+${f2(d.addedHours)} added`);
-        if (d.seventhDay) notes.push("7th day");
-        if (notes.length) {
+        if (d.addedHours > 0) notes.push({ t: `+${f2(d.addedHours)} added`, tone: "muted" });
+        if (d.seventhDay) notes.push({ t: "7th day", tone: "muted" });
+        // A DAY WITH NOTHING TO SAY STILL SAYS SOMETHING. Mánu 2026-08-09: a
+        // blank Comments cell reads as "we did not look", and the whole point of
+        // this column is that somebody did. Green, so a clean day is legible at
+        // a glance.
+        if (!notes.length) good("compliant");
+        {
           // the column is narrow and these notes vary in length, so shrink to
           // fit and only clip as a last resort. running past the column edge on
           // a document someone signs looks like a broken form.
           const col = xs[IDX.comments];
           const maxW = col.w - 6;
-          const { str, size } = fitText(notes.join(", "), maxW, font, 6, 4.4);
-          // red is the colour this sheet uses for something owed. a day whose
-          // only note is a waiver owes nothing, so it must not read as a
-          // finding - grey it instead of shouting it.
-          const owed = d.mealViolation || d.mealLate || d.restViolation || d.restUnknown;
-          text(str, col.x + 3, base, { size, color: owed ? PREM : MUTED });
+          // drawn segment by segment rather than as one string, so the settled
+          // half of a row is green while the owed half stays red.
+          const pieces = notes.map((n, i) => ({
+            str: i < notes.length - 1 ? `${n.t}, ` : n.t,
+            f: n.tone === "good" ? italic : font,
+            color: n.tone === "bad" ? PREM : n.tone === "good" ? GOOD : MUTED,
+          }));
+
+          // MEASURED PER SEGMENT, IN THE FONT EACH ONE IS ACTUALLY DRAWN IN.
+          // This used to size the joined string in `font` alone, so any row with
+          // a green italic piece measured narrower than it drew.
+          const widthAt = (sz) =>
+            pieces.reduce((w, pc) => w + pc.f.widthOfTextAtSize(pc.str, sz), 0);
+          let size = 6;
+          while (size > 4 && widthAt(size) > maxW) size -= 0.2;
+
+          // AND CLIP WHEN EVEN THE FLOOR DOES NOT FIT. The old code called a
+          // helper that returned both an ellipsised string and a size, kept only
+          // the size, and drew the full text at 4.4pt straight through the
+          // table's right rule. Four rows on this batch, two of them before any
+          // of today's changes: Uribe's 28th and 29th lost the "d" of "added"
+          // through the border.
+          let x = col.x + 3;
+          const edge = col.x + 3 + maxW;
+          for (const pc of pieces) {
+            const room = edge - x;
+            if (room <= 0) break;
+            if (pc.f.widthOfTextAtSize(pc.str, size) <= room) {
+              text(pc.str, x, base, { size, color: pc.color, f: pc.f });
+              x += pc.f.widthOfTextAtSize(pc.str, size);
+              continue;
+            }
+            let cut = pc.str;
+            while (cut.length > 1 && pc.f.widthOfTextAtSize(`${cut}…`, size) > room) {
+              cut = cut.slice(0, -1);
+            }
+            text(`${cut}…`, x, base, { size, color: pc.color, f: pc.f });
+            break;
+          }
         }
       }
 
@@ -483,37 +692,104 @@ export async function renderCorrected(sheet, opts = {}) {
   // sits right under the table it explains - those highlights are in the punch
   // cells and nowhere else, so the legend belongs next to them rather than
   // three sections further down.
-  const keyH = 20;
+  // THE KEY LAYS ITSELF OUT NOW. It was three hand-placed x offsets, which was
+  // fine at three entries and became a guessing game at five. Each entry is
+  // measured, packed two to a row, and the box grows to fit - a legend that runs
+  // off the page is worse than no legend.
+  //
+  // Only entries this sheet actually uses appear: a swatch for something not on
+  // the page is a question nobody can answer by looking.
+  const keyItems = [
+    { fill: REST, label: "10-Minute Paid Rest Break" },
+    { fill: MEAL, label: "30-Minute Unpaid Meal Break" },
+  ];
+  if (hasAdded) {
+    keyItems.push({ fill: REST, bar: ADDED_BAR, label: "Rest Break Added - recorded off the clock" });
+  }
+  if (hasAdjustedMeal) {
+    keyItems.push({ fill: MEAL, bar: MEAL_BAR, label: "Meal Break - recorded as a rest break, and not counted as either" });
+  }
+  if (hasOutside) {
+    keyItems.push({ fill: MEAL, bar: OUTSIDE_BAR, label: "Rest Break recorded outside your shift - paid, and no premium owed" });
+  }
+  if (hasUnknown) {
+    keyItems.push({ fill: MEAL, label: "??? - a rest break with no times recorded. Not charged to anyone." });
+  }
+
+  const keySize = 7.5;
+  const swatchW = 22, gap = 6, pad = 14;
+  const itemW = (it) => swatchW + gap + font.widthOfTextAtSize(it.label, keySize) + pad;
+  // pack into rows that fit between "Color Key:" and the right rule
+  const keyX0 = L + 58;
+  const keyRows = [[]];
+  let used = 0;
+  for (const it of keyItems) {
+    const w = itemW(it);
+    if (used + w > R - keyX0 - 4 && keyRows[keyRows.length - 1].length) {
+      keyRows.push([]);
+      used = 0;
+    }
+    keyRows[keyRows.length - 1].push(it);
+    used += w;
+  }
+  const keyH = 8 + keyRows.length * 12;
   ensure(keyH + 18);
   page.drawRectangle({
     x: L, y: y - keyH + 6, width: R - L, height: keyH,
     borderColor: BLACK, borderWidth: 0.8,
   });
-  const keyY = y - keyH + 12;
-  // reflowed for the portrait page: the old spacing was measured against a
-  // 736pt table and ran the last label off a 556pt one.
-  text("Color Key:", L + 8, keyY, { size: 8, f: bold });
-  page.drawRectangle({ x: L + 58, y: keyY - 3, width: 22, height: 10, color: REST, borderColor: GRID, borderWidth: 0.4 });
-  text("10-Minute Paid Rest Break", L + 86, keyY, { size: 7.5 });
-  page.drawRectangle({ x: L + 196, y: keyY - 3, width: 22, height: 10, color: MEAL, borderColor: GRID, borderWidth: 0.4 });
-  text("30-Minute Unpaid Meal Break", L + 224, keyY, { size: 7.5 });
-  text("Hours include paid rest break time.", L + 348, keyY, { size: 6.5, color: MUTED });
+  const keyTop = y - keyH + 6 + keyH - 12;
+  text("Color Key:", L + 8, keyTop, { size: 8, f: bold });
+  keyRows.forEach((row, ri) => {
+    let x = keyX0;
+    const ky = keyTop - ri * 12;
+    for (const it of row) {
+      page.drawRectangle({ x, y: ky - 3, width: swatchW, height: 10, color: it.fill, borderColor: GRID, borderWidth: 0.4 });
+      if (it.bar) hazard(page, x, ky - 3, swatchW, 10, it.bar);
+      text(it.label, x + swatchW + gap, ky, { size: keySize });
+      x += itemW(it);
+    }
+  });
   y -= keyH + 8;
 
-  // Breaks the record puts INSIDE a highlighted gap rather than matching it,
-  // and breaks that line up with no punch at all. The colour can only be
-  // approximate for those, so the exact times are stated rather than implied.
+  // WHAT WAS ADDED, AND WHY - directly under the colour key, because the key is
+  // where the striped cells are introduced and this is the sentence that says
+  // what they mean.
+  //
+  // It used to sit at the very bottom with the reconciliation line, and on a
+  // full sheet there was no room left: Uribe's went to a SECOND PAGE, alone,
+  // after the signature block. An explanation for a figure is no use on a page
+  // somebody has already stopped reading.
+  if ((sheet.totals.addedHours || 0) > 0) {
+    const addedOt = sheet.totals.addedOtHours || 0;
+    const ot = addedOt > 0
+      ? ` ${f2(addedOt)} of it falls past eight hours in a day and is paid as overtime.`
+      : "";
+    y = wrap(
+      page,
+      `ADDED: ${f2(sheet.totals.addedHours)} hrs on top of the export. The striped cells are rest breaks the report recorded while you were clocked out. A rest period is paid time, so those minutes have been paid rather than deducted from your breaks.${ot}`,
+      L, y, R - L, { font: italic, size: 6.5, color: INK, leading: 8 },
+    );
+    y -= 4;
+  }
+
+  // Anything that could not be drawn on a row at all: a meal inside a longer
+  // gap, a reversed row we corrected, times QSP wrote unreadably. Everything
+  // else is said by the colour of the cell.
   if (footnotes.length) {
-    ensure(12 + Math.min(footnotes.length, 7) * 8);
+    // WRAPPED, because these are sentences now rather than fragments. Drawn as
+    // one unbroken line they ran straight through the right rule and off the
+    // page: "Payroll will confirm whic" was where 07/25 stopped.
     for (const fn of footnotes.slice(0, 6)) {
-      text("* " + fn, L, y, { size: 6, color: MUTED });
-      y -= 8;
+      ensure(18);
+      y = wrap(page, "* " + fn, L, y, R - L, { font, size: 6, color: MUTED, leading: 7.5 });
     }
+    ensure(12);
     if (footnotes.length > 6) {
       text("* and " + (footnotes.length - 6) + " more, listed on the checks screen", L, y, { size: 6, color: MUTED });
       y -= 8;
     }
-    y -= 6;
+    y -= 4;
   }
 
   // ---------- overlapping client bookings ----------
@@ -772,27 +1048,6 @@ export async function renderCorrected(sheet, opts = {}) {
       : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export. This sheet corrects break premiums only.`,
     L, y, { size: 6.5, color: MUTED, f: italic },
   );
-  // WHAT WAS ADDED, AND WHY, on its own line rather than folded into the one
-  // above. The line above reconciles this sheet to the export; this one says we
-  // went ABOVE the export and names the reason, which is the first time this
-  // engine has ever done that. The days are marked "+0.17 added" individually;
-  // this is the total, and it separates the overtime because ten minutes past
-  // the eighth hour is paid at a different rate and the employee should not
-  // have to work that out.
-  if (added > 0) {
-    const ot = addedOt > 0
-      ? ` ${f2(addedOt)} of the added time falls past eight hours in a day and is paid as overtime.`
-      : "";
-    const body = `ADDED: ${f2(added)} hrs on top of the export. A rest break was recorded while you were clocked out on the days marked "added" - a rest period is paid time, so those minutes have been paid rather than deducted from your breaks.${ot}`;
-    // ASK FOR THE ROOM FIRST. Without this the paragraph runs into the footer on
-    // the longest sheets and the overflow guard throws, which is exactly what
-    // happened to Uribe on the 2026-08-09 re-upload: 13 days and 4 footnotes
-    // left 31.1pt where the footer starts at 40, and his was the only one of the
-    // 59 that could not render. Three lines at 8pt leading plus the gap above.
-    ensure(9 + 3 * 8);
-    y -= 9;
-    y = wrap(page, body, L, y, R - L, { font: italic, size: 6.5, color: INK, leading: 8 });
-  }
 
   // ---------- footer ----------
   // hard guard: content must never run under the footer. paging should prevent
@@ -906,19 +1161,6 @@ export function breakCells(punches, at, b) {
   return [];
 }
 
-function fitText(str, maxW, font, startSize, minSize) {
-  let size = startSize;
-  while (size > minSize && font.widthOfTextAtSize(str, size) > maxW) {
-    size -= 0.2;
-  }
-  if (font.widthOfTextAtSize(str, size) <= maxW) return { str, size };
-
-  let out = str;
-  while (out.length > 1 && font.widthOfTextAtSize(`${out}…`, size) > maxW) {
-    out = out.slice(0, -1);
-  }
-  return { str: `${out}…`, size };
-}
 
 // left-aligned word wrap; returns the y after the last line
 function wrap(page, str, x, y, maxW, { font, size, color, leading }) {

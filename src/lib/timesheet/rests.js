@@ -19,7 +19,7 @@ import { normalizeDate } from "./clock.js";
 
 // California requires a NET TEN MINUTES. That is the whole rule, and everything
 // below is about reading QSP's record of it honestly.
-const FULL_REST_MIN = 10;
+export const FULL_REST_MIN = 10;
 // How far over ten a break can run and still just be a rest break. Above this
 // it is a meal or a typo, not a rest. 15 because it is the other standard rest
 // length, so 11-15 reads as a real break somebody rounded up.
@@ -28,6 +28,28 @@ const FULL_REST_MIN = 10;
 // genuine break is exactly 10 - so this threshold is a guard for future periods
 // rather than a judgement about this one. Move the number here and nowhere else.
 const REST_LONG_MAX_MIN = 15;
+// A California meal period is thirty unpaid minutes. Not a rest rule, so it is
+// not part of the bands above - it is here only to recognise an entry that is
+// the LENGTH of a meal sitting in the rest report.
+const MEAL_LENGTH_MIN = 30;
+
+// A rest row that is exactly a meal long and has no single mis-picked field to
+// explain it. Two on 07/16-07/31, both Hernadez, on days with no meal rostered
+// at all: 07/25 2p-2:30p and 07/26 12:30p-1p.
+//
+// Mánu 2026-08-09: draw these as a meal, striped, and say in the footnote what
+// the adjustment does - but do NOT decide it. Counting them as meals taken would
+// REMOVE the meal premium those days currently owe, and that is a person's call,
+// not a threshold's.
+//
+// Read off the stored row rather than off `kind`, so it works on the batch
+// already in the database instead of needing a re-upload to take effect.
+export function isMealLengthRest(row) {
+  return !!row
+    && !row.counted
+    && !row.repair
+    && Number(row.minutes) === MEAL_LENGTH_MIN;
+}
 
 // DO NOT DECIDE ANYTHING FROM `Total Rest Time`. It is rounded to two decimals,
 // so a real 7:00->7:10 break prints as either 0.17 (10.2 min) or 0.16 (9.6 min)

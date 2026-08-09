@@ -196,6 +196,13 @@ export function applyOverrides(days, overrides) {
     if (patch.mealViolation != null) next.mealViolation = patch.mealViolation;
     if (patch.mealLate != null) next.mealLate = patch.mealLate;
     if (patch.restViolation != null) next.restViolation = patch.restViolation;
+    // A REST TIME THE EMPLOYEE GAVE US THEMSELVES. The repair we propose is a
+    // mechanical guess - the first single-field fix that lands between ten and
+    // fifteen minutes - so it can name the wrong ten minutes on a day a break
+    // genuinely happened. Riding on the day row means the renderer sees it
+    // through `data.days` on the on-demand path as well, without the batch's
+    // shared restsByDate having to carry something that belongs to one person.
+    if (patch.statedRest) next.statedRest = patch.statedRest;
     next.corrected = true;
     out.push(next);
   }

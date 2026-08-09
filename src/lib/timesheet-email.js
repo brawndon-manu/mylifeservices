@@ -170,6 +170,87 @@ function renderCheck(c) {
           first, then the time you start again.</p>
       </div>`;
 
+    // Mánu 2026-08-09: raise these in the email as an issue, with options to
+    // correct it. Deliberately NOT decided anywhere - saying "meal" would take a
+    // premium hour off the person, and the only one who knows is them.
+    case "restIsMealLength":
+      return `<div style="${CARD("#fff8ec", "#f0dcb8")}">
+        <p style="${H}color:#7a4a12;">A 30-minute break nobody can classify</p>
+        <p style="${P}color:#5c4a24;">The break record has the entries below filed as
+          <strong>rest breaks</strong>, but each one runs 30 minutes. A rest break is 10 minutes and a
+          meal period is 30, so we cannot tell which these were. <strong>Nothing has been added or
+          removed for them</strong> and your break premiums are unchanged.</p>
+        ${table(["Day", "What the record has", "Length"], c.rows.map((r) =>
+          [esc(r.date), `${esc(r.from)} - ${esc(r.to)}`, `${esc(r.minutes)} min`]))}
+        <p style="${P}color:#5c4a24;margin-bottom:8px;"><strong>Which was it?</strong></p>
+        <ul style="margin:0 0 10px;padding-left:20px;font-size:14px;color:#5c4a24;line-height:1.6;">
+          <li><strong>It was my unpaid meal period.</strong> Reply and say so. That day would stop owing
+            a meal premium, so your premium hours would go <strong>down by one hour for each day</strong>.
+            Say it only if it is true - we would rather pay it than assume it.</li>
+          <li><strong>It was a 10-minute rest break and the times are wrong.</strong> Reply with the time
+            you actually stopped and we will correct the record. Your premiums do not change.</li>
+          <li><strong>Neither - I did not take a break then.</strong> Reply and say so. Nothing changes,
+            the premium stays, and we will get the entry fixed at source.</li>
+        </ul>
+        <p style="margin:0;font-size:13px;color:#7a4a12;">Clock meal periods and rest breaks separately,
+          so the record shows which is which.</p>
+      </div>`;
+
+    // ten minutes recorded against no shift at all. Paid, no premium, and worth
+    // saying because the habit is what needs fixing, not the pay.
+    case "restOutsideShift":
+      return `<div style="${CARD("#f2f7fd", "#c8dcf3")}">
+        <p style="${H}color:#1c4d80;">Rest breaks recorded outside your shift</p>
+        <p style="${P}color:#2c4a66;">On the days below your rest break is recorded
+          <strong>before your first shift started or after your last one ended</strong>. A rest period
+          is paid time, so <strong>those minutes have been added to your day and paid</strong>, and no
+          break premium is owed for them.</p>
+        ${table(["Day", "Recorded at"], c.rows.map((r) =>
+          [esc(r.date), `${esc(r.from)} - ${esc(r.to)}`]))}
+        <p style="${P}color:#2c4a66;margin-bottom:8px;"><strong>Please check these.</strong></p>
+        <ul style="margin:0 0 10px;padding-left:20px;font-size:14px;color:#2c4a66;line-height:1.6;">
+          <li><strong>That is when I took it.</strong> Nothing to do. Going forward take your rest break
+            <em>during</em> the shift - a break before you start is not the break the law gives you.</li>
+          <li><strong>I took it during my shift and the time is wrong.</strong> Reply with when you
+            actually stopped and we will correct it.</li>
+        </ul>
+        <p style="margin:0;font-size:13px;color:#2c4a66;">Either way you are not out of pocket. This is
+          about the record matching the day.</p>
+      </div>`;
+
+    // the report asserts a break and holds neither end of it
+    case "restNoTimes":
+      return `<div style="${CARD("#f2f7fd", "#c8dcf3")}">
+        <p style="${H}color:#1c4d80;">A rest break with no times on it</p>
+        <p style="${P}color:#2c4a66;">The break record says you took a rest break on the shift below
+          but has neither the time you stopped nor the time you started again. Your timesheet shows it
+          as <strong>???</strong> on that shift. <strong>Nothing has been charged and no premium is
+          affected</strong> - it looks like the times were simply never entered.</p>
+        ${table(["Day", "Shift"], c.rows.map((r) => [esc(r.date), esc(r.shift)]))}
+        <p style="${P}color:#2c4a66;margin-bottom:8px;"><strong>Did you take it?</strong></p>
+        <ul style="margin:0 0 10px;padding-left:20px;font-size:14px;color:#2c4a66;line-height:1.6;">
+          <li><strong>Yes.</strong> Reply with roughly when, and we will put the times in so the record
+            is complete.</li>
+          <li><strong>No, I did not get one.</strong> Reply and say so - then a break premium IS owed
+            for that day and we will add it.</li>
+        </ul>
+        <p style="margin:0;font-size:13px;color:#2c4a66;">Clock out and back in for your rest breaks so
+          the times record themselves.</p>
+      </div>`;
+
+    // a meal rostered in the middle of the night
+    case "mealAmPm":
+      return `<div style="${CARD("#f2f7fd", "#c8dcf3")}">
+        <p style="${H}color:#1c4d80;">A meal break rostered in the middle of the night</p>
+        <p style="${P}color:#2c4a66;">Your schedule has a meal break at a time nobody works. We have
+          read it as twelve hours out - an AM picked where PM was meant - and your timesheet shows it at
+          the corrected time. <strong>Your hours and premiums are unchanged.</strong></p>
+        ${table(["Day", "Schedule says", "We read it as"], c.rows.map((r) =>
+          [esc(r.date), esc(r.was), `<strong>${esc(r.now)}</strong>`]))}
+        <p style="margin:0;font-size:13px;color:#2c4a66;">If that is not when your meal break was, reply
+          and tell us - we would rather fix the schedule than guess at it twice.</p>
+      </div>`;
+
     case "mealUnknown":
       return `<div style="${CARD("#f4f6f9", "#d8dee6")}">
         <p style="${H}color:#33414f;">Days we could not check</p>

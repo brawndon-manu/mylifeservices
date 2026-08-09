@@ -179,8 +179,13 @@ test("a waived day says so on the sheet, and does not look like a compliant day"
 
   const { bytes } = await renderCorrected(sheet, { printedBy: "Test", generatedOn: "8/8/2026" });
   const words = await pdfWords(bytes);
-  assert.ok(words.includes("meal waived, waiver on file"), "the sheet says why");
-  assert.ok(!words.includes("no meal period"), "and does not also claim a violation");
+  // "waiver on file" was dropped 2026-08-09: it was the justification, not the
+  // outcome, and it made the note the longest thing in a 70pt column.
+  assert.ok(words.includes("meal waived"), "the sheet says the meal was waived");
+  assert.ok(!words.includes("waiver on file"), "without restating the paperwork");
+  assert.ok(!words.includes("no meal period"), "and does not claim a violation");
+  // a waived day is NOT a clean day, and must not print the clean-day word
+  assert.ok(!words.includes("compliant"), "waived is not the same as compliant");
 });
 
 // ------------------------------------------- where the gap falls on the roster
@@ -744,4 +749,32 @@ test("it never lowers overtime, and never touches a complete week", () => {
   ]);
   assert.equal(full.days[0].weekPartial, false);
   assert.equal(full.days[0].otHours, 0, "we can prove this one, so we do not take it on trust");
+});
+
+// ------------------------------------------- what the Comments column says
+
+test("a clean day says compliant, and a day with a finding does not", async () => {
+  // Mánu 2026-08-09: a blank Comments cell reads as "nobody looked", and the
+  // whole point of the column is that somebody did.
+  const clean = analyzeTimesheet({
+    employee: "Test, Person",
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    // 4 hours: under five so no meal owed, under 3.5 bands so no rest owed
+    days: [{ date: "07/20/26", punches: [at(8), at(11)], printed: null, restRecorded: 0 }],
+  });
+  assert.equal(clean.premiums.totalHours, 0, "nothing owed, or this proves nothing");
+  const cleanWords = await pdfWords(
+    (await renderCorrected(clean, { printedBy: "T", generatedOn: "8/9/2026" })).bytes);
+  assert.ok(cleanWords.includes("compliant"));
+
+  // THE OPPOSITE: a day that owes something must not also claim to be clean.
+  const owing = analyzeTimesheet({
+    employee: "Test, Person",
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    days: [{ date: "07/20/26", punches: [at(8), at(16, 30)], printed: null, restRecorded: 0 }],
+  });
+  assert.ok(owing.premiums.totalHours > 0);
+  const owingWords = await pdfWords(
+    (await renderCorrected(owing, { printedBy: "T", generatedOn: "8/9/2026" })).bytes);
+  assert.ok(!owingWords.includes("compliant"), "a day with a finding is not compliant");
 });

@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyRest, isSaneRest, REST_KIND_NOTE } from "../rests.js";
+import { classifyRest, isSaneRest, REST_KIND_NOTE, isMealLengthRest } from "../rests.js";
+import { recordedBreaksFor, insertRecordedBreaks } from "../recorded-breaks.js";
 
 const row = (out, back, printed) => ({
   "Rest Period Time Out": out,
@@ -198,4 +199,84 @@ test("a rest filed against the wrong shift is spotted, and it is not a missed br
   assert.equal(restOffOwnShift(row("8:00 AM", "5:00 PM", "11:45 AM", "11:35 AM")), false);
   // nothing to compare against
   assert.equal(restOffOwnShift(row("", "", "10:00 AM", "10:10 AM")), false);
+});
+
+// ---------------------------------------------------------------------------
+// a 30-minute entry filed as a rest break: drawn as a meal, decided by nobody
+// ---------------------------------------------------------------------------
+
+test("a thirty minute rest row is recognised, a ten minute one is not", () => {
+  // Hernadez 07/25 and 07/26, on days with no meal rostered at all.
+  const meal = { counted: false, repair: null, minutes: 30 };
+  assert.equal(isMealLengthRest(meal), true);
+
+  // each of the three conditions has to matter on its own, or this is just
+  // "anything that did not count"
+  assert.equal(isMealLengthRest({ ...meal, minutes: 10 }), false, "ten is a rest");
+  assert.equal(isMealLengthRest({ ...meal, minutes: 60 }), false, "sixty is neither");
+  assert.equal(isMealLengthRest({ ...meal, counted: true }), false, "a counted row stands");
+  assert.equal(
+    isMealLengthRest({ ...meal, repair: { field: "in", minutes: 10 } }),
+    false,
+    "a row with a single mis-picked field is a repair question, not a meal",
+  );
+  assert.equal(isMealLengthRest(null), false);
+});
+
+test("it is drawn as a striped meal, and charged as neither", () => {
+  // inside a worked segment, exactly like Hernadez 07/25 (punched 12:30p-4:30p)
+  const punches = [{ min: 570, raw: "9:30a" }, { min: 720, raw: "12p" },
+    { min: 750, raw: "12:30p" }, { min: 990, raw: "4:30p" }];
+  const rests = [{
+    name: "Hernadez, Joseph", date: "07/25/26", out: "2:00 PM", in: "2:30 PM",
+    minutes: 30, counted: false, reversed: false, kind: "too-long", repair: null,
+  }];
+  const rec = recordedBreaksFor("Hernadez, Joseph", rests, null);
+  const day = rec.get("07/25/26");
+  assert.equal(day.rests.length, 0, "it is no longer offered as a rest");
+  assert.equal(day.meals.length, 1, "it is offered as a meal");
+  assert.equal(day.meals[0].adjusted, true);
+
+  const { punches: shown } = insertRecordedBreaks(punches, day.order);
+  assert.deepEqual(shown.map((x) => x.raw),
+    ["9:30a", "12p", "12:30p", "2p", "2:30p", "4:30p"]);
+  assert.deepEqual(shown.map((x) => x.mark),
+    [null, null, null, "meal-adjusted", "meal-adjusted", null]);
+
+  // and the same row at TEN minutes is still a rest, or the check above passes
+  // for a renderer that turned every uncounted row into a meal
+  const ten = recordedBreaksFor("Hernadez, Joseph",
+    [{ ...rests[0], minutes: 10, counted: true, kind: null }], null);
+  assert.equal(ten.get("07/25/26").meals.length, 0);
+  assert.equal(ten.get("07/25/26").rests.length, 1);
+});
+
+test("the email asks about it and never answers it", async () => {
+  const { buildEmployeeChecks, checkSummaryLine } =
+    await import("../employee-checks.js");
+  const data = { days: [{ date: "07/25/26", paidHours: 7 }] };
+  const restRows = [{
+    name: "Hernadez, Joseph", date: "07/25/26", out: "2:00 PM", in: "2:30 PM",
+    minutes: 30, counted: false, reversed: false, kind: "too-long", repair: null,
+  }];
+
+  const checks = buildEmployeeChecks(data, { restRows, sourceName: "Hernadez, Joseph" });
+  const hit = checks.find((k) => k.kind === "restIsMealLength");
+  assert.ok(hit, "the check is raised");
+  assert.equal(hit.tone, "ask", "asked, not asserted");
+  assert.deepEqual(hit.rows, [{ date: "07/25/26", from: "2p", to: "2:30p", minutes: 30 }]);
+  assert.match(checkSummaryLine(hit), /tell us whether it was your meal/);
+
+  // it comes from the BATCH rows, so a caller that forgets them gets nothing
+  // rather than a wrong answer
+  assert.equal(
+    buildEmployeeChecks(data).some((k) => k.kind === "restIsMealLength"),
+    false,
+  );
+  // and it belongs to that person only
+  assert.equal(
+    buildEmployeeChecks(data, { restRows, sourceName: "Someone, Else" })
+      .some((k) => k.kind === "restIsMealLength"),
+    false,
+  );
 });

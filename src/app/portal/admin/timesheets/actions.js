@@ -24,7 +24,7 @@ import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
-import { parseRestReport, restKey, allRestRows, clockMin } from "@/lib/timesheet/rests";
+import { parseRestReport, restKey, allRestRows, clockMin, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -920,7 +920,9 @@ export async function sendTimesheets(batchId, formData) {
 
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
-    select: { id: true, periodFrom: true, periodTo: true },
+    // restsByDate carries the 30-minute entries filed as rest breaks, which the
+    // email has to ask about. They live on the batch, not the sheet.
+    select: { id: true, periodFrom: true, periodTo: true, restsByDate: true },
   });
   if (!batch) redirect("/portal/admin/timesheets");
 
@@ -971,7 +973,10 @@ export async function sendTimesheets(batchId, formData) {
       // what their own sheet needs them to look at. a premium total with no
       // basis is not something anyone can check, and these are the only people
       // who know whether a break actually happened.
-      checks: buildEmployeeChecks(ts.data),
+      checks: buildEmployeeChecks(ts.data, {
+        restRows: batch.restsByDate || [],
+        sourceName: ts.sourceName,
+      }),
     });
     if (res.ok) {
       sent++;
@@ -1445,6 +1450,16 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   return { ok: true };
 }
 
+// minutes past midnight -> the short form every time on the sheet uses, so an
+// employee-stated break prints like "2:10p" beside QSP's own punches rather than
+// in a second format that reads as a different kind of thing.
+function shortClock(min) {
+  const h24 = Math.floor(min / 60);
+  const mm = min % 60;
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
+}
+
 // Employee-side: answer a rest-repair question on your own sheet.
 //
 // The Rest Periods Report holds entries that cannot be read - out after in, an
@@ -1460,7 +1475,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
 //     "why is this figure not what the export said" has one answer in one place.
 //   - it is reversible until they sign, and the sheet is rebuilt each time so
 //     the document always matches the answer printed above it.
-export async function answerRestRepair({ token, date, out, accept }) {
+export async function answerRestRepair({ token, date, out, accept, at }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
@@ -1496,6 +1511,31 @@ export async function answerRestRepair({ token, date, out, accept }) {
 
   const yes = accept === true;
 
+  // "YES, BUT NOT THEN." Our repair is a mechanical guess - proposeRepair takes
+  // the FIRST single-field fix landing between ten and fifteen minutes - so it
+  // can name the wrong ten minutes on a day a break really did happen. Without
+  // this the person had to either accept a time they know is wrong or decline
+  // and keep a premium they may not be owed.
+  //
+  // `at` is a 24-hour "HH:MM" from an <input type="time">, so there is no
+  // am/pm to misread, which is the very mistake this whole question exists for.
+  // Ten minutes is fixed: that is the entitlement, and letting somebody type
+  // twenty-five would just make a different unreadable row.
+  let stated = null;
+  if (yes && at != null && at !== "") {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(at).trim());
+    if (!m) return { ok: false, error: "badtime" };
+    const start = Number(m[1]) * 60 + Number(m[2]);
+    if (!(start >= 0 && start <= 1439)) return { ok: false, error: "badtime" };
+    // it must still land on the same day, so a 11:55pm start cannot roll over
+    if (start + FULL_REST_MIN > 1439) return { ok: false, error: "badtime" };
+    stated = {
+      from: shortClock(start),
+      to: shortClock(start + FULL_REST_MIN),
+      minutes: FULL_REST_MIN,
+    };
+  }
+
   // Rebuild against the overrides this answer implies. Computed from scratch
   // rather than toggled, so changing the answer back really does put the
   // premium back rather than leaving a half-applied override behind.
@@ -1503,6 +1543,10 @@ export async function answerRestRepair({ token, date, out, accept }) {
   const day = { ...(overrides[date] || {}) };
   if (yes) day.restViolation = false;
   else delete day.restViolation;
+  // cleared on every answer, so going from a stated time back to plain "yes" or
+  // to "no" really does drop it rather than leaving it drawn on the sheet
+  if (stated) day.statedRest = stated;
+  else delete day.statedRest;
   if (Object.keys(day).length) overrides[date] = day;
   else delete overrides[date];
 
@@ -1523,7 +1567,12 @@ export async function answerRestRepair({ token, date, out, accept }) {
     resolvedById: ts.userId || null,
     note: `Asked about the ${row.date} rest entry (out ${row.out || "blank"}, in ${row.in || "blank"}, ${row.derivation}).`,
     resolutionNote: yes
-      ? `Employee confirmed the break was taken; read as ${row.repair.from} to ${row.repair.to}. Rest premium removed for this day.`
+      ? stated
+        // the time is THEIRS, not ours, and the audit row has to be able to say
+        // which - it is the only record of where a time on a signed wage
+        // document came from when it matches neither source export
+        ? `Employee confirmed the break was taken but gave their own time: ${stated.from} to ${stated.to}, not the ${row.repair.from} to ${row.repair.to} we proposed. Rest premium removed for this day.`
+        : `Employee confirmed the break was taken; read as ${row.repair.from} to ${row.repair.to}. Rest premium removed for this day.`
       : "Employee said the break was not taken. Premium stands and the QSP entry still needs correcting.",
   };
   if (existing) {

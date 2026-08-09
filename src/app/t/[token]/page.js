@@ -102,7 +102,9 @@ export default async function SignTimesheetPage({ params }) {
         {who} · {period}
       </p>
 
-      <div className="mt-5 grid gap-2 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2">
+      {/* ONE COLUMN. Two columns put Overtime beside Hours worked, where it read
+          as a second half of the same figure rather than its own line. */}
+      <div className="mt-5 grid gap-2 rounded-xl border border-border bg-surface p-4">
         <Figure label="Hours worked" value={ts.paidHours} strong />
         {ts.otHours > 0 && <Figure label="Overtime" value={ts.otHours} />}
         {ts.doubleHours > 0 && <Figure label="Double time" value={ts.doubleHours} />}
