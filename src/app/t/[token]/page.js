@@ -60,10 +60,16 @@ export default async function SignTimesheetPage({ params }) {
   );
   const unanswered = restQuestions.filter((r) => !restAnswers.has(r.date));
 
-  // the row exists but its PDF was never stored (storage was down at upload).
-  // say so plainly - a bare 404 here looks like the link is fake and sends
-  // people chasing payroll for nothing.
-  if (!ts.pdfUrl) {
+  // THIS USED TO ASK FOR `ts.pdfUrl` AND NOTHING HAS ONE SINCE THE SHEET WENT
+  // ON DEMAND. `rebuildSheetFor` nulls it deliberately - "the stored copy is
+  // gone: the sheet is rendered on demand now" - and the viewer below reads
+  // /t/[token]/pdf, which renders from `data` and never looks at pdfUrl. So the
+  // gate was turning every single employee link into "isn't ready yet",
+  // including the two that went to real people.
+  //
+  // What it was actually guarding is a sheet that cannot be rendered at all,
+  // which is what the pdf route itself 404s on: no day rows.
+  if (!(ts.data?.days || []).length) {
     return (
       <section className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
