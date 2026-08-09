@@ -367,6 +367,43 @@ export async function uploadBatch(formData) {
     select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
   });
 
+  // ---- does this schedule actually cover the people on the timesheet? ----
+  //
+  // On 2026-08-09 a schedule export holding ONE employee was uploaded against a
+  // 59-person timesheet. Nothing errored. 454 days came back mealUnknown,
+  // because a day with no schedule is unanswerable rather than a violation, and
+  // the batch landed at 426 premium hours instead of 680. It looked like a
+  // finished batch and was wrong by 254 hours, which is far worse than a
+  // refusal - the same export at 59 people is a 479KB file and the single
+  // person one is 184KB, so nothing about the file names or the screen said so.
+  //
+  // Refused rather than warned, on the same principle as an export with no
+  // timesheet rows: a number nobody can evidence should not reach a screen.
+  //
+  // THIS HAS TO RUN BEFORE THE BATCH ROW IS CREATED. It first shipped below it,
+  // so a refused upload left an empty batch on the list and the error said
+  // "Nothing was created" while a row sat there saying otherwise. The lookup
+  // needs only the timesheet, the parsed schedule and the staff list, all of
+  // which exist by here, so there was never a reason for it to be lower.
+  const scheduleNamesForCover = schedules ? [...schedules.values()].map((p) => p.employee) : [];
+  const scheduleCoverIndex = indexByAccount(scheduleNamesForCover, staff);
+  const scheduleCovers = withHours.filter((raw) => {
+    const m = matchEmployee(raw.employee, staff);
+    return !!lookupAcross(raw.employee, m, {
+      get: (k) => schedules.get(k) || null,
+      keyOf: scheduleKey,
+      byUser: scheduleCoverIndex,
+    }).value;
+  }).length;
+  if (scheduleCovers * 2 < withHours.length) {
+    redirect(
+      `/portal/admin/timesheets/new?error=schedule&why=${encodeURIComponent(
+        `the schedule covers ${scheduleCovers} of the ${withHours.length} people on the timesheet` +
+          ` - meal periods cannot be evidenced for the rest, so the premium total would be far too low`,
+      )}`,
+    );
+  }
+
   const batch = await prisma.timesheetBatch.create({
     data: {
       periodFrom: period.from || "",
@@ -407,35 +444,6 @@ export async function uploadBatch(formData) {
   // hours with no second opinion, and a 5.9-hour punch question nothing could
   // settle - all of it over a spelling.
   const scheduleByUser = indexByAccount(scheduleNames, staff);
-
-  // ---- does this schedule actually cover the people on the timesheet? ----
-  //
-  // On 2026-08-09 a schedule export holding ONE employee was uploaded against a
-  // 59-person timesheet. Nothing errored. 454 days came back mealUnknown,
-  // because a day with no schedule is unanswerable rather than a violation, and
-  // the batch landed at 426 premium hours instead of 680. It looked like a
-  // finished batch and was wrong by 254 hours, which is far worse than a
-  // refusal - the same export at 59 people is a 479KB file and the single
-  // person one is 184KB, so nothing about the file names or the screen said so.
-  //
-  // Refused rather than warned, on the same principle as an export with no
-  // timesheet rows: a number nobody can evidence should not reach a screen.
-  const scheduleCovers = withHours.filter((raw) => {
-    const m = matchEmployee(raw.employee, staff);
-    return !!lookupAcross(raw.employee, m, {
-      get: (k) => schedules.get(k) || null,
-      keyOf: scheduleKey,
-      byUser: scheduleByUser,
-    }).value;
-  }).length;
-  if (scheduleCovers * 2 < withHours.length) {
-    redirect(
-      `/portal/admin/timesheets/new?error=schedule&why=${encodeURIComponent(
-        `the schedule covers ${scheduleCovers} of the ${withHours.length} people on the timesheet` +
-          ` - meal periods cannot be evidenced for the rest, so the premium total would be far too low`,
-      )}`,
-    );
-  }
 
   // people we could not place in one of the other reports, with the best guess
   // and how sure it is. shown, never acted on.
