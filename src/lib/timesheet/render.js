@@ -780,15 +780,18 @@ export async function renderCorrected(sheet, opts = {}) {
   // the eighth hour is paid at a different rate and the employee should not
   // have to work that out.
   if (added > 0) {
-    y -= 9;
     const ot = addedOt > 0
       ? ` ${f2(addedOt)} of the added time falls past eight hours in a day and is paid as overtime.`
       : "";
-    y = wrap(
-      page,
-      `ADDED: ${f2(added)} hrs on top of the export. A rest break was recorded while you were clocked out on the days marked "added" - a rest period is paid time, so those minutes have been paid rather than deducted from your breaks.${ot}`,
-      L, y, R - L, { font: italic, size: 6.5, color: INK, leading: 8 },
-    );
+    const body = `ADDED: ${f2(added)} hrs on top of the export. A rest break was recorded while you were clocked out on the days marked "added" - a rest period is paid time, so those minutes have been paid rather than deducted from your breaks.${ot}`;
+    // ASK FOR THE ROOM FIRST. Without this the paragraph runs into the footer on
+    // the longest sheets and the overflow guard throws, which is exactly what
+    // happened to Uribe on the 2026-08-09 re-upload: 13 days and 4 footnotes
+    // left 31.1pt where the footer starts at 40, and his was the only one of the
+    // 59 that could not render. Three lines at 8pt leading plus the gap above.
+    ensure(9 + 3 * 8);
+    y -= 9;
+    y = wrap(page, body, L, y, R - L, { font: italic, size: 6.5, color: INK, leading: 8 });
   }
 
   // ---------- footer ----------

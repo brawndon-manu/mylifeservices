@@ -159,3 +159,69 @@ test("eleven ten-minute additions on eight-hour days are all overtime, and say s
   assert.equal(t.totals.addedOtHours, 1.83, "all of it is past eight hours");
   assert.equal(t.totals.addedHours, t.totals.addedOtHours);
 });
+
+// A SMOKE TEST, AND HONEST ABOUT BEING ONE.
+//
+// The ADDED paragraph was appended without asking for vertical room first, so
+// on the longest sheet in the batch it ran into the footer and the layout guard
+// threw. Brandon Uribe's was the only one of 59 that could not be built on the
+// 2026-08-09 re-upload: 13 days and 4 footnotes left 31.1pt where the footer
+// starts at 40.
+//
+// THIS TEST DOES NOT REPRODUCE THAT. Three attempts tried - one fixed length,
+// then footnotes added, then a sweep of every length from 6 to 16 days - and
+// all three passed with the fix REMOVED. The overflow window is narrower than
+// synthetic days reach: it needs his real mix of continuation rows and a
+// premium table whose date list wraps. Building a fixture faithful enough would
+// mean committing a real person's hours to a PUBLIC repo, which is not worth
+// it.
+//
+// So this covers the ordinary case only, and the REAL check for this class is
+// `docs/week9/scratch/render-all.mjs`, which renders all 59 sheets of the live
+// batch and is what both found the bug and proved the fix. Run it after any
+// change to render.js.
+test("sheets of every ordinary length render with the added paragraph on them", async () => {
+  const build = (n) => {
+    const days = [];
+    for (let i = 0; i < n; i++) {
+      const date = `07/${String(16 + i).padStart(2, "0")}/26`;
+      days.push({
+        date,
+        punches: [at(8), at(12), at(12, 30), at(17)],
+        printed: null,
+        restRecorded: 1,
+        restsAlreadyPaid: true,
+        restTimes: [{ out: 10 * 60, in: 10 * 60 + 10 }, { out: 17 * 60 + 30, in: 17 * 60 + 40 }],
+      });
+    }
+    return analyzeTimesheet({
+      employee: "Uribe, Brandon",
+      payPeriod: { from: "07/16/26", to: "07/31/26" },
+      days,
+    });
+  };
+
+  const failures = [];
+  for (let n = 6; n <= 16; n++) {
+    const sheet = build(n);
+    assert.ok(sheet.totals.addedHours > 0, `n=${n} must carry the paragraph`);
+    // the footnotes are half the reason his sheet was long: each rest that
+    // cannot be placed against a punch adds a line under the table.
+    const restsByDate = sheet.days.map((d) => ({
+      name: "Uribe, Brandon", date: d.date, counted: true, out: "5:30 PM", in: "5:40 PM",
+    }));
+    const scheduleByDate = Object.fromEntries(
+      sheet.days.map((d) => [d.date, { shifts: [{ start: "8:00 AM", end: "5:00 PM", client: "A client" }] }]),
+    );
+    try {
+      const { bytes } = await renderCorrected(
+        { ...sheet, restsByDate, scheduleByDate },
+        { printedBy: "Uribe, Brandon", generatedOn: "8/9/2026" },
+      );
+      if (!(bytes?.length > 0)) failures.push(`${n} days: empty`);
+    } catch (e) {
+      failures.push(`${n} days: ${e.message}`);
+    }
+  }
+  assert.deepEqual(failures, [], "every length must produce a sheet");
+});

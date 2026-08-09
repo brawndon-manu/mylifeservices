@@ -498,13 +498,13 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       {missingPdf > 0 && (
         <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
           <strong>{missingPdf}</strong>{" "}
-          {missingPdf === 1 ? "timesheet has" : "timesheets have"} no stored PDF
-          in this batch - file storage was failing when it was uploaded. Those
-          can&apos;t be sent (the link would 404). Refresh the Blob token with{" "}
-          <code className="rounded bg-rose-100 px-1 py-0.5 text-xs dark:bg-rose-900/50">
-            vercel env pull .env.local
-          </code>{" "}
-          and upload the export again.
+          {missingPdf === 1 ? "timesheet" : "timesheets"} could not be BUILT when
+          this batch was uploaded, so {missingPdf === 1 ? "it" : "they"} can&apos;t
+          be sent. Sheets are generated on demand rather than stored, so this is
+          a problem producing the document, not saving it - most often the layout
+          running out of room on somebody&apos;s longest sheet. The reason was
+          logged at upload time. Once the render is fixed the sheet builds
+          normally; re-uploading the export also clears it.
         </div>
       )}
 
