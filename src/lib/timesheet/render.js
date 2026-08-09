@@ -421,6 +421,13 @@ export async function renderCorrected(sheet, opts = {}) {
         // hours are questioned is exactly the day whose explanation has to be
         // readable, so the marker stays in the cell and the sentence moves.
         if (d.compressedDay && d.onSiteMin != null) notes.push("overlap *");
+        // HOURS THIS DAY GAINED, said out loud. A rest recorded while the person
+        // was off the clock is paid time nobody paid for, so the minutes are
+        // added rather than a premium charged (Mánu 2026-08-09). An employee
+        // reading a daily total a fraction above what they punched is owed the
+        // reason on the same line, otherwise the only place it exists is the
+        // engine. Reads "+0.17 added" against the Daily Total beside it.
+        if (d.addedHours > 0) notes.push(`+${f2(d.addedHours)} added`);
         if (d.seventhDay) notes.push("7th day");
         if (notes.length) {
           // the column is narrow and these notes vary in length, so shrink to
@@ -757,12 +764,32 @@ export async function renderCorrected(sheet, opts = {}) {
   // that did not happen is worse than saying nothing. Say what is actually true
   // of THIS sheet instead.
   const moved = Math.abs(sheet.totals.paidHours - sheet.totals.rawHours) >= 0.005;
+  const added = sheet.totals.addedHours || 0;
+  const addedOt = sheet.totals.addedOtHours || 0;
   text(
     moved
       ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Corrected to ${f2(sheet.totals.paidHours)} hrs - rest breaks the export left out are paid time and have been added back.`
       : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export. This sheet corrects break premiums only.`,
     L, y, { size: 6.5, color: MUTED, f: italic },
   );
+  // WHAT WAS ADDED, AND WHY, on its own line rather than folded into the one
+  // above. The line above reconciles this sheet to the export; this one says we
+  // went ABOVE the export and names the reason, which is the first time this
+  // engine has ever done that. The days are marked "+0.17 added" individually;
+  // this is the total, and it separates the overtime because ten minutes past
+  // the eighth hour is paid at a different rate and the employee should not
+  // have to work that out.
+  if (added > 0) {
+    y -= 9;
+    const ot = addedOt > 0
+      ? ` ${f2(addedOt)} of the added time falls past eight hours in a day and is paid as overtime.`
+      : "";
+    y = wrap(
+      page,
+      `ADDED: ${f2(added)} hrs on top of the export. A rest break was recorded while you were clocked out on the days marked "added" - a rest period is paid time, so those minutes have been paid rather than deducted from your breaks.${ot}`,
+      L, y, R - L, { font: italic, size: 6.5, color: INK, leading: 8 },
+    );
+  }
 
   // ---------- footer ----------
   // hard guard: content must never run under the footer. paging should prevent

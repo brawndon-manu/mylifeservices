@@ -162,6 +162,9 @@ const isDate = (s) => /^\d{2}\/\d{2}\/\d{2}$/.test(s.trim());
 // the exact figure (7.6667). we mirror that so the "as exported" column
 // reconciles against their document line for line.
 const ceil2 = (n) => Math.ceil(n * 100 - 1e-9) / 100;
+// same shape as the r2 in every other file here, kept local so parse.js stays
+// dependency-free in both directions.
+const round2 = (n) => Math.round((n || 0) * 100) / 100;
 
 // pull the visual rows (grouped by y) out of one page
 async function pageRows(page) {
@@ -428,8 +431,25 @@ export function analyzeDay(day) {
   // where paying under the export is right rather than indefensible.
   const computedPaidHours = paidMin / 60;
   const floorAt = day.repaired ? null : printedDailyForFloor;
-  const paidHours =
-    floorAt !== null && computedPaidHours < floorAt ? floorAt : computedPaidHours;
+  const withFloor = (mins) => {
+    const h = mins / 60;
+    return floorAt !== null && h < floorAt ? floorAt : h;
+  };
+  const paidHours = withFloor(paidMin);
+  // HOW MUCH THIS DAY ACTUALLY GAINED, which is NOT simply the off-clock rest
+  // minutes. QSP's printed daily is a floor, so if the day was already being
+  // floored up, some or all of those minutes are already inside the figure and
+  // adding them changes nothing. The sheet has to say "added" only about hours
+  // somebody is genuinely getting that they were not before, so this is the
+  // difference the floor actually let through.
+  //
+  // LEFT UNROUNDED, like `paidHours` beside it. Rounding here and summing the
+  // rounded days gave April 1.87 added against 1.83 of added overtime, which
+  // reads as "0.04 of it was straight time" on a document she signs - and it
+  // was not, all eleven of her days are exactly 8.00 before the addition. Ten
+  // minutes is 0.1667 and eleven of them is 1.8333; it is only 1.87 if you
+  // round each one to 0.17 first. Display rounds, storage rounds, this does not.
+  const addedHours = paidHours - withFloor(paidMin - restsOffClockMin);
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
 
@@ -848,6 +868,9 @@ export function analyzeDay(day) {
     // was off the clock, and the minutes added to their day because of it.
     // Supersedes the three discounts - see the block near the top.
     restsOffClock,
+    // hours this day GAINED from those minutes, after QSP's printed floor has
+    // had its say. Zero when the day was being floored up anyway.
+    addedHours,
     restsOffClockMin,
     // what the day's longest lunch-shaped gap actually is, per the roster.
     // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
@@ -1088,8 +1111,31 @@ export function punchCoverage(sheets) {
   };
 }
 
+// HOW MUCH OF THE OVERTIME EXISTS ONLY BECAUSE WE ADDED MINUTES?
+//
+// Mánu 2026-08-09: the sheet has to say that hours were ADDED, and separately
+// that some of the overtime came from adding them. Ten minutes tacked onto a
+// day already at eight hours is ten minutes of overtime, not straight time, and
+// an employee reading "OT 0.17" is owed the sentence explaining where it came
+// from.
+//
+// It cannot be read off a day in isolation: weekly >40 means a day can tip into
+// overtime because of minutes added on a DIFFERENT day. So the whole sheet is
+// run twice - once as it stands, once with the added minutes taken back out -
+// and the difference is the overtime the addition caused.
+function overtimeWithout(days, payPeriod) {
+  const stripped = days.map((d) => ({
+    ...d,
+    paidHours: round2(d.paidHours - (d.addedHours || 0)),
+  }));
+  return applyOvertime(stripped, payPeriod).reduce((n, d) => n + d.otHours, 0);
+}
+
 export function analyzeTimesheet(parsed) {
-  const days = applyOvertime(parsed.days.map(analyzeDay), parsed.payPeriod);
+  const analyzed = parsed.days.map(analyzeDay);
+  const addedHours = round2(analyzed.reduce((n, d) => n + (d.addedHours || 0), 0));
+  const otWithout = addedHours > 0 ? overtimeWithout(analyzed, parsed.payPeriod) : null;
+  const days = applyOvertime(analyzed, parsed.payPeriod);
   const mealDays = days.filter((d) => d.mealViolation).map((d) => d.date);
   const restDays = days.filter((d) => d.restViolation).map((d) => d.date);
   return {
@@ -1101,6 +1147,13 @@ export function analyzeTimesheet(parsed) {
       regularHours: days.reduce((n, d) => n + d.regularHours, 0),
       otHours: days.reduce((n, d) => n + d.otHours, 0),
       doubleHours: days.reduce((n, d) => n + d.doubleHours, 0),
+      // hours added on top of the export because a rest was recorded off the
+      // clock, and how much of the overtime exists only because of them.
+      addedHours,
+      addedOtHours:
+        otWithout === null
+          ? 0
+          : Math.max(0, round2(days.reduce((n, d) => n + d.otHours, 0) - otWithout)),
     },
     // weeks cut off by the pay-period boundary: their >40 overtime is
     // provisional until the neighbouring period's hours are known.

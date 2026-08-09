@@ -29,6 +29,11 @@ export const REQUIRED_DAY_FIELDS = [
   "mealGapKind", "mealGapMin",
   "mealsRostered", "secondMealRequired", "secondMealViolation", "secondMealUnknown",
   "restTackedOn", "restsInsideMeal", "restsOutsideShift", "restsUnpaid",
+  // the 2026-08-09 rulings. `addedHours` is what the SHEET prints as "added",
+  // so a batch stored without it renders a daily total above the export with no
+  // explanation beside it - which is the one thing that must never happen on a
+  // document somebody signs.
+  "restsOffClock", "restsOffClockMin", "addedHours", "mealInsideBooking",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -73,6 +78,10 @@ export function storedDay(d) {
     // gap. both reported only, neither moves a figure.
     restsOutsideShift: d.restsOutsideShift ?? null,
     restsUnpaid: d.restsUnpaid ?? null,
+    restsOffClock: d.restsOffClock ?? null,
+    restsOffClockMin: d.restsOffClockMin ?? 0,
+    addedHours: r2(d.addedHours),
+    mealInsideBooking: !!d.mealInsideBooking,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,
     mealStartedAfterMin: d.mealStartedAfterMin ?? null,
