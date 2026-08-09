@@ -12,7 +12,30 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
 
-function FileRow({ id, label, selected, onPick, tone, accept = "application/pdf,.pdf" }) {
+// Server Actions cap the whole request, and the four exports go up as one. A
+// 24MB corrected-timesheet PDF sitting in the same Downloads folder as the QSP
+// export is very easy to pick by mistake, and until now that produced a 500
+// with a stack trace and no clue which file was too big.
+//
+// Vercel caps a serverless request body at 4.5MB whatever this is set to, so
+// the number here is the real ceiling for an upload done in production. It is
+// higher locally, which is why uploads have been run from localhost.
+const BODY_LIMIT_MB = 5;
+const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+// Module scope on purpose. Date.now and Math.random are impure, and once the
+// submit handler started reading render-scope values the React compiler began
+// treating it as render code and rejecting them. The id is only a lookup suffix
+// for the progress poll, so where it is minted does not matter - but it has to
+// be somewhere the compiler is not entitled to re-run.
+function mintUploadId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    `u${Date.now()}${Math.random().toString(36).slice(2)}`
+  );
+}
+
+function FileRow({ id, label, selected, size, onPick, tone, accept = "application/pdf,.pdf" }) {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-muted">
@@ -36,7 +59,7 @@ function FileRow({ id, label, selected, onPick, tone, accept = "application/pdf,
           selected ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"
         }`}
       >
-        {selected ? `Selected: ${selected}` : "Nothing selected yet."}
+        {selected ? `Selected: ${selected}${size ? ` (${mb(size)})` : ""}` : "Nothing selected yet."}
       </p>
     </div>
   );
@@ -53,6 +76,10 @@ export default function UploadForm({ action, aside }) {
   const [schedName, setSchedName] = useState("");
   const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
+  // bytes per picker, so the form can add them up before it sends anything
+  const [sizes, setSizes] = useState({});
+  const totalBytes = Object.values(sizes).reduce((n, b) => n + b, 0);
+  const overLimit = totalBytes > BODY_LIMIT_MB * 1024 * 1024;
   const [busy, setBusy] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const formRef = useRef(null);
@@ -96,11 +123,24 @@ export default function UploadForm({ action, aside }) {
       }
     }
 
+    // stop it here rather than let the server reject the body. the message
+    // names the biggest file, because the mistake is nearly always one wrong
+    // pick rather than four large exports.
+    if (overLimit) {
+      e.preventDefault();
+      const biggest = Object.entries(sizes).sort((a, b) => b[1] - a[1])[0];
+      const label = { file: "timesheet", schedule: "schedule", payroll: "payroll", rests: "rest breaks" };
+      window.alert(
+        `Those four come to ${mb(totalBytes)} and the limit is ${BODY_LIMIT_MB} MB.\n\n` +
+        `The largest is the ${label[biggest[0]] || biggest[0]} file at ${mb(biggest[1])}. ` +
+        `Check it is the QSP export and not a corrected timesheet - those run to 20 MB and live in the same folder.`,
+      );
+      return;
+    }
+
     // if any of this fails the upload still runs - it just runs without a
     // counter, which is exactly how it behaved before
-    const id =
-      globalThis.crypto?.randomUUID?.() ||
-      `u${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const id = mintUploadId();
     if (idFieldRef.current) idFieldRef.current.value = id;
     setUploadId(id);
     setBusy(true);
@@ -132,14 +172,22 @@ export default function UploadForm({ action, aside }) {
         label="QSP Simple Timesheet export (PDF)"
         tone="primary"
         selected={name}
-        onPick={(e) => setName(e.target.files?.[0]?.name || "")}
+        size={sizes.file || 0}
+        onPick={(e) => {
+          setName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, file: e.target.files?.[0]?.size || 0 }));
+        }}
       />
 
       <FileRow
         id="schedule"
         label="Employee Schedules export (PDF)"
         selected={schedName}
-        onPick={(e) => setSchedName(e.target.files?.[0]?.name || "")}
+        size={sizes.schedule || 0}
+        onPick={(e) => {
+          setSchedName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, schedule: e.target.files?.[0]?.size || 0 }));
+        }}
       />
 
       <FileRow
@@ -147,7 +195,11 @@ export default function UploadForm({ action, aside }) {
         label="Simple Payroll Processing Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
         selected={payrollName}
-        onPick={(e) => setPayrollName(e.target.files?.[0]?.name || "")}
+        size={sizes.payroll || 0}
+        onPick={(e) => {
+          setPayrollName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, payroll: e.target.files?.[0]?.size || 0 }));
+        }}
       />
 
       <FileRow
@@ -155,9 +207,21 @@ export default function UploadForm({ action, aside }) {
         label="Rest Periods Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
         selected={restsName}
-        onPick={(e) => setRestsName(e.target.files?.[0]?.name || "")}
+        size={sizes.rests || 0}
+        onPick={(e) => {
+          setRestsName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, rests: e.target.files?.[0]?.size || 0 }));
+        }}
       />
         </div>
+        {totalBytes > 0 && (
+          <p className={`mt-5 text-xs ${overLimit ? "font-semibold text-rose-600 dark:text-rose-400" : "text-muted"}`}>
+            {mb(totalBytes)} selected
+            {overLimit
+              ? ` - over the ${BODY_LIMIT_MB} MB limit, so this will be refused before it uploads.`
+              : ` of a ${BODY_LIMIT_MB} MB limit.`}
+          </p>
+        )}
         <button
           type="submit"
           className="mt-7 w-full rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"

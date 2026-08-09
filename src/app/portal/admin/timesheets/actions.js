@@ -472,9 +472,16 @@ export async function uploadBatch(formData) {
           // stepping away mid-booking. without this it only ever sees a hole.
           scheduleBlocks: sd ? scheduleBlocks(sd.entries) : null,
           // the day's counted rest windows in minutes, so the engine can see a
-          // rest taken hard against the rostered lunch. a count could never
-          // show that.
-          restTimes: restWindows.get(`${restKey(t.employee)}|${d.date}`) || null,
+          // rest taken hard against the rostered lunch, or one recorded outside
+          // the shift. a count could never show either.
+          //
+          // Keyed on the REST REPORT's own spelling of the name, via the person
+          // `lookupAcross` already matched - `restWindows` is built from that
+          // document, and QSP does not always spell somebody the same way in
+          // two exports. Falling back to the timesheet's name only matters when
+          // the report has no row for them, in which case there is nothing to
+          // find under either name.
+          restTimes: restWindows.get(`${restKey(rest?.name || raw.employee)}|${d.date}`) || null,
         };
       }),
     };
