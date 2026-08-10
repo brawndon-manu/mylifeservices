@@ -1979,9 +1979,17 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
     // button. both are signed per recipient so the link needs no login.
     const ackUrl =
       post.requireAck && !isMeeting ? `${base}/a/ack/${signAckToken(post.id, r.id)}` : null;
+    // THE PUBLIC COPY OF THE POST, not /portal/... - the proxy gates the portal
+    // on being signed in, so this button used to dead-end at a login screen for
+    // anyone reading their mail on a device they had never signed in on.
     const ctaHtml = isMeeting
       ? buildRsvpButtons(post, `${base}/a/rsvp/${signRsvpToken(post.id, r.id, "pick")}`)
-      : postButton(`${base}/portal/announcements/${post.id}`, "Go to the announcement");
+      : postButton(
+          ackUrl
+            ? `${base}/a/post/${signAckToken(post.id, r.id)}`
+            : `${base}/portal/announcements/${post.id}`,
+          "Go to the announcement",
+        );
     const html = buildAnnouncementEmailHtml({
       logoUrl,
       title,

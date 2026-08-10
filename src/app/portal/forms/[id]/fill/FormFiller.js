@@ -89,6 +89,8 @@ export default function FormFiller({
   // dialog - the reader just signs their own document and submits it back.
   signMode = false,
   signLabel = null,
+  // one line above the document, for a caller that knows what it is
+  signIntro = null,
 }) {
   const [status, setStatus] = useState("loading");
   const [pages, setPages] = useState([]); // { url, w, h }
@@ -425,8 +427,12 @@ export default function FormFiller({
       <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
         <LockIcon className="mt-0.5 h-4 w-4 flex-none" />
         <p>
+          {/* sign mode was built for timesheets and said so, which read as
+              somebody else's document once an HR form started using it. The
+              caller names the thing; the fallback stays generic. */}
           {signMode
-            ? "Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
+            ? signIntro ||
+              "Read it through, sign at the bottom, then submit. Your signed copy is kept on file."
             : `Nothing is saved here. Fill it in, then ${reviewTeam ? "submit it to the review team or download the PDF." : "download the official PDF to your device."}`}
         </p>
       </div>

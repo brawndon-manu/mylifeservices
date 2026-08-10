@@ -46,10 +46,16 @@ export default auth(async (req) => {
   // /g/<slug> is a guidebook page shared by its random link. break policy is
   // exactly the sort of thing somebody needs to read on a phone during a
   // maintenance window, and the people it is shared with may have no account.
+  // /a/<...>/<token> are the personal signed links from an announcement email:
+  // acknowledge, RSVP, read the post, sign the form it asks for. Same argument
+  // as /t/ - an acknowledgment deadline does not pause for a maintenance window,
+  // and the person may be reading their mail on a phone they have never signed
+  // in on.
   const isShareLink =
     pathname.startsWith("/f/") ||
     pathname.startsWith("/r/") ||
     pathname.startsWith("/t/") ||
+    pathname.startsWith("/a/") ||
     pathname.startsWith("/g/");
 
   // 1. MAINTENANCE GATE - public pages only. the portal, the login page, the

@@ -47,11 +47,26 @@ export function tagCls(tag) {
 
 // build the acknowledged / not-yet roster for one announcement. `p.acks` must be
 // the ack rows (userId, viaEmail, createdAt).
+// OPENED AND SIGNED ARE TWO DIFFERENT STATES. Mánu 2026-08-10: the
+// acknowledgment tells you somebody at least opened it; on a post carrying a
+// form, the signature is what finishes it. A roster that showed only the tick
+// read "done" for people who had read the thing and signed nothing.
+//
+// `p.submissions` is optional - a post with no form has none, and everything
+// below then behaves exactly as it always did.
 export function buildAckRoster(p, audienceUsers) {
   const ackByUser = new Map((p.acks || []).map((a) => [a.userId, a]));
+  const signedByUser = new Map(
+    (p.submissions || []).filter((s) => s.userId).map((s) => [s.userId, s]),
+  );
+  const needsSignature = !!p.formId;
   const people = audienceUsers.map((u) => {
     const a = ackByUser.get(u.id);
+    const sub = signedByUser.get(u.id);
     return {
+      signed: !!sub,
+      signedId: sub?.id || null,
+      signedLabel: sub ? fmtAck(sub.createdAt) : null,
       id: u.id,
       displayName: preferredName(u),
       title: u.title || "",
@@ -65,12 +80,18 @@ export function buildAckRoster(p, audienceUsers) {
   });
   const acked = people.filter((x) => x.acked);
   const notYet = people.filter((x) => !x.acked);
+  const signed = people.filter((x) => x.signed);
+  // read it and stopped there - the state the tick used to hide
+  const openedNotSigned = people.filter((x) => x.acked && !x.signed);
   const viaEmail = acked.filter((x) => x.viaEmail).length;
   const expected = people.length;
   const pct = expected > 0 ? Math.round((acked.length / expected) * 100) : 0;
 
   return {
     people,
+    needsSignature,
+    signed: signed.length,
+    openedNotSigned: openedNotSigned.length,
     acked: acked.length,
     notYet: notYet.length,
     viaEmail,

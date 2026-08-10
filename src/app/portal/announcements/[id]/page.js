@@ -310,7 +310,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   let roster = null;
   if (post.requireAck && !meeting && canSeeRoster) {
     // the roster denominator = this announcement's audience (shared helper).
-    const [expectedUsers, acks] = await Promise.all([
+    // the signatures too, so the roster can tell "read it" from "signed it"
+    const [expectedUsers, acks, submissions] = await Promise.all([
       prisma.user.findMany({
         where: ackAudienceWhere(post),
         select: {
@@ -329,6 +330,15 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         where: { announcementId: id },
         select: { userId: true, viaEmail: true, createdAt: true, recordedById: true },
       }),
+      // the signatures. Empty on a post with no form, which is what makes the
+      // roster behave exactly as it always did for those.
+      post.formId
+        ? prisma.formSubmission.findMany({
+            where: { announcementId: id },
+            select: { id: true, userId: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([]),
     ]);
     const ackMap = new Map(acks.map((a) => [a.userId, a]));
     // resolve the names of admins who logged an ack on someone's behalf.
@@ -340,6 +350,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         })
       : [];
     const recorderName = new Map(recorders.map((u) => [u.id, preferredName(u)]));
+    // OPENED IS NOT SIGNED. On a post carrying a form the tick only says they
+    // read it; the roster has to show what is still outstanding rather than
+    // counting a read as done.
+    const signedMap = new Map(submissions.filter((x) => x.userId).map((x) => [x.userId, x]));
     const acked = expectedUsers
       .filter((u) => ackMap.has(u.id))
       .map((u) => ({
@@ -348,11 +362,20 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         recordedBy: ackMap.get(u.id).recordedById
           ? recorderName.get(ackMap.get(u.id).recordedById) || "an admin"
           : null,
+        signedAt: signedMap.get(u.id)?.createdAt || null,
       }))
       .sort((a, b) => b.ack.createdAt - a.ack.createdAt);
-    const notYet = expectedUsers.filter((u) => !ackMap.has(u.id));
+    const notYet = expectedUsers
+      .filter((u) => !ackMap.has(u.id))
+      .map((u) => ({ ...u, signedAt: signedMap.get(u.id)?.createdAt || null }));
     const total = expectedUsers.length;
     const pct = total ? Math.round((acked.length / total) * 100) : 0;
+    // what the post is really waiting on when a signature is wanted
+    const needsSignature = !!post.formId;
+    const signedCount = expectedUsers.filter((u) => signedMap.has(u.id)).length;
+    const openedNotSigned = expectedUsers.filter(
+      (u) => ackMap.has(u.id) && !signedMap.has(u.id),
+    ).length;
     // manage-invitees data (same as the meeting roster).
     const expectedIds = new Set(expectedUsers.map((u) => u.id));
     const allActive = await prisma.user.findMany({
@@ -373,7 +396,11 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     const addedInvitees = expectedUsers
       .filter((u) => (post.ackUserIds || []).includes(u.id))
       .map((u) => ({ id: u.id, displayName: preferredName(u) }));
-    roster = { acked, notYet, total, pct, inviteeCandidates, addedInvitees };
+    roster = {
+      acked, notYet, total, pct, inviteeCandidates, addedInvitees,
+      needsSignature, signedCount, openedNotSigned,
+      signedPct: total ? Math.round((signedCount / total) * 100) : 0,
+    };
   }
 
   // ---- Company Meeting ----
@@ -725,7 +752,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               </p>
               {post.requireAck && !meeting && (
                 <p className="mt-2 text-sm font-medium text-rose-600 dark:text-rose-400">
-                  Acknowledgment required
+                  {post.formId
+                    ? "Acknowledgment and signature required"
+                    : "Acknowledgment required"}
                 </p>
               )}
               {post.postedBy && isElevated(user.role) && (
@@ -1325,6 +1354,25 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     of {roster.total} acknowledged · {roster.pct}%
                   </span>
                 </div>
+                {/* OPENED IS NOT SIGNED. On a post carrying a form the tick only
+                    says they read it, and a roster showing that alone reads as
+                    done for people who have signed nothing. */}
+                {roster.needsSignature && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-semibold text-foreground">
+                      {roster.signedCount}
+                    </span>
+                    <span className="text-sm text-muted">
+                      of {roster.total} signed · {roster.signedPct}%
+                      {roster.openedNotSigned > 0 && (
+                        <span className="ml-2 text-amber-700 dark:text-amber-400">
+                          {roster.openedNotSigned} read it but{" "}
+                          {roster.openedNotSigned === 1 ? "has" : "have"} not signed
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <OverrideToggle />
                   {!isDraft && (
@@ -1379,6 +1427,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           {ackDateFmt(u.ack.createdAt)}
                           {u.recordedBy && (
                             <span className="italic text-faint">· by {u.recordedBy}</span>
+                          )}
+                          {roster.needsSignature && (
+                            <span
+                              className={
+                                u.signedAt
+                                  ? "font-medium text-emerald-700 dark:text-emerald-400"
+                                  : "font-medium text-amber-700 dark:text-amber-400"
+                              }
+                            >
+                              · {u.signedAt ? `signed ${ackDateFmt(u.signedAt)}` : "not signed"}
+                            </span>
                           )}
                         </span>
                       </li>

@@ -60,24 +60,25 @@ export default async function AckPage({ params }) {
       user &&
       !user.deactivatedAt
     ) {
-      // A TICK IS NOT A SIGNATURE. Mánu 2026-08-10, after this button completed
-      // an attestation while the form sat unsigned: if a form is attached, this
-      // link takes them to it instead of recording anything.
+      // OPENED IS NOT SIGNED, AND BOTH ARE WORTH KNOWING. Mánu 2026-08-10:
+      // "the reason why I included the acknowledgment for sign forms is so we
+      // can tell if the staff at least opened it then just needs to sign."
       //
-      // Signed in, they go to the in-portal filler. Not signed in, they get the
-      // public copy of the same form, where they add their name and work email -
-      // that submission carries the announcement now, so signing there is what
-      // records the acknowledgment.
+      // So on a post with a form this records that they opened it - which is
+      // exactly what an acknowledgment is - and then hands them straight to the
+      // document. The roster shows the two states separately, so "read it, has
+      // not signed" is visible rather than passing for done.
       if (announcement.formId && announcement.form?.fillable) {
-        const me = await getCurrentUser();
-        const q = `?announcementId=${announcement.id}`;
-        redirect(
-          me
-            ? `/portal/forms/${announcement.form.id}/fill${q}`
-            : announcement.form.shareSlug
-              ? `/f/${announcement.form.shareSlug}${q}`
-              : `/portal/forms/${announcement.form.id}/fill${q}`,
-        );
+        try {
+          await recordAnnouncementAck({
+            announcementId: announcement.id,
+            userId: user.id,
+            viaEmail: true,
+          });
+        } catch (e) {
+          console.error("opened-ack failed:", e);
+        }
+        redirect(`/a/sign/${token}`);
       }
 
       try {

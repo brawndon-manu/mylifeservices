@@ -319,7 +319,7 @@ export function buildAnnouncementEmailHtml({
   const subtitle = `
     <div style="margin-top:12px;color:#334155;font-size:14px;">${esc(authorName)}${role}</div>
     <div style="margin-top:4px;color:#64748b;font-size:13px;">${esc(dateStr)}</div>
-    ${requireAck ? `<div style="margin-top:8px;color:#dc2626;font-size:13px;font-weight:600;">Acknowledgment required</div>` : ""}`;
+    ${requireAck ? `<div style="margin-top:8px;color:#dc2626;font-size:13px;font-weight:600;">${ackNeedsSignature ? "Acknowledgment and signature required" : "Acknowledgment required"}</div>` : ""}`;
   const ackButton =
     requireAck && ackUrl
       ? ackNeedsSignature

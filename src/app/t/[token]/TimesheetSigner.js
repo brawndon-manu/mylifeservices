@@ -25,6 +25,7 @@ export default function TimesheetSigner({ token, fileUrl, title, submitAction })
         formId={token}
         submitAction={submit}
         reviewTeam={{ recipientLabel: "payroll", recipients: [], ccNames: [] }}
+        signIntro="Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
         signMode
       />
     </div>
