@@ -8,6 +8,7 @@ import BackLink from "@/components/BackLink";
 import ApproveSigner from "./ApproveSigner";
 import { approveTimesheet } from "../../../actions";
 import { companyDate } from "@/lib/company-time";
+import { premiumStanding } from "@/lib/timesheet/premium-split";
 
 export const metadata = { title: "Approve timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -23,9 +24,20 @@ export default async function ApproveTimesheetPage({ params }) {
       batch: { select: { id: true, periodFrom: true, periodTo: true } },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       approvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      corrections: {
+        where: { kind: { startsWith: "q_" }, status: { not: "open" } },
+        select: { kind: true, date: true, status: true },
+      },
     },
   });
   if (!ts) notFound();
+
+  // THE FIGURE ON THE DOCUMENT THEY SIGNED, not the stored column. This screen
+  // is where somebody approves the pay, and it was quoting `premiumHours` - the
+  // ignoring-assumptions total - above a signed sheet that charges a different
+  // number. Same drift as the email, one screen further along and with a
+  // signature already on it.
+  const standing = premiumStanding(ts.data?.days || [], ts.corrections);
 
   const who = ts.user ? preferredName(ts.user) : ts.sourceName;
   const period = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
@@ -45,7 +57,12 @@ export default async function ApproveTimesheetPage({ params }) {
         <Fig label="Hours worked" value={ts.paidHours} strong />
         {ts.otHours > 0 && <Fig label="Overtime" value={ts.otHours} />}
         {ts.doubleHours > 0 && <Fig label="Double time" value={ts.doubleHours} />}
-        {ts.premiumHours > 0 && <Fig label="Break premium owed" value={ts.premiumHours} tone="prem" />}
+        {standing.charged > 0 && (
+          <Fig label="Break penalty pay to pay out" value={standing.charged} tone="prem" />
+        )}
+        {standing.assumed > 0 && (
+          <Fig label="Assumed taken, not charged" value={standing.assumed} />
+        )}
       </div>
 
       {!ts.signedAt ? (

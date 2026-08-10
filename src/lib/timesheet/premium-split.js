@@ -218,6 +218,32 @@ export function premiumsFromDays(days) {
   };
 }
 
+// WHERE ONE PERSON'S PREMIUM ACTUALLY STANDS, from their stored days and their
+// answers. Every employee-facing surface reads this and nothing else: the
+// email, the page they sign on, and the PDF embedded in it.
+//
+// Mánu 2026-08-09 late: those three were telling three different stories. The
+// email said "break premium hours owed 17 hrs" and "you are owed an extra hour
+// of pay for each one"; the page underneath it said "we have assumed you took
+// them and have not added any penalty pay"; the PDF charged all 17. Both of the
+// first two sat above a signature. One function now, so they cannot disagree.
+export function premiumStanding(days, corrections) {
+  const answers = answersByDate(corrections);
+  const confirmed = confirmedFromAnswers(corrections);
+  const split = splitPremium(days, { confirmed });
+  return {
+    // what is actually being charged: penalties a document records on its own,
+    // plus every one the employee has told us they are owed
+    charged: split.projected,
+    // assumed taken, charged nothing, still open to them
+    assumed: split.assumed,
+    // what it would be if every assumption turned out to be wrong
+    ignoring: split.ignoringAssumptions,
+    confirmed,
+    answers,
+  };
+}
+
 // the same two figures across a whole batch
 export function splitPremiumForSheets(sheets, { confirmedBySheet } = {}) {
   let projected = 0;

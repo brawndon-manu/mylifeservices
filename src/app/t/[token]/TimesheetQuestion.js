@@ -23,8 +23,17 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
 // what each kind asks, and what each answer means. Kept as data so the wording
 // can be read in one place rather than chased through five branches of JSX.
-function copyFor(q, premiumHours) {
+// `standing` is what premiumStanding() returns for this person: `charged` is
+// the penalty pay actually on the sheet, `assumed` is what we assumed away and
+// have not charged. THE BASELINE IS `charged`, and that is the correction of
+// 2026-08-09 late - every one of these used to quote the stored
+// ignoring-assumptions column and describe "yes" as taking an hour OFF a sheet
+// that was never carrying it.
+function copyFor(q, standing) {
+  const base = standing?.charged || 0;
   const prem = (n) => `${r2(n).toFixed(2)} hours`;
+  // saying NO is what puts an hour on now. Saying yes leaves the sheet alone.
+  const owedIfNo = (n = 1) => prem(base + n);
   switch (q.kind) {
     case "repair":
       return {
@@ -43,16 +52,15 @@ function copyFor(q, premiumHours) {
           `What we think: out ${q.proposed.from} · in ${q.proposed.to} = ${q.row.minutes} min`,
         ],
         yes: { label: "Yes, I took that break", why: "You stopped for about ten minutes around then." },
-        no: { label: "No, I did not take it", why: "You worked through. Nothing changes and the premium stays." },
+        no: { label: "No, I did not take it", why: "You worked through, so an hour of penalty pay goes on." },
         timeLabel: `What time did your break start on ${q.date}?`,
-        yesEffect: <>Your break premium goes from <b>{prem(premiumHours)}</b> to <b>{prem(premiumHours - 1)}</b>.</>,
-        noEffect: <>Your break premium stays at <b>{prem(premiumHours)}</b>. Nothing about your pay changes.</>,
+        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
+        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo()}</b>.</>,
         footnote: (
           <>
-            <b>Answering &ldquo;yes&rdquo; lowers your break premium by one hour</b>, from{" "}
-            {prem(premiumHours)} to {prem(premiumHours - 1)}, because a break you were given and
-            took is not owed a penalty. If you are not sure, say no. We would rather pay it than
-            assume it.
+            <b>Nothing is charged for this day right now.</b> Saying no is what adds an hour, taking
+            your penalty pay from {prem(base)} to {owedIfNo()}. Say no if you did not get the break -
+            nobody will be annoyed about it.
           </>
         ),
       };
@@ -73,13 +81,13 @@ function copyFor(q, premiumHours) {
         ],
         yes: { label: "Yes, that was my meal", why: "You took your thirty minutes and it was logged in the wrong place." },
         no: { label: "No, that was a rest break", why: "Nothing changes and the premium stays." },
-        yesEffect: <>Your break premium goes from <b>{prem(premiumHours)}</b> to <b>{prem(premiumHours - 1)}</b>.</>,
-        noEffect: <>Your break premium stays at <b>{prem(premiumHours)}</b>.</>,
+        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
+        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo()}</b>.</>,
         footnote: (
           <>
-            <b>Answering &ldquo;yes&rdquo; lowers your break premium by one hour</b>, because a meal
-            you took is not owed a penalty. If you are not sure, say no. We would rather pay it
-            than assume it.
+            <b>Nothing is charged for this day right now</b> - we assumed the thirty minutes was
+            your meal. Saying it was not is what adds an hour, taking your penalty pay from{" "}
+            {prem(base)} to {owedIfNo()}.
           </>
         ),
       };
@@ -103,12 +111,12 @@ function copyFor(q, premiumHours) {
         yes: { label: "Yes, I took it", why: "Somebody logged it without the times. No penalty is owed." },
         no: { label: "No, I did not take it", why: "You worked through. Nothing changes and the premium stays." },
         timeLabel: `What time did your break start on ${q.date}?`,
-        yesEffect: <>Your break premium goes from <b>{prem(premiumHours)}</b> to <b>{prem(premiumHours - 1)}</b>.</>,
-        noEffect: <>Your break premium stays at <b>{prem(premiumHours)}</b>.</>,
+        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
+        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo()}</b>.</>,
         footnote: (
           <>
-            <b>Answering &ldquo;yes&rdquo; lowers your break premium by one hour.</b> If you are not
-            sure, say no. We would rather pay it than assume it.
+            <b>Nothing is charged for this day right now.</b> Saying no is what adds an hour, taking
+            your penalty pay from {prem(base)} to {owedIfNo()}.
           </>
         ),
       };
@@ -169,19 +177,20 @@ function copyFor(q, premiumHours) {
           label: "No, I missed them",
           why: "You worked through. You are owed penalty pay and it goes on your sheet.",
         },
-        yesEffect: <>Nothing changes. No penalty pay is added, and your hours stay as they are.</>,
+        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
         noEffect: (
           <>
-            <b>{r2(q.movesOnDecline).toFixed(2)} hours</b> of penalty pay go onto your timesheet -
-            up to one hour for a missed meal and one for missed rest breaks on each day. Your sheet
-            will be rebuilt.
+            <b>{r2(q.movesOnDecline).toFixed(2)} hours</b> of penalty pay go onto your timesheet,
+            taking it from <b>{prem(base)}</b> to <b>{owedIfNo(q.movesOnDecline)}</b> - up to one
+            hour for a missed meal and one for missed rest breaks on each day. Your sheet will be
+            rebuilt.
           </>
         ),
         footnote: (
           <>
             <b>You are legally entitled to these breaks</b>, and to be paid a penalty if you did
-            not get them. If you missed them, say no. Nobody will be annoyed about it - we would
-            rather pay it than assume it.
+            not get them. Nothing is charged for them right now, so saying no is what puts the pay
+            on. Nobody will be annoyed about it.
           </>
         ),
       };
@@ -290,13 +299,13 @@ function Choice({ on, tone, label, why, onClick, busy }) {
 
 // one question inside the card: the choices, the optional typed time, and the
 // confirm panel that has to be got past before anything is written
-function OneQuestion({ token, q, answer, premiumHours, submitAction, showDate }) {
+function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [picking, setPicking] = useState(false);
   const [at, setAt] = useState("");
   const [proposed, setProposed] = useState(null);
-  const c = copyFor(q, premiumHours);
+  const c = copyFor(q, standing);
   if (!c) return null;
 
   const answered = answer === "accepted" || answer === "declined";
@@ -456,12 +465,12 @@ function OneQuestion({ token, q, answer, premiumHours, submitAction, showDate })
 }
 
 export default function TimesheetQuestion({
-  token, questions, answers, premiumHours, submitAction,
+  token, questions, answers, standing, submitAction,
 }) {
   const list = questions || [];
   if (!list.length) return null;
   const head = list[0];
-  const c = copyFor(head, premiumHours);
+  const c = copyFor(head, standing);
   if (!c) return null;
 
   const allAnswered = list.every((q) => answers?.[q.id]);
@@ -513,7 +522,7 @@ export default function TimesheetQuestion({
             token={token}
             q={q}
             answer={answers?.[q.id] || null}
-            premiumHours={premiumHours}
+            standing={standing}
             submitAction={submitAction}
             showDate={perDay}
           />

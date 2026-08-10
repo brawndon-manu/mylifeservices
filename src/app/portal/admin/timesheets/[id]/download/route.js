@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { renderSheet } from "@/lib/timesheet/render-sheet";
+import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 
@@ -40,7 +41,18 @@ export async function GET(req, { params }) {
             }
           : { OR: [{ signedPdfUrl: { not: null } }, { approvedPdfUrl: { not: null } }] },
         orderBy: { sourceName: "asc" },
-        select: { id: true, data: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true },
+        select: {
+          id: true, data: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true,
+          dueAt: true,
+          // the answers, because an unsigned sheet is rendered here on the
+          // SAME basis the employee signs on. Merging the ignoring-assumptions
+          // copy into a batch export would hand payroll a different figure from
+          // the one on the document that person actually attested to.
+          corrections: {
+            where: { kind: { startsWith: "q_" }, status: { not: "open" } },
+            select: { kind: true, date: true, status: true },
+          },
+        },
       },
     },
   });
@@ -65,7 +77,13 @@ export async function GET(req, { params }) {
         if (!res.ok) continue;
         bytes = await res.arrayBuffer();
       } else {
-        const rendered = await renderSheet({ ...ts, batch });
+        const standing = premiumStanding(ts.data?.days || [], ts.corrections);
+        const rendered = await renderSheet({ ...ts, batch }, {
+          basis: "corrected",
+          confirmed: standing.confirmed,
+          answers: standing.answers,
+          pastDue: !!ts.dueAt && ts.dueAt.getTime() < Date.now(),
+        });
         if (!rendered) continue;
         bytes = rendered.bytes;
       }

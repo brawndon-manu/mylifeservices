@@ -31,13 +31,24 @@ export function buildTimesheetEmailHtml({
        </div>`
     : "";
 
+  // TWO PREMIUM LINES, NOT ONE, and the difference is what this email used to
+  // get wrong. It said "Break premium hours owed: 17 hrs" and the page it linked
+  // to said we had assumed the breaks were taken and added no penalty pay. Both
+  // sat above a signature. What is being paid and what is still being assumed
+  // are different numbers and the email has to print both.
   const rows = summary
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 18px;border-collapse:collapse;font-size:14px;">
          ${summaryRow("Hours worked (corrected)", `${summary.paidHours} hrs`)}
          ${summary.otHours > 0 ? summaryRow("Overtime", `${summary.otHours} hrs`) : ""}
          ${summary.doubleHours > 0 ? summaryRow("Double time", `${summary.doubleHours} hrs`) : ""}
-         ${summary.premiumHours > 0 ? summaryRow("Break premium hours owed", `${summary.premiumHours} hrs`) : ""}
-       </table>`
+         ${summary.chargedPremium > 0 ? summaryRow("Break penalty pay included", `${summary.chargedPremium} hrs`) : ""}
+         ${summary.assumedPremium > 0 ? summaryRow("Breaks assumed taken, nothing charged", `${summary.assumedPremium} hrs - please confirm`) : ""}
+       </table>
+       ${summary.assumedPremium > 0
+         ? `<p style="margin:-8px 0 18px;font-size:13px;color:#6b7280;line-height:1.55;">Those
+              ${summary.assumedPremium} hours are <strong>not</strong> on this timesheet. We assumed you
+              took the breaks and charged nothing for them. If you missed any, say so and the pay goes on.</p>`
+         : ""}`
     : "";
 
   const note = message
@@ -110,16 +121,24 @@ function renderCheck(c) {
           Signing as it stands means signing for hours you were not paid for.</p>
       </div>`;
 
+    // ASSUMED TAKEN, NOT CHARGED. This card used to read "That is on us, not on
+    // you, and you are owed an extra hour of pay for each one" - the pre-08/09
+    // model, and the opposite of what the sheet and the page now say. Staff
+    // author their own schedules and signed an acknowledgment to put their
+    // breaks on them, so a missing entry is assumed rather than charged.
     case "mealMissing":
       return `<div style="${CARD("#fff8ec", "#f3d9a8")}">
-        <p style="${H}color:#7a4a12;">Meal periods</p>
+        <p style="${H}color:#7a4a12;">Meal periods with nothing on file</p>
         <p style="${P}color:#5c4a24;">In California you are owed an unpaid 30-minute meal period once
           you pass <strong>5 hours</strong> in a day, and it has to start before the end of your fifth
-          hour. On the days below you worked over 5 hours and <strong>no meal period was scheduled for
-          you</strong>. That is on us, not on you, and you are owed an extra hour of pay for each one.</p>
-        ${table(["Day", "Hours worked"], c.rows.map((r) => [esc(r.date), `${esc(r.hours)} hrs`]))}
-        <p style="margin:0;font-size:13px;color:#7a4a12;">Those hours are already included in this
-          timesheet. If you did take a lunch on any of these days, reply and tell us.</p>
+          hour. On the days below you worked over 5 hours and <strong>no meal period is recorded</strong>.
+          Because you set your own schedule and agreed to put your breaks on it, we have assumed you took
+          them and <strong>no penalty pay has been added</strong>.</p>
+        ${statusTable(["Day", "Hours worked"], c.rows,
+          (r) => [esc(r.date), `${esc(r.hours)} hrs`])}
+        <p style="margin:0;font-size:13px;color:#7a4a12;"><strong>If you did not get a lunch on any of
+          these days, say so on your timesheet page and an hour of penalty pay goes on for each one.</strong>
+          Nobody will be annoyed about it.</p>
       </div>`;
 
     case "mealLate":
@@ -127,7 +146,9 @@ function renderCheck(c) {
         <p style="${H}color:#7a4a12;">Meal periods that started late</p>
         <p style="${P}color:#5c4a24;">A meal period has to <strong>begin</strong> before the end of your
           fifth hour of work. Taking it later still counts as a missed meal period under California law,
-          even though you took it - so an extra hour is owed for each of these.</p>
+          even though you took it - so an extra hour is owed for each of these. <strong>Your schedule
+          records these, so the penalty pay is already on this timesheet</strong> and there is nothing
+          you need to confirm.</p>
         ${table(["Day", "Your meal started"], c.rows.map((r) =>
           [esc(r.date), `${esc(hhmm(r.startedAfter))} into your shift`]))}
         <p style="margin:0;font-size:13px;color:#7a4a12;"><strong>Going forward, start your lunch before
@@ -137,24 +158,25 @@ function renderCheck(c) {
 
     case "restGap":
       return `<div style="${CARD("#fff8ec", "#f3d9a8")}">
-        <p style="${H}color:#7a4a12;">Rest breaks</p>
+        <p style="${H}color:#7a4a12;">Rest breaks with nothing on file</p>
         <p style="${P}color:#5c4a24;">You get a paid <strong>10-minute rest break for every 4 hours</strong>
           you work, or major fraction of one. On the days below your schedule has a short gap, but no rest
-          break was recorded, so we have no record that you took one.</p>
-        ${table(["Day", "Worked", "Gap in your schedule", "Breaks recorded"], c.rows.map((r) =>
+          break is recorded. We have assumed you took it and <strong>no penalty pay has been
+          added</strong>.</p>
+        ${statusTable(["Day", "Worked", "Gap in your schedule", "Breaks recorded"], c.rows, (r) =>
           [esc(r.date), `${esc(r.hours)} hrs`, esc(r.gaps.join(", ")),
-           `<strong>${esc(r.taken)} of ${esc(r.owed)}</strong>`]))}
+           `<strong>${esc(r.taken)} of ${esc(r.owed)}</strong>`])}
         ${restAdvice()}
       </div>`;
 
     case "restNoGap":
       return `<div style="${CARD("#fff8ec", "#f3d9a8")}">
-        <p style="${H}color:#7a4a12;">Rest breaks</p>
+        <p style="${H}color:#7a4a12;">Rest breaks with nothing on file</p>
         <p style="${P}color:#5c4a24;">You get a paid <strong>10-minute rest break for every 4 hours</strong>
-          you work, or major fraction of one. No rest break was recorded on the days below, so an extra
-          hour of pay is owed for each.</p>
-        ${table(["Day", "Worked", "Breaks recorded"], c.rows.map((r) =>
-          [esc(r.date), `${esc(r.hours)} hrs`, `<strong>${esc(r.taken)} of ${esc(r.owed)}</strong>`]))}
+          you work, or major fraction of one. No rest break is recorded on the days below. We have assumed
+          you took it and <strong>no penalty pay has been added</strong>.</p>
+        ${statusTable(["Day", "Worked", "Breaks recorded"], c.rows, (r) =>
+          [esc(r.date), `${esc(r.hours)} hrs`, `<strong>${esc(r.taken)} of ${esc(r.owed)}</strong>`])}
         ${restAdvice()}
       </div>`;
 
@@ -266,19 +288,36 @@ function renderCheck(c) {
   }
 }
 
+// WHAT AN ANSWER DOES, and it is the reverse of what this used to say. The hour
+// is no longer sitting on the sheet waiting to be signed for - nothing has been
+// charged, and saying "no" is what puts it on.
 function restAdvice() {
   return `<p style="${P}color:#5c4a24;margin-bottom:8px;"><strong>Which was it?</strong></p>
     <ul style="margin:0 0 10px;padding-left:20px;font-size:14px;color:#5c4a24;line-height:1.6;">
-      <li><strong>You took the break but did not clock it.</strong> That is the one to fix. Clock out and
-        back in for every rest break from now on - if it is not recorded, it did not happen as far as
-        payroll and the state are concerned.</li>
-      <li><strong>You did not get to take it.</strong> Then the extra hour on this sheet is yours and you
-        should sign for it. Tell your supervisor so the schedule can be fixed - that is our problem to
-        solve, not yours.</li>
+      <li><strong>You took the break but did not clock it.</strong> Then this timesheet is right as it
+        stands. Clock out and back in for every rest break from now on - if it is not recorded, it did
+        not happen as far as payroll and the state are concerned.</li>
+      <li><strong>You did not get to take it.</strong> Then an hour of penalty pay is yours and it is not
+        on this sheet yet. <strong>Say so on your timesheet page and it goes on.</strong> Tell your
+        supervisor too, so the schedule can be fixed - that is our problem to solve, not yours.</li>
     </ul>
     <p style="margin:0;font-size:13px;color:#7a4a12;">Rest breaks are not optional and not something to
       work through. Repeatedly not recording them is a timekeeping issue and will be documented and
       raised with your supervisor. If you are regularly unable to take them, say so.</p>`;
+}
+
+// A DAY THEY HAVE ALREADY TOLD US ABOUT IS NOT AN ASSUMPTION ANY MORE. Sends
+// happen before anyone answers, so most of the time every row reads "assumed
+// taken" - but a resend after an answer must not tell somebody their penalty
+// pay is still hypothetical when it is already on the document.
+function statusTable(headers, rows, cells) {
+  if (!rows.some((r) => r.charged)) return table(headers, rows.map(cells));
+  return table([...headers, "Status"], rows.map((r) => [
+    ...cells(r),
+    r.charged
+      ? `<strong>penalty pay added</strong>`
+      : `assumed taken`,
+  ]));
 }
 
 export function renderChecksHtml(checks) {

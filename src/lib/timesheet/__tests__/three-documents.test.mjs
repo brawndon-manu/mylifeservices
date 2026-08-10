@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { renderSheet } from "../render-sheet.js";
+import { premiumStanding } from "../premium-split.js";
 
 async function pdfText(bytes) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -61,19 +62,26 @@ const day = (over = {}) => ({
 const ASSUMED = day({ mealViolation: true, restViolation: true, restTaken: 1 });
 const DOCUMENTED = day({ date: "07/21/26", mealViolation: true, mealLate: true });
 
-test("each copy says which one it is, and the default one still says nothing", async () => {
+test("each copy says which one it is, and only the signed one reads as a payslip", async () => {
+  // 2026-08-09 late: `corrected` became the document people are sent and sign,
+  // so it explains the model instead of warning anybody off it. The other two
+  // are admin readings and have to say so - `ignoring` above all, because it
+  // charges every assumption the company is NOT making.
   const ts = sheetFor([ASSUMED, DOCUMENTED]);
 
-  const plain = await pdfText((await renderSheet(ts)).bytes);
-  assert.ok(!/PROJECTED COPY|AS CORRECTED/.test(plain),
-    "the copy that is emailed and signed is unchanged");
+  const corrected = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
+  assert.match(corrected, /Breaks with nothing on file recording them are assumed taken/);
+  assert.ok(!/Not the copy sent for signature/.test(corrected),
+    "this IS the copy sent for signature");
 
   const projected = await pdfText((await renderSheet(ts, { basis: "projected" })).bytes);
   assert.match(projected, /PROJECTED COPY - the engine's proposal/);
   assert.match(projected, /Not the copy sent for signature/);
 
-  const corrected = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
-  assert.match(corrected, /AS CORRECTED - your answers applied/);
+  const ignoring = await pdfText((await renderSheet(ts)).bytes);
+  assert.match(ignoring, /IGNORING ASSUMPTIONS - reference copy, not a payslip/);
+  assert.match(ignoring, /Not the copy sent for signature/);
+  assert.match(ignoring, /3\.00 hrs/, "and it charges every one of them");
 });
 
 test("the projected copy charges the documented penalty and not the assumed one", async () => {
@@ -148,4 +156,56 @@ test("after the deadline the corrected copy stops asking and says what it assume
   const early = await pdfText((await renderSheet(ts, { basis: "corrected", pastDue: false })).bytes);
   assert.match(early, /meal \+ rest: to confirm/);
   assert.ok(!/assumed taken,/.test(early));
+});
+
+// ---------------------------------------------------------------------------
+// THE THREE SURFACES AGREEING. Mánu 2026-08-09 late, reading his own email:
+// it said "Break premium hours owed: 17 hrs" and "you are owed an extra hour of
+// pay for each one", the page under it said the breaks were assumed taken and
+// no penalty pay added, and the PDF charged all 17. Two of the three sat above
+// a signature. They read from one function now.
+
+test("what is charged and what is assumed are different numbers, and both are said", () => {
+  const days = [ASSUMED, DOCUMENTED];
+  const s = premiumStanding(days, []);
+  assert.equal(s.charged, 1, "the late lunch the schedule records");
+  assert.equal(s.assumed, 2, "the meal and the rest nobody wrote down");
+  assert.equal(s.ignoring, 3, "and the two together are the old headline figure");
+
+  // the email quoted `ignoring` and called it "owed". That is the bug: it is
+  // the one figure that is not what anybody is being paid.
+  assert.notEqual(s.charged, s.ignoring);
+});
+
+test("an answer moves an hour from assumed to charged, on every surface at once", async () => {
+  const days = [ASSUMED];
+  const answers = [
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "declined" },
+  ];
+
+  const before = premiumStanding(days, []);
+  assert.equal(before.charged, 0);
+  assert.equal(before.assumed, 2);
+
+  const after = premiumStanding(days, answers);
+  assert.equal(after.charged, 2, "she said she missed both");
+  assert.equal(after.assumed, 0, "and nothing is being assumed any more");
+  assert.equal(after.ignoring, 2, "the ceiling does not move");
+
+  // and the document she signs carries the same figure the page quotes
+  const pdf = await pdfText((await renderSheet(sheetFor(days), {
+    basis: "corrected", confirmed: after.confirmed, answers: after.answers,
+  })).bytes);
+  assert.match(pdf, /2\.00 hrs/);
+  assert.ok(!/to confirm/.test(pdf), "nothing left to ask about");
+});
+
+test("confirming charges nobody anything, which is the whole point of asking", () => {
+  const accepted = premiumStanding([ASSUMED], [
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" },
+  ]);
+  assert.equal(accepted.charged, 0);
+  // the override has not run here, so the day still carries its flags - the
+  // standing is what the SHEET will say once it has, and it says zero either way
+  assert.equal(accepted.assumed, 2);
 });

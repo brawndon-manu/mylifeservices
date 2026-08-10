@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { renderSheet } from "@/lib/timesheet/render-sheet";
+import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { buildZip, safeEntryName } from "@/lib/zip";
@@ -33,6 +34,14 @@ export async function GET(req, { params }) {
           signedPdfUrl: true,
           approvedPdfUrl: true,
           signedAt: true,
+          dueAt: true,
+          // rendered on the SAME basis the employee signs on, so a batch export
+          // cannot carry a different figure from the document that person
+          // actually attested to.
+          corrections: {
+            where: { kind: { startsWith: "q_" }, status: { not: "open" } },
+            select: { kind: true, date: true, status: true },
+          },
         },
       },
     },
@@ -63,7 +72,13 @@ export async function GET(req, { params }) {
         if (!res.ok) continue;
         data = Buffer.from(await res.arrayBuffer());
       } else {
-        const rendered = await renderSheet({ ...t, batch });
+        const standing = premiumStanding(t.data?.days || [], t.corrections);
+        const rendered = await renderSheet({ ...t, batch }, {
+          basis: "corrected",
+          confirmed: standing.confirmed,
+          answers: standing.answers,
+          pastDue: !!t.dueAt && t.dueAt.getTime() < Date.now(),
+        });
         if (!rendered) continue;
         data = Buffer.from(rendered.bytes);
       }

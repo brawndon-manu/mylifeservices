@@ -12,6 +12,7 @@ import {
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
 import { buildQuestions } from "@/lib/timesheet/questions";
+import { premiumStanding } from "@/lib/timesheet/premium-split";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
 // outside /portal so proxy.js doesn't bounce it to login - the signed token IS
@@ -48,6 +49,11 @@ export default async function SignTimesheetPage({ params }) {
   if (!ts) notFound();
 
   const openCorrections = ts.corrections.filter((c) => c.status === "open");
+
+  // WHERE THIS PERSON'S PREMIUM ACTUALLY STANDS. The same function the email
+  // and the PDF read, so the three cannot tell three different stories - which
+  // is exactly what they were doing before 2026-08-09 late.
+  const standing = premiumStanding(ts.data?.days || [], ts.corrections);
 
   // EVERY QUESTION THIS SHEET RAISES, from the one classifier the server action
   // re-derives from too. Mánu 2026-08-09: all five block signing, "since we
@@ -127,10 +133,28 @@ export default async function SignTimesheetPage({ params }) {
         <Figure label="Hours worked" value={ts.paidHours} strong />
         {ts.otHours > 0 && <Figure label="Overtime" value={ts.otHours} />}
         {ts.doubleHours > 0 && <Figure label="Double time" value={ts.doubleHours} />}
-        {ts.premiumHours > 0 && (
-          <Figure label="Break premium owed" value={ts.premiumHours} tone="prem" />
+        {/* WHAT IS BEING PAID, AND WHAT IS ONLY BEING ASSUMED. This was one
+            line reading "Break premium owed 17.00" - the stored
+            ignoring-assumptions column - directly above a card explaining that
+            we had assumed the breaks were taken and added no penalty pay. */}
+        {standing.charged > 0 && (
+          <Figure label="Break penalty pay included" value={standing.charged} tone="prem" />
+        )}
+        {standing.assumed > 0 && (
+          <Figure
+            label="Breaks assumed taken, nothing charged"
+            value={standing.assumed}
+            tone="muted"
+          />
         )}
       </div>
+      {standing.assumed > 0 && (
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Those {standing.assumed.toFixed(2)} hours are <b>not</b> on this timesheet. Nothing on
+          file records those breaks, and we assumed you took them rather than charging for them.
+          If you missed any, say so below and the pay goes on.
+        </p>
+      )}
 
       {ts.message && (
         <div className="mt-4 rounded-xl border border-border bg-surface-2 p-4 text-sm leading-relaxed text-foreground">
@@ -204,7 +228,7 @@ export default async function SignTimesheetPage({ params }) {
               token={token}
               questions={group}
               answers={answers}
-              premiumHours={ts.premiumHours}
+              standing={standing}
               submitAction={answerTimesheetQuestion}
             />
           ))}
@@ -267,7 +291,13 @@ function Figure({ label, value, strong, tone }) {
       <span className="text-sm text-muted">{label}</span>
       <span
         className={`text-sm font-semibold ${
-          tone === "prem" ? "text-rose-600 dark:text-rose-400" : "text-foreground"
+          tone === "prem"
+            ? "text-rose-600 dark:text-rose-400"
+            // noted, not charged - the same grey the sheet itself uses for a
+            // premium it assumed away rather than billed
+            : tone === "muted"
+              ? "text-muted"
+              : "text-foreground"
         } ${strong ? "text-base" : ""}`}
       >
         {(Math.round((value || 0) * 100) / 100).toFixed(2)} hrs

@@ -52,22 +52,31 @@ const NOTEINK = rgb(0.42, 0.32, 0.06);
 
 // WHICH DOCUMENT AM I HOLDING.
 //
-// One person can now be printed three ways and the three can differ by every
-// premium on the page - Aranda is 19.00 hours on one and 2.00 on another. Page
-// two of the wrong one is indistinguishable from page two of the right one, so
-// the banner is drawn on EVERY page rather than only the first.
+// One person can be printed three ways and the three differ by every premium on
+// the page - Aranda is 19.00 hours on one and 2.00 on another. Page two of the
+// wrong one is indistinguishable from page two of the right one, so the banner
+// is drawn on EVERY page rather than only the first.
 //
-// The default sheet carries no banner and is byte-for-byte the document it has
-// always been. That is deliberate: it is the copy that is emailed and signed,
-// and "is this the document they signed" has to keep having a clean answer.
+// `corrected` IS THE DOCUMENT PEOPLE SIGN, as of 2026-08-09 late. Its banner
+// explains the model rather than warning you off, because there is nothing to
+// warn anybody off - this is their timesheet. The other two are admin readings
+// and say so.
+//
+// `ignoring` used to be the signed document and carried no banner at all. It
+// now charges every assumption the company is not making, which is the one
+// figure nobody should mistake for a payslip, so it is labelled too.
 const BASIS_BANNER = {
   projected: {
-    title: "PROJECTED COPY - the engine's proposal.",
-    body: "Breaks you did not record are assumed taken and are not charged here. Not the copy sent for signature.",
+    title: "PROJECTED COPY - the engine's proposal, before anyone answered.",
+    body: "Breaks with nothing on file recording them are assumed taken and are not charged. Not the copy sent for signature.",
   },
   corrected: {
-    title: "AS CORRECTED - your answers applied.",
-    body: "Breaks still unrecorded are assumed taken and are not charged here. Not the copy sent for signature.",
+    title: "Breaks with nothing on file recording them are assumed taken.",
+    body: "Nothing is charged for them. Confirm them on your timesheet page, and say so if you missed any.",
+  },
+  ignoring: {
+    title: "IGNORING ASSUMPTIONS - reference copy, not a payslip.",
+    body: "Every break with nothing on file is charged here, whether or not it was missed. Not the copy sent for signature.",
   },
 };
 

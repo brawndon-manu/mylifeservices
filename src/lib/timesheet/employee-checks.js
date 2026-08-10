@@ -59,8 +59,13 @@ function scheduleGaps(entry) {
   return out;
 }
 
-export function buildEmployeeChecks(data, { restRows, sourceName } = {}) {
+// `confirmed` is the set of "MM/DD/YY:meal" / "MM/DD/YY:rest" the employee has
+// already told us they ARE owed - see confirmedFromAnswers in premium-split.js.
+// A day in it is charged and no longer an assumption, and the email has to say
+// so rather than telling somebody their penalty pay is still hypothetical.
+export function buildEmployeeChecks(data, { restRows, sourceName, confirmed } = {}) {
   if (!data) return [];
+  const owed = (date, kind) => !!confirmed && confirmed.has(`${date}:${kind}`);
   const days = data.days || [];
   const byDate = data.scheduleCheck?.byDate || {};
   const out = [];
@@ -81,7 +86,7 @@ export function buildEmployeeChecks(data, { restRows, sourceName } = {}) {
 
   // 2. no meal period rostered at all
   const mealNone = days.filter((d) => d.mealViolation && !d.mealLate).map((d) => ({
-    date: d.date, hours: r2(d.paidHours),
+    date: d.date, hours: r2(d.paidHours), charged: owed(d.date, "meal"),
   }));
   if (mealNone.length) out.push({ kind: "mealMissing", tone: "info", rows: mealNone });
 
@@ -106,6 +111,7 @@ export function buildEmployeeChecks(data, { restRows, sourceName } = {}) {
       taken: d.restTaken ?? 0,
       owed: d.restRequired,
       gaps,
+      charged: owed(d.date, "rest"),
     };
     (gaps.length ? withGap : noGap).push(row);
   }
@@ -177,13 +183,13 @@ export function checkSummaryLine(check) {
     case "missingDay":
       return `${days} on your schedule with no hours recorded - tell us if you worked them`;
     case "mealMissing":
-      return `${days} over 5 hours with no meal period scheduled`;
+      return `${days} over 5 hours with no meal period recorded - assumed taken, nothing charged`;
     case "mealLate":
       return `${days} where your meal period started after the end of your fifth hour`;
     case "restGap":
-      return `${days} with a gap in your schedule but no rest break recorded`;
+      return `${days} with a gap in your schedule but no rest break recorded - assumed taken, nothing charged`;
     case "restNoGap":
-      return `${days} with no rest break recorded`;
+      return `${days} with no rest break recorded - assumed taken, nothing charged`;
     case "corrected":
       return `${days} where punch times were recorded in reverse and have been corrected`;
     case "mealUnknown":

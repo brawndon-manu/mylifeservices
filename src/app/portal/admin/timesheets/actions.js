@@ -20,6 +20,7 @@ import {
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
 import { buildQuestions, patchesFor } from "@/lib/timesheet/questions";
+import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
@@ -944,6 +945,12 @@ export async function sendTimesheets(batchId, formData) {
     where,
     include: {
       user: { select: { id: true, email: true, name: true, preferredFirstName: true, preferredLastName: true } },
+      // what they have already told us, so a RESEND says "penalty pay added"
+      // rather than repeating an assumption they have already corrected
+      corrections: {
+        where: { kind: { startsWith: "q_" }, status: { not: "open" } },
+        select: { kind: true, date: true, status: true },
+      },
     },
   });
 
@@ -958,6 +965,11 @@ export async function sendTimesheets(batchId, formData) {
   for (const ts of rows) {
     if (!ts.user?.email) { failed++; continue; }
     const url = `${base}/t/${signTimesheetToken(ts.id)}`;
+    // WHAT IS BEING PAID AND WHAT IS STILL BEING ASSUMED, from the one function
+    // the page and the PDF also read. `ts.premiumHours` is the stored
+    // ignoring-assumptions column and quoting it here is what made the email
+    // promise 17 hours the document underneath it does not pay.
+    const standing = premiumStanding(ts.data?.days || [], ts.corrections);
     const res = await sendTimesheet({
       intendedEmail: ts.user.email,
       employeeName: preferredName(ts.user) || ts.sourceName,
@@ -969,7 +981,8 @@ export async function sendTimesheets(batchId, formData) {
         paidHours: ts.paidHours,
         otHours: ts.otHours,
         doubleHours: ts.doubleHours,
-        premiumHours: ts.premiumHours,
+        chargedPremium: standing.charged,
+        assumedPremium: standing.assumed,
       },
       // what their own sheet needs them to look at. a premium total with no
       // basis is not something anyone can check, and these are the only people
@@ -977,6 +990,7 @@ export async function sendTimesheets(batchId, formData) {
       checks: buildEmployeeChecks(ts.data, {
         restRows: batch.restsByDate || [],
         sourceName: ts.sourceName,
+        confirmed: standing.confirmed,
       }),
     });
     if (res.ok) {
