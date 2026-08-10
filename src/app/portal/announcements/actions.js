@@ -40,6 +40,7 @@ import {
   POST_CONTENT_MAX,
   COMMENT_CONTENT_MAX,
 } from "@/lib/hub";
+import { resolveAnnouncementRecipients } from "@/lib/timesheet-mode";
 import {
   isValidAnnouncementTag,
   isChangelog,
@@ -2026,7 +2027,21 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
           ? `${title}\n\nHi ${firstName}, please review this and sign the form: ${ackUrl}`
           : `${title}\n\nHi ${firstName}, please read this announcement and acknowledge: ${ackUrl}`
         : `${title}\n\nHi ${firstName}, a new announcement was posted. View it in the portal.`;
-    return { from, to: [r.email], subject, html, text, ...(files.length ? { attachments: files } : {}) };
+    // OFF THE REAL DEPLOYMENT THIS DOES NOT GO TO STAFF. Publishing from a
+    // laptop used to email every targeted employee for real, with every link
+    // pointing at localhost so none of them worked. Timesheets have been
+    // guarded since one reached an employee mid-meeting; announcements were
+    // not, which is why a "test" post reached Britny. On production nothing
+    // changes. Mánu 2026-08-10.
+    const route = resolveAnnouncementRecipients(r.email);
+    return {
+      from,
+      to: route.to,
+      subject: route.redirected ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}` : subject,
+      html,
+      text,
+      ...(files.length ? { attachments: files } : {}),
+    };
   });
 
   const resend = new Resend(process.env.RESEND_API_KEY);

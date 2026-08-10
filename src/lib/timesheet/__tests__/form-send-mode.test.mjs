@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveFormRecipients } from "../../timesheet-mode.js";
+import { resolveFormRecipients, resolveAnnouncementRecipients } from "../../timesheet-mode.js";
 
 const PROD = { VERCEL_ENV: "production", AUTH_URL: "https://www.mylifeservicesinc.com" };
 const REVIEWER = "britny.mylifeservices@gmail.com";
@@ -51,4 +51,30 @@ test("the local inbox list is its own setting and cannot be aimed at staff", () 
   });
   assert.deepEqual(r.to, ["brawndonu@gmail.com"]);
   assert.ok(!r.to.includes(COLLEAGUE));
+});
+
+// AND THE SAME FOR ANNOUNCEMENTS.
+//
+// Publishing from a laptop emailed every targeted employee for real, with every
+// link pointing at localhost. That is how a post Mánu called "testing final"
+// reached Britny on 2026-08-10.
+test("an announcement on the real deployment reaches the employee", () => {
+  const r = resolveAnnouncementRecipients("staff.member@example.com", PROD);
+  assert.deepEqual(r.to, ["staff.member@example.com"]);
+  assert.equal(r.redirected, false);
+});
+
+test("off the real deployment no employee is on the line", () => {
+  for (const env of [
+    {},
+    { VERCEL_ENV: "preview", AUTH_URL: "https://branch.vercel.app" },
+    // the one that actually happened: publishing from the laptop
+    { VERCEL_ENV: "production", AUTH_URL: "http://localhost:3000" },
+  ]) {
+    const r = resolveAnnouncementRecipients("staff.member@example.com", env);
+    assert.equal(r.redirected, true, `should redirect for ${JSON.stringify(env)}`);
+    assert.ok(!r.to.includes("staff.member@example.com"), "staff must not be on the TO line");
+    assert.deepEqual(r.to, ["brawndonu@gmail.com"]);
+    assert.equal(r.intendedEmail, "staff.member@example.com");
+  }
 });

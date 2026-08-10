@@ -99,21 +99,33 @@ export function resolveRecipients(intendedEmail, env = process.env) {
   return { to: testRecipients(env), redirected: true, intendedEmail };
 }
 
-// WHERE A SUBMITTED FORM IS ALLOWED TO GO. Same file because this is the
+// EVERYTHING ELSE THAT LEAVES THIS APP BY EMAIL. Same file because this is the
 // send-mode guard and it has to stay dependency-free to be testable; the name
 // says timesheet only for historical reasons.
 //
 // Timesheets have had a lock since a real employee received her payroll
-// document from a dev server. FORM SUBMISSIONS NEVER DID - filling one on a
-// laptop emailed the reviewer for real, which is how a test run reaches HR.
+// document from a dev server. NOTHING ELSE DID - a form submitted from a laptop
+// emailed the reviewer for real, and publishing an announcement from a laptop
+// emailed every targeted employee with every link pointing at localhost.
 //
-// Only lock 2 applies. There is no phrase to set: a form submission on the real
-// deployment is a person doing their job and must always go through. Everywhere
-// else it is redirected, and the cc is dropped as well so a redirected copy
-// cannot reach the submitter's colleagues either.
-export function resolveFormRecipients(intendedEmail, cc = [], env = process.env) {
+// Only lock 2 applies to these. There is no phrase to set: on the real
+// deployment both are people doing their job and must always go through.
+// Everywhere else they are redirected, and the cc is dropped as well so a
+// redirected copy cannot reach the sender's colleagues either.
+function redirectOffProduction(intendedEmail, cc, env) {
   if (isProductionDeployment(env)) {
     return { to: [intendedEmail], cc, redirected: false, intendedEmail };
   }
   return { to: localInboxes(env), cc: [], redirected: true, intendedEmail };
+}
+
+export function resolveFormRecipients(intendedEmail, cc = [], env = process.env) {
+  return redirectOffProduction(intendedEmail, cc, env);
+}
+
+// one announcement email, addressed to one member of staff. Same rule: off the
+// real deployment it comes to Mánu instead, and the intended address rides back
+// so the subject can say whose copy it was.
+export function resolveAnnouncementRecipients(intendedEmail, env = process.env) {
+  return redirectOffProduction(intendedEmail, [], env);
 }

@@ -12,6 +12,7 @@ import { ackAudienceWhere, formatHasOnline } from "@/lib/announcements";
 import { firstNameOf } from "@/lib/contacts";
 import { renderMarkdown } from "@/lib/markdown";
 import { instantToZoned, zonedToInstant } from "@/lib/meeting-time";
+import { resolveAnnouncementRecipients } from "@/lib/timesheet-mode";
 import {
   buildAnnouncementEmailHtml,
   buildMeetingBlockHtml,
@@ -62,9 +63,22 @@ export async function GET(request) {
     .filter(Boolean);
 
   const sendBatch = async (messagesIn) => {
-    const messages = testList.length
+    const filtered = testList.length
       ? messagesIn.filter((m) => m.to.some((a) => testList.includes(a.toLowerCase())))
       : messagesIn;
+    // AND THE LOCK, because the line above is an opt-in filter, not a guard:
+    // with CRON_TEST_RECIPIENTS unset this route mails real staff from wherever
+    // it is run. Off the real deployment every reminder and notice is
+    // redirected, same rule as announcements and form submissions.
+    const messages = filtered.map((m) => {
+      const route = resolveAnnouncementRecipients(m.to[0]);
+      if (!route.redirected) return m;
+      return {
+        ...m,
+        to: route.to,
+        subject: `[TEST - would have gone to ${route.intendedEmail}] ${m.subject}`,
+      };
+    });
     for (let i = 0; i < messages.length; i += 100) {
       const chunk = messages.slice(i, i + 100);
       try {
