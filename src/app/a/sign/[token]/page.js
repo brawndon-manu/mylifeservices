@@ -110,11 +110,15 @@ export default async function SignFromLinkPage({ params }) {
             })}
             . Payroll and HR have the copy - there is nothing else to do.
           </p>
+          {/* the portal copy, same as the ack page sends people to. signed in
+              you land on the post; signed out you get the login screen, which
+              is the intended behaviour. this page is the one that needs no
+              login, and they have already finished with it. */}
           <Link
-            href={`/a/post/${token}`}
+            href={`/portal/announcements/${post.id}`}
             className="mt-3 inline-block text-sm font-medium text-brand hover:text-brand-dark"
           >
-            Back to the announcement →
+            Open it in the portal →
           </Link>
         </div>
       ) : (
