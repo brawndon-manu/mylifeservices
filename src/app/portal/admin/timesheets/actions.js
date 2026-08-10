@@ -1676,7 +1676,7 @@ const QUESTION_NOUN = {
   shortMealRest: "ten minute meal block read as a rest period",
 };
 
-function resolutionFor(q, choice, stated) {
+function resolutionFor(q, choice, stated, statedBreaks) {
   const yes = choice === "yes";
   switch (q.kind) {
     case "repair":
@@ -1700,8 +1700,18 @@ function resolutionFor(q, choice, stated) {
         ? "Employee confirmed the time was entered wrongly. Our correction stands and the minutes are not added."
         : "Employee said the break really was taken at that time, off the clock. The minutes have been added back and paid.";
     case "nothingDocumented":
+      // THE TIMES GO IN THE NOTE, not just on the day row. This note is the
+      // audit trail payroll reads, and "they said they took them" without the
+      // times is the same record-keeping hole this question exists to close.
       return yes
-        ? "Employee confirmed they took their breaks and did not record them. No premium owed, per the signed acknowledgment that recording them is theirs to do."
+        ? "Employee confirmed they took their breaks and did not record them" +
+          ((statedBreaks || []).length
+            ? `, at ${statedBreaks
+                .map((b) => `${b.kindOf === "meal" ? "meal" : "rest"} ${b.from}-${b.to}` +
+                  (b.source === "typed" ? " (given by the employee)" : " (from their schedule, accepted)"))
+                .join(", ")}`
+            : "") +
+          ". No premium owed, per the signed acknowledgment that recording them is theirs to do."
         : "Employee says they did not get their breaks. Premium restored for the days concerned - one hour for a missed meal and one for missed rests, per UPS v. Superior Court.";
     case "restSnappedToShift":
       return yes
