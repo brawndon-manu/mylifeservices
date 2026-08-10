@@ -280,6 +280,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
   // ---- acknowledgments ----
   const myAck = post.acks[0] ?? null;
+  // MY SIGNATURE, WHICH IS NOT MY ACKNOWLEDGMENT. On a form-backed post the
+  // emailed link records the open and hands them to the document, so nearly
+  // everyone arrives here already holding an ack. Keying the panel off the ack
+  // alone hid the form from exactly the people who still owed a signature.
+  const mySignature = post.formId
+    ? await prisma.formSubmission.findFirst({
+        where: { announcementId: post.id, userId: user.id },
+        select: { createdAt: true },
+        orderBy: { createdAt: "desc" },
+      })
+    : null;
   // am I in this announcement's ack audience? (Everyone = the expected-ack
   // staff set; otherwise my job title has to match one of the targeted titles.)
   const titleMatches = (t) =>
@@ -1280,8 +1291,54 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
           )}
 
           {/* staff "I read this" box - only for the expected list */}
+          {/* WHAT IS OUTSTANDING, WHICH ON A FORM-BACKED POST IS THE SIGNATURE.
+              A tick used to win this branch outright, so anyone who came in
+              through the emailed link - which records the open on purpose - was
+              shown a green "you acknowledged this" and never saw the form they
+              still owed. A post with a form is finished by signing it. */}
           {iMustAck &&
-            (myAck ? (
+            (post.formId ? (
+              mySignature ? (
+                <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  <HeartlessCheck className="h-5 w-5 shrink-0" />
+                  <span>
+                    You signed &ldquo;{post.form?.title}&rdquo; on{" "}
+                    {new Date(mySignature.createdAt).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                    . Nothing else to do.
+                  </span>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 px-5 py-4 dark:border-sky-900 dark:bg-sky-950/40">
+                  <div className="flex items-start gap-3">
+                    <CheckboxIcon className="h-6 w-6 shrink-0 text-brand" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-brand-dark dark:text-sky-100">
+                        {myAck
+                          ? `You opened this on ${new Date(myAck.createdAt).toLocaleDateString(
+                              "en-US",
+                              { month: "long", day: "numeric", year: "numeric" },
+                            )}. It still needs your signature.`
+                          : "This one needs the attached form filled out and submitted."}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-brand-dark/80 dark:text-sky-200/80">
+                        Acknowledging records that you opened it. Submitting &ldquo;
+                        {post.form?.title}&rdquo; is what finishes it.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    href={`/portal/forms/${post.formId}/fill?announcementId=${post.id}`}
+                    className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand sm:w-auto"
+                  >
+                    Fill &amp; submit the form
+                  </Link>
+                </div>
+              )
+            ) : myAck ? (
               <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
                 <HeartlessCheck className="h-5 w-5 shrink-0" />
                 <span>
@@ -1293,27 +1350,6 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   })}
                   {myAck.viaEmail && " (via email)"}.
                 </span>
-              </div>
-            ) : post.formId ? (
-              <div className="rounded-xl border border-sky-200 bg-sky-50 px-5 py-4 dark:border-sky-900 dark:bg-sky-950/40">
-                <div className="flex items-start gap-3">
-                  <CheckboxIcon className="h-6 w-6 shrink-0 text-brand" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-brand-dark dark:text-sky-100">
-                      This one needs the attached form filled out and submitted.
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-brand-dark/80 dark:text-sky-200/80">
-                      Submitting &ldquo;{post.form?.title}&rdquo; is what records your
-                      acknowledgment.
-                    </p>
-                  </div>
-                </div>
-                <Link
-                  href={`/portal/forms/${post.formId}/fill?announcementId=${post.id}`}
-                  className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand sm:w-auto"
-                >
-                  Fill &amp; submit the form
-                </Link>
               </div>
             ) : (
               <form

@@ -459,10 +459,12 @@ export default function AnnouncementForm({
                       </option>
                     ))}
                   </select>
+                  {/* OPENED AND SIGNED ARE TWO STATES, and the person choosing
+                      the form has to know that before they choose it. */}
                   <p className="mt-1 text-xs text-muted">
-                    When set, staff fill and submit this form instead of just
-                    checking a box - submitting it is what records their
-                    acknowledgment.
+                    When set, acknowledging only records that they opened it -
+                    submitting the form is what finishes it. The roster tracks
+                    both.
                   </p>
                 </div>
               )}
