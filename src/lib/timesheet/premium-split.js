@@ -31,7 +31,7 @@
 // A premium the employee has CONFIRMED they are owed stops being an assumption
 // and joins the projected figure, which is the whole point of asking.
 
-import { buildQuestions } from "./questions.js";
+import { buildQuestions, answerProgress } from "./questions.js";
 
 const PER_VIOLATION = 1;
 
@@ -271,16 +271,11 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
 
     // the same classifier the employee's page renders from, so payroll's idea
     // of "still waiting" cannot drift from what the person was actually asked
-    const asked = buildQuestions(s.data, {
-      restRows: restRows || [],
-      sourceName: s.sourceName,
-    }).length;
-    const answered = new Set(
-      (s.corrections || [])
-        .filter((c) => String(c.kind || "").startsWith("q_") && c.status !== "open")
-        .map((c) => c.kind),
-    ).size;
-    if (answered < asked) waiting++;
+    const progress = answerProgress(
+      buildQuestions(s.data, { restRows: restRows || [], sourceName: s.sourceName }),
+      s.corrections,
+    );
+    if (!progress.settled) waiting++;
   }
 
   return {

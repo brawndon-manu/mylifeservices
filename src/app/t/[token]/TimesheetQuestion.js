@@ -154,6 +154,9 @@ function copyFor(q, standing) {
         ),
       };
 
+    // ONE QUESTION PER DAY NOW, rendered as one card by BatchCard. The copy
+    // here is the card's heading, so it describes the whole set; the per-day
+    // wording lives in the rows.
     case "nothingDocumented":
       return {
         title: "We could not find your breaks on record",
@@ -164,33 +167,19 @@ function copyFor(q, standing) {
             you set your own schedule and agreed to put your breaks on it, we have assumed you
             took them and have <b>not</b> added any penalty pay.
             <br /><br />
-            <b>Is that right?</b> If your day was too busy and you missed them, say so and you
-            will be paid for it.
+            <b>Is that right?</b> Answer each day below. If a day was too busy and you missed
+            them, say so and you will be paid for it.
           </>
         ),
-        dates: q.dates,
-        yes: {
-          label: "Yes, I took my breaks",
-          why: "You took them and just did not write them down. Nothing changes.",
-        },
-        no: {
-          label: "No, I missed them",
-          why: "You worked through. You are owed penalty pay and it goes on your sheet.",
-        },
+        yes: { label: "Yes, I took my breaks", why: "You took them and just did not write them down. Nothing changes." },
+        no: { label: "No, I missed them", why: "You worked through. You are owed penalty pay and it goes on your sheet." },
         yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: (
-          <>
-            <b>{r2(q.movesOnDecline).toFixed(2)} hours</b> of penalty pay go onto your timesheet,
-            taking it from <b>{prem(base)}</b> to <b>{owedIfNo(q.movesOnDecline)}</b> - up to one
-            hour for a missed meal and one for missed rest breaks on each day. Your sheet will be
-            rebuilt.
-          </>
-        ),
+        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo(q.movesOnDecline)}</b>.</>,
         footnote: (
           <>
             <b>You are legally entitled to these breaks</b>, and to be paid a penalty if you did
-            not get them. Nothing is charged for them right now, so saying no is what puts the pay
-            on. Nobody will be annoyed about it.
+            not get them. Nothing is charged for them right now, so saying you missed one is what
+            puts the pay on. Nobody will be annoyed about it.
           </>
         ),
       };
@@ -265,11 +254,16 @@ function copyFor(q, standing) {
   }
 }
 
+// GREEN IS "NOTHING CHANGES", RED IS "MONEY MOVES", and it used to be the other
+// way round by accident: "yes" lit up brand blue and "no" lit up emerald, so
+// telling us you missed twelve breaks turned the card green. Mánu 2026-08-09.
+// Same language the timesheet itself uses - green for a settled day, red for
+// one that owes something.
 function Choice({ on, tone, label, why, onClick, busy }) {
   const ring = on
     ? tone === "yes"
-      ? "border-2 border-brand-light bg-brand-light/10"
-      : "border-2 border-emerald-500 bg-emerald-500/10"
+      ? "border-2 border-emerald-500 bg-emerald-500/10"
+      : "border-2 border-rose-500 bg-rose-500/10"
     : "border border-border-strong bg-surface-2 hover:border-brand";
   return (
     <button
@@ -285,8 +279,8 @@ function Choice({ on, tone, label, why, onClick, busy }) {
           className={`h-3.5 w-3.5 flex-none rounded-full border-2 ${
             on
               ? tone === "yes"
-                ? "border-brand-light bg-brand-light"
-                : "border-emerald-500 bg-emerald-500"
+                ? "border-emerald-500 bg-emerald-500"
+                : "border-rose-500 bg-rose-500"
               : "border-border-strong"
           }`}
         />
@@ -416,8 +410,15 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
         </div>
       )}
 
+      {/* the panel takes the colour of the answer it is about to write, so the
+          last thing somebody reads before committing is the same green or red
+          they just clicked. */}
       {proposed && !answered && (
-        <div className="mt-3 rounded-lg border-2 border-brand-light bg-brand-light/10 p-4">
+        <div className={`mt-3 rounded-lg border-2 p-4 ${
+          proposed.choice === "yes"
+            ? "border-emerald-500 bg-emerald-500/10"
+            : "border-rose-500 bg-rose-500/10"
+        }`}>
           <p className="text-base font-semibold text-foreground">Are you sure you want to confirm?</p>
           <div className="mt-2 space-y-1.5 text-sm text-muted">
             <p>{proposed.choice === "yes" ? c.yesEffect : c.noEffect}</p>
@@ -434,7 +435,9 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
               type="button"
               disabled={pending}
               onClick={commit}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                proposed.choice === "yes" ? "bg-emerald-600" : "bg-rose-600"
+              }`}
             >
               Yes, confirm
             </button>
@@ -464,6 +467,236 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
   );
 }
 
+// A WHOLE CARD ANSWERED DAY BY DAY AND COMMITTED ONCE.
+//
+// Mánu 2026-08-09 late, looking at his own twelve day breaks card: "what if only
+// some of them are no? with the way we have it right now, all of them are no or
+// all of them are yes." So every day gets its own answer - but one confirm and
+// one write, because thirteen confirm panels and thirteen sheet rebuilds is what
+// Ford would otherwise be walked through.
+//
+// NOTHING IS PRE-SELECTED, same as every other card. The staged answers live
+// here in client state until the confirm panel is got past, and until then the
+// database has not been touched.
+function BatchCard({ token, list, answers, standing, submitAction, copy }) {
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState(null);
+  const [picked, setPicked] = useState({});
+  const [confirming, setConfirming] = useState(false);
+
+  const base = standing?.charged || 0;
+  const answeredAll = list.every((q) => answers?.[q.id]);
+  // an answer already on record shows as the current setting, so changing your
+  // mind is editing what you said rather than starting again
+  const valueFor = (q) =>
+    picked[q.id] ?? (answers?.[q.id] === "accepted" ? "yes" : answers?.[q.id] === "declined" ? "no" : null);
+
+  const setAll = (choice) =>
+    setPicked(Object.fromEntries(list.map((q) => [q.id, choice])));
+
+  const chosen = list.map((q) => ({ q, v: valueFor(q) }));
+  const missed = chosen.filter((x) => x.v === "no");
+  const took = chosen.filter((x) => x.v === "yes");
+  const undecided = chosen.filter((x) => !x.v);
+  const hours = missed.reduce((n, x) => n + (x.q.movesOnDecline || 0), 0);
+  // only the days whose answer differs from what is already stored need writing
+  const dirty = chosen.filter(
+    ({ q, v }) =>
+      v && v !== (answers?.[q.id] === "accepted" ? "yes" : answers?.[q.id] === "declined" ? "no" : null),
+  );
+
+  function commit() {
+    setErr(null);
+    start(async () => {
+      const res = await submitAction({
+        token,
+        batch: chosen.filter((x) => x.v).map(({ q, v }) => ({ id: q.id, choice: v })),
+      });
+      if (!res?.ok) setErr(res?.error || "failed");
+      else { setConfirming(false); setPicked({}); }
+    });
+  }
+
+  const label = (q, v) =>
+    q.row.meal && q.row.rest
+      ? (v === "yes" ? "Took them" : "Missed them")
+      : (v === "yes" ? "Took it" : "Missed it");
+
+  return (
+    <>
+      <div className="mt-4 flex flex-wrap items-center gap-2.5 rounded-lg border border-border-strong bg-surface-2 p-3">
+        <span className="text-sm text-muted">Same answer for every day:</span>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => { setConfirming(false); setAll("yes"); }}
+          className="rounded-lg border border-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-300"
+        >
+          Yes, I took them all
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => { setConfirming(false); setAll("no"); }}
+          className="rounded-lg border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-500/10 disabled:opacity-50 dark:text-rose-300"
+        >
+          No, I missed them all
+        </button>
+      </div>
+
+      <ul className="mt-3 divide-y divide-border">
+        {chosen.map(({ q, v }) => (
+          <li
+            key={q.id}
+            className={`flex flex-wrap items-center justify-between gap-3 py-2.5 ${
+              v === "no" ? "bg-rose-500/5" : ""
+            }`}
+          >
+            <span className="min-w-0">
+              <span className="font-mono text-sm text-foreground">{q.date}</span>
+              <span className="ml-3 text-xs text-muted">
+                {q.row.meal && q.row.rest
+                  ? "meal + rest breaks"
+                  : q.row.meal ? "meal break" : "rest break"}
+                {" · "}{q.row.hours} hrs worked
+              </span>
+            </span>
+            <span className="flex overflow-hidden rounded-lg border border-border-strong">
+              {["yes", "no"].map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  disabled={pending}
+                  aria-pressed={v === opt}
+                  onClick={() => {
+                    setConfirming(false);
+                    setPicked((p) => ({ ...p, [q.id]: opt }));
+                  }}
+                  className={`px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
+                    v === opt
+                      ? opt === "yes"
+                        ? "bg-emerald-500/15 text-emerald-700 ring-2 ring-inset ring-emerald-500 dark:text-emerald-300"
+                        : "bg-rose-500/15 text-rose-700 ring-2 ring-inset ring-rose-500 dark:text-rose-300"
+                      : "bg-surface-2 text-muted hover:text-foreground"
+                  }`}
+                >
+                  {label(q, opt)}
+                </button>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {!confirming && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={pending || !dirty.length}
+            onClick={() => setConfirming(true)}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:opacity-40"
+          >
+            {answeredAll && !dirty.length ? "Answered" : "Save my answers"}
+          </button>
+          {undecided.length > 0 && (
+            <span className="text-sm text-muted">
+              {undecided.length} {undecided.length === 1 ? "day" : "days"} still to answer.
+            </span>
+          )}
+        </div>
+      )}
+
+      {confirming && (
+        <div
+          className={`mt-3 rounded-lg border-2 p-4 ${
+            missed.length
+              ? "border-rose-500 bg-rose-500/10"
+              : "border-emerald-500 bg-emerald-500/10"
+          }`}
+        >
+          <p className="text-base font-semibold text-foreground">Are you sure you want to confirm?</p>
+          <div className="mt-2 space-y-1.5 text-sm text-muted">
+            {missed.length ? (
+              <>
+                <p>
+                  You are telling us you missed breaks on{" "}
+                  <b className="text-foreground">
+                    {missed.length} of {list.length} {list.length === 1 ? "day" : "days"}
+                  </b>
+                  {took.length ? `, and took them on the other ${took.length}` : ""}.
+                </p>
+                <p>
+                  <b className="text-foreground">{r2(hours).toFixed(2)} hours</b> of penalty pay go
+                  onto your timesheet, taking it from{" "}
+                  <b className="text-foreground">{r2(base).toFixed(2)} hours</b> to{" "}
+                  <b className="text-foreground">{r2(base + hours).toFixed(2)} hours</b> - one hour
+                  for a missed meal and one for missed rest breaks on each day. Your sheet will be
+                  rebuilt.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  You are telling us you took your breaks on{" "}
+                  <b className="text-foreground">
+                    all {took.length} {took.length === 1 ? "day" : "days"}
+                  </b>{" "}
+                  and simply did not write them down.
+                </p>
+                <p>
+                  Nothing changes. Your penalty pay stays at{" "}
+                  <b className="text-foreground">{r2(base).toFixed(2)} hours</b>.
+                </p>
+              </>
+            )}
+            {undecided.length > 0 && (
+              <p className="text-amber-700 dark:text-amber-400">
+                {undecided.length} {undecided.length === 1 ? "day is" : "days are"} still unanswered
+                and will stay that way. You cannot sign until every day has an answer.
+              </p>
+            )}
+            <p className="text-xs">You can change your answer any time before you sign.</p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2.5">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={commit}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                missed.length ? "bg-rose-600" : "bg-emerald-600"
+              }`}
+            >
+              Yes, confirm
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirming(false)}
+              className="rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-muted"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      )}
+
+      {err && (
+        <p className="mt-3 text-sm font-semibold text-rose-700 dark:text-rose-400">
+          {err === "already"
+            ? "This timesheet is already signed, so it cannot be changed."
+            : "That didn't save. Refresh the page and try again."}
+        </p>
+      )}
+
+      {copy.footnote && (
+        <p className="mt-3 border-l-2 border-border-strong pl-3 text-sm text-muted">
+          {copy.footnote}
+        </p>
+      )}
+    </>
+  );
+}
+
 export default function TimesheetQuestion({
   token, questions, answers, standing, submitAction,
 }) {
@@ -475,14 +708,37 @@ export default function TimesheetQuestion({
 
   const allAnswered = list.every((q) => answers?.[q.id]);
   const anyDeclined = list.some((q) => answers?.[q.id] === "declined");
+  // amber while we are still asking, RED once an answer has put money on, plain
+  // once every answer has left the figures alone. This had the last two the
+  // wrong way round: a card where somebody reported twelve missed breaks went
+  // green, which reads as "all settled, nothing owed".
   const tone = !allAnswered
     ? "border-2 border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30"
     : anyDeclined
-      ? "border-2 border-emerald-400 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+      ? "border-2 border-rose-400 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30"
       : "border border-border-strong bg-surface-2";
+  // a BATCH kind is answered day by day and committed in one go - see BatchCard.
+  const batched = !!head.batch;
   // more than one question in a card means each one is its own pay decision and
   // gets its own date heading and its own confirm
-  const perDay = list.length > 1;
+  const perDay = !batched && list.length > 1;
+
+  if (batched) {
+    return (
+      <div className={`mt-5 rounded-xl p-5 ${tone}`}>
+        <p className="text-base font-semibold text-foreground">{c.title}</p>
+        <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
+        <BatchCard
+          token={token}
+          list={list}
+          answers={answers}
+          standing={standing}
+          submitAction={submitAction}
+          copy={c}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`mt-5 rounded-xl p-5 ${tone}`}>

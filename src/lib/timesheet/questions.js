@@ -29,8 +29,16 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
 // stable, and derived from the record rather than from position in a list, so
 // an answer given before a rebuild still matches the question after one
+// A GROUPED KIND IS ONE HABIT ANSWERED ONCE. April's eleven 7:00-7:10 entries
+// are one decision, not eleven.
+//
+// `nothingDocumented` LEFT THIS SET on 2026-08-09 late. Mánu, looking at his own
+// card: "what if only some of them are no? with the way we have it right now,
+// all of them are no or all of them are yes." A day he worked through is not the
+// same event as a day he took his ten and forgot to log it, and 432 day
+// decisions across the batch were being forced through one switch.
 const GROUPED = new Set([
-  "restOutsideShift", "shortMealRest", "restSnappedToShift", "nothingDocumented",
+  "restOutsideShift", "shortMealRest", "restSnappedToShift",
 ]);
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
@@ -182,6 +190,17 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   //    IF SHE IGNORES THIS, THE ACKNOWLEDGMENT FORM IS THE ANSWER and no premium
   //    is owed. Answering "no" is what puts one back - and a day can owe two,
   //    one for the meal and one for the rests, per UPS v. Superior Court.
+  //    ONE QUESTION PER DAY, not one for the lot. They still render as a single
+  //    card - the page groups by kind - but each day is answered on its own,
+  //    because each day is its own event and its own hour or two of somebody's
+  //    money. Median is 9 days a person and the largest is 13.
+  //
+  //    THE DAY IS THE UNIT, not the break. A day short both a lunch and its
+  //    rests is answered once and charges two hours. 238 of the 432 day
+  //    decisions in this batch are that shape, so somebody who got their lunch
+  //    and missed only the tens is paid for both - the company over-pays by an
+  //    hour rather than under-pays, and they had to say "missed" to get there.
+  //    Settled 2026-08-09 late; splitting it needs a second correction kind.
   const mealUndocumented = days.filter((d) => d.mealViolation && !d.mealLate);
   const restUndocumented = days.filter((d) => d.restViolation);
   if (mealUndocumented.length || restUndocumented.length) {
@@ -189,27 +208,65 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       ...mealUndocumented.map((d) => d.date),
       ...restUndocumented.map((d) => d.date),
     ])].sort();
-    out.push({
-      kind: "nothingDocumented",
-      dates,
-      moves: 0,
-      // every premium that would come back if she says no to all of it
-      movesOnDecline: mealUndocumented.length + restUndocumented.length,
-      row: {
-        mealDays: mealUndocumented.length,
-        restDays: restUndocumented.length,
-        days: dates.length,
-        detail: dates.slice(0, 14).map((date) => ({
-          date,
-          meal: mealUndocumented.some((d) => d.date === date),
-          rest: restUndocumented.some((d) => d.date === date),
+    for (const date of dates) {
+      const meal = mealUndocumented.some((d) => d.date === date);
+      const rest = restUndocumented.some((d) => d.date === date);
+      out.push({
+        kind: "nothingDocumented",
+        date,
+        at: "",
+        moves: 0,
+        // one hour for the meal, one for the rests, per UPS v. Superior Court
+        movesOnDecline: (meal ? 1 : 0) + (rest ? 1 : 0),
+        // ANSWERED TOGETHER, WRITTEN TOGETHER. The card sets every day, then
+        // commits them in one call and rebuilds the sheet once - thirteen
+        // confirm panels and thirteen rebuilds was the alternative.
+        batch: "nothingDocumented",
+        row: {
+          meal,
+          rest,
           hours: r2((dayOf(date)?.paidHours) || 0),
-        })),
-      },
-    });
+          // the whole card's shape, carried on every question so the heading can
+          // be written without the page re-deriving it
+          days: dates.length,
+          mealDays: mealUndocumented.length,
+          restDays: restUndocumented.length,
+        },
+      });
+    }
   }
 
   return out.map((q) => ({ ...q, id: questionId(q) }));
+}
+
+// HOW FAR THROUGH THEIR QUESTIONS ONE PERSON IS.
+//
+// COUNTED PER QUESTION, NOT PER KIND, and that distinction is the whole reason
+// this exists. Every screen used to do `new Set(corrections.map(c => c.kind)).size`
+// against `buildQuestions(...).length`. That agrees only while every kind is a
+// single question - it was already wrong for Hernadez, whose two thirty minute
+// entries are two questions of one kind, so she would have read "waiting on 1 of
+// 2" for ever after answering both. Splitting `nothingDocumented` per day makes
+// it wrong for 53 of the 59.
+//
+// A GROUPED question owns several dates and one answer, so any answered date
+// settles it. An ungrouped one owns exactly its own date.
+export function answerProgress(questions, corrections) {
+  const rows = (corrections || []).filter(
+    (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
+  );
+  const hit = (q) =>
+    rows.find(
+      (c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date),
+    ) || null;
+  const seen = (questions || []).map(hit);
+  return {
+    asked: (questions || []).length,
+    answered: seen.filter(Boolean).length,
+    declined: seen.filter((c) => c?.status === "declined").length,
+    // nothing left to ask this person, so nothing else can move their figure
+    settled: seen.every(Boolean),
+  };
 }
 
 // what one answer does to the day rows it covers, as an override patch.

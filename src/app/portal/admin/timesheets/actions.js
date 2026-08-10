@@ -1492,11 +1492,28 @@ function shortClock(min) {
 // money - and it moves it back UP. Mánu 2026-08-09: "if they make corrections
 // against our presumed corrections then a new timesheet pdf should be built for
 // them with the updated count."
-export async function answerTimesheetQuestion({ token, id, choice, at }) {
+// ONE ANSWER, OR A WHOLE CARD OF THEM.
+//
+// `{ id, choice }` is one question. `{ batch: [{ id, choice, at }] }` is a card
+// answered day by day and committed together - Mánu 2026-08-09 late, on the
+// twelve-day breaks card: answering each day separately would mean thirteen
+// confirm panels and thirteen sheet rebuilds for Ford.
+//
+// EVERY ID IS STILL RE-DERIVED FROM THE CLASSIFIER, one at a time, exactly as
+// before. A batch is a batch of writes, not a relaxation of the check: a client
+// cannot answer a question nobody asked, whichever shape it arrives in.
+export async function answerTimesheetQuestion({ token, id, choice, at, batch }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
-  if (choice !== "yes" && choice !== "no") return { ok: false, error: "badchoice" };
+
+  const asked = Array.isArray(batch) && batch.length
+    ? batch.map((b) => ({ id: b?.id, choice: b?.choice, at: b?.at ?? null }))
+    : [{ id, choice, at: at ?? null }];
+  if (asked.length > 40) return { ok: false, error: "toomany" };
+  if (asked.some((a) => a.choice !== "yes" && a.choice !== "no")) {
+    return { ok: false, error: "badchoice" };
+  }
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: tsId },
@@ -1513,46 +1530,54 @@ export async function answerTimesheetQuestion({ token, id, choice, at }) {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
   });
-  const q = questions.find((x) => x.id === id);
-  if (!q) return { ok: false, error: "unknown" };
+  // RESOLVE AND VALIDATE EVERYTHING BEFORE WRITING ANYTHING. A batch where the
+  // ninth day carries a time we cannot read must not leave the first eight
+  // written and the sheet half rebuilt.
+  const resolved = [];
+  for (const a of asked) {
+    const q = questions.find((x) => x.id === a.id);
+    if (!q) return { ok: false, error: "unknown" };
 
-  // a typed time is only meaningful where the question asks for one
-  let stated = null;
-  if (choice === "yes" && q.canGiveTime && at != null && at !== "") {
-    const m = /^(\d{1,2}):(\d{2})$/.exec(String(at).trim());
-    if (!m) return { ok: false, error: "badtime" };
-    const start = Number(m[1]) * 60 + Number(m[2]);
-    if (!(start >= 0 && start <= 1439)) return { ok: false, error: "badtime" };
-    if (start + FULL_REST_MIN > 1439) return { ok: false, error: "badtime" };
-    stated = {
-      from: shortClock(start),
-      to: shortClock(start + FULL_REST_MIN),
-      minutes: FULL_REST_MIN,
-    };
+    // a typed time is only meaningful where the question asks for one
+    let stated = null;
+    if (a.choice === "yes" && q.canGiveTime && a.at != null && a.at !== "") {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(String(a.at).trim());
+      if (!m) return { ok: false, error: "badtime" };
+      const start = Number(m[1]) * 60 + Number(m[2]);
+      if (!(start >= 0 && start <= 1439)) return { ok: false, error: "badtime" };
+      if (start + FULL_REST_MIN > 1439) return { ok: false, error: "badtime" };
+      stated = {
+        from: shortClock(start),
+        to: shortClock(start + FULL_REST_MIN),
+        minutes: FULL_REST_MIN,
+      };
+    }
+    resolved.push({ q, choice: a.choice, stated });
   }
 
-  // record this answer first, so rebuilding the overrides below sees it
-  const kindKey = `q_${q.kind}`;
-  const dates = q.dates || [q.date];
-  const noteFor = (date) => `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`;
-  for (const date of dates) {
-    const existing = await prisma.timesheetCorrection.findFirst({
-      where: { timesheetId: ts.id, date, kind: kindKey },
-      select: { id: true },
-    });
-    const record = {
-      status: choice === "yes" ? "accepted" : "declined",
-      resolvedAt: new Date(),
-      resolvedById: ts.userId || null,
-      note: noteFor(date),
-      resolutionNote: resolutionFor(q, choice, stated),
-    };
-    if (existing) {
-      await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
-    } else {
-      await prisma.timesheetCorrection.create({
-        data: { timesheetId: ts.id, date, kind: kindKey, ...record },
+  // record the answers first, so rebuilding the overrides below sees them
+  for (const { q, choice: pick, stated } of resolved) {
+    const kindKey = `q_${q.kind}`;
+    const dates = q.dates || [q.date];
+    for (const date of dates) {
+      const existing = await prisma.timesheetCorrection.findFirst({
+        where: { timesheetId: ts.id, date, kind: kindKey },
+        select: { id: true },
       });
+      const record = {
+        status: pick === "yes" ? "accepted" : "declined",
+        resolvedAt: new Date(),
+        resolvedById: ts.userId || null,
+        note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
+        resolutionNote: resolutionFor(q, pick, stated),
+      };
+      if (existing) {
+        await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
+      } else {
+        await prisma.timesheetCorrection.create({
+          data: { timesheetId: ts.id, date, kind: kindKey, ...record },
+        });
+      }
     }
   }
 
@@ -1577,15 +1602,19 @@ export async function answerTimesheetQuestion({ token, id, choice, at }) {
     }
   }
   // the employee's own time rides on the day row, same as before
-  if (stated && q.date) {
-    overrides[q.date] = { ...(overrides[q.date] || {}), statedRest: stated };
+  for (const { q, stated } of resolved) {
+    if (stated && q.date) {
+      overrides[q.date] = { ...(overrides[q.date] || {}), statedRest: stated };
+    }
   }
 
+  // ONE REBUILD, whatever came in. A thirteen day card rebuilding the sheet
+  // thirteen times is why the batch shape exists.
   const rebuilt = await rebuildSheetFor(ts, overrides, { keepSent: true });
   if (!rebuilt.ok) return rebuilt;
 
   revalidatePath(`/t/${token}`);
-  return { ok: true, choice };
+  return { ok: true, answered: resolved.length };
 }
 
 const QUESTION_NOUN = {

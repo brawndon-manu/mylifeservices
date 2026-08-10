@@ -6,7 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { sendModeSummary } from "@/lib/timesheet-send";
 import { describePunchIssue, scheduledPaidHours } from "@/lib/timesheet/anomalies";
-import { buildQuestions } from "@/lib/timesheet/questions";
+import { buildQuestions, answerProgress } from "@/lib/timesheet/questions";
 import {
   splitPremium,
   splitPremiumForSheets,
@@ -87,11 +87,14 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // the five pre-signing questions, from the same classifier the employee page
   // and the server action use, so payroll's count cannot drift from what the
   // person is actually being shown
-  const questionCountFor = (t) =>
-    buildQuestions(t.data, {
-      restRows: batch.restsByDate || [],
-      sourceName: t.sourceName,
-    }).length;
+  const progressFor = (t) =>
+    answerProgress(
+      buildQuestions(t.data, {
+        restRows: batch.restsByDate || [],
+        sourceName: t.sourceName,
+      }),
+      t.corrections,
+    );
 
   // the projected figure and the ignoring-assumptions one. A premium somebody
   // has told us they ARE owed stops being an assumption, so the answers feed in.
@@ -114,6 +117,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     // nobody has to click twice to find out which one they wanted.
     const split = splitPremium(t.data?.days || [], { confirmed: confirmedBySheet[t.id] });
     const engineOnly = splitPremium(t.data?.days || []);
+    const progress = progressFor(t);
     return {
     id: t.id,
     sourceName: t.sourceName,
@@ -163,17 +167,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     // the five pre-signing questions: how many this person has been asked, how
     // many are answered, and how many they answered AGAINST us. A decline is
     // the one that moves a figure back, so it is the one payroll must see.
-    questionsAsked: questionCountFor(t),
-    questionsAnswered: new Set(
-      t.corrections
-        .filter((c) => String(c.kind || "").startsWith("q_") && c.status !== "open")
-        .map((c) => c.kind),
-    ).size,
-    questionsDeclined: new Set(
-      t.corrections
-        .filter((c) => String(c.kind || "").startsWith("q_") && c.status === "declined")
-        .map((c) => c.kind),
-    ).size,
+    // COUNTED PER QUESTION, not per kind - see answerProgress. Counting kinds
+    // read "waiting on 1 of 2" for ever on anybody whose kind covers more than
+    // one question, which is now most of the batch.
+    questionsAsked: progress.asked,
+    questionsAnswered: progress.answered,
+    questionsDeclined: progress.declined,
     punchIssues: (t.data?.punchIssues || []).length,
     // how many of those flags actually need a person. the raw count sits
     // directly above Send all and read "23 people have punch entries that

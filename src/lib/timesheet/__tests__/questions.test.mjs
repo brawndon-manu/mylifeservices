@@ -7,7 +7,7 @@
 // would quietly hand somebody less than they are owed.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildQuestions, patchesFor } from "../questions.js";
+import { buildQuestions, patchesFor, answerProgress } from "../questions.js";
 
 const day = (over = {}) => ({
   date: "07/20/26", paidHours: 8.17, restTaken: 2, restRequired: 2,
@@ -117,4 +117,118 @@ test("ids are stable across a rebuild, so an answer still matches its question",
   const a = buildQuestions({ days }, { restRows: [], sourceName: "X" });
   const b = buildQuestions({ days: [{ ...days[0], paidHours: 8 }] }, { restRows: [], sourceName: "X" });
   assert.equal(a[0].id, b[0].id, "the sheet is rebuilt on every answer");
+});
+
+// ---------------------------------------------------------------------------
+// ONE QUESTION PER DAY. Mánu 2026-08-09 late, on his own twelve day card: "what
+// if only some of them are no? with the way we have it right now, all of them
+// are no or all of them are yes."
+
+const ndDay = (date, over = {}) => ({
+  date, paidHours: 8, mealViolation: false, mealLate: false, restViolation: false,
+  restTaken: 0, restRequired: 2, punches: [], breaks: [], ...over,
+});
+
+test("the breaks question is one per day, and each day carries its own hours", () => {
+  const qs = buildQuestions({
+    days: [
+      ndDay("07/20/26", { mealViolation: true, restViolation: true }),
+      ndDay("07/21/26", { restViolation: true }),
+      ndDay("07/22/26"),
+    ],
+  }, { restRows: [], sourceName: "Testperson" });
+  const nd = qs.filter((q) => q.kind === "nothingDocumented");
+
+  assert.equal(nd.length, 2, "one per day that is short something, and no more");
+  assert.deepEqual(nd.map((q) => q.date), ["07/20/26", "07/21/26"]);
+  // a day short both a lunch and its rests is two hours; a day short only its
+  // rests is one. Under the old single question both were folded into one total.
+  assert.equal(nd[0].movesOnDecline, 2);
+  assert.equal(nd[1].movesOnDecline, 1);
+  assert.deepEqual(
+    nd.map((q) => [q.row.meal, q.row.rest]),
+    [[true, true], [false, true]],
+  );
+  // distinct ids, or two days would share an answer and the split is pointless
+  assert.equal(new Set(nd.map((q) => q.id)).size, 2);
+  // and they are marked as one card, committed together
+  assert.ok(nd.every((q) => q.batch === "nothingDocumented"));
+});
+
+test("saying no on one day leaves the others alone", () => {
+  const days = [
+    ndDay("07/20/26", { mealViolation: true, restViolation: true }),
+    ndDay("07/21/26", { restViolation: true }),
+  ];
+  const nd = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+    .filter((q) => q.kind === "nothingDocumented");
+
+  // the 20th: they took them, so the engine's reading stands and stays cleared
+  assert.deepEqual(patchesFor(nd[0], "yes", days[0]), {
+    mealViolation: false, restViolation: false,
+  });
+  // the 21st: they missed them, so the override is cleared and the day's own
+  // flags - which already say a rest is owed - come back through
+  assert.deepEqual(patchesFor(nd[1], "no", days[1]), {
+    mealViolation: null, restViolation: null,
+  });
+});
+
+test("progress is counted per question, not per kind", () => {
+  // THE BUG THIS FIXES: every screen used to count distinct kinds against the
+  // number of questions. That agrees only while a kind is a single question, and
+  // it was already wrong for a two-day restIsMealLength card.
+  const days = [
+    ndDay("07/20/26", { mealViolation: true }),
+    ndDay("07/21/26", { mealViolation: true }),
+  ];
+  const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" });
+  assert.equal(qs.length, 2);
+
+  const one = [{ kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" }];
+  const p1 = answerProgress(qs, one);
+  assert.equal(p1.answered, 1, "one of the two, not one KIND of one kind");
+  assert.equal(p1.settled, false, "so they still cannot sign");
+
+  const both = [...one, { kind: "q_nothingDocumented", date: "07/21/26", status: "declined" }];
+  const p2 = answerProgress(qs, both);
+  assert.equal(p2.answered, 2);
+  assert.equal(p2.declined, 1);
+  assert.equal(p2.settled, true);
+
+  // an OPEN correction is a reported problem, not an answer
+  assert.equal(answerProgress(qs, [
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "open" },
+  ]).answered, 0);
+});
+
+test("a grouped question is still settled by any one of its dates", () => {
+  // April's eleven 7:00-7:10 entries are one habit and one answer. Counting
+  // those per date would leave her permanently ten answers short.
+  const days = [
+    ndDay("07/20/26", { restsMisclicked: 1, restsMisclickedMin: 10 }),
+    ndDay("07/21/26", { restsMisclicked: 1, restsMisclickedMin: 10 }),
+  ];
+  const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+    .filter((q) => q.kind === "restOutsideShift");
+  assert.equal(qs.length, 1, "one question over both days");
+  assert.equal(
+    answerProgress(qs, [
+      { kind: "q_restOutsideShift", date: "07/20/26", status: "accepted" },
+    ]).settled,
+    true,
+  );
+
+  // AND THE COUNT DOES NOT DOUBLE. One answer to a grouped question writes a
+  // correction row PER DATE, so counting rows rather than questions reports two
+  // answers to a card that has one - and the batch list would read "2 of 1".
+  // This is the assertion that discriminates; the settled check above passes
+  // either way.
+  const p = answerProgress(qs, [
+    { kind: "q_restOutsideShift", date: "07/20/26", status: "accepted" },
+    { kind: "q_restOutsideShift", date: "07/21/26", status: "accepted" },
+  ]);
+  assert.equal(p.asked, 1);
+  assert.equal(p.answered, 1, "two rows, one question, one answer");
+  assert.equal(p.declined, 0);
 });
