@@ -26,11 +26,20 @@ export default async function CorrectionsPage({ params }) {
   // every sheet in this batch that has something reported on it, open or not.
   // resolved ones stay visible: what was declined, and why, is the part you'd
   // want on hand if anyone ever asks about a figure.
+  //
+  // NOT the `q_` rows. Those are the five questions asked before signing, and
+  // they are a different workflow: they are never "open", they are already
+  // answered by the time they exist, and there is nothing here for anyone to
+  // accept or reject. Left in, they would list every confirmation on this
+  // screen under a raw "q_repair" label and bury the reports that do need a
+  // decision. They surface on the batch list and on the employee's own page.
+  const NOT_A_QUESTION = { kind: { not: { startsWith: "q_" } } };
   const sheets = await prisma.timesheet.findMany({
-    where: { batchId: id, corrections: { some: {} } },
+    where: { batchId: id, corrections: { some: NOT_A_QUESTION } },
     include: {
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       corrections: {
+        where: NOT_A_QUESTION,
         orderBy: [{ status: "asc" }, { createdAt: "asc" }],
         include: {
           resolvedBy: {

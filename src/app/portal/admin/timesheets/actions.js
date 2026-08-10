@@ -19,6 +19,7 @@ import {
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
+import { buildQuestions, patchesFor } from "@/lib/timesheet/questions";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
@@ -1460,74 +1461,54 @@ function shortClock(min) {
   return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
 }
 
-// Employee-side: answer a rest-repair question on your own sheet.
+// THE ONE ACTION BEHIND ALL FIVE QUESTIONS.
 //
-// The Rest Periods Report holds entries that cannot be read - out after in, an
-// AM/PM slip - and for a few of them a single mis-picked field explains it. We
-// never apply that guess: the person who would lose an hour of premium pay is
-// the one who knows whether the break happened, so they are asked.
+// It never trusts what it is handed. The question list is rebuilt from the
+// sheet and the batch's own rest rows, and the incoming `id` has to match one
+// of them, so a client cannot answer a question nobody asked. That is the same
+// defence the old single-question action had, which matched on name, date and
+// out-time; this generalises it to all five kinds.
 //
-// SAYING YES REDUCES SOMEBODY'S PAY, so this is careful about three things:
-//   - the question must be one WE asked. it is matched against the batch's
-//     stored restsByDate by name, date and out-time, and must carry a
-//     proposed repair. a client cannot invent a date and clear a premium.
-//   - the answer is recorded either way, as a resolved TimesheetCorrection, so
-//     "why is this figure not what the export said" has one answer in one place.
-//   - it is reversible until they sign, and the sheet is rebuilt each time so
-//     the document always matches the answer printed above it.
-export async function answerRestRepair({ token, date, out, accept, at }) {
+// OVERRIDES ARE COMPUTED FROM SCRATCH on every answer, from the full set of
+// stored answers rather than by toggling. Changing an answer back really does
+// put the figure back, instead of leaving half an override behind.
+//
+// Two of the five arrive with the correction ALREADY APPLIED by the engine
+// (`restOutsideShift`, `shortMealRest`). For those, declining is what moves the
+// money - and it moves it back UP. Mánu 2026-08-09: "if they make corrections
+// against our presumed corrections then a new timesheet pdf should be built for
+// them with the updated count."
+export async function answerTimesheetQuestion({ token, id, choice, at }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
-  const id = verifyTimesheetToken(token);
-  if (!id) return { ok: false, error: "auth" };
+  const tsId = verifyTimesheetToken(token);
+  if (!tsId) return { ok: false, error: "auth" };
+  if (choice !== "yes" && choice !== "no") return { ok: false, error: "badchoice" };
 
   const ts = await prisma.timesheet.findUnique({
-    where: { id },
+    where: { id: tsId },
     include: {
-      batch: {
-        select: {
-          id: true, periodFrom: true, periodTo: true, restsByDate: true,
-        },
-      },
+      batch: { select: { id: true, restsByDate: true } },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
   });
   if (!ts) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
-  // they have told us something else is wrong; that gets sorted before this does
   if (ts.corrections.length) return { ok: false, error: "reported" };
 
-  const row = (ts.batch.restsByDate || []).find(
-    (r) =>
-      restKey(r.name) === restKey(ts.sourceName) &&
-      r.date === date &&
-      String(r.out || "") === String(out || "") &&
-      r.repair,
-  );
-  if (!row) return { ok: false, error: "unknown" };
-  // the day has to exist on the sheet, or an accepted answer would patch nothing
-  if (!(ts.data?.days || []).some((d) => d.date === date)) {
-    return { ok: false, error: "unknown" };
-  }
+  const questions = buildQuestions(ts.data, {
+    restRows: ts.batch.restsByDate || [],
+    sourceName: ts.sourceName,
+  });
+  const q = questions.find((x) => x.id === id);
+  if (!q) return { ok: false, error: "unknown" };
 
-  const yes = accept === true;
-
-  // "YES, BUT NOT THEN." Our repair is a mechanical guess - proposeRepair takes
-  // the FIRST single-field fix landing between ten and fifteen minutes - so it
-  // can name the wrong ten minutes on a day a break really did happen. Without
-  // this the person had to either accept a time they know is wrong or decline
-  // and keep a premium they may not be owed.
-  //
-  // `at` is a 24-hour "HH:MM" from an <input type="time">, so there is no
-  // am/pm to misread, which is the very mistake this whole question exists for.
-  // Ten minutes is fixed: that is the entitlement, and letting somebody type
-  // twenty-five would just make a different unreadable row.
+  // a typed time is only meaningful where the question asks for one
   let stated = null;
-  if (yes && at != null && at !== "") {
+  if (choice === "yes" && q.canGiveTime && at != null && at !== "") {
     const m = /^(\d{1,2}):(\d{2})$/.exec(String(at).trim());
     if (!m) return { ok: false, error: "badtime" };
     const start = Number(m[1]) * 60 + Number(m[2]);
     if (!(start >= 0 && start <= 1439)) return { ok: false, error: "badtime" };
-    // it must still land on the same day, so a 11:55pm start cannot roll over
     if (start + FULL_REST_MIN > 1439) return { ok: false, error: "badtime" };
     stated = {
       from: shortClock(start),
@@ -1536,55 +1517,111 @@ export async function answerRestRepair({ token, date, out, accept, at }) {
     };
   }
 
-  // Rebuild against the overrides this answer implies. Computed from scratch
-  // rather than toggled, so changing the answer back really does put the
-  // premium back rather than leaving a half-applied override behind.
-  const overrides = { ...(ts.overrides || {}) };
-  const day = { ...(overrides[date] || {}) };
-  if (yes) day.restViolation = false;
-  else delete day.restViolation;
-  // cleared on every answer, so going from a stated time back to plain "yes" or
-  // to "no" really does drop it rather than leaving it drawn on the sheet
-  if (stated) day.statedRest = stated;
-  else delete day.statedRest;
-  if (Object.keys(day).length) overrides[date] = day;
-  else delete overrides[date];
+  // record this answer first, so rebuilding the overrides below sees it
+  const kindKey = `q_${q.kind}`;
+  const dates = q.dates || [q.date];
+  const noteFor = (date) => `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`;
+  for (const date of dates) {
+    const existing = await prisma.timesheetCorrection.findFirst({
+      where: { timesheetId: ts.id, date, kind: kindKey },
+      select: { id: true },
+    });
+    const record = {
+      status: choice === "yes" ? "accepted" : "declined",
+      resolvedAt: new Date(),
+      resolvedById: ts.userId || null,
+      note: noteFor(date),
+      resolutionNote: resolutionFor(q, choice, stated),
+    };
+    if (existing) {
+      await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
+    } else {
+      await prisma.timesheetCorrection.create({
+        data: { timesheetId: ts.id, date, kind: kindKey, ...record },
+      });
+    }
+  }
+
+  // rebuild EVERY override from every answer on record, this one included
+  const answers = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
+    select: { date: true, kind: true, status: true, resolutionNote: true },
+  });
+  const overrides = {};
+  for (const q2 of questions) {
+    for (const date of q2.dates || [q2.date]) {
+      const a = answers.find((x) => x.date === date && x.kind === `q_${q2.kind}`);
+      if (!a) continue;
+      const day = (ts.data?.days || []).find((d) => d.date === date);
+      const patch = patchesFor(q2, a.status === "accepted" ? "yes" : "no", day);
+      const clean = Object.fromEntries(
+        Object.entries(patch).filter(([, v]) => v != null),
+      );
+      if (Object.keys(clean).length) {
+        overrides[date] = { ...(overrides[date] || {}), ...clean };
+      }
+    }
+  }
+  // the employee's own time rides on the day row, same as before
+  if (stated && q.date) {
+    overrides[q.date] = { ...(overrides[q.date] || {}), statedRest: stated };
+  }
 
   const rebuilt = await rebuildSheetFor(ts, overrides, { keepSent: true });
   if (!rebuilt.ok) return rebuilt;
 
-  // one audit row per question, updated in place if they change their mind.
-  // never "open", so it does not put the sheet into the reported-a-problem
-  // state and block the signing it exists to precede.
-  const existing = await prisma.timesheetCorrection.findFirst({
-    where: { timesheetId: ts.id, date, kind: "rest_taken" },
-    select: { id: true },
-  });
-  const record = {
-    status: yes ? "accepted" : "declined",
-    resolvedAt: new Date(),
-    // the employee resolved it themselves - that is the whole point of asking
-    resolvedById: ts.userId || null,
-    note: `Asked about the ${row.date} rest entry (out ${row.out || "blank"}, in ${row.in || "blank"}, ${row.derivation}).`,
-    resolutionNote: yes
-      ? stated
-        // the time is THEIRS, not ours, and the audit row has to be able to say
-        // which - it is the only record of where a time on a signed wage
-        // document came from when it matches neither source export
-        ? `Employee confirmed the break was taken but gave their own time: ${stated.from} to ${stated.to}, not the ${row.repair.from} to ${row.repair.to} we proposed. Rest premium removed for this day.`
-        : `Employee confirmed the break was taken; read as ${row.repair.from} to ${row.repair.to}. Rest premium removed for this day.`
-      : "Employee said the break was not taken. Premium stands and the QSP entry still needs correcting.",
-  };
-  if (existing) {
-    await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
-  } else {
-    await prisma.timesheetCorrection.create({
-      data: { timesheetId: ts.id, date, kind: "rest_taken", ...record },
-    });
-  }
-
   revalidatePath(`/t/${token}`);
-  return { ok: true, accepted: yes };
+  return { ok: true, choice };
+}
+
+const QUESTION_NOUN = {
+  repair: "rest entry we could not read",
+  restIsMealLength: "thirty minute break filed as a rest",
+  restNoTimes: "rest entry recorded with no times",
+  restOutsideShift: "rest recorded outside the rostered day",
+  restSnappedToShift: "rest clocked as the shift ended",
+  nothingDocumented: "day with no break recorded at all",
+  shortMealRest: "ten minute meal block read as a rest period",
+};
+
+function resolutionFor(q, choice, stated) {
+  const yes = choice === "yes";
+  switch (q.kind) {
+    case "repair":
+      return yes
+        ? stated
+          ? `Employee confirmed the break was taken but gave their own time: ${stated.from} to ${stated.to}. Rest premium removed for this day.`
+          : `Employee confirmed the break was taken; read as ${q.proposed.from} to ${q.proposed.to}. Rest premium removed for this day.`
+        : "Employee said the break was not taken. Premium stands and the QSP entry still needs correcting.";
+    case "restIsMealLength":
+      return yes
+        ? "Employee confirmed the thirty minute entry was their meal break. Meal premium removed for this day."
+        : "Employee said it was a rest break, not their meal. Meal premium stands.";
+    case "restNoTimes":
+      return yes
+        ? stated
+          ? `Employee confirmed the break was taken at ${stated.from} to ${stated.to}. Rest premium removed for this day.`
+          : "Employee confirmed the break was taken. Rest premium removed for this day."
+        : "Employee said the break was not taken. Premium stands.";
+    case "restOutsideShift":
+      return yes
+        ? "Employee confirmed the time was entered wrongly. Our correction stands and the minutes are not added."
+        : "Employee said the break really was taken at that time, off the clock. The minutes have been added back and paid.";
+    case "nothingDocumented":
+      return yes
+        ? "Employee confirmed they took their breaks and did not record them. No premium owed, per the signed acknowledgment that recording them is theirs to do."
+        : "Employee says they did not get their breaks. Premium restored for the days concerned - one hour for a missed meal and one for missed rests, per UPS v. Superior Court.";
+    case "restSnappedToShift":
+      return yes
+        ? "Employee confirmed the break was taken before the shift ended. Our correction stands and the minutes are not added."
+        : "FLAG FOR PAYROLL: employee says the break really was taken after clocking out, so the ten is being entered at the wrong time in QSClock. The minutes have been added back and paid.";
+    case "shortMealRest":
+      return yes
+        ? "Employee confirmed the short meal block was their rest period. Credit stands."
+        : "Employee said it was not their rest period. The credit has been removed and any premium restored.";
+    default:
+      return "";
+  }
 }
 
 // employee-side: store the signed PDF against their timesheet. called from the

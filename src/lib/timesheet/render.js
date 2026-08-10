@@ -427,13 +427,17 @@ export async function renderCorrected(sheet, opts = {}) {
     if (shown.some((x) => x.mark === "unknown-rest")) hasUnknown = true;
 
     for (const e of entries) {
-      // ten minutes rostered before the day started or after it ended. Paid, and
-      // the day owes no rest premium for it, but it is not a break in a shift.
+      // Ten minutes recorded before the day started or after it ended. Since
+      // Mánu's ruling of 2026-08-09 (evening) this is read as a MISCLICK rather
+      // than as ten minutes worked, so the minutes are NOT added. The copy said
+      // "paid time and have been added" and would now be describing the
+      // opposite of what the engine does.
       if (e.kindOf === "rest" && e.outsideShift) {
         footnotes.push(
-          `${d.date}: the ${e.from}-${e.to} rest break falls outside the shifts ` +
-          `you were rostered for that day. Those ten minutes are paid time and have ` +
-          `been added, and no break premium is owed. Worth taking it inside your shift.`,
+          `${d.date}: the ${e.from}-${e.to} rest break is recorded outside the shifts ` +
+          `you were rostered for that day, so we have read the time as entered wrongly ` +
+          `rather than as extra minutes worked. Your break still counts and no break ` +
+          `premium is owed. Please confirm this on your timesheet page.`,
         );
       }
       // the report says a break happened and holds neither end of it
@@ -710,7 +714,7 @@ export async function renderCorrected(sheet, opts = {}) {
     keyItems.push({ fill: MEAL, bar: MEAL_BAR, label: "Meal Break - recorded as a rest break, and not counted as either" });
   }
   if (hasOutside) {
-    keyItems.push({ fill: MEAL, bar: OUTSIDE_BAR, label: "Rest Break recorded outside your shift - paid, and no premium owed" });
+    keyItems.push({ fill: MEAL, bar: OUTSIDE_BAR, label: "Rest Break recorded outside your shift - counted, time not added, no premium owed" });
   }
   if (hasUnknown) {
     keyItems.push({ fill: MEAL, label: "??? - a rest break with no times recorded. Not charged to anyone." });

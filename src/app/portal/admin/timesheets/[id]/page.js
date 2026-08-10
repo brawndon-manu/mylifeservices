@@ -6,6 +6,8 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { sendModeSummary } from "@/lib/timesheet-send";
 import { describePunchIssue, scheduledPaidHours } from "@/lib/timesheet/anomalies";
+import { buildQuestions } from "@/lib/timesheet/questions";
+import { splitPremiumForSheets } from "@/lib/timesheet/premium-split";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "../_components/SendModeBanner";
 import ReviewTable from "../_components/ReviewTable";
@@ -51,7 +53,14 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               preferredFirstName: true, preferredLastName: true, title: true, image: true,
             },
           },
-          corrections: { where: { status: "open" }, select: { id: true } },
+          // open ones block signing. The `q_` ones are the five questions the
+          // employee is asked before signing, and they are NOT open - they must
+          // not put the sheet into the reported-a-problem state, but payroll
+          // still has to see who has answered and who has argued back.
+          corrections: {
+            where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
+            select: { id: true, kind: true, status: true, date: true },
+          },
         },
       },
     },
@@ -70,6 +79,29 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     image: u.image || null,
     email: u.email,
   }));
+
+  // the five pre-signing questions, from the same classifier the employee page
+  // and the server action use, so payroll's count cannot drift from what the
+  // person is actually being shown
+  const questionCountFor = (t) =>
+    buildQuestions(t.data, {
+      restRows: batch.restsByDate || [],
+      sourceName: t.sourceName,
+    }).length;
+
+  // the projected figure and the ignoring-assumptions one. A premium somebody
+  // has told us they ARE owed stops being an assumption, so the answers feed in.
+  const confirmedBySheet = {};
+  for (const t of batch.timesheets) {
+    const set = new Set();
+    for (const c of t.corrections) {
+      if (c.status !== "declined") continue;
+      if (c.kind === "q_restNoTimes" || c.kind === "q_repair") set.add(`${c.date}:rest`);
+      if (c.kind === "q_restIsMealLength") set.add(`${c.date}:meal`);
+    }
+    confirmedBySheet[t.id] = set;
+  }
+  const premiumSplit = splitPremiumForSheets(batch.timesheets, { confirmedBySheet });
 
   const rows = batch.timesheets.map((t) => ({
     id: t.id,
@@ -107,7 +139,24 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     signedAt: t.signedAt ? t.signedAt.toISOString() : null,
     approvedAt: t.approvedAt ? t.approvedAt.toISOString() : null,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
-    disputed: t.corrections.length > 0,
+    // ONLY the open ones. The query now also returns the `q_` answers, and
+    // counting those here would have marked all 59 as having reported a problem
+    // the moment anybody confirmed anything.
+    disputed: t.corrections.some((c) => c.status === "open"),
+    // the five pre-signing questions: how many this person has been asked, how
+    // many are answered, and how many they answered AGAINST us. A decline is
+    // the one that moves a figure back, so it is the one payroll must see.
+    questionsAsked: questionCountFor(t),
+    questionsAnswered: new Set(
+      t.corrections
+        .filter((c) => String(c.kind || "").startsWith("q_") && c.status !== "open")
+        .map((c) => c.kind),
+    ).size,
+    questionsDeclined: new Set(
+      t.corrections
+        .filter((c) => String(c.kind || "").startsWith("q_") && c.status === "declined")
+        .map((c) => c.kind),
+    ).size,
     punchIssues: (t.data?.punchIssues || []).length,
     // how many of those flags actually need a person. the raw count sits
     // directly above Send all and read "23 people have punch entries that
@@ -437,6 +486,41 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             {totalPremium.toFixed(2)} hours across this pay period. Nobody should
             sign off on that figure without reading one of these.
           </p>
+
+          {/* TWO FIGURES, BECAUSE ONE CANNOT BE STATED HONESTLY. Staff author
+              their own schedules and signed an acknowledgment to enter their
+              breaks, so a missing entry is assumed taken rather than charged -
+              which makes the charged figure small and the exposure invisible if
+              it is shown alone. The gap between these two IS the unanswered
+              work, and it shrinks as people reply. Mánu 2026-08-09. */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-border bg-surface-2 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Projected premium
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">
+                {premiumSplit.projected.toFixed(2)}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                What we think is owed, after the engine&apos;s assumptions. Only
+                penalties a document records on its own, plus anything an
+                employee has told us they are owed.
+              </p>
+            </div>
+            <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                Ignoring assumptions
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-amber-900 dark:text-amber-200">
+                {premiumSplit.ignoringAssumptions.toFixed(2)}
+              </p>
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200/80">
+                What would be owed if every assumption we made turned out to be
+                wrong. The {premiumSplit.assumed.toFixed(2)} hour gap is what
+                nobody has answered yet.
+              </p>
+            </div>
+          </div>
 
           {/* what each premium rests on, and which ones nobody has settled.
               this is the question that decides whether any of them can be sent,

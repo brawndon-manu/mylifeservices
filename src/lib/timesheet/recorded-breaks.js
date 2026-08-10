@@ -261,8 +261,14 @@ export function insertRecordedBreaks(punches, entries) {
       // Mánu 2026-08-09: a ten taken before the first shift starts, or after the
       // last one ends, is drawn BLUE WITH RED STRIPES rather than as an ordinary
       // added rest, because it is not a break in the working day at all - it is
-      // ten minutes recorded against no shift. The minutes are still added and
-      // still paid; what changes is that it stops looking like a normal break.
+      // ten minutes recorded against no shift.
+      //
+      // AS OF 2026-08-09 (evening) THE MINUTES ARE NO LONGER PAID: Mánu ruled
+      // the entry a misclick, so `analyzeDay` withholds them from paid hours.
+      // The cells are still drawn where the record puts them, because the
+      // employee is asked to confirm that reading and cannot confirm what the
+      // sheet does not show. The red stripes now mean "we did not count this
+      // time", not "we added it".
       //
       // A ten at the very END of a shift she was on (3p-5p with a break at
       // 4:50p) is NOT this - it is inside the day and only worth a note.

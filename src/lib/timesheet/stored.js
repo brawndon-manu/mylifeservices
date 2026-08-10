@@ -34,6 +34,10 @@ export const REQUIRED_DAY_FIELDS = [
   // explanation beside it - which is the one thing that must never happen on a
   // document somebody signs.
   "restsOffClock", "restsOffClockMin", "addedHours", "mealInsideBooking",
+  // the 2026-08-09 EVENING rulings, read back by `buildQuestions` to decide
+  // whether a correction we already applied still needs confirming
+  "restsMisclicked", "restsMisclickedMin", "restsFromShortMeals",
+  "restsSnapped", "restsSnappedMin", "restsSnappedDetail",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -108,6 +112,19 @@ export function storedDay(d) {
     restsOffClock: d.restsOffClock ?? null,
     restsOffClockMin: d.restsOffClockMin ?? 0,
     addedHours: r2(d.addedHours),
+    // The 2026-08-09 EVENING rulings. `buildQuestions` reads all three off the
+    // STORED day to decide whether to ask somebody to confirm a correction we
+    // already made, and the raw inputs they are derived from - scheduleBlocks
+    // and restTimes - are deliberately not stored. So if these are dropped here
+    // the question can never be asked again for the life of the batch, and the
+    // employee is never told their hours moved. Exactly the failure this file
+    // was written to stop.
+    restsMisclicked: d.restsMisclicked ?? null,
+    restsMisclickedMin: d.restsMisclickedMin ?? 0,
+    restsFromShortMeals: d.restsFromShortMeals ?? 0,
+    restsSnapped: d.restsSnapped ?? null,
+    restsSnappedMin: d.restsSnappedMin ?? 0,
+    restsSnappedDetail: d.restsSnappedDetail ?? [],
     mealInsideBooking: !!d.mealInsideBooking,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,

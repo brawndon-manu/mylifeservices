@@ -39,6 +39,13 @@ export default function ReviewTable({
     signed: rows.filter((r) => r.signedAt).length,
     toApprove: rows.filter((r) => r.signedAt && !r.approvedAt).length,
     disputed: rows.filter((r) => r.disputed).length,
+    // EVERY ONE OF THE FIVE QUESTIONS BLOCKS SIGNING, so an unanswered one is
+    // not a detail - it is the reason a sheet will never come back.
+    waiting: rows.filter((r) => (r.questionsAsked || 0) > (r.questionsAnswered || 0)).length,
+    // and the ones who answered AGAINST us. Two of the five arrive with the
+    // correction already applied, so a decline is what puts hours or a premium
+    // back - it is the only answer that changes a figure after the fact.
+    argued: rows.filter((r) => (r.questionsDeclined || 0) > 0).length,
   };
   const shown = rows.filter((r) => {
     if (filter === "needsMatch") return !r.user;
@@ -46,6 +53,8 @@ export default function ReviewTable({
     if (filter === "signed") return !!r.signedAt;
     if (filter === "toApprove") return r.signedAt && !r.approvedAt;
     if (filter === "disputed") return !!r.disputed;
+    if (filter === "waiting") return (r.questionsAsked || 0) > (r.questionsAnswered || 0);
+    if (filter === "argued") return (r.questionsDeclined || 0) > 0;
     return true;
   });
 
@@ -53,6 +62,8 @@ export default function ReviewTable({
     ["all", "All"],
     ["needsMatch", "Needs a match"],
     ["unsent", "Not sent yet"],
+    ["waiting", "Waiting on an answer"],
+    ["argued", "Corrected us"],
     ["disputed", "Reported a problem"],
     ["toApprove", "Needs approval"],
     ["signed", "Signed"],
@@ -106,6 +117,38 @@ export default function ReviewTable({
                         className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                       >
                         partial week
+                      </span>
+                    )}
+                    {/* THE FIVE PRE-SIGNING QUESTIONS. Every one blocks signing,
+                        so an unanswered question is the reason a sheet never
+                        comes back - it belongs on the row, not two pages in. */}
+                    {r.questionsAsked > 0 && r.questionsAnswered < r.questionsAsked && (
+                      <span
+                        title="This person has to answer these before they can sign. We took the cheapest reading in each case, so it does not stand until they confirm it."
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                      >
+                        waiting on {r.questionsAsked - r.questionsAnswered} of {r.questionsAsked}{" "}
+                        {r.questionsAsked === 1 ? "answer" : "answers"}
+                      </span>
+                    )}
+                    {/* answered AGAINST us. Two of the five arrive already
+                        applied, so this is the answer that moved a figure back
+                        after we had changed it. */}
+                    {r.questionsDeclined > 0 && (
+                      <span
+                        title="They told us our correction was wrong. Hours or a premium have gone back on and the sheet was rebuilt."
+                        className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                      >
+                        corrected us · {r.questionsDeclined}
+                      </span>
+                    )}
+                    {r.questionsAsked > 0 && r.questionsAnswered === r.questionsAsked
+                      && !r.questionsDeclined && (
+                      <span
+                        title="Every question on this sheet has been confirmed, so it can be signed."
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      >
+                        all confirmed
                       </span>
                     )}
                     {/* a lunch that happened but started too late still owes an

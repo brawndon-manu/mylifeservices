@@ -4,14 +4,14 @@ import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { preferredName } from "@/lib/contacts";
 import TimesheetSigner from "./TimesheetSigner";
 import ReportProblem from "./ReportProblem";
-import RestRepairQuestion from "./RestRepairQuestion";
+import TimesheetQuestion from "./TimesheetQuestion";
 import {
   submitSignedTimesheet,
   submitTimesheetCorrections,
-  answerRestRepair,
+  answerTimesheetQuestion,
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
-import { restKey } from "@/lib/timesheet/rests";
+import { buildQuestions } from "@/lib/timesheet/questions";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
 // outside /portal so proxy.js doesn't bounce it to login - the signed token IS
@@ -34,10 +34,13 @@ export default async function SignTimesheetPage({ params }) {
       batch: { select: { periodFrom: true, periodTo: true, restsByDate: true } },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       // every correction, not just the open ones: the open ones block signing,
-      // and the resolved rest_taken rows are the answers already given to a
-      // rest-repair question. one relation, so it cannot be included twice.
+      // and the resolved `q_` rows are the answers already given to the five
+      // pre-signing questions. one relation, so it cannot be included twice.
       corrections: {
-        select: { id: true, date: true, kind: true, note: true, status: true, createdAt: true },
+        select: {
+          id: true, date: true, kind: true, note: true, status: true,
+          createdAt: true, resolutionNote: true,
+        },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -45,20 +48,36 @@ export default async function SignTimesheetPage({ params }) {
   if (!ts) notFound();
 
   const openCorrections = ts.corrections.filter((c) => c.status === "open");
-  const restAnswers = new Map(
-    ts.corrections
-      .filter((c) => c.kind === "rest_taken" && c.status !== "open")
-      .map((c) => [c.date, c.status]),
-  );
 
-  // rest-report entries for THIS person that we could not read and can explain
-  // with one mis-picked field. only days the sheet actually lists, so an answer
-  // always has something to patch.
-  const sheetDates = new Set((ts.data?.days || []).map((d) => d.date));
-  const restQuestions = (ts.batch.restsByDate || []).filter(
-    (r) => restKey(r.name) === restKey(ts.sourceName) && r.repair && sheetDates.has(r.date),
+  // EVERY QUESTION THIS SHEET RAISES, from the one classifier the server action
+  // re-derives from too. Mánu 2026-08-09: all five block signing, "since we
+  // assumed best case scenarios for least premium hours and hours overall owed".
+  const questions = buildQuestions(ts.data, {
+    restRows: ts.batch.restsByDate || [],
+    sourceName: ts.sourceName,
+  });
+  // answers live per date and per kind; a grouped question counts as answered
+  // once any of its dates has an answer, because it is answered as one thing
+  const answered = ts.corrections.filter(
+    (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
   );
-  const unanswered = restQuestions.filter((r) => !restAnswers.has(r.date));
+  const answers = {};
+  for (const q of questions) {
+    const hit = answered.find(
+      (c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date),
+    );
+    if (hit) answers[q.id] = hit.status;
+  }
+  const unanswered = questions.filter((q) => !answers[q.id]);
+
+  // one card per kind. `restIsMealLength` keeps a row per day inside its card,
+  // which the component handles when it is handed more than one question.
+  const byKind = [];
+  for (const q of questions) {
+    const found = byKind.find((g) => g[0].kind === q.kind);
+    if (found) found.push(q);
+    else byKind.push([q]);
+  }
 
   // THIS USED TO ASK FOR `ts.pdfUrl` AND NOTHING HAS ONE SINCE THE SHEET WENT
   // ON DEMAND. `rebuildSheetFor` nulls it deliberately - "the stored copy is
@@ -179,21 +198,48 @@ export default async function SignTimesheetPage({ params }) {
               nothing is lost by making them choose - but a document signed
               without the answer would be signed against figures that are about
               to change. */}
-          {restQuestions.map((q) => (
-            <RestRepairQuestion
-              key={`${q.date}-${q.out}`}
+          {byKind.map((group) => (
+            <TimesheetQuestion
+              key={group[0].kind}
               token={token}
-              question={q}
+              questions={group}
+              answers={answers}
               premiumHours={ts.premiumHours}
-              answer={restAnswers.get(q.date) || null}
-              submitAction={answerRestRepair}
+              submitAction={answerTimesheetQuestion}
             />
           ))}
+
+          {/* WHAT THEY TOLD US, back on the page. A confirmation that leaves no
+              trace is indistinguishable from one nobody gave, and two of these
+              questions rebuilt the sheet they are about to sign. */}
+          {Object.keys(answers).length > 0 && (
+            <div className="mt-5 rounded-xl border border-border bg-surface-2 p-5">
+              <p className="text-sm font-semibold text-foreground">
+                What you have told us about this timesheet
+              </p>
+              <ul className="mt-2.5 space-y-2">
+                {answered.map((c) => (
+                  <li key={`${c.kind}-${c.date}`} className="text-sm text-muted">
+                    <span className="font-semibold text-foreground">{c.date}</span>
+                    {" - "}
+                    <span className={c.status === "declined" ? "text-emerald-700 dark:text-emerald-400" : ""}>
+                      {c.status === "accepted" ? "confirmed" : "corrected"}
+                    </span>
+                    {c.resolutionNote && (
+                      <span className="block text-xs opacity-80">{c.resolutionNote}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {unanswered.length > 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-border-strong p-5">
               <p className="text-sm text-muted">
-                Answer the question above and your timesheet will appear here to sign.
+                {unanswered.length === 1
+                  ? "Answer the question above and your timesheet will appear here to sign."
+                  : `Answer all ${unanswered.length} questions above and your timesheet will appear here to sign.`}
               </p>
             </div>
           ) : (

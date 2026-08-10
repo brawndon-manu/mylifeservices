@@ -196,6 +196,11 @@ export function applyOverrides(days, overrides) {
     if (patch.mealViolation != null) next.mealViolation = patch.mealViolation;
     if (patch.mealLate != null) next.mealLate = patch.mealLate;
     if (patch.restViolation != null) next.restViolation = patch.restViolation;
+    // A rest count the employee moved. Declining "that ten minutes was your
+    // rest period" takes the credit back off, and the printed count has to
+    // follow the premium or the sheet argues with itself - that disagreement
+    // was already found once, lower on 66 days and higher on 22.
+    if (patch.restTaken != null) next.restTaken = patch.restTaken;
     // A REST TIME THE EMPLOYEE GAVE US THEMSELVES. The repair we propose is a
     // mechanical guess - the first single-field fix that lands between ten and
     // fifteen minutes - so it can name the wrong ten minutes on a day a break

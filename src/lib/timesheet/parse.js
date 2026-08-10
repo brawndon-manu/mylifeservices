@@ -301,6 +301,16 @@ function parsePage(rows) {
 // only when daily work time is "less than three and one-half hours", and Brinker
 // puts the entitlement at "from three and one-half to six hours", so a day of
 // EXACTLY 3.5 owes one. we used to write this <= and gave those days nothing.
+// minutes past midnight -> the short form the sheet already prints punches in,
+// so a time we moved reads like "11:50a" beside QSP's own rather than in a
+// second format that looks like a different kind of thing.
+function clockShort(min) {
+  const h24 = Math.floor(min / 60);
+  const mm = min % 60;
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
+}
+
 export function restsRequired(hours) {
   const h = hours || 0;
   if (h < 3.5) return 0;
@@ -389,11 +399,130 @@ export function analyzeDay(day) {
     (r) => r && Number.isFinite(r.out) && Number.isFinite(r.in) && r.in > r.out,
   );
   const onClock = (r) => segments.some((s) => r.out >= s.start.min && r.in <= s.end.min);
-  const offClockRests = usableRests.filter((r) => !onClock(r));
+
+  // A REST RECORDED ENTIRELY OUTSIDE THE ROSTERED DAY IS A MISCLICK, NOT TEN
+  // MINUTES WORKED. Mánu 2026-08-09: "if people clock their breaks before the
+  // start of their shift then we will assume it was wrong... no 10 minutes
+  // should be added to her corrected hours because of our assumption that her
+  // timing was wrong hence no overtime."
+  //
+  // This REVERSES half of the 2026-08-09 morning ruling, which paid these
+  // minutes. It still holds for a rest taken off the clock INSIDE the day;
+  // what changed is the one recorded against no shift at all.
+  //
+  // Measured over 07/16-07/31 before building: 15 rows, 5 people, 150 minutes.
+  // Eleven are April Martinez's 7:00-7:10 against an 8:00 start. Each of those
+  // days reads 8.17 with 0.17 overtime while QSP printed 8.00, so dropping the
+  // ten minutes lands exactly on payroll's own figure rather than under it and
+  // the printed-daily floor below agrees instead of fighting it.
+  //
+  // WORK blocks only. Bucio's schedule carries a meal block at 12a-12:10a, and
+  // counting that as part of her rostered day would stretch it back to midnight
+  // and make every rest on it look inside the roster.
+  const rosteredWorkSpans = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => !b.meal)
+    : null;
+  const rosteredDayStart = rosteredWorkSpans?.length
+    ? Math.min(...rosteredWorkSpans.map((b) => b.start))
+    : null;
+  const rosteredDayEnd = rosteredWorkSpans?.length
+    ? Math.max(...rosteredWorkSpans.map((b) => b.end))
+    : null;
+  // ENTIRELY outside, at one end or the other. A rest that merely straddles the
+  // edge of the roster is a different case and is still paid: that is a break
+  // that started early or ran long, not one recorded at a time nobody was
+  // there. `outsideShift` further down is the looser punch-based test and is a
+  // FLAG; this one moves money, so it is the strict reading.
+  const misclickedRest = (r) =>
+    rosteredDayStart != null && (r.in <= rosteredDayStart || r.out >= rosteredDayEnd);
+  const misclickedRests = usableRests.filter(misclickedRest);
+
+  // A REST CLOCKED THE INSTANT A SHIFT ENDS IS A MIS-TAP, NOT TEN MINUTES
+  // WORKED. Mánu 2026-08-09: "shift ended at 12p and break out 12:10p... engine
+  // should assume i meant 11:50a-12p", which removes the added hours and any
+  // overtime they created.
+  //
+  // Distinct from `misclickedRest` above: that one is outside the WHOLE rostered
+  // day. This one is inside the day, in a punched-out gap, hard against the edge
+  // of the shift that just ended.
+  //
+  // THE WINDOW IS FIFTEEN MINUTES AND THAT IS NOT ARBITRARY: fifteen is the
+  // rostered transition between two client bookings in this data, 102 of them
+  // this period. A break logged inside that window is plausibly the same event
+  // mis-tapped. Past it the person chose when to stop, and the 08/09 morning
+  // ruling pays a rest genuinely taken off the clock. This rule TAKES money, so
+  // it takes the narrow reading.
+  //
+  // Measured before building: 6 rows, 4 people, 60 minutes, of which 2 days drop
+  // back under 8 hours. Widening to 30 would have added 2 more rows.
+  const SNAP_WINDOW_MIN = 15;
+  const SNAP_REST_MAX = 20;
+  const segStart = segments.length ? segments[0].start.min : null;
+  const segEnd = segments.length ? segments[segments.length - 1].end.min : null;
+  // where a mis-tapped rest should have been: the same number of minutes,
+  // ending exactly when the shift did. Returns null when it cannot be one.
+  const snapMeals = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter((b) => b.meal)
+    : [];
+  const snapTargetFor = (r) => {
+    const len = r.in - r.out;
+    // a 730-minute AM/PM slip is not a mis-tap, it is the repair question's job
+    if (len > SNAP_REST_MAX) return null;
+    // A REST INSIDE A ROSTERED MEAL IS NOT THIS. Jones 07/28 took his ten inside
+    // a 12:00-12:30 lunch he had punched out for, ten minutes into it - within
+    // the window, and nothing to do with mis-tapping a shift edge. That is the
+    // 2026-08-08 ruling: the lunch is unpaid time and he spent ten of it on a
+    // rest, so those minutes are paid. Without this guard the new rule reached
+    // straight into that one and took the minutes back.
+    //
+    // It costs Mánu's own three nothing: 07/28 and 07/29 have no meal rostered
+    // at all (his gaps are the 15-minute transitions between bookings), and
+    // 07/31's meal is 12:20-12:50, after his 12:00 break rather than around it.
+    if (snapMeals.some((m) => r.out >= m.start && r.in <= m.end)) return null;
+    if (segStart == null || r.in <= segStart || r.out >= segEnd) return null;
+    let prevEnd = -1;
+    let seg = null;
+    for (const s of segments) {
+      if (s.end.min <= r.out && s.end.min > prevEnd) { prevEnd = s.end.min; seg = s; }
+    }
+    if (prevEnd < 0 || r.out - prevEnd > SNAP_WINDOW_MIN) return null;
+    // the minutes we are moving it into have to exist inside that shift
+    if (prevEnd - len < seg.start.min) return null;
+    return { from: prevEnd - len, to: prevEnd, minutes: len };
+  };
+  const snappedRests = usableRests.filter(
+    (r) => !onClock(r) && !misclickedRest(r) && snapTargetFor(r),
+  );
+
+  const offClockRests = usableRests.filter(
+    (r) => !onClock(r) && !misclickedRest(r) && !snapTargetFor(r),
+  );
   const restsOffClock = restTimes && segments.length ? offClockRests.length : null;
   const restsOffClockMin = restTimes && segments.length
     ? offClockRests.reduce((n, r) => n + (r.in - r.out), 0)
     : 0;
+  // Kept as a count so the sheet can draw them and the employee can be asked to
+  // confirm the correction. They still COUNT as rests taken - what changed is
+  // only that their minutes are no longer added to paid hours.
+  const restsMisclicked = restTimes && rosteredDayStart != null
+    ? misclickedRests.length
+    : null;
+  const restsMisclickedMin = misclickedRests.reduce((n, r) => n + (r.in - r.out), 0);
+
+  // The snapped ones, same idea: counted as taken, minutes not added, and the
+  // employee is asked to confirm. Both the recorded time and the time we moved
+  // it to travel with it, because the question has to quote both and the sheet
+  // has to draw it where we decided it happened.
+  const restsSnapped = restTimes && segments.length ? snappedRests.length : null;
+  const restsSnappedMin = snappedRests.reduce((n, r) => n + (r.in - r.out), 0);
+  const restsSnappedDetail = snappedRests.map((r) => {
+    const t = snapTargetFor(r);
+    return {
+      wasFrom: clockShort(r.out), wasTo: clockShort(r.in),
+      from: clockShort(t.from), to: clockShort(t.to),
+      minutes: t.minutes,
+    };
+  });
 
   // what QSP printed for this day, if we have it
   const printedDailyForFloor = day.printed?.daily ?? null;
@@ -563,7 +692,34 @@ export function analyzeDay(day) {
   // were never rest periods. See the ruling above. This is the only place the
   // report's own count is reduced, and it can only ever move the day toward
   // owing a premium, never away from one.
-  const restTaken = Math.max(0, (recorded === null ? 0 : recorded) - restsNotCounted);
+  // A SCHEDULE ROW LABELLED "Meal Break" BUT ONLY REST-LENGTH IS A REST PERIOD.
+  // Mánu 2026-08-09: "she put her 10 minutes rest period for her meal break and
+  // at the midnight time... engine should detect she already has a meal break
+  // and assume that 2nd meal break of 10 minutes was actually meant to be her
+  // rest period break as well as the wrong timing of it."
+  //
+  // This is the ONLY place the schedule is allowed to witness a rest, and it is
+  // narrow on purpose: a block the schedule itself calls a meal, of a length no
+  // meal can be. Ten minutes is a rest. Thirty is a meal.
+  //
+  // Measured before building: 7 rows over 6 days, 2 people - Bucio and Devine.
+  // Counted PER DAY. Per row it reports "still a violation" twice on Devine's
+  // 07/29 and the check cannot fail; per day her two rows take her 0/2 -> 2/2
+  // and clear the premium. That is the one hour this ruling costs.
+  //
+  // It adds no MEAL premium anywhere: on the four Devine days with no real meal
+  // the day already read mealViolation, because a ten minute block never
+  // satisfied the meal rule to begin with.
+  const REST_LENGTH_MAX = 15;
+  const shortMealBlocks = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter(
+        (b) => b.meal && b.end - b.start > 0 && b.end - b.start <= REST_LENGTH_MAX,
+      )
+    : [];
+  const restsFromShortMeals = shortMealBlocks.length;
+
+  const restTaken =
+    Math.max(0, (recorded === null ? 0 : recorded) - restsNotCounted) + restsFromShortMeals;
 
   // Can ANY source speak to whether a rest break happened on this day?
   //
@@ -581,7 +737,9 @@ export function analyzeDay(day) {
   // punches is a gap in the roster and proves nothing - that was settled on
   // 2026-08-06 and it has not changed. So evidence means the report, and
   // nothing else.
-  const restEvidence = recorded !== null;
+  // A short meal block is a record too, so a day carrying one is never
+  // "unknown" for want of a source - something on the roster does speak to it.
+  const restEvidence = recorded !== null || restsFromShortMeals > 0;
   //
   // Unanswerable ONLY when no rest source was collected for the batch at all.
   //
@@ -872,6 +1030,22 @@ export function analyzeDay(day) {
     // had its say. Zero when the day was being floored up anyway.
     addedHours,
     restsOffClockMin,
+    // rests recorded entirely outside the rostered day, read as a MISCLICK and
+    // therefore NOT paid. They still count as taken. The employee is asked to
+    // confirm the correction, so the count and the minutes we withheld both
+    // have to survive onto the sheet. Mánu 2026-08-09.
+    restsMisclicked,
+    restsMisclickedMin,
+    // rests clocked the instant a shift ended, moved back inside it and so not
+    // paid as extra. `restsSnappedDetail` carries both times because the
+    // question quotes both and the sheet draws the moved one.
+    restsSnapped,
+    restsSnappedMin,
+    restsSnappedDetail,
+    // rest periods credited from a schedule block the roster calls a meal but
+    // which is only rest-length. The one case where the schedule witnesses a
+    // rest, and the employee is asked to confirm that too.
+    restsFromShortMeals,
     // what the day's longest lunch-shaped gap actually is, per the roster.
     // "scheduled-transition" | "overlap-artifact" | "inside-booking" |
     // "unclear" | "no-schedule", or null when there is no such gap. Evidence
