@@ -528,6 +528,8 @@ export async function publishAnnouncement(postId, formData) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
+      // and whether a signature is wanted, which changes the button
+      formId: true,
       requireAck: true,
       createdAt: true,
       ackEveryone: true,
@@ -748,6 +750,8 @@ export async function editPost(postId, formData) {
           content: true,
           // the PDFs the post carries, so the email can attach them
           attachments: true,
+          // and whether a signature is wanted, which changes the button
+          formId: true,
           requireAck: true,
           createdAt: true,
           ackEveryone: true,
@@ -1617,6 +1621,8 @@ export async function adminAddInvitee(postId, userId, formData) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
+      // and whether a signature is wanted, which changes the button
+      formId: true,
       createdAt: true,
       ackEveryone: true,
       ackTitles: true,
@@ -1740,6 +1746,8 @@ export async function sendAckEmails(postId) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
+      // and whether a signature is wanted, which changes the button
+      formId: true,
       requireAck: true,
       deletedAt: true,
       ackEveryone: true,
@@ -1839,6 +1847,8 @@ export async function emailMeetingNoResponse(postId) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
+      // and whether a signature is wanted, which changes the button
+      formId: true,
       requireAck: true,
       createdAt: true,
       deletedAt: true,
@@ -1980,6 +1990,9 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
       dateStr,
       eyebrow: isMeeting ? "Company meeting" : "Announcement",
       requireAck: post.requireAck && !isMeeting,
+      // a form-backed post cannot be finished with a tick - the button takes
+      // them to the document instead
+      ackNeedsSignature: !!post.formId,
       bodyHtml,
       ackUrl,
       meetingHtml,
@@ -1990,7 +2003,9 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
     const text = isMeeting
       ? `${title}\n\nHi ${firstName}, please RSVP for this meeting: ${base}/portal/announcements/${post.id}`
       : post.requireAck && ackUrl
-        ? `${title}\n\nHi ${firstName}, please read this announcement and acknowledge: ${ackUrl}`
+        ? post.formId
+          ? `${title}\n\nHi ${firstName}, please review this and sign the form: ${ackUrl}`
+          : `${title}\n\nHi ${firstName}, please read this announcement and acknowledge: ${ackUrl}`
         : `${title}\n\nHi ${firstName}, a new announcement was posted. View it in the portal.`;
     return { from, to: [r.email], subject, html, text, ...(files.length ? { attachments: files } : {}) };
   });
@@ -2052,6 +2067,8 @@ export async function sendAnnouncementEmail(postId, formData) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
+      // and whether a signature is wanted, which changes the button
+      formId: true,
       requireAck: true,
       deletedAt: true,
       createdAt: true,

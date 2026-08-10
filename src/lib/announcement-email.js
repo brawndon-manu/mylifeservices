@@ -305,6 +305,10 @@ export function buildAnnouncementEmailHtml({
   requireAck = false,
   bodyHtml = "",
   ackUrl = null,
+  // a post with a form to sign asks for a signature, not a tick. Mánu
+  // 2026-08-10: the button should say review and sign, and clicking it should
+  // take them to the document - one click cannot stand in for signing it.
+  ackNeedsSignature = false,
   meetingHtml = "",
   ctaHtml = "",
   footer,
@@ -318,7 +322,9 @@ export function buildAnnouncementEmailHtml({
     ${requireAck ? `<div style="margin-top:8px;color:#dc2626;font-size:13px;font-weight:600;">Acknowledgment required</div>` : ""}`;
   const ackButton =
     requireAck && ackUrl
-      ? `<div style="margin-top:24px;"><a href="${ackUrl}" style="${BTN}">Acknowledge that I've read this</a><div style="margin-top:8px;color:#8a93a0;font-size:12px;">One click confirms it, no login needed.</div></div>`
+      ? ackNeedsSignature
+        ? `<div style="margin-top:24px;"><a href="${ackUrl}" style="${BTN}">Review and sign</a><div style="margin-top:8px;color:#8a93a0;font-size:12px;">Opens the form in the portal. Signed in or not, you can sign it there.</div></div>`
+        : `<div style="margin-top:24px;"><a href="${ackUrl}" style="${BTN}">Acknowledge that I've read this</a><div style="margin-top:8px;color:#8a93a0;font-size:12px;">One click confirms it, no login needed.</div></div>`
       : "";
   return emailShell({
     logoUrl,

@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf } from "@/lib/contacts";
 import { recordAnnouncementAck } from "@/lib/announcement-ack";
@@ -34,6 +36,9 @@ export default async function AckPage({ params }) {
           content: true,
           requireAck: true,
           deletedAt: true,
+          // a post with a form is finished by SIGNING it, not by a tick
+          formId: true,
+          form: { select: { id: true, shareSlug: true, fillable: true } },
         },
       }),
       prisma.user.findUnique({
@@ -55,6 +60,26 @@ export default async function AckPage({ params }) {
       user &&
       !user.deactivatedAt
     ) {
+      // A TICK IS NOT A SIGNATURE. Mánu 2026-08-10, after this button completed
+      // an attestation while the form sat unsigned: if a form is attached, this
+      // link takes them to it instead of recording anything.
+      //
+      // Signed in, they go to the in-portal filler. Not signed in, they get the
+      // public copy of the same form, where they add their name and work email -
+      // that submission carries the announcement now, so signing there is what
+      // records the acknowledgment.
+      if (announcement.formId && announcement.form?.fillable) {
+        const me = await getCurrentUser();
+        const q = `?announcementId=${announcement.id}`;
+        redirect(
+          me
+            ? `/portal/forms/${announcement.form.id}/fill${q}`
+            : announcement.form.shareSlug
+              ? `/f/${announcement.form.shareSlug}${q}`
+              : `/portal/forms/${announcement.form.id}/fill${q}`,
+        );
+      }
+
       try {
         await recordAnnouncementAck({
           announcementId: announcement.id,
