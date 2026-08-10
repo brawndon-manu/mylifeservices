@@ -354,7 +354,12 @@ export default function FormFiller({
   }
 
   async function sendToTeam() {
-    if (!bytesRef.current || !submitAction) return;
+    // and never return without saying why. a bare `return` here is what a dead
+    // button looks like from the outside.
+    if (!bytesRef.current || !submitAction) {
+      setSendErr("The document isn't loaded yet. Give it a moment, then try again.");
+      return;
+    }
     // sign-only mode goes straight back to whoever issued the document, so
     // there's no reviewer to choose and no name/email to collect.
     if (!signMode && !recipientId) {
@@ -612,6 +617,7 @@ export default function FormFiller({
               </div>
             </div>
           ) : (
+            <>
             <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-5">
               {signMode ? (
                 <button
@@ -648,6 +654,16 @@ export default function FormFiller({
                 {busy ? "Preparing…" : "Download filled PDF"}
               </button>
             </div>
+            {/* THE ERROR HAD NOWHERE TO GO IN SIGN MODE, so the button read as a
+                dud. Every failure path set sendErr, but the only place it was
+                ever rendered was inside the "Submit to review team" dialog -
+                which sign mode never opens. Mánu 2026-08-10: "sign and submit
+                is a dud and doesnt do anything." It was refusing an unsigned
+                document exactly as it should and saying so into nowhere. */}
+            {!sendOpen && sendErr && (
+              <p className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-400">{sendErr}</p>
+            )}
+            </>
           )}
 
           {sendOpen && (
