@@ -36,6 +36,14 @@ export const FORM_EMAIL_ROUTES = [
     cc: [{ name: "Jessica Zermeno", email: "mls.jessicazermeno@gmail.com" }],
   },
   {
+    key: "training-ack",
+    // "Training Acknowledgment & Attestation" - April's workers' comp training
+    // of 7/9 and 7/10. Britny asked for the signed forms back and holds HR
+    // Administrator, so this follows the title rather than her name.
+    match: (title) => /training acknowledgment/i.test(title || ""),
+    recipientTitle: "HR Administrator",
+  },
+  {
     key: "rest-meal-break",
     // "Rest & Meal Period Policy and Acknowledgement"
     match: (title) => /rest\b.*\bmeal\b/i.test(title || ""),
