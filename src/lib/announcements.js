@@ -250,4 +250,5 @@ export {
   ATTACH_MAX_COUNT,
   cleanAttachment,
   attachmentsOf,
+  emailAttachmentsOf,
 } from "./announcement-attachments.js";

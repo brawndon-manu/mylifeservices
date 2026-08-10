@@ -47,3 +47,26 @@ export function attachmentsOf(post) {
   const raw = Array.isArray(post?.attachments) ? post.attachments : [];
   return raw.map(cleanAttachment).filter(Boolean).slice(0, ATTACH_MAX_COUNT);
 }
+
+// THE FORM THEY HAVE TO SIGN IS A DOCUMENT TOO. Mánu 2026-08-10: "i want the
+// forms included ... to be a part of the email."
+//
+// A post's signable form (`formId`) and its attachment list are separate
+// fields, so picking a form to be signed did NOT put that form in the email -
+// staff got the reading material and not the thing they were being asked to
+// sign. This folds it in, deduped, so choosing it once is enough.
+//
+// It goes FIRST: it is the document the message is actually about.
+export function emailAttachmentsOf(post, form) {
+  const list = attachmentsOf(post);
+  const f = cleanAttachment(
+    form?.fileUrl ? { url: form.fileUrl, name: form.title, formId: form.id } : null,
+  );
+  if (!f) return list;
+  // already carried, either by url or because the same library form was picked
+  const already = list.some(
+    (a) => a.url === f.url || (f.formId && a.formId && a.formId === f.formId),
+  );
+  if (already) return list;
+  return [f, ...list].slice(0, ATTACH_MAX_COUNT);
+}

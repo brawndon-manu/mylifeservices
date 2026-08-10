@@ -49,6 +49,7 @@ import {
   ATTACH_MAX_COUNT,
   cleanAttachment,
   attachmentsOf,
+  emailAttachmentsOf,
   isEvent,
   isValidEventAudience,
   isValidMeetingKind,
@@ -1924,8 +1925,21 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
   // Best effort by design: a document that will not fetch must not stop the
   // announcement going out. It is still on the post, and the email still links
   // there.
+  // THE SIGNABLE FORM COUNTS AS ONE OF THE DOCUMENTS. A post's `formId` and its
+  // attachment list are separate fields, so choosing a form to be signed did not
+  // put that form in the email - people were sent the reading material and not
+  // the thing they were being asked to sign. Looked up here rather than trusted
+  // off `post`, because emailAnnouncement is called with several different
+  // selects and only some of them carry the form.
+  const signForm = post.formId
+    ? await prisma.form.findUnique({
+        where: { id: post.formId },
+        select: { id: true, title: true, fileUrl: true },
+      })
+    : null;
+
   const files = [];
-  for (const a of attachmentsOf(post)) {
+  for (const a of emailAttachmentsOf(post, signForm)) {
     try {
       const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
       const res = await fetch(url);

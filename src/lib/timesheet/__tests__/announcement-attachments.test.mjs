@@ -16,6 +16,7 @@ import {
   attachmentsOf,
   ATTACH_ACCEPT,
   ATTACH_MAX_COUNT,
+  emailAttachmentsOf,
 } from "../../announcement-attachments.js";
 
 test("a library pick and an upload both survive, and say which they are", () => {
@@ -79,4 +80,53 @@ test("only PDFs are accepted", () => {
   // the point of an attachment here is something staff read and sign, and the
   // portal can only render and sign a PDF - a .docx helps nobody
   assert.deepEqual(ATTACH_ACCEPT, ["application/pdf"]);
+});
+
+// THE FORM THEY HAVE TO SIGN IS A DOCUMENT TOO.
+//
+// Mánu 2026-08-10: "i want the forms included ... to be a part of the email."
+// A post's signable form and its attachment list are separate fields, so
+// picking a form to be signed sent everyone the reading material and not the
+// thing they were being asked to sign.
+test("the signable form is attached, and comes first", () => {
+  const post = {
+    attachments: [
+      { url: "/forms/scope.pdf", name: "Scope of Service", formId: "scope-id" },
+    ],
+  };
+  const form = { id: "ack-id", title: "Training Acknowledgment", fileUrl: "/forms/ack.pdf" };
+  const out = emailAttachmentsOf(post, form);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].url, "/forms/ack.pdf", "the form being signed leads");
+  assert.equal(out[1].url, "/forms/scope.pdf");
+});
+
+test("a form already picked as an attachment is not attached twice", () => {
+  const form = { id: "ack-id", title: "Training Acknowledgment", fileUrl: "/forms/ack.pdf" };
+  // by url
+  assert.equal(
+    emailAttachmentsOf({ attachments: [{ url: "/forms/ack.pdf", name: "Ack" }] }, form).length,
+    1,
+  );
+  // and by formId, even if the file has since been re-pathed
+  assert.equal(
+    emailAttachmentsOf(
+      { attachments: [{ url: "/forms/ack-v2.pdf", name: "Ack", formId: "ack-id" }] },
+      form,
+    ).length,
+    1,
+  );
+});
+
+test("no form, or a form with no file, changes nothing", () => {
+  const post = { attachments: [{ url: "/forms/scope.pdf", name: "Scope" }] };
+  assert.deepEqual(emailAttachmentsOf(post, null), attachmentsOf(post));
+  assert.deepEqual(emailAttachmentsOf(post, { id: "x", title: "x" }), attachmentsOf(post));
+});
+
+test("the signable form cannot smuggle in an off-site url", () => {
+  // same trust boundary as everything else here - it goes through cleanAttachment
+  const post = { attachments: [] };
+  assert.equal(emailAttachmentsOf(post, { id: "x", title: "x", fileUrl: "//evil.example/x.pdf" }).length, 0);
+  assert.equal(emailAttachmentsOf(post, { id: "x", title: "x", fileUrl: "http://evil.example/x.pdf" }).length, 0);
 });
