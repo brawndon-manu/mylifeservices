@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
+import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 
 export const metadata = { title: "Payout report", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -25,12 +26,23 @@ export default async function PayoutReportPage({ params }) {
           user: {
             select: { name: true, preferredFirstName: true, preferredLastName: true },
           },
-          corrections: { where: { status: "open" }, select: { id: true } },
+          corrections: {
+            where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
+            select: { id: true, kind: true, date: true, status: true },
+          },
         },
       },
     },
   });
   if (!batch) notFound();
+
+  // THE CHARGED FIGURE, and whether it is finished changing. Mánu 2026-08-09
+  // late: the projected report is the one. This page keyed off the stored
+  // `premiumHours` column, which is the ignoring-assumptions total - 684.00
+  // against 59 signed sheets charging 14.00.
+  const standing = batchPremiumStanding(batch.timesheets, {
+    restRows: batch.restsByDate || [],
+  });
 
   const rows = batch.timesheets.map((t) => ({
     id: t.id,
@@ -41,12 +53,14 @@ export default async function PayoutReportPage({ params }) {
     otHours: t.otHours,
     doubleHours: t.doubleHours,
     paidHours: t.paidHours,
-    premiumHours: t.premiumHours,
-    payable: (t.paidHours || 0) + (t.premiumHours || 0),
+    premiumHours: standing.byId[t.id]?.charged ?? 0,
+    assumedHours: standing.byId[t.id]?.assumed ?? 0,
+    payable: (t.paidHours || 0) + (standing.byId[t.id]?.charged ?? 0),
     partialWeek: t.partialWeek,
     signedAt: t.signedAt,
     approvedAt: t.approvedAt,
-    disputed: t.corrections.length > 0,
+    // ONLY the open ones - a `q_` row is an ANSWER, not a reported problem
+    disputed: t.corrections.some((c) => c.status === "open"),
     recomputed: !!t.recomputedAt,
   }));
 
@@ -103,6 +117,26 @@ export default async function PayoutReportPage({ params }) {
         <Big label="Premium hours" value={fmt(totals.premiumHours)} tone="prem" />
         <Big label="Total hours payable" value={fmt(totals.payable)} strong />
       </div>
+
+      {/* WHETHER THE PREMIUM COLUMN IS FINISHED CHANGING. Until everybody has
+          answered, a break somebody says they missed is a premium coming back,
+          so this total can only go UP. A payout page that looks final while
+          most of the batch has an open question is the one way this model can
+          shortchange somebody. */}
+      {standing.settled ? (
+        <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <strong>Final.</strong> All {standing.people} have answered what they were
+          asked about their breaks. Nothing further can move the premium column.
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <strong>Provisional.</strong> {standing.waiting} of {standing.people} have not
+          answered yet. Breaks nobody recorded are assumed taken and are not charged
+          here, so up to <strong>{fmt(standing.assumed)}</strong> more premium hours go
+          on if everyone still to answer says they missed theirs. This total can rise
+          and cannot fall.
+        </div>
+      )}
 
       {(disputed > 0 || unmatched > 0 || partial > 0) && (
         <div className="mt-4 space-y-2">

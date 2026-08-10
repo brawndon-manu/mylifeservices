@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { renderPayoutReport } from "@/lib/timesheet/payout-pdf";
+import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 
 // same figures as the payout page and its CSV, as a document. built on demand so
 // it can never disagree with the screen.
@@ -26,12 +27,22 @@ export async function GET(_req, { params }) {
           user: {
             select: { name: true, preferredFirstName: true, preferredLastName: true },
           },
-          corrections: { where: { status: "open" }, select: { id: true } },
+          corrections: {
+            where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
+            select: { id: true, kind: true, date: true, status: true },
+          },
         },
       },
     },
   });
   if (!batch) return new NextResponse("Not found", { status: 404 });
+
+  // the CHARGED figure, not the stored ignoring-assumptions column, plus how
+  // many people have still to answer - because until they all have, the penalty
+  // column can only go up.
+  const standing = batchPremiumStanding(batch.timesheets, {
+    restRows: batch.restsByDate || [],
+  });
 
   let bytes;
   try {
@@ -46,10 +57,13 @@ export async function GET(_req, { params }) {
           otHours: t.otHours,
           doubleHours: t.doubleHours,
           paidHours: t.paidHours,
-          premiumHours: t.premiumHours,
+          premiumHours: standing.byId[t.id]?.charged ?? 0,
           partialWeek: t.partialWeek,
-          disputed: t.corrections.length > 0,
+          // ONLY the open ones. The query now also returns the `q_` answers, and
+          // counting those would mark everybody as having reported a problem.
+          disputed: t.corrections.some((c) => c.status === "open"),
         })),
+        standing,
       },
       {
         generatedOn: new Date().toLocaleDateString("en-US", {

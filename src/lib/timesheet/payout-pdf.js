@@ -25,6 +25,11 @@ const PREM = rgb(0.7, 0.11, 0.11);
 const TOTALBG = rgb(0.878, 0.949, 0.961);
 const GRID = rgb(0.75, 0.79, 0.83);
 const WHITE = rgb(1, 1, 1);
+// the provisional / final notice on the penalty column
+const WAITBG = rgb(0.992, 0.969, 0.894);
+const WAITINK = rgb(0.42, 0.32, 0.06);
+const OKBG = rgb(0.898, 0.961, 0.925);
+const OKINK = rgb(0.05, 0.35, 0.19);
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
@@ -39,7 +44,21 @@ const COLS = [
   ["Total payable", 82, true],
 ];
 
-export async function renderPayoutReport({ periodFrom, periodTo, rows }, opts = {}) {
+// greedy wrap: the notice is a sentence, and a sentence running through the
+// right rule on a payroll document reads as a broken form.
+function wrapAt(str, maxW, font, size) {
+  const out = [];
+  let line = "";
+  for (const w of String(str).split(/\s+/)) {
+    const cand = line ? `${line} ${w}` : w;
+    if (font.widthOfTextAtSize(cand, size) > maxW && line) { out.push(line); line = w; }
+    else line = cand;
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+export async function renderPayoutReport({ periodFrom, periodTo, rows, standing }, opts = {}) {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -103,7 +122,35 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows }, opts = 
       text(`Pay period ${period}`, L, y, { size: 11, f: bold });
       y -= 13;
       text(`${rows.length} employees`, L, y, { size: 8.5, color: MUTED });
-      y -= 9;
+      y -= 12;
+
+      // WHETHER THE PENALTY COLUMN IS FINISHED CHANGING. Mánu 2026-08-09 late:
+      // the projected report is the one, "updated as people confirm with a
+      // notice when everyone has confirmed". Until every question has an answer
+      // the penalty total can only go UP, so a report that looks final while
+      // most of the batch has an open question is the one way this model can
+      // shortchange somebody.
+      if (standing?.people) {
+        const good = standing.settled;
+        const title = good
+          ? "FINAL. Everyone has answered."
+          : `PROVISIONAL. ${standing.waiting} of ${standing.people} have not answered yet.`;
+        const body = good
+          ? `All ${standing.people} confirmed what they were asked about their breaks. Nothing further can move the penalty column.`
+          : `Breaks nobody recorded are assumed taken and are not charged. Up to ${f2(standing.assumed)} more penalty hours go on if everyone still to answer says they missed theirs. The penalty column can rise and cannot fall.`;
+        const ink = good ? OKINK : WAITINK;
+        const lines = wrapAt(body, R - L - 16, font, 7.5);
+        const boxH = 17 + lines.length * 9;
+        page.drawRectangle({
+          x: L, y: y - boxH + 5, width: R - L, height: boxH,
+          color: good ? OKBG : WAITBG, borderColor: ink, borderWidth: 0.6,
+        });
+        text(title, L + 5, y - 7, { size: 8.5, f: bold, color: ink });
+        let ly = y - 18;
+        for (const ln of lines) { text(ln, L + 5, ly, { size: 7.5, color: ink }); ly -= 9; }
+        y -= boxH + 8;
+      }
+
       page.drawLine({ start: { x: L, y }, end: { x: R, y }, thickness: 0.8, color: GRID });
       y -= 18;
     } else {

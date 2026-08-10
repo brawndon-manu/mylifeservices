@@ -31,6 +31,8 @@
 // A premium the employee has CONFIRMED they are owed stops being an assumption
 // and joins the projected figure, which is the whole point of asking.
 
+import { buildQuestions } from "./questions.js";
+
 const PER_VIOLATION = 1;
 
 // ---------------------------------------------------------------------------
@@ -241,6 +243,53 @@ export function premiumStanding(days, corrections) {
     ignoring: split.ignoringAssumptions,
     confirmed,
     answers,
+  };
+}
+
+// WHAT PAYROLL PAYS, AND WHETHER IT IS FINISHED CHANGING.
+//
+// Mánu 2026-08-09 late: "have the projected report be the one and it be updated
+// as people confirm with a notice when everyone has confirmed new choices."
+//
+// So the payroll documents pay the CHARGED figure, and they carry a notice
+// saying how many people have still to answer - because until they all have,
+// that figure can only go up. A payout sheet that looks final while 53 people
+// have an open question is the one way this model can actually hurt somebody.
+export function batchPremiumStanding(sheets, { restRows } = {}) {
+  let charged = 0;
+  let assumed = 0;
+  let ignoring = 0;
+  let waiting = 0;
+  const byId = {};
+
+  for (const s of sheets || []) {
+    const st = premiumStanding(s.data?.days || [], s.corrections);
+    byId[s.id] = st;
+    charged += st.charged;
+    assumed += st.assumed;
+    ignoring += st.ignoring;
+
+    // the same classifier the employee's page renders from, so payroll's idea
+    // of "still waiting" cannot drift from what the person was actually asked
+    const asked = buildQuestions(s.data, {
+      restRows: restRows || [],
+      sourceName: s.sourceName,
+    }).length;
+    const answered = new Set(
+      (s.corrections || [])
+        .filter((c) => String(c.kind || "").startsWith("q_") && c.status !== "open")
+        .map((c) => c.kind),
+    ).size;
+    if (answered < asked) waiting++;
+  }
+
+  return {
+    charged, assumed, ignoring, byId,
+    people: (sheets || []).length,
+    waiting,
+    // everybody has answered every question put to them, so nothing else is
+    // going to move this figure
+    settled: waiting === 0,
   };
 }
 

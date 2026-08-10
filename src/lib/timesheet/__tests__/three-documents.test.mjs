@@ -12,7 +12,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { renderSheet } from "../render-sheet.js";
-import { premiumStanding } from "../premium-split.js";
+import { premiumStanding, batchPremiumStanding } from "../premium-split.js";
+import { renderPenaltyRoster } from "../penalty-roster.js";
+import { renderPayoutReport } from "../payout-pdf.js";
 
 async function pdfText(bytes) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -208,4 +210,78 @@ test("confirming charges nobody anything, which is the whole point of asking", (
   // the override has not run here, so the day still carries its flags - the
   // standing is what the SHEET will say once it has, and it says zero either way
   assert.equal(accepted.assumed, 2);
+});
+
+// ---------------------------------------------------------------------------
+// WHAT PAYROLL PAYS, AND WHETHER IT IS FINISHED CHANGING.
+//
+// Mánu 2026-08-09 late: "have the projected report be the one and it be updated
+// as people confirm with a notice when everyone has confirmed new choices."
+//
+// Until every question has an answer the penalty total can only go UP - a break
+// somebody says they missed is a premium coming back - so a payroll document
+// that looks final while most of the batch has an open question is the one way
+// this model can shortchange somebody.
+
+const sheetRow = (id, days, corrections = []) => ({
+  id, sourceName: `Person, ${id}`, data: { days }, corrections,
+});
+
+test("the batch standing pays what is charged and counts who has not answered", () => {
+  const s = batchPremiumStanding([
+    sheetRow("a", [ASSUMED]),
+    sheetRow("b", [DOCUMENTED]),
+  ]);
+  assert.equal(s.charged, 1, "the late lunch, and only it");
+  assert.equal(s.assumed, 2, "what could still land");
+  assert.equal(s.ignoring, 3, "what both payroll documents printed before");
+  assert.equal(s.people, 2);
+  assert.equal(s.waiting, 1, "only the assumed sheet raises a question");
+  assert.equal(s.settled, false);
+
+  // per person, because the roster prints a row each
+  assert.equal(s.byId.a.charged, 0);
+  assert.equal(s.byId.b.charged, 1);
+});
+
+test("it goes final only when every question has an answer", () => {
+  const asked = sheetRow("a", [ASSUMED]);
+  assert.equal(batchPremiumStanding([asked]).settled, false);
+
+  const answered = sheetRow("a", [ASSUMED], [
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" },
+  ]);
+  const s = batchPremiumStanding([answered]);
+  assert.equal(s.waiting, 0);
+  assert.equal(s.settled, true, "she answered, so nothing else can move it");
+  assert.equal(s.charged, 0, "and confirming charged nobody anything");
+
+  // a sheet nobody was ever asked about is settled from the start, or the
+  // notice would read "provisional" on a batch with nothing to wait for
+  assert.equal(batchPremiumStanding([sheetRow("c", [day()])]).settled, true);
+});
+
+test("the payroll documents carry the notice, and it flips when the batch is done", async () => {
+  const rows = [{ who: "Person, a", sourceName: "Person, a", premiumHours: 1 }];
+  const waiting = { people: 2, waiting: 1, settled: false, assumed: 2, charged: 1 };
+  const done = { people: 2, waiting: 0, settled: true, assumed: 0, charged: 1 };
+
+  const provisional = await pdfText(
+    (await renderPenaltyRoster({ periodFrom: "07/16/26", periodTo: "07/31/26", rows, standing: waiting })).bytes);
+  assert.match(provisional, /PROVISIONAL\. 1 of 2 have not answered yet/);
+  assert.match(provisional, /can rise and cannot fall/);
+
+  const final = await pdfText(
+    (await renderPenaltyRoster({ periodFrom: "07/16/26", periodTo: "07/31/26", rows, standing: done })).bytes);
+  assert.match(final, /FINAL\. Everyone has answered/);
+  assert.ok(!/PROVISIONAL/.test(final));
+
+  // and the payout report says the same thing about the same column
+  const payRows = [{
+    who: "Person, a", matched: true, regularHours: 8, otHours: 0, doubleHours: 0,
+    paidHours: 8, premiumHours: 1, partialWeek: false, disputed: false,
+  }];
+  const payout = await pdfText(
+    (await renderPayoutReport({ periodFrom: "07/16/26", periodTo: "07/31/26", rows: payRows, standing: waiting })).bytes);
+  assert.match(payout, /PROVISIONAL\. 1 of 2 have not answered yet/);
 });

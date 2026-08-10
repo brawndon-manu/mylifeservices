@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
+import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 
 // the payout figures as data. payroll keys these in somewhere else, and typing
 // them off a PDF is how a digit goes missing.
@@ -34,12 +35,21 @@ export async function GET(_req, { params }) {
           user: {
             select: { name: true, preferredFirstName: true, preferredLastName: true },
           },
-          corrections: { where: { status: "open" }, select: { id: true } },
+          corrections: {
+            where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
+            select: { id: true, kind: true, date: true, status: true },
+          },
         },
       },
     },
   });
   if (!batch) return new Response("Not found", { status: 404 });
+
+  // the CHARGED figure, same as the page and the PDF. Payroll keys these in
+  // somewhere else, so this is the last place a stale column could survive.
+  const standing = batchPremiumStanding(batch.timesheets, {
+    restRows: batch.restsByDate || [],
+  });
 
   const header = [
     "Employee",
@@ -50,6 +60,7 @@ export async function GET(_req, { params }) {
     "Double time hours",
     "Hours worked",
     "Premium hours",
+    "Premium hours assumed, not charged",
     "Total hours payable",
     "Partial week",
     "Status",
@@ -57,15 +68,18 @@ export async function GET(_req, { params }) {
   ];
 
   const lines = [header.map(cell).join(",")];
-  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, payable: 0 };
+  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumed: 0, payable: 0 };
 
   for (const ts of batch.timesheets) {
-    const payable = (ts.paidHours || 0) + (ts.premiumHours || 0);
+    const charged = standing.byId[ts.id]?.charged ?? 0;
+    const assumed = standing.byId[ts.id]?.assumed ?? 0;
+    const payable = (ts.paidHours || 0) + charged;
     t.reg += ts.regularHours || 0;
     t.ot += ts.otHours || 0;
     t.dbl += ts.doubleHours || 0;
     t.paid += ts.paidHours || 0;
-    t.prem += ts.premiumHours || 0;
+    t.prem += charged;
+    t.assumed += assumed;
     t.payable += payable;
 
     lines.push(
@@ -77,10 +91,11 @@ export async function GET(_req, { params }) {
         r2(ts.otHours),
         r2(ts.doubleHours),
         r2(ts.paidHours),
-        r2(ts.premiumHours),
+        r2(charged),
+        r2(assumed),
         r2(payable),
         ts.partialWeek ? "yes" : "no",
-        ts.corrections.length
+        ts.corrections.some((c) => c.status === "open")
           ? "reported a problem"
           : ts.approvedAt
             ? "approved"
@@ -104,6 +119,7 @@ export async function GET(_req, { params }) {
       r2(t.dbl),
       r2(t.paid),
       r2(t.prem),
+      r2(t.assumed),
       r2(t.payable),
       "",
       "",
@@ -112,6 +128,15 @@ export async function GET(_req, { params }) {
       .map(cell)
       .join(","),
   );
+
+  // WHETHER THE PREMIUM COLUMN IS FINISHED CHANGING, as its own row rather than
+  // a comment - a CSV has nowhere else to put it, and payroll keys off this.
+  lines.push("");
+  lines.push([
+    standing.settled
+      ? `FINAL: all ${standing.people} have answered. Nothing further can move the premium column.`
+      : `PROVISIONAL: ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumed)} more premium hours go on if they all say they missed theirs. This total can rise and cannot fall.`,
+  ].map(cell).join(","));
 
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");
   // BOM so Excel opens it as UTF-8 and doesn't mangle accented names

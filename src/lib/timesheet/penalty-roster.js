@@ -24,6 +24,11 @@ const ROWALT = rgb(0.957, 0.973, 0.984);
 const PREM = rgb(0.7, 0.11, 0.11);
 const GRID = rgb(0.75, 0.79, 0.83);
 const TOTALBG = rgb(0.878, 0.949, 0.961);
+// the provisional / final notice
+const WAITBG = rgb(0.992, 0.969, 0.894);
+const WAITINK = rgb(0.42, 0.32, 0.06);
+const OKBG = rgb(0.898, 0.961, 0.925);
+const OKINK = rgb(0.05, 0.35, 0.19);
 
 // Is "Taylor Adams" the same person as QSP's "Adams, Taylor"? Yes - it is the
 // same name written the other way round, and annotating every row with that
@@ -45,7 +50,54 @@ function sameHuman(a, b) {
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
-export async function renderPenaltyRoster({ periodFrom, periodTo, rows }, opts = {}) {
+// greedy wrap, because the notice is a sentence rather than a label and a
+// sentence running through the right rule on a payroll document reads as broken
+function wrapAt(str, maxW, font, size) {
+  const out = [];
+  let line = "";
+  for (const w of String(str).split(/\s+/)) {
+    const cand = line ? `${line} ${w}` : w;
+    if (font.widthOfTextAtSize(cand, size) > maxW && line) {
+      out.push(line);
+      line = w;
+    } else {
+      line = cand;
+    }
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+// WHETHER THIS FIGURE IS FINISHED CHANGING, said at the top of the sheet
+// payroll works from.
+//
+// Mánu 2026-08-09 late: the projected report is the one, "updated as people
+// confirm with a notice when everyone has confirmed". Until every question has
+// an answer the total can only go UP - a break somebody says they missed is a
+// premium coming back - so a sheet that looks final while 53 people have an open
+// question is the one way this model can shortchange somebody.
+function noticeFor(standing) {
+  if (!standing || !standing.people) return null;
+  if (standing.settled) {
+    return {
+      title: "FINAL. Everyone has answered.",
+      body:
+        `All ${standing.people} confirmed what they were asked about their breaks. ` +
+        "Nothing further can move this total.",
+      good: true,
+    };
+  }
+  return {
+    title: `PROVISIONAL. ${standing.waiting} of ${standing.people} have not answered yet.`,
+    body:
+      `Breaks nobody recorded are assumed taken and are not charged here. Up to ` +
+      `${f2(standing.assumed)} more hours go on if everyone still to answer says they missed theirs. ` +
+      "This total can rise and cannot fall.",
+    good: false,
+  };
+}
+
+export async function renderPenaltyRoster({ periodFrom, periodTo, rows, standing }, opts = {}) {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -101,7 +153,27 @@ export async function renderPenaltyRoster({ periodFrom, periodTo, rows }, opts =
         (clear ? ` · ${clear} owed none` : ""),
         L, y, { size: 9, color: MUTED },
       );
-      y -= 26;
+      y -= 18;
+
+      const notice = noticeFor(standing);
+      if (notice) {
+        const ink = notice.good ? OKINK : WAITINK;
+        const lines = wrapAt(notice.body, R - L - 20, font, 8.5);
+        const boxH = 20 + lines.length * 10;
+        page.drawRectangle({
+          x: L - 6, y: y - boxH + 6, width: R - L + 12, height: boxH,
+          color: notice.good ? OKBG : WAITBG,
+          borderColor: ink, borderWidth: 0.7,
+        });
+        text(notice.title, L + 4, y - 8, { size: 9.5, f: bold, color: ink });
+        let ly = y - 20;
+        for (const ln of lines) {
+          text(ln, L + 4, ly, { size: 8.5, color: ink });
+          ly -= 10;
+        }
+        y -= boxH + 10;
+      }
+      y -= 8;
     } else {
       text(`Break Penalty Hours · ${period} (continued)`, L, y, {
         size: 10, f: bold, color: MUTED,
