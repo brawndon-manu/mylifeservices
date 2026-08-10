@@ -18,6 +18,11 @@ import SignaturePad from "./SignaturePad";
 
 const RICH_TEXT_FLAG = 1 << 25;
 const WORKER_SRC = "/pdf.worker.min.mjs";
+// a load that has not finished by now is not going to. Better a visible failure
+// than a spinner nobody can get past: everything in the loader is awaited, so
+// any step that neither resolves nor rejects leaves the reader on "Loading the
+// form…" with no error and no way on.
+const LOAD_TIMEOUT_MS = 45_000;
 // a letter page is 8.5in wide, so this width IS the reading resolution: 880px
 // worked out to ~103 dpi, and the timesheet's table text is 7.2pt (6pt in the
 // comments column), which lands around 9 pixels tall. legible-ish on a retina
@@ -54,6 +59,7 @@ function sendErrorText(code) {
       info: "Enter your name and a valid email up top first.",
       rate: "Too many submissions in a row. Wait a minute and try again.",
       toobig: "The filled form is too large to email. Download it and send it manually.",
+      nosignature: "Tap the signature box on the document and draw your signature before submitting.",
       config: "Email isn't configured on the server. Let IT know.",
       auth: "Your session expired. Refresh and sign in again.",
     }[code] || "Couldn't send. Please try again."
@@ -109,6 +115,14 @@ export default function FormFiller({
 
   useEffect(() => {
     let active = true;
+    // THE WATCHDOG. Everything below is awaited, and a step that neither
+    // resolves nor rejects leaves the reader on "Loading the form…" for ever
+    // with no error and no way on. Nothing in the app does that today - this is
+    // here because chasing a suspected hang cost an hour, and a silent spinner
+    // on a document somebody has to sign is the worst way to find out.
+    const watchdog = setTimeout(() => {
+      if (active) setStatus((s) => (s === "loading" ? "error" : s));
+    }, LOAD_TIMEOUT_MS);
     (async () => {
       try {
         const res = await fetch(fileUrl);
@@ -207,6 +221,7 @@ export default function FormFiller({
     })();
     return () => {
       active = false;
+      clearTimeout(watchdog);
     };
   }, [fileUrl, signMode]);
 
@@ -346,6 +361,15 @@ export default function FormFiller({
     }
     if (!signMode && publicMode && (!empName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail.trim()))) {
       setSendErr(sendErrorText("info"));
+      return;
+    }
+    // A SIGNATURE IS THE WHOLE POINT OF SIGN MODE, AND NOTHING WAS CHECKING FOR
+    // ONE. Mánu 2026-08-10 answered every question on his timesheet, submitted,
+    // and the stored copy came back with the signature line blank - the
+    // AcroForm flattened with nothing in it, one image on the page and that was
+    // the logo. Payroll would have filed an attestation nobody signed.
+    if (signMode && placements.some((p) => p.kind === "signature" && !values[p.name])) {
+      setSendErr(sendErrorText("nosignature"));
       return;
     }
     setSendBusy(true);
