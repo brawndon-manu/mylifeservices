@@ -45,6 +45,31 @@ const PREM = rgb(0.7, 0.11, 0.11);
 const GOOD = rgb(0.06, 0.45, 0.24);
 const WHITE = rgb(1, 1, 1);
 const BLACK = rgb(0, 0, 0);
+// the banner that names which of the three documents this is
+const NOTEBG = rgb(0.992, 0.969, 0.894);
+const NOTEBORDER = rgb(0.788, 0.635, 0.153);
+const NOTEINK = rgb(0.42, 0.32, 0.06);
+
+// WHICH DOCUMENT AM I HOLDING.
+//
+// One person can now be printed three ways and the three can differ by every
+// premium on the page - Aranda is 19.00 hours on one and 2.00 on another. Page
+// two of the wrong one is indistinguishable from page two of the right one, so
+// the banner is drawn on EVERY page rather than only the first.
+//
+// The default sheet carries no banner and is byte-for-byte the document it has
+// always been. That is deliberate: it is the copy that is emailed and signed,
+// and "is this the document they signed" has to keep having a clean answer.
+const BASIS_BANNER = {
+  projected: {
+    title: "PROJECTED COPY - the engine's proposal.",
+    body: "Breaks you did not record are assumed taken and are not charged here. Not the copy sent for signature.",
+  },
+  corrected: {
+    title: "AS CORRECTED - your answers applied.",
+    body: "Breaks still unrecorded are assumed taken and are not charged here. Not the copy sent for signature.",
+  },
+};
 
 // PORTRAIT. Most people open this on a phone, and a landscape page on a phone
 // is a page you pinch and drag.
@@ -348,6 +373,33 @@ export async function renderCorrected(sheet, opts = {}) {
     text("Employee Name:", L, y, { size: 8.5 });
     text(sheet.employee ?? "", L + 74, y, { size: 8.5, f: bold });
     y -= 9;
+
+    const banner = BASIS_BANNER[sheet.basis];
+    if (banner) {
+      // MEASURED AND SHRUNK, never wrapped. One line keeps the banner the same
+      // height on every page of every sheet, portrait or landscape, so it
+      // cannot push a table row onto a page of its own. 7.5pt fits both widths
+      // with room to spare; the loop is here so a future edit to the wording
+      // cannot silently run it through the right rule.
+      const gap = 5;
+      let size = 7.5;
+      const wide = () =>
+        bold.widthOfTextAtSize(banner.title, size) +
+        gap + font.widthOfTextAtSize(banner.body, size) > R - L - 14;
+      while (size > 5 && wide()) size -= 0.25;
+      const boxH = size + 9;
+      y -= 8;
+      page.drawRectangle({
+        x: L, y: y - boxH, width: R - L, height: boxH,
+        color: NOTEBG, borderColor: NOTEBORDER, borderWidth: 0.6,
+      });
+      const base = y - boxH + (boxH - size) / 2 + 1;
+      text(banner.title, L + 7, base, { size, f: bold, color: NOTEINK });
+      text(banner.body, L + 7 + bold.widthOfTextAtSize(banner.title, size) + gap, base, {
+        size, color: NOTEINK,
+      });
+      y -= boxH + 3;
+    }
   };
 
   const newPage = (continued) => {
@@ -546,6 +598,16 @@ export async function renderCorrected(sheet, opts = {}) {
         const notes = [];
         const bad = (t) => notes.push({ t, tone: "bad" });
         const good = (t) => notes.push({ t, tone: "good" });
+        // NOTED, NOT CHARGED - the tone this sheet already uses for "+0.17
+        // added" and "overlap *". A premium the engine assumed away keeps its
+        // words and loses its colour, which is the whole difference between the
+        // documents: same finding, not being charged for.
+        const noted = (t) => notes.push({ t, tone: "muted" });
+        // set only on a projected or corrected render. `projectDays` cleared the
+        // violation flags this row would otherwise have been drawn from, so
+        // without this the row goes silent and prints "compliant" - 359 rows on
+        // the live batch would claim a clean day for a break nobody verified.
+        const pn = d.premiumNote || null;
         if (d.mealLate) bad("meal started late");
         // a day past ten hours owes a SECOND meal, and "you got the first one
         // and not the second" is a different sentence from "you got no lunch".
@@ -554,6 +616,7 @@ export async function renderCorrected(sheet, opts = {}) {
         else if (d.secondMealViolation && d.mealsRostered >= 1) {
           bad(d.secondMealLate ? "second meal started late" : "no second meal period");
         } else if (d.mealViolation) bad("no meal period");
+        else if (pn?.meal === "taken") good("meal taken, confirmed");
         // a waived day is not a violation, and the sheet has to say which one it
         // is. printing nothing would make a waived day look identical to a day
         // where lunch was actually taken, and the only record of why 63 hours
@@ -567,11 +630,21 @@ export async function renderCorrected(sheet, opts = {}) {
         // the gaps suggest, and the punch count is the one the engine
         // deliberately doesn't trust - so days were printing "rest 3/2" beside a
         // premium for missing rest breaks. 39 rows across 16 people did that.
-        if (d.restUnknown) {
+        //
+        // THE ASSUMED CASE IS HANDLED SEPARATELY, further down, as ONE phrase
+        // naming both breaks and where the assumption stands. The order matters:
+        // most of these days are `restUnknown` too - nothing recorded a rest at
+        // all - so a later branch would print that sentence in red on a document
+        // charging nothing for it.
+        if (pn?.rest === "assumed") {
+          // said below, with the meal
+        } else if (d.restUnknown) {
           // "0 taken" and "nothing recorded it" are different claims, and only
           // one of them is a finding. Printing 0 for the second is asserting
           // something no source supports.
           bad(`rest: no record (${d.restRequired} owed)`);
+        } else if (pn?.rest === "taken") {
+          good("rest taken, confirmed");
         } else if (d.restViolation) {
           // PRINT THE FIGURE THE PREMIUM WAS DECIDED ON. This used to be
           // min(restCount, restRecorded), where restCount is the punch-gap
@@ -604,6 +677,44 @@ export async function renderCorrected(sheet, opts = {}) {
         // engine. Reads "+0.17 added" against the Daily Total beside it.
         if (d.addedHours > 0) notes.push({ t: `+${f2(d.addedHours)} added`, tone: "muted" });
         if (d.seventhDay) notes.push({ t: "7th day", tone: "muted" });
+        // WHICH BREAKS WERE ASSUMED AND WHERE THE ASSUMPTION STANDS, as ONE
+        // phrase. An answer covers the DAY rather than the break, so the state
+        // is said once; and the finding and the state are merged because they
+        // do not fit as two.
+        //
+        // EVERY WORD HERE WAS MEASURED, over all 59 sheets, against a control
+        // of 0 clipped cells on the default sheet:
+        //
+        //     "no meal period, rest 1/2, needs confirmation"   226 clipped
+        //     "meal + rest 1/2: needs confirmation"             45
+        //     "meal + rest: needs confirmation"                 45
+        //     "meal + rest: to confirm"                          3
+        //
+        // 68pt is the narrowest this column gets and the fitter stops shrinking
+        // at 4pt, which buys about 25 characters once a row is already carrying
+        // "overlap *" or "+0.17 added". The full phrase Mánu asked for lives in
+        // the colour key three inches below, where there is room for it.
+        //
+        // IT GOES LAST DELIBERATELY. Moving it ahead of those two markers also
+        // gives 3, but they are the ones clipped instead - and both explain the
+        // Daily Total on the same row, while this one is spelled out in full
+        // under the premium table. Given something has to give, it is this.
+        //
+        // Two states, and they are different claims. Before the deadline we are
+        // still asking. After it the acknowledgment they signed has answered for
+        // them, and the sheet says what the company is now treating as true
+        // rather than leaving a question open that nobody is going to close
+        // (Mánu 2026-08-09). "assumed taken" clips 13 rows to "assumed tak…",
+        // against 1 for a bare "taken" that reads as nonsense beside "rest 0/1".
+        if (pn && (pn.meal === "assumed" || pn.rest === "assumed")) {
+          const which =
+            pn.meal === "assumed" && pn.rest === "assumed"
+              ? "meal + rest"
+              : pn.meal === "assumed"
+                ? "meal"
+                : `rest ${pn.restTaken}/${pn.restRequired}`;
+          noted(`${which}: ${pn.state === "not-documented" ? "assumed taken" : "to confirm"}`);
+        }
         // A DAY WITH NOTHING TO SAY STILL SAYS SOMETHING. Mánu 2026-08-09: a
         // blank Comments cell reads as "we did not look", and the whole point of
         // this column is that somebody did. Green, so a clean day is legible at
@@ -764,6 +875,23 @@ export async function renderCorrected(sheet, opts = {}) {
   // full sheet there was no room left: Uribe's went to a SECOND PAGE, alone,
   // after the signature block. An explanation for a figure is no use on a page
   // somebody has already stopped reading.
+  // WHAT A GREY BREAK NOTE MEANS, said in full, directly under the table it
+  // describes. The cells themselves only have room for "meal + rest: to
+  // confirm" - 68pt at the narrowest, and the fitter bottoms out at 4pt - so
+  // the sentence Mánu asked for lives here, where there is a whole page width
+  // for it. Same reason the overlap marker is a "*" pointing at a paragraph.
+  if ((sheet.days || []).some((d) => d.premiumNote)) {
+    const due = (sheet.days || []).some((d) => d.premiumNote?.state === "not-documented");
+    y = wrap(
+      page,
+      due
+        ? "GREY BREAK NOTES: a meal or rest break with nothing on file recording it. The date for replying has passed, so these are being treated as taken and nothing is charged for them. Say so if any of them were missed."
+        : "GREY BREAK NOTES: a meal or rest break with nothing on file recording it. These are assumed taken and nothing is charged for them, and they need your confirmation before this timesheet can be signed.",
+      L, y, R - L, { font: italic, size: 6.5, color: NOTEINK, leading: 8 },
+    );
+    y -= 4;
+  }
+
   if ((sheet.totals.addedHours || 0) > 0) {
     const addedOt = sheet.totals.addedOtHours || 0;
     const ot = addedOt > 0
@@ -889,6 +1017,60 @@ export async function renderCorrected(sheet, opts = {}) {
 
   // ---------- premium table ----------
   const p = sheet.premiums;
+
+  // WHAT THIS DOCUMENT LEFT OUT, AND WHY.
+  //
+  // On a projected or corrected sheet the premium table is only half the story:
+  // the other half is every hour that was NOT charged because we assumed the
+  // break was taken. On 50 of the 59 people in the live batch the table is
+  // empty and this paragraph is the entire content of the section, which is
+  // exactly why it cannot be optional - "No meal or rest break premiums due"
+  // standing alone is a clean bill of health for something nobody verified.
+  const assumedDays = (sheet.days || []).filter((d) => d.premiumNote);
+  const assumedMeals = assumedDays.filter((d) => d.premiumNote.meal === "assumed").length;
+  const assumedRests = assumedDays.filter((d) => d.premiumNote.rest === "assumed").length;
+  const pastDue = assumedDays.some((d) => d.premiumNote.state === "not-documented");
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const assumedNote =
+    assumedMeals + assumedRests > 0
+      ? [
+          `Assumed taken, not charged: ${
+            [
+              assumedMeals ? plural(assumedMeals, "meal period", "meal periods") : null,
+              assumedRests ? plural(assumedRests, "rest break", "rest breaks") : null,
+            ].filter(Boolean).join(" and ")
+          }, on the days shown in grey above. Company policy asks you to enter your rest periods and your `
+            + "lunch on your own schedule, and nothing on file says these were missed.",
+          pastDue
+            ? "The date for replying has passed, so these are being treated as taken under the acknowledgment you signed. If any of them were missed, say so and this figure changes."
+            : "If any of them were missed, say so on your timesheet page and this figure changes.",
+        ]
+      : null;
+
+  // drawn in a tinted box, the same one the banner uses, so the two halves of
+  // "what this document is" read as one thing rather than as a stray footnote.
+  const drawAssumedNote = (top) => {
+    ensure(64);
+    let cur = top;
+    const boxTop = cur;
+    cur -= 8;
+    for (const para of assumedNote) {
+      cur = wrap(page, para, L + 7, cur, R - L - 14, {
+        font, size: 7, color: NOTEINK, leading: 9,
+      });
+      cur -= 3;
+    }
+    cur -= 4;
+    // the fill goes down AFTER the height is known, and behind the text: pdf-lib
+    // paints in call order, so drawing the box first would need the height
+    // guessed and drawing it opaque afterwards would bury the paragraph.
+    page.drawRectangle({
+      x: L, y: cur, width: R - L, height: boxTop - cur,
+      borderColor: NOTEBORDER, borderWidth: 0.6,
+    });
+    return cur - 12;
+  };
+
   if (p.totalHours > 0) {
     // header + both rows + total, kept on one page
     ensure(40 + (p.mealDays.length ? 22 : 0) + (p.restDays.length ? 30 : 0) + 40);
@@ -943,11 +1125,16 @@ export async function renderCorrected(sheet, opts = {}) {
       L, y, { size: 6.5, color: MUTED },
     );
     y -= 14;
+    if (assumedNote) y = drawAssumedNote(y);
   } else {
-    text("No meal or rest break premiums due for this pay period.", L, y, {
-      size: 9, f: bold, color: rgb(0.05, 0.4, 0.25),
-    });
+    text(
+      assumedNote
+        ? "No break premiums are being charged for this pay period."
+        : "No meal or rest break premiums due for this pay period.",
+      L, y, { size: 9, f: bold, color: rgb(0.05, 0.4, 0.25) },
+    );
     y -= 16;
+    if (assumedNote) y = drawAssumedNote(y);
   }
 
   // ---------- attestation ----------

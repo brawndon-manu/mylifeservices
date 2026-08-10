@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { buildBatchStats } from "@/lib/timesheet/stats";
+import { splitPremiumForSheets, confirmedFromAnswers } from "@/lib/timesheet/premium-split";
 import BackLink from "@/components/BackLink";
 
 export const metadata = { title: "Timesheet stats", robots: { index: false, follow: false } };
@@ -23,6 +24,10 @@ export default async function TimesheetStatsPage({ params }) {
       timesheets: {
         include: {
           user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+          corrections: {
+            where: { kind: { startsWith: "q_" }, status: { not: "open" } },
+            select: { kind: true, date: true, status: true },
+          },
         },
       },
     },
@@ -35,6 +40,15 @@ export default async function TimesheetStatsPage({ params }) {
   }));
   const s = buildBatchStats(rows);
   const t = s.totals;
+
+  // THE SAME PAIR THE PAY PERIOD PAGE SHOWS, from the same function, because
+  // two admin screens quoting different premium totals for one batch is worse
+  // than either of them being wrong on its own.
+  const confirmedBySheet = {};
+  for (const ts of batch.timesheets) {
+    confirmedBySheet[ts.id] = confirmedFromAnswers(ts.corrections);
+  }
+  const premiumSplit = splitPremiumForSheets(batch.timesheets, { confirmedBySheet });
 
   const maxDow = Math.max(1, ...s.byDow.map((d) => d.meal + d.rest));
 
@@ -75,20 +89,37 @@ export default async function TimesheetStatsPage({ params }) {
           sub="floored up to QSP's printed daily figure"
           tone="good"
         />
+        {/* The headline is the PROJECTED figure, not the raw total. Under the
+            2026-08-09 model a break nobody recorded is assumed taken and
+            charged nothing, so leading with the raw total would put a number on
+            this page that the company is not proposing to pay. The exposure is
+            not hidden - it is the card right below. */}
         <Card
-          label="Premium hours owed"
-          value={n2(t.premiumHours)}
-          sub={`${t.employeesWithPremium} of ${t.employees} affected`}
+          label="Premium hours projected"
+          value={n2(premiumSplit.projected)}
+          sub={`${n2(premiumSplit.ignoringAssumptions)} ignoring assumptions`}
           tone="warn"
         />
       </div>
 
       {/* the money question */}
       <Section title="Break premiums owed" hint="California Labor Code 226.7 - one hour per missed meal period, one per missed rest break, max one of each per day.">
+        {/* THE THREE FIGURES, same as the pay period page and the same as the
+            three documents. Staff author their own schedules and signed an
+            acknowledgment to record their breaks, so a missing entry is assumed
+            taken rather than charged. That makes one number impossible to state
+            honestly: the projected one alone hides the exposure, and the raw
+            one alone charges for breaks people took. The gap IS the unanswered
+            work, and it closes as people reply. */}
         <div className="grid gap-3 sm:grid-cols-3">
+          <Mini label="Projected" value={`${n2(premiumSplit.projected)} hrs`} strong />
+          <Mini label="Ignoring assumptions" value={`${n2(premiumSplit.ignoringAssumptions)} hrs`} />
+          <Mini label="Nobody has answered yet" value={`${n2(premiumSplit.assumed)} hrs`} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <Mini label="Meal period premiums" value={`${n2(t.mealPremiumHours)} hrs`} />
           <Mini label="Rest break premiums" value={`${n2(t.restPremiumHours)} hrs`} />
-          <Mini label="Total" value={`${n2(t.premiumHours)} hrs`} strong />
+          <Mini label="Charged before any assumption" value={`${n2(t.premiumHours)} hrs`} />
         </div>
 
         {t.neverPunchedCount > 0 && (

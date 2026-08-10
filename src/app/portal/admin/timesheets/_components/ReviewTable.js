@@ -219,16 +219,7 @@ export default function ReviewTable({
                       Review &amp; approve →
                     </a>
                   )}
-                  {r.hasPdf && (
-                    <a
-                      href={`/portal/admin/timesheets/sheet/${r.id}/download`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-brand transition hover:text-brand-dark"
-                    >
-                      {r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : "Preview PDF"} →
-                    </a>
-                  )}
+                  {r.hasPdf && <SheetLinks r={r} />}
                   <a
                     href={`/portal/admin/timesheets/sheet/${r.id}/report`}
                     target="_blank"
@@ -317,6 +308,54 @@ export default function ReviewTable({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+// THE THREE DOCUMENTS FOR ONE PERSON, each carrying the total it opens.
+//
+// Mánu 2026-08-09 wants to hold them side by side. They differ by every premium
+// the engine assumed away - Aranda is 19.00 hours on one and 2.00 on another -
+// so the figure belongs on the link rather than behind it.
+//
+// WHERE THEY AGREE, ONLY ONE LINK SHOWS. Ten of the 59 owe nothing under any
+// reading and would otherwise get three identical links to the same document,
+// which teaches people that the labels do not mean anything.
+function SheetLinks({ r }) {
+  const base = `/portal/admin/timesheets/sheet/${r.id}/download`;
+  const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
+  // a signed or approved copy is a stored artefact of the sheet as it stood,
+  // and it is always the ignoring-assumptions one. Say which it is.
+  const settled = r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : null;
+
+  const same =
+    r.premiumProjected === r.premiumCorrected && r.premiumCorrected === r.premiumIgnoring;
+
+  const link = (href, label, muted) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`text-xs font-medium transition ${
+        muted ? "text-muted hover:text-brand" : "text-brand hover:text-brand-dark"
+      }`}
+    >
+      {label} →
+    </a>
+  );
+
+  if (same) {
+    return <div className="flex flex-col items-end">{link(base, settled || "Preview PDF")}</div>;
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+        {settled || "Preview PDF"}
+      </span>
+      {link(`${base}?basis=projected`, `projected ${f2(r.premiumProjected)}`)}
+      {link(`${base}?basis=ignoring`, `ignoring assumptions ${f2(r.premiumIgnoring)}`, true)}
+      {link(`${base}?basis=corrected`, `as corrected ${f2(r.premiumCorrected)}`, true)}
     </div>
   );
 }

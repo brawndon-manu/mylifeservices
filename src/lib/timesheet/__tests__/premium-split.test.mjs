@@ -3,7 +3,9 @@
 // missing entry is assumed taken and asked about rather than charged.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { splitPremium } from "../premium-split.js";
+import {
+  splitPremium, projectDays, premiumsFromDays, confirmedFromAnswers,
+} from "../premium-split.js";
 
 const day = (over = {}) => ({
   date: "07/20/26", paidHours: 8, mealViolation: false, mealLate: false,
@@ -71,4 +73,111 @@ test("a clean day owes nothing on either figure", () => {
   assert.equal(d.projected, 0);
   assert.equal(d.ignoringAssumptions, 0);
   assert.equal(d.rows.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// THE THREE DOCUMENTS. Mánu 2026-08-09: he wants to hold the engine's proposal
+// and the raw figure side by side for one person, plus a third showing where
+// that person actually landed once they answered.
+
+test("an answer is read off the correction rows, and a decline is what charges", () => {
+  // Every question is phrased so "yes" agrees with the cheap reading the engine
+  // already took. Saying NO is the employee telling us they are owed.
+  const declined = confirmedFromAnswers([
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "declined" },
+  ]);
+  assert.deepEqual([...declined].sort(), ["07/20/26:meal", "07/20/26:rest"]);
+
+  const accepted = confirmedFromAnswers([
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" },
+  ]);
+  assert.equal(accepted.size, 0, "confirming our reading charges nothing");
+
+  // and the two kinds that move MINUTES rather than a premium stay out of it,
+  // or declining one of those would silently add an hour of pay
+  const minutesOnly = confirmedFromAnswers([
+    { kind: "q_restOutsideShift", date: "07/20/26", status: "declined" },
+    { kind: "q_restSnappedToShift", date: "07/20/26", status: "declined" },
+  ]);
+  assert.equal(minutesOnly.size, 0);
+
+  // an OPEN correction is a reported problem, not an answer
+  const open = confirmedFromAnswers([
+    { kind: "q_nothingDocumented", date: "07/20/26", status: "open" },
+  ]);
+  assert.equal(open.size, 0);
+});
+
+test("the projected rows keep the finding and lose the charge", () => {
+  const days = [
+    day({ date: "07/20/26", mealViolation: true, restViolation: true, restTaken: 1, restRequired: 2 }),
+    day({ date: "07/21/26", mealViolation: true, mealLate: true }),
+  ];
+  const out = projectDays(days);
+
+  // the assumed day stops being charged...
+  assert.equal(out[0].mealViolation, false);
+  assert.equal(out[0].restViolation, false);
+  // ...but it does NOT go silent. 359 rows on the live batch carry an assumed
+  // premium and nothing else, so dropping the flag alone would print
+  // "compliant" on every one of them - a clean bill of health for a break
+  // nobody verified.
+  assert.equal(out[0].premiumNote.meal, "assumed");
+  assert.equal(out[0].premiumNote.rest, "assumed");
+  assert.equal(out[0].premiumNote.restTaken, 1, "the count survives the flag being cleared");
+  assert.equal(out[0].premiumNote.restRequired, 2);
+
+  // the documented one is untouched, or the projected sheet charges nothing ever
+  assert.equal(out[1].mealViolation, true);
+  assert.equal(out[1].premiumNote, undefined, "nothing to explain: it is charged");
+
+  assert.equal(premiumsFromDays(out).totalHours, 1, "the late lunch, and only it");
+  assert.equal(premiumsFromDays(days).totalHours, 3, "against three before projecting");
+});
+
+test("the corrected rows charge what the employee said they are owed", () => {
+  const days = [day({ date: "07/20/26", mealViolation: true, restViolation: true })];
+  const answers = [{ kind: "q_nothingDocumented", date: "07/20/26", status: "declined" }];
+
+  // the PROJECTED copy is the engine's proposal and is blind to answers
+  assert.equal(premiumsFromDays(projectDays(days)).totalHours, 0);
+
+  // the CORRECTED copy is not
+  const corrected = projectDays(days, { confirmed: confirmedFromAnswers(answers) });
+  assert.equal(premiumsFromDays(corrected).totalHours, 2, "a meal and a rest");
+  assert.equal(corrected[0].premiumNote, undefined, "nothing assumed is left to note");
+});
+
+test("silence is called a question before the deadline and an answer after it", () => {
+  // Mánu 2026-08-09: "if they don't sign off on it, then the form will be our
+  // assumption". Same figure either way - what changes is what the sheet claims.
+  const days = [day({ mealViolation: true })];
+  assert.equal(projectDays(days, { pastDue: false })[0].premiumNote.state, "needs-confirmation");
+  assert.equal(projectDays(days, { pastDue: true })[0].premiumNote.state, "not-documented");
+  assert.equal(
+    premiumsFromDays(projectDays(days, { pastDue: true })).totalHours, 0,
+    "the deadline passing charges nobody anything",
+  );
+});
+
+test("a day they confirmed they took says so, and a clean day still says nothing", () => {
+  // the override has already cleared the violation by the time this runs, so
+  // without the answer record the day is indistinguishable from one that never
+  // owed anything - and on the corrected copy that sentence is the evidence.
+  const confirmedTaken = projectDays([day({ date: "07/20/26" })], {
+    answers: { "07/20/26:meal": "taken", "07/20/26:rest": "taken" },
+  });
+  assert.equal(confirmedTaken[0].premiumNote.meal, "taken");
+  assert.equal(confirmedTaken[0].premiumNote.rest, "taken");
+
+  const untouched = projectDays([day({ date: "07/20/26" })], { answers: {} });
+  assert.equal(untouched[0].premiumNote, undefined);
+});
+
+test("projecting a batch that owes nothing changes nothing at all", () => {
+  // the check that proves the ones above can fail: if projectDays rewrote every
+  // day it was handed, every assertion here would still pass by accident.
+  const clean = [day({ date: "07/20/26" }), day({ date: "07/21/26" })];
+  assert.deepEqual(projectDays(clean), clean);
+  assert.equal(premiumsFromDays(projectDays(clean)).totalHours, 0);
 });

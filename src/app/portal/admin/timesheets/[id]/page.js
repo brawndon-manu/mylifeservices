@@ -7,7 +7,11 @@ import { preferredName } from "@/lib/contacts";
 import { sendModeSummary } from "@/lib/timesheet-send";
 import { describePunchIssue, scheduledPaidHours } from "@/lib/timesheet/anomalies";
 import { buildQuestions } from "@/lib/timesheet/questions";
-import { splitPremiumForSheets } from "@/lib/timesheet/premium-split";
+import {
+  splitPremium,
+  splitPremiumForSheets,
+  confirmedFromAnswers,
+} from "@/lib/timesheet/premium-split";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "../_components/SendModeBanner";
 import ReviewTable from "../_components/ReviewTable";
@@ -91,19 +95,26 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
   // the projected figure and the ignoring-assumptions one. A premium somebody
   // has told us they ARE owed stops being an assumption, so the answers feed in.
+  // WHICH PREMIUMS SOMEBODY HAS SAID THEY ARE OWED. Derived in
+  // premium-split.js now rather than here: the PDF route needs the same answer
+  // to build the corrected copy, and a screen and a document disagreeing about
+  // what a person said is the drift the single classifier exists to stop. The
+  // version that lived here also missed `q_nothingDocumented`, which is the
+  // question 53 of the 59 are being asked.
   const confirmedBySheet = {};
   for (const t of batch.timesheets) {
-    const set = new Set();
-    for (const c of t.corrections) {
-      if (c.status !== "declined") continue;
-      if (c.kind === "q_restNoTimes" || c.kind === "q_repair") set.add(`${c.date}:rest`);
-      if (c.kind === "q_restIsMealLength") set.add(`${c.date}:meal`);
-    }
-    confirmedBySheet[t.id] = set;
+    confirmedBySheet[t.id] = confirmedFromAnswers(t.corrections);
   }
   const premiumSplit = splitPremiumForSheets(batch.timesheets, { confirmedBySheet });
 
-  const rows = batch.timesheets.map((t) => ({
+  const rows = batch.timesheets.map((t) => {
+    // THE SAME THREE FIGURES THE THREE DOCUMENTS PRINT, computed from the
+    // function the documents are built with rather than read off the stored
+    // column. Every link on the row carries the total it is about to open, so
+    // nobody has to click twice to find out which one they wanted.
+    const split = splitPremium(t.data?.days || [], { confirmed: confirmedBySheet[t.id] });
+    const engineOnly = splitPremium(t.data?.days || []);
+    return {
     id: t.id,
     sourceName: t.sourceName,
     matchMethod: t.matchMethod,
@@ -120,6 +131,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     otHours: t.otHours,
     doubleHours: t.doubleHours,
     premiumHours: t.premiumHours,
+    // projected = the engine's proposal, blind to the answers on purpose.
+    // corrected = the same with this person's answers folded in.
+    // ignoring  = every violation charged, which is the sheet as it is today.
+    premiumProjected: engineOnly.projected,
+    premiumCorrected: split.projected,
+    premiumIgnoring: split.ignoringAssumptions,
     partialWeek: t.partialWeek,
     // a lunch that HAPPENED but started after the fifth hour still owes a
     // premium, and it reads as an error to anyone who remembers taking it.
@@ -190,7 +207,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         .filter((f) => f.flag === "missing-from-timesheet").length,
       punchIssues: (t.data?.punchIssues || []).length,
     },
-  }));
+    };
+  });
 
   // how many of the source exports this period was uploaded with. tells you at
   // a glance whether a batch is missing a document it should have had.

@@ -1,0 +1,151 @@
+// THREE DOCUMENTS FOR ONE PERSON, and what each of them is allowed to claim.
+//
+// Mánu 2026-08-09: beside the existing preview there should be the engine's
+// projection, the figure without the assumptions, and a third showing where the
+// person landed once they answered. They differ by every premium the engine
+// assumed away - 14.00 against 684.00 across the live batch - so the danger is
+// not that one is wrong, it is that somebody reads the wrong one.
+//
+// These tests are about what the PAGE SAYS, not what the arithmetic does.
+// premium-split.test.mjs covers the arithmetic.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { renderSheet } from "../render-sheet.js";
+
+async function pdfText(bytes) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(bytes), useSystemFonts: false, isEvalSupported: false,
+  }).promise;
+  const out = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const content = await (await doc.getPage(i)).getTextContent();
+    for (const item of content.items) if (item.str?.trim()) out.push(item.str.trim());
+  }
+  return out.join("\n");
+}
+
+const at = (h, m = 0) => ({ min: h * 60 + m });
+
+// One assumed day and one documented one, which is the shape the whole question
+// turns on: a rostered lunch taken too late is charged on every copy, a lunch
+// nobody recorded is charged on one of them.
+const sheetFor = (days) => ({
+  id: "t1",
+  sourceName: "Testperson, Casey",
+  data: {
+    payPeriod: { from: "07/16/26", to: "07/31/26" },
+    generatedOn: "8/9/2026",
+    days,
+    premiums: {
+      mealDays: days.filter((d) => d.mealViolation).map((d) => d.date),
+      restDays: days.filter((d) => d.restViolation).map((d) => d.date),
+      mealHours: days.filter((d) => d.mealViolation).length,
+      restHours: days.filter((d) => d.restViolation).length,
+      totalHours: days.filter((d) => d.mealViolation).length
+        + days.filter((d) => d.restViolation).length,
+    },
+  },
+  batch: { periodFrom: "07/16/26", periodTo: "07/31/26", restsByDate: [] },
+});
+
+const day = (over = {}) => ({
+  date: "07/20/26", punches: [at(8), at(16, 30)],
+  paidHours: 8, rawHours: 8, regularHours: 8, otHours: 0, doubleHours: 0,
+  addedHours: 0, breaks: [], restTaken: 0, restRequired: 2,
+  mealViolation: false, mealLate: false, restViolation: false,
+  ...over,
+});
+
+const ASSUMED = day({ mealViolation: true, restViolation: true, restTaken: 1 });
+const DOCUMENTED = day({ date: "07/21/26", mealViolation: true, mealLate: true });
+
+test("each copy says which one it is, and the default one still says nothing", async () => {
+  const ts = sheetFor([ASSUMED, DOCUMENTED]);
+
+  const plain = await pdfText((await renderSheet(ts)).bytes);
+  assert.ok(!/PROJECTED COPY|AS CORRECTED/.test(plain),
+    "the copy that is emailed and signed is unchanged");
+
+  const projected = await pdfText((await renderSheet(ts, { basis: "projected" })).bytes);
+  assert.match(projected, /PROJECTED COPY - the engine's proposal/);
+  assert.match(projected, /Not the copy sent for signature/);
+
+  const corrected = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
+  assert.match(corrected, /AS CORRECTED - your answers applied/);
+});
+
+test("the projected copy charges the documented penalty and not the assumed one", async () => {
+  const ts = sheetFor([ASSUMED, DOCUMENTED]);
+
+  const plain = await pdfText((await renderSheet(ts)).bytes);
+  assert.match(plain, /3\.00 hrs/, "meal + rest on the 20th, meal on the 21st");
+
+  const projected = await pdfText((await renderSheet(ts, { basis: "projected" })).bytes);
+  assert.match(projected, /1\.00 hrs/, "the late lunch only");
+  assert.ok(!/3\.00 hrs/.test(projected), "and not the two it assumed away");
+});
+
+test("an assumed day is still a finding on the projected copy, never a clean one", async () => {
+  // THE FAILURE THIS EXISTS TO CATCH: clear the violation flags and the row
+  // goes quiet and prints "compliant". 359 rows on the live batch would have
+  // claimed a clean day for a break nobody verified.
+  const projected = await pdfText(
+    (await renderSheet(sheetFor([ASSUMED]), { basis: "projected" })).bytes);
+  assert.match(projected, /meal \+ rest: to confirm/);
+  assert.ok(!/compliant/.test(projected), "the one day on this sheet is not clean");
+  assert.match(projected, /GREY BREAK NOTES/, "and the colour is explained in words");
+});
+
+test("a copy that charges nothing still accounts for what it left out", async () => {
+  // 50 of the 59 people project to 0.00, so on most sheets this paragraph IS
+  // the premium section. "No premiums due" standing alone would be a clean bill
+  // of health for something nobody checked.
+  const projected = await pdfText(
+    (await renderSheet(sheetFor([ASSUMED]), { basis: "projected" })).bytes);
+  assert.match(projected, /No break premiums are being charged/);
+  assert.match(projected, /Assumed taken, not charged: 1 meal period and 1 rest break/);
+  assert.match(projected, /nothing on file says these were missed/);
+
+  // THE OPPOSITE: a genuinely clean sheet assumed nothing and must not carry
+  // the paragraph at all, or it is an apology for a finding that never existed.
+  const clean = await pdfText(
+    (await renderSheet(sheetFor([day()]), { basis: "projected" })).bytes);
+  assert.match(clean, /No meal or rest break premiums due/);
+  assert.ok(!/Assumed taken, not charged/.test(clean));
+  assert.ok(!/GREY BREAK NOTES/.test(clean));
+});
+
+test("declining moves a premium onto the corrected copy and leaves the projected one alone", async () => {
+  const ts = sheetFor([ASSUMED]);
+  const answered = {
+    confirmed: new Set(["07/20/26:meal", "07/20/26:rest"]),
+    answers: { "07/20/26:meal": "owed", "07/20/26:rest": "owed" },
+  };
+
+  const corrected = await pdfText((await renderSheet(ts, { basis: "corrected", ...answered })).bytes);
+  assert.match(corrected, /2\.00 hrs/, "she said she missed both");
+  assert.ok(!/to confirm/.test(corrected), "nothing is left to ask about");
+
+  // the projected copy is the engine's PROPOSAL and does not move. Holding the
+  // two side by side is how you see what the asking actually changed.
+  const projected = await pdfText((await renderSheet(ts, { basis: "projected", ...answered })).bytes);
+  assert.match(projected, /No break premiums are being charged/);
+  assert.match(projected, /to confirm/);
+});
+
+test("after the deadline the corrected copy stops asking and says what it assumed", async () => {
+  // Mánu 2026-08-09: "if they don't sign off on it, then the form will be our
+  // assumption." Not a new charge - a different claim about the same zero.
+  const ts = sheetFor([ASSUMED]);
+  const late = await pdfText((await renderSheet(ts, { basis: "corrected", pastDue: true })).bytes);
+  assert.match(late, /meal \+ rest: assumed taken/);
+  assert.ok(!/to confirm/.test(late));
+  assert.match(late, /The date for replying has passed/);
+  assert.match(late, /acknowledgment you signed/);
+
+  const early = await pdfText((await renderSheet(ts, { basis: "corrected", pastDue: false })).bytes);
+  assert.match(early, /meal \+ rest: to confirm/);
+  assert.ok(!/assumed taken,/.test(early));
+});

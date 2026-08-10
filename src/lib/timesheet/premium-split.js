@@ -33,6 +33,53 @@
 
 const PER_VIOLATION = 1;
 
+// ---------------------------------------------------------------------------
+// WHAT AN ANSWER SAYS ABOUT A PREMIUM.
+//
+// The answers are `TimesheetCorrection` rows keyed `q_<kind>`, and only some of
+// the seven kinds speak to a premium at all - `restOutsideShift` and
+// `restSnappedToShift` move paid MINUTES and leave the premium alone, so they
+// are deliberately absent from this table.
+//
+// A DECLINE IS THE EMPLOYEE SAYING THEY ARE OWED IT. Every one of these is
+// phrased so that "yes" agrees with the cheap reading the engine already took;
+// saying no is what puts a premium back. So declined -> owed, accepted -> taken.
+//
+// This table used to be inline in the pay period page and covered three kinds.
+// It missed `q_nothingDocumented`, which is the question 53 of 59 people are
+// being asked - so a decline on the big one would have put the premium back on
+// the stored day and into the ignoring-assumptions figure while the projected
+// figure sat still. The two are supposed to CONVERGE as people answer; that
+// omission would have made the gap grow instead.
+const PREMIUM_ANSWER_KINDS = {
+  q_repair: ["rest"],
+  q_restNoTimes: ["rest"],
+  q_restIsMealLength: ["meal"],
+  q_shortMealRest: ["rest"],
+  q_nothingDocumented: ["meal", "rest"],
+};
+
+// "MM/DD/YY:meal" -> "taken" | "owed", for every answer on record.
+export function answersByDate(corrections) {
+  const out = {};
+  for (const c of corrections || []) {
+    if (!c || c.status === "open") continue;
+    const kinds = PREMIUM_ANSWER_KINDS[c.kind];
+    if (!kinds) continue;
+    for (const k of kinds) out[`${c.date}:${k}`] = c.status === "declined" ? "owed" : "taken";
+  }
+  return out;
+}
+
+// the premiums an employee has told us they ARE owed. This is what `confirmed`
+// below wants, and every screen that needs it builds it here rather than
+// deriving its own - the pay period page, the stats page and the PDF route all
+// have to agree about what somebody said.
+export function confirmedFromAnswers(corrections) {
+  const answers = answersByDate(corrections);
+  return new Set(Object.keys(answers).filter((k) => answers[k] === "owed"));
+}
+
 // `confirmed` is a Set of "MM/DD/YY:meal" / "MM/DD/YY:rest" - the days where
 // somebody answered "no, I did not take it" and is owed after all.
 export function splitPremium(days, { confirmed } = {}) {
@@ -87,6 +134,87 @@ export function splitPremium(days, { confirmed } = {}) {
     // the size of what is still unanswered
     assumed,
     rows,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// THE PROJECTED DAY ROWS, which is what makes a second document possible
+// without a second renderer.
+//
+// `renderCorrected` counts nothing itself - it draws the day rows it is handed
+// and the premium table it is handed. So the projected sheet is the SAME
+// renderer over days whose assumed violations have been cleared. One document
+// generator, three documents, and no chance of the two drifting into different
+// layouts or different arithmetic.
+//
+// NONE OF THIS IS EVER STORED. These fields exist for the length of one render.
+// Do NOT add them to `storedDay` or `REQUIRED_DAY_FIELDS`: a stored day is the
+// raw finding, and which of the three documents you are looking at is not a
+// property of the day.
+//
+// CLEARING THE VIOLATION IS NOT ENOUGH ON ITS OWN. 359 day rows on the live
+// batch carry an assumed premium and nothing else worth printing, so simply
+// dropping the flag would flip all 359 from a red finding to a green
+// "compliant" - a clean bill of health for a break nobody verified. That is the
+// opposite of what the model claims. `premiumNote` is what keeps the row
+// speaking, and render.js prints it in grey: noted, not charged.
+//
+// @param confirmed  premiums the employee says they ARE owed (see above)
+// @param answers    "MM/DD/YY:meal" -> "taken" | "owed", the full answer record
+// @param pastDue    their deadline has passed, so silence has settled it
+export function projectDays(days, { confirmed, answers, pastDue } = {}) {
+  const has = (date, kind) => !!confirmed && confirmed.has(`${date}:${kind}`);
+  const said = (date, kind) => answers?.[`${date}:${kind}`] || null;
+  // WHAT AN UNANSWERED ASSUMPTION IS CALLED, and the two names are not the same
+  // claim. Before the deadline we are still asking. After it, Mánu 2026-08-09:
+  // "if they don't sign off on it, then the form will be our assumption" - the
+  // acknowledgment form they signed is the answer, and the sheet says what the
+  // company is now treating as true rather than pretending a question is open.
+  const state = pastDue ? "not-documented" : "needs-confirmation";
+
+  return (days || []).map((d) => {
+    const mealOwed = d.mealViolation === true || d.mealLate === true;
+    const restOwed = d.restViolation === true;
+    const mealAssumed = mealOwed && d.mealLate !== true && !has(d.date, "meal");
+    const restAssumed = restOwed && !has(d.date, "rest");
+    // a day they answered "yes, I took it" on has already had its violation
+    // cleared by the override, so there is nothing left here to notice. Say so
+    // anyway: on the corrected copy that sentence is the evidence.
+    const mealTaken = said(d.date, "meal") === "taken" && !mealOwed;
+    const restTaken = said(d.date, "rest") === "taken" && !restOwed;
+
+    if (!mealAssumed && !restAssumed && !mealTaken && !restTaken) return d;
+
+    return {
+      ...d,
+      mealViolation: mealAssumed ? false : d.mealViolation,
+      restViolation: restAssumed ? false : d.restViolation,
+      premiumNote: {
+        meal: mealAssumed ? "assumed" : mealTaken ? "taken" : null,
+        rest: restAssumed ? "assumed" : restTaken ? "taken" : null,
+        state,
+        // the figure the rest note prints, kept here because clearing
+        // restViolation is what stops render.js reaching for it
+        restTaken: d.restTaken ?? 0,
+        restRequired: d.restRequired ?? 0,
+      },
+    };
+  });
+}
+
+// the premium table for a set of day rows. parse.js builds this at upload from
+// the same two flags; this rebuilds it for a projected render, where the flags
+// have moved. Kept beside `projectDays` so the table and the rows it summarises
+// can only ever be counted the same way.
+export function premiumsFromDays(days) {
+  const mealDays = (days || []).filter((d) => d.mealViolation).map((d) => d.date);
+  const restDays = (days || []).filter((d) => d.restViolation).map((d) => d.date);
+  return {
+    mealDays,
+    restDays,
+    mealHours: mealDays.length * PER_VIOLATION,
+    restHours: restDays.length * PER_VIOLATION,
+    totalHours: (mealDays.length + restDays.length) * PER_VIOLATION,
   };
 }
 
