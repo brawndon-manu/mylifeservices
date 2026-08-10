@@ -290,7 +290,15 @@ export function buildFormEmailHtml({
     eyebrow,
     title: formTitle,
     subtitle,
-    bodyHtml: `${noteBlock}<p style="margin:0;">The completed form is attached as a PDF.</p>`,
+    // ONE EMAIL, TWO AUDIENCES. It goes TO the reviewer and CCs the person who
+    // signed, so the wording has to be true for both - the submitter is being
+    // handed their own copy, the reviewer is being handed the filed one. Mánu
+    // 2026-08-10 wanted it to say more than "attached": that the copy is theirs
+    // to keep and that the acknowledgment is on record.
+    bodyHtml:
+      `${noteBlock}` +
+      `<p style="margin:0 0 12px;">The signed copy is attached as a PDF. Keep it for your records.</p>` +
+      `<p style="margin:0;color:#4b5563;">This submission has been recorded and the signed document is on file.</p>`,
     footer: "My Life Services &middot; form submission",
   });
 }

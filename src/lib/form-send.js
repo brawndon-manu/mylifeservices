@@ -64,7 +64,7 @@ export async function sendFilledForm({
     dateStr,
     note,
   });
-  const text = `${formTitle}\n\nSubmitted by ${submitterName} (${submitterEmail})\n${dateStr}\n${note ? `\nAdditional info: ${note}\n` : ""}\nThe completed form is attached as a PDF.`;
+  const text = `${formTitle}\n\nSubmitted by ${submitterName} (${submitterEmail})\n${dateStr}\n${note ? `\nAdditional info: ${note}\n` : ""}\nThe signed copy is attached as a PDF. Keep it for your records.\nThis submission has been recorded and the signed document is on file.`;
 
   const route_ = resolveFormRecipients(recipientEmail, ccEmails);
   const resend = new Resend(process.env.RESEND_API_KEY);
