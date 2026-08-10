@@ -240,3 +240,14 @@ export function computeMeetingLocks({ options, myChoices, meetingAt, myAttended,
       : lockedOptionIds.size > 0;
   return { isSeries: false, lockedAll, lockedSeriesIds: [], lockedOptionIds: [...lockedOptionIds] };
 }
+
+// Documents attached to a post. The helpers live in their own dependency-free
+// module so they can be tested without pulling in everything this file imports -
+// same reason timesheet-mode.js is split out from the send path.
+export {
+  ATTACH_ACCEPT,
+  ATTACH_MAX_BYTES,
+  ATTACH_MAX_COUNT,
+  cleanAttachment,
+  attachmentsOf,
+} from "./announcement-attachments.js";

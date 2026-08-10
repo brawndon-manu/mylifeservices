@@ -21,6 +21,7 @@ export async function submitPublicFormByEmail({
   pdfBase64,
   pdfName,
   recipientId,
+  announcementId,
 }) {
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -36,6 +37,20 @@ export async function submitPublicFormByEmail({
     select: { id: true, title: true, fillable: true },
   });
   if (!form || !form.fillable) return { ok: false, error: "norecipients" };
+
+  // the announcement this signature is meant to acknowledge, re-derived rather
+  // than trusted: real, still asking for an ack, and pointing at THIS form.
+  // Same check the logged-in path makes.
+  let validAnnouncementId = null;
+  if (typeof announcementId === "string" && announcementId) {
+    const a = await prisma.announcement.findUnique({
+      where: { id: announcementId },
+      select: { formId: true, requireAck: true, deletedAt: true },
+    });
+    if (a && !a.deletedAt && a.requireAck && a.formId === form.id) {
+      validAnnouncementId = announcementId;
+    }
+  }
 
   const route = formEmailRoute(form.title);
   if (!route || !route.recipientTitle) return { ok: false, error: "norecipients" };
@@ -69,6 +84,10 @@ export async function submitPublicFormByEmail({
         submitterName: name,
         submitterEmail: email,
         attribution: "unassigned",
+        // WITHOUT THIS the ack is never written - not now, and not later when
+        // an admin assigns the submission, because assignFormSubmission reads
+        // the announcement off the row it is assigning.
+        announcementId: validAnnouncementId,
         ip,
       });
     } catch (e) {

@@ -31,6 +31,7 @@ import {
   isAckExempt,
   computeMeetingLocks,
   canSeeAnnouncement,
+  attachmentsOf,
 } from "@/lib/announcements";
 import AuthorPreview from "../_components/AuthorPreview";
 import Avatar from "@/components/Avatar";
@@ -234,6 +235,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   if (!isDraft && !canSeeAnnouncement(post, user)) notFound();
 
   const expired = isExpired(post);
+  const attachments = attachmentsOf(post);
   const liked = post.likes.length > 0;
   const canDeletePost = post.authorId === user.id || isModerator(user.role);
   // the author edits their own; Super can edit anyone's.
@@ -1104,6 +1106,37 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   </div>
                   </OverrideProvider>
                 )}
+              </div>
+            )}
+
+            {/* THE DOCUMENTS THE POST CARRIES. They are also attached to the
+                email, so somebody who read it in their inbox has already seen
+                them - these are here for anyone who came to the post first, or
+                came back for a second look. */}
+            {attachments.length > 0 && (
+              <div className="mx-auto mt-5 max-w-2xl px-6 sm:px-8">
+                <p className="text-xs font-semibold uppercase tracking-wide text-faint">
+                  {attachments.length === 1 ? "Attached document" : "Attached documents"}
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {attachments.map((a) => (
+                    <li key={a.url}>
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 transition hover:border-brand"
+                      >
+                        <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                          {a.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted">
+                          PDF{a.bytes ? ` · ${Math.max(1, Math.round(a.bytes / 1024))} KB` : ""} →
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 

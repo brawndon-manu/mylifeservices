@@ -44,6 +44,11 @@ import {
   isValidAnnouncementTag,
   isChangelog,
   isCompanyMeeting,
+  ATTACH_ACCEPT,
+  ATTACH_MAX_BYTES,
+  ATTACH_MAX_COUNT,
+  cleanAttachment,
+  attachmentsOf,
   isEvent,
   isValidEventAudience,
   isValidMeetingKind,
@@ -278,6 +283,82 @@ function parseMeetingFields(formData, tag) {
   };
 }
 
+// PDFs UPLOADED STRAIGHT ONTO A POST. Same store and same cleanup as the image,
+// a different prefix so the two are tellable apart in the bucket.
+async function uploadAttachment(file) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error("Attachments arent configured yet. Create a Blob store in Vercel.");
+  }
+  const key = `announcements/docs/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.pdf`;
+  const blob = await put(key, file, { access: "public", contentType: "application/pdf" });
+  return blob.url;
+}
+
+// WHAT ENDS UP ON THE POST, from both sources.
+//
+// A library pick arrives as a Form id and is LOOKED UP - the url and the name
+// come from the row, never from the posted value, or a crafted form could
+// attach any url it liked under a friendly name. An upload is checked for type
+// and size before it reaches the store.
+//
+// `redirectOn` is the page to bounce back to, so create and edit report their
+// errors in the right place.
+async function resolveAttachments(formData, redirectOn) {
+  const out = [];
+
+  // ALREADY ON THE POST, and not ticked for removal. An uploaded PDF exists
+  // only here, so an edit that silently dropped it would lose the file - the
+  // library picks below can always be re-picked, these cannot.
+  for (const raw of formData.getAll("keepAttachments")) {
+    if (typeof raw !== "string" || !raw) continue;
+    try {
+      const a = cleanAttachment(JSON.parse(raw));
+      if (a) out.push(a);
+    } catch {
+      // a mangled hidden field drops that one attachment rather than the post
+    }
+  }
+
+  const ids = formData
+    .getAll("attachFormIds")
+    .filter((v) => typeof v === "string" && v);
+  if (ids.length) {
+    const rows = await prisma.form.findMany({
+      where: { id: { in: ids.slice(0, ATTACH_MAX_COUNT) } },
+      select: { id: true, title: true, fileUrl: true },
+    });
+    // keep the order the picker showed them in rather than the database's
+    for (const id of ids) {
+      const f = rows.find((r) => r.id === id);
+      if (f) out.push({ name: f.title, url: f.fileUrl, formId: f.id, bytes: null });
+    }
+  }
+
+  const files = formData
+    .getAll("attachments")
+    .filter((f) => f && typeof f === "object" && "size" in f && f.size > 0);
+  for (const file of files) {
+    if (!ATTACH_ACCEPT.includes(file.type)) redirect(`${redirectOn}?error=attachType`);
+    if (file.size > ATTACH_MAX_BYTES) redirect(`${redirectOn}?error=attachSize`);
+    if (out.length >= ATTACH_MAX_COUNT) redirect(`${redirectOn}?error=attachCount`);
+    let url;
+    try {
+      url = await uploadAttachment(file);
+    } catch {
+      redirect(`${redirectOn}?error=attachUpload`);
+    }
+    out.push({
+      name: (file.name || "Document").replace(/\.pdf$/i, "").slice(0, 120),
+      url,
+      formId: null,
+      bytes: file.size,
+    });
+  }
+
+  if (out.length > ATTACH_MAX_COUNT) redirect(`${redirectOn}?error=attachCount`);
+  return out.length ? out.map(cleanAttachment).filter(Boolean) : null;
+}
+
 async function uploadImage(file) {
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     throw new Error(
@@ -291,6 +372,14 @@ async function uploadImage(file) {
     contentType: file.type,
   });
   return blob.url;
+}
+
+// the uploaded PDFs on a post. A library attachment points at a file the forms
+// library owns, so deleting the post must NOT delete that one.
+async function tryDeleteAttachments(post) {
+  for (const a of attachmentsOf(post)) {
+    if (!a.formId) await tryDeleteBlob(a.url);
+  }
 }
 
 async function tryDeleteBlob(url) {
@@ -374,6 +463,12 @@ export async function createPost(formData) {
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
   const formId = await resolveFormId(formData, requireAck);
 
+  // DOCUMENTS THAT RIDE ALONG. Two sources, both validated here: ids picked
+  // from the forms library (looked up, never trusted as posted) and PDFs
+  // uploaded straight onto the post. Resolved before the image so a rejected
+  // attachment does not orphan an uploaded blob.
+  const attachments = await resolveAttachments(formData, "/portal/announcements/new");
+
   let imageUrl = null;
   const file = formData.get("image");
   if (file && typeof file === "object" && "size" in file && file.size > 0) {
@@ -399,6 +494,7 @@ export async function createPost(formData) {
       tag,
       expiresAt,
       imageUrl,
+      attachments,
       requireAck,
       ackEveryone,
       ackTitles,
@@ -430,6 +526,8 @@ export async function publishAnnouncement(postId, formData) {
       tag: true,
       title: true,
       content: true,
+      // the PDFs the post carries, so the email can attach them
+      attachments: true,
       requireAck: true,
       createdAt: true,
       ackEveryone: true,
@@ -478,7 +576,10 @@ export async function discardDraft(postId) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, postedById: true, deletedAt: true, publishedAt: true, imageUrl: true },
+    select: {
+      id: true, authorId: true, postedById: true, deletedAt: true,
+      publishedAt: true, imageUrl: true, attachments: true,
+    },
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
   const canDiscard =
@@ -487,6 +588,7 @@ export async function discardDraft(postId) {
     redirect(`/portal/announcements/${postId}?error=forbidden`);
   }
   await tryDeleteBlob(post.imageUrl);
+  await tryDeleteAttachments(post);
   await prisma.announcement.delete({ where: { id: postId } });
   revalidatePath("/portal/announcements");
   redirect("/portal/announcements?discarded=1");
@@ -496,7 +598,7 @@ export async function deletePost(postId) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, imageUrl: true, deletedAt: true },
+    select: { id: true, authorId: true, imageUrl: true, attachments: true, deletedAt: true },
   });
   if (!post || post.deletedAt) {
     redirect("/portal/announcements");
@@ -509,9 +611,10 @@ export async function deletePost(postId) {
 
   await prisma.announcement.update({
     where: { id: postId },
-    data: { deletedAt: new Date(), imageUrl: null },
+    data: { deletedAt: new Date(), imageUrl: null, attachments: null },
   });
   await tryDeleteBlob(post.imageUrl);
+  await tryDeleteAttachments(post);
 
   revalidatePath("/portal/announcements");
   redirect("/portal/announcements?deleted=1");
@@ -528,6 +631,8 @@ export async function editPost(postId, formData) {
       deletedAt: true,
       publishedAt: true,
       tag: true,
+      // needed to work out which uploaded files the author removed
+      attachments: true,
       meetingOptions: true,
       meetingAt: true,
     },
@@ -594,6 +699,14 @@ export async function editPost(postId, formData) {
   const formId = await resolveFormId(formData, requireAck);
 
   const meetingFields = parseMeetingFields(formData, tag);
+  // the kept ones come back as hidden fields, so an edit that touches nothing
+  // else leaves the documents exactly as they were. Anything the author removed
+  // is simply absent from the post and its blob goes below.
+  const attachments = await resolveAttachments(formData, `/portal/announcements/${postId}/edit`);
+  const dropped = attachmentsOf(post).filter(
+    (a) => !a.formId && !(attachments || []).some((k) => k.url === a.url),
+  );
+
   await prisma.announcement.update({
     where: { id: postId },
     data: {
@@ -601,6 +714,7 @@ export async function editPost(postId, formData) {
       content,
       tag,
       expiresAt,
+      attachments,
       requireAck,
       ackEveryone,
       ackTitles,
@@ -612,6 +726,9 @@ export async function editPost(postId, formData) {
       editedAt: new Date(),
     },
   });
+  // only AFTER the row no longer points at them, so a failed update cannot
+  // leave the post referencing a file that has been deleted
+  for (const a of dropped) await tryDeleteBlob(a.url);
 
   // if this is a published meeting and any session's start time moved, reset the
   // picks for just those sessions (attendees re-RSVP) and, per the author's
@@ -629,6 +746,8 @@ export async function editPost(postId, formData) {
           id: true,
           title: true,
           content: true,
+          // the PDFs the post carries, so the email can attach them
+          attachments: true,
           requireAck: true,
           createdAt: true,
           ackEveryone: true,
@@ -1496,6 +1615,8 @@ export async function adminAddInvitee(postId, userId, formData) {
       ackUserIds: true,
       title: true,
       content: true,
+      // the PDFs the post carries, so the email can attach them
+      attachments: true,
       createdAt: true,
       ackEveryone: true,
       ackTitles: true,
@@ -1617,6 +1738,8 @@ export async function sendAckEmails(postId) {
       id: true,
       title: true,
       content: true,
+      // the PDFs the post carries, so the email can attach them
+      attachments: true,
       requireAck: true,
       deletedAt: true,
       ackEveryone: true,
@@ -1714,6 +1837,8 @@ export async function emailMeetingNoResponse(postId) {
       id: true,
       title: true,
       content: true,
+      // the PDFs the post carries, so the email can attach them
+      attachments: true,
       requireAck: true,
       createdAt: true,
       deletedAt: true,
@@ -1781,6 +1906,30 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
     preferredFirstName: true,
     preferredLastName: true,
   };
+  // THE DOCUMENTS, FETCHED ONCE AND SHARED BY EVERY MESSAGE. Mánu 2026-08-10:
+  // staff should get the PDFs in the email the way HR sends them today, AND the
+  // button back to the portal to sign. A library attachment is a same-origin
+  // path, so it is resolved against the site's own base url.
+  //
+  // Best effort by design: a document that will not fetch must not stop the
+  // announcement going out. It is still on the post, and the email still links
+  // there.
+  const files = [];
+  for (const a of attachmentsOf(post)) {
+    try {
+      const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      files.push({
+        filename: `${a.name.replace(/[^\w .-]/g, "_").slice(0, 80)}.pdf`,
+        content: buf.toString("base64"),
+      });
+    } catch (e) {
+      console.error(`announcement attachment skipped (${a.url}):`, e?.message || e);
+    }
+  }
+
   const recipients = await prisma.user.findMany({ where, select });
   if (includeDirector) {
     const director = await prisma.user.findFirst({
@@ -1843,7 +1992,7 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
       : post.requireAck && ackUrl
         ? `${title}\n\nHi ${firstName}, please read this announcement and acknowledge: ${ackUrl}`
         : `${title}\n\nHi ${firstName}, a new announcement was posted. View it in the portal.`;
-    return { from, to: [r.email], subject, html, text };
+    return { from, to: [r.email], subject, html, text, ...(files.length ? { attachments: files } : {}) };
   });
 
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -1901,6 +2050,8 @@ export async function sendAnnouncementEmail(postId, formData) {
       id: true,
       title: true,
       content: true,
+      // the PDFs the post carries, so the email can attach them
+      attachments: true,
       requireAck: true,
       deletedAt: true,
       createdAt: true,

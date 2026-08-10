@@ -354,6 +354,18 @@ model Announcement {
   // means filling + submitting the form, which writes the ack (see FormSubmission).
   formId      String?
   form        Form?     @relation(fields: [formId], references: [id])
+  // DOCUMENTS THAT RIDE ALONG WITH THE POST. [{ name, url, formId?, bytes? }]
+  //
+  // Two sources on purpose. A `formId` entry points at something already in the
+  // forms library, so the file is stored once and stays browsable at
+  // /portal/forms afterwards. An entry without one was uploaded straight onto
+  // the post and lives only here - which is the case that lets HR attach
+  // something without waiting on a deploy, the gap that stopped Britny getting
+  // the workers' comp training out on 2026-08-10.
+  //
+  // Json rather than a table because it is a short ordered list read only with
+  // its parent, and nothing ever queries across posts by attachment.
+  attachments Json?
   // Company Meeting fields (used when tag = "Company Meeting").
   meetingKind      String?  // Training | Team meeting | All-hands | Orientation | Other
   meetingFormat    String?  // zoom | in_person | hybrid

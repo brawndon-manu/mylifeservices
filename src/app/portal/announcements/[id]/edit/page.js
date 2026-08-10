@@ -48,6 +48,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       tag: true,
       expiresAt: true,
       imageUrl: true,
+      attachments: true,
       requireAck: true,
       ackEveryone: true,
       ackTitles: true,
@@ -108,7 +109,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
   // proxy "post as" - same as create, but only while it's still a draft.
   const canProxy = isElevated(user.role) && isDraft;
   const showRoles = canSeeRoles(user.role);
-  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }, allForms] =
+  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }, allForms, docs] =
     await Promise.all([
       getAckStaffByTitle(),
       getStaffByTitle(),
@@ -117,6 +118,13 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
         where: { fillable: true },
         select: { id: true, title: true },
         orderBy: { title: "asc" },
+      }),
+      // ATTACHABLE is a wider set than ack-eligible: the training deck is not
+      // fillable and has nowhere to submit to, but it is exactly the kind of
+      // thing a post needs to carry.
+      prisma.form.findMany({
+        select: { id: true, title: true, category: true, fillable: true },
+        orderBy: [{ category: "asc" }, { title: "asc" }],
       }),
     ]);
   const forms = allForms.filter((f) => !!formEmailRoute(f.title)?.recipientTitle);
@@ -171,6 +179,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
           forms={forms}
+          docs={docs}
           cancelHref={`/portal/announcements/${id}`}
           submitLabel={isDraft ? "Save changes and preview" : "Save changes"}
         />

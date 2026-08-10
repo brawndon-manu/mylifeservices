@@ -52,7 +52,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
 
   const canProxy = isElevated(user.role);
   const showRoles = canSeeRoles(user.role);
-  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }, allForms] =
+  const [ackStaffByTitle, emailStaffByTitle, { ackEveryone, allActive }, allForms, docs] =
     await Promise.all([
       getAckStaffByTitle(),
       getStaffByTitle(),
@@ -61,6 +61,13 @@ export default async function NewAnnouncementPage({ searchParams }) {
         where: { fillable: true },
         select: { id: true, title: true },
         orderBy: { title: "asc" },
+      }),
+      // ATTACHABLE is a wider set than ack-eligible: the training deck is not
+      // fillable and has nowhere to submit to, but it is exactly the kind of
+      // thing a post needs to carry.
+      prisma.form.findMany({
+        select: { id: true, title: true, category: true, fillable: true },
+        orderBy: [{ category: "asc" }, { title: "asc" }],
       }),
     ]);
   // only forms that can actually be submitted by email are eligible to attach -
@@ -118,6 +125,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
           forms={forms}
+          docs={docs}
           submitLabel="Preview"
         />
       </div>

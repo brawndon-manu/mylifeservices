@@ -16,6 +16,7 @@ import {
   isEvent,
 } from "@/lib/announcements";
 import { POST_CONTENT_MAX, IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
+import { ATTACH_ACCEPT, ATTACH_MAX_BYTES, ATTACH_MAX_COUNT, attachmentsOf } from "@/lib/announcements";
 import DatePicker from "@/components/DatePicker";
 import AudiencePicker from "./AudiencePicker";
 import MeetingFields from "./MeetingFields";
@@ -126,10 +127,15 @@ export default function AnnouncementForm({
   ackStaffByTitle = {},
   ackEveryoneTotal = null,
   forms = [],
+  docs = [],
   cancelHref = "/portal/announcements",
   submitLabel = "Preview",
 }) {
   const d = defaults;
+  // documents already on the post: shown with a remove control, and posted back
+  // as hidden fields so an edit that touches nothing else keeps them. An
+  // uploaded PDF exists only here, so dropping it silently would lose the file.
+  const [kept, setKept] = useState(() => attachmentsOf(d));
   const [tag, setTag] = useState(d.tag || tags[0] || "Announcement");
   const changelog = isChangelog(tag);
   const meeting = isCompanyMeeting(tag);
@@ -278,6 +284,84 @@ export default function AnnouncementForm({
               />
             </div>
           )}
+
+          {/* DOCUMENTS THAT RIDE ALONG WITH THE POST. Two sources on purpose:
+              something already in the forms library is stored once and stays
+              browsable there, while an upload lets HR attach a one-off without
+              waiting on a deploy - the gap that stopped the workers' comp
+              training going out on 2026-08-10. */}
+          <div>
+            <span className={LABEL}>
+              Attached documents <span className="text-faint">(optional)</span>
+            </span>
+
+            {kept.length > 0 && (
+              <ul className="mt-2 space-y-1.5">
+                {kept.map((a) => (
+                  <li
+                    key={a.url}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2"
+                  >
+                    <span className="min-w-0 text-sm text-foreground">
+                      <span className="truncate">{a.name}</span>
+                      <span className="ml-2 text-xs text-muted">
+                        {a.formId ? "from the forms library" : "uploaded to this post"}
+                      </span>
+                    </span>
+                    <input type="hidden" name="keepAttachments" value={JSON.stringify(a)} />
+                    <button
+                      type="button"
+                      onClick={() => setKept((k) => k.filter((x) => x.url !== a.url))}
+                      className="shrink-0 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {docs.length > 0 && (
+              <details className="mt-2 rounded-lg border border-border bg-surface-2 px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium text-foreground">
+                  Attach from the forms library
+                </summary>
+                <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+                  {docs
+                    .filter((f) => !kept.some((k) => k.formId === f.id))
+                    .map((f) => (
+                      <label key={f.id} className="flex items-start gap-2 text-sm text-muted">
+                        <input
+                          type="checkbox"
+                          name="attachFormIds"
+                          value={f.id}
+                          className="mt-0.5 h-4 w-4 accent-brand"
+                        />
+                        <span>
+                          {f.title}
+                          <span className="ml-2 text-xs text-faint">
+                            {f.category}{f.fillable ? " · fillable" : ""}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              </details>
+            )}
+
+            <input
+              id="attachments"
+              name="attachments"
+              type="file"
+              multiple
+              accept={ATTACH_ACCEPT.join(",")}
+              className="mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
+            />
+            <p className="mt-1 text-xs text-muted">
+              PDF only, up to {Math.round(ATTACH_MAX_BYTES / (1024 * 1024))} MB each and{" "}
+              {ATTACH_MAX_COUNT} in total. Staff get them in the email and on the post.
+            </p>
+          </div>
 
           {mode === "create" && (
             <div>

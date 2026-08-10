@@ -25,8 +25,9 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function PublicFillPage({ params }) {
+export default async function PublicFillPage({ params, searchParams }) {
   const { slug } = await params;
+  const sp = await searchParams;
 
   const form = await prisma.form.findUnique({
     where: { shareSlug: slug },
@@ -34,9 +35,33 @@ export default async function PublicFillPage({ params }) {
   });
   if (!form || !form.fillable) notFound();
 
+  // ARRIVED FROM AN ANNOUNCEMENT that wants this form signed. Carried through
+  // so a signature given without logging in still completes that person's
+  // acknowledgment - it did not, until 2026-08-10: the public path stored the
+  // submission with no announcement on it, so the roster never ticked and even
+  // assigning it later recorded nothing.
+  //
+  // Validated the same way the logged-in page does: the announcement has to be
+  // real, still require an ack, and actually point at THIS form. Never trust
+  // the query string.
+  let announcementId = null;
+  if (typeof sp?.announcementId === "string" && sp.announcementId) {
+    const a = await prisma.announcement.findUnique({
+      where: { id: sp.announcementId },
+      select: { formId: true, requireAck: true, deletedAt: true },
+    });
+    if (a && !a.deletedAt && a.requireAck && a.formId === form.id) {
+      announcementId = sp.announcementId;
+    }
+  }
+
   // already signed in? use the normal in-portal fill page (by the real form id).
   const user = await getCurrentUser();
-  if (user) redirect(`/portal/forms/${form.id}/fill`);
+  if (user) {
+    redirect(
+      `/portal/forms/${form.id}/fill${announcementId ? `?announcementId=${announcementId}` : ""}`,
+    );
+  }
 
   // the public link only makes sense for a form that can be submitted by email.
   const route = formEmailRoute(form.title);
@@ -66,6 +91,7 @@ export default async function PublicFillPage({ params }) {
         title={form.title}
         formId={form.id}
         reviewTeam={reviewTeam}
+        announcementId={announcementId}
         publicMode
         submitAction={submitPublicFormByEmail}
       />
