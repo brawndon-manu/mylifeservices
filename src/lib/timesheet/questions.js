@@ -23,7 +23,7 @@
 // The second shape is why declining has to rebuild the sheet.
 
 import { restKey, isMealLengthRest } from "./rests.js";
-import { shortTime } from "./recorded-breaks.js";
+import { shortTime, scheduleGaps, rosteredMeal } from "./recorded-breaks.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -48,6 +48,67 @@ export const questionId = (q) =>
  * @param restRows   the batch's `restsByDate`
  * @param sourceName who this sheet belongs to, as the exports name them
  */
+// minutes past midnight -> "1:15p", the only time format on the sheet
+const clock = (min) => {
+  const h24 = Math.floor(min / 60);
+  const mm = min % 60;
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
+};
+
+// WHAT A DAY NEEDS A TIME FOR, once somebody says they took their breaks.
+//
+// Mánu 2026-08-10: "we also need to add in the ability for them to pick the
+// times if yes. so the new generated time sheet can reflect their answers" -
+// and required, "because we need a record of this."
+//
+// A slot arrives PRE-FILLED only where a real time already exists: a meal the
+// roster booked and nobody punched. 20 of 855 across this batch. Everything
+// else is blank, because this question is by definition the days where nothing
+// was recorded, and "for the ones that are missing entirely, they have to input
+// those in, we cannot assume."
+//
+// A schedule GAP is offered beside an empty box as a one-tap suggestion, not a
+// value. 506 of the 597 tens have one. Tapping it is the employee choosing a
+// time; the slot records which of the three it was so the sheet can say.
+function slotsFor(day, entry, wantMeal, wantRest) {
+  const out = [];
+  if (wantMeal) {
+    const m = rosteredMeal(entry);
+    out.push({
+      slot: "meal",
+      kindOf: "meal",
+      label: "Lunch started",
+      minutes: 30,
+      // the roster booked it, so it is a time and not a guess
+      prefill: m ? clock(m.from) : null,
+      source: m ? "schedule" : null,
+      hint: m ? "from your schedule - change it if that is not when you went" : null,
+    });
+  }
+  if (wantRest) {
+    const gaps = scheduleGaps(entry);
+    const owed = Math.max(1, (day?.restRequired ?? 1) - (day?.restTaken ?? 0));
+    for (let i = 0; i < owed; i++) {
+      const g = gaps[i] || null;
+      out.push({
+        slot: `rest${i + 1}`,
+        kindOf: "rest",
+        label: owed === 1 ? "Your ten" : i === 0 ? "First ten" : i === 1 ? "Second ten" : `Ten #${i + 1}`,
+        minutes: 10,
+        // NEVER pre-filled. The schedule cannot roster a rest period at all.
+        prefill: null,
+        source: null,
+        suggest: g ? clock(g.from) : null,
+        hint: g
+          ? `your schedule has a gap ${clock(g.from)}-${clock(g.to)}`
+          : "no gap on your schedule to point at - you will have to remember",
+      });
+    }
+  }
+  return out;
+}
+
 export function buildQuestions(data, { restRows, sourceName } = {}) {
   if (!data) return [];
   const days = data.days || [];
@@ -208,6 +269,7 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       ...mealUndocumented.map((d) => d.date),
       ...restUndocumented.map((d) => d.date),
     ])].sort();
+    const byDate = data.scheduleCheck?.byDate || {};
     for (const date of dates) {
       const meal = mealUndocumented.some((d) => d.date === date);
       const rest = restUndocumented.some((d) => d.date === date);
@@ -222,6 +284,10 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
         // commits them in one call and rebuilds the sheet once - thirteen
         // confirm panels and thirteen rebuilds was the alternative.
         batch: "nothingDocumented",
+        // ANSWERING "yes" IS NOT ENOUGH ON ITS OWN ANY MORE. Every slot here has
+        // to carry a time before the card can be submitted, and the times land
+        // on the sheet they then sign.
+        needs: slotsFor(dayOf(date), byDate[date], meal, rest),
         row: {
           meal,
           rest,
@@ -292,12 +358,23 @@ export function patchesFor(question, choice, day) {
         ? { paidHours: null }
         : { paidHours: r2((day?.paidHours || 0) + (day?.restsMisclickedMin || 0) / 60) };
     case "nothingDocumented":
-      // "Yes, that is correct" - she took them and did not write them down, so
-      // nothing is owed and nothing changes. "No" puts the premium back on the
-      // day, which is what the violation flags already say, so the patch is to
-      // clear any override rather than to add one.
+      // "Yes, that is correct" - they took them and did not write them down, so
+      // nothing is owed. "No" puts the premium back on the day, which is what
+      // the violation flags already say, so the patch clears any override
+      // rather than adding one.
+      //
+      // ONLY WHAT THIS DAY WAS ACTUALLY ASKED ABOUT. A day can owe a rest under
+      // this question AND carry a meal premium the SCHEDULE documented - a lunch
+      // rostered and punched that began after the fifth hour. Clearing both
+      // flags took that documented hour off too: Aranda answering "yes I took my
+      // tens" on 07/29 and 07/30 dropped her from 19.00 to 0.00 when the honest
+      // answer is 2.00. Found 2026-08-10 by rendering the round trip; it dates
+      // from when this was one grouped question.
       return yes
-        ? { mealViolation: false, restViolation: false }
+        ? {
+            mealViolation: question.row?.meal ? false : null,
+            restViolation: question.row?.rest ? false : null,
+          }
         : { mealViolation: null, restViolation: null };
     case "restSnappedToShift":
       // confirming leaves the move alone. Declining says they really did take it

@@ -1465,6 +1465,15 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   return { ok: true };
 }
 
+// "13:15" -> 795, or null if it is not a time on this clock. One parser, so the
+// single-answer path and the per-day times cannot disagree about what counts.
+function hhmmToMin(v) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(v ?? "").trim());
+  if (!m) return null;
+  const min = Number(m[1]) * 60 + Number(m[2]);
+  return min >= 0 && min <= 1439 ? min : null;
+}
+
 // minutes past midnight -> the short form every time on the sheet uses, so an
 // employee-stated break prints like "2:10p" beside QSP's own punches rather than
 // in a second format that reads as a different kind of thing.
@@ -1508,8 +1517,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
   if (!tsId) return { ok: false, error: "auth" };
 
   const asked = Array.isArray(batch) && batch.length
-    ? batch.map((b) => ({ id: b?.id, choice: b?.choice, at: b?.at ?? null }))
-    : [{ id, choice, at: at ?? null }];
+    ? batch.map((b) => ({ id: b?.id, choice: b?.choice, at: b?.at ?? null, times: b?.times || null }))
+    : [{ id, choice, at: at ?? null, times: null }];
   if (asked.length > 40) return { ok: false, error: "toomany" };
   if (asked.some((a) => a.choice !== "yes" && a.choice !== "no")) {
     return { ok: false, error: "badchoice" };
@@ -1541,10 +1550,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
     // a typed time is only meaningful where the question asks for one
     let stated = null;
     if (a.choice === "yes" && q.canGiveTime && a.at != null && a.at !== "") {
-      const m = /^(\d{1,2}):(\d{2})$/.exec(String(a.at).trim());
-      if (!m) return { ok: false, error: "badtime" };
-      const start = Number(m[1]) * 60 + Number(m[2]);
-      if (!(start >= 0 && start <= 1439)) return { ok: false, error: "badtime" };
+      const start = hhmmToMin(a.at);
+      if (start == null) return { ok: false, error: "badtime" };
       if (start + FULL_REST_MIN > 1439) return { ok: false, error: "badtime" };
       stated = {
         from: shortClock(start),
@@ -1552,11 +1559,42 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
         minutes: FULL_REST_MIN,
       };
     }
-    resolved.push({ q, choice: a.choice, stated });
+    // THE TIMES THEY GAVE FOR BREAKS NOTHING RECORDED. Required: a day cannot
+    // be answered "I took them" without saying when, because the record is the
+    // whole point of asking (Mánu 2026-08-10). Validated here, before anything
+    // is written, so a bad time on the ninth day cannot leave the first eight
+    // saved and the sheet half rebuilt.
+    let statedBreaks = null;
+    if (a.choice === "yes" && q.needs?.length) {
+      const given = a.times || {};
+      const list = [];
+      for (const need of q.needs) {
+        const raw = given[need.slot];
+        const start = hhmmToMin(raw);
+        if (start == null) return { ok: false, error: "missingtime" };
+        if (start + need.minutes > 1439) return { ok: false, error: "badtime" };
+        // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
+        // client. It only drives the sheet's footnote, but "you typed this" is
+        // a claim about where a figure on a signed document came from and a
+        // browser does not get to assert it.
+        const from = shortClock(start);
+        const source =
+          need.prefill && from === need.prefill ? "schedule"
+            : need.suggest && from === need.suggest ? "gap"
+              : "typed";
+        list.push({
+          slot: need.slot, kindOf: need.kindOf, minutes: need.minutes,
+          from, to: shortClock(start + need.minutes), source,
+        });
+      }
+      statedBreaks = list;
+    }
+
+    resolved.push({ q, choice: a.choice, stated, statedBreaks });
   }
 
   // record the answers first, so rebuilding the overrides below sees them
-  for (const { q, choice: pick, stated } of resolved) {
+  for (const { q, choice: pick, stated, statedBreaks } of resolved) {
     const kindKey = `q_${q.kind}`;
     const dates = q.dates || [q.date];
     for (const date of dates) {
@@ -1569,7 +1607,10 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
         resolvedAt: new Date(),
         resolvedById: ts.userId || null,
         note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
-        resolutionNote: resolutionFor(q, pick, stated),
+        resolutionNote: resolutionFor(q, pick, stated, statedBreaks),
+        // cleared on a "no", so changing your mind from yes does not leave
+        // times on the record for breaks you have since said you never got
+        statedBreaks: pick === "yes" ? statedBreaks : null,
       };
       if (existing) {
         await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
@@ -1584,7 +1625,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
   // rebuild EVERY override from every answer on record, this one included
   const answers = await prisma.timesheetCorrection.findMany({
     where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
-    select: { date: true, kind: true, status: true, resolutionNote: true },
+    select: { date: true, kind: true, status: true, resolutionNote: true, statedBreaks: true },
   });
   const overrides = {};
   for (const q2 of questions) {
@@ -1598,6 +1639,14 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
       );
       if (Object.keys(clean).length) {
         overrides[date] = { ...(overrides[date] || {}), ...clean };
+      }
+      // THE TIMES COME BACK FROM THE ANSWER, not from the override that wrote
+      // them. Overrides are rebuilt from scratch on every reply, so anything
+      // held only in the blob is dropped the moment somebody answers a
+      // different question - which is what happened to `statedRest` until
+      // 2026-08-10. Kept on the correction row, they survive every rebuild.
+      if (Array.isArray(a.statedBreaks) && a.statedBreaks.length) {
+        overrides[date] = { ...(overrides[date] || {}), statedBreaks: a.statedBreaks };
       }
     }
   }

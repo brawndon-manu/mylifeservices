@@ -753,6 +753,15 @@ model TimesheetCorrection {
   // what they say they actually worked that day, when the kind calls for it
   claimedHours Float?
   note        String?
+  // WHEN THEY SAY THEY TOOK THEIR BREAKS, on a day they answered "I took them".
+  // [{ kindOf: "meal" | "rest", from, to, minutes, source: "typed" | "schedule" | "gap" }]
+  //
+  // It lives on the ANSWER rather than only in the day-row override because
+  // `answerTimesheetQuestion` rebuilds every override from every answer on
+  // record each time somebody replies. A time held only in the override blob is
+  // lost the moment they answer a different question - which it was, until
+  // 2026-08-10.
+  statedBreaks Json?
 
   // open | accepted | declined
   status         String    @default("open")

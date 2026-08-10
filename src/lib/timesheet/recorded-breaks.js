@@ -305,6 +305,65 @@ export function withStatedRest(order, stated) {
   return [...(order || []), entry].sort((a, b) => (toMin(a.from) ?? 0) - (toMin(b.from) ?? 0));
 }
 
+// EVERY BREAK THE EMPLOYEE TOLD US ABOUT, drawn where they say it happened.
+//
+// `withStatedRest` above takes ONE rest, which is all the repair question ever
+// needed. A day answered "yes, I took them" on the breaks question can owe a
+// lunch AND up to three tens, so this takes the list - and the two coexist
+// because the single-rest kinds still write `statedRest`.
+//
+// `stated: true` is what the renderer draws the dashed outline from. A break
+// nobody recorded at the time is the employee's own account of the day and must
+// never be mistaken on a signed document for one the clock witnessed.
+export function withStatedBreaks(order, list) {
+  const extra = (list || [])
+    .filter((b) => b?.from && b?.to)
+    .map((b) => ({ ...b, kindOf: b.kindOf === "meal" ? "meal" : "rest", counted: true, stated: true }));
+  if (!extra.length) return order || [];
+  return [...(order || []), ...extra].sort((a, b) => (toMin(a.from) ?? 0) - (toMin(b.from) ?? 0));
+}
+
+// The unexplained holes in a day's roster: 5 to 20 minutes between two
+// consecutive bookings, which is where an informal ten tends to hide. NOT a
+// proposal and never pre-filled - Mánu 2026-08-10, "we cannot assume" - but
+// offered as a one-tap suggestion beside an empty box, because 506 of the 597
+// tens in this batch have one and typing them all from memory is the
+// alternative.
+const MIN_GAP = 5;
+const MAX_GAP = 20;
+export function scheduleGaps(entry) {
+  const shifts = [];
+  for (const s of entry?.shifts || []) {
+    if (s.meal) continue;
+    const m = RANGE.exec(String(s.text || ""));
+    if (!m) continue;
+    const a = toMin(m[1]), b = toMin(m[2]);
+    if (a == null || b == null) continue;
+    shifts.push({ s: a, e: b });
+  }
+  shifts.sort((a, b) => a.s - b.s);
+  const out = [];
+  for (let i = 0; i + 1 < shifts.length; i++) {
+    const g = shifts[i + 1].s - shifts[i].e;
+    if (g >= MIN_GAP && g <= MAX_GAP) out.push({ from: shifts[i].e, to: shifts[i + 1].s });
+  }
+  return out;
+}
+
+// the meal the ROSTER booked for a day, when it booked one. The only thing on
+// this question that can honestly be pre-filled: 20 of 855 across the batch.
+export function rosteredMeal(entry) {
+  for (const s of entry?.shifts || []) {
+    if (!s.meal) continue;
+    const m = RANGE.exec(String(s.text || ""));
+    if (!m) continue;
+    const a = toMin(m[1]), b = toMin(m[2]);
+    if (a == null || b == null) continue;
+    return { from: a, to: b };
+  }
+  return null;
+}
+
 // The working day as the SCHEDULE draws it: first rostered start to last
 // rostered end, ignoring the meal blocks themselves. Used to tell a break inside
 // somebody's day from ten minutes recorded against no shift at all.

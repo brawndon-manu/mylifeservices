@@ -232,3 +232,111 @@ test("a grouped question is still settled by any one of its dates", () => {
   assert.equal(p.answered, 1, "two rows, one question, one answer");
   assert.equal(p.declined, 0);
 });
+
+
+test("saying yes never clears a premium the schedule documented", () => {
+  // THE ONE THAT MOVES MONEY THE WRONG WAY. A day can owe a rest under the
+  // breaks question AND carry a meal premium the schedule witnessed - a lunch
+  // rostered and punched that began after the fifth hour. Clearing both flags on
+  // "yes" took that documented hour off too: 9 hours across 7 people, Aranda
+  // 19.00 -> 0.00 when the honest answer is 2.00. Found 2026-08-10.
+  const days = [
+    ndDay("07/29/26", { mealViolation: true, mealLate: true, restViolation: true }),
+  ];
+  const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+    .filter((q) => q.kind === "nothingDocumented");
+
+  assert.equal(qs.length, 1, "the day is asked about, for its REST");
+  assert.equal(qs[0].row.meal, false, "the late lunch is not what is being asked");
+  assert.equal(qs[0].row.rest, true);
+  assert.equal(qs[0].movesOnDecline, 1, "one hour, the rest - not two");
+
+  // yes clears the rest and LEAVES the documented meal alone
+  assert.deepEqual(patchesFor(qs[0], "yes", days[0]), {
+    mealViolation: null,
+    restViolation: false,
+  });
+
+  // THE OPPOSITE: a day whose meal is undocumented IS cleared by yes, or the
+  // question would charge for something nobody is claiming.
+  const undoc = [ndDay("07/20/26", { mealViolation: true, restViolation: true })];
+  const q2 = buildQuestions({ days: undoc }, { restRows: [], sourceName: "T" })
+    .filter((q) => q.kind === "nothingDocumented")[0];
+  assert.equal(q2.movesOnDecline, 2);
+  assert.deepEqual(patchesFor(q2, "yes", undoc[0]), {
+    mealViolation: false,
+    restViolation: false,
+  });
+});
+
+test("a day answered yes asks for a time for every break it is short", () => {
+  // Mánu 2026-08-10: required, "because we need a record of this."
+  const days = [ndDay("07/20/26", {
+    mealViolation: true, restViolation: true, restTaken: 0, restRequired: 2,
+  })];
+  const q = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+    .filter((x) => x.kind === "nothingDocumented")[0];
+
+  assert.deepEqual(q.needs.map((n) => n.slot), ["meal", "rest1", "rest2"]);
+  assert.deepEqual(q.needs.map((n) => n.minutes), [30, 10, 10]);
+  // NOTHING is pre-filled without a real time behind it. The schedule cannot
+  // roster a rest period at all, so a ten is never proposed.
+  assert.ok(q.needs.every((n) => !n.prefill), "no schedule here, so nothing to propose");
+
+  // one already taken means one still to account for
+  const partial = [ndDay("07/21/26", { restViolation: true, restTaken: 1, restRequired: 2 })];
+  const q3 = buildQuestions({ days: partial }, { restRows: [], sourceName: "T" })
+    .filter((x) => x.kind === "nothingDocumented")[0];
+  assert.deepEqual(q3.needs.map((n) => n.slot), ["rest1"]);
+
+  // a clean day is asked nothing at all, or the card would demand times for
+  // breaks nobody says are missing
+  assert.equal(
+    buildQuestions({ days: [ndDay("07/22/26")] }, { restRows: [], sourceName: "T" })
+      .filter((x) => x.kind === "nothingDocumented").length,
+    0,
+  );
+});
+
+test("a rostered lunch is proposed, and a schedule gap is only suggested", () => {
+  const days = [ndDay("07/20/26", {
+    mealViolation: true, restViolation: true, restTaken: 0, restRequired: 1,
+  })];
+  const data = {
+    days,
+    scheduleCheck: {
+      byDate: {
+        "07/20/26": {
+          // two bookings 15 minutes apart, and a lunch rostered elsewhere in
+          // the day. The hole AROUND a rostered lunch is not a rest gap - it is
+          // the lunch - so the two have to be separate to test either.
+          shifts: [
+            { text: "9a-12p Rincon" },
+            { text: "12:15p-5p Rincon" },
+            { text: "3p-3:30p", meal: true },
+          ],
+        },
+      },
+    },
+  };
+  const q = buildQuestions(data, { restRows: [], sourceName: "T" })
+    .filter((x) => x.kind === "nothingDocumented")[0];
+
+  const meal = q.needs.find((n) => n.slot === "meal");
+  assert.equal(meal.prefill, "3p", "the roster booked it, so it is a time and not a guess");
+  assert.equal(meal.source, "schedule");
+
+  const rest = q.needs.find((n) => n.slot === "rest1");
+  assert.equal(rest.prefill, null, "never pre-filled");
+  assert.equal(rest.suggest, "12p", "the 15 minute hole between two bookings");
+  assert.match(rest.hint, /gap 12p-12:15p/);
+
+  // AND THE OPPOSITE: a day with one unbroken booking has no hole to point at,
+  // so there is nothing to suggest and the hint says so.
+  const solid = buildQuestions(
+    { days, scheduleCheck: { byDate: { "07/20/26": { shifts: [{ text: "9a-5p Rincon" }] } } } },
+    { restRows: [], sourceName: "T" },
+  ).filter((x) => x.kind === "nothingDocumented")[0];
+  assert.equal(solid.needs.find((n) => n.slot === "rest1").suggest, null);
+  assert.match(solid.needs.find((n) => n.slot === "rest1").hint, /no gap on your schedule/);
+});

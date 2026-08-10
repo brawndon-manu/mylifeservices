@@ -482,6 +482,8 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [picked, setPicked] = useState({});
+  // { [questionId]: { [slot]: "raw text the person typed" } }
+  const [times, setTimes] = useState({});
   const [confirming, setConfirming] = useState(false);
 
   const base = standing?.charged || 0;
@@ -493,6 +495,24 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
 
   const setAll = (choice) =>
     setPicked(Object.fromEntries(list.map((q) => [q.id, choice])));
+
+  const rawAt = (q, slot) => times[q.id]?.[slot] ?? "";
+  const setAt = (q, slot, v) =>
+    setTimes((t) => ({ ...t, [q.id]: { ...(t[q.id] || {}), [slot]: v } }));
+  // a slot is satisfied by anything the loose parser can read - "115", "1:15p",
+  // "1.15 pm" - or by the schedule time it arrived pre-filled with
+  const minutesAt = (q, need) => {
+    const raw = rawAt(q, need.slot);
+    if (raw.trim()) return parseLooseTime(raw, { assumeWorkday: true });
+    return need.prefill ? parseLooseTime(need.prefill, { assumeWorkday: true }) : null;
+  };
+  // EVERY DAY ANSWERED "took them" OWES ITS TIMES. Mánu 2026-08-10: required,
+  // "because we need a record of this". A day answered "missed them" owes none -
+  // there is nothing to say when about.
+  const missingTimes = list.reduce((n, q) => {
+    if (valueFor(q) !== "yes") return n;
+    return n + (q.needs || []).filter((need) => !minutesAt(q, need)).length;
+  }, 0);
 
   const chosen = list.map((q) => ({ q, v: valueFor(q) }));
   const missed = chosen.filter((x) => x.v === "no");
@@ -510,10 +530,23 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
     start(async () => {
       const res = await submitAction({
         token,
-        batch: chosen.filter((x) => x.v).map(({ q, v }) => ({ id: q.id, choice: v })),
+        batch: chosen.filter((x) => x.v).map(({ q, v }) => ({
+          id: q.id,
+          choice: v,
+          // sent as HH:MM, the one shape the server parses. A day answered
+          // "missed them" sends none - there is nothing to say when about.
+          times:
+            v === "yes" && q.needs?.length
+              ? Object.fromEntries(
+                  q.needs
+                    .map((need) => [need.slot, minutesAt(q, need)])
+                    .filter(([, m]) => m),
+                )
+              : null,
+        })),
       });
       if (!res?.ok) setErr(res?.error || "failed");
-      else { setConfirming(false); setPicked({}); }
+      else { setConfirming(false); setPicked({}); setTimes({}); }
     });
   }
 
@@ -548,7 +581,7 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
         {chosen.map(({ q, v }) => (
           <li
             key={q.id}
-            className={`flex flex-wrap items-center justify-between gap-3 py-2.5 ${
+            className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 ${
               v === "no" ? "bg-rose-500/5" : ""
             }`}
           >
@@ -584,6 +617,57 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
                 </button>
               ))}
             </span>
+            {v === "yes" && (q.needs || []).length > 0 && (
+              <div className="mt-1 w-full rounded-lg border border-border-strong bg-surface-2 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-faint">
+                  When did you take {q.needs.length === 1 ? "it" : "them"} on {q.date}?
+                </p>
+                <div className="mt-2 space-y-2">
+                  {q.needs.map((need) => {
+                    const raw = rawAt(q, need.slot);
+                    const mins = minutesAt(q, need);
+                    return (
+                      <div key={need.slot} className="flex flex-wrap items-center gap-2.5">
+                        <label
+                          htmlFor={`t-${q.id}-${need.slot}`}
+                          className="w-28 text-sm text-foreground"
+                        >
+                          {need.label}
+                        </label>
+                        <input
+                          id={`t-${q.id}-${need.slot}`}
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          disabled={pending}
+                          value={raw || (need.prefill && !(q.id in times && need.slot in (times[q.id] || {})) ? need.prefill : raw)}
+                          onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
+                          placeholder="e.g. 115 or 1:15p"
+                          className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
+                            mins ? "border-emerald-500" : "border-amber-500/70"
+                          }`}
+                        />
+                        {!mins && need.suggest && (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => { setConfirming(false); setAt(q, need.slot, need.suggest); }}
+                            className="rounded-full border border-dashed border-border-strong px-3 py-1 text-xs text-brand transition hover:border-solid"
+                          >
+                            use {need.suggest}
+                          </button>
+                        )}
+                        <span className="text-xs text-muted">
+                          {mins && raw.trim()
+                            ? `reads as ${formatTimeDisplay(mins)}`
+                            : need.hint}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -592,7 +676,7 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={pending || !dirty.length}
+            disabled={pending || !dirty.length || missingTimes > 0}
             onClick={() => setConfirming(true)}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:opacity-40"
           >
@@ -604,6 +688,16 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
             </span>
           )}
         </div>
+      )}
+
+      {/* SAYING YOU TOOK A BREAK IS ONLY HALF THE ANSWER. The record is the
+          thing that was missing, so a day claimed without a time is not a day
+          that has been answered. */}
+      {!confirming && missingTimes > 0 && (
+        <p className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+          <b>{missingTimes} {missingTimes === 1 ? "time" : "times"} still to fill in.</b>{" "}
+          Nothing is submitted until every day you answered &ldquo;took them&rdquo; says when.
+        </p>
       )}
 
       {confirming && (
@@ -648,6 +742,11 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
                   <b className="text-foreground">{r2(base).toFixed(2)} hours</b>.
                 </p>
               </>
+            )}
+            {took.length > 0 && (
+              <p>
+                The times you gave go onto your timesheet as your own record of those breaks.
+              </p>
             )}
             {undecided.length > 0 && (
               <p className="text-amber-700 dark:text-amber-400">

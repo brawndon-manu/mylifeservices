@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { recordedBreaksFor, insertRecordedBreaks, withStatedRest } from "./recorded-breaks.js";
+import { recordedBreaksFor, insertRecordedBreaks, withStatedRest, withStatedBreaks } from "./recorded-breaks.js";
 
 // read straight off disk - this only ever runs server-side.
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
@@ -279,7 +279,11 @@ export async function renderCorrected(sheet, opts = {}) {
   // how many punch cells this sheet actually needs, AFTER the recorded breaks
   // are inserted - a rest that splits a worked segment adds four cells, so the
   // count has to be taken from the row that gets drawn, not the raw punches.
-  const entriesFor = (d) => withStatedRest(recorded.get(d.date)?.order || [], d.statedRest);
+  // what the two reports recorded, PLUS anything the employee told us about a
+  // day neither of them witnessed. Both, because the single-rest kinds still
+  // write `statedRest` and the breaks question writes the list.
+  const entriesFor = (d) =>
+    withStatedBreaks(withStatedRest(recorded.get(d.date)?.order || [], d.statedRest), d.statedBreaks);
   const neededPunches = (sheet.days || []).reduce((n, d) => {
     const { punches } = insertRecordedBreaks(d.punches || [], entriesFor(d));
     return Math.max(n, punches.length);
@@ -533,6 +537,25 @@ export async function renderCorrected(sheet, opts = {}) {
       footnotes.push(
         `${d.date}: you told us you took this rest break at ${d.statedRest.from}, ` +
         `so it is shown at that time rather than the one the report holds.`,
+      );
+    }
+    // BREAKS THE EMPLOYEE PUT ON THE RECORD THEMSELVES. Nothing witnessed these
+    // at the time - that is why they were asked - so the sheet says whose
+    // account they are, and where each time came from. A time somebody typed
+    // and a time they accepted off their own schedule are different claims and
+    // this document is the one they sign.
+    if ((d.statedBreaks || []).length) {
+      const said = (kind) => (d.statedBreaks || []).filter((b) => b.kindOf === kind);
+      const parts = [];
+      for (const b of said("meal")) parts.push(`a meal at ${b.from}`);
+      for (const b of said("rest")) parts.push(`a rest break at ${b.from}`);
+      const typed = (d.statedBreaks || []).filter((b) => b.source === "typed").length;
+      const off = (d.statedBreaks || []).length - typed;
+      footnotes.push(
+        `${d.date}: you told us you took ${parts.join(" and ")}. Nothing recorded ` +
+        `${parts.length === 1 ? "it" : "them"} at the time, so this is your own account of the day ` +
+        `and no premium is charged for ${parts.length === 1 ? "it" : "them"}.` +
+        (off ? ` ${off === (d.statedBreaks || []).length ? "Those times came" : "One of those times came"} from your schedule and you accepted ${off === 1 ? "it" : "them"}.` : ""),
       );
     }
     for (const u of unplaced) {

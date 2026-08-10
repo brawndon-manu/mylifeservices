@@ -208,6 +208,11 @@ export function applyOverrides(days, overrides) {
     // through `data.days` on the on-demand path as well, without the batch's
     // shared restsByDate having to carry something that belongs to one person.
     if (patch.statedRest) next.statedRest = patch.statedRest;
+    // EVERY break the employee told us about on a day nothing recorded. Rides
+    // on the day row for the same reason statedRest does: the renderer reads
+    // `data.days` on the on-demand path, and this belongs to one person rather
+    // than to the batch's shared restsByDate.
+    if (patch.statedBreaks) next.statedBreaks = patch.statedBreaks;
     next.corrected = true;
     out.push(next);
   }
