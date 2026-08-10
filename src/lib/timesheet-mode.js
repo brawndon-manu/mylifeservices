@@ -98,3 +98,22 @@ export function resolveRecipients(intendedEmail, env = process.env) {
   if (isLiveSend(env)) return { to: [intendedEmail], redirected: false, intendedEmail };
   return { to: testRecipients(env), redirected: true, intendedEmail };
 }
+
+// WHERE A SUBMITTED FORM IS ALLOWED TO GO. Same file because this is the
+// send-mode guard and it has to stay dependency-free to be testable; the name
+// says timesheet only for historical reasons.
+//
+// Timesheets have had a lock since a real employee received her payroll
+// document from a dev server. FORM SUBMISSIONS NEVER DID - filling one on a
+// laptop emailed the reviewer for real, which is how a test run reaches HR.
+//
+// Only lock 2 applies. There is no phrase to set: a form submission on the real
+// deployment is a person doing their job and must always go through. Everywhere
+// else it is redirected, and the cc is dropped as well so a redirected copy
+// cannot reach the submitter's colleagues either.
+export function resolveFormRecipients(intendedEmail, cc = [], env = process.env) {
+  if (isProductionDeployment(env)) {
+    return { to: [intendedEmail], cc, redirected: false, intendedEmail };
+  }
+  return { to: localInboxes(env), cc: [], redirected: true, intendedEmail };
+}

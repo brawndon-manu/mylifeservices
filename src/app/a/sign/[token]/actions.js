@@ -17,7 +17,7 @@ import { verifyAckToken } from "@/lib/ack-token";
 import { checkRateLimit } from "@/lib/security";
 import { preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
-import { resolveRecipient } from "@/lib/form-recipients";
+import { resolveRecipient, resolveDefaultRecipient } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
 import { storeFormSubmission } from "@/lib/form-store";
 
@@ -58,7 +58,14 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
 
   const route = formEmailRoute(post.form.title);
   if (!route?.recipientTitle) return { ok: false, error: "norecipients" };
-  const recipient = await resolveRecipient(route.recipientTitle, recipientId);
+  // NOBODY PICKS A RECIPIENT HERE. Sign mode has no dropdown - the signed
+  // document goes back to whoever holds the route's title - so `recipientId`
+  // arrives undefined every time and this used to refuse the submission
+  // outright. It still honours an explicit id if one is ever sent, so the
+  // client cannot widen who it reaches, only re-state it.
+  const recipient =
+    (await resolveRecipient(route.recipientTitle, recipientId)) ||
+    (await resolveDefaultRecipient(route.recipientTitle));
   if (!recipient) return { ok: false, error: "norecipient" };
 
   const name = preferredName(user) || user.name || "Staff";

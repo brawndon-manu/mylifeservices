@@ -4,6 +4,9 @@
 // nothing is stored, it's emailed and gone.
 import { Resend } from "resend";
 import { buildFormEmailHtml, EMAIL_TZ } from "@/lib/announcement-email";
+// the guard lives in timesheet-mode.js because that module is deliberately
+// dependency-free and therefore testable; this one imports resend and cannot be.
+import { resolveFormRecipients } from "@/lib/timesheet-mode";
 
 // the cc list for a form send: the route's fixed cc + the submitter (so they keep
 // a copy), deduped + minus whoever's already on the TO line. case-insensitive.
@@ -63,14 +66,17 @@ export async function sendFilledForm({
   });
   const text = `${formTitle}\n\nSubmitted by ${submitterName} (${submitterEmail})\n${dateStr}\n${note ? `\nAdditional info: ${note}\n` : ""}\nThe completed form is attached as a PDF.`;
 
+  const route_ = resolveFormRecipients(recipientEmail, ccEmails);
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const { error } = await resend.emails.send({
       from,
-      to: [recipientEmail],
-      cc: ccEmails,
+      to: route_.to,
+      cc: route_.cc,
       replyTo,
-      subject,
+      // say so in the subject, so a redirected copy can never be mistaken for
+      // the real thing sitting in a reviewer's inbox
+      subject: route_.redirected ? `[TEST - would have gone to ${route_.intendedTo}] ${subject}` : subject,
       html,
       text,
       attachments: [{ filename: pdfName || "form.pdf", content: pdfBase64 }],
