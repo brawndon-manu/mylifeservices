@@ -22,18 +22,24 @@ import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
 // what each kind asks, and what each answer means. Kept as data so the wording
-// can be read in one place rather than chased through five branches of JSX.
-// `standing` is what premiumStanding() returns for this person: `charged` is
-// the penalty pay actually on the sheet, `assumed` is what we assumed away and
-// have not charged. THE BASELINE IS `charged`, and that is the correction of
-// 2026-08-09 late - every one of these used to quote the stored
-// ignoring-assumptions column and describe "yes" as taking an hour OFF a sheet
-// that was never carrying it.
+// can be read in one place rather than chased through six branches of JSX.
+//
+// EVERY ONE OF THESE REVERSED ON 2026-08-11. `standing.charged` is the penalty
+// pay actually on the sheet, and after the flip that is EVERY fault the reports
+// show. So the sheet arrives carrying the money, and an answer can only take it
+// off: "yes I took my break" removes an hour, "no I missed it" agrees with what
+// the sheet already says and changes nothing.
+//
+// The old copy said the opposite in every card - "nothing is charged for this
+// day right now", "saying no is what adds an hour" - and all of it sat above a
+// signature. There is no half-way version of this file.
 function copyFor(q, standing) {
   const base = standing?.charged || 0;
   const prem = (n) => `${r2(n).toFixed(2)} hours`;
-  // saying NO is what puts an hour on now. Saying yes leaves the sheet alone.
-  const owedIfNo = (n = 1) => prem(base + n);
+  // saying YES is what takes pay off now. Saying no leaves the sheet alone.
+  // `q.moves` is negative and already knows whether this day owes anything.
+  const off = Math.abs(q.moves || 0);
+  const leftIfYes = () => prem(Math.max(0, base - off));
   switch (q.kind) {
     case "repair":
       return {
@@ -52,15 +58,18 @@ function copyFor(q, standing) {
           `What we think: out ${q.proposed.from} · in ${q.proposed.to} = ${q.row.minutes} min`,
         ],
         yes: { label: "Yes, I took that break", why: "You stopped for about ten minutes around then." },
-        no: { label: "No, I did not take it", why: "You worked through, so an hour of penalty pay goes on." },
+        no: { label: "No, I did not take it", why: "You worked through. Your penalty pay stays as it is." },
         timeLabel: `What time did your break start on ${q.date}?`,
-        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo()}</b>.</>,
+        yesEffect: off > 0
+          ? <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>
+          : <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
+        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
         footnote: (
           <>
-            <b>Nothing is charged for this day right now.</b> Saying no is what adds an hour, taking
-            your penalty pay from {prem(base)} to {owedIfNo()}. Say no if you did not get the break -
-            nobody will be annoyed about it.
+            <b>This day is already paid a penalty.</b>{" "}
+            {off > 0
+              ? <>Saying you took the break is what removes it, taking your penalty pay from {prem(base)} to {leftIfYes()}. Only say yes if you really did stop.</>
+              : <>Neither answer changes your pay. We are asking so the record is right.</>}
           </>
         ),
       };
@@ -80,14 +89,17 @@ function copyFor(q, standing) {
           "A rest break is ten minutes. A meal is thirty.",
         ],
         yes: { label: "Yes, that was my meal", why: "You took your thirty minutes and it was logged in the wrong place." },
-        no: { label: "No, that was a rest break", why: "Nothing changes and the premium stays." },
-        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo()}</b>.</>,
+        no: { label: "No, that was a rest break", why: "You did not get a meal that day. Your penalty pay stays as it is." },
+        yesEffect: off > 0
+          ? <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>
+          : <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
+        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
         footnote: (
           <>
-            <b>Nothing is charged for this day right now</b> - we assumed the thirty minutes was
-            your meal. Saying it was not is what adds an hour, taking your penalty pay from{" "}
-            {prem(base)} to {owedIfNo()}.
+            <b>This day is being paid for a missed meal.</b>{" "}
+            {off > 0
+              ? <>Telling us the thirty minutes WAS your meal is what removes it, taking your penalty pay from {prem(base)} to {leftIfYes()}.</>
+              : <>Neither answer changes your pay. We are asking so the record is right.</>}
           </>
         ),
       };
@@ -95,12 +107,20 @@ function copyFor(q, standing) {
     case "restNoTimes":
       return {
         title: "Did you take this break?",
+        // THE BODY HAS TO FOLLOW THE FIGURE, not assert one. It said "and pays
+        // you an hour for it" on every sheet, which contradicted its own
+        // footnote the moment the blank row started COUNTING as a break taken
+        // (2026-08-11) - Flores 07/29 reads "1 of 1 rest breaks" and owes
+        // nothing, above a sentence promising her an hour. Caught by opening
+        // the page, which is the only thing that ever catches these.
         body: (
           <>
             On <b>{q.date}</b> the break record has a rest break for you with <b>no times on it</b>.
-            We cannot tell when it was, or whether it happened. Your timesheet currently says you
-            took <b>{q.row.taken} of {q.row.owed}</b> rest breaks that day and pays you an hour
-            for it.
+            We cannot tell when it was, or whether it happened. Your timesheet says you took{" "}
+            <b>{q.row.taken} of {q.row.owed}</b> rest breaks that day
+            {off > 0
+              ? <> and pays you an hour of penalty pay for the shortfall.</>
+              : <>, so the break is counted and no penalty is owed. What is missing is the time.</>}
           </>
         ),
         evidence: [
@@ -108,48 +128,62 @@ function copyFor(q, standing) {
           `Your punches: ${(q.row.punches || []).join(" | ") || "none recorded"}`,
           `Hours paid that day: ${q.row.hours} · rest breaks owed: ${q.row.owed}`,
         ],
-        yes: { label: "Yes, I took it", why: "Somebody logged it without the times. No penalty is owed." },
-        no: { label: "No, I did not take it", why: "You worked through. Nothing changes and the premium stays." },
+        yes: { label: "Yes, I took it", why: "Somebody logged it without the times." },
+        no: { label: "No, I did not take it", why: "You worked through. Your penalty pay stays as it is." },
         timeLabel: `What time did your break start on ${q.date}?`,
-        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo()}</b>.</>,
-        footnote: (
-          <>
-            <b>Nothing is charged for this day right now.</b> Saying no is what adds an hour, taking
-            your penalty pay from {prem(base)} to {owedIfNo()}.
-          </>
-        ),
+        yesEffect: off > 0
+          ? <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>
+          : <>Your record gets the time on it. Your pay does not change either way.</>,
+        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
+        footnote: off > 0
+          ? (
+            <>
+              <b>This day is already paid a penalty.</b> Saying you took the break is what removes
+              it, taking your penalty pay from {prem(base)} to {leftIfYes()}.
+            </>
+          )
+          : (
+            <>
+              <b>Neither answer costs you anything.</b> The break is already counted - what is
+              missing is the time it started, so the record can say when.
+            </>
+          ),
       };
 
     case "restOutsideShift":
       return {
-        title: "We corrected a break time. Is that right?",
+        title: "One of your breaks is logged outside your shift",
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> the break record has your
-            rest break at a time <b>outside the shifts you were rostered for</b>. We have read
-            that as the time being entered wrongly rather than as extra minutes worked, so those{" "}
-            <b>{q.row.minutes} minutes</b> have <b>not</b> been added to your hours. Your break
-            still counts and no premium is owed.
+            rest break at a time <b>outside the shifts you were rostered for</b>. We have paid
+            those <b>{q.row.minutes} minutes</b> as time you were on a break off the clock, so
+            they are on your timesheet already.
+            <br /><br />
+            <b>Is that right?</b> If the time was just entered wrongly and you were not actually
+            on a break then, tell us and we will take them back off.
           </>
         ),
         dates: q.dates,
-        yes: { label: "Yes, the time was entered wrong", why: "Our correction stands. Nothing more changes." },
+        yes: {
+          label: "The time was entered wrong",
+          why: "You were not on a break then. The minutes come back off.",
+        },
         no: {
           label: "No, I really did take it then",
-          why: "You took your break before clocking in. Those minutes are owed and go back on.",
+          why: "You took your break off the clock. The minutes stay on your sheet.",
         },
-        yesEffect: <>Nothing changes. Your hours stay as they are on the timesheet below.</>,
-        noEffect: (
+        yesEffect: (
           <>
-            <b>{r2(q.movesOnDecline).toFixed(2)} hours</b> go back onto your timesheet, and any
-            overtime they create comes with them. Your sheet will be rebuilt.
+            <b>{r2(off).toFixed(2)} hours</b> come off your timesheet, along with any overtime
+            they created. Your sheet will be rebuilt.
           </>
         ),
+        noEffect: <>Nothing changes. Your hours stay as they are on the timesheet below.</>,
         footnote: (
           <>
-            <b>We already made this change</b>, so confirming it changes nothing. Say no if you
-            really did take that break at the time recorded, and the minutes go back on.
+            <b>The minutes are already on your sheet</b>, so leaving this alone costs you nothing.
+            Only say the time was wrong if you really were not on a break then.
           </>
         ),
       };
@@ -172,23 +206,30 @@ function copyFor(q, standing) {
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> we cannot find a ten minute
-            rest period{q.row.mealDays > 0 ? " or a meal break" : ""} recorded for you. Because
-            you set your own schedule and agreed to put your breaks on it, we have assumed you
-            took them and have <b>not</b> added any penalty pay.
+            rest period{q.row.mealDays > 0 ? " or a meal break" : ""} recorded for you. Rather than
+            assume you took them, we have <b>paid you the penalty</b> for every one - it is on the
+            timesheet below.
             <br /><br />
-            <b>Is that right?</b> Answer each day below. If a day was too busy and you missed
-            them, say so and you will be paid for it.
+            <b>Did you actually take them?</b> Answer each day below. If you did take a break and
+            simply did not write it down, say so and that hour comes off. If you are not sure,
+            leave it - nothing is taken off unless you tell us to.
           </>
         ),
-        yes: { label: "Yes, I took my breaks", why: "You took them and just did not write them down. Nothing changes." },
-        no: { label: "No, I missed them", why: "You worked through. You are owed penalty pay and it goes on your sheet." },
-        yesEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{owedIfNo(q.movesOnDecline)}</b>.</>,
+        yes: {
+          label: "Yes, I took my breaks",
+          why: "You took them and just did not write them down. That hour comes off.",
+        },
+        no: {
+          label: "No, I missed them",
+          why: "You worked through. The penalty pay stays on your sheet.",
+        },
+        yesEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>,
+        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
         footnote: (
           <>
             <b>You are legally entitled to these breaks</b>, and to be paid a penalty if you did
-            not get them. Nothing is charged for them right now, so saying you missed one is what
-            puts the pay on. Nobody will be annoyed about it.
+            not get them. That pay is already on your sheet, so you lose nothing by ignoring this.
+            Only say you took a break if you really did.
           </>
         ),
       };
@@ -230,39 +271,53 @@ function copyFor(q, standing) {
         ),
       };
 
-    case "restSnappedToShift":
+    // THE ONE MÁNU RULED ON HIMSELF, and all three rows were his: "those 10
+    // minutes were documented outside of a shift in between a time with no
+    // scheduling so its time added." It used to move the break and withhold the
+    // minutes without asking. Now the minutes are paid and the move is what
+    // needs his say-so.
+    case "restAtServiceEdge":
       return {
-        title: "We moved a break time. Is that right?",
+        title: "One of your breaks sits right on the edge of your shift",
         body: (
           <>
-            On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your rest break is recorded
-            starting <b>right as your shift ended</b>, which would put it after you clocked out. We
-            have read that as the break being logged a few minutes late rather than taken off the
-            clock, and moved it to the ten minutes <b>before</b> your shift ended. Those{" "}
-            <b>{q.row.minutes} minutes</b> are <b>not</b> added to your hours.
+            On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your rest break is logged{" "}
+            <b>immediately outside the shift it was filed under</b> - starting exactly as it ended,
+            or ending exactly as it began. We have taken that at face value and{" "}
+            <b>paid you the {q.row.minutes} minutes</b> as a break you took off the clock.
+            <br /><br />
+            <b>Or did you mean it to be inside your shift?</b> If the break really happened during
+            the shift and was logged against its edge by mistake, tell us and we will move it there.
           </>
         ),
         dates: q.dates,
         evidence: (q.row.detail || []).slice(0, 6).map(
-          (x) => `${x.date}: recorded ${x.wasFrom}-${x.wasTo} -> read as ${x.from}-${x.to}`,
+          (x) => `${x.date}: logged ${x.wasFrom}-${x.wasTo}, service ${x.service} - inside would be ${x.from}-${x.to}`,
         ),
-        yes: { label: "Yes, I took it before my shift ended", why: "Our correction stands. Nothing more changes." },
-        no: {
-          label: "No, I took it after I clocked out",
-          why: "The minutes are owed and go back on, and we flag the entry for payroll.",
+        yes: {
+          label: "It should have been inside my shift",
+          why: "We move it inside the shift, and the extra minutes come back off.",
         },
-        yesEffect: <>Nothing changes. Your hours stay as they are on the timesheet below.</>,
+        no: {
+          label: "No, I took it outside my shift",
+          why: "The minutes stay paid, and we flag the entry for payroll.",
+        },
+        yesEffect: (
+          <>
+            <b>{r2(off).toFixed(2)} hours</b> come off your timesheet, along with any overtime they
+            created. Your sheet will be rebuilt.
+          </>
+        ),
         noEffect: (
           <>
-            <b>{r2(q.movesOnDecline).toFixed(2)} hours</b> go back onto your timesheet, along with
-            any overtime they create. Your sheet will be rebuilt, and payroll gets told the break
-            is being clocked at the wrong time.
+            Nothing changes. Your hours stay as they are, and payroll gets told the break is being
+            logged against the wrong shift in QSClock.
           </>
         ),
         footnote: (
           <>
-            <b>We already made this change</b>, so confirming it changes nothing. Say no if you
-            really did take your break after clocking out, and the minutes go back on.
+            <b>The minutes are already paid</b>, so leaving this alone costs you nothing. Only say
+            it belonged inside your shift if that is what actually happened.
           </>
         ),
       };

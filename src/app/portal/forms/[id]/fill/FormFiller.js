@@ -62,6 +62,10 @@ function sendErrorText(code) {
       nosignature: "Tap the signature box on the document and draw your signature before submitting.",
       config: "Email isn't configured on the server. Let IT know.",
       auth: "Your session expired. Refresh and sign in again.",
+      // the signer backed out of a confirmation panel of its own. Nothing went
+      // wrong, so this must not read like a failure - the timesheet signer uses
+      // it when somebody decides to go back and answer their questions first.
+      cancelled: "No problem - nothing has been submitted.",
     }[code] || "Couldn't send. Please try again."
   );
 }

@@ -11,7 +11,7 @@ import {
   answerTimesheetQuestion,
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
-import { buildQuestions } from "@/lib/timesheet/questions";
+import { buildQuestions, signingGate } from "@/lib/timesheet/questions";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
@@ -56,13 +56,15 @@ export default async function SignTimesheetPage({ params }) {
   // is exactly what they were doing before 2026-08-09 late.
   const standing = premiumStanding(ts.data?.days || [], ts.corrections);
 
-  // the signed policy the assumption rests on, so the sentence naming it can be
-  // opened. Only looked up when there is an assumption to justify.
-  const policy = standing.assumed > 0 ? await restMealPolicyLink() : null;
+  // the signed policy the questions rest on, so the sentence naming it can be
+  // opened. Only looked up when there is an assumption left to explain.
+  const policy = standing.assumptions > 0 ? await restMealPolicyLink() : null;
 
   // EVERY QUESTION THIS SHEET RAISES, from the one classifier the server action
-  // re-derives from too. Mánu 2026-08-09: all five block signing, "since we
-  // assumed best case scenarios for least premium hours and hours overall owed".
+  // re-derives from too. THEY NO LONGER ALL BLOCK SIGNING: after the 2026-08-11
+  // flip, leaving a break question alone keeps the pay on, so `signingGate` is
+  // what decides - only a change we made or data we could not read holds a
+  // signature up.
   const questions = buildQuestions(ts.data, {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
@@ -79,7 +81,12 @@ export default async function SignTimesheetPage({ params }) {
     );
     if (hit) answers[q.id] = hit.status;
   }
-  const unanswered = questions.filter((q) => !answers[q.id]);
+  // WHO MAY SIGN, AND WHAT THE POPUP COUNTS. Two tiers: a question where the
+  // engine CHANGED the document or could not READ it has to be settled first;
+  // a break-premium question never blocks, because ignoring it is the choice
+  // that keeps their pay. Measured on the live batch: 54 of 59 could sign
+  // straight away, 5 gated on 6 questions.
+  const gate = signingGate(questions, ts.corrections);
 
   // ONE CARD PER `batch`, FALLING BACK TO THE KIND. `restIsMealLength` keeps a
   // row per day inside its card, which the component handles when it is handed
@@ -146,27 +153,29 @@ export default async function SignTimesheetPage({ params }) {
         <Figure label="Hours worked" value={ts.paidHours} strong />
         {ts.otHours > 0 && <Figure label="Overtime" value={ts.otHours} />}
         {ts.doubleHours > 0 && <Figure label="Double time" value={ts.doubleHours} />}
-        {/* WHAT IS BEING PAID, AND WHAT IS ONLY BEING ASSUMED. This was one
-            line reading "Break premium owed 17.00" - the stored
-            ignoring-assumptions column - directly above a card explaining that
-            we had assumed the breaks were taken and added no penalty pay. */}
+        {/* WHAT IS BEING PAID. After the flip the penalty pay is ON the sheet
+            and the second line is what would come OFF it - the opposite of what
+            these two said until 2026-08-11, when the charged figure was small
+            and the assumed one was the invisible exposure. */}
         {standing.charged > 0 && (
           <Figure label="Break penalty pay included" value={standing.charged} tone="prem" />
         )}
-        {standing.assumed > 0 && (
+        {standing.assumptions > 0 && (
           <Figure
-            label="Breaks assumed taken, nothing charged"
-            value={standing.assumed}
+            label="Comes off only if you tell us you took them"
+            value={standing.assumptions}
             tone="muted"
           />
         )}
       </div>
-      {standing.assumed > 0 && (
-        /* WHY THE ASSUMPTION IS ALLOWED TO STAND, not just that it was made.
-           Mánu 2026-08-10: the reason is the signed acknowledgment, so the
-           document has to say so - the figure below rests on it. */
+      {standing.assumptions > 0 && (
+        /* WHAT THE QUESTIONS ARE FOR, now that they cannot cost anybody money by
+           being ignored. The policy is still named and still linked - it is why
+           we are entitled to ask at all - but it is no longer holding a figure
+           off somebody's sheet, so the paragraph says what it does say. */
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Those {standing.assumed.toFixed(2)} hours are <b>not</b> on this timesheet. Under the{" "}
+          Those {standing.assumptions.toFixed(2)} hours <b>are</b> on this timesheet and you will be
+          paid them unless you tell us otherwise. Under the{" "}
           {policy ? (
             <a
               href={policy.path}
@@ -180,9 +189,9 @@ export default async function SignTimesheetPage({ params }) {
             <b>Rest &amp; Meal Period Policy and Acknowledgement</b>
           )}{" "}
           you signed, recording your rest periods and meal breaks is your responsibility. Where a
-          break is not documented we have
-          treated it as a record that was not kept, rather than a break you did not receive, and
-          charged nothing for it. If you did miss a break, say so below and the penalty pay is added.
+          break is not on record we have paid the penalty for it rather than assume you took it.
+          If you did take those breaks and simply did not write them down, say so below and the
+          pay comes off. If you are not sure, leave it - nothing is taken off unless you say so.
         </p>
       )}
 
@@ -247,11 +256,12 @@ export default async function SignTimesheetPage({ params }) {
         </div>
       ) : (
         <>
-          {/* asked BEFORE the signer, and the signer is withheld until it is
-              answered. an unanswered question leaves the premium in place, so
-              nothing is lost by making them choose - but a document signed
-              without the answer would be signed against figures that are about
-              to change. */}
+          {/* asked BEFORE the signer, but only the mandatory ones hold it back.
+              An unanswered break question leaves the premium ON, so making
+              somebody work through twelve cards whose only outcome is less pay
+              would be gating a signature on them giving money up. What still
+              blocks is a punch we CHANGED or a row we could not READ - see
+              `signingGate`. */}
           {byKind.map((group) => (
             <TimesheetQuestion
               key={group[0].kind}
@@ -288,12 +298,12 @@ export default async function SignTimesheetPage({ params }) {
             </div>
           )}
 
-          {unanswered.length > 0 ? (
+          {!gate.canSign ? (
             <div className="mt-5 rounded-xl border border-dashed border-border-strong p-5">
               <p className="text-sm text-muted">
-                {unanswered.length === 1
+                {gate.blocking === 1
                   ? "Answer the question above and your timesheet will appear here to sign."
-                  : `Answer all ${unanswered.length} questions above and your timesheet will appear here to sign.`}
+                  : `Answer the ${gate.blocking} questions marked as needed above, and your timesheet will appear here to sign.`}
               </p>
             </div>
           ) : (
@@ -302,6 +312,12 @@ export default async function SignTimesheetPage({ params }) {
               fileUrl={`/t/${token}/pdf`}
               title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
               submitAction={submitSignedTimesheet}
+              /* THE POPUP IS REASSURANCE, NOT A WARNING. Ignoring these is the
+                 safe choice for the employee now, so the panel says the pay is
+                 already on the sheet rather than nagging them to finish. The
+                 count is this person's own. */
+              unansweredOptional={gate.optionalOpen}
+              premiumOnSheet={standing.charged}
             />
           )}
           <ReportProblem
