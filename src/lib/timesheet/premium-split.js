@@ -1,35 +1,35 @@
-// The two premium figures, and why there are two.
+// The two premium figures, and which one payroll pays.
 //
-// Mánu 2026-08-09: staff map out their own schedules. Company policy requires
-// them to enter the ten minute rest periods and the lunch the DLSE bands
-// entitle them to, and they signed an acknowledgment form saying they would.
-// So a break missing from the record is not the company failing to provide one -
-// it is a gap in a record the EMPLOYEE was responsible for keeping. We assume it
-// was taken, and we ask them.
+// THE SILENCE DEFAULT REVERSED ON 2026-08-11. Until then an unanswered question
+// resolved to NOT PAID, and the figure payroll paid was the small one: 14.00
+// hours against 678.00 on the live batch, a 664 hour swing. Mánu confirmed the
+// full reversal and had it costed first. It now resolves to PAID.
 //
-// That makes one premium figure impossible to state honestly, so there are two:
+// So the two figures kept their arithmetic and swapped their jobs:
 //
-//   PROJECTED             what we think is owed after those assumptions
-//   IGNORING ASSUMPTIONS  what is owed if every assumption is wrong
+//   PROJECTED           every fault the reports actually show, taken literally,
+//                       with its penalty. THE DEFAULT, and what payroll pays.
+//   POLICY ASSUMPTIONS  what we assume instead. Each one REDUCES the projected
+//                       figure, and each one needs confirmation before it does.
 //
-// The gap between them is the size of what is still unanswered, and it shrinks
-// as people reply. Showing only the projected figure would hide the exposure;
-// showing only the other would charge for breaks people took.
+// The gap between them is the size of what is still unanswered, and the total
+// can now only ever come DOWN as people reply. That is the point of the
+// reversal: an employee who never opens the email keeps every hour, and nobody
+// loses pay by not filling in a form.
 //
-// WHAT COUNTS AS DOCUMENTED. Exactly one thing: a meal that was rostered and
-// punched and BEGAN after the end of the fifth hour. The schedule affirmatively
-// records the violation - the meal is right there, at the wrong time. Nobody had
-// to fail to write something down for us to know.
+// WHAT AN ANSWER DOES, therefore, is the opposite of what it used to do. "Yes I
+// took it" REMOVES an hour. "No I missed it" changes nothing, because the sheet
+// already says they missed it.
 //
-// Everything else is an absence. The Rest Periods Report showing 1 of 2, or
-// never mentioning somebody, or a day over six hours with no meal rostered:
-// in every case what is missing is an entry the employee was supposed to make.
-// R1 and R2 were split across "witnessed" and "settled by a ruling" under the
-// old model and there is no principled line between them under this one - a day
-// showing 1 of 2 is the same species as a person showing 0 of any.
+// WHAT IS NOT AN ASSUMPTION AT ALL. Exactly one thing: a meal that was rostered
+// and punched and BEGAN after the end of the fifth hour. The schedule
+// affirmatively records the violation - the meal is right there, at the wrong
+// time - so there is nothing to assume and nothing to ask. It is in the
+// projected figure and no answer can take it out.
 //
-// A premium the employee has CONFIRMED they are owed stops being an assumption
-// and joins the projected figure, which is the whole point of asking.
+// Everything else is an absence: the Rest Periods Report showing 1 of 2, or
+// never mentioning somebody, or a day over six hours with no meal rostered. All
+// of those are now PAID unless somebody tells us otherwise.
 
 import { buildQuestions, answerProgress } from "./questions.js";
 
@@ -39,20 +39,20 @@ const PER_VIOLATION = 1;
 // WHAT AN ANSWER SAYS ABOUT A PREMIUM.
 //
 // The answers are `TimesheetCorrection` rows keyed `q_<kind>`, and only some of
-// the seven kinds speak to a premium at all - `restOutsideShift` and
-// `restSnappedToShift` move paid MINUTES and leave the premium alone, so they
-// are deliberately absent from this table.
+// the kinds speak to a premium at all - `restOutsideShift` and
+// `restAtServiceEdge` move paid MINUTES and leave the premium alone, so they are
+// deliberately absent from this table.
 //
-// A DECLINE IS THE EMPLOYEE SAYING THEY ARE OWED IT. Every one of these is
-// phrased so that "yes" agrees with the cheap reading the engine already took;
-// saying no is what puts a premium back. So declined -> owed, accepted -> taken.
+// AN ACCEPT IS THE EMPLOYEE GIVING A PREMIUM UP, and after the 2026-08-11 flip
+// that is the only direction one moves. Every question is phrased so that "yes"
+// says the break happened; the premium is on the sheet until they say so, and
+// saying so is what takes it off. So accepted -> taken, declined -> owed, and a
+// decline now simply agrees with what the sheet already says.
 //
 // This table used to be inline in the pay period page and covered three kinds.
 // It missed `q_nothingDocumented`, which is the question 53 of 59 people are
-// being asked - so a decline on the big one would have put the premium back on
-// the stored day and into the ignoring-assumptions figure while the projected
-// figure sat still. The two are supposed to CONVERGE as people answer; that
-// omission would have made the gap grow instead.
+// being asked - so an answer on the big one moved one figure and not the other,
+// when the two are supposed to CONVERGE as people reply.
 const PREMIUM_ANSWER_KINDS = {
   q_repair: ["rest"],
   q_restNoTimes: ["rest"],
@@ -90,11 +90,16 @@ export function confirmedFromAnswers(corrections) {
 }
 
 // `confirmed` is a Set of "MM/DD/YY:meal" / "MM/DD/YY:rest" - the days where
-// somebody answered "no, I did not take it" and is owed after all.
+// somebody answered "no, I did not take it". After the flip that answer AGREES
+// with the sheet: the premium was already on it. What the set does now is mark
+// the premium as SETTLED, so no assumption can come along and take it off.
+//
+// A premium somebody answered "yes" to never reaches here at all: the override
+// clears the day's violation flag, and a day with no violation has no premium.
 export function splitPremium(days, { confirmed } = {}) {
   const has = (date, kind) => !!confirmed && confirmed.has(`${date}:${kind}`);
-  let documented = 0;
-  let assumed = 0;
+  let settled = 0;
+  let assumable = 0;
   const rows = [];
 
   for (const d of days || []) {
@@ -106,55 +111,65 @@ export function splitPremium(days, { confirmed } = {}) {
     const restOwed = d.restViolation === true;
 
     if (mealOwed) {
-      // M1 and only M1: rostered, punched, started too late.
-      const isDocumented = d.mealLate === true || has(date, "meal");
-      if (isDocumented) documented += PER_VIOLATION;
-      else assumed += PER_VIOLATION;
+      // M1 and only M1 is beyond assuming: rostered, punched, started too late.
+      // A confirmed "no" is the other way a premium stops being assumable.
+      const isSettled = d.mealLate === true || has(date, "meal");
+      if (isSettled) settled += PER_VIOLATION;
+      else assumable += PER_VIOLATION;
       rows.push({
         date, kind: "meal", hours: PER_VIOLATION,
-        documented: isDocumented,
+        // whether an assumption could still take this hour away
+        settled: isSettled,
         why: d.mealLate
           ? "a meal was rostered and began after the fifth hour"
           : has(date, "meal")
             ? "the employee confirmed they did not get their meal"
-            : "no meal is recorded, and recording it was theirs to do",
+            : "no meal is recorded, so it is paid unless they tell us they took it",
       });
     }
 
     if (restOwed) {
-      const isDocumented = has(date, "rest");
-      if (isDocumented) documented += PER_VIOLATION;
-      else assumed += PER_VIOLATION;
+      const isSettled = has(date, "rest");
+      if (isSettled) settled += PER_VIOLATION;
+      else assumable += PER_VIOLATION;
       rows.push({
         date, kind: "rest", hours: PER_VIOLATION,
-        documented: isDocumented,
-        why: isDocumented
+        settled: isSettled,
+        why: isSettled
           ? "the employee confirmed they did not get their break"
-          : "fewer rests are recorded than the hours require, and recording them was theirs to do",
+          : "fewer rests are recorded than the hours require, so it is paid unless they tell us they took them",
       });
     }
   }
 
   return {
-    // what we think is owed, after the assumptions
-    projected: documented,
-    // what is owed if every single assumption turns out to be wrong
-    ignoringAssumptions: documented + assumed,
-    // the size of what is still unanswered
-    assumed,
+    // EVERY fault the reports show, taken literally. The default, and what
+    // payroll pays.
+    projected: settled + assumable,
+    // what the policy assumptions would take off, if every one were confirmed.
+    // Nothing here is applied on its own.
+    assumptions: assumable,
+    // what would be left if they all held. The floor, not the figure.
+    ifAssumptionsHold: settled,
     rows,
   };
 }
 
 // ---------------------------------------------------------------------------
-// THE PROJECTED DAY ROWS, which is what makes a second document possible
-// without a second renderer.
+// THE DAY ROWS WITH THE POLICY ASSUMPTIONS APPLIED, which is what makes a
+// second document possible without a second renderer.
 //
 // `renderCorrected` counts nothing itself - it draws the day rows it is handed
-// and the premium table it is handed. So the projected sheet is the SAME
-// renderer over days whose assumed violations have been cleared. One document
-// generator, three documents, and no chance of the two drifting into different
+// and the premium table it is handed. So the assumed sheet is the SAME renderer
+// over days whose assumable violations have been cleared. One document
+// generator, three documents, and no chance of them drifting into different
 // layouts or different arithmetic.
+//
+// THIS IS NO LONGER THE DEFAULT. Before 2026-08-11 this produced the figure
+// payroll paid; now it produces the alternative reading, and the sheet that goes
+// out is the untouched one. Renamed from `projectDays` for exactly that reason -
+// "projected" is the other document now, and leaving the old name on this would
+// have pointed every future reader at the wrong one.
 //
 // NONE OF THIS IS EVER STORED. These fields exist for the length of one render.
 // Do NOT add them to `storedDay` or `REQUIRED_DAY_FIELDS`: a stored day is the
@@ -162,23 +177,24 @@ export function splitPremium(days, { confirmed } = {}) {
 // property of the day.
 //
 // CLEARING THE VIOLATION IS NOT ENOUGH ON ITS OWN. 359 day rows on the live
-// batch carry an assumed premium and nothing else worth printing, so simply
+// batch carry an assumable premium and nothing else worth printing, so simply
 // dropping the flag would flip all 359 from a red finding to a green
 // "compliant" - a clean bill of health for a break nobody verified. That is the
 // opposite of what the model claims. `premiumNote` is what keeps the row
 // speaking, and render.js prints it in grey: noted, not charged.
 //
-// @param confirmed  premiums the employee says they ARE owed (see above)
+// @param confirmed  premiums the employee has SETTLED by telling us they missed
+//                   them, which no assumption may take away
 // @param answers    "MM/DD/YY:meal" -> "taken" | "owed", the full answer record
 // @param pastDue    their deadline has passed, so silence has settled it
-export function projectDays(days, { confirmed, answers, pastDue } = {}) {
+export function applyAssumptions(days, { confirmed, answers, pastDue } = {}) {
   const has = (date, kind) => !!confirmed && confirmed.has(`${date}:${kind}`);
   const said = (date, kind) => answers?.[`${date}:${kind}`] || null;
-  // WHAT AN UNANSWERED ASSUMPTION IS CALLED, and the two names are not the same
+  // WHAT AN UNCONFIRMED ASSUMPTION IS CALLED, and the two names are not the same
   // claim. Before the deadline we are still asking. After it, Mánu 2026-08-09:
   // "if they don't sign off on it, then the form will be our assumption" - the
   // acknowledgment form they signed is the answer, and the sheet says what the
-  // company is now treating as true rather than pretending a question is open.
+  // company would be treating as true rather than pretending a question is open.
   const state = pastDue ? "not-documented" : "needs-confirmation";
 
   return (days || []).map((d) => {
@@ -212,9 +228,9 @@ export function projectDays(days, { confirmed, answers, pastDue } = {}) {
 }
 
 // the premium table for a set of day rows. parse.js builds this at upload from
-// the same two flags; this rebuilds it for a projected render, where the flags
-// have moved. Kept beside `projectDays` so the table and the rows it summarises
-// can only ever be counted the same way.
+// the same two flags; this rebuilds it for a render where the assumptions have
+// moved them. Kept beside `applyAssumptions` so the table and the rows it
+// summarises can only ever be counted the same way.
 export function premiumsFromDays(days) {
   const mealDays = (days || []).filter((d) => d.mealViolation).map((d) => d.date);
   const restDays = (days || []).filter((d) => d.restViolation).map((d) => d.date);
@@ -241,13 +257,15 @@ export function premiumStanding(days, corrections) {
   const confirmed = confirmedFromAnswers(corrections);
   const split = splitPremium(days, { confirmed });
   return {
-    // what is actually being charged: penalties a document records on its own,
-    // plus every one the employee has told us they are owed
+    // WHAT IS ACTUALLY BEING CHARGED, and after 2026-08-11 that is every fault
+    // the reports show. It falls as people confirm they took their breaks; it
+    // cannot rise.
     charged: split.projected,
-    // assumed taken, charged nothing, still open to them
-    assumed: split.assumed,
-    // what it would be if every assumption turned out to be wrong
-    ignoring: split.ignoringAssumptions,
+    // what the policy assumptions would take off if every one were confirmed.
+    // Not applied, and not deducted from `charged`.
+    assumptions: split.assumptions,
+    // the floor: what would be left if they all held
+    ifAssumptionsHold: split.ifAssumptionsHold,
     confirmed,
     answers,
   };
@@ -259,13 +277,15 @@ export function premiumStanding(days, corrections) {
 // as people confirm with a notice when everyone has confirmed new choices."
 //
 // So the payroll documents pay the CHARGED figure, and they carry a notice
-// saying how many people have still to answer - because until they all have,
-// that figure can only go up. A payout sheet that looks final while 53 people
-// have an open question is the one way this model can actually hurt somebody.
+// saying how many people have still to answer. THE DIRECTION OF THAT NOTICE
+// REVERSED ON 2026-08-11 along with everything else: until every answer is in
+// the figure can only come DOWN, never up. A payout sheet that looks final while
+// 53 people have an open question is still the thing to guard against, but it is
+// now over-stating payroll rather than under-paying an employee.
 export function batchPremiumStanding(sheets, { restRows } = {}) {
   let charged = 0;
-  let assumed = 0;
-  let ignoring = 0;
+  let assumptions = 0;
+  let ifAssumptionsHold = 0;
   let waiting = 0;
   const byId = {};
 
@@ -273,8 +293,8 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
     const st = premiumStanding(s.data?.days || [], s.corrections);
     byId[s.id] = st;
     charged += st.charged;
-    assumed += st.assumed;
-    ignoring += st.ignoring;
+    assumptions += st.assumptions;
+    ifAssumptionsHold += st.ifAssumptionsHold;
 
     // the same classifier the employee's page renders from, so payroll's idea
     // of "still waiting" cannot drift from what the person was actually asked
@@ -286,7 +306,7 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
   }
 
   return {
-    charged, assumed, ignoring, byId,
+    charged, assumptions, ifAssumptionsHold, byId,
     people: (sheets || []).length,
     waiting,
     // everybody has answered every question put to them, so nothing else is
@@ -298,15 +318,15 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
 // the same two figures across a whole batch
 export function splitPremiumForSheets(sheets, { confirmedBySheet } = {}) {
   let projected = 0;
-  let ignoringAssumptions = 0;
-  let assumed = 0;
+  let assumptions = 0;
+  let ifAssumptionsHold = 0;
   for (const s of sheets || []) {
     const r = splitPremium(s.data?.days || [], {
       confirmed: confirmedBySheet?.[s.id],
     });
     projected += r.projected;
-    ignoringAssumptions += r.ignoringAssumptions;
-    assumed += r.assumed;
+    assumptions += r.assumptions;
+    ifAssumptionsHold += r.ifAssumptionsHold;
   }
-  return { projected, ignoringAssumptions, assumed };
+  return { projected, assumptions, ifAssumptionsHold };
 }

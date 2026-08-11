@@ -6,21 +6,28 @@
 // the email cannot drift apart - that is the same reason `buildEmployeeChecks`
 // is the single classifier for the "things to check" cards.
 //
-// EVERY ONE OF THESE BLOCKS SIGNING. Mánu 2026-08-09: "they should only be able
-// to sign it if they confirm the choices since we assumed best case scenarios
-// for least premium hours and hours overall owed." The engine has already taken
-// the cheapest reading in each case, so the reading does not stand until the
-// person whose pay it is says so.
+// WHICH WAY THE MONEY MOVES, after the 2026-08-11 flip.
 //
-// TWO SHAPES OF QUESTION, and the difference is which way the money moves:
+// The sheet now arrives carrying EVERY fault the reports show, with its penalty
+// and its minutes on it. So for every question about a BREAK PREMIUM or a POLICY
+// ASSUMPTION - which is all but one of them, and 664 of the 678 hours - the
+// direction is the same and it is the safe one:
 //
-//   ASK-THEN-APPLY   nothing has changed yet. Confirming REMOVES a premium.
-//                    repair, restIsMealLength, restNoTimes.
-//   APPLY-THEN-ASK   the engine already corrected it and the sheet arrives
-//                    changed. Confirming changes nothing; DECLINING puts the
-//                    money back. restOutsideShift, shortMealRest.
+//   yes   "I took it" / "I mis-tapped it" -> pay comes OFF
+//   no    nothing changes; the sheet already says what they are saying
+//   ---   silence changes nothing either, which is why these no longer block
+//         signing. An employee who never opens the email keeps every hour.
 //
-// The second shape is why declining has to rebuild the sheet.
+// THE ONE EXCEPTION IS A CORRECTION SOMEBODY DISPUTES. `shortMealRest` credited
+// a rest period off a schedule block the roster mislabelled, and that is a
+// mechanical fix rather than a reading of intent, so it is applied on its own.
+// Declining it takes the credit back off and can restore a premium. It is the
+// only answer left that can move a figure UP, and it is worth naming rather than
+// pretending the rule is universal.
+//
+// WHAT BLOCKS SIGNING is a separate question from which way money moves, and the
+// line is not "is a premium involved". It is whether we CHANGED the document or
+// could not READ it. See `MANDATORY_KINDS`.
 
 import {
   restKey, isMealLengthRest, clockMin, FULL_REST_MIN, REST_LONG_MAX_MIN,
@@ -40,7 +47,7 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 // same event as a day he took his ten and forgot to log it, and 432 day
 // decisions across the batch were being forced through one switch.
 const GROUPED = new Set([
-  "restOutsideShift", "shortMealRest", "restSnappedToShift",
+  "restOutsideShift", "shortMealRest", "restAtServiceEdge",
 ]);
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
@@ -145,6 +152,20 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     return !r.repair && isMealLengthRest(r) && !!d?.mealMissing;
   };
 
+  // WHAT CONFIRMING ACTUALLY TAKES OFF, and it is not always an hour.
+  //
+  // Under the flip every one of these arrives with its premium already on the
+  // sheet, so "yes" is what removes one - but only where the day still owes it.
+  // A blank rest row now COUNTS as a break taken (2026-08-11), which can clear
+  // the violation before anybody is asked, and a hard-coded -1 would have
+  // promised an hour off a day that was not carrying one. The card quotes this
+  // figure to somebody about their own pay, so it has to be the real one.
+  const takesOff = (date, kind) => {
+    const d = dayOf(date);
+    if (!d) return 0;
+    return (kind === "meal" ? d.mealViolation === true : d.restViolation === true) ? -1 : 0;
+  };
+
   for (const r of mine) {
     if (!r.repair || mealReadingWins(r)) continue;
     const fixedOut = r.repair.field === "out" ? r.repair.to : r.out;
@@ -153,7 +174,7 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       kind: "repair",
       date: r.date,
       at: r.out || "",
-      moves: -1,
+      moves: takesOff(r.date, "rest"),
       row: { out: r.out, in: r.in, derivation: r.derivation, minutes: r.repair.minutes },
       proposed: { from: fixedOut, to: fixedIn },
       canGiveTime: true,
@@ -177,7 +198,7 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       kind: "restIsMealLength",
       date: r.date,
       at: r.out || "",
-      moves: -1,
+      moves: takesOff(r.date, "meal"),
       group: "restIsMealLength",
       row: {
         from: shortTime(r.reversed ? r.in : r.out),
@@ -212,7 +233,7 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       kind: "restNoTimes",
       date: r.date,
       at: "",
-      moves: -1,
+      moves: takesOff(r.date, "rest"),
       row: {
         taken: d.restTaken ?? 0,
         owed: d.restRequired ?? 0,
@@ -278,21 +299,24 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 
   // ---- APPLY, THEN ASK -----------------------------------------------------
 
-  // 4. rests recorded entirely outside the rostered day, read as a MISCLICK and
-  //    NOT paid. April Martinez, eleven days of 7:00-7:10 against an 8:00 start.
-  //    ONE card for all of them: eleven identical cards would be unusable, and
-  //    it is one habit, not eleven decisions.
+  // 4. rests recorded entirely outside the rostered day - the MIS-CLICK reading.
+  //    April Martinez, eleven days of 7:00-7:10 against an 8:00 start. ONE card
+  //    for all of them: eleven identical cards would be unusable, and it is one
+  //    habit, not eleven decisions.
   //
-  //    DECLINING PUTS THE MINUTES BACK. If she really did take a break at 7:00
-  //    before clocking in, those minutes were worked off the clock and are owed.
+  //    THE MINUTES ARE PAID UNTIL SHE SAYS OTHERWISE. This used to withhold them
+  //    and ask her to confirm; under the 2026-08-11 flip the mis-click is an
+  //    ASSUMPTION about what she meant, and an assumption is never applied on its
+  //    own. So the projected sheet pays the break she recorded, and CONFIRMING
+  //    the assumption is what takes it back off.
   const misclicked = days.filter((d) => (d.restsMisclicked || 0) > 0);
   if (misclicked.length) {
     const minutes = misclicked.reduce((n, d) => n + (d.restsMisclickedMin || 0), 0);
     out.push({
       kind: "restOutsideShift",
       dates: misclicked.map((d) => d.date),
-      moves: 0,          // confirming changes nothing; declining ADDS
-      movesOnDecline: r2(minutes / 60),
+      moves: -r2(minutes / 60),   // confirming REMOVES; declining changes nothing
+      movesOnDecline: 0,
       row: { minutes, days: misclicked.length },
     });
   }
@@ -315,22 +339,26 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     });
   }
 
-  // 6. a rest clocked the instant a shift ended, moved back inside the shift.
-  //    Mánu's own three at 12:00-12:10 against a shift ending at 12:00, plus
-  //    Aranda, Jones and Lazo. DECLINING pays the minutes back and flags the
-  //    entry: "i would be granted the 0.17 minutes to my pay and any premium as
-  //    a result if the conditions are met".
-  const snapped = days.filter((d) => (d.restsSnapped || 0) > 0);
-  if (snapped.length) {
-    const minutes = snapped.reduce((n, d) => n + (d.restsSnappedMin || 0), 0);
-    const detail = snapped.flatMap((d) =>
-      (d.restsSnappedDetail || []).map((x) => ({ date: d.date, ...x })));
+  // 6. a rest logged hard against the edge of the service it was filed under.
+  //    Uribe's three at 12:00-12:10 against a service ending 12:00, Hatt's
+  //    3:30-4:30 against one starting 4:30, and eight more across six people.
+  //
+  //    THE MINUTES ARE PAID. Mánu 2026-08-11: "those 10 minutes were documented
+  //    outside of a shift in between a time with no scheduling so its time
+  //    added." The assumption - that he should have logged it inside the shift,
+  //    so it is a scheduling error - is what would take them off, and it needs
+  //    his confirmation before it does anything.
+  const atEdge = days.filter((d) => (d.restsAtServiceEdge || 0) > 0);
+  if (atEdge.length) {
+    const minutes = atEdge.reduce((n, d) => n + (d.restsAtServiceEdgeMin || 0), 0);
+    const detail = atEdge.flatMap((d) =>
+      (d.restsAtServiceEdgeDetail || []).map((x) => ({ date: d.date, ...x })));
     out.push({
-      kind: "restSnappedToShift",
-      dates: snapped.map((d) => d.date),
-      moves: 0,
-      movesOnDecline: r2(minutes / 60),
-      row: { minutes, days: snapped.length, detail },
+      kind: "restAtServiceEdge",
+      dates: atEdge.map((d) => d.date),
+      moves: -r2(minutes / 60),
+      movesOnDecline: 0,
+      row: { minutes, days: atEdge.length, detail },
     });
   }
 
@@ -387,8 +415,11 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
           kind: part === "meal" ? "nothingDocumentedMeal" : "nothingDocumentedRest",
           date,
           at: "",
-          moves: 0,
-          movesOnDecline: 1,
+          // the premium is on the sheet by construction here - this question
+          // exists because the day carries the violation - so confirming always
+          // takes exactly one hour off, and declining leaves it alone.
+          moves: -1,
+          movesOnDecline: 0,
           // ANSWERED TOGETHER, WRITTEN TOGETHER. The card sets every day, then
           // commits them in one call and rebuilds the sheet once - thirteen
           // confirm panels and thirteen rebuilds was the alternative.
@@ -417,7 +448,67 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     }
   }
 
-  return out.map((q) => ({ ...q, id: questionId(q) }));
+  return out.map((q) => ({ ...q, id: questionId(q), mandatory: isMandatory(q.kind) }));
+}
+
+// ---------------------------------------------------------------------------
+// WHAT STILL BLOCKS A SIGNATURE.
+//
+// Every question blocked signing until 2026-08-11, and that was right while
+// silence meant NOT PAID: an unanswered question was an hour the employee might
+// be owed and was not getting, so making them answer protected them. The flip
+// turns that on its head. Silence now leaves every hour ON the sheet, so
+// demanding an answer before somebody can sign is demanding they work through a
+// card whose only possible outcome is less pay. Measured on the live batch:
+// 664 of the 678 hours sit behind questions of exactly that shape.
+//
+// So only two things still block, and neither is about money:
+//
+//   WE CHANGED THE DOCUMENT   a punch we repaired. The sheet in front of them is
+//                             not what their report said, and they should not
+//                             sign that without being told.
+//   WE COULD NOT READ IT      a rest entry with no times on it. Nobody can say
+//                             what happened, so the record needs a person.
+//
+// Measured: 54 of 59 could sign straight away, 5 gated on 6 questions.
+//
+// A KIND NOT NAMED HERE DEFAULTS TO MANDATORY. The safe failure is asking too
+// much - a new kind that quietly becomes optional is a discrepancy somebody
+// signs past without ever seeing it, and that is worse than one extra card.
+const OPTIONAL_KINDS = new Set([
+  // the break premiums. Silence leaves the pay on.
+  "nothingDocumented", "nothingDocumentedMeal", "nothingDocumentedRest",
+  "restIsMealLength",
+  // the two policy assumptions. Silence leaves the minutes on.
+  "restOutsideShift", "restAtServiceEdge",
+  // a correction that moves nothing either way, and one the employee can dispute
+  // afterwards without a figure hanging on it
+  "restTooLongOffClock", "shortMealRest",
+]);
+
+export const isMandatory = (kind) => !OPTIONAL_KINDS.has(kind);
+
+// the questions somebody must settle before a sheet can be generated, and the
+// ones they may simply ignore. Every surface that gates a signature reads this
+// rather than counting questions, so the page, the popup and the server action
+// cannot disagree about who is allowed to sign.
+export function signingGate(questions, corrections) {
+  const rows = (corrections || []).filter(
+    (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
+  );
+  const answered = (q) =>
+    rows.some((c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date));
+  const all = questions || [];
+  const required = all.filter((q) => q.mandatory ?? isMandatory(q.kind));
+  const outstanding = required.filter((q) => !answered(q));
+  const optionalOpen = all.filter((q) => !(q.mandatory ?? isMandatory(q.kind))).filter((q) => !answered(q));
+  return {
+    // nothing left that has to be settled, so they may sign
+    canSign: outstanding.length === 0,
+    blocking: outstanding.length,
+    // what the reassurance popup counts. Ignoring these is the safe choice.
+    optionalOpen: optionalOpen.length,
+  };
 }
 
 // HOW FAR THROUGH THEIR QUESTIONS ONE PERSON IS.
@@ -466,12 +557,13 @@ export function patchesFor(question, choice, day) {
       // "yes, I took it" - no rest premium owed for the day
       return yes ? { restViolation: false } : { restViolation: null };
     case "restOutsideShift":
-      // confirming leaves our correction alone. Declining says the entry was
-      // right and the break really was taken off the clock, so the minutes are
-      // owed after all and go back on the day.
+      // INVERTED BY THE FLIP. The minutes are on the sheet already, because the
+      // report says the break happened and nothing mechanical says otherwise.
+      // Confirming the assumption - "yes, I mis-tapped it, I was not on a break
+      // at seven" - is what takes them off. Declining leaves the sheet alone.
       return yes
-        ? { paidHours: null }
-        : { paidHours: r2((day?.paidHours || 0) + (day?.restsMisclickedMin || 0) / 60) };
+        ? { paidHours: r2(Math.max(0, (day?.paidHours || 0) - (day?.restsMisclickedMin || 0) / 60)) }
+        : { paidHours: null };
     case "nothingDocumented":
       // "Yes, that is correct" - they took them and did not write them down, so
       // nothing is owed. "No" puts the premium back on the day, which is what
@@ -499,13 +591,13 @@ export function patchesFor(question, choice, day) {
       return yes ? { mealViolation: false } : { mealViolation: null };
     case "nothingDocumentedRest":
       return yes ? { restViolation: false } : { restViolation: null };
-    case "restSnappedToShift":
-      // confirming leaves the move alone. Declining says they really did take it
-      // after clocking out, so the minutes are owed and go back on - and the
-      // entry gets flagged for payroll as a mis-entered ten.
+    case "restAtServiceEdge":
+      // INVERTED BY THE FLIP, same as the mis-click above. The break is paid
+      // where it was recorded; confirming that it should have sat inside the
+      // service is what moves it there and takes the added minutes back off.
       return yes
-        ? { paidHours: null }
-        : { paidHours: r2((day?.paidHours || 0) + (day?.restsSnappedMin || 0) / 60) };
+        ? { paidHours: r2(Math.max(0, (day?.paidHours || 0) - (day?.restsAtServiceEdgeMin || 0) / 60)) }
+        : { paidHours: null };
     case "shortMealRest": {
       // declining takes the credited rest back off. The count follows the
       // premium so the printed figure and the charge cannot disagree.

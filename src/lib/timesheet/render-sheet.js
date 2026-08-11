@@ -15,27 +15,34 @@
 
 import { renderCorrected } from "./render.js";
 import { addedOvertimeHours } from "./parse.js";
-import { projectDays, premiumsFromDays } from "./premium-split.js";
+import { applyAssumptions, premiumsFromDays } from "./premium-split.js";
 
 // THE THREE DOCUMENTS, and they are one renderer over three sets of day rows.
 //
 // Mánu 2026-08-09: he wants to hold them side by side for the same person.
 //
-//   ignoring    every violation charged. What the sheet has always been, and
-//               the copy that is emailed and signed. Byte-for-byte unchanged.
-//   projected   the engine's PROPOSAL. Only a penalty a document records on its
-//               own is charged - a meal that was rostered, punched, and began
-//               after the fifth hour. Everything else is assumed taken and
-//               asked about. It ignores the answers on purpose: it is what the
-//               engine put forward, and comparing it to what came back is the
-//               entire point of having two.
-//   corrected   the same, WITH the answers folded in. A premium somebody has
-//               told us they are owed is charged here and not in `projected`,
+// THE NAMES MOVED ON 2026-08-11 BECAUSE THE DEFAULT MOVED. `projected` used to
+// mean the small figure - the engine's proposal after assuming breaks were
+// taken - and `ignoring` meant the big one. The flip makes the big one the
+// default and the thing payroll pays, and "projected" is Mánu's word for it. So
+// the old `ignoring` IS the new `projected`, and the old `projected` is now
+// `assumed`. Renaming rather than quietly swapping the meanings: a stored basis
+// string that still said "projected" while meaning the opposite is the sort of
+// thing that prints the wrong figure above somebody's signature.
+//
+//   projected   every fault the reports show, with its penalty. THE DEFAULT,
+//               the copy that is emailed and signed, and what payroll pays.
+//   assumed     every policy assumption applied - breaks assumed taken, minutes
+//               assumed mis-tapped. Blind to the answers on purpose: it is the
+//               engine's alternative reading, and comparing it to what came back
+//               is the entire point of having it.
+//   corrected   the same, WITH the answers folded in. An assumption somebody has
+//               settled by telling us they missed the break is NOT applied here,
 //               so the gap between the two is the work the batch has done.
 //
-// Only `ignoring` may be served from a stored blob. The other two are opinions
+// Only `projected` may be served from a stored blob. The other two are opinions
 // about an open question and have to be built from what is true right now.
-export const BASES = ["ignoring", "projected", "corrected"];
+export const BASES = ["projected", "assumed", "corrected"];
 
 // Everything a render needs, so every caller selects the same fields and none
 // of them quietly omits one and produces a subtly different document.
@@ -56,18 +63,19 @@ export const RENDER_SELECT = {
 // document has to add up.
 const sum = (days, k) => Math.round(days.reduce((n, d) => n + (d[k] || 0), 0) * 100) / 100;
 
-export async function renderSheet(ts, { basis = "ignoring", confirmed, answers, pastDue } = {}) {
+export async function renderSheet(ts, { basis = "projected", confirmed, answers, pastDue } = {}) {
   const d = ts.data || {};
   const stored = d.days || [];
   if (!stored.length) return null;
 
-  // The projected copy is the engine's own proposal, so it is deliberately
-  // blind to `confirmed`: an answer belongs to the corrected copy.
+  // The assumed copy is the engine's own alternative reading, so it is
+  // deliberately blind to `confirmed`: an answer belongs to the corrected copy.
+  // `projected` is the stored days untouched, which is the whole point of it.
   const days =
-    basis === "projected"
-      ? projectDays(stored, { pastDue: false })
+    basis === "assumed"
+      ? applyAssumptions(stored, { pastDue: false })
       : basis === "corrected"
-        ? projectDays(stored, { confirmed, answers, pastDue })
+        ? applyAssumptions(stored, { confirmed, answers, pastDue })
         : stored;
 
   return renderCorrected(
@@ -91,10 +99,11 @@ export async function renderSheet(ts, { basis = "ignoring", confirmed, answers, 
         addedOtHours: addedOvertimeHours(days, d.payPeriod || null),
       },
       // RECOUNTED FROM THE ROWS THIS DOCUMENT ACTUALLY DRAWS, never carried
-      // over from the stored object. `d.premiums` is the ignoring-assumptions
-      // table by construction, so reusing it on a projected render would print
-      // Aranda's nine meal days above a page that charges two of them.
-      premiums: basis === "ignoring" ? d.premiums : premiumsFromDays(days),
+      // over from the stored object. `d.premiums` is the every-fault table by
+      // construction, which is exactly the projected document - so it is reused
+      // there and rebuilt everywhere else. Reusing it on an assumed render would
+      // print Aranda's nine meal days above a page that charges two of them.
+      premiums: basis === "projected" ? d.premiums : premiumsFromDays(days),
       comments: d.comments || null,
       punchCorrections: d.punchCorrections || null,
       // the Breaks column: what the two reports RECORDED, never derived from
