@@ -55,8 +55,10 @@ function everyKind() {
   };
   add([day({ mealViolation: true })]);                                   // nothingDocumentedMeal
   add([day({ restViolation: true })]);                                   // nothingDocumentedRest
-  add([day({ restsMisclicked: 1, restsMisclickedMin: 10 })]);            // restOutsideShift
-  add([day({ restsAtServiceEdge: 1, restsAtServiceEdgeMin: 10 })]);      // restAtServiceEdge
+  add([day({
+    restsOutsideScheduled: 1, restsOutsideScheduledMin: 10,
+    restsOutsideScheduledDetail: [{ wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day", service: "8a-11a", from: "8a", to: "8:10a" }],
+  })]);                                                                  // restOutsideScheduled
   add([day({ restsFromShortMeals: 1, restTaken: 1, restRequired: 2, restViolation: true })]); // shortMealRest
   // repair comes off a REST ROW the parser had to fix, not off the day
   add([day({ restViolation: true })], {
@@ -109,6 +111,25 @@ test("every kind has an audit noun and a resolution sentence for payroll", () =>
   }
 });
 
+test("every kind knows what its answer does to the day", () => {
+  // THE HOLE THIS CLOSES, found 2026-08-11 by falling into it. Merging two kinds
+  // into one meant deleting a span of `patchesFor`, and the three
+  // nothingDocumented cases went with it - so every "yes I took my breaks" fell
+  // through to `default: return {}` and quietly patched nothing. 53 of 59 people
+  // are asked that question. The build passed; three unrelated tests caught it
+  // by accident, and only because they happened to assert the patch.
+  //
+  // A kind with no case here does not error - it silently does nothing, which is
+  // the worst shape a payroll bug can have.
+  const handled = casesIn(read("src/lib/timesheet/questions.js"), "export function patchesFor");
+  for (const kind of everyKind()) {
+    assert.ok(
+      handled.has(kind),
+      `${kind} has no case in patchesFor - answering it would change nothing at all`,
+    );
+  }
+});
+
 test("every kind that settles a premium is in the answer table", () => {
   const table = read("src/lib/timesheet/premium-split.js");
   const listed = new Set(
@@ -134,10 +155,9 @@ test("the kinds are a known set, so a new one cannot arrive unnoticed", () => {
       "nothingDocumentedMeal",
       "nothingDocumentedRest",
       "repair",
-      "restAtServiceEdge",
       "restIsMealLength",
       "restNoTimes",
-      "restOutsideShift",
+      "restOutsideScheduled",
       "restTooLongOffClock",
       "shortMealRest",
     ],
@@ -171,7 +191,7 @@ test("a kind nobody classified blocks signing rather than slipping through", () 
   assert.equal(isMandatory("repair"), true, "we changed their punches");
   assert.equal(isMandatory("restNoTimes"), true, "we could not read the row");
   assert.equal(isMandatory("nothingDocumentedRest"), false, "ignoring it keeps their pay");
-  assert.equal(isMandatory("restAtServiceEdge"), false);
+  assert.equal(isMandatory("restOutsideScheduled"), false);
 });
 
 test("the gate lets somebody sign past every optional question and no mandatory one", () => {
