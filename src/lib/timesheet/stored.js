@@ -37,7 +37,7 @@ export const REQUIRED_DAY_FIELDS = [
   // the 2026-08-09 EVENING rulings, read back by `buildQuestions` to decide
   // whether a correction we already applied still needs confirming
   "restsMisclicked", "restsMisclickedMin", "restsFromShortMeals",
-  "restsSnapped", "restsSnappedMin", "restsSnappedDetail",
+  "restsAtServiceEdge", "restsAtServiceEdgeMin", "restsAtServiceEdgeDetail",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -122,9 +122,9 @@ export function storedDay(d) {
     restsMisclicked: d.restsMisclicked ?? null,
     restsMisclickedMin: d.restsMisclickedMin ?? 0,
     restsFromShortMeals: d.restsFromShortMeals ?? 0,
-    restsSnapped: d.restsSnapped ?? null,
-    restsSnappedMin: d.restsSnappedMin ?? 0,
-    restsSnappedDetail: d.restsSnappedDetail ?? [],
+    restsAtServiceEdge: d.restsAtServiceEdge ?? null,
+    restsAtServiceEdgeMin: d.restsAtServiceEdgeMin ?? 0,
+    restsAtServiceEdgeDetail: d.restsAtServiceEdgeDetail ?? [],
     mealInsideBooking: !!d.mealInsideBooking,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,

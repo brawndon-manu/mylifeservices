@@ -302,18 +302,34 @@ export function restOffOwnShift(row) {
 //
 // "abuts" is what makes those two the same species and separates them from a
 // rest logged hours away from its shift.
+// THE STORED ROW ONLY EVER CARRIED THE SERVICE AS A SENTENCE. `allRestRows` has
+// written `shift: "1:00 PM to 2:30 PM"` since the beginning and only started
+// carrying `shiftFrom`/`shiftTo` on 2026-08-11, so every batch already in the
+// database - including the live one - has the service window and no field to
+// read it out of. Splitting the sentence is what lets this rule work on a sheet
+// that was uploaded before the rule existed, instead of only on the next upload.
+const splitShift = (s) => {
+  const m = /^(.+?)\s+to\s+(.+)$/.exec(String(s || "").trim());
+  return m ? { from: m[1], to: m[2] } : { from: null, to: null };
+};
+
 export function serviceFit(row) {
-  const sO = clockMin(row?.["Shift Start Time"] ?? row?.shiftFrom);
-  const sI = clockMin(row?.["Shift End Time"] ?? row?.shiftTo);
+  const said = splitShift(row?.shift);
+  const sO = clockMin(row?.["Shift Start Time"] ?? row?.shiftFrom ?? said.from);
+  const sI = clockMin(row?.["Shift End Time"] ?? row?.shiftTo ?? said.to);
   const a = clockMin(row?.["Rest Period Time Out"] ?? row?.out);
   const b = clockMin(row?.["Rest Period Time In"] ?? row?.in);
   if (sO == null || sI == null || a == null || b == null) return { where: "unknown" };
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
-  if (lo >= sO && hi <= sI) return { where: "inside" };
-  if (hi <= sO) return { where: "before", abuts: hi === sO, gapMin: sO - hi };
-  if (lo >= sI) return { where: "after", abuts: lo === sI, gapMin: lo - sI };
-  return { where: "straddles" };
+  // the service window travels with the verdict. A rule that moves a break to
+  // where it should have been needs the edge it is moving to, and re-reading the
+  // row for it is how the two end up disagreeing about which shift they meant.
+  const svc = { from: sO, to: sI };
+  if (lo >= sO && hi <= sI) return { where: "inside", ...svc };
+  if (hi <= sO) return { where: "before", abuts: hi === sO, gapMin: sO - hi, ...svc };
+  if (lo >= sI) return { where: "after", abuts: lo === sI, gapMin: lo - sI, ...svc };
+  return { where: "straddles", ...svc };
 }
 
 export function restKey(name) {

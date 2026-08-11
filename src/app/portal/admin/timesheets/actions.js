@@ -18,15 +18,13 @@ import {
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildEmployeeChecks } from "@/lib/timesheet/employee-checks";
 import { buildQuestions, patchesFor } from "@/lib/timesheet/questions";
-import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
-import { parseRestReport, restKey, allRestRows, clockMin, FULL_REST_MIN } from "@/lib/timesheet/rests";
+import { parseRestReport, restKey, allRestRows, clockMin, serviceFit, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -470,6 +468,13 @@ export async function uploadBatch(formData) {
   // report rows so the engine can tell a rest taken hard against the rostered
   // lunch from one taken in the middle of a work period. Keyed on the report's
   // own spelling; the day builder looks it up under the same key.
+  //
+  // EACH WINDOW CARRIES THE SERVICE IT WAS LOGGED AGAINST. Mánu 2026-08-11:
+  // "rest periods are tied to a service. theres no way to document them without
+  // having a service to add it to." So the report itself says where a break was
+  // meant to sit, and until now the engine threw that away and guessed from
+  // punch gaps instead - which is why the old snap rule found 3 of the 10 rows
+  // that actually sit hard against a service edge.
   const restWindows = new Map();
   for (const row of restsByDate) {
     if (!row.counted || !row.date) continue;
@@ -478,7 +483,7 @@ export async function uploadBatch(formData) {
     if (out == null || inn == null) continue;
     const k = `${restKey(row.name)}|${row.date}`;
     if (!restWindows.has(k)) restWindows.set(k, []);
-    restWindows.get(k).push({ out, in: inn });
+    restWindows.get(k).push({ out, in: inn, fit: serviceFit(row) });
   }
 
   for (const raw of withHours) {
@@ -965,11 +970,18 @@ export async function sendTimesheets(batchId, formData) {
   for (const ts of rows) {
     if (!ts.user?.email) { failed++; continue; }
     const url = `${base}/t/${signTimesheetToken(ts.id)}`;
-    // WHAT IS BEING PAID AND WHAT IS STILL BEING ASSUMED, from the one function
-    // the page and the PDF also read. `ts.premiumHours` is the stored
-    // ignoring-assumptions column and quoting it here is what made the email
-    // promise 17 hours the document underneath it does not pay.
-    const standing = premiumStanding(ts.data?.days || [], ts.corrections);
+    // HOW MANY QUESTIONS THEY HAVE, WHICH IS THE ONLY NUMBER THE EMAIL CARRIES.
+    // Mánu 2026-08-11 cut the figures, the checks tables and the policy
+    // paragraph: everything they said is on the page the button opens, beside
+    // the document it describes, and a payroll figure quoted in an email goes
+    // stale the moment somebody answers one of these.
+    //
+    // Counted from the same classifier the page renders from, so the email
+    // cannot promise a different number of cards than the person then sees.
+    const asked = buildQuestions(ts.data, {
+      restRows: batch.restsByDate || [],
+      sourceName: ts.sourceName,
+    }).length;
     const res = await sendTimesheet({
       intendedEmail: ts.user.email,
       // `sentAt` is stamped by the first send, so a row that already has one is
@@ -980,21 +992,7 @@ export async function sendTimesheets(batchId, formData) {
       message,
       dueAt: dueLabel,
       signUrl: url,
-      summary: {
-        paidHours: ts.paidHours,
-        otHours: ts.otHours,
-        doubleHours: ts.doubleHours,
-        chargedPremium: standing.charged,
-        assumedPremium: standing.assumed,
-      },
-      // what their own sheet needs them to look at. a premium total with no
-      // basis is not something anyone can check, and these are the only people
-      // who know whether a break actually happened.
-      checks: buildEmployeeChecks(ts.data, {
-        restRows: batch.restsByDate || [],
-        sourceName: ts.sourceName,
-        confirmed: standing.confirmed,
-      }),
+      questionCount: asked,
     });
     if (res.ok) {
       sent++;
@@ -1682,7 +1680,7 @@ const QUESTION_NOUN = {
   restIsMealLength: "thirty minute break filed as a rest",
   restNoTimes: "rest entry recorded with no times",
   restOutsideShift: "rest recorded outside the rostered day",
-  restSnappedToShift: "rest clocked as the shift ended",
+  restAtServiceEdge: "rest logged against the edge of its own service",
   nothingDocumented: "day with no break recorded at all",
   // split per part 2026-08-10, so the audit note names which break was asked
   // about rather than "the day"
@@ -1713,8 +1711,8 @@ function resolutionFor(q, choice, stated, statedBreaks) {
         : "Employee said the break was not taken. Premium stands.";
     case "restOutsideShift":
       return yes
-        ? "Employee confirmed the time was entered wrongly. Our correction stands and the minutes are not added."
-        : "Employee said the break really was taken at that time, off the clock. The minutes have been added back and paid.";
+        ? "Employee confirmed the time was entered wrongly and they were not on a break then. The minutes have been taken back off."
+        : "Employee said the break really was taken at that time, off the clock. The minutes stand as paid.";
     case "nothingDocumented":
       // THE TIMES GO IN THE NOTE, not just on the day row. This note is the
       // audit trail payroll reads, and "they said they took them" without the
@@ -1756,10 +1754,10 @@ function resolutionFor(q, choice, stated, statedBreaks) {
       return yes
         ? "Employee confirmed this was a real break they took. Recorded as taken; no change to hours or premium."
         : "Employee says the entry was a mistake. Flagged for payroll as a mis-entry; no change to hours or premium.";
-    case "restSnappedToShift":
+    case "restAtServiceEdge":
       return yes
-        ? "Employee confirmed the break was taken before the shift ended. Our correction stands and the minutes are not added."
-        : "FLAG FOR PAYROLL: employee says the break really was taken after clocking out, so the ten is being entered at the wrong time in QSClock. The minutes have been added back and paid.";
+        ? "Employee confirmed the break belonged inside the service and was logged against its edge by mistake. The minutes have been taken back off."
+        : "FLAG FOR PAYROLL: employee says the break really was taken outside the service, so the ten is being entered against the wrong shift in QSClock. The minutes stand as paid.";
     case "shortMealRest":
       return yes
         ? "Employee confirmed the short meal block was their rest period. Credit stands."
