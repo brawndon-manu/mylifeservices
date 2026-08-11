@@ -2047,11 +2047,32 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
   const resend = new Resend(process.env.RESEND_API_KEY);
   let sent = 0;
   try {
-    for (let i = 0; i < messages.length; i += 100) {
-      const chunk = messages.slice(i, i + 100);
-      const { error } = await resend.batch.send(chunk);
-      if (error) console.error("announcement email batch error:", error);
-      else sent += chunk.length;
+    if (files.length) {
+      // ONE AT A TIME WHEN THERE ARE DOCUMENTS, because Resend's BATCH endpoint
+      // does not accept attachments - "the attachments field is not supported
+      // yet" - and it does not complain. The batch call succeeds and the PDFs
+      // are silently dropped, so every announcement this week went out with its
+      // documents missing. The SDK says the same thing in its own types:
+      // CreateBatchEmailOptions = Omit<CreateEmailOptions, 'attachments' | ...>.
+      //
+      // Each message is already addressed to one person, so this changes how
+      // they are handed over, not who receives what.
+      for (const m of messages) {
+        // Resend allows 10 requests a second per team. Sequential awaits are
+        // usually slower than that on their own, but not always, so hold the
+        // floor rather than find out during a 77-person send.
+        if (sent > 0) await new Promise((r) => setTimeout(r, 120));
+        const { error } = await resend.emails.send(m);
+        if (error) console.error(`announcement email failed (${m.to}):`, error);
+        else sent += 1;
+      }
+    } else {
+      for (let i = 0; i < messages.length; i += 100) {
+        const chunk = messages.slice(i, i + 100);
+        const { error } = await resend.batch.send(chunk);
+        if (error) console.error("announcement email batch error:", error);
+        else sent += chunk.length;
+      }
     }
   } catch (e) {
     console.error("announcement email send threw:", e);
