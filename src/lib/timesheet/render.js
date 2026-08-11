@@ -65,11 +65,14 @@ const NOTEINK = rgb(0.42, 0.32, 0.06);
 // `projected` therefore carries NO WARNING BANNER: there is nothing to warn
 // anybody off, it is their timesheet, and every hour the engine could find for
 // them is on it. The other two are readings of an open question and say so.
+//
+// `projected` CARRIES NO BANNER AT ALL. Mánu 2026-08-11: "remove yellow hazard
+// over the time sheet. for the bottom one too." It is the default document and
+// their own timesheet - there is nothing to warn anybody off, and an amber box
+// on every page put a hazard stripe over the header on page one and across the
+// attestation on page two. The sentence it carried has moved into the premium
+// section at the bottom, in grey, next to the figure it is actually about.
 const BASIS_BANNER = {
-  projected: {
-    title: "Breaks with nothing on file recording them are paid as missed.",
-    body: "The penalty for each one is already on this timesheet. If you did take a break and did not record it, say so on your timesheet page and it comes off.",
-  },
   assumed: {
     title: "IF EVERY ASSUMPTION HOLDS - reference copy, not a payslip.",
     body: "Every break with nothing on file is treated as taken here, whether or not it was. Not the copy sent for signature.",
@@ -1160,6 +1163,20 @@ export async function renderCorrected(sheet, opts = {}) {
       "One additional hour of pay per workday for a missed meal period and for missed rest break(s) - max one of each per day.",
       L, y, { size: 6.5, color: MUTED },
     );
+    y -= 10;
+    // WHERE THE AMBER BANNER'S SENTENCE WENT. It used to be a tinted box across
+    // the top of every page - over the header on page one and over the
+    // attestation on page two. It belongs next to the figure it explains, in the
+    // same grey as the rest of the small print, and only on the copy that
+    // actually charges these.
+    if (!assumedNote) {
+      y = wrap(
+        page,
+        "A break with nothing on file recording it is paid as missed, and the penalty for each one is in the figure above. "
+        + "If you did take a break and simply did not record it, say so on your timesheet page and it comes off.",
+        L, y, R - L, { font, size: 6.5, color: MUTED, leading: 8 },
+      );
+    }
     y -= 14;
     if (assumedNote) y = drawAssumedNote(y);
   } else {

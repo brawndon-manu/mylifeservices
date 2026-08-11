@@ -76,10 +76,15 @@ test("each copy says which one it is, and only the signed one reads as a payslip
   // The other two are admin readings of an open question and have to say so.
   const ts = sheetFor([ASSUMED, DOCUMENTED]);
 
+  // THE DEFAULT COPY CARRIES NO BANNER AT ALL. Mánu 2026-08-11 had the amber box
+  // removed: it is their own timesheet, there is nothing to warn them off, and
+  // drawing it on every page put a hazard stripe over the header and then over
+  // the attestation. The sentence moved to the premium section, in grey.
   const projected = await pdfText((await renderSheet(ts)).bytes);
-  assert.match(projected, /Breaks with nothing on file recording them are paid as missed/);
   assert.ok(!/Not the copy sent for signature/.test(projected),
     "this IS the copy sent for signature");
+  assert.ok(!/reference copy|AS CORRECTED/.test(projected), "and it carries no banner");
+  assert.match(projected, /paid as missed/, "the sentence survives, beside the premium table");
   assert.match(projected, /3\.00 hrs/, "and it charges every one of them");
 
   const assumed = await pdfText((await renderSheet(ts, { basis: "assumed" })).bytes);
