@@ -16,9 +16,22 @@
 //
 // COLOUR CARRIES THE SAME MEANING AS THE SHEET: amber while we are still asking,
 // green once an answer has left the figures alone, plain once it has not.
-import { useState, useTransition } from "react";
+import { createContext, useContext, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
+
+// THE BATCH ANSWER, SHARED SO ITS ROWS CAN BE SPLIT ACROSS THE PAGE.
+//
+// A batched kind is many days answered separately and committed ONCE - see
+// BatchProvider. "Day by day" needs each of those days to sit beside its own
+// calendar, which means the rows can no longer live inside one card, but they
+// still have to share one set of staged answers and one confirm. So the state
+// moved up into a provider and the two pieces that draw it - BatchDays and
+// BatchConfirm - read it from here.
+//
+// Both views mount exactly one provider, so there is still one staged answer
+// and one commit however the rows are arranged.
+const BatchCtx = createContext(null);
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -45,6 +58,7 @@ function copyFor(q, standing) {
     case "repair":
       return {
         title: "One question before you sign",
+        short: "Rest break time looks mis-entered",
         body: (
           <>
             On <b>{q.date}</b> the break record has your rest break entered as{" "}
@@ -78,6 +92,7 @@ function copyFor(q, standing) {
     case "restIsMealLength":
       return {
         title: "Was this your meal break?",
+        short: "Break long enough to be a meal",
         body: (
           <>
             On <b>{q.date}</b> the break record has a <b>{q.row.minutes} minute</b> break from{" "}
@@ -108,6 +123,7 @@ function copyFor(q, standing) {
     case "restNoTimes":
       return {
         title: "Did you take this break?",
+        short: "Break recorded with no times",
         // THE BODY HAS TO FOLLOW THE FIGURE, not assert one. It said "and pays
         // you an hour for it" on every sheet, which contradicted its own
         // footnote the moment the blank row started COUNTING as a break taken
@@ -168,6 +184,16 @@ function copyFor(q, standing) {
             ? "after the shift it was filed under had ended"
             : "outside the hours you were scheduled to be working";
       const canClear = (q.row.detail || []).some((x) => x.clearsARest);
+      // THE SAME FAULT IN FOUR WORDS, for the simple view. Mánu 2026-08-11: "we
+      // don't have to over explain for the day by day view because this is the
+      // simple view. It can just say rest taken after shift time."
+      const shapeShort = shapes.has("unpaid-gap") && shapes.size === 1
+        ? "Rest taken in unscheduled time"
+        : shapes.has("before") && shapes.size === 1
+          ? "Rest taken before shift time"
+          : shapes.has("after") && shapes.size === 1
+            ? "Rest taken after shift time"
+            : "Rest taken outside shift time";
       return {
         // ONE CARD COVERS ALL OF THEM, so the heading has to count. Mánu
         // 2026-08-11 asked whether it was a notice for one or for any number:
@@ -176,6 +202,7 @@ function copyFor(q, standing) {
         title: q.row.days === 1
           ? "One of your breaks is outside your scheduled hours"
           : "Some of your breaks are outside your scheduled hours",
+        short: shapeShort,
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your ten minute rest break is
@@ -304,6 +331,7 @@ function copyFor(q, standing) {
     case "restTooLongOffClock":
       return {
         title: "One of your breaks does not look like a break",
+        short: "Break too long to be a rest",
         body: (
           <>
             On <b>{q.date}</b> a break is recorded from <b>{q.row.from}</b> to <b>{q.row.to}</b>,
@@ -337,6 +365,7 @@ function copyFor(q, standing) {
     case "shortMealRest":
       return {
         title: "We read a meal block as your rest break. Is that right?",
+        short: "Meal block read as your rest break",
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your schedule has a block
@@ -408,7 +437,7 @@ function Choice({ on, tone, label, why, onClick, busy }) {
 // confirm panel that has to be got past before anything is written
 function OneQuestion({
   token, q, answer, answerHasTimes, answerTimes, locked, disturbCount,
-  standing, submitAction, showDate,
+  standing, submitAction, showDate, terse,
 }) {
   // THE PAGE HAS TO REFETCH, AND `revalidatePath` ALONE DID NOT DO IT.
   //
@@ -618,7 +647,7 @@ function OneQuestion({
           tone="yes"
           busy={pending}
           label={c.yes.label}
-          why={!answered ? c.yes.why : null}
+          why={!answered && !terse ? c.yes.why : null}
           onClick={() => pick("yes")}
         />
         <Choice
@@ -626,7 +655,7 @@ function OneQuestion({
           tone="no"
           busy={pending}
           label={c.no.label}
-          why={!answered ? c.no.why : null}
+          why={!answered && !terse ? c.no.why : null}
           onClick={() => pick("no")}
         />
         {c.third && (
@@ -635,7 +664,7 @@ function OneQuestion({
             tone="no"
             busy={pending}
             label={c.third.label}
-            why={!answered ? c.third.why : null}
+            why={!answered && !terse ? c.third.why : null}
             onClick={() => pick(c.third.value)}
           />
         )}
@@ -849,7 +878,27 @@ function OneQuestion({
 // NOTHING IS PRE-SELECTED, same as every other card. The staged answers live
 // here in client state until the confirm panel is got past, and until then the
 // database has not been touched.
-function BatchCard({ token, list, answers, partials, waiting, standing, submitAction, copy }) {
+// WHAT THE BATCHED CARD SAYS BEFORE IT ASKS ANYTHING. Its own component because
+// `copyFor` lives in this "use client" module: a server component can render a
+// client component but it cannot call into one, so "Day by day" asks for the
+// heading rather than computing it.
+export function BatchHeading({ question, standing, className = "" }) {
+  const c = copyFor(question, standing);
+  if (!c) return null;
+  return (
+    <div className={className}>
+      <p className="text-base font-semibold text-foreground">{c.title}</p>
+      <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
+    </div>
+  );
+}
+
+export function BatchProvider({
+  token, list, answers, partials, waiting, standing, submitAction, copy: copyProp, children,
+}) {
+  // the caller may hand the copy in (the "All questions" card already computed
+  // it to pick the card tone) or leave it to be derived here
+  const copy = copyProp || copyFor(list[0], standing) || {};
   // see the note in OneQuestion - the figures at the top of the page are server
   // rendered, so an answer that does not refresh the tree leaves them stale
   const router = useRouter();
@@ -980,10 +1029,26 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
     });
   }
 
-  // WHICH BREAK THIS ROW IS ABOUT. Since the split, a question owns one part of
-  // one day, so the label names the part rather than the day's whole set.
-  const partName = (q) =>
-    q.row?.part === "meal" ? "Lunch break" : q.row?.part === "rest" ? "Rest breaks" : null;
+  // WHAT IS ACTUALLY MISSING ON THIS DAY, in a few words. Mánu 2026-08-11:
+  // "for the first day, it should say no scheduled rest break with the hours",
+  // and for 07/27 - which owes two tens and holds one - "rest break, one of two
+  // missing". The row used to say "rest break · 6 hrs worked", which names the
+  // subject but never the fault.
+  //
+  // Both numbers come off the slots the engine already built: `needs` is what is
+  // still owed and `known` is what is already on record, so this cannot drift
+  // from what the question goes on to ask for.
+  const WORDS = ["no", "one", "two", "three", "four", "five"];
+  const count = (n) => WORDS[n] || String(n);
+  const missingLabel = (q) => {
+    const owed = (q.needs || []).length;
+    const have = (q.needs?.[0]?.known || []).length;
+    const total = owed + have;
+    if (q.row?.part === "meal") return "No meal break recorded";
+    if (!owed) return "Rest break";
+    if (have > 0) return `Rest break - ${count(owed)} of ${count(total)} missing`;
+    return total > 1 ? `No rest breaks recorded - ${count(total)} owed` : "No rest break recorded";
+  };
 
   // WHAT IF THEY ONLY TOOK ONE OF THE TWO? Mánu 2026-08-11. It was yes-or-no,
   // so somebody who got one ten and worked through the other had to claim they
@@ -994,10 +1059,16 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
   // wrong was the RECORD, and the time for the ten they did get.
   const owedOn = (q) => (q.row?.part === "rest" ? (q.needs || []).length : 1);
   const optionsFor = (q) => (owedOn(q) >= 2 ? ["yes", "partial", "no"] : ["yes", "no"]);
+  // SIX HOURS OWES ONE TEN, AND THE BUTTON HAS TO SAY SO. Mánu 2026-08-11 on his
+  // 07/16: "it should ask accurately depending on how many hours I worked." The
+  // engine already derives it - `restRequired` is 1 that day and the slot is
+  // named "Your ten" - but only the meal case was ever singularised, so a day
+  // owed one rest still read "Took them".
   const label = (q, v) => {
     if (q.row?.part === "meal") return v === "yes" ? "Took it" : "Missed it";
-    if (v === "yes") return "Took them";
-    if (v === "no") return "Missed them";
+    const one = owedOn(q) <= 1;
+    if (v === "yes") return one ? "Took it" : "Took them";
+    if (v === "no") return one ? "Missed it" : "Missed them";
     return owedOn(q) === 2 ? "Took one" : "Took some";
   };
 
@@ -1149,6 +1220,29 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
   }
 
   return (
+    <BatchCtx.Provider
+      value={{
+        Toggle, TimesFor, missingLabel, byDay, list, copy,
+        pending, err, confirming, setConfirming, commit,
+        dirty, missingTimes, undecided, missed, took, hours, base, answeredAll,
+      }}
+    >
+      {children}
+    </BatchCtx.Provider>
+  );
+}
+
+// THE DAY ROWS. `dates` narrows them to one day so "Day by day" can put each
+// day's decision beside that day's calendar; left out, every day renders in one
+// list, which is what the "All questions" card has always shown.
+export function BatchDays({ dates }) {
+  const ctx = useContext(BatchCtx);
+  if (!ctx) return null;
+  const { Toggle, TimesFor, missingLabel } = ctx;
+  const byDay = dates ? ctx.byDay.filter((d) => dates.includes(d.date)) : ctx.byDay;
+  if (!byDay.length) return null;
+
+  return (
     <>
       {/* NO "SAME ANSWER FOR EVERY DAY" ANY MORE. Mánu 2026-08-10 asked for it to
           go, so each day is answered deliberately. Worth remembering what it
@@ -1167,9 +1261,7 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
               <span className="min-w-0">
                 <span className="font-mono text-sm text-foreground">{date}</span>
                 <span className="ml-3 text-xs text-muted">
-                  {items.length === 1
-                    ? `${items[0].q.row?.part === "meal" ? "meal break" : "rest break"} · `
-                    : ""}
+                  {items.length === 1 ? `${missingLabel(items[0].q)} · ` : ""}
                   {hours} hrs worked
                 </span>
                 {items.length > 1 && (
@@ -1186,7 +1278,7 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
                   key={item.q.id}
                   className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-l-2 border-border py-1 pl-3"
                 >
-                  <span className="text-sm text-foreground">{partName(item.q)}</span>
+                  <span className="text-sm text-foreground">{missingLabel(item.q)}</span>
                   <Toggle item={item} />
                 </div>
               ))}
@@ -1196,7 +1288,23 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
           </li>
         ))}
       </ul>
+    </>
+  );
+}
 
+// THE ONE CONFIRM FOR THE WHOLE BATCH, wherever its rows ended up. Rendered once
+// per provider: after the list in "All questions", after the last day in "Day by
+// day". It still spells out the total before anything is written.
+export function BatchConfirm() {
+  const ctx = useContext(BatchCtx);
+  if (!ctx) return null;
+  const {
+    list, copy, pending, err, confirming, setConfirming, commit,
+    dirty, missingTimes, undecided, missed, took, hours, base, answeredAll,
+  } = ctx;
+
+  return (
+    <>
       {!confirming && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
@@ -1324,6 +1432,7 @@ function BatchCard({ token, list, answers, partials, waiting, standing, submitAc
 
 export default function TimesheetQuestion({
   token, questions, answers, partials, answerTimes, waiting, disturbs, standing, submitAction,
+  terse,
 }) {
   const list = questions || [];
   if (!list.length) return null;
@@ -1353,7 +1462,7 @@ export default function TimesheetQuestion({
       <div className={`mt-5 rounded-xl p-5 ${tone}`}>
         <p className="text-base font-semibold text-foreground">{c.title}</p>
         <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
-        <BatchCard
+        <BatchProvider
           partials={partials}
           waiting={waiting}
           token={token}
@@ -1362,7 +1471,49 @@ export default function TimesheetQuestion({
           standing={standing}
           submitAction={submitAction}
           copy={c}
-        />
+        >
+          <BatchDays />
+          <BatchConfirm />
+        </BatchProvider>
+      </div>
+    );
+  }
+
+  // THE SIMPLE VIEW NAMES THE FAULT AND STOPS. Mánu 2026-08-11: "we don't have
+  // to over explain for the day by day view because this is the simple view. It
+  // can just say rest taken after shift time. Correct? Then I'll fix it."
+  //
+  // So no body, no evidence block, no footnote and no reasoning under the
+  // options - the day's own calendar is sitting beside this saying where the
+  // break landed, which is what the paragraph was for. The dates stay when the
+  // card covers more than the day it is filed under, because a question that
+  // silently answers for two other days should say so. Everything it writes is
+  // identical to the long card; only the words around it are gone.
+  if (terse) {
+    return (
+      <div className="mt-3 border-l-2 border-amber-400 pl-3 dark:border-amber-700">
+        <p className="text-sm font-semibold text-foreground">{c.short || c.title}</p>
+        {c.dates?.length > 1 && (
+          <p className="mt-1 font-mono text-xs text-muted">{c.dates.join("  ")}</p>
+        )}
+        <div className={perDay ? "mt-2" : ""}>
+          {list.map((q) => (
+            <OneQuestion
+              key={q.id}
+              token={token}
+              q={q}
+              answer={answers?.[q.id] || null}
+              answerHasTimes={!!partials?.[q.id]}
+              answerTimes={answerTimes?.[q.id] || null}
+              locked={waiting?.has?.(q.id)}
+              disturbCount={(disturbs?.[q.id] || []).length}
+              standing={standing}
+              submitAction={submitAction}
+              showDate={perDay}
+              terse
+            />
+          ))}
+        </div>
       </div>
     );
   }

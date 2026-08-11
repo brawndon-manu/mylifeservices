@@ -5,6 +5,8 @@ import { preferredName } from "@/lib/contacts";
 import TimesheetSigner from "./TimesheetSigner";
 import ReportProblem from "./ReportProblem";
 import TimesheetQuestion from "./TimesheetQuestion";
+import TimesheetViews from "./TimesheetViews";
+import DayByDay from "./DayByDay";
 import {
   submitSignedTimesheet,
   submitTimesheetCorrections,
@@ -290,20 +292,42 @@ export default async function SignTimesheetPage({ params }) {
               would be gating a signature on them giving money up. What still
               blocks is a punch we CHANGED or a row we could not READ - see
               `signingGate`. */}
-          {byKind.map((group) => (
-            <TimesheetQuestion
-              key={group[0].kind}
-              token={token}
-              questions={group}
-              answers={answers}
-              partials={partials}
-              answerTimes={answerTimes}
-              waiting={deps.waiting}
-              disturbs={deps.disturbs}
-              standing={standing}
-              submitAction={answerTimesheetQuestion}
-            />
-          ))}
+          {/* TWO ARRANGEMENTS OF THE SAME QUESTIONS. "Day by day" walks the
+              period with each day drawn on a time axis; "All questions" is the
+              one card per kind that has always been here. Both hand the same
+              props to the same component, so an answer given in either is the
+              same row in the database. */}
+          <TimesheetViews
+            simple={
+              <DayByDay
+                days={ts.data.days}
+                groups={byKind}
+                token={token}
+                answers={answers}
+                partials={partials}
+                answerTimes={answerTimes}
+                waiting={deps.waiting}
+                disturbs={deps.disturbs}
+                standing={standing}
+                submitAction={answerTimesheetQuestion}
+              />
+            }
+            detailed={byKind.map((group) => (
+              <TimesheetQuestion
+                key={group[0].kind}
+                token={token}
+                questions={group}
+                answers={answers}
+                partials={partials}
+                answerTimes={answerTimes}
+                waiting={deps.waiting}
+                disturbs={deps.disturbs}
+                standing={standing}
+                submitAction={answerTimesheetQuestion}
+              />
+            ))}
+          />
+
 
           {/* WHAT THEY TOLD US, back on the page. A confirmation that leaves no
               trace is indistinguishable from one nobody gave, and two of these
