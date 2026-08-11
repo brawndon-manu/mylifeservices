@@ -65,12 +65,20 @@ function everyKind() {
       minutes: 10, repair: { field: "out", from: "9:00 PM", to: "9:00 AM" },
     }],
   });                                                                    // repair
-  add([day({ mealViolation: true })], {
+  add([day({ mealViolation: true, mealMissing: true })], {
     restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "2:00 PM", in: "2:30 PM", minutes: 30, counted: false }],
   });                                                                    // restIsMealLength
   add([day({ restTaken: 0, restRequired: 1, restViolation: true })], {
-    restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "", in: "", minutes: 0 }],
+    restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "", in: "", minutes: null }],
   });                                                                    // restNoTimes
+  // too long to be a rest, no single-field repair, and the day's meal is NOT
+  // missing - so neither the repair nor the meal reading takes it. Hatt 07/20.
+  add([day({ mealViolation: false, mealMissing: false, restViolation: true })], {
+    restRows: [{
+      name: "Newperson, Someone", date: "04/02/27", out: "3:30 PM", in: "4:30 PM",
+      minutes: 60, counted: false, reversed: false, kind: "too-long", repair: null,
+    }],
+  });                                                                    // restTooLongOffClock
   return kinds;
 }
 
@@ -130,6 +138,7 @@ test("the kinds are a known set, so a new one cannot arrive unnoticed", () => {
       "restNoTimes",
       "restOutsideShift",
       "restSnappedToShift",
+      "restTooLongOffClock",
       "shortMealRest",
     ],
   );

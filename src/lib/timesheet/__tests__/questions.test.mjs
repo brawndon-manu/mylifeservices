@@ -70,7 +70,9 @@ test("two thirty minute entries are two questions, so each hour is answered on i
     name: "Hernadez, Joseph", date, out: "2:00 PM", in: "2:30 PM",
     minutes: 30, counted: false,
   }));
-  const days = ["07/25/26", "07/26/26"].map((date) => day({ date, mealViolation: true }));
+  // the meal question now also requires the DAY to be missing its meal, which
+  // is exactly Hernadez's shape: nothing rostered, something meal-length logged
+  const days = ["07/25/26", "07/26/26"].map((date) => day({ date, mealViolation: true, mealMissing: true }));
   const qs = buildQuestions({ days }, { restRows, sourceName: "Hernadez, Joseph" });
 
   const meals = qs.filter((q) => q.kind === "restIsMealLength");
@@ -85,7 +87,7 @@ test("two thirty minute entries are two questions, so each hour is answered on i
 
 // --------------------------------------------------------------------- Flores
 
-test("a rest with no times is asked only while the day still owes a premium", () => {
+test("a rest with no times COUNTS, and is asked for its start time", () => {
   const restRows = [{ name: "Flores, Esmeralda", date: "07/29/26", out: "", in: "", minutes: 0 }];
   const owing = day({ date: "07/29/26", restTaken: 0, restRequired: 1, restViolation: true, paidHours: 5.02 });
   const qs = buildQuestions({ days: [owing] }, { restRows, sourceName: "Flores, Esmeralda" });
@@ -94,11 +96,28 @@ test("a rest with no times is asked only while the day still owes a premium", ()
   assert.equal(noTimes.canGiveTime, true, "she can tell us when instead");
   assert.deepEqual(patchesFor(noTimes, "yes", owing), { restViolation: false });
 
-  // once the premium is gone there is nothing to ask about, or the question
-  // would keep appearing after it had been answered
+  // IT IS ASKED EVEN ONCE THE PREMIUM IS GONE, and that reversal is the point.
+  // Mánu 2026-08-10: a blank row still counts as a break taken, so counting it
+  // can be exactly what CLEARS the premium - and gating the question on the
+  // violation made it vanish the moment it started doing its job. What is
+  // missing is the time, and the time is still missing.
   const settled = day({ date: "07/29/26", restTaken: 1, restRequired: 1, restViolation: false });
   const after = buildQuestions({ days: [settled] }, { restRows, sourceName: "Flores, Esmeralda" });
-  assert.equal(after.find((q) => q.kind === "restNoTimes"), undefined);
+  assert.ok(after.find((q) => q.kind === "restNoTimes"), "still asked, because the time is still blank");
+
+  // it asks for ONE thing: when it started. Both boxes blank is two ? on the
+  // sheet but one answer, since a ten minute rest gives the other end.
+  assert.deepEqual(noTimes.row.missing, ["out", "in"]);
+  assert.equal(noTimes.needs.length, 1);
+  assert.equal(noTimes.needs[0].minutes, 10);
+
+  // and a row with BOTH times is never asked
+  const complete = [{ name: "Flores, Esmeralda", date: "07/29/26", out: "9:00 AM", in: "9:10 AM", minutes: 10, counted: true }];
+  assert.equal(
+    buildQuestions({ days: [owing] }, { restRows: complete, sourceName: "Flores, Esmeralda" })
+      .find((q) => q.kind === "restNoTimes"),
+    undefined,
+  );
 });
 
 // ---------------------------------------------------------------- other people

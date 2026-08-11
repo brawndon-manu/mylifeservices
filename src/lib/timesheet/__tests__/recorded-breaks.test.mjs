@@ -69,11 +69,26 @@ test("a REVERSED row is flipped for display", () => {
   assert.equal(`${r.from}-${r.to}`, "12p-12:10p");
 });
 
-test("a row that did not count is present but not marked as taken", () => {
+test("a meal-length row is drawn as a meal, but only where none was rostered", () => {
+  // Martinez 07/23 flips to 50 minutes on a day the roster gives no meal at all.
+  // Since 2026-08-10 the meal-length window is 21 to 90 rather than an exact 30,
+  // so this is read the same way Hernadez's two thirties are: shown as a meal we
+  // are unsure about, rather than as a rest that did not count.
   const m = recordedBreaksFor("Martinez, Jose", RESTS, SCHED);
-  const r = m.get("07/23/26").rests[0];
-  assert.equal(r.counted, false, "so the renderer leaves it uncoloured and marks it");
-  assert.equal(r.kind, "too-long");
+  const day = m.get("07/23/26");
+  assert.equal(day.rests.length, 0, "it is no longer sitting in the rest lane");
+  assert.deepEqual(day.meals, [{ from: "3p", to: "3:50p", minutes: 50, adjusted: true }]);
+
+  // THE COUNTER-CASE, and the reason the drawing is gated on the roster: Hatt
+  // 07/20 is sixty minutes AND had her lunch booked at noon. Without the gate
+  // the widened window would print a second lunch on a sheet she signs.
+  const hattRests = [
+    { name: "Hatt, Kristy", date: "07/31/26", out: "3:30 PM", in: "4:30 PM", minutes: 60, counted: false, reversed: false, kind: "too-long" },
+  ];
+  const hatt = recordedBreaksFor("Hatt, Kristy", hattRests, SCHED).get("07/31/26");
+  assert.deepEqual(hatt.meals, [{ from: "12:20p", to: "12:50p" }], "her real rostered lunch, and only that");
+  assert.equal(hatt.rests.length, 1, "the sixty minutes stay in the rest lane");
+  assert.equal(hatt.rests[0].counted, false, "uncoloured and marked, as before");
 });
 
 test("entries are ordered by CLOCK TIME, not meals-then-rests", () => {

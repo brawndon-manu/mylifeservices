@@ -450,7 +450,14 @@ export function recordedBreaksFor(sourceName, restsByDate, scheduleByDate) {
     // are on days with no meal rostered at all. Shown blue and striped so it
     // reads as "a meal we are not sure about" rather than as a rest that
     // happened. Nothing about the premium moves: that needs a person.
-    if (isMealLengthRest(r)) {
+    //
+    // ONLY WHERE THE ROSTER HAS NO MEAL OF ITS OWN. The length test widened on
+    // 2026-08-10 from an exact thirty to the whole 21-90 meal window, which
+    // swept up Hatt's sixty minutes - and her lunch was rostered and taken at
+    // noon. Drawing that as "a meal we are unsure about" would put a second
+    // lunch on a sheet she signs. If the schedule already booked her meal, this
+    // row is not it.
+    if (isMealLengthRest(r) && !(get(r.date).meals || []).length) {
       get(r.date).meals.push({
         from: shortTime(from),
         to: shortTime(to),

@@ -539,13 +539,37 @@ export function analyzeDay(day) {
   // configured: if no rest break was punched out on the day, there is nothing to
   // add back and the sum is the same either way. The flag exists so the intent
   // is legible rather than an accident of the arithmetic.
+  // A SCHEDULE BLOCK THE ROSTER CALLS A MEAL BUT WHICH IS ONLY REST-LENGTH is
+  // the one case where the schedule witnesses a rest. Defined here rather than
+  // beside the rest count below, because if they were CLOCKED OUT for it the
+  // minutes are pay and have to reach `paidMin` a few lines down.
+  //
+  // Mánu 2026-08-10: "the inverse if they put meal breaks for ten minutes ...
+  // and in that case, their o[t] time as well because that's paid hours." A rest
+  // period is paid and a meal is not, so calling it what it is changes the day's
+  // hours and its overtime. A block worked straight through is already in their
+  // hours; only one they punched out for is missing.
+  //
+  // ZERO CASES on 07/16-07/31 - no short meal blocks at all - so this closes a
+  // hole rather than moving a figure. It bites the first time a roster has one.
+  const REST_LENGTH_MAX = 15;
+  const shortMealBlocks = Array.isArray(day.scheduleBlocks)
+    ? day.scheduleBlocks.filter(
+        (b) => b.meal && b.end - b.start > 0 && b.end - b.start <= REST_LENGTH_MAX,
+      )
+    : [];
+  const shortMealPaidMin = shortMealBlocks
+    .filter((b) => segments.length > 0
+      && !segments.some((s) => b.start >= s.start.min && b.end <= s.end.min))
+    .reduce((n, b) => n + (b.end - b.start), 0);
+
   const restsArePaidBySource = day.restsAlreadyPaid === true;
   const restMinToAddBack = restsArePaidBySource ? 0 : restMin;
   // ...plus any rest the report recorded while the person was off the clock.
   // Nothing paid for those minutes and a rest period is paid time, so they are
   // added here rather than taken out of the rest count. Mánu 2026-08-09.
   // This is the first thing in this engine that can pay ABOVE what QSP exported.
-  const paidMin = workedMin + restMinToAddBack + restsOffClockMin;
+  const paidMin = workedMin + restMinToAddBack + restsOffClockMin + shortMealPaidMin;
   // the correction only ever ADDS unpaid rest time back, so the corrected hours
   // must never come out below what payroll already exported. QSP rounds each
   // punch segment its own way, which can leave our exact figure a hundredth or
@@ -710,12 +734,6 @@ export function analyzeDay(day) {
   // It adds no MEAL premium anywhere: on the four Devine days with no real meal
   // the day already read mealViolation, because a ten minute block never
   // satisfied the meal rule to begin with.
-  const REST_LENGTH_MAX = 15;
-  const shortMealBlocks = Array.isArray(day.scheduleBlocks)
-    ? day.scheduleBlocks.filter(
-        (b) => b.meal && b.end - b.start > 0 && b.end - b.start <= REST_LENGTH_MAX,
-      )
-    : [];
   const restsFromShortMeals = shortMealBlocks.length;
 
   const restTaken =

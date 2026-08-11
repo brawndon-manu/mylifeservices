@@ -1689,6 +1689,7 @@ const QUESTION_NOUN = {
   nothingDocumentedMeal: "meal break with nothing recorded",
   nothingDocumentedRest: "rest periods with nothing recorded",
   shortMealRest: "ten minute meal block read as a rest period",
+  restTooLongOffClock: "break too long to be a rest, on a day whose meal is accounted for",
 };
 
 function resolutionFor(q, choice, stated, statedBreaks) {
@@ -1748,6 +1749,13 @@ function resolutionFor(q, choice, stated, statedBreaks) {
         q.kind === "nothingDocumentedMeal" ? "it" : "them"
       }${when}. No premium owed, per the signed acknowledgment that recording them is theirs to do.`;
     }
+    case "restTooLongOffClock":
+      // NEITHER ANSWER MOVES A FIGURE. The row was already not counted and the
+      // day already stands as it stands; this exists so the record says what
+      // happened rather than the entry being binned unexamined.
+      return yes
+        ? "Employee confirmed this was a real break they took. Recorded as taken; no change to hours or premium."
+        : "Employee says the entry was a mistake. Flagged for payroll as a mis-entry; no change to hours or premium.";
     case "restSnappedToShift":
       return yes
         ? "Employee confirmed the break was taken before the shift ended. Our correction stands and the minutes are not added."

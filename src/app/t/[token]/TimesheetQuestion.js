@@ -193,6 +193,43 @@ function copyFor(q, standing) {
         ),
       };
 
+    // A BREAK TOO LONG TO BE A REST, ON A DAY WHOSE LUNCH IS ACCOUNTED FOR.
+    // Hatt 07/20: sixty minutes logged while clocked out between two shifts,
+    // with her lunch already rostered at noon. Before 2026-08-10 the row was
+    // thrown away, she lost the rest credit, and nobody asked her anything.
+    case "restTooLongOffClock":
+      return {
+        title: "One of your breaks does not look like a break",
+        body: (
+          <>
+            On <b>{q.date}</b> a break is recorded from <b>{q.row.from}</b> to <b>{q.row.to}</b>,
+            which is <b>{q.row.minutes} minutes</b>. A rest break is ten minutes and your lunch
+            that day is already accounted for
+            {q.row.onClock ? "" : ", and you were clocked out at the time"}.
+            <br /><br />
+            We have left it as it is and <b>changed nothing</b> about your hours or your pay.
+            We would just like to know what it was, so the record is right.
+          </>
+        ),
+        yes: {
+          label: "That was a real break I took",
+          why: "We will note it as a break you took. Your hours do not change.",
+        },
+        no: {
+          label: "That looks like a mistake",
+          why: "We will note it as a mis-entry so payroll knows to ignore it.",
+        },
+        yesEffect: <>Nothing changes. Your hours and your penalty pay stay exactly as they are.</>,
+        noEffect: <>Nothing changes. Your hours and your penalty pay stay exactly as they are.</>,
+        footnote: (
+          <>
+            <b>Neither answer costs you anything.</b> This one is about the record, not the money -
+            it is here because throwing the entry away without asking would be us deciding what
+            happened on your day.
+          </>
+        ),
+      };
+
     case "restSnappedToShift":
       return {
         title: "We moved a break time. Is that right?",

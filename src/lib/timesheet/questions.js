@@ -22,7 +22,9 @@
 //
 // The second shape is why declining has to rebuild the sheet.
 
-import { restKey, isMealLengthRest } from "./rests.js";
+import {
+  restKey, isMealLengthRest, clockMin, FULL_REST_MIN, REST_LONG_MAX_MIN,
+} from "./rests.js";
 import { shortTime, scheduleGaps, rosteredMeal } from "./recorded-breaks.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -123,8 +125,20 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 
   // 1. a rest entry one mis-picked field would explain. The oldest of the five
   //    and the only one that already had a card.
+  // WHICH READING WINS WHEN A ROW HAS TWO. Martinez 07/23 is typed backwards,
+  // flips to 50 minutes, and sits on a day with no meal rostered at all. The
+  // mechanical guess is "the IN hour was also an hour out" - two typos. The
+  // simpler reading is that he took a 50 minute lunch and swapped the boxes,
+  // which is one. Mánu 2026-08-10 was told this and it stands: where the day is
+  // MISSING A MEAL and the row is meal-length, the meal question wins and the
+  // repair is not asked, so nobody gets two incompatible questions about one row.
+  const mealReadingWins = (r) => {
+    const d = dayOf(r.date);
+    return isMealLengthRest(r) && !!d?.mealMissing;
+  };
+
   for (const r of mine) {
-    if (!r.repair) continue;
+    if (!r.repair || mealReadingWins(r)) continue;
     const fixedOut = r.repair.field === "out" ? r.repair.to : r.out;
     const fixedIn = r.repair.field === "out" ? r.in : r.repair.to;
     out.push({
@@ -142,8 +156,14 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   //    meal, and nothing we hold says which. Saying "meal" takes an hour off
   //    them, so it is asked rather than decided. Hernadez, two days - grouped
   //    into one card but answered per day, because each day is its own hour.
+  //    ONLY ON A DAY THAT IS MISSING ITS MEAL. The length window widened on
+  //    2026-08-10 from an exact thirty to 21-90, which reaches Hatt's sixty -
+  //    and her lunch was rostered and taken at noon. Asking her "was that your
+  //    meal?" has no answer behind it and no premium to move. The question
+  //    exists because a meal is missing and something meal-shaped is sitting in
+  //    the wrong report.
   for (const r of mine) {
-    if (!isMealLengthRest(r)) continue;
+    if (!mealReadingWins(r)) continue;
     const d = dayOf(r.date);
     out.push({
       kind: "restIsMealLength",
@@ -162,12 +182,24 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 
   // 3. a rest recorded with neither end on it. We cannot tell when it was or
   //    whether it happened, and the day is currently paying a premium for it.
+  //    THE BREAK COUNTS NOW; WHAT IS MISSING IS WHEN. Mánu 2026-08-10: "if its
+  //    blank it should count as a break but needs to correction ... It's
+  //    counted. It just needs the time it started."
+  //
+  //    So this no longer waits for the day to owe a premium - counting the row
+  //    can be exactly what CLEARS the premium, and gating on the violation made
+  //    the question vanish the moment it started doing its job. It is asked
+  //    whenever a time is missing, and it asks for the start rather than a yes
+  //    or no, because there is nothing to agree or disagree with.
   for (const r of mine) {
-    if (r.repair || isMealLengthRest(r)) continue;
-    const hasTimes = String(r.out || "").trim() && String(r.in || "").trim();
-    if (hasTimes) continue;
+    if (r.repair || mealReadingWins(r)) continue;
+    const missing = [
+      String(r.out || "").trim() ? null : "out",
+      String(r.in || "").trim() ? null : "in",
+    ].filter(Boolean);
+    if (!missing.length) continue;
     const d = dayOf(r.date);
-    if (!d?.restViolation) continue;
+    if (!d) continue;
     out.push({
       kind: "restNoTimes",
       date: r.date,
@@ -178,6 +210,59 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
         owed: d.restRequired ?? 0,
         hours: r2(d.paidHours),
         punches: (d.punches || []).map((p) => p.raw ?? p),
+        // one ? per blank box, so the sheet can draw them where the time should be
+        missing,
+      },
+      // ONE SLOT, THE START. If the OUT time survived we already know when it
+      // began and it is offered back; a ten minute rest gives the other end.
+      needs: [{
+        slot: "rest1",
+        kindOf: "rest",
+        label: missing.length === 2 ? "Break started" : "Time it started",
+        minutes: FULL_REST_MIN,
+        prefill: null,
+        source: null,
+        suggest: String(r.out || "").trim() ? shortTime(r.out) : null,
+        hint: missing.length === 2
+          ? "neither end was recorded, so we need to know when it began"
+          : `the ${missing[0] === "out" ? "start" : "end"} time is missing from the record`,
+      }],
+      canGiveTime: true,
+    });
+  }
+
+  // 4. A BREAK TOO LONG TO BE A REST, ON A DAY WHOSE MEAL IS ACCOUNTED FOR.
+  //    Hatt 07/20: sixty minutes logged 3:30-4:30 while she was clocked OUT
+  //    between two shifts, with her lunch already rostered and taken at noon.
+  //    It is not a lunch, it is not a rest, and until now she was asked nothing
+  //    at all - the row was simply thrown away and she lost the rest credit.
+  //
+  //    Deliberately last and deliberately narrow: a row with a repair goes to
+  //    the repair question, and a meal-shaped row on a day missing its meal goes
+  //    to the meal question. This is what is left.
+  for (const r of mine) {
+    if (r.counted || r.repair || mealReadingWins(r)) continue;
+    if (!(Number(r.minutes) > REST_LONG_MAX_MIN)) continue;
+    const d = dayOf(r.date);
+    if (!d) continue;
+    const onClock = (d.punches || []).some((p, i, all) => {
+      if (i % 2) return false;
+      const a = p.min ?? null, z = all[i + 1]?.min ?? null;
+      const s = clockMin(r.out), e = clockMin(r.in);
+      return a != null && z != null && s != null && e != null && s >= a && e <= z;
+    });
+    out.push({
+      kind: "restTooLongOffClock",
+      date: r.date,
+      at: r.out || "",
+      moves: 0,
+      movesOnDecline: 0,
+      row: {
+        from: shortTime(r.reversed ? r.in : r.out),
+        to: shortTime(r.reversed ? r.out : r.in),
+        minutes: r.minutes,
+        onClock,
+        hours: r2(d.paidHours),
       },
       canGiveTime: true,
     });

@@ -129,12 +129,26 @@ test("an AM/PM slip reads as 730 minutes and does not count", () => {
   assert.equal(c.kind, "too-long");
 });
 
-test("a row with no times at all does not count", () => {
-  // Flores 07/29
+test("a row with no times at all still COUNTS, and asks for the times", () => {
+  // Flores 07/29. Mánu 2026-08-10: "if its blank it should count as a break but
+  // needs to correction". Somebody opened the break screen and logged it; the
+  // times are what did not survive. Treating it as no break charged her a rest
+  // premium for a break the report says she took.
   const c = classifyRest(row("", "", 0));
-  assert.equal(c.counted, false);
-  assert.equal(c.minutes, null);
+  assert.equal(c.counted, true, "the break happened");
+  assert.equal(c.minutes, null, "but nobody knows when");
   assert.equal(c.kind, "no-times");
+  assert.equal(c.needsTimes, true);
+  assert.deepEqual(c.missing, ["out", "in"], "two blanks, so two ?");
+
+  // one blank asks for one, and names WHICH - the sheet draws a ? in that column
+  assert.deepEqual(classifyRest(row("", "9:10 AM", 0)).missing, ["out"]);
+  assert.deepEqual(classifyRest(row("9:00 AM", "", 0)).missing, ["in"]);
+
+  // and a row that HAS its times is untouched by any of this
+  const ok = classifyRest(row("9:00 AM", "9:10 AM", 0.17));
+  assert.equal(ok.needsTimes, undefined);
+  assert.equal(ok.missing, undefined);
 });
 
 test("exactly ten counts; the boundary is inclusive", () => {
@@ -205,20 +219,29 @@ test("a rest filed against the wrong shift is spotted, and it is not a missed br
 // a 30-minute entry filed as a rest break: drawn as a meal, decided by nobody
 // ---------------------------------------------------------------------------
 
-test("a thirty minute rest row is recognised, a ten minute one is not", () => {
-  // Hernadez 07/25 and 07/26, on days with no meal rostered at all.
+test("any MEAL-LENGTH rest row is recognised, not just an exact thirty", () => {
+  // Hernadez 07/25 and 07/26 are 30; Martinez 07/23 flips to 50 and is the same
+  // species. Widened 2026-08-10 to the engine's own meal window, 21 to 90, so a
+  // 45 minute row on the next batch is not missed for not being 30.
   const meal = { counted: false, repair: null, minutes: 30 };
   assert.equal(isMealLengthRest(meal), true);
+  assert.equal(isMealLengthRest({ ...meal, minutes: 50 }), true, "Martinez");
+  assert.equal(isMealLengthRest({ ...meal, minutes: 60 }), true, "Hatt's length");
+  assert.equal(isMealLengthRest({ ...meal, minutes: 21 }), true, "the low edge");
+  assert.equal(isMealLengthRest({ ...meal, minutes: 90 }), true, "the high edge");
 
-  // each of the three conditions has to matter on its own, or this is just
-  // "anything that did not count"
+  // the window still has to mean something at both ends
   assert.equal(isMealLengthRest({ ...meal, minutes: 10 }), false, "ten is a rest");
-  assert.equal(isMealLengthRest({ ...meal, minutes: 60 }), false, "sixty is neither");
+  assert.equal(isMealLengthRest({ ...meal, minutes: 20 }), false, "still rest-shaped");
+  assert.equal(isMealLengthRest({ ...meal, minutes: 91 }), false, "too long for a meal");
   assert.equal(isMealLengthRest({ ...meal, counted: true }), false, "a counted row stands");
+  // A ROW WITH A REPAIR IS NO LONGER EXCLUDED. Martinez has both a proposed
+  // hour-roll and a meal-length reading; which one is asked is decided in
+  // questions.js by whether the day is missing a meal, not here.
   assert.equal(
     isMealLengthRest({ ...meal, repair: { field: "in", minutes: 10 } }),
-    false,
-    "a row with a single mis-picked field is a repair question, not a meal",
+    true,
+    "the repair no longer suppresses it - precedence lives with the day",
   );
   assert.equal(isMealLengthRest(null), false);
 });

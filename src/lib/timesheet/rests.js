@@ -27,28 +27,44 @@ export const FULL_REST_MIN = 10;
 // NOTHING in the 07/16-07/31 report lands between 11 and 29 minutes - every
 // genuine break is exactly 10 - so this threshold is a guard for future periods
 // rather than a judgement about this one. Move the number here and nowhere else.
-const REST_LONG_MAX_MIN = 15;
-// A California meal period is thirty unpaid minutes. Not a rest rule, so it is
-// not part of the bands above - it is here only to recognise an entry that is
-// the LENGTH of a meal sitting in the rest report.
-const MEAL_LENGTH_MIN = 30;
+export const REST_LONG_MAX_MIN = 15;
+// A California meal period is thirty unpaid minutes, and the engine reads a
+// punched gap of 21 to 90 minutes as one. The same window applies here: an entry
+// in the REST report that is as long as a meal is worth asking about, whatever
+// the exact figure.
+//
+// WIDENED FROM EXACTLY 30 on 2026-08-10. Mánu, looking at Hernadez and Hatt:
+// "if their ten minute break ... is the same length as a meal aka thirty
+// minutes, then it needs to be questioned whether that was meant to be a meal
+// break. if they are missing a meal break that day." An exact-30 test caught
+// Hernadez's two and would have missed Martinez's 50 next to it - and a 45
+// minute row on the next batch.
+const MEAL_LENGTH_MIN_MIN = 21;
+const MEAL_LENGTH_MAX_MIN = 90;
 
-// A rest row that is exactly a meal long and has no single mis-picked field to
-// explain it. Two on 07/16-07/31, both Hernadez, on days with no meal rostered
-// at all: 07/25 2p-2:30p and 07/26 12:30p-1p.
+// A rest row as long as a meal. Two on 07/16-07/31 were exactly 30, both
+// Hernadez, on days with no meal rostered at all: 07/25 2p-2:30p and 07/26
+// 12:30p-1p. Martinez 07/23 is 50 and the same species.
 //
 // Mánu 2026-08-09: draw these as a meal, striped, and say in the footnote what
 // the adjustment does - but do NOT decide it. Counting them as meals taken would
 // REMOVE the meal premium those days currently owe, and that is a person's call,
 // not a threshold's.
 //
+// THE DAY HAS TO BE MISSING A MEAL for this to mean anything, and that test
+// lives in questions.js where the day is in scope. Hatt 07/20 is 60 minutes and
+// had her lunch rostered and taken, so the length alone would have asked her a
+// question with no answer behind it.
+//
 // Read off the stored row rather than off `kind`, so it works on the batch
 // already in the database instead of needing a re-upload to take effect.
 export function isMealLengthRest(row) {
+  const mins = Number(row?.minutes);
   return !!row
     && !row.counted
-    && !row.repair
-    && Number(row.minutes) === MEAL_LENGTH_MIN;
+    && Number.isFinite(mins)
+    && mins >= MEAL_LENGTH_MIN_MIN
+    && mins <= MEAL_LENGTH_MAX_MIN;
 }
 
 // DO NOT DECIDE ANYTHING FROM `Total Rest Time`. It is rounded to two decimals,
@@ -148,8 +164,27 @@ export function classifyRest(row) {
 
   const out = clockMin(row["Rest Period Time Out"]);
   const back = clockMin(row["Rest Period Time In"]);
+  // A BREAK WITH NO TIMES ON IT IS STILL A BREAK SOMEBODY TOOK. Mánu 2026-08-10:
+  // "if its blank it should count as a break but needs to correction ... if both
+  // missing then 2 ? then they need to correct it."
+  //
+  // Somebody opened the break screen and logged it; the times are what did not
+  // survive. Treating that as no break at all charged Flores a rest premium for
+  // a break the report says she took. It counts, and the missing fields come
+  // back as `missing` so the sheet can draw a ? where the time should be and the
+  // question can insist on it.
   if (out == null || back == null) {
-    return { ...base, counted: false, minutes: null, kind: "no-times" };
+    const missing = [out == null ? "out" : null, back == null ? "in" : null].filter(Boolean);
+    return {
+      ...base,
+      counted: true,
+      minutes: null,
+      kind: "no-times",
+      missing,
+      // nothing to pay for minutes nobody recorded - the count is the claim,
+      // the time is what is being asked for
+      needsTimes: true,
+    };
   }
 
   const raw = back - out;
