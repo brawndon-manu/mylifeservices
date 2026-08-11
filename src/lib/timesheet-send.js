@@ -12,7 +12,6 @@
 // dry run is realistic without anyone's hours reaching them by accident.
 import { Resend } from "resend";
 import { buildTimesheetEmailHtml } from "@/lib/timesheet-email";
-import { restMealPolicyLink } from "@/lib/policy-form";
 
 // the guard itself lives in its own dependency-free module so it can be tested
 // in isolation - see src/lib/timesheet-mode.js.
@@ -33,8 +32,8 @@ export async function sendTimesheet({
   message,
   dueAt,
   signUrl,
-  summary,
-  checks = [],
+  // the only number the email carries. See timesheet-email.js.
+  questionCount = 0,
   // has this person already had this sheet? drives the subject only
   isResend = false,
 }) {
@@ -57,23 +56,17 @@ export async function sendTimesheet({
     : `Your timesheet for ${periodLabel} - please review and sign`;
   const subject = redirected ? `[TEST -> ${intendedEmail}] ${line}` : line;
 
-  // the policy the break assumption rests on, so the sentence naming it can be
-  // opened. Resolved per send rather than cached: it is one small query against
-  // a table with a handful of rows, and a stale slug is a dead link.
-  const base = (process.env.AUTH_URL || "https://www.mylifeservicesinc.com").replace(/\/$/, "");
-  const policy = summary?.assumedPremium > 0 ? await restMealPolicyLink() : null;
-  const policyUrl = policy ? `${base}${policy.path}` : null;
-
+  // NO POLICY LOOKUP ANY MORE. The paragraph it fed was cut with the rest of the
+  // figures on 2026-08-11; the page still names and links the policy, beside the
+  // document it is about.
   const html = buildTimesheetEmailHtml({
     employeeName,
     periodLabel,
     message,
     dueAt,
     signUrl,
-    summary,
-    checks,
+    questionCount,
     redirectedFrom: redirected ? intendedEmail : null,
-    policyUrl,
   });
 
   const text = [
@@ -81,10 +74,10 @@ export async function sendTimesheet({
     `Hi ${employeeName},`,
     ``,
     `Your timesheet for ${periodLabel} is ready to review and sign.`,
-    // the plain-text copy carries the same reasoning and the same link, so a
-    // client that strips html does not drop the basis for the figure
-    summary?.assumedPremium > 0
-      ? `\n${summary.assumedPremium} hours of breaks are assumed taken and are NOT on this timesheet. Under the Rest & Meal Period Policy and Acknowledgement you signed, recording your rest periods and meal breaks is your responsibility, so an undocumented break is treated as a record that was not kept rather than a break you did not receive. If you did miss one, say so and the penalty pay is added.${policyUrl ? `\nRead the policy: ${policyUrl}` : ""}\n`
+    // the plain-text copy says the same thing and no more, so a client that
+    // strips html gets the same email rather than a different one
+    questionCount > 0
+      ? `\nThere ${questionCount === 1 ? "is" : "are"} ${questionCount > 10 ? "several" : questionCount} ${questionCount === 1 ? "question" : "questions"} about your breaks on the page. Answering ${questionCount === 1 ? "it" : "them"} is optional.\n`
       : "",
     message ? `\n${message}\n` : "",
     dueAt ? `Please sign it by ${dueAt}.` : "",

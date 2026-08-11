@@ -13,28 +13,15 @@ function esc(s) {
 const BTN =
   "display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;";
 
-// the policy's name, linked when we have a url for it and bold either way. Kept
-// bold when unlinked so the sentence still points at a specific document.
-function policyName(url) {
-  const label = "Rest &amp; Meal Period Policy and Acknowledgement";
-  return url
-    ? `<a href="${esc(url)}" style="color:#2f6feb;font-weight:700;text-decoration:underline;">${label}</a>`
-    : `<strong>${label}</strong>`;
-}
-
 export function buildTimesheetEmailHtml({
   employeeName,
   periodLabel,
   message,
   dueAt,
   signUrl,
-  summary,
-  checks = [],
+  // how many questions this person has waiting. The only number in the email.
+  questionCount = 0,
   redirectedFrom = null,
-  // absolute url to the signed policy, or null when it cannot be resolved - the
-  // sentence then names the document without linking it rather than shipping a
-  // dead link in a payroll email
-  policyUrl = null,
 }) {
   // loud banner so a test send can never be mistaken for the real thing
   const testBanner = redirectedFrom
@@ -44,27 +31,26 @@ export function buildTimesheetEmailHtml({
        </div>`
     : "";
 
-  // TWO PREMIUM LINES, NOT ONE, and the difference is what this email used to
-  // get wrong. It said "Break premium hours owed: 17 hrs" and the page it linked
-  // to said we had assumed the breaks were taken and added no penalty pay. Both
-  // sat above a signature. What is being paid and what is still being assumed
-  // are different numbers and the email has to print both.
-  const rows = summary
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 18px;border-collapse:collapse;font-size:14px;">
-         ${summaryRow("Hours worked (corrected)", `${summary.paidHours} hrs`)}
-         ${summary.otHours > 0 ? summaryRow("Overtime", `${summary.otHours} hrs`) : ""}
-         ${summary.doubleHours > 0 ? summaryRow("Double time", `${summary.doubleHours} hrs`) : ""}
-         ${summary.chargedPremium > 0 ? summaryRow("Break penalty pay included", `${summary.chargedPremium} hrs`) : ""}
-         ${summary.assumedPremium > 0 ? summaryRow("Breaks assumed taken, nothing charged", `${summary.assumedPremium} hrs - please confirm`) : ""}
-       </table>
-       ${summary.assumedPremium > 0
-         ? `<p style="margin:-8px 0 18px;font-size:13px;color:#6b7280;line-height:1.55;">Those
-              ${summary.assumedPremium} hours are <strong>not</strong> on this timesheet. Under the
-              ${policyName(policyUrl)} you signed, recording your
-              rest periods and meal breaks is your responsibility. Where a break is not documented we have
-              treated it as a record that was not kept, rather than a break you did not receive, and charged
-              nothing for it. If you did miss a break, say so and the penalty pay is added.</p>`
-         : ""}`
+  // THE EMAIL CARRIES NO FIGURES AT ALL. Mánu 2026-08-11, rewriting it down to
+  // the bare minimum: no hours, no premium total, no policy paragraph, no
+  // sender. Everything it used to state is on the page the button opens, where
+  // it sits beside the document those figures describe - and a payroll figure
+  // quoted in an email is a figure that goes stale the moment somebody answers
+  // a question. This email exists to get them to the page.
+  //
+  // WHAT IT DOES COUNT IS QUESTIONS, not days and not hours. Mánu: this period
+  // is the worst case and real ones will be far smaller. Above ten it says
+  // "several" rather than a number, because "you have 34 questions" reads as a
+  // demand and the whole point of the flip is that answering is optional.
+  //
+  // HE CUT THE CONSEQUENCE LINE - "we will take your breaks as fine" - and it
+  // stays cut. Under the flip it would be false anyway: ignoring the email
+  // changes nothing about their pay.
+  const asked = Number(questionCount) || 0;
+  const howMany = asked > 10 ? "several" : String(asked);
+  const questions = asked > 0
+    ? `<p style="margin:0 0 18px;">There ${asked === 1 ? "is" : "are"} <strong>${howMany}</strong>
+         ${asked === 1 ? "question" : "questions"} about your breaks on the page. Answering ${asked === 1 ? "it" : "them"} is optional.</p>`
     : "";
 
   const note = message
@@ -78,9 +64,8 @@ export function buildTimesheetEmailHtml({
   const body = `
     ${testBanner}
     <p style="margin:0 0 14px;">Hi ${esc(employeeName)},</p>
-    <p style="margin:0 0 18px;">Your timesheet for <strong>${esc(periodLabel)}</strong> is ready. Please review the hours and breaks, then sign it.</p>
-    ${rows}
-    ${renderChecksHtml(checks)}
+    <p style="margin:0 0 18px;">Your timesheet for <strong>${esc(periodLabel)}</strong> is ready. Please review it and sign.</p>
+    ${questions}
     ${note}
     ${due}
     <a href="${signUrl}" style="${BTN}">Review &amp; sign my timesheet</a>
@@ -91,6 +76,12 @@ export function buildTimesheetEmailHtml({
 
 // ---------------------------------------------------------------------------
 // "Things to check on this timesheet"
+//
+// NOT IN THE EMAIL ANY MORE. The 2026-08-11 rewrite cut the email back to a
+// greeting, a question count and a button, so nothing below is rendered into a
+// send today. It is kept because the blocks are the only written explanation of
+// each finding anywhere in the codebase and the page will want them; delete it
+// only when something replaces it.
 //
 // The email used to state a premium total and nothing else, which is a number
 // nobody can check or learn from. Each block below says which days, why, and
@@ -342,9 +333,3 @@ export function renderChecksHtml(checks) {
     ${checks.map(renderCheck).join("")}`;
 }
 
-function summaryRow(label, value) {
-  return `<tr>
-    <td style="padding:6px 0;color:#64748b;border-bottom:1px solid #eef1f5;">${esc(label)}</td>
-    <td style="padding:6px 0;text-align:right;font-weight:600;color:#0f2230;border-bottom:1px solid #eef1f5;">${esc(value)}</td>
-  </tr>`;
-}
