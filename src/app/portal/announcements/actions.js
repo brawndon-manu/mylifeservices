@@ -1878,7 +1878,10 @@ export async function emailMeetingNoResponse(postId) {
   if (!noRespIds.length) {
     redirect(`/portal/announcements/${postId}?sent=0`);
   }
-  const res = await emailAnnouncement(post, { id: { in: noRespIds } });
+  // definitionally a chase-up: these are the people who did not respond first
+  // time round, so say so in the subject rather than sending them a copy of a
+  // mail they have already got and letting the client hide the body.
+  const res = await emailAnnouncement(post, { id: { in: noRespIds } }, { reminder: true });
   revalidatePath(`/portal/announcements/${postId}`);
   redirect(`/portal/announcements/${postId}?sent=${res?.sent || 0}`);
 }
@@ -1903,7 +1906,13 @@ function emailAudienceWhere({ everyone, titles, userIds = [] }) {
 // announcement requires ack, each email carries that person's one-click link.
 // best-effort; stamps ackEmailSentAt when any go out. returns { ok, sent,
 // reason }. `post` must include id/title/content/requireAck/createdAt + author.
-async function emailAnnouncement(post, where, { includeDirector = false } = {}) {
+async function emailAnnouncement(
+  post,
+  where,
+  // `reminder` overrides the has-it-been-sent check for callers that know the
+  // answer already, like the "email whoever has not acknowledged" button.
+  { includeDirector = false, reminder = null } = {},
+) {
   const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
   const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
   if (!from || !base || !process.env.RESEND_API_KEY) {
@@ -1939,6 +1948,20 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
       })
     : null;
 
+  // HAS THIS POST BEEN EMAILED BEFORE? Gmail threads on subject + sender and
+  // hides the repeat behind "Show trimmed content", so a second send of the same
+  // subject arrives with its body collapsed. Read from the row rather than from
+  // `post`, for the same reason as the form above: the callers pass different
+  // selects and only some carry `ackEmailSentAt`.
+  const priorSend =
+    reminder ??
+    !!(
+      await prisma.announcement.findUnique({
+        where: { id: post.id },
+        select: { ackEmailSentAt: true },
+      })
+    )?.ackEmailSentAt;
+
   const files = [];
   for (const a of emailAttachmentsOf(post, signForm)) {
     try {
@@ -1968,7 +1991,15 @@ async function emailAnnouncement(post, where, { includeDirector = false } = {}) 
   if (!recipients.length) return { ok: true, sent: 0 };
 
   const title = post.title || "Announcement";
-  const subject = post.requireAck ? `Acknowledgment required: ${title}` : title;
+  // "Reminder: Acknowledgment required: X" reads badly, so the second send gets
+  // its own sentence rather than a prefix bolted onto the first one's.
+  const subject = priorSend
+    ? post.requireAck
+      ? `Reminder: ${title} still needs your acknowledgment`
+      : `Reminder: ${title}`
+    : post.requireAck
+      ? `Acknowledgment required: ${title}`
+      : title;
   const bodyHtml = renderMarkdown(post.content);
   const dateStr = new Date(post.createdAt).toLocaleDateString("en-US", {
     year: "numeric",

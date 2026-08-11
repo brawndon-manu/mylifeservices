@@ -13,6 +13,15 @@ function esc(s) {
 const BTN =
   "display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;";
 
+// the policy's name, linked when we have a url for it and bold either way. Kept
+// bold when unlinked so the sentence still points at a specific document.
+function policyName(url) {
+  const label = "Rest &amp; Meal Period Policy and Acknowledgement";
+  return url
+    ? `<a href="${esc(url)}" style="color:#2f6feb;font-weight:700;text-decoration:underline;">${label}</a>`
+    : `<strong>${label}</strong>`;
+}
+
 export function buildTimesheetEmailHtml({
   employeeName,
   periodLabel,
@@ -22,6 +31,10 @@ export function buildTimesheetEmailHtml({
   summary,
   checks = [],
   redirectedFrom = null,
+  // absolute url to the signed policy, or null when it cannot be resolved - the
+  // sentence then names the document without linking it rather than shipping a
+  // dead link in a payroll email
+  policyUrl = null,
 }) {
   // loud banner so a test send can never be mistaken for the real thing
   const testBanner = redirectedFrom
@@ -46,8 +59,11 @@ export function buildTimesheetEmailHtml({
        </table>
        ${summary.assumedPremium > 0
          ? `<p style="margin:-8px 0 18px;font-size:13px;color:#6b7280;line-height:1.55;">Those
-              ${summary.assumedPremium} hours are <strong>not</strong> on this timesheet. We assumed you
-              took the breaks and charged nothing for them. If you missed any, say so and the pay goes on.</p>`
+              ${summary.assumedPremium} hours are <strong>not</strong> on this timesheet. Under the
+              ${policyName(policyUrl)} you signed, recording your
+              rest periods and meal breaks is your responsibility. Where a break is not documented we have
+              treated it as a record that was not kept, rather than a break you did not receive, and charged
+              nothing for it. If you did miss a break, say so and the penalty pay is added.</p>`
          : ""}`
     : "";
 
