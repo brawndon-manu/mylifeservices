@@ -273,32 +273,54 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     for (const date of dates) {
       const meal = mealUndocumented.some((d) => d.date === date);
       const rest = restUndocumented.some((d) => d.date === date);
-      out.push({
-        kind: "nothingDocumented",
-        date,
-        at: "",
-        moves: 0,
-        // one hour for the meal, one for the rests, per UPS v. Superior Court
-        movesOnDecline: (meal ? 1 : 0) + (rest ? 1 : 0),
-        // ANSWERED TOGETHER, WRITTEN TOGETHER. The card sets every day, then
-        // commits them in one call and rebuilds the sheet once - thirteen
-        // confirm panels and thirteen rebuilds was the alternative.
-        batch: "nothingDocumented",
-        // ANSWERING "yes" IS NOT ENOUGH ON ITS OWN ANY MORE. Every slot here has
-        // to carry a time before the card can be submitted, and the times land
-        // on the sheet they then sign.
-        needs: slotsFor(dayOf(date), byDate[date], meal, rest),
-        row: {
-          meal,
-          rest,
-          hours: r2((dayOf(date)?.paidHours) || 0),
-          // the whole card's shape, carried on every question so the heading can
-          // be written without the page re-deriving it
-          days: dates.length,
-          mealDays: mealUndocumented.length,
-          restDays: restUndocumented.length,
-        },
-      });
+      // THE BREAK IS THE UNIT NOW, NOT THE DAY. Mánu 2026-08-10: "there has to be
+      // option for yes to some as well as no to others."
+      //
+      // The day was the unit until now, so a day short BOTH a lunch and its tens
+      // was one all-or-nothing answer. Somebody who got their lunch and worked
+      // through their tens had to claim both to be paid for either: two hours
+      // where the truth was one. 238 of the 432 day-decisions in this batch are
+      // that shape.
+      //
+      // Each part is its own question and its own correction row, so each is
+      // worth exactly ONE hour on a decline, per UPS v. Superior Court's ceiling
+      // of one meal and one rest premium a day. They still render as one card
+      // per day - the page groups on `batch` - so this adds decisions, not cards.
+      const parts = [];
+      if (meal) parts.push("meal");
+      if (rest) parts.push("rest");
+      for (const part of parts) {
+        out.push({
+          kind: part === "meal" ? "nothingDocumentedMeal" : "nothingDocumentedRest",
+          date,
+          at: "",
+          moves: 0,
+          movesOnDecline: 1,
+          // ANSWERED TOGETHER, WRITTEN TOGETHER. The card sets every day, then
+          // commits them in one call and rebuilds the sheet once - thirteen
+          // confirm panels and thirteen rebuilds was the alternative.
+          batch: "nothingDocumented",
+          // ANSWERING "yes" IS NOT ENOUGH ON ITS OWN ANY MORE. Every slot here
+          // has to carry a time before the card can be submitted, and the times
+          // land on the sheet they then sign. Split per part, so saying "I took
+          // my lunch" on a both-day now asks for one time and not three.
+          needs: slotsFor(dayOf(date), byDate[date], part === "meal", part === "rest"),
+          row: {
+            part,
+            meal,
+            rest,
+            // how many decisions this DAY carries, so the card can show a day
+            // once with its parts under it
+            parts: parts.length,
+            hours: r2((dayOf(date)?.paidHours) || 0),
+            // the whole card's shape, carried on every question so the heading can
+            // be written without the page re-deriving it
+            days: dates.length,
+            mealDays: mealUndocumented.length,
+            restDays: restUndocumented.length,
+          },
+        });
+      }
     }
   }
 
@@ -376,6 +398,14 @@ export function patchesFor(question, choice, day) {
             restViolation: question.row?.rest ? false : null,
           }
         : { mealViolation: null, restViolation: null };
+    // THE SPLIT PAIR. Each touches ONLY its own flag, which is what lets two
+    // answers on the same date merge instead of overwriting each other - the
+    // rebuild in answerTimesheetQuestion drops nulls and spreads what is left,
+    // so "took my lunch" and "missed my tens" land as one day with one premium.
+    case "nothingDocumentedMeal":
+      return yes ? { mealViolation: false } : { mealViolation: null };
+    case "nothingDocumentedRest":
+      return yes ? { restViolation: false } : { restViolation: null };
     case "restSnappedToShift":
       // confirming leaves the move alone. Declining says they really did take it
       // after clocking out, so the minutes are owed and go back on - and the

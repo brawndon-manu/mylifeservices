@@ -120,16 +120,18 @@ test("ids are stable across a rebuild, so an answer still matches its question",
 });
 
 // ---------------------------------------------------------------------------
-// ONE QUESTION PER DAY. Mánu 2026-08-09 late, on his own twelve day card: "what
-// if only some of them are no? with the way we have it right now, all of them
-// are no or all of them are yes."
+// ONE QUESTION PER BREAK. Mánu 2026-08-09 late, on his own twelve day card:
+// "what if only some of them are no? with the way we have it right now, all of
+// them are no or all of them are yes." Answered per DAY on 08-09, and split
+// again per BREAK on 08-10 - a day short both a lunch and its tens was still
+// all-or-nothing, so getting paid for the tens meant claiming the lunch too.
 
 const ndDay = (date, over = {}) => ({
   date, paidHours: 8, mealViolation: false, mealLate: false, restViolation: false,
   restTaken: 0, restRequired: 2, punches: [], breaks: [], ...over,
 });
 
-test("the breaks question is one per day, and each day carries its own hours", () => {
+test("the breaks question is one per BREAK, and each is worth one hour", () => {
   const qs = buildQuestions({
     days: [
       ndDay("07/20/26", { mealViolation: true, restViolation: true }),
@@ -137,22 +139,58 @@ test("the breaks question is one per day, and each day carries its own hours", (
       ndDay("07/22/26"),
     ],
   }, { restRows: [], sourceName: "Testperson" });
-  const nd = qs.filter((q) => q.kind === "nothingDocumented");
+  const nd = qs.filter((q) => String(q.kind).startsWith("nothingDocumented"));
 
-  assert.equal(nd.length, 2, "one per day that is short something, and no more");
-  assert.deepEqual(nd.map((q) => q.date), ["07/20/26", "07/21/26"]);
-  // a day short both a lunch and its rests is two hours; a day short only its
-  // rests is one. Under the old single question both were folded into one total.
-  assert.equal(nd[0].movesOnDecline, 2);
-  assert.equal(nd[1].movesOnDecline, 1);
-  assert.deepEqual(
-    nd.map((q) => [q.row.meal, q.row.rest]),
-    [[true, true], [false, true]],
-  );
-  // distinct ids, or two days would share an answer and the split is pointless
-  assert.equal(new Set(nd.map((q) => q.id)).size, 2);
-  // and they are marked as one card, committed together
+  // ONE PER BREAK NOW, not one per day. 07/20 is short both a lunch and its
+  // rests, so it is two decisions; 07/21 is short only its rests, so it is one.
+  assert.equal(nd.length, 3, "two for the day short both, one for the day short rests");
+  assert.deepEqual(nd.map((q) => [q.date, q.kind]), [
+    ["07/20/26", "nothingDocumentedMeal"],
+    ["07/20/26", "nothingDocumentedRest"],
+    ["07/21/26", "nothingDocumentedRest"],
+  ]);
+  // EVERY ONE IS WORTH EXACTLY ONE HOUR. The old combined question was worth two
+  // on a day short both, which is what made it all-or-nothing.
+  assert.ok(nd.every((q) => q.movesOnDecline === 1));
+  // the day's shape still rides along, so the card can group by date
+  assert.deepEqual(nd.map((q) => q.row.parts), [2, 2, 1]);
+  // distinct ids, or two decisions would share an answer and the split is pointless
+  assert.equal(new Set(nd.map((q) => q.id)).size, 3);
+  // and they are still marked as one card, committed together
   assert.ok(nd.every((q) => q.batch === "nothingDocumented"));
+});
+
+test("a day short both can be answered yes to one and no to the other", () => {
+  // THE WHOLE POINT OF THE SPLIT. Mánu 2026-08-10: somebody who got their lunch
+  // and worked through their tens had to claim both to be paid for either.
+  const days = [ndDay("07/20/26", { mealViolation: true, restViolation: true })];
+  const nd = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+    .filter((q) => String(q.kind).startsWith("nothingDocumented"));
+  assert.equal(nd.length, 2);
+
+  const meal = nd.find((q) => q.kind === "nothingDocumentedMeal");
+  const rest = nd.find((q) => q.kind === "nothingDocumentedRest");
+
+  // "I took my lunch" touches only the meal flag...
+  assert.deepEqual(patchesFor(meal, "yes", days[0]), { mealViolation: false });
+  // ...and "I missed my tens" touches only the rest one, clearing the override
+  // so the day's own flag stands and the hour is charged
+  assert.deepEqual(patchesFor(rest, "no", days[0]), { restViolation: null });
+
+  // MERGED THE WAY THE REBUILD MERGES THEM: nulls dropped, the rest spread. One
+  // hour charged, not two and not none - which no single answer could express.
+  const merged = {};
+  for (const [q, choice] of [[meal, "yes"], [rest, "no"]]) {
+    for (const [k, v] of Object.entries(patchesFor(q, choice, days[0]))) {
+      if (v != null) merged[k] = v;
+    }
+  }
+  assert.deepEqual(merged, { mealViolation: false });
+  assert.equal(
+    (merged.mealViolation === false ? 0 : 1) + (merged.restViolation === false ? 0 : 1),
+    1,
+    "one hour owed: the tens, not the lunch",
+  );
 });
 
 test("saying no on one day leaves the others alone", () => {
@@ -161,17 +199,16 @@ test("saying no on one day leaves the others alone", () => {
     ndDay("07/21/26", { restViolation: true }),
   ];
   const nd = buildQuestions({ days }, { restRows: [], sourceName: "T" })
-    .filter((q) => q.kind === "nothingDocumented");
+    .filter((q) => String(q.kind).startsWith("nothingDocumented"));
 
-  // the 20th: they took them, so the engine's reading stands and stays cleared
-  assert.deepEqual(patchesFor(nd[0], "yes", days[0]), {
-    mealViolation: false, restViolation: false,
-  });
+  // the 20th, both parts taken: each clears its own flag and nothing else
+  assert.deepEqual(patchesFor(nd[0], "yes", days[0]), { mealViolation: false });
+  assert.deepEqual(patchesFor(nd[1], "yes", days[0]), { restViolation: false });
   // the 21st: they missed them, so the override is cleared and the day's own
-  // flags - which already say a rest is owed - come back through
-  assert.deepEqual(patchesFor(nd[1], "no", days[1]), {
-    mealViolation: null, restViolation: null,
-  });
+  // flag - which already says a rest is owed - comes back through
+  assert.deepEqual(patchesFor(nd[2], "no", days[1]), { restViolation: null });
+  // and answering the 21st cannot reach the 20th
+  assert.equal(nd[2].date, "07/21/26");
 });
 
 test("progress is counted per question, not per kind", () => {
@@ -185,12 +222,12 @@ test("progress is counted per question, not per kind", () => {
   const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" });
   assert.equal(qs.length, 2);
 
-  const one = [{ kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" }];
+  const one = [{ kind: "q_nothingDocumentedMeal", date: "07/20/26", status: "accepted" }];
   const p1 = answerProgress(qs, one);
   assert.equal(p1.answered, 1, "one of the two, not one KIND of one kind");
   assert.equal(p1.settled, false, "so they still cannot sign");
 
-  const both = [...one, { kind: "q_nothingDocumented", date: "07/21/26", status: "declined" }];
+  const both = [...one, { kind: "q_nothingDocumentedMeal", date: "07/21/26", status: "declined" }];
   const p2 = answerProgress(qs, both);
   assert.equal(p2.answered, 2);
   assert.equal(p2.declined, 1);
@@ -198,7 +235,7 @@ test("progress is counted per question, not per kind", () => {
 
   // an OPEN correction is a reported problem, not an answer
   assert.equal(answerProgress(qs, [
-    { kind: "q_nothingDocumented", date: "07/20/26", status: "open" },
+    { kind: "q_nothingDocumentedMeal", date: "07/20/26", status: "open" },
   ]).answered, 0);
 });
 
@@ -244,29 +281,28 @@ test("saying yes never clears a premium the schedule documented", () => {
     ndDay("07/29/26", { mealViolation: true, mealLate: true, restViolation: true }),
   ];
   const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" })
-    .filter((q) => q.kind === "nothingDocumented");
+    .filter((q) => String(q.kind).startsWith("nothingDocumented"));
 
   assert.equal(qs.length, 1, "the day is asked about, for its REST");
   assert.equal(qs[0].row.meal, false, "the late lunch is not what is being asked");
   assert.equal(qs[0].row.rest, true);
   assert.equal(qs[0].movesOnDecline, 1, "one hour, the rest - not two");
 
-  // yes clears the rest and LEAVES the documented meal alone
-  assert.deepEqual(patchesFor(qs[0], "yes", days[0]), {
-    mealViolation: null,
-    restViolation: false,
-  });
+  // yes clears the rest and CANNOT REACH the documented meal - since the split
+  // the rest question only ever touches restViolation, which is a stronger
+  // guarantee than the old "clear meal only if it was asked about"
+  assert.deepEqual(patchesFor(qs[0], "yes", days[0]), { restViolation: false });
+  assert.ok(!("mealViolation" in patchesFor(qs[0], "yes", days[0])));
 
-  // THE OPPOSITE: a day whose meal is undocumented IS cleared by yes, or the
-  // question would charge for something nobody is claiming.
+  // THE OPPOSITE: a day whose meal is undocumented IS asked about and cleared by
+  // yes, or the question would charge for something nobody is claiming.
   const undoc = [ndDay("07/20/26", { mealViolation: true, restViolation: true })];
   const q2 = buildQuestions({ days: undoc }, { restRows: [], sourceName: "T" })
-    .filter((q) => q.kind === "nothingDocumented")[0];
-  assert.equal(q2.movesOnDecline, 2);
-  assert.deepEqual(patchesFor(q2, "yes", undoc[0]), {
-    mealViolation: false,
-    restViolation: false,
-  });
+    .filter((q) => String(q.kind).startsWith("nothingDocumented"));
+  assert.equal(q2.length, 2, "two decisions now, one per break");
+  assert.ok(q2.every((q) => q.movesOnDecline === 1), "one hour each");
+  assert.deepEqual(patchesFor(q2[0], "yes", undoc[0]), { mealViolation: false });
+  assert.deepEqual(patchesFor(q2[1], "yes", undoc[0]), { restViolation: false });
 });
 
 test("a day answered yes asks for a time for every break it is short", () => {
@@ -274,26 +310,38 @@ test("a day answered yes asks for a time for every break it is short", () => {
   const days = [ndDay("07/20/26", {
     mealViolation: true, restViolation: true, restTaken: 0, restRequired: 2,
   })];
-  const q = buildQuestions({ days }, { restRows: [], sourceName: "T" })
-    .filter((x) => x.kind === "nothingDocumented")[0];
+  const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+    .filter((x) => String(x.kind).startsWith("nothingDocumented"));
 
-  assert.deepEqual(q.needs.map((n) => n.slot), ["meal", "rest1", "rest2"]);
-  assert.deepEqual(q.needs.map((n) => n.minutes), [30, 10, 10]);
+  // THE TIMES FOLLOW THE SPLIT, which is the quiet win in it: answering "I took
+  // my lunch" now asks for ONE time, not three. Before, a both-day demanded all
+  // three before it would submit, even from somebody claiming only the lunch.
+  const meal = qs.find((q) => q.kind === "nothingDocumentedMeal");
+  const rest = qs.find((q) => q.kind === "nothingDocumentedRest");
+  assert.deepEqual(meal.needs.map((n) => n.slot), ["meal"]);
+  assert.deepEqual(meal.needs.map((n) => n.minutes), [30]);
+  assert.deepEqual(rest.needs.map((n) => n.slot), ["rest1", "rest2"]);
+  assert.deepEqual(rest.needs.map((n) => n.minutes), [10, 10]);
+  // and between them they still account for every break the day is short
+  assert.equal(meal.needs.length + rest.needs.length, 3);
   // NOTHING is pre-filled without a real time behind it. The schedule cannot
   // roster a rest period at all, so a ten is never proposed.
-  assert.ok(q.needs.every((n) => !n.prefill), "no schedule here, so nothing to propose");
+  assert.ok(
+    [...meal.needs, ...rest.needs].every((n) => !n.prefill),
+    "no schedule here, so nothing to propose",
+  );
 
   // one already taken means one still to account for
   const partial = [ndDay("07/21/26", { restViolation: true, restTaken: 1, restRequired: 2 })];
   const q3 = buildQuestions({ days: partial }, { restRows: [], sourceName: "T" })
-    .filter((x) => x.kind === "nothingDocumented")[0];
+    .filter((x) => String(x.kind).startsWith("nothingDocumented"))[0];
   assert.deepEqual(q3.needs.map((n) => n.slot), ["rest1"]);
 
   // a clean day is asked nothing at all, or the card would demand times for
   // breaks nobody says are missing
   assert.equal(
     buildQuestions({ days: [ndDay("07/22/26")] }, { restRows: [], sourceName: "T" })
-      .filter((x) => x.kind === "nothingDocumented").length,
+      .filter((x) => String(x.kind).startsWith("nothingDocumented")).length,
     0,
   );
 });
@@ -319,14 +367,16 @@ test("a rostered lunch is proposed, and a schedule gap is only suggested", () =>
       },
     },
   };
-  const q = buildQuestions(data, { restRows: [], sourceName: "T" })
-    .filter((x) => x.kind === "nothingDocumented")[0];
+  // the day's slots now live across two questions, so gather them
+  const slots = buildQuestions(data, { restRows: [], sourceName: "T" })
+    .filter((x) => String(x.kind).startsWith("nothingDocumented"))
+    .flatMap((x) => x.needs);
 
-  const meal = q.needs.find((n) => n.slot === "meal");
+  const meal = slots.find((n) => n.slot === "meal");
   assert.equal(meal.prefill, "3p", "the roster booked it, so it is a time and not a guess");
   assert.equal(meal.source, "schedule");
 
-  const rest = q.needs.find((n) => n.slot === "rest1");
+  const rest = slots.find((n) => n.slot === "rest1");
   assert.equal(rest.prefill, null, "never pre-filled");
   assert.equal(rest.suggest, "12p", "the 15 minute hole between two bookings");
   assert.match(rest.hint, /gap 12p-12:15p/);
@@ -336,7 +386,7 @@ test("a rostered lunch is proposed, and a schedule gap is only suggested", () =>
   const solid = buildQuestions(
     { days, scheduleCheck: { byDate: { "07/20/26": { shifts: [{ text: "9a-5p Rincon" }] } } } },
     { restRows: [], sourceName: "T" },
-  ).filter((x) => x.kind === "nothingDocumented")[0];
-  assert.equal(solid.needs.find((n) => n.slot === "rest1").suggest, null);
-  assert.match(solid.needs.find((n) => n.slot === "rest1").hint, /no gap on your schedule/);
+  ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs);
+  assert.equal(solid.find((n) => n.slot === "rest1").suggest, null);
+  assert.match(solid.find((n) => n.slot === "rest1").hint, /no gap on your schedule/);
 });

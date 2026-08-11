@@ -13,6 +13,7 @@ import {
 import { correctionLabel } from "@/lib/timesheet/corrections";
 import { buildQuestions } from "@/lib/timesheet/questions";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
+import { restMealPolicyLink } from "@/lib/policy-form";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
 // outside /portal so proxy.js doesn't bounce it to login - the signed token IS
@@ -55,6 +56,10 @@ export default async function SignTimesheetPage({ params }) {
   // is exactly what they were doing before 2026-08-09 late.
   const standing = premiumStanding(ts.data?.days || [], ts.corrections);
 
+  // the signed policy the assumption rests on, so the sentence naming it can be
+  // opened. Only looked up when there is an assumption to justify.
+  const policy = standing.assumed > 0 ? await restMealPolicyLink() : null;
+
   // EVERY QUESTION THIS SHEET RAISES, from the one classifier the server action
   // re-derives from too. Mánu 2026-08-09: all five block signing, "since we
   // assumed best case scenarios for least premium hours and hours overall owed".
@@ -76,11 +81,19 @@ export default async function SignTimesheetPage({ params }) {
   }
   const unanswered = questions.filter((q) => !answers[q.id]);
 
-  // one card per kind. `restIsMealLength` keeps a row per day inside its card,
-  // which the component handles when it is handed more than one question.
+  // ONE CARD PER `batch`, FALLING BACK TO THE KIND. `restIsMealLength` keeps a
+  // row per day inside its card, which the component handles when it is handed
+  // more than one question.
+  //
+  // Grouping on the kind alone was right until the breaks question split into a
+  // meal kind and a rest kind on 2026-08-10: that would have given somebody two
+  // separate cards asking about the same days, one for lunches and one for tens.
+  // They share a `batch`, so they stay one card and the day keeps its parts
+  // together.
   const byKind = [];
   for (const q of questions) {
-    const found = byKind.find((g) => g[0].kind === q.kind);
+    const key = q.batch || q.kind;
+    const found = byKind.find((g) => (g[0].batch || g[0].kind) === key);
     if (found) found.push(q);
     else byKind.push([q]);
   }
@@ -149,10 +162,27 @@ export default async function SignTimesheetPage({ params }) {
         )}
       </div>
       {standing.assumed > 0 && (
+        /* WHY THE ASSUMPTION IS ALLOWED TO STAND, not just that it was made.
+           Mánu 2026-08-10: the reason is the signed acknowledgment, so the
+           document has to say so - the figure below rests on it. */
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Those {standing.assumed.toFixed(2)} hours are <b>not</b> on this timesheet. Nothing on
-          file records those breaks, and we assumed you took them rather than charging for them.
-          If you missed any, say so below and the pay goes on.
+          Those {standing.assumed.toFixed(2)} hours are <b>not</b> on this timesheet. Under the{" "}
+          {policy ? (
+            <a
+              href={policy.path}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-brand underline underline-offset-2 hover:text-brand-dark"
+            >
+              Rest &amp; Meal Period Policy and Acknowledgement
+            </a>
+          ) : (
+            <b>Rest &amp; Meal Period Policy and Acknowledgement</b>
+          )}{" "}
+          you signed, recording your rest periods and meal breaks is your responsibility. Where a
+          break is not documented we have
+          treated it as a record that was not kept, rather than a break you did not receive, and
+          charged nothing for it. If you did miss a break, say so below and the penalty pay is added.
         </p>
       )}
 

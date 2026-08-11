@@ -157,7 +157,16 @@ function copyFor(q, standing) {
     // ONE QUESTION PER DAY NOW, rendered as one card by BatchCard. The copy
     // here is the card's heading, so it describes the whole set; the per-day
     // wording lives in the rows.
+    // SPLIT PER BREAK 2026-08-10, and both kinds share this copy. The card is
+    // still one per person - the page groups them - so the heading describes the
+    // whole set and the per-break wording lives on the rows.
+    //
+    // Without these two cases the switch fell to `default: return null` and the
+    // card rendered NOTHING, on a page that still said "answer all 17 questions
+    // above". Caught by looking at the rendered page rather than the build.
     case "nothingDocumented":
+    case "nothingDocumentedMeal":
+    case "nothingDocumentedRest":
       return {
         title: "We could not find your breaks on record",
         body: (
@@ -493,9 +502,6 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
   const valueFor = (q) =>
     picked[q.id] ?? (answers?.[q.id] === "accepted" ? "yes" : answers?.[q.id] === "declined" ? "no" : null);
 
-  const setAll = (choice) =>
-    setPicked(Object.fromEntries(list.map((q) => [q.id, choice])));
-
   const rawAt = (q, slot) => times[q.id]?.[slot] ?? "";
   const setAt = (q, slot, v) =>
     setTimes((t) => ({ ...t, [q.id]: { ...(t[q.id] || {}), [slot]: v } }));
@@ -550,124 +556,151 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
     });
   }
 
+  // WHICH BREAK THIS ROW IS ABOUT. Since the split, a question owns one part of
+  // one day, so the label names the part rather than the day's whole set.
+  const partName = (q) =>
+    q.row?.part === "meal" ? "Lunch break" : q.row?.part === "rest" ? "Rest breaks" : null;
   const label = (q, v) =>
-    q.row.meal && q.row.rest
-      ? (v === "yes" ? "Took them" : "Missed them")
-      : (v === "yes" ? "Took it" : "Missed it");
+    q.row?.part === "meal"
+      ? (v === "yes" ? "Took it" : "Missed it")
+      : (v === "yes" ? "Took them" : "Missed them");
+
+  // the yes/no pair for one decision. Lifted out of the row markup when the
+  // split arrived, because a day can now show two of them.
+  const Toggle = ({ item: { q, v } }) => (
+    <span className="flex overflow-hidden rounded-lg border border-border-strong">
+      {["yes", "no"].map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          disabled={pending}
+          aria-pressed={v === opt}
+          onClick={() => {
+            setConfirming(false);
+            setPicked((p) => ({ ...p, [q.id]: opt }));
+          }}
+          className={`px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
+            v === opt
+              ? opt === "yes"
+                ? "bg-emerald-500/15 text-emerald-700 ring-2 ring-inset ring-emerald-500 dark:text-emerald-300"
+                : "bg-rose-500/15 text-rose-700 ring-2 ring-inset ring-rose-500 dark:text-rose-300"
+              : "bg-surface-2 text-muted hover:text-foreground"
+          }`}
+        >
+          {label(q, opt)}
+        </button>
+      ))}
+    </span>
+  );
+
+  // the times a "took them" owes. Now scoped to ONE part, so a both-day answered
+  // "took my lunch, missed my tens" asks for one time and not three.
+  const TimesFor = ({ q, v }) => {
+    if (v !== "yes" || !(q.needs || []).length) return null;
+    return (
+      <div className="mt-2 w-full rounded-lg border border-border-strong bg-surface-2 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-faint">
+          When did you take {q.needs.length === 1 ? "it" : "them"} on {q.date}?
+        </p>
+        <div className="mt-2 space-y-2">
+          {q.needs.map((need) => {
+            const raw = rawAt(q, need.slot);
+            const mins = minutesAt(q, need);
+            return (
+              <div key={need.slot} className="flex flex-wrap items-center gap-2.5">
+                <label htmlFor={`t-${q.id}-${need.slot}`} className="w-28 text-sm text-foreground">
+                  {need.label}
+                </label>
+                <input
+                  id={`t-${q.id}-${need.slot}`}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  disabled={pending}
+                  value={raw || (need.prefill && !(q.id in times && need.slot in (times[q.id] || {})) ? need.prefill : raw)}
+                  onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
+                  placeholder="e.g. 115 or 1:15p"
+                  className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
+                    mins ? "border-emerald-500" : "border-amber-500/70"
+                  }`}
+                />
+                {!mins && need.suggest && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => { setConfirming(false); setAt(q, need.slot, need.suggest); }}
+                    className="rounded-full border border-dashed border-border-strong px-3 py-1 text-xs text-brand transition hover:border-solid"
+                  >
+                    use {need.suggest}
+                  </button>
+                )}
+                <span className="text-xs text-muted">
+                  {mins && raw.trim() ? `reads as ${formatTimeDisplay(mins)}` : need.hint}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // one entry per DAY, carrying its one or two decisions. The card stays a list
+  // of days; only a day short both grows a second row.
+  const byDay = [];
+  for (const item of chosen) {
+    const last = byDay[byDay.length - 1];
+    if (last && last.date === item.q.date) last.items.push(item);
+    else byDay.push({ date: item.q.date, hours: item.q.row?.hours, items: [item] });
+  }
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-center gap-2.5 rounded-lg border border-border-strong bg-surface-2 p-3">
-        <span className="text-sm text-muted">Same answer for every day:</span>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => { setConfirming(false); setAll("yes"); }}
-          className="rounded-lg border border-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-300"
-        >
-          Yes, I took them all
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => { setConfirming(false); setAll("no"); }}
-          className="rounded-lg border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-500/10 disabled:opacity-50 dark:text-rose-300"
-        >
-          No, I missed them all
-        </button>
-      </div>
-
+      {/* NO "SAME ANSWER FOR EVERY DAY" ANY MORE. Mánu 2026-08-10 asked for it to
+          go, so each day is answered deliberately. Worth remembering what it
+          actually removed: "took them all" never skipped the times, so it cost
+          the honest path almost nothing - but "missed them all" was a single tap
+          to the full premium, and that is now nine to thirteen. The friction
+          landed on the answer that pays people, which was raised before it was
+          built and is his call. */}
       <ul className="mt-3 divide-y divide-border">
-        {chosen.map(({ q, v }) => (
+        {byDay.map(({ date, hours, items }) => (
           <li
-            key={q.id}
-            className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 ${
-              v === "no" ? "bg-rose-500/5" : ""
-            }`}
+            key={date}
+            className={`py-2.5 ${items.every((x) => x.v === "no") ? "bg-rose-500/5" : ""}`}
           >
-            <span className="min-w-0">
-              <span className="font-mono text-sm text-foreground">{q.date}</span>
-              <span className="ml-3 text-xs text-muted">
-                {q.row.meal && q.row.rest
-                  ? "meal + rest breaks"
-                  : q.row.meal ? "meal break" : "rest break"}
-                {" · "}{q.row.hours} hrs worked
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <span className="min-w-0">
+                <span className="font-mono text-sm text-foreground">{date}</span>
+                <span className="ml-3 text-xs text-muted">
+                  {items.length === 1
+                    ? `${items[0].q.row?.part === "meal" ? "meal break" : "rest break"} · `
+                    : ""}
+                  {hours} hrs worked
+                </span>
+                {items.length > 1 && (
+                  <span className="ml-2 rounded-full border border-border-strong px-2 py-0.5 text-[11px] text-muted">
+                    2 to answer
+                  </span>
+                )}
               </span>
-            </span>
-            <span className="flex overflow-hidden rounded-lg border border-border-strong">
-              {["yes", "no"].map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  disabled={pending}
-                  aria-pressed={v === opt}
-                  onClick={() => {
-                    setConfirming(false);
-                    setPicked((p) => ({ ...p, [q.id]: opt }));
-                  }}
-                  className={`px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
-                    v === opt
-                      ? opt === "yes"
-                        ? "bg-emerald-500/15 text-emerald-700 ring-2 ring-inset ring-emerald-500 dark:text-emerald-300"
-                        : "bg-rose-500/15 text-rose-700 ring-2 ring-inset ring-rose-500 dark:text-rose-300"
-                      : "bg-surface-2 text-muted hover:text-foreground"
+              {items.length === 1 && <Toggle item={items[0]} />}
+            </div>
+            {items.length > 1 &&
+              items.map((item) => (
+                <div
+                  key={item.q.id}
+                  className={`mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-l-2 border-border py-1 pl-3 ${
+                    item.v === "no" ? "bg-rose-500/10" : ""
                   }`}
                 >
-                  {label(q, opt)}
-                </button>
-              ))}
-            </span>
-            {v === "yes" && (q.needs || []).length > 0 && (
-              <div className="mt-1 w-full rounded-lg border border-border-strong bg-surface-2 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-faint">
-                  When did you take {q.needs.length === 1 ? "it" : "them"} on {q.date}?
-                </p>
-                <div className="mt-2 space-y-2">
-                  {q.needs.map((need) => {
-                    const raw = rawAt(q, need.slot);
-                    const mins = minutesAt(q, need);
-                    return (
-                      <div key={need.slot} className="flex flex-wrap items-center gap-2.5">
-                        <label
-                          htmlFor={`t-${q.id}-${need.slot}`}
-                          className="w-28 text-sm text-foreground"
-                        >
-                          {need.label}
-                        </label>
-                        <input
-                          id={`t-${q.id}-${need.slot}`}
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="off"
-                          disabled={pending}
-                          value={raw || (need.prefill && !(q.id in times && need.slot in (times[q.id] || {})) ? need.prefill : raw)}
-                          onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
-                          placeholder="e.g. 115 or 1:15p"
-                          className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
-                            mins ? "border-emerald-500" : "border-amber-500/70"
-                          }`}
-                        />
-                        {!mins && need.suggest && (
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() => { setConfirming(false); setAt(q, need.slot, need.suggest); }}
-                            className="rounded-full border border-dashed border-border-strong px-3 py-1 text-xs text-brand transition hover:border-solid"
-                          >
-                            use {need.suggest}
-                          </button>
-                        )}
-                        <span className="text-xs text-muted">
-                          {mins && raw.trim()
-                            ? `reads as ${formatTimeDisplay(mins)}`
-                            : need.hint}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  <span className="text-sm text-foreground">{partName(item.q)}</span>
+                  <Toggle item={item} />
                 </div>
-              </div>
-            )}
+              ))}
+            {items.map(({ q, v }) => (
+              <TimesFor key={`t-${q.id}`} q={q} v={v} />
+            ))}
           </li>
         ))}
       </ul>
@@ -684,7 +717,8 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
           </button>
           {undecided.length > 0 && (
             <span className="text-sm text-muted">
-              {undecided.length} {undecided.length === 1 ? "day" : "days"} still to answer.
+              {/* not "days" any more - one day can carry two answers */}
+              {undecided.length} still to answer.
             </span>
           )}
         </div>

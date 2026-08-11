@@ -58,7 +58,14 @@ const PREMIUM_ANSWER_KINDS = {
   q_restNoTimes: ["rest"],
   q_restIsMealLength: ["meal"],
   q_shortMealRest: ["rest"],
+  // kept for answers written before the split on 2026-08-10; nothing produces
+  // this kind any more
   q_nothingDocumented: ["meal", "rest"],
+  // ONE PART EACH, which is the point of splitting it. The combined kind above
+  // settled both premiums off a single answer, so a day short both could never
+  // land on one hour.
+  q_nothingDocumentedMeal: ["meal"],
+  q_nothingDocumentedRest: ["rest"],
 };
 
 // "MM/DD/YY:meal" -> "taken" | "owed", for every answer on record.

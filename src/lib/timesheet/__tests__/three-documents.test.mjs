@@ -248,8 +248,17 @@ test("it goes final only when every question has an answer", () => {
   const asked = sheetRow("a", [ASSUMED]);
   assert.equal(batchPremiumStanding([asked]).settled, false);
 
+  // BOTH PARTS, since the split. The assumed day is short a meal and its rests,
+  // so it is two decisions and answering one leaves the sheet still waiting -
+  // which is the assertion below doing its job.
+  const halfAnswered = sheetRow("a", [ASSUMED], [
+    { kind: "q_nothingDocumentedMeal", date: "07/20/26", status: "accepted" },
+  ]);
+  assert.equal(batchPremiumStanding([halfAnswered]).settled, false, "one of two is not answered");
+
   const answered = sheetRow("a", [ASSUMED], [
-    { kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" },
+    { kind: "q_nothingDocumentedMeal", date: "07/20/26", status: "accepted" },
+    { kind: "q_nothingDocumentedRest", date: "07/20/26", status: "accepted" },
   ]);
   const s = batchPremiumStanding([answered]);
   assert.equal(s.waiting, 0);

@@ -972,6 +972,9 @@ export async function sendTimesheets(batchId, formData) {
     const standing = premiumStanding(ts.data?.days || [], ts.corrections);
     const res = await sendTimesheet({
       intendedEmail: ts.user.email,
+      // `sentAt` is stamped by the first send, so a row that already has one is
+      // getting this sheet for at least the second time
+      isResend: !!ts.sentAt,
       employeeName: preferredName(ts.user) || ts.sourceName,
       periodLabel,
       message,
@@ -1645,8 +1648,16 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
       // held only in the blob is dropped the moment somebody answers a
       // different question - which is what happened to `statedRest` until
       // 2026-08-10. Kept on the correction row, they survive every rebuild.
+      //
+      // MERGED, NOT REPLACED, since the split on 2026-08-10. A day short both a
+      // meal and its rests now has TWO answer rows, each carrying its own times.
+      // Assigning here would have let whichever ran second silently drop the
+      // other's - the lunch time vanishing off a sheet somebody then signs.
+      // De-duped by slot so a rebuild cannot stack the same break twice.
       if (Array.isArray(a.statedBreaks) && a.statedBreaks.length) {
-        overrides[date] = { ...(overrides[date] || {}), statedBreaks: a.statedBreaks };
+        const merged = [...(overrides[date]?.statedBreaks || []), ...a.statedBreaks];
+        const bySlot = new Map(merged.map((b) => [b.slot, b]));
+        overrides[date] = { ...(overrides[date] || {}), statedBreaks: [...bySlot.values()] };
       }
     }
   }
@@ -1673,6 +1684,10 @@ const QUESTION_NOUN = {
   restOutsideShift: "rest recorded outside the rostered day",
   restSnappedToShift: "rest clocked as the shift ended",
   nothingDocumented: "day with no break recorded at all",
+  // split per part 2026-08-10, so the audit note names which break was asked
+  // about rather than "the day"
+  nothingDocumentedMeal: "meal break with nothing recorded",
+  nothingDocumentedRest: "rest periods with nothing recorded",
   shortMealRest: "ten minute meal block read as a rest period",
 };
 
@@ -1713,6 +1728,26 @@ function resolutionFor(q, choice, stated, statedBreaks) {
             : "") +
           ". No premium owed, per the signed acknowledgment that recording them is theirs to do."
         : "Employee says they did not get their breaks. Premium restored for the days concerned - one hour for a missed meal and one for missed rests, per UPS v. Superior Court.";
+    // ONE BREAK, ONE ANSWER, ONE HOUR. Split from the combined kind above on
+    // 2026-08-10 so a day short both can be answered honestly either way. The
+    // note names the specific break, because payroll reads these and "their
+    // breaks" no longer says which.
+    case "nothingDocumentedMeal":
+    case "nothingDocumentedRest": {
+      const noun = q.kind === "nothingDocumentedMeal" ? "meal break" : "rest periods";
+      if (!yes) {
+        return `Employee says they did not get their ${noun} that day. One hour of premium restored, per UPS v. Superior Court.`;
+      }
+      const when = (statedBreaks || []).length
+        ? `, at ${statedBreaks
+            .map((b) => `${b.from}-${b.to}` +
+              (b.source === "typed" ? " (given by the employee)" : " (from their schedule, accepted)"))
+            .join(", ")}`
+        : "";
+      return `Employee confirmed they took their ${noun} and did not record ${
+        q.kind === "nothingDocumentedMeal" ? "it" : "them"
+      }${when}. No premium owed, per the signed acknowledgment that recording them is theirs to do.`;
+    }
     case "restSnappedToShift":
       return yes
         ? "Employee confirmed the break was taken before the shift ended. Our correction stands and the minutes are not added."

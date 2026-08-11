@@ -47,8 +47,15 @@ const DAY = {
 };
 
 test("a day that owes a meal and two rests asks for three times", () => {
-  const qs = buildQuestions({ days: [DAY] }, { restRows: [], sourceName: "T" });
-  const q = qs.find((x) => x.kind === "nothingDocumented");
+  // SPLIT ACROSS TWO QUESTIONS since 2026-08-10: the lunch is one decision and
+  // its own time, the tens are another with theirs. Between them the day still
+  // accounts for all three, but claiming only the lunch now costs one time.
+  const qs = buildQuestions({ days: [DAY] }, { restRows: [], sourceName: "T" })
+    .filter((x) => String(x.kind).startsWith("nothingDocumented"));
+  assert.equal(qs.length, 2);
+  const q = { needs: qs.flatMap((x) => x.needs) };
+  assert.deepEqual(qs[0].needs.map((n) => n.slot), ["meal"]);
+  assert.deepEqual(qs[1].needs.map((n) => n.slot), ["rest1", "rest2"]);
   assert.deepEqual(q.needs.map((n) => n.slot), ["meal", "rest1", "rest2"]);
   assert.deepEqual(q.needs.map((n) => n.minutes), [30, 10, 10]);
 
@@ -61,7 +68,7 @@ test("a day that owes a meal and two rests asks for three times", () => {
   // a day owing only rests asks only about rests
   const restOnly = buildQuestions(
     { days: [{ ...DAY, mealViolation: false }] }, { restRows: [], sourceName: "T" },
-  ).find((x) => x.kind === "nothingDocumented");
+  ).find((x) => String(x.kind).startsWith("nothingDocumented"));
   assert.deepEqual(restOnly.needs.map((n) => n.slot), ["rest1", "rest2"]);
 });
 
@@ -71,10 +78,10 @@ test("a rostered meal nobody punched IS pre-filled, and a rest never is", () => 
   const entry = { shifts: [{ text: "8a-4:30p Rincon" }, { text: "12p-12:30p lunch", meal: true }] };
   assert.deepEqual(rosteredMeal(entry), { from: 720, to: 750 });
 
-  const q = buildQuestions(
+  const q = { needs: buildQuestions(
     { days: [DAY], scheduleCheck: { byDate: { "07/20/26": entry } } },
     { restRows: [], sourceName: "T" },
-  ).find((x) => x.kind === "nothingDocumented");
+  ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs) };
   assert.equal(q.needs[0].slot, "meal");
   assert.equal(q.needs[0].prefill, "12p");
   assert.equal(q.needs[0].source, "schedule");
@@ -88,10 +95,10 @@ test("a gap in the roster is offered, not filled in", () => {
   const entry = { shifts: [{ text: "8a-12p A" }, { text: "12:15p-4p B" }] };
   assert.deepEqual(scheduleGaps(entry), [{ from: 720, to: 735 }]);
 
-  const q = buildQuestions(
+  const q = { needs: buildQuestions(
     { days: [DAY], scheduleCheck: { byDate: { "07/20/26": entry } } },
     { restRows: [], sourceName: "T" },
-  ).find((x) => x.kind === "nothingDocumented");
+  ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs) };
   const rest1 = q.needs.find((n) => n.slot === "rest1");
   assert.equal(rest1.suggest, "12p", "offered as a one-tap");
   assert.equal(rest1.prefill, null, "but never as a value");
