@@ -1,0 +1,150 @@
+// EVERY QUESTION KIND HAS TO BE FULLY DRESSED BEFORE IT SHIPS.
+//
+// Mánu 2026-08-10, on the test batch: "let's make sure every discrepancy we have
+// listed so far is stuff that can be repeated ... if it appears again in the one
+// I will eventually upload, the same results should appear."
+//
+// The failure this exists to stop already happened once, earlier the same day.
+// Splitting the breaks question produced two new kinds, and `copyFor` in
+// TimesheetQuestion.js still only knew the old one. Its switch fell through to
+// `default: return null`, so the card rendered NOTHING - on a page that still
+// said "answer all 17 questions above". The build passed. Every test passed.
+// Only opening the page showed it.
+//
+// So: a kind that `buildQuestions` can emit must also have copy for the
+// employee, a noun for the audit note, a resolution sentence for payroll, and a
+// place in the premium answer table. Adding a kind without one of those should
+// break the suite rather than a person's timesheet.
+//
+// The component is a client module full of JSX and cannot be imported here, so
+// its switch labels are read out of the source. That is deliberately crude: it
+// catches the one thing that matters, which is a kind nobody wrote copy for.
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+import { buildQuestions } from "../questions.js";
+
+const root = path.resolve(import.meta.dirname, "../../../..");
+const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
+
+// the switch labels a file handles, e.g. `case "restNoTimes":`
+const casesIn = (src, from) => {
+  const at = src.indexOf(from);
+  assert.ok(at > -1, `could not find ${from} - this test needs updating`);
+  return new Set([...src.slice(at).matchAll(/case\s+"([A-Za-z]+)"\s*:/g)].map((m) => m[1]));
+};
+
+// EVERY SHAPE THAT RAISES A QUESTION, built so the set is derived rather than
+// typed out. If a new kind is added to questions.js, add a shape here and the
+// rest of the assertions will tell you what else it needs.
+const day = (over = {}) => ({
+  date: "04/02/27", paidHours: 8, rawHours: 8, regularHours: 8, otHours: 0,
+  doubleHours: 0, addedHours: 0, punches: [], breaks: [],
+  restTaken: 0, restRequired: 2, mealViolation: false, mealLate: false,
+  restViolation: false, ...over,
+});
+
+function everyKind() {
+  const kinds = new Set();
+  const add = (days, opts = {}) => {
+    for (const q of buildQuestions({ days, ...(opts.data || {}) }, {
+      restRows: opts.restRows || [], sourceName: opts.sourceName || "Newperson, Someone",
+    })) kinds.add(q.kind);
+  };
+  add([day({ mealViolation: true })]);                                   // nothingDocumentedMeal
+  add([day({ restViolation: true })]);                                   // nothingDocumentedRest
+  add([day({ restsMisclicked: 1, restsMisclickedMin: 10 })]);            // restOutsideShift
+  add([day({ restsSnapped: 1, restsSnappedMin: 10 })]);                  // restSnappedToShift
+  add([day({ restsFromShortMeals: 1, restTaken: 1, restRequired: 2, restViolation: true })]); // shortMealRest
+  // repair comes off a REST ROW the parser had to fix, not off the day
+  add([day({ restViolation: true })], {
+    restRows: [{
+      name: "Newperson, Someone", date: "04/02/27", out: "9:00 AM", in: "9:10 AM",
+      minutes: 10, repair: { field: "out", from: "9:00 PM", to: "9:00 AM" },
+    }],
+  });                                                                    // repair
+  add([day({ mealViolation: true })], {
+    restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "2:00 PM", in: "2:30 PM", minutes: 30, counted: false }],
+  });                                                                    // restIsMealLength
+  add([day({ restTaken: 0, restRequired: 1, restViolation: true })], {
+    restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "", in: "", minutes: 0 }],
+  });                                                                    // restNoTimes
+  return kinds;
+}
+
+test("every question kind the engine can raise has employee copy", () => {
+  const handled = casesIn(read("src/app/t/[token]/TimesheetQuestion.js"), "function copyFor");
+  for (const kind of everyKind()) {
+    assert.ok(
+      handled.has(kind),
+      `${kind} has no case in copyFor - the card will render NOTHING for it`,
+    );
+  }
+});
+
+test("every kind has an audit noun and a resolution sentence for payroll", () => {
+  const actions = read("src/app/portal/admin/timesheets/actions.js");
+  const nouns = actions.slice(actions.indexOf("const QUESTION_NOUN"));
+  const resolutions = casesIn(actions, "function resolutionFor");
+  for (const kind of everyKind()) {
+    assert.match(
+      nouns.slice(0, nouns.indexOf("}")),
+      new RegExp(`\\b${kind}\\b`),
+      `${kind} is missing from QUESTION_NOUN, so its audit note reads "undefined"`,
+    );
+    assert.ok(
+      resolutions.has(kind),
+      `${kind} has no case in resolutionFor, so payroll gets no explanation of the answer`,
+    );
+  }
+});
+
+test("every kind that settles a premium is in the answer table", () => {
+  const table = read("src/lib/timesheet/premium-split.js");
+  const listed = new Set(
+    [...table.matchAll(/^\s{2}(q_[A-Za-z]+):/gm)].map((m) => m[1].slice(2)),
+  );
+  for (const kind of everyKind()) {
+    // only the kinds that move a meal or rest premium need to be here; the ones
+    // that move MINUTES do not, so this asserts the premium ones specifically
+    if (!/nothingDocumented|restIsMealLength|restNoTimes|shortMealRest|repair/.test(kind)) continue;
+    assert.ok(
+      listed.has(kind),
+      `${kind} settles a premium but is not in PREMIUM_ANSWER_KINDS, so answering it would move the stored figure while the projected one sat still`,
+    );
+  }
+});
+
+test("the kinds are a known set, so a new one cannot arrive unnoticed", () => {
+  // Pin the list. A new kind failing here is the POINT: it is the prompt to give
+  // it copy, a noun, a resolution, a premium mapping and a gate classification.
+  assert.deepEqual(
+    [...everyKind()].sort(),
+    [
+      "nothingDocumentedMeal",
+      "nothingDocumentedRest",
+      "repair",
+      "restIsMealLength",
+      "restNoTimes",
+      "restOutsideShift",
+      "restSnappedToShift",
+      "shortMealRest",
+    ],
+  );
+});
+
+test("the same shape raises the same question on any date, in any period", () => {
+  // the whole point of Mánu's question: nothing about this is tied to the batch
+  // it was written against.
+  const shape = (date) => [day({ date, mealViolation: true, restViolation: true })];
+  const kindsOn = (date) =>
+    buildQuestions({ days: shape(date) }, { restRows: [], sourceName: "X" })
+      .map((q) => q.kind)
+      .sort();
+  const july = kindsOn("07/20/26");
+  for (const other of ["01/01/27", "08/01/26", "12/31/28", "02/29/28"]) {
+    assert.deepEqual(kindsOn(other), july, `a ${other} day should raise what a 07/20/26 day raises`);
+  }
+});
