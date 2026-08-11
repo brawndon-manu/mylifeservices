@@ -9,7 +9,9 @@
 // asserted rather than just the arithmetic.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildQuestions, patchesFor, answerProgress } from "../questions.js";
+import {
+  buildQuestions, patchesFor, answerProgress, dependencyGate, restWindow, restTimeFits, shiftsOf,
+} from "../questions.js";
 
 const day = (over = {}) => ({
   date: "07/20/26", paidHours: 8.17, restTaken: 2, restRequired: 2,
@@ -463,17 +465,242 @@ test("a rostered lunch is proposed, and a schedule gap is only suggested", () =>
   assert.equal(meal.prefill, "3p", "the roster booked it, so it is a time and not a guess");
   assert.equal(meal.source, "schedule");
 
+  // THE SCHEDULE GAP IS NO LONGER OFFERED, and that reversed on 2026-08-11.
+  // Mánu: "they are not allowed to put their breaks into unscheduled time, it
+  // has to be assigned to a service - so showing that there's a gap and
+  // suggesting to put it in that gap goes against our policy." The card above
+  // this one exists because a ten was logged outside a shift; this one was
+  // proposing exactly that, on 506 of the 597 rest slots in the batch.
   const rest = slots.find((n) => n.slot === "rest1");
   assert.equal(rest.prefill, null, "never pre-filled");
-  assert.equal(rest.suggest, "12p", "the 15 minute hole between two bookings");
-  assert.match(rest.hint, /gap 12p-12:15p/);
+  assert.equal(rest.suggest, null, "and no longer suggested either");
+  assert.ok(!/gap/.test(rest.hint), "the hint must not point at unscheduled time");
 
-  // AND THE OPPOSITE: a day with one unbroken booking has no hole to point at,
-  // so there is nothing to suggest and the hint says so.
-  const solid = buildQuestions(
+  // AND WHAT IT POINTS AT INSTEAD: the shifts the day was actually worked in,
+  // taken from the punches, with the half this ten belongs in.
+  const worked = buildQuestions(
+    {
+      days: [ndDay("07/20/26", {
+        mealViolation: true, restViolation: true, restTaken: 0, restRequired: 1,
+        punches: [{ min: 9 * 60 }, { min: 17 * 60 }],
+      })],
+      scheduleCheck: { byDate: { "07/20/26": { shifts: [{ text: "9a-5p Rincon" }] } } },
+    },
+    { restRows: [], sourceName: "T" },
+  ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs);
+  const r1 = worked.find((n) => n.slot === "rest1");
+  assert.deepEqual(r1.shifts, ["9a-5p"], "their own in and out, not the roster's holes");
+  assert.deepEqual(r1.window, ["9a-1p"], "the first ten sits in the first four hours");
+  assert.match(r1.hint, /has to be inside 9a-1p/);
+
+  // a day with no punches at all cannot place it, and says so rather than
+  // inventing somewhere to put it
+  const nowhere = buildQuestions(
     { days, scheduleCheck: { byDate: { "07/20/26": { shifts: [{ text: "9a-5p Rincon" }] } } } },
     { restRows: [], sourceName: "T" },
   ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs);
-  assert.equal(solid.find((n) => n.slot === "rest1").suggest, null);
-  assert.match(solid.find((n) => n.slot === "rest1").hint, /no gap on your schedule/);
+  assert.match(nowhere.find((n) => n.slot === "rest1").hint, /no punches on this day/);
+});
+
+// ---------------------------------------------------------------------------
+// CHANGING YOUR MIND HAS TO LAND WHERE THE FIRST ANSWER WOULD HAVE.
+//
+// `patchesFor` sets an ABSOLUTE figure for this kind, so it is only correct when
+// it is handed the PRISTINE day. Hand it a day a previous answer already
+// rewrote and the target is computed from the wrong baseline: Mánu answered "I
+// took it during a shift" and then "yes, that is when I took it" on his own
+// sheet, and his hours stayed at the lower figure. It reads as "I cannot change
+// my answer", which is how he reported it.
+//
+// The caller is what has to pass the pristine day - `answerTimesheetQuestion`
+// now reads `daysOriginal` - and this is the assertion that says why.
+
+test("answering, changing, and changing back lands the same figure every time", () => {
+  const q = {
+    kind: "restOutsideScheduled",
+    row: { detail: [{ date: "07/28/26", minutes: 10 }] },
+  };
+  // his own 07/28: 6.17 with the ten included
+  const pristine = day({
+    date: "07/28/26", paidHours: 6.17, restsOffClockMin: 10,
+    restTaken: 1, restRequired: 2,
+  });
+
+  const yes1 = patchesFor(q, "yes", pristine);
+  assert.equal(yes1.paidHours, 6.17);
+  const no = patchesFor(q, "no", pristine);
+  assert.equal(no.paidHours, 6);
+  // BACK AGAIN, from the pristine day - not from what "no" just wrote
+  const yes2 = patchesFor(q, "yes", pristine);
+  assert.equal(yes2.paidHours, 6.17, "changing back has to undo the change");
+
+  // AND THE FAILURE ITSELF, so this test can fail. Feeding the patched day back
+  // in is what the caller used to do, and it never recovers the ten minutes.
+  const patched = { ...pristine, paidHours: no.paidHours };
+  assert.equal(
+    patchesFor(q, "yes", patched).paidHours, 6,
+    "computed off an already-patched day it sticks at the lower figure - the bug",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// WHAT HAS TO BE ANSWERED FIRST.
+//
+// Mánu 2026-08-11: "prioritize what is shown first, and not be able to show the
+// other options until the one that will have a domino effect on the rest are
+// answered first."
+//
+// A question that moves paid hours moves the entitlement with it, so the break
+// questions for those same dates are asking about premiums that may be about to
+// stop existing. The scoping is the part worth pinning: a ten logged outside a
+// shift on the 28th says nothing about the 16th, and locking a whole sheet over
+// three days would be a gate nobody could defend.
+
+// short a ten AND carrying a ten logged off the clock, so the day raises both
+// the hours question and a break question - which is the whole shape under test
+const offClockDay = (date) => day({
+  date, punches: [{ min: 8 * 60 }, { min: 17 * 60 }],
+  restTaken: 1, restRequired: 2, restViolation: true,
+});
+const offClockRest = (date) => ({
+  name: "T", date, out: "7:00 AM", in: "7:10 AM",
+  minutes: 10, counted: true, shift: "8:00 AM to 11:00 AM",
+});
+
+test("the hours question is asked first, whatever order it was built in", () => {
+  const qs = buildQuestions(
+    { days: [offClockDay("07/28/26"), ndDay("07/16/26", { restViolation: true })] },
+    { restRows: [offClockRest("07/28/26")], sourceName: "T" },
+  );
+  assert.equal(qs[0].kind, "restOutsideScheduled", "it re-derives the day, so it leads");
+  assert.equal(qs[0].movesHours, true);
+  assert.ok(qs.slice(1).every((q) => !q.movesHours));
+});
+
+test("only the dates the hours question touches are held back", () => {
+  const days = [
+    offClockDay("07/28/26"),                          // the mover's date
+    ndDay("07/16/26", { restViolation: true }),       // nothing to do with it
+  ];
+  const qs = buildQuestions({ days }, { restRows: [offClockRest("07/28/26")], sourceName: "T" });
+  const { waiting } = dependencyGate(qs, []);
+
+  const on28 = qs.find((q) => q.kind === "nothingDocumentedRest" && q.date === "07/28/26");
+  const on16 = qs.find((q) => q.kind === "nothingDocumentedRest" && q.date === "07/16/26");
+  assert.ok(on28 && on16, "both days raise a break question");
+  assert.equal(waiting.has(on28.id), true, "the 28th waits - its hours are about to move");
+  assert.equal(waiting.has(on16.id), false, "the 16th does not - it is a different day");
+  // and the mover itself is never waiting on anything
+  assert.equal(waiting.has(qs[0].id), false);
+});
+
+test("answering the hours question releases the days it was holding", () => {
+  const days = [offClockDay("07/28/26")];
+  const qs = buildQuestions({ days }, { restRows: [offClockRest("07/28/26")], sourceName: "T" });
+  const before = dependencyGate(qs, []);
+  assert.equal(before.waiting.size > 0, true);
+
+  const after = dependencyGate(qs, [
+    { kind: "q_restOutsideScheduled", date: "07/28/26", status: "accepted" },
+  ]);
+  assert.equal(after.waiting.size, 0, "nothing is held once the hours are settled");
+});
+
+test("changing an hours answer only warns when there is something to disturb", () => {
+  const days = [offClockDay("07/28/26")];
+  const qs = buildQuestions({ days }, { restRows: [offClockRest("07/28/26")], sourceName: "T" });
+  const mover = qs.find((q) => q.movesHours);
+
+  // answered upstream, nothing downstream answered yet - nothing to warn about
+  const quiet = dependencyGate(qs, [
+    { kind: "q_restOutsideScheduled", date: "07/28/26", status: "accepted" },
+  ]);
+  assert.deepEqual(quiet.disturbs[mover.id], [], "no warning when it reaches nothing");
+
+  // now a break question on the same date has been answered
+  const loud = dependencyGate(qs, [
+    { kind: "q_restOutsideScheduled", date: "07/28/26", status: "accepted" },
+    { kind: "q_nothingDocumentedRest", date: "07/28/26", status: "declined" },
+  ]);
+  assert.equal(loud.disturbs[mover.id].length, 1, "one answer below would be reworked");
+});
+
+// ---------------------------------------------------------------------------
+// WHERE A REST PERIOD IS ALLOWED TO GO.
+//
+// Mánu 2026-08-11: "for the first ten it should be the ones within the first
+// four hours of the shift. The second ten should be the ones in the last four
+// hours of the shift. They have to select times within that shift."
+//
+// This replaced the schedule-gap suggestion, which pointed at UNSCHEDULED time -
+// the exact thing the `restOutsideScheduled` question penalises. The employer's
+// rule is that a rest is assigned to a service, so the window is inside the work.
+
+const worked = (...pairs) => day({
+  date: "07/20/26",
+  punches: pairs.flatMap(([a, b]) => [{ min: a * 60 }, { min: b * 60 }]),
+});
+
+test("the first ten belongs in the first four hours, the second in the last four", () => {
+  const d = worked([9, 17]);
+  assert.deepEqual(shiftsOf(d), [{ from: 540, to: 1020 }]);
+  assert.deepEqual(restWindow(d, 1), [{ from: 9 * 60, to: 13 * 60 }]);
+  assert.deepEqual(restWindow(d, 2), [{ from: 13 * 60, to: 17 * 60 }]);
+
+  // a short day cannot run past its own end
+  assert.deepEqual(restWindow(worked([9, 11]), 1), [{ from: 9 * 60, to: 11 * 60 }]);
+});
+
+test("the window quoted is one they can actually pick from", () => {
+  // Uribe 07/31: 8a-9:30a, 10a-12p, 1p-4p. The last four hours run 12p-4p and
+  // 12p-1p is unscheduled, so quoting the raw half invites a time the shift
+  // check then refuses. Mánu 2026-08-11: "fix the window to only show the shift
+  // times."
+  const d = worked([8, 9.5], [10, 12], [13, 16]);
+  assert.deepEqual(restWindow(d, 2), [{ from: 13 * 60, to: 16 * 60 }], "1p-4p, not 12p-4p");
+
+  // AND SPANS, NOT ONE FLATTENED RANGE. His 07/23 works 10a-12p and 12:15p-2:15p
+  // inside the first ten's four hours, with an unscheduled hole between them.
+  // Quoting "10a to 2p" would invite 12:05p, which the shift check refuses.
+  const split = worked([10, 12], [12.25, 14.25], [14.5, 16.5]);
+  assert.deepEqual(restWindow(split, 1), [
+    { from: 10 * 60, to: 12 * 60 },
+    { from: 12 * 60 + 15, to: 14 * 60 },
+  ]);
+  assert.equal(restTimeFits(split, 1, 12 * 60 + 5).ok, false, "the hole is not offered");
+
+  // every minute the employee is shown is one the checker accepts
+  for (const w of restWindow(d, 2)) {
+    for (let t = w.from; t + 10 <= w.to; t += 10) {
+      assert.equal(restTimeFits(d, 2, t).ok, true, `${t} is inside a quoted span but refused`);
+    }
+  }
+});
+
+test("a time outside every shift is refused, whatever they remember", () => {
+  // the split day: 8-12 and 1-5, with an hour of unscheduled time between. The
+  // gap is exactly what used to be offered as a one-tap.
+  const d = worked([8, 12], [13, 17]);
+
+  assert.equal(restTimeFits(d, 1, 10 * 60).ok, true, "inside the first shift");
+  assert.equal(restTimeFits(d, 2, 15 * 60).ok, true, "inside the second");
+
+  const inGap = restTimeFits(d, 1, 12 * 60 + 30);
+  assert.equal(inGap.ok, false, "the unscheduled hole is not somewhere a break may go");
+  assert.equal(inGap.why, "outside");
+
+  // right shift, wrong half: a first ten cannot be at 4pm on a 8-5 day
+  const lateFirst = restTimeFits(d, 1, 16 * 60);
+  assert.equal(lateFirst.ok, false);
+  assert.equal(lateFirst.why, "window");
+
+  // a ten that would run past the end of the shift it starts in
+  assert.equal(restTimeFits(d, 2, 16 * 60 + 55).ok, false, "ten minutes has to fit inside");
+});
+
+test("a day with no punches judges nothing rather than guessing", () => {
+  // we have nothing to place it against, so refusing would be inventing a rule
+  const d = day({ date: "07/20/26", punches: [] });
+  assert.equal(restWindow(d, 1), null);
+  assert.equal(restTimeFits(d, 1, 10 * 60).ok, true);
 });

@@ -38,7 +38,7 @@
 import {
   restKey, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
-import { shortTime, scheduleGaps, rosteredMeal } from "./recorded-breaks.js";
+import { shortTime, rosteredMeal } from "./recorded-breaks.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -58,6 +58,67 @@ const GROUPED = new Set([
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
 
+// ---------------------------------------------------------------------------
+// WHICH QUESTIONS HAVE TO BE ANSWERED FIRST, because their answer changes what
+// the others are even asking.
+//
+// Mánu 2026-08-11: "we should make it so we have to prioritize what is shown
+// first, and not be able to show the other options until the one that will have
+// a domino effect on the rest are answered first."
+//
+// A question that moves PAID HOURS moves the entitlement with it - see
+// `reentitle` in parse.js. His own 07/28 sits at 6.17 and falls to 6.00 on one
+// answer, and the six hour line decides both whether a meal is owed and whether
+// one ten is owed or two. So the break questions for that day are asking about
+// premiums that may be about to stop existing.
+//
+// Answering them in the wrong order is not corrupting - everything is re-derived
+// from the pristine day on every reply - but it wastes somebody's time and shows
+// them a question that then vanishes, which looks like the system changing its
+// mind about their pay.
+const MOVES_HOURS = new Set(["restOutsideScheduled"]);
+export const movesHours = (kind) => MOVES_HOURS.has(kind);
+
+// the dates one question speaks for
+const datesOf = (q) => q.dates || (q.date ? [q.date] : []);
+
+// WHAT IS WAITING ON WHAT, and only where the dates actually overlap. A ten
+// logged outside a shift on the 28th says nothing about the 16th, so locking
+// every break question on the sheet would be a gate nobody could justify.
+//
+// Returns the ids of questions that cannot be answered yet, plus - for a
+// question being CHANGED - which already-answered questions its answer would
+// disturb.
+export function dependencyGate(questions, corrections) {
+  const rows = (corrections || []).filter(
+    (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
+  );
+  const answered = (q) =>
+    rows.some((c) => c.kind === `q_${q.kind}` && datesOf(q).includes(c.date));
+
+  const movers = (questions || []).filter((q) => movesHours(q.kind));
+  const openMoverDates = new Set(
+    movers.filter((q) => !answered(q)).flatMap(datesOf),
+  );
+
+  const waiting = new Set();
+  for (const q of questions || []) {
+    if (movesHours(q.kind)) continue;
+    if (datesOf(q).some((d) => openMoverDates.has(d))) waiting.add(q.id);
+  }
+
+  // for each mover, the answered questions on its dates - what a change would
+  // reach. Empty means changing it disturbs nothing and needs no warning.
+  const disturbs = {};
+  for (const q of movers) {
+    const mine = new Set(datesOf(q));
+    disturbs[q.id] = (questions || [])
+      .filter((x) => !movesHours(x.kind) && datesOf(x).some((d) => mine.has(d)) && answered(x))
+      .map((x) => x.id);
+  }
+  return { waiting, disturbs };
+}
+
 /**
  * @param data       the sheet's stored `data` (days, scheduleCheck)
  * @param restRows   the batch's `restsByDate`
@@ -71,6 +132,68 @@ const clock = (min) => {
   return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
 };
 
+// THE SHIFTS A DAY WAS ACTUALLY WORKED IN, from the punches. Pairs, in order.
+export function shiftsOf(day) {
+  const p = (day?.punches || []).map((x) => x.min).filter((n) => Number.isFinite(n));
+  const out = [];
+  for (let i = 0; i + 1 < p.length; i += 2) if (p[i + 1] > p[i]) out.push({ from: p[i], to: p[i + 1] });
+  return out;
+}
+
+// WHERE A REST PERIOD IS ALLOWED TO GO.
+//
+// Mánu 2026-08-11, on the schedule-gap suggestion this replaces: "they are not
+// allowed to put their breaks into unscheduled time. It has to be assigned to a
+// service. So it's showing that there's a gap and suggesting to put it in that
+// gap goes against our policy ... instead of showing me where the gaps are, it
+// should show me my ins and outs of each shift for the day."
+//
+// He is right and the old suggestion was self-defeating: the card ABOVE this one
+// exists because a ten was logged outside a shift, and this one was proposing
+// exactly that. 506 of the 597 tens in the batch had a gap offered to them.
+//
+// So the window is inside the WORK, and which part of it depends on which ten:
+// the first belongs in the first four hours, the second in the last four. A time
+// outside every shift is not a rest period this employer can accept, whatever
+// the employee remembers - it is the thing the other question is about.
+const FOUR_HOURS = 240;
+export function restWindow(day, ordinal) {
+  const shifts = shiftsOf(day);
+  if (!shifts.length) return null;
+  const start = shifts[0].from;
+  const end = shifts[shifts.length - 1].to;
+  const half = ordinal <= 1
+    ? { from: start, to: Math.min(end, start + FOUR_HOURS) }
+    : { from: Math.max(start, end - FOUR_HOURS), to: end };
+
+  // NARROWED TO THE SHIFTS IT ACTUALLY OVERLAPS, and kept as SPANS rather than
+  // flattened to one range. Mánu 2026-08-11: "fix the window to only show the
+  // shift times."
+  //
+  // Uribe 07/31 works 8a-9:30a, 10a-12p and 1p-4p, so the last four hours run
+  // 12p-4p and 12p-1p is unscheduled - quoting the raw half told him he could
+  // put a ten at 12:30p, which the shift check then refuses.
+  //
+  // Flattening to first-start..last-end has the same fault one level down: his
+  // 07/23 first ten would read "10a to 2p" across a 12p-12:15p hole. A break can
+  // only go in a span, so the spans are what he is shown.
+  const spans = shifts
+    .map((s) => ({ from: Math.max(s.from, half.from), to: Math.min(s.to, half.to) }))
+    .filter((s) => s.to - s.from >= FULL_REST_MIN);
+  return spans.length ? spans : [half];
+}
+
+// is a chosen start inside one of the day's shifts, and inside its own window?
+export function restTimeFits(day, ordinal, startMin, minutes = FULL_REST_MIN) {
+  const shifts = shiftsOf(day);
+  if (!shifts.length) return { ok: true, why: null };   // nothing to judge it by
+  const inShift = shifts.some((s) => startMin >= s.from && startMin + minutes <= s.to);
+  if (!inShift) return { ok: false, why: "outside" };
+  const spans = restWindow(day, ordinal) || [];
+  const inWindow = spans.some((w) => startMin >= w.from && startMin + minutes <= w.to);
+  return inWindow ? { ok: true, why: null } : { ok: false, why: "window" };
+}
+
 // WHAT A DAY NEEDS A TIME FOR, once somebody says they took their breaks.
 //
 // Mánu 2026-08-10: "we also need to add in the ability for them to pick the
@@ -78,15 +201,16 @@ const clock = (min) => {
 // and required, "because we need a record of this."
 //
 // A slot arrives PRE-FILLED only where a real time already exists: a meal the
-// roster booked and nobody punched. 20 of 855 across this batch. Everything
-// else is blank, because this question is by definition the days where nothing
-// was recorded, and "for the ones that are missing entirely, they have to input
-// those in, we cannot assume."
+// roster booked and nobody punched. Everything else is blank, because this
+// question is by definition the days where nothing was recorded, and "for the
+// ones that are missing entirely, they have to input those in, we cannot
+// assume."
 //
-// A schedule GAP is offered beside an empty box as a one-tap suggestion, not a
-// value. 506 of the 597 tens have one. Tapping it is the employee choosing a
-// time; the slot records which of the three it was so the sheet can say.
-function slotsFor(day, entry, wantMeal, wantRest) {
+// THE TENS ALREADY ON RECORD ARE COUNTED AND SHOWN. A day owed two and holding
+// one asks for the SECOND, and says so - Mánu 2026-08-11: "that one were
+// entitled for two, so it should already show the second one." Asking "your
+// ten" on a day that already has one reads as though we lost it.
+function slotsFor(day, entry, wantMeal, wantRest, known = []) {
   const out = [];
   if (wantMeal) {
     const m = rosteredMeal(entry);
@@ -102,22 +226,38 @@ function slotsFor(day, entry, wantMeal, wantRest) {
     });
   }
   if (wantRest) {
-    const gaps = scheduleGaps(entry);
-    const owed = Math.max(1, (day?.restRequired ?? 1) - (day?.restTaken ?? 0));
+    const required = day?.restRequired ?? 1;
+    const taken = day?.restTaken ?? 0;
+    const owed = Math.max(1, required - taken);
+    const shifts = shiftsOf(day).map((x) => `${clock(x.from)}-${clock(x.to)}`);
+    const ordinalName = (n) =>
+      required <= 1 ? "Your ten" : n === 1 ? "First ten" : n === 2 ? "Second ten" : `Ten #${n}`;
+
     for (let i = 0; i < owed; i++) {
-      const g = gaps[i] || null;
+      // the ones already on record come first, so a day holding one asks for #2
+      const ordinal = taken + i + 1;
+      const spans = restWindow(day, ordinal) || [];
+      const asText = spans.map((x) => `${clock(x.from)}-${clock(x.to)}`);
       out.push({
         slot: `rest${i + 1}`,
         kindOf: "rest",
-        label: owed === 1 ? "Your ten" : i === 0 ? "First ten" : i === 1 ? "Second ten" : `Ten #${i + 1}`,
-        minutes: 10,
-        // NEVER pre-filled. The schedule cannot roster a rest period at all.
+        label: ordinalName(ordinal),
+        minutes: FULL_REST_MIN,
+        // NEVER pre-filled and NEVER suggested. The schedule cannot roster a
+        // rest period at all, and the gap it used to offer was unscheduled time
+        // this employer does not accept a break in.
         prefill: null,
         source: null,
-        suggest: g ? clock(g.from) : null,
-        hint: g
-          ? `your schedule has a gap ${clock(g.from)}-${clock(g.to)}`
-          : "no gap on your schedule to point at - you will have to remember",
+        suggest: null,
+        // the shifts themselves, so they can pick a real time from their own day
+        shifts,
+        window: asText,
+        // what is already on record for the day, and whether it is there
+        // because they corrected it
+        known: known.map((k) => ({ from: k.from, corrected: !!k.corrected })),
+        hint: asText.length
+          ? `has to be inside ${asText.join(" or ")}`
+          : "no punches on this day to place it against",
       });
     }
   }
@@ -156,6 +296,32 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   const mealReadingWins = (r) => {
     const d = dayOf(r.date);
     return !r.repair && isMealLengthRest(r) && !!d?.mealMissing;
+  };
+
+  // THE TENS ON RECORD FOR A DATE, with any correction already applied.
+  //
+  // A stated break carries `replaces`, the recorded row it supersedes, so a ten
+  // the report logged at 12p and the employee has since placed at 11:50a shows
+  // as 11:50a. Reading the raw row instead makes the card argue with an answer
+  // given moments earlier.
+  const knownRestsOn = (date) => {
+    const d = dayOf(date);
+    const stated = (d?.statedBreaks || []).filter((b) => b.kindOf !== "meal" && b.from);
+    const supersedes = (r) =>
+      stated.find((b) => b.replaces?.from === shortTime(r.out) && b.replaces?.to === shortTime(r.in));
+    const rows = mine
+      .filter((r) => r.date === date && r.counted && r.out)
+      .map((r) => {
+        const moved = supersedes(r);
+        return moved
+          ? { from: moved.from, to: moved.to, corrected: true }
+          : { from: shortTime(r.out), to: shortTime(r.in), corrected: false };
+      });
+    // a stated ten that replaced nothing is one they told us about from scratch
+    const extra = stated
+      .filter((b) => !b.replaces)
+      .map((b) => ({ from: b.from, to: b.to, corrected: true }));
+    return [...rows, ...extra];
   };
 
   // WHAT CONFIRMING ACTUALLY TAKES OFF, and it is not always an hour.
@@ -394,6 +560,11 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       minutes: x.minutes,
       prefill: null,
       source: null,
+      // WHICH RECORDED ROW THIS ANSWER SUPERSEDES. Without it the sheet draws
+      // both - the ten the report logged outside the shift AND the one they say
+      // they actually took - so a corrected day shows two rests where there was
+      // one. Carried through onto the stored answer so the renderer can drop it.
+      replaces: { from: x.wasFrom, to: x.wasTo },
       suggest: x.from || null,
       hint: x.from
         ? `inside your ${x.service} shift that would be ${x.from}`
@@ -496,7 +667,18 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
           // has to carry a time before the card can be submitted, and the times
           // land on the sheet they then sign. Split per part, so saying "I took
           // my lunch" on a both-day now asks for one time and not three.
-          needs: slotsFor(dayOf(date), byDate[date], part === "meal", part === "rest"),
+          // the tens already held for this date, so the slot can be named
+          // "Second ten" and the known one shown beside it.
+          //
+          // AS CORRECTED, NOT AS RECORDED. If they have already told us a ten
+          // was really taken at another time, that is the time on record now -
+          // showing the original contradicts the answer they just gave two
+          // cards up. Mánu 2026-08-11: "after answering above, this statement
+          // needs to be changed cause it contradicts itself."
+          needs: slotsFor(
+            dayOf(date), byDate[date], part === "meal", part === "rest",
+            knownRestsOn(date),
+          ),
           row: {
             part,
             meal,
@@ -516,7 +698,17 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     }
   }
 
-  return out.map((q) => ({ ...q, id: questionId(q), mandatory: isMandatory(q.kind) }));
+  // HOURS FIRST. The order questions are built in is the order the engine
+  // happens to check them; the order they are ASKED in has to be the one that
+  // does not waste somebody's time. A question whose answer re-derives the day
+  // goes above the ones derived from it.
+  const ordered = [
+    ...out.filter((q) => movesHours(q.kind)),
+    ...out.filter((q) => !movesHours(q.kind)),
+  ];
+  return ordered.map((q) => ({
+    ...q, id: questionId(q), mandatory: isMandatory(q.kind), movesHours: movesHours(q.kind),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +837,16 @@ export function patchesFor(question, choice, day) {
       // "yes, that is when I took it" - off the clock, so the minutes are pay
       if (yes) return { paidHours: r2(Math.max(0, base + mins / 60)) };
 
+      // THE MINUTES STOP BEING OFF-CLOCK TIME, and everything the sheet draws
+      // from that has to follow. `restsOffClock*` is what stripes the cell and
+      // `addedHours` is what prints "+0.17 added" beneath it - leave them and a
+      // corrected day still declares minutes it is no longer paying.
+      const offClock = {
+        restsOffClock: Math.max(0, (day?.restsOffClock ?? 0) - rows.length),
+        restsOffClockMin: Math.max(0, already - mins),
+        addedHours: r2(Math.max(0, (day?.addedHours || 0) - mins / 60)),
+      };
+
       // "I did not take it at all" - no minutes, AND the rest stops counting as
       // taken, which is what can put a premium on the day. Aranda 07/31 reads
       // 1 of 1 today; without this she says she never got her break and the
@@ -653,14 +855,15 @@ export function patchesFor(question, choice, day) {
         const taken = Math.max(0, (day?.restTaken ?? 0) - rows.length);
         return {
           paidHours: r2(Math.max(0, base)),
+          ...offClock,
           restTaken: taken,
           restViolation: taken < (day?.restRequired ?? 0),
         };
       }
 
-      // "I took it earlier, inside my shift" - it was already paid as worked
-      // time, so nothing is added and the break still counts.
-      return { paidHours: r2(Math.max(0, base)) };
+      // "I took it during a shift" - it was already paid as worked time, so
+      // nothing is added and the break still counts, at the time they gave.
+      return { paidHours: r2(Math.max(0, base)), ...offClock };
     }
     case "nothingDocumented":
       // "Yes, I took them" - they took them and did not write them down, so the

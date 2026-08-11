@@ -320,7 +320,25 @@ export function withStatedBreaks(order, list) {
     .filter((b) => b?.from && b?.to)
     .map((b) => ({ ...b, kindOf: b.kindOf === "meal" ? "meal" : "rest", counted: true, stated: true }));
   if (!extra.length) return order || [];
-  return [...(order || []), ...extra].sort((a, b) => (toMin(a.from) ?? 0) - (toMin(b.from) ?? 0));
+
+  // A STATED BREAK CAN SUPERSEDE A RECORDED ONE, and then the recorded one must
+  // stop being drawn.
+  //
+  // Every stated break was an ADDITION until 2026-08-11, which is right for the
+  // breaks question - nothing was recorded, so there is nothing to replace. It
+  // is wrong for a ten the report DID record at a time the employee has since
+  // corrected: Uribe's sheet drew the 12p-12:10p the report logged, striped and
+  // declared as added time, AND the 11:50a he told us it actually was. Two rests
+  // on a day that had one, on a document he signs. Mánu 2026-08-11: "it should
+  // show these 3 rest period breaks in yellow since they fall within a shift and
+  // put them between the shift it has on."
+  const superseded = extra
+    .map((b) => b.replaces)
+    .filter((x) => x?.from && x?.to);
+  const kept = (order || []).filter(
+    (o) => !superseded.some((x) => x.from === o.from && x.to === o.to),
+  );
+  return [...kept, ...extra].sort((a, b) => (toMin(a.from) ?? 0) - (toMin(b.from) ?? 0));
 }
 
 // The unexplained holes in a day's roster: 5 to 20 minutes between two

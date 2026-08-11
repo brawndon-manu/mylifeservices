@@ -89,26 +89,32 @@ test("a rostered meal nobody punched IS pre-filled, and a rest never is", () => 
   assert.ok(q.needs.slice(1).every((n) => !n.prefill));
 });
 
-test("a gap in the roster is offered, not filled in", () => {
-  // 5 to 20 minutes between two consecutive bookings. 84 of them across the
-  // batch, covering 79 of the 597 rest slots - the rest are typed from memory.
+test("a rest slot points at the shifts worked, never at the gaps between them", () => {
+  // REVERSED 2026-08-11. A 5-to-20 minute hole between two bookings is
+  // unscheduled time, and this employer does not accept a rest period there -
+  // it is the whole subject of the `restOutsideScheduled` question. Offering it
+  // as a one-tap was the same fault by a different route, on 506 of the 597
+  // rest slots in the batch. Mánu: "instead of showing me where the gaps are it
+  // should show me my ins and outs of each shift for the day."
   const entry = { shifts: [{ text: "8a-12p A" }, { text: "12:15p-4p B" }] };
+  // the gap is still computable - nothing else changed about the roster - it
+  // just is not somewhere a break may be put
   assert.deepEqual(scheduleGaps(entry), [{ from: 720, to: 735 }]);
 
-  const q = { needs: buildQuestions(
+  const needs = buildQuestions(
     { days: [DAY], scheduleCheck: { byDate: { "07/20/26": entry } } },
     { restRows: [], sourceName: "T" },
-  ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs) };
-  const rest1 = q.needs.find((n) => n.slot === "rest1");
-  assert.equal(rest1.suggest, "12p", "offered as a one-tap");
-  assert.equal(rest1.prefill, null, "but never as a value");
-  // only one gap, so the second ten has nothing to point at and says so
-  const rest2 = q.needs.find((n) => n.slot === "rest2");
-  assert.equal(rest2.suggest, null);
-  assert.match(rest2.hint, /you will have to remember/);
+  ).filter((x) => String(x.kind).startsWith("nothingDocumented")).flatMap((x) => x.needs);
 
-  // a 4 hour hole is not a rest break and is not offered as one
-  assert.deepEqual(scheduleGaps({ shifts: [{ text: "8a-12p A" }, { text: "4p-6p B" }] }), []);
+  for (const n of needs.filter((x) => x.kindOf === "rest")) {
+    assert.equal(n.suggest, null, "no gap is ever offered");
+    assert.equal(n.prefill, null, "and nothing is filled in for them");
+    assert.ok(!/gap/.test(n.hint || ""), "nor named in the hint");
+    // what it DOES carry: the day's own punches, and the half of the shift this
+    // particular ten belongs in
+    assert.ok(Array.isArray(n.shifts), "the shifts worked travel with the slot");
+    assert.ok(n.window || !n.shifts.length, "and the window it has to land in");
+  }
 });
 
 test("the times survive a rebuild, because they live on the answer", () => {
