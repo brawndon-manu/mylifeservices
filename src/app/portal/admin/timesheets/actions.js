@@ -1679,8 +1679,7 @@ const QUESTION_NOUN = {
   repair: "rest entry we could not read",
   restIsMealLength: "thirty minute break filed as a rest",
   restNoTimes: "rest entry recorded with no times",
-  restOutsideShift: "rest recorded outside the rostered day",
-  restAtServiceEdge: "rest logged against the edge of its own service",
+  restOutsideScheduled: "ten logged outside scheduled working hours",
   nothingDocumented: "day with no break recorded at all",
   // split per part 2026-08-10, so the audit note names which break was asked
   // about rather than "the day"
@@ -1709,10 +1708,16 @@ function resolutionFor(q, choice, stated, statedBreaks) {
           ? `Employee confirmed the break was taken at ${stated.from} to ${stated.to}. Rest premium removed for this day.`
           : "Employee confirmed the break was taken. Rest premium removed for this day."
         : "Employee said the break was not taken. Premium stands.";
-    case "restOutsideShift":
+    case "restOutsideScheduled":
+      // CONFIRMING KEEPS THE TIME HERE, unlike every other kind. The question is
+      // whether the recorded time is right, not whether the break happened.
       return yes
-        ? "Employee confirmed the time was entered wrongly and they were not on a break then. The minutes have been taken back off."
-        : "Employee said the break really was taken at that time, off the clock. The minutes stand as paid.";
+        ? "Employee confirmed they took the break at the time recorded, off the clock. The minutes stand as paid."
+        : "Employee said the recorded time was wrong" +
+          ((statedBreaks || []).length
+            ? `, and gave ${statedBreaks.map((b) => `${b.from}-${b.to}`).join(", ")} instead`
+            : "") +
+          ". The added minutes have been taken back off and the break moved. FLAG FOR PAYROLL: the ten is being entered against the wrong time in QSClock.";
     case "nothingDocumented":
       // THE TIMES GO IN THE NOTE, not just on the day row. This note is the
       // audit trail payroll reads, and "they said they took them" without the
@@ -1754,10 +1759,6 @@ function resolutionFor(q, choice, stated, statedBreaks) {
       return yes
         ? "Employee confirmed this was a real break they took. Recorded as taken; no change to hours or premium."
         : "Employee says the entry was a mistake. Flagged for payroll as a mis-entry; no change to hours or premium.";
-    case "restAtServiceEdge":
-      return yes
-        ? "Employee confirmed the break belonged inside the service and was logged against its edge by mistake. The minutes have been taken back off."
-        : "FLAG FOR PAYROLL: employee says the break really was taken outside the service, so the ten is being entered against the wrong shift in QSClock. The minutes stand as paid.";
     case "shortMealRest":
       return yes
         ? "Employee confirmed the short meal block was their rest period. Credit stands."

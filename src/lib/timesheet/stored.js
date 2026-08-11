@@ -36,8 +36,8 @@ export const REQUIRED_DAY_FIELDS = [
   "restsOffClock", "restsOffClockMin", "addedHours", "mealInsideBooking",
   // the 2026-08-09 EVENING rulings, read back by `buildQuestions` to decide
   // whether a correction we already applied still needs confirming
-  "restsMisclicked", "restsMisclickedMin", "restsFromShortMeals",
-  "restsAtServiceEdge", "restsAtServiceEdgeMin", "restsAtServiceEdgeDetail",
+  "restsFromShortMeals",
+  "restsOutsideScheduled", "restsOutsideScheduledMin", "restsOutsideScheduledDetail",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -119,12 +119,10 @@ export function storedDay(d) {
     // the question can never be asked again for the life of the batch, and the
     // employee is never told their hours moved. Exactly the failure this file
     // was written to stop.
-    restsMisclicked: d.restsMisclicked ?? null,
-    restsMisclickedMin: d.restsMisclickedMin ?? 0,
     restsFromShortMeals: d.restsFromShortMeals ?? 0,
-    restsAtServiceEdge: d.restsAtServiceEdge ?? null,
-    restsAtServiceEdgeMin: d.restsAtServiceEdgeMin ?? 0,
-    restsAtServiceEdgeDetail: d.restsAtServiceEdgeDetail ?? [],
+    restsOutsideScheduled: d.restsOutsideScheduled ?? null,
+    restsOutsideScheduledMin: d.restsOutsideScheduledMin ?? 0,
+    restsOutsideScheduledDetail: d.restsOutsideScheduledDetail ?? [],
     mealInsideBooking: !!d.mealInsideBooking,
     mealMissing: d.mealMissing,
     mealLate: d.mealLate,

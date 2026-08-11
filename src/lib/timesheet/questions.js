@@ -18,12 +18,18 @@
 //   ---   silence changes nothing either, which is why these no longer block
 //         signing. An employee who never opens the email keeps every hour.
 //
-// THE ONE EXCEPTION IS A CORRECTION SOMEBODY DISPUTES. `shortMealRest` credited
-// a rest period off a schedule block the roster mislabelled, and that is a
-// mechanical fix rather than a reading of intent, so it is applied on its own.
-// Declining it takes the credit back off and can restore a premium. It is the
-// only answer left that can move a figure UP, and it is worth naming rather than
-// pretending the rule is universal.
+// TWO KINDS DO NOT READ THAT WAY, and both are worth naming rather than
+// pretending the rule is universal:
+//
+//   restOutsideScheduled  asks "was that the right time?", so YES agrees with
+//                         the sheet and keeps the ten, and NO is the correction
+//                         that takes the minutes off and asks when it really was
+//   shortMealRest         a mechanical fix applied on its own, so declining it
+//                         takes the credit back and can restore a premium - the
+//                         only answer left that moves a figure UP
+//
+// The rule that actually holds across all of them: an answer that CONFIRMS the
+// record never moves money, only a correction does, and silence keeps the pay.
 //
 // WHAT BLOCKS SIGNING is a separate question from which way money moves, and the
 // line is not "is a premium involved". It is whether we CHANGED the document or
@@ -47,7 +53,7 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 // same event as a day he took his ten and forgot to log it, and 432 day
 // decisions across the batch were being forced through one switch.
 const GROUPED = new Set([
-  "restOutsideShift", "shortMealRest", "restAtServiceEdge",
+  "restOutsideScheduled", "shortMealRest",
 ]);
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
@@ -299,25 +305,59 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 
   // ---- APPLY, THEN ASK -----------------------------------------------------
 
-  // 4. rests recorded entirely outside the rostered day - the MIS-CLICK reading.
-  //    April Martinez, eleven days of 7:00-7:10 against an 8:00 start. ONE card
-  //    for all of them: eleven identical cards would be unusable, and it is one
-  //    habit, not eleven decisions.
+  // 4. A TEN LOGGED OUTSIDE DOCUMENTED WORKING HOURS - before the rostered day,
+  //    after it, hard against a service edge, or in an unpaid gap. One question
+  //    since 2026-08-11, where there were three separate readings of the same
+  //    event and one of them asked nothing at all.
   //
-  //    THE MINUTES ARE PAID UNTIL SHE SAYS OTHERWISE. This used to withhold them
-  //    and ask her to confirm; under the 2026-08-11 flip the mis-click is an
-  //    ASSUMPTION about what she meant, and an assumption is never applied on its
-  //    own. So the projected sheet pays the break she recorded, and CONFIRMING
-  //    the assumption is what takes it back off.
-  const misclicked = days.filter((d) => (d.restsMisclicked || 0) > 0);
-  if (misclicked.length) {
-    const minutes = misclicked.reduce((n, d) => n + (d.restsMisclickedMin || 0), 0);
+  //    ONE card for the lot: April Martinez has eleven identical 7:00-7:10 rows
+  //    and eleven cards would be unusable. It is one habit, not eleven decisions.
+  //
+  //    THE MINUTES ARE PAID UNTIL THEY SAY THE TIME WAS WRONG. Mánu 2026-08-11:
+  //    "they'll get that additional ten minutes if it is [correct] ... They also
+  //    gotta input the time if it was wrong, so the new generated time sheet can
+  //    be corrected."
+  //
+  //    SO THE POLARITY IS THE OTHER WAY ROUND FROM THE BREAK QUESTIONS, and that
+  //    is deliberate rather than an oversight. Everywhere else "yes I took it"
+  //    removes a premium. Here the question is "was that the right time?", so
+  //    YES agrees with the sheet and keeps the ten, and NO is the correction that
+  //    takes it off. The rule that actually holds across all of them is: an
+  //    answer that CONFIRMS the record never moves money, and only a correction
+  //    does. Silence keeps the pay either way.
+  const outside = days.filter((d) => (d.restsOutsideScheduled || 0) > 0);
+  if (outside.length) {
+    const minutes = outside.reduce((n, d) => n + (d.restsOutsideScheduledMin || 0), 0);
+    const detail = outside.flatMap((d) =>
+      (d.restsOutsideScheduledDetail || []).map((x) => ({ date: d.date, ...x })));
+    // one slot per row, so a corrected time lands on the day it belongs to
+    // rather than being applied to all eleven of April's at once
+    const needs = detail.map((x, i) => ({
+      slot: `outside${i + 1}`,
+      kindOf: "rest",
+      date: x.date,
+      label: `${x.date} - when did you actually take it?`,
+      minutes: x.minutes,
+      prefill: null,
+      source: null,
+      // where the service says it should have been, offered as one tap. Only
+      // where the report gave us a shift to put it in.
+      suggest: x.from || null,
+      hint: x.from
+        ? `your ${x.service} shift that day - tapping this puts it at ${x.from}`
+        : "we have no shift on this row to point at, so you will have to remember",
+    }));
     out.push({
-      kind: "restOutsideShift",
-      dates: misclicked.map((d) => d.date),
-      moves: -r2(minutes / 60),   // confirming REMOVES; declining changes nothing
-      movesOnDecline: 0,
-      row: { minutes, days: misclicked.length },
+      kind: "restOutsideScheduled",
+      dates: outside.map((d) => d.date),
+      // confirming the record changes nothing; correcting it takes the time off
+      moves: 0,
+      movesOnDecline: -r2(minutes / 60),
+      row: { minutes, days: outside.length, detail },
+      // asked only when they say the time was wrong
+      needs,
+      needsOn: "no",
+      canGiveTime: true,
     });
   }
 
@@ -336,29 +376,6 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       moves: 0,
       movesOnDecline: restores,
       row: { days: shortMeal.length, credited: shortMeal.reduce((n, d) => n + d.restsFromShortMeals, 0) },
-    });
-  }
-
-  // 6. a rest logged hard against the edge of the service it was filed under.
-  //    Uribe's three at 12:00-12:10 against a service ending 12:00, Hatt's
-  //    3:30-4:30 against one starting 4:30, and eight more across six people.
-  //
-  //    THE MINUTES ARE PAID. Mánu 2026-08-11: "those 10 minutes were documented
-  //    outside of a shift in between a time with no scheduling so its time
-  //    added." The assumption - that he should have logged it inside the shift,
-  //    so it is a scheduling error - is what would take them off, and it needs
-  //    his confirmation before it does anything.
-  const atEdge = days.filter((d) => (d.restsAtServiceEdge || 0) > 0);
-  if (atEdge.length) {
-    const minutes = atEdge.reduce((n, d) => n + (d.restsAtServiceEdgeMin || 0), 0);
-    const detail = atEdge.flatMap((d) =>
-      (d.restsAtServiceEdgeDetail || []).map((x) => ({ date: d.date, ...x })));
-    out.push({
-      kind: "restAtServiceEdge",
-      dates: atEdge.map((d) => d.date),
-      moves: -r2(minutes / 60),
-      movesOnDecline: 0,
-      row: { minutes, days: atEdge.length, detail },
     });
   }
 
@@ -480,7 +497,7 @@ const OPTIONAL_KINDS = new Set([
   "nothingDocumented", "nothingDocumentedMeal", "nothingDocumentedRest",
   "restIsMealLength",
   // the two policy assumptions. Silence leaves the minutes on.
-  "restOutsideShift", "restAtServiceEdge",
+  "restOutsideScheduled",
   // a correction that moves nothing either way, and one the employee can dispute
   // afterwards without a figure hanging on it
   "restTooLongOffClock", "shortMealRest",
@@ -556,27 +573,26 @@ export function patchesFor(question, choice, day) {
     case "restNoTimes":
       // "yes, I took it" - no rest premium owed for the day
       return yes ? { restViolation: false } : { restViolation: null };
-    case "restOutsideShift":
-      // INVERTED BY THE FLIP. The minutes are on the sheet already, because the
-      // report says the break happened and nothing mechanical says otherwise.
-      // Confirming the assumption - "yes, I mis-tapped it, I was not on a break
-      // at seven" - is what takes them off. Declining leaves the sheet alone.
+    case "restOutsideScheduled":
+      // THE OTHER WAY ROUND FROM THE REST OF THEM, on purpose. This asks "was
+      // that the right time?", so confirming keeps the ten where it is and
+      // DECLINING is the correction that takes the minutes back off. Mánu
+      // 2026-08-11: "they'll get that additional ten minutes if it is [correct]
+      // ... they also gotta input the time if it was wrong."
       return yes
-        ? { paidHours: r2(Math.max(0, (day?.paidHours || 0) - (day?.restsMisclickedMin || 0) / 60)) }
-        : { paidHours: null };
+        ? { paidHours: null }
+        : { paidHours: r2(Math.max(0, (day?.paidHours || 0) - (day?.restsOutsideScheduledMin || 0) / 60)) };
     case "nothingDocumented":
-      // "Yes, that is correct" - they took them and did not write them down, so
-      // nothing is owed. "No" puts the premium back on the day, which is what
-      // the violation flags already say, so the patch clears any override
-      // rather than adding one.
+      // "Yes, I took them" - they took them and did not write them down, so the
+      // premium comes off. "No" agrees with what the day already says, so the
+      // patch clears any override rather than adding one.
       //
       // ONLY WHAT THIS DAY WAS ACTUALLY ASKED ABOUT. A day can owe a rest under
       // this question AND carry a meal premium the SCHEDULE documented - a lunch
       // rostered and punched that began after the fifth hour. Clearing both
       // flags took that documented hour off too: Aranda answering "yes I took my
       // tens" on 07/29 and 07/30 dropped her from 19.00 to 0.00 when the honest
-      // answer is 2.00. Found 2026-08-10 by rendering the round trip; it dates
-      // from when this was one grouped question.
+      // answer is 2.00. Found 2026-08-10 by rendering the round trip.
       return yes
         ? {
             mealViolation: question.row?.meal ? false : null,
@@ -591,13 +607,6 @@ export function patchesFor(question, choice, day) {
       return yes ? { mealViolation: false } : { mealViolation: null };
     case "nothingDocumentedRest":
       return yes ? { restViolation: false } : { restViolation: null };
-    case "restAtServiceEdge":
-      // INVERTED BY THE FLIP, same as the mis-click above. The break is paid
-      // where it was recorded; confirming that it should have sat inside the
-      // service is what moves it there and takes the added minutes back off.
-      return yes
-        ? { paidHours: r2(Math.max(0, (day?.paidHours || 0) - (day?.restsAtServiceEdgeMin || 0) / 60)) }
-        : { paidHours: null };
     case "shortMealRest": {
       // declining takes the credited rest back off. The count follows the
       // premium so the printed figure and the charge cannot disagree.
@@ -605,6 +614,13 @@ export function patchesFor(question, choice, day) {
       const taken = Math.max(0, (day?.restTaken ?? 0) - (day?.restsFromShortMeals || 0));
       return { restTaken: taken, restViolation: taken < (day?.restRequired ?? 0) };
     }
+    case "restTooLongOffClock":
+      // NEITHER ANSWER MOVES A FIGURE, and this case exists to say so out loud.
+      // It was falling through to the default, which is indistinguishable from a
+      // kind somebody forgot - and forgetting one is silent, because the default
+      // patches nothing and nothing errors. Spelled out so "no case" can only
+      // ever mean "nobody wrote one".
+      return {};
     default:
       return {};
   }

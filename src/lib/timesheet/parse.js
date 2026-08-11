@@ -400,21 +400,33 @@ export function analyzeDay(day) {
   );
   const onClock = (r) => segments.some((s) => r.out >= s.start.min && r.in <= s.end.min);
 
-  // A REST RECORDED ENTIRELY OUTSIDE THE ROSTERED DAY IS A MISCLICK, NOT TEN
-  // MINUTES WORKED. Mánu 2026-08-09: "if people clock their breaks before the
-  // start of their shift then we will assume it was wrong... no 10 minutes
-  // should be added to her corrected hours because of our assumption that her
-  // timing was wrong hence no overtime."
+  // A TEN LOGGED OUTSIDE DOCUMENTED WORKING HOURS.
   //
-  // This REVERSES half of the 2026-08-09 morning ruling, which paid these
-  // minutes. It still holds for a rest taken off the clock INSIDE the day;
-  // what changed is the one recorded against no shift at all.
+  // ONE RULE NOW, WHERE THERE WERE THREE. Mánu 2026-08-11, after the flip:
+  // "that question needs to apply to any time there is a 10 minute break put
+  // down outside of documented working ours, Meaning scheduled hours. if they
+  // have an hour gap in their schedule with no service listed? then that is a
+  // unpaid gap. If there are tens in the unpaid gap, they need to have that
+  // question."
   //
-  // Measured over 07/16-07/31 before building: 15 rows, 5 people, 150 minutes.
-  // Eleven are April Martinez's 7:00-7:10 against an 8:00 start. Each of those
-  // days reads 8.17 with 0.17 overtime while QSP printed 8.00, so dropping the
-  // ten minutes lands exactly on payroll's own figure rather than under it and
-  // the printed-daily floor below agrees instead of fighting it.
+  // The engine had grown three separate readings of the same event - a rest
+  // before the rostered day started (the "misclick"), a rest hard against the
+  // edge of its service (the "snap"), and a rest in a punched-out gap that
+  // nothing asked about at all. All three are one thing: a paid ten minute rest
+  // recorded at a time the person was not documented as working. They now behave
+  // identically, so they are one rule and one question.
+  //
+  //   projected     the ten is real and the minutes are PAID, and every rule
+  //                 downstream acts on the added time
+  //   assumption    the time was entered wrongly, so it comes back off - and the
+  //                 employee has to say when it actually was, so the corrected
+  //                 sheet can put it there
+  //
+  // THE QUESTION IS OFFERED EXACTLY WHERE MINUTES WERE ADDED. That equivalence
+  // is the point: no ten is paid on an assumption without somebody being asked,
+  // and nothing is asked about where there is no money to move. On 07/16-07/31
+  // that is 25 rows, 250 minutes, 4.17 hours across 11 people - against the 15
+  // the old misclick question reached.
   //
   // WORK blocks only. Bucio's schedule carries a meal block at 12a-12:10a, and
   // counting that as part of her rostered day would stretch it back to midnight
@@ -428,61 +440,32 @@ export function analyzeDay(day) {
   const rosteredDayEnd = rosteredWorkSpans?.length
     ? Math.max(...rosteredWorkSpans.map((b) => b.end))
     : null;
-  // ENTIRELY outside, at one end or the other. A rest that merely straddles the
-  // edge of the roster is a different case and is still paid: that is a break
-  // that started early or ran long, not one recorded at a time nobody was
-  // there. `outsideShift` further down is the looser punch-based test and is a
-  // FLAG; this one moves money, so it is the strict reading.
-  const misclickedRest = (r) =>
-    rosteredDayStart != null && (r.in <= rosteredDayStart || r.out >= rosteredDayEnd);
-  const misclickedRests = usableRests.filter(misclickedRest);
 
-  // A REST LOGGED HARD AGAINST THE EDGE OF ITS OWN SERVICE.
-  //
-  // THIS WAS A SILENT CORRECTION AND IT WAS WRONG. Until 2026-08-11 it was the
-  // "snap" rule: a rest clocked within fifteen minutes of a punch-out was read as
-  // a mis-tap of the shift edge, moved back inside the shift, and its minutes
-  // withheld. All three rows it caught on this period were Mánu's own, and all
-  // three were genuine off-clock breaks. He ruled: "those 10 minutes were
-  // documented outside of a shift in between a time with no scheduling so its
-  // time added."
-  //
-  // So it stops taking money. Under the CORRECTION vs ASSUMPTION line, moving a
-  // break to where somebody should have logged it is reading intent into data
-  // that is not itself wrong - the times are exactly what happened. That makes it
-  // an assumption, and an assumption is never applied on its own:
-  //
-  //   projected    the rest was documented outside scheduled hours, so the
-  //                minutes are ADDED and every other rule acts on the added time
-  //   assumption   they should have logged it inside the shift, so read it as a
-  //                scheduling error, add nothing - and ASK
-  //
-  // KEYED OFF THE SERVICE, NOT PUNCH GAPS, and that is the substance of the
-  // change rather than a tidy-up. A rest cannot be logged in QSP without a
-  // service to hang it on, so the report already names the shift each break
-  // belongs to. Ten rows across six people sit hard against a service edge this
-  // period; the punch-gap rule found three of them, and only by coincidence of
-  // what the gaps happened to look like. Uribe's three at 12:00-12:10 against a
-  // service ending 12:00 and Hatt's 3:30-4:30 against one starting 4:30 are the
-  // same mistake at opposite ends of a shift, and nothing before this could see
-  // they were related.
-  //
-  // "abuts" is the whole test: zero minutes between the break and the edge. A
-  // rest logged an hour from its service is a different animal and is left alone.
-  //
-  // AND IT HAS TO BE REST-LENGTH. Twenty minutes is generous for a ten and
-  // excludes everything meal-shaped or slipped. Without the cap a 730 minute
-  // AM/PM slip that happened to touch a service edge would be read as twelve
-  // hours of off-clock break and moved wholesale; the same span belongs to the
-  // repair question. `counted` already keeps malformed rows out of `restTimes`
-  // in the real pipeline, so this is the second lock rather than the first.
-  const EDGE_REST_MAX = 20;
-  const atServiceEdge = (r) =>
-    !!r?.fit
-    && (r.fit.where === "before" || r.fit.where === "after")
-    && r.fit.abuts === true
-    && r.in - r.out <= EDGE_REST_MAX;
-  const edgeRests = usableRests.filter((r) => !onClock(r) && atServiceEdge(r));
+  // WHERE IT SITS, in the roster's terms. This does not decide anything - every
+  // one of these is paid and every one raises the same question - it is what
+  // lets the card tell somebody which of their days it is talking about, in
+  // words they can check against their own schedule.
+  const whereOutside = (r) => {
+    if (!rosteredWorkSpans?.length) return "no-schedule";
+    if (r.in <= rosteredDayStart) return "before-day";
+    if (r.out >= rosteredDayEnd) return "after-day";
+    // touching the end of one rostered block or the start of the next. Uribe's
+    // 12:00-12:10 against a service ending 12:00, and Hatt's mirror of it.
+    if (rosteredWorkSpans.some((b) => r.out === b.end || r.in === b.start)) return "service-edge";
+    if (r.fit && (r.fit.where === "before" || r.fit.where === "after") && r.fit.abuts) return "service-edge";
+    return "unpaid-gap";
+  };
+
+  // where the assumption would put it: inside the service the report filed it
+  // under, at the edge it is sitting against. Only offered when the report gave
+  // us a service to move it into - otherwise the employee types the time.
+  const insideService = (r) => {
+    const len = r.in - r.out;
+    if (!r.fit || r.fit.from == null) return null;
+    if (r.fit.where === "after") return { from: r.fit.to - len, to: r.fit.to };
+    if (r.fit.where === "before") return { from: r.fit.from, to: r.fit.from + len };
+    return null;
+  };
 
   // NOTHING IS WITHHELD FROM PAID TIME ANY MORE. This list used to exclude both
   // the misclicked rows and the snapped ones, which is what made the withholding
@@ -494,37 +477,33 @@ export function analyzeDay(day) {
   const restsOffClockMin = restTimes && segments.length
     ? offClockRests.reduce((n, r) => n + (r.in - r.out), 0)
     : 0;
-  // WHAT AN ASSUMPTION WOULD TAKE OFF, held separately from what is paid.
+  // WHAT THE ASSUMPTION WOULD TAKE OFF, held separately from what is paid.
   //
   // These minutes are IN `paidMin` below. The count and the minutes exist so the
   // employee can be asked whether the assumption holds, and so the surface that
   // reports the assumptions can say what confirming one would cost. Nothing here
   // reduces a figure on its own - that is the whole distinction the 2026-08-11
   // ruling draws.
-  const restsMisclicked = restTimes && rosteredDayStart != null
-    ? misclickedRests.length
-    : null;
-  const restsMisclickedMin = misclickedRests.reduce((n, r) => n + (r.in - r.out), 0);
-
-  // The service-edge ones, same shape. Both the time recorded and the time the
-  // assumption would move it to travel with the row, because the question has to
-  // quote both and the sheet has to draw whichever reading it is printing.
-  const restsAtServiceEdge = restTimes ? edgeRests.length : null;
-  const restsAtServiceEdgeMin = edgeRests.reduce((n, r) => n + (r.in - r.out), 0);
-  const restsAtServiceEdgeDetail = edgeRests.map((r) => {
-    const len = r.in - r.out;
-    // inside its own service, at the edge it is sitting against: a break logged
-    // after the service ends belongs in the last ten minutes of it, and one
-    // logged before it starts belongs in the first ten.
-    const [from, to] = r.fit.where === "after"
-      ? [r.fit.to - len, r.fit.to]
-      : [r.fit.from, r.fit.from + len];
+  //
+  // IT IS THE SAME SET AS `offClockRests`, deliberately. Every ten whose minutes
+  // were added is a ten somebody gets asked about, and nothing else is.
+  const restsOutsideScheduled = restTimes && segments.length ? offClockRests.length : null;
+  const restsOutsideScheduledMin = restsOffClockMin;
+  const restsOutsideScheduledDetail = (restTimes && segments.length ? offClockRests : []).map((r) => {
+    const inside = insideService(r);
     return {
       wasFrom: clockShort(r.out), wasTo: clockShort(r.in),
-      from: clockShort(from), to: clockShort(to),
-      minutes: len,
-      where: r.fit.where,
-      service: `${clockShort(r.fit.from)}-${clockShort(r.fit.to)}`,
+      minutes: r.in - r.out,
+      // before-day | after-day | service-edge | unpaid-gap | no-schedule
+      where: whereOutside(r),
+      // the shift the REPORT filed it under, which is the thing an employee can
+      // recognise. Null when the row carried no service.
+      service: r.fit?.from != null
+        ? `${clockShort(r.fit.from)}-${clockShort(r.fit.to)}`
+        : null,
+      // where the assumption would put it, when there is a service to put it in
+      from: inside ? clockShort(inside.from) : null,
+      to: inside ? clockShort(inside.to) : null,
     };
   });
 
@@ -1052,19 +1031,18 @@ export function analyzeDay(day) {
     // had its say. Zero when the day was being floored up anyway.
     addedHours,
     restsOffClockMin,
-    // THE TWO POLICY ASSUMPTIONS, and both are amounts already IN the paid
-    // hours above. Each is what confirming that assumption would take back off.
+    // THE POLICY ASSUMPTION, and it is an amount already IN the paid hours
+    // above. This is what confirming it would take back off.
     //
-    // rests recorded entirely outside the rostered day - the MIS-CLICK reading.
-    restsMisclicked,
-    restsMisclickedMin,
-    // rests logged hard against the edge of the service they were filed under.
-    // `restsAtServiceEdgeDetail` carries the recorded time AND where the
+    // Every ten recorded at a time the person was not documented as working:
+    // before the rostered day, after it, against a service edge, or in an unpaid
+    // gap. One rule since 2026-08-11 - they were three, and they all behave the
+    // same way now. The detail carries the recorded time AND where the
     // assumption would put it, because the question quotes both and the sheet
     // draws whichever reading it is printing.
-    restsAtServiceEdge,
-    restsAtServiceEdgeMin,
-    restsAtServiceEdgeDetail,
+    restsOutsideScheduled,
+    restsOutsideScheduledMin,
+    restsOutsideScheduledDetail,
     // rest periods credited from a schedule block the roster calls a meal but
     // which is only rest-length. The one case where the schedule witnesses a
     // rest, and the employee is asked to confirm that too.

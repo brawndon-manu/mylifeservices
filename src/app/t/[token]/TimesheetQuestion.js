@@ -150,43 +150,70 @@ function copyFor(q, standing) {
           ),
       };
 
-    case "restOutsideShift":
+    // A TEN LOGGED OUTSIDE DOCUMENTED WORKING HOURS. Before the rostered day,
+    // after it, against a service edge, or in an unpaid gap - one card for all
+    // four shapes since 2026-08-11, because they are one event and one habit.
+    //
+    // THE ONLY CARD WHERE "YES" IS THE CHEAP ANSWER. Everywhere else confirming
+    // takes pay off; here it keeps the ten and DECLINING takes it off, because
+    // the question is "was that the right time?" rather than "did you take it?".
+    case "restOutsideScheduled": {
+      const shapes = new Set((q.row.detail || []).map((x) => x.where));
+      const shapeWords = shapes.has("unpaid-gap") && shapes.size === 1
+        ? "in a gap in your schedule, when you were not booked with anyone"
+        : shapes.has("before-day") && shapes.size === 1
+          ? "before your first shift of the day started"
+          : shapes.has("after-day") && shapes.size === 1
+            ? "after your last shift of the day had ended"
+            : shapes.has("service-edge") && shapes.size === 1
+              ? "right on the edge of the shift it was filed under"
+              : "outside the hours you were scheduled to be working";
       return {
-        title: "One of your breaks is logged outside your shift",
+        title: "One of your breaks is logged outside your scheduled hours",
         body: (
           <>
-            On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> the break record has your
-            rest break at a time <b>outside the shifts you were rostered for</b>. We have paid
-            those <b>{q.row.minutes} minutes</b> as time you were on a break off the clock, so
-            they are on your timesheet already.
+            On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your ten minute rest break is
+            recorded <b>{shapeWords}</b>. A rest period is paid time, so we have taken it at face
+            value and <b>paid you those {q.row.minutes} minutes</b> - they are on the timesheet
+            below, along with any overtime they created.
             <br /><br />
-            <b>Is that right?</b> If the time was just entered wrongly and you were not actually
-            on a break then, tell us and we will take them back off.
+            <b>Was that the right time?</b> If it is, leave it and you keep the pay. If the time
+            was entered wrongly, tell us and we will need to know when you actually stopped, so
+            your corrected timesheet can show it in the right place.
           </>
         ),
         dates: q.dates,
+        evidence: (q.row.detail || []).slice(0, 8).map(
+          (x) => `${x.date}: logged ${x.wasFrom}-${x.wasTo}` +
+            (x.service ? ` · filed under your ${x.service} shift` : " · no shift on the row") +
+            (x.from ? ` · inside it would be ${x.from}-${x.to}` : ""),
+        ),
         yes: {
-          label: "The time was entered wrong",
-          why: "You were not on a break then. The minutes come back off.",
+          label: "Yes, that is when I took it",
+          why: "You stopped then, off the clock. The minutes stay paid.",
         },
         no: {
-          label: "No, I really did take it then",
-          why: "You took your break off the clock. The minutes stay on your sheet.",
+          label: "No, the time is wrong",
+          why: "We take the minutes back off, and you tell us when it really was.",
         },
-        yesEffect: (
+        timeLabel: "When did you actually take these breaks?",
+        yesEffect: <>Nothing changes. The <b>{q.row.minutes} minutes</b> stay on your timesheet.</>,
+        noEffect: (
           <>
-            <b>{r2(off).toFixed(2)} hours</b> come off your timesheet, along with any overtime
-            they created. Your sheet will be rebuilt.
+            <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off your timesheet, along
+            with any overtime they created, and your breaks move to the times you give us. Your
+            sheet will be rebuilt.
           </>
         ),
-        noEffect: <>Nothing changes. Your hours stay as they are on the timesheet below.</>,
         footnote: (
           <>
-            <b>The minutes are already on your sheet</b>, so leaving this alone costs you nothing.
-            Only say the time was wrong if you really were not on a break then.
+            <b>The minutes are already paid</b>, so leaving this alone costs you nothing. A rest
+            period is paid time wherever you took it - only tell us the time is wrong if you were
+            not actually on a break then.
           </>
         ),
       };
+    }
 
     // ONE QUESTION PER DAY NOW, rendered as one card by BatchCard. The copy
     // here is the card's heading, so it describes the whole set; the per-day
@@ -267,57 +294,6 @@ function copyFor(q, standing) {
             <b>Neither answer costs you anything.</b> This one is about the record, not the money -
             it is here because throwing the entry away without asking would be us deciding what
             happened on your day.
-          </>
-        ),
-      };
-
-    // THE ONE MÁNU RULED ON HIMSELF, and all three rows were his: "those 10
-    // minutes were documented outside of a shift in between a time with no
-    // scheduling so its time added." It used to move the break and withhold the
-    // minutes without asking. Now the minutes are paid and the move is what
-    // needs his say-so.
-    case "restAtServiceEdge":
-      return {
-        title: "One of your breaks sits right on the edge of your shift",
-        body: (
-          <>
-            On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your rest break is logged{" "}
-            <b>immediately outside the shift it was filed under</b> - starting exactly as it ended,
-            or ending exactly as it began. We have taken that at face value and{" "}
-            <b>paid you the {q.row.minutes} minutes</b> as a break you took off the clock.
-            <br /><br />
-            <b>Or did you mean it to be inside your shift?</b> If the break really happened during
-            the shift and was logged against its edge by mistake, tell us and we will move it there.
-          </>
-        ),
-        dates: q.dates,
-        evidence: (q.row.detail || []).slice(0, 6).map(
-          (x) => `${x.date}: logged ${x.wasFrom}-${x.wasTo}, service ${x.service} - inside would be ${x.from}-${x.to}`,
-        ),
-        yes: {
-          label: "It should have been inside my shift",
-          why: "We move it inside the shift, and the extra minutes come back off.",
-        },
-        no: {
-          label: "No, I took it outside my shift",
-          why: "The minutes stay paid, and we flag the entry for payroll.",
-        },
-        yesEffect: (
-          <>
-            <b>{r2(off).toFixed(2)} hours</b> come off your timesheet, along with any overtime they
-            created. Your sheet will be rebuilt.
-          </>
-        ),
-        noEffect: (
-          <>
-            Nothing changes. Your hours stay as they are, and payroll gets told the break is being
-            logged against the wrong shift in QSClock.
-          </>
-        ),
-        footnote: (
-          <>
-            <b>The minutes are already paid</b>, so leaving this alone costs you nothing. Only say
-            it belonged inside your shift if that is what actually happened.
           </>
         ),
       };
