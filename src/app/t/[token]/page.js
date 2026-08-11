@@ -42,6 +42,10 @@ export default async function SignTimesheetPage({ params }) {
         select: {
           id: true, date: true, kind: true, note: true, status: true,
           createdAt: true, resolutionNote: true,
+          // needed to tell a partial from a plain decline - see `partials`
+          // below. Left out, it comes back undefined and every partial reloads
+          // as "Missed them", which is a different thing to have told payroll.
+          statedBreaks: true,
         },
         orderBy: { createdAt: "asc" },
       },
@@ -75,11 +79,21 @@ export default async function SignTimesheetPage({ params }) {
     (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
   );
   const answers = {};
+  // A DECLINED ANSWER THAT STILL CARRIES TIMES IS A PARTIAL - "I got one of my
+  // two tens". A plain decline clears `statedBreaks`, so nothing else can leave
+  // times on a declined row, and that is what lets the card come back showing
+  // "Took one" instead of "Missed them" after a reload. No third status and no
+  // migration for it.
+  const partials = {};
   for (const q of questions) {
     const hit = answered.find(
       (c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date),
     );
-    if (hit) answers[q.id] = hit.status;
+    if (!hit) continue;
+    answers[q.id] = hit.status;
+    if (hit.status === "declined" && Array.isArray(hit.statedBreaks) && hit.statedBreaks.length) {
+      partials[q.id] = true;
+    }
   }
   // WHO MAY SIGN, AND WHAT THE POPUP COUNTS. Two tiers: a question where the
   // engine CHANGED the document or could not READ it has to be settled first;
@@ -268,6 +282,7 @@ export default async function SignTimesheetPage({ params }) {
               token={token}
               questions={group}
               answers={answers}
+              partials={partials}
               standing={standing}
               submitAction={answerTimesheetQuestion}
             />

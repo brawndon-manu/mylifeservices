@@ -373,7 +373,6 @@ function Choice({ on, tone, label, why, onClick, busy }) {
 function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
-  const [picking, setPicking] = useState(false);
   const [at, setAt] = useState("");
   const [proposed, setProposed] = useState(null);
   const c = copyFor(q, standing);
@@ -381,16 +380,44 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
 
   const answered = answer === "accepted" || answer === "declined";
   const typedHHMM = parseLooseTime(at, { assumeWorkday: true });
+  // WHAT IS CURRENTLY SHOWING, staged or saved. Clicking whichever one that is
+  // takes it back off - staged answers just clear, and a SAVED one stages a
+  // deletion the confirm panel then commits. Mánu 2026-08-11: "clicking on a
+  // box clicked should also unclick the box and unhighlight."
+  const shown = proposed
+    ? proposed.choice
+    : answer === "accepted" ? "yes" : answer === "declined" ? "no" : null;
+  const pick = (v) => setProposed(shown === v ? { choice: null } : { choice: v });
+
+  // WHICH ANSWER OPENS THE TIME BOX, and whether it may be left empty.
+  //
+  // `needsOn` is "yes" everywhere except `restOutsideScheduled`, where the
+  // correction is "no" - so the box follows the answer that actually needs a
+  // time rather than always hanging off "yes".
+  //
+  // REQUIRED only where the record holds no time at all. `restNoTimes` is the
+  // whole reason this question exists: Mánu 2026-08-10, "because we need a
+  // record of this". On `repair` the engine already has a time it can read, so
+  // typing one is a correction and staying quiet accepts the proposal.
+  const timeOn = q.needsOn || "yes";
+  const needsTime = !!q.canGiveTime && proposed?.choice === timeOn;
+  const timeRequired = needsTime && !!(q.needs || []).length;
+  const suggestion = (q.needs || [])[0]?.suggest || q.proposed?.from || null;
+  // a required box with nothing readable in it is what holds the confirm
+  const timeBlocked = timeRequired ? !typedHHMM : !!(at.trim() && !typedHHMM);
 
   function commit() {
-    if (!proposed) return;
+    if (!proposed || timeBlocked) return;
     setErr(null);
     start(async () => {
       const res = await submitAction({
-        token, id: q.id, choice: proposed.choice, at: proposed.at,
+        token, id: q.id, choice: proposed.choice,
+        // the box only exists on the answer that needs it, so a time typed and
+        // then switched away from is never sent
+        at: needsTime && typedHHMM ? typedHHMM : null,
       });
       if (!res?.ok) setErr(res?.error || "failed");
-      else { setProposed(null); setPicking(false); }
+      else { setProposed(null); setAt(""); }
     });
   }
 
@@ -419,43 +446,49 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
         </div>
       )}
 
+      {/* CLICKING A CHOSEN BOX UNCHOOSES IT. Mánu 2026-08-11. Without this the
+          only way out of a mis-tap was to pick the other answer, which on a
+          question about somebody's pay means asserting the opposite of what you
+          meant just to clear the first mistake. */}
       <div className="mt-3 flex flex-wrap gap-2.5">
         <Choice
-          on={answer === "accepted" || (proposed?.choice === "yes" && !proposed.at)}
+          on={shown === "yes"}
           tone="yes"
           busy={pending}
           label={c.yes.label}
           why={!answered ? c.yes.why : null}
-          onClick={() => { setPicking(false); setProposed({ choice: "yes" }); }}
+          onClick={() => pick("yes")}
         />
         <Choice
-          on={answer === "declined" || proposed?.choice === "no"}
+          on={shown === "no"}
           tone="no"
           busy={pending}
           label={c.no.label}
           why={!answered ? c.no.why : null}
-          onClick={() => { setPicking(false); setProposed({ choice: "no" }); }}
+          onClick={() => pick("no")}
         />
-        {q.canGiveTime && !answered && (
-          <Choice
-            on={picking || !!proposed?.at}
-            tone="yes"
-            busy={pending}
-            label="Yes, but at a different time"
-            why="Tell us when you actually stopped."
-            onClick={() => { setProposed(null); setPicking((p) => !p); }}
-          />
-        )}
       </div>
 
-      {picking && !answered && (
+      {/* THE TIME GOES UNDER THE ANSWER THAT NEEDS IT, not beside it as a third
+          option. Mánu 2026-08-11: "yes i took it should have an option to enter
+          a time, then the yes but a different time becomes redundant."
+
+          There were three boxes - yes, no, and "yes but at a different time" -
+          and the third was the same answer as the first with an extra field.
+          Two of them lit up green and one of the two was a decoy.
+
+          WHICH answer needs it depends on the question. Everywhere else it is
+          "yes"; on `restOutsideScheduled` the correction is "no", so that is
+          where the box has to appear. `needsOn` says which. */}
+      {needsTime && !answered && (
         <div className="mt-3 rounded-lg border border-border-strong bg-surface-2 p-3">
           <label htmlFor={`at-${q.id}`} className="block text-sm font-semibold text-foreground">
             {c.timeLabel}
           </label>
           <p className="mt-1 text-xs text-muted">
-            Ten minutes from whenever you say. If it falls outside the hours you were clocked in
-            for, those ten minutes get PAID and added to your day.
+            {timeRequired
+              ? "We need this before you can confirm - the record has no time on it at all."
+              : "Optional. Leave it blank and we will use the time already on the record."}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
             <input
@@ -466,8 +499,19 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
               value={at}
               onChange={(e) => setAt(e.target.value)}
               placeholder="e.g. 230 or 2:30pm"
-              className="w-40 rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+              className={`w-40 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
+                at.trim() && !typedHHMM ? "border-rose-500" : "border-border-strong"
+              }`}
             />
+            {suggestion && !at.trim() && (
+              <button
+                type="button"
+                onClick={() => setAt(suggestion)}
+                className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                Use {suggestion}
+              </button>
+            )}
             <span className="text-sm text-muted">
               {at.trim()
                 ? typedHHMM
@@ -475,14 +519,6 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
                   : <span className="text-rose-600 dark:text-rose-400">not a time we can read</span>
                 : null}
             </span>
-            <button
-              type="button"
-              disabled={pending || !typedHHMM}
-              onClick={() => setProposed({ choice: "yes", at: typedHHMM })}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              Save that time
-            </button>
           </div>
         </div>
       )}
@@ -490,19 +526,34 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
       {/* the panel takes the colour of the answer it is about to write, so the
           last thing somebody reads before committing is the same green or red
           they just clicked. */}
-      {proposed && !answered && (
+      {proposed && (
         <div className={`mt-3 rounded-lg border-2 p-4 ${
           proposed.choice === "yes"
             ? "border-emerald-500 bg-emerald-500/10"
-            : "border-rose-500 bg-rose-500/10"
+            : proposed.choice === "no"
+              ? "border-rose-500 bg-rose-500/10"
+              : "border-border-strong bg-surface-2"
         }`}>
-          <p className="text-base font-semibold text-foreground">Are you sure you want to confirm?</p>
+          <p className="text-base font-semibold text-foreground">
+            {proposed.choice === null ? "Take your answer off?" : "Are you sure you want to confirm?"}
+          </p>
           <div className="mt-2 space-y-1.5 text-sm text-muted">
-            <p>{proposed.choice === "yes" ? c.yesEffect : c.noEffect}</p>
-            {proposed.at && (
+            <p>
+              {proposed.choice === "yes" ? c.yesEffect
+                : proposed.choice === "no" ? c.noEffect
+                  : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
+            </p>
+            {needsTime && typedHHMM && (
               <p>
-                The sheet will show <b className="text-foreground">{formatTimeDisplay(proposed.at)}</b>,
+                The sheet will show <b className="text-foreground">{formatTimeDisplay(typedHHMM)}</b>,
                 and say it came from you rather than from the break record.
+              </p>
+            )}
+            {timeBlocked && (
+              <p className="font-semibold text-rose-600 dark:text-rose-400">
+                {timeRequired && !at.trim()
+                  ? "Put the time in above first."
+                  : "That time cannot be read - check it above."}
               </p>
             )}
             <p className="text-xs">You can change your answer any time before you sign.</p>
@@ -510,13 +561,14 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
           <div className="mt-3 flex flex-wrap gap-2.5">
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || timeBlocked}
               onClick={commit}
               className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
-                proposed.choice === "yes" ? "bg-emerald-600" : "bg-rose-600"
+                proposed.choice === "yes" ? "bg-emerald-600"
+                  : proposed.choice === "no" ? "bg-rose-600" : "bg-brand"
               }`}
             >
-              Yes, confirm
+              {proposed.choice === null ? "Take it off" : "Yes, confirm"}
             </button>
             <button
               type="button"
@@ -555,7 +607,7 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
 // NOTHING IS PRE-SELECTED, same as every other card. The staged answers live
 // here in client state until the confirm panel is got past, and until then the
 // database has not been touched.
-function BatchCard({ token, list, answers, standing, submitAction, copy }) {
+function BatchCard({ token, list, answers, partials, standing, submitAction, copy }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [picked, setPicked] = useState({});
@@ -567,8 +619,19 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
   const answeredAll = list.every((q) => answers?.[q.id]);
   // an answer already on record shows as the current setting, so changing your
   // mind is editing what you said rather than starting again
-  const valueFor = (q) =>
-    picked[q.id] ?? (answers?.[q.id] === "accepted" ? "yes" : answers?.[q.id] === "declined" ? "no" : null);
+  //
+  // A SAVED "declined" THAT STILL CARRIES TIMES IS A PARTIAL. There is no third
+  // status on a correction row and this did not warrant a migration: declining
+  // normally clears `statedBreaks`, so times surviving on a declined row can
+  // only mean somebody said they took SOME of their tens. That is what lets the
+  // choice come back as "partial" when the page reloads.
+  const savedValue = (q) => {
+    const a = answers?.[q.id];
+    if (a === "accepted") return "yes";
+    if (a === "declined") return partials?.[q.id] ? "partial" : "no";
+    return null;
+  };
+  const valueFor = (q) => (q.id in picked ? picked[q.id] : savedValue(q));
 
   const rawAt = (q, slot) => times[q.id]?.[slot] ?? "";
   const setAt = (q, slot, v) =>
@@ -584,33 +647,50 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
   // "because we need a record of this". A day answered "missed them" owes none -
   // there is nothing to say when about.
   const missingTimes = list.reduce((n, q) => {
-    if (valueFor(q) !== "yes") return n;
-    return n + (q.needs || []).filter((need) => !minutesAt(q, need)).length;
+    const v = valueFor(q);
+    if (v === "yes") {
+      return n + (q.needs || []).filter((need) => !minutesAt(q, need)).length;
+    }
+    // A PARTIAL OWES AT LEAST ONE TIME, not all of them. They are telling us
+    // they got some of their tens and not the others, so the blanks are the
+    // point - what we cannot accept is a partial with nothing filled in at all.
+    if (v === "partial") {
+      return n + ((q.needs || []).some((need) => minutesAt(q, need)) ? 0 : 1);
+    }
+    return n;
   }, 0);
 
   const chosen = list.map((q) => ({ q, v: valueFor(q) }));
-  const missed = chosen.filter((x) => x.v === "no");
+  // A PARTIAL COUNTS AS MISSED FOR THE MONEY. One hour per workday on which a
+  // rest period was not provided, per UPS v. Superior Court - so one of two
+  // tens is exactly as much premium as none of two. What differs is the record,
+  // and the time they give for the one they did get.
+  const missed = chosen.filter((x) => x.v === "no" || x.v === "partial");
   const took = chosen.filter((x) => x.v === "yes");
   const undecided = chosen.filter((x) => !x.v);
   const hours = missed.reduce((n, x) => n + (x.q.movesOnDecline || 0), 0);
-  // only the days whose answer differs from what is already stored need writing
-  const dirty = chosen.filter(
-    ({ q, v }) =>
-      v && v !== (answers?.[q.id] === "accepted" ? "yes" : answers?.[q.id] === "declined" ? "no" : null),
-  );
+  // only the days whose answer differs from what is already stored need writing.
+  // A CLEARED ONE COUNTS AS A CHANGE - unclicking a saved answer has to be able
+  // to take it off the record, or the box unhighlights and nothing happens.
+  const dirty = chosen.filter(({ q, v }) => v !== savedValue(q));
+  const cleared = dirty.filter(({ v }) => !v);
 
   function commit() {
     setErr(null);
     start(async () => {
       const res = await submitAction({
         token,
-        batch: chosen.filter((x) => x.v).map(({ q, v }) => ({
+        batch: chosen.filter((x) => x.v || dirty.includes(x)).map(({ q, v }) => ({
           id: q.id,
+          // null means "take my answer off the record" - see the clear branch
+          // in answerTimesheetQuestion
           choice: v,
           // sent as HH:MM, the one shape the server parses. A day answered
           // "missed them" sends none - there is nothing to say when about.
+          // a "missed them" sends none - there is nothing to say when about. A
+          // partial sends only the slots they actually filled in.
           times:
-            v === "yes" && q.needs?.length
+            (v === "yes" || v === "partial") && q.needs?.length
               ? Object.fromEntries(
                   q.needs
                     .map((need) => [need.slot, minutesAt(q, need)])
@@ -628,16 +708,36 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
   // one day, so the label names the part rather than the day's whole set.
   const partName = (q) =>
     q.row?.part === "meal" ? "Lunch break" : q.row?.part === "rest" ? "Rest breaks" : null;
-  const label = (q, v) =>
-    q.row?.part === "meal"
-      ? (v === "yes" ? "Took it" : "Missed it")
-      : (v === "yes" ? "Took them" : "Missed them");
+
+  // WHAT IF THEY ONLY TOOK ONE OF THE TWO? Mánu 2026-08-11. It was yes-or-no,
+  // so somebody who got one ten and worked through the other had to claim they
+  // missed both or took both - and neither is true.
+  //
+  // The money does not change: one hour per workday on which a rest period was
+  // not provided, so one of two is the same premium as none of two. What was
+  // wrong was the RECORD, and the time for the ten they did get.
+  const owedOn = (q) => (q.row?.part === "rest" ? (q.needs || []).length : 1);
+  const optionsFor = (q) => (owedOn(q) >= 2 ? ["yes", "partial", "no"] : ["yes", "no"]);
+  const label = (q, v) => {
+    if (q.row?.part === "meal") return v === "yes" ? "Took it" : "Missed it";
+    if (v === "yes") return "Took them";
+    if (v === "no") return "Missed them";
+    return owedOn(q) === 2 ? "Took one" : "Took some";
+  };
 
   // the yes/no pair for one decision. Lifted out of the row markup when the
   // split arrived, because a day can now show two of them.
+  //
+  // A SEGMENTED CONTROL, NOT THREE TINTED BOXES. It was a ring inside a border
+  // inside a row that itself went red, so a chosen answer read as three nested
+  // boxes and the red band ran the width of the row past the words it was
+  // about. Mánu 2026-08-11: "fix the way the green and red boxes are over missed
+  // it and took them." One outline, one filled segment, no row tint.
+  //
+  // CLICKING THE CHOSEN SEGMENT CLEARS IT, same as the single questions.
   const Toggle = ({ item: { q, v } }) => (
     <span className="flex overflow-hidden rounded-lg border border-border-strong">
-      {["yes", "no"].map((opt) => (
+      {optionsFor(q).map((opt, i) => (
         <button
           key={opt}
           type="button"
@@ -645,14 +745,18 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
           aria-pressed={v === opt}
           onClick={() => {
             setConfirming(false);
-            setPicked((p) => ({ ...p, [q.id]: opt }));
+            setPicked((p) => ({ ...p, [q.id]: (q.id in p ? p[q.id] : savedValue(q)) === opt ? null : opt }));
           }}
           className={`px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
+            i > 0 ? "border-l border-border-strong" : ""
+          } ${
             v === opt
               ? opt === "yes"
-                ? "bg-emerald-500/15 text-emerald-700 ring-2 ring-inset ring-emerald-500 dark:text-emerald-300"
-                : "bg-rose-500/15 text-rose-700 ring-2 ring-inset ring-rose-500 dark:text-rose-300"
-              : "bg-surface-2 text-muted hover:text-foreground"
+                ? "bg-emerald-600 text-white"
+                : opt === "partial"
+                  ? "bg-amber-500 text-white"
+                  : "bg-rose-600 text-white"
+              : "bg-surface-2 text-muted hover:bg-surface hover:text-foreground"
           }`}
         >
           {label(q, opt)}
@@ -664,12 +768,20 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
   // the times a "took them" owes. Now scoped to ONE part, so a both-day answered
   // "took my lunch, missed my tens" asks for one time and not three.
   const TimesFor = ({ q, v }) => {
-    if (v !== "yes" || !(q.needs || []).length) return null;
+    if ((v !== "yes" && v !== "partial") || !(q.needs || []).length) return null;
+    const partial = v === "partial";
     return (
       <div className="mt-2 w-full rounded-lg border border-border-strong bg-surface-2 p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-faint">
-          When did you take {q.needs.length === 1 ? "it" : "them"} on {q.date}?
+          When did you take {q.needs.length === 1 || partial ? "it" : "them"} on {q.date}?
         </p>
+        {partial && (
+          <p className="mt-1 text-xs text-muted">
+            Fill in the {q.needs.length === 2 ? "one" : "ones"} you did get and leave the rest
+            blank. Your penalty pay does not change - the law pays one hour for the day either
+            way - but the record will say which you had.
+          </p>
+        )}
         <div className="mt-2 space-y-2">
           {q.needs.map((need) => {
             const raw = rawAt(q, need.slot);
@@ -689,7 +801,7 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
                   onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
                   placeholder="e.g. 115 or 1:15p"
                   className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
-                    mins ? "border-emerald-500" : "border-amber-500/70"
+                    mins ? "border-emerald-500" : partial ? "border-border-strong" : "border-amber-500/70"
                   }`}
                 />
                 {!mins && need.suggest && (
@@ -733,10 +845,10 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
           built and is his call. */}
       <ul className="mt-3 divide-y divide-border">
         {byDay.map(({ date, hours, items }) => (
-          <li
-            key={date}
-            className={`py-2.5 ${items.every((x) => x.v === "no") ? "bg-rose-500/5" : ""}`}
-          >
+          /* NO ROW TINT. A red wash across the whole line was louder than the
+             answer it was reporting and ran past the words it belonged to. The
+             segment itself carries the colour. */
+          <li key={date} className="py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <span className="min-w-0">
                 <span className="font-mono text-sm text-foreground">{date}</span>
@@ -758,9 +870,7 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
               items.map((item) => (
                 <div
                   key={item.q.id}
-                  className={`mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-l-2 border-border py-1 pl-3 ${
-                    item.v === "no" ? "bg-rose-500/10" : ""
-                  }`}
+                  className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-l-2 border-border py-1 pl-3"
                 >
                   <span className="text-sm text-foreground">{partName(item.q)}</span>
                   <Toggle item={item} />
@@ -899,7 +1009,7 @@ function BatchCard({ token, list, answers, standing, submitAction, copy }) {
 }
 
 export default function TimesheetQuestion({
-  token, questions, answers, standing, submitAction,
+  token, questions, answers, partials, standing, submitAction,
 }) {
   const list = questions || [];
   if (!list.length) return null;
@@ -930,6 +1040,7 @@ export default function TimesheetQuestion({
         <p className="text-base font-semibold text-foreground">{c.title}</p>
         <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
         <BatchCard
+          partials={partials}
           token={token}
           list={list}
           answers={answers}

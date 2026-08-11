@@ -1521,7 +1521,14 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
     ? batch.map((b) => ({ id: b?.id, choice: b?.choice, at: b?.at ?? null, times: b?.times || null }))
     : [{ id, choice, at: at ?? null, times: null }];
   if (asked.length > 40) return { ok: false, error: "toomany" };
-  if (asked.some((a) => a.choice !== "yes" && a.choice !== "no")) {
+  // "partial" is a rest day where they got SOME of their tens. It settles as a
+  // DECLINE - one hour per workday on which a rest period was not provided, so
+  // one of two is the same premium as none of two - but it keeps the times for
+  // the ones they did get, which a plain decline clears.
+  // A NULL CHOICE TAKES AN ANSWER BACK OFF THE RECORD. Mánu 2026-08-11:
+  // "clicking on a box clicked should also unclick the box." Unhighlighting it
+  // while the row stayed in the database would have been a lie on screen.
+  if (asked.some((a) => a.choice != null && !["yes", "no", "partial"].includes(a.choice))) {
     return { ok: false, error: "badchoice" };
   }
 
@@ -1566,13 +1573,19 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
     // is written, so a bad time on the ninth day cannot leave the first eight
     // saved and the sheet half rebuilt.
     let statedBreaks = null;
-    if (a.choice === "yes" && q.needs?.length) {
+    if ((a.choice === "yes" || a.choice === "partial") && q.needs?.length) {
       const given = a.times || {};
       const list = [];
       for (const need of q.needs) {
         const raw = given[need.slot];
         const start = hhmmToMin(raw);
-        if (start == null) return { ok: false, error: "missingtime" };
+        // A PARTIAL LEAVES BLANKS ON PURPOSE - the empty slots ARE the breaks
+        // they are telling us they did not get. What it may not be is empty
+        // throughout, which is checked once the loop has run.
+        if (start == null) {
+          if (a.choice === "partial") continue;
+          return { ok: false, error: "missingtime" };
+        }
         if (start + need.minutes > 1439) return { ok: false, error: "badtime" };
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
         // client. It only drives the sheet's footnote, but "you typed this" is
@@ -1588,30 +1601,44 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
           from, to: shortClock(start + need.minutes), source,
         });
       }
+      if (a.choice === "partial" && !list.length) return { ok: false, error: "missingtime" };
       statedBreaks = list;
     }
 
-    resolved.push({ q, choice: a.choice, stated, statedBreaks });
+    resolved.push({ q, choice: a.choice ?? null, stated, statedBreaks });
   }
 
   // record the answers first, so rebuilding the overrides below sees them
   for (const { q, choice: pick, stated, statedBreaks } of resolved) {
     const kindKey = `q_${q.kind}`;
     const dates = q.dates || [q.date];
+    // UNANSWERED AGAIN. Scoped to this sheet, this kind and these dates - never
+    // a bare delete - and the override rebuild below then runs without it, so
+    // the sheet goes back to what it said before they answered.
+    if (pick === null) {
+      await prisma.timesheetCorrection.deleteMany({
+        where: { timesheetId: ts.id, kind: kindKey, date: { in: dates }, status: { not: "open" } },
+      });
+      continue;
+    }
     for (const date of dates) {
       const existing = await prisma.timesheetCorrection.findFirst({
         where: { timesheetId: ts.id, date, kind: kindKey },
         select: { id: true },
       });
       const record = {
+        // a partial settles as a decline: the premium stands either way
         status: pick === "yes" ? "accepted" : "declined",
         resolvedAt: new Date(),
         resolvedById: ts.userId || null,
         note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
         resolutionNote: resolutionFor(q, pick, stated, statedBreaks),
-        // cleared on a "no", so changing your mind from yes does not leave
-        // times on the record for breaks you have since said you never got
-        statedBreaks: pick === "yes" ? statedBreaks : null,
+        // cleared on a plain "no", so changing your mind from yes does not
+        // leave times on the record for breaks you have since said you never
+        // got. A PARTIAL KEEPS THEM, and that is also what marks it as one -
+        // times surviving on a declined row cannot mean anything else, which is
+        // how the page shows "Took one" again after a reload.
+        statedBreaks: pick === "no" ? null : statedBreaks,
       };
       if (existing) {
         await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
@@ -1739,6 +1766,14 @@ function resolutionFor(q, choice, stated, statedBreaks) {
     case "nothingDocumentedMeal":
     case "nothingDocumentedRest": {
       const noun = q.kind === "nothingDocumentedMeal" ? "meal break" : "rest periods";
+      // A PARTIAL IS A DECLINE THAT CARRIES TIMES. Same hour either way - the
+      // law pays one per workday a rest period was not provided - so the note
+      // has to be the thing that records which of them they actually got.
+      if (choice === "partial") {
+        const got = (statedBreaks || []).map((b) => `${b.from}-${b.to}`).join(", ");
+        return `Employee says they got SOME of their rest periods that day${got ? `, at ${got}` : ""}, and not the rest. `
+          + "Premium stands - one hour per workday a rest period was not provided, per UPS v. Superior Court.";
+      }
       if (!yes) {
         return `Employee says they did not get their ${noun} that day. One hour of premium restored, per UPS v. Superior Court.`;
       }
