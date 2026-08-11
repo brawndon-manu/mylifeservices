@@ -213,6 +213,19 @@ export function applyOverrides(days, overrides) {
     // `data.days` on the on-demand path, and this belongs to one person rather
     // than to the batch's shared restsByDate.
     if (patch.statedBreaks) next.statedBreaks = patch.statedBreaks;
+    // MINUTES THAT STOPPED BEING OFF-CLOCK TIME, and everything the sheet draws
+    // from them. `restsOffClock*` is what stripes a cell and `addedHours` is
+    // what prints "+0.17 added" beside the daily total.
+    //
+    // A WHITELIST IS WHY THIS WAS MISSED. `patchesFor` had been setting all
+    // three since the answer started moving hours, and applyOverrides copied
+    // none of them - so Uribe's daily total corrected to 6.00 while the comment
+    // beside it still declared 0.17 added. Mánu 2026-08-11: "the daily total got
+    // corrected but it still shows the +0.17 added." Nothing errors when a field
+    // is left out here; it is silently ignored, which is the trap.
+    if (patch.addedHours != null) next.addedHours = patch.addedHours;
+    if (patch.restsOffClock != null) next.restsOffClock = patch.restsOffClock;
+    if (patch.restsOffClockMin != null) next.restsOffClockMin = patch.restsOffClockMin;
     next.corrected = true;
     out.push(next);
   }
@@ -248,9 +261,24 @@ export function applyOverrides(days, overrides) {
 // overtime has to be redone rather than patched: changing one day's hours can
 // push a whole workweek past 40, and the 7th-day rule depends on the shape of
 // the week. `applyOvertime` is injected so this file stays client-safe.
-export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime) {
+export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, reentitle) {
   const patched = applyOverrides(days || [], overrides);
-  const withOt = applyOvertime(patched, payPeriod || null);
+  // WHAT HANGS OFF THE HOURS HAS TO FOLLOW THE HOURS.
+  //
+  // An override that moves `paidHours` used to stop there, leaving the day with
+  // the entitlement it was analysed with. Mánu 2026-08-11 found it on his own
+  // sheet: answering that a ten belonged inside his shift took him from 6.17 to
+  // 6.00, which puts the meal waiver back within reach and drops the second rest
+  // - and neither happened, so his own answer left him charged two premium hours
+  // he no longer owed.
+  //
+  // Only days the override actually touched are re-derived. A day nobody
+  // answered about keeps exactly what the engine said at upload.
+  const touched = new Set(Object.keys(overrides || {}));
+  const rebanded = reentitle
+    ? patched.map((d) => (touched.has(d.date) ? { ...d, ...reentitle(d, d.paidHours) } : d))
+    : patched;
+  const withOt = applyOvertime(rebanded, payPeriod || null);
 
   const mealDays = withOt.filter((d) => d.mealViolation).map((d) => d.date);
   const restDays = withOt.filter((d) => d.restViolation).map((d) => d.date);

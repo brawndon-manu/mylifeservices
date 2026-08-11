@@ -323,6 +323,65 @@ export function restsRequired(hours) {
 // the same as elapsed time from the first punch: a split shift with a two hour
 // unpaid hole makes a rest look five hours into the day when it is three hours
 // of work in. Measuring the wrong one turned 45 late rests into 54.
+// RE-DERIVE EVERYTHING THAT HANGS OFF THE HOURS, for a day whose hours moved
+// after it was analysed.
+//
+// Mánu 2026-08-11, on his own three tens: "I know some of those if it was taken
+// after the shifts, I would gain those ten minutes, which would put me over six
+// hours, which would make me need a meal, which I didn't take. So things below
+// as well can subsequently change."
+//
+// He is right, and nothing was doing it. An answer that moves `paidHours` went
+// through `applyOverrides`, which sets the figure and stops - so a day patched
+// from 6.17 down to 6.00 kept the entitlement it was analysed with: a meal
+// required and unwaivable, and two rests owed. His own sheet charged two premium
+// hours he no longer owed, ON HIS OWN ANSWER.
+//
+// THE SIX HOUR LINE MOVES TWO RULES AT ONCE, which is what makes it worth a
+// function rather than a patch: at 6.00 the waiver reaches the day and one rest
+// is owed; a tenth of an hour later neither is true.
+//
+// Every rule here is the same expression `analyzeDay` uses, and
+// `parse.reentitle.test.mjs` asserts they agree on real analyzed days - a copy
+// that drifts is the whole risk of having one.
+export function reentitle(day, paidHours) {
+  const paid = paidHours ?? day.paidHours ?? 0;
+  const restRequired = restsRequired(paid);
+  const mealRequired = paid > RULES.mealRequiredAfterHours;
+
+  // stored facts about the day that the hours cannot change
+  const mealScheduled = day.mealScheduled ?? null;
+  const mealTaken = mealScheduled === true && !day.mealInsideBooking;
+  const mealUnknown = mealRequired && mealScheduled === null;
+  const mealWaiverOnFile =
+    day.mealWaiverOnFile === undefined ? RULES.mealWaiverOnFileByDefault : day.mealWaiverOnFile;
+  const mealWaived =
+    mealRequired && !mealUnknown && !mealTaken && mealWaiverOnFile
+    && paid <= RULES.mealWaiverMaxHours;
+
+  const mealsRostered = day.mealsRostered ?? null;
+  const secondMealRequired = paid > RULES.secondMealRequiredAfterHours;
+  const secondMealUnknown = secondMealRequired && (mealUnknown || mealsRostered === null);
+  const secondMealTaken = mealsRostered !== null && mealsRostered >= 2;
+  const secondMealViolation =
+    secondMealRequired && !secondMealUnknown && (!secondMealTaken || !!day.secondMealLate);
+
+  return {
+    restRequired,
+    mealRequired,
+    mealUnknown,
+    mealWaived,
+    mealMissing: mealRequired && !mealUnknown && !mealTaken,
+    secondMealRequired,
+    secondMealUnknown,
+    secondMealViolation,
+    mealViolation:
+      (mealRequired && !mealUnknown && !mealWaived && (!mealTaken || !!day.mealLate))
+      || secondMealViolation,
+    restViolation: !day.restUnknown && (day.restTaken ?? 0) < restRequired,
+  };
+}
+
 export function workedBeforeMin(punches, at) {
   const p = (punches || []).map((x) => x.min);
   let n = 0;
