@@ -18,76 +18,84 @@ const day = (over = {}) => ({
 
 // ---------------------------------------------------------------- April's shape
 
-test("every ten outside scheduled hours is ONE question, not eleven", () => {
-  const detail = (date) => [{
-    wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day",
-    service: "8a-11a", from: "8a", to: "8:10a", date,
-  }];
-  const days = ["07/16/26", "07/17/26", "07/20/26"].map((date) =>
-    day({
-      date, restsOutsideScheduled: 1, restsOutsideScheduledMin: 10,
-      restsOutsideScheduledDetail: detail(date),
-    }));
-  const qs = buildQuestions({ days }, { restRows: [], sourceName: "Martinez, April" });
-
-  const outside = qs.filter((q) => q.kind === "restOutsideScheduled");
-  assert.equal(outside.length, 1, "one card, or eleven identical ones on the real batch");
-  assert.deepEqual(outside[0].dates, ["07/16/26", "07/17/26", "07/20/26"]);
-  assert.equal(outside[0].row.minutes, 30);
-
-  // THE ONE CARD WHERE YES IS THE CHEAP ANSWER. It asks whether the recorded
-  // time was right, so confirming keeps the ten and DECLINING is the correction.
-  assert.equal(outside[0].moves, 0, "confirming the time keeps the pay");
-  assert.equal(outside[0].movesOnDecline, -0.5, "correcting it takes the half hour off");
-
-  // and a corrected time is asked for per DAY, so April's eleven do not all get
-  // the one time applied to them
-  assert.equal(outside[0].needs.length, 3, "one slot per row");
-  assert.deepEqual(outside[0].needs.map((n) => n.date), ["07/16/26", "07/17/26", "07/20/26"]);
-  assert.equal(outside[0].needs[0].suggest, "8a", "the service gives a one-tap suggestion");
-  assert.equal(outside[0].needsOn, "no", "only asked when they say the time was wrong");
+// A ten the report records while they were NOT clocked in. Built from the rest
+// rows and the stored punches, never from a flag `analyzeDay` sets at upload -
+// that flag is absent on every batch already in the database, so the question
+// could never appear on one. Aranda had two of these on screen and was asked
+// nothing about either.
+const offClockRow = (date, out, inn, shift) => ({
+  name: "Martinez, April", date, out, in: inn, minutes: 10, counted: true, shift,
+});
+const punchedDay = (over = {}) => day({
+  punches: [{ min: 8 * 60 }, { min: 17 * 60 }], restTaken: 1, restRequired: 2, ...over,
 });
 
-test("confirming the time keeps April's minutes; correcting it takes them off", () => {
-  const q = { kind: "restOutsideScheduled" };
-
-  assert.deepEqual(
-    patchesFor(q, "yes", day({ paidHours: 8.17, restsOutsideScheduledMin: 10 })),
-    { paidHours: null },
-    "confirming agrees with the sheet, so there is nothing to patch",
-  );
-
-  // the stored day reads 8.17 - the ten minutes she recorded are PAID - so
-  // correcting the time has to land back on 8.00.
-  const off = patchesFor(q, "no", day({ paidHours: 8.17, restsOutsideScheduledMin: 10 }));
-  assert.equal(off.paidHours, 8, "and the overtime goes with them");
-
-  // AND IT CANNOT GO BELOW ZERO.
-  const floored = patchesFor(q, "no", day({ paidHours: 0.05, restsOutsideScheduledMin: 10 }));
-  assert.equal(floored.paidHours, 0);
-});
-
-test("a ten in an unpaid schedule gap raises the same question as one before the shift", () => {
-  // Mánu 2026-08-11: the gap case had no question at all before this. Both
-  // shapes are one card, and the card can tell them apart.
-  const days = [
-    day({
-      date: "07/28/26", restsOutsideScheduled: 1, restsOutsideScheduledMin: 10,
-      restsOutsideScheduledDetail: [{ wasFrom: "1p", wasTo: "1:10p", minutes: 10, where: "unpaid-gap", service: null, from: null, to: null }],
-    }),
-    day({
-      date: "07/29/26", restsOutsideScheduled: 1, restsOutsideScheduledMin: 10,
-      restsOutsideScheduledDetail: [{ wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day", service: "8a-11a", from: "8a", to: "8:10a" }],
-    }),
+test("a ten recorded off the clock is asked about, from the rows and the punches", () => {
+  const days = [punchedDay({ date: "07/16/26" }), punchedDay({ date: "07/17/26" })];
+  const restRows = [
+    offClockRow("07/16/26", "7:00 AM", "7:10 AM", "8:00 AM to 11:00 AM"),
+    offClockRow("07/17/26", "7:00 AM", "7:10 AM", "8:00 AM to 11:00 AM"),
   ];
-  const q = buildQuestions({ days }, { restRows: [], sourceName: "T" })
-    .find((x) => x.kind === "restOutsideScheduled");
-  assert.equal(q.row.days, 2, "one card covering both shapes");
-  assert.deepEqual(q.row.detail.map((x) => x.where), ["unpaid-gap", "before-day"]);
-  // the gap row has no service to point at, so its slot has no suggestion
-  assert.equal(q.needs[0].suggest, null);
-  assert.equal(q.needs[1].suggest, "8a");
+  const qs = buildQuestions({ days }, { restRows, sourceName: "Martinez, April" });
+  const outside = qs.filter((q) => q.kind === "restOutsideScheduled");
+
+  assert.equal(outside.length, 1, "one card, or eleven identical ones on the real batch");
+  assert.deepEqual(outside[0].dates, ["07/16/26", "07/17/26"]);
+  assert.equal(outside[0].row.minutes, 20);
+  assert.equal(outside[0].row.detail[0].where, "before", "before the shift it was filed under");
+  assert.equal(outside[0].row.detail[0].from, "8a", "and inside it would start at 8a");
+
+  // THE ONE THAT MUST NOT FIRE: the same ten while clocked in is already paid,
+  // so there is nothing to add and nothing to ask.
+  const onClock = buildQuestions(
+    { days: [punchedDay({ date: "07/16/26" })] },
+    { restRows: [offClockRow("07/16/26", "10:00 AM", "10:10 AM", "8:00 AM to 11:00 AM")], sourceName: "Martinez, April" },
+  );
+  assert.equal(onClock.filter((q) => q.kind === "restOutsideScheduled").length, 0);
 });
+
+test("the three outcomes land three different figures", () => {
+  // Mánu 2026-08-11: "she needs to get those hours added unless she confirms an
+  // earlier time in a service, or if she didnt take it at all."
+  const q = {
+    kind: "restOutsideScheduled",
+    row: { detail: [{ date: "07/31/26", minutes: 10 }] },
+  };
+  // a sheet built BEFORE the flip: the ten was withheld, so paidHours is 5.00
+  // and `restsOffClockMin` is 0. Aranda 07/31 exactly.
+  const old = day({ date: "07/31/26", paidHours: 5, restsOffClockMin: 0, restTaken: 1, restRequired: 1 });
+  assert.equal(patchesFor(q, "yes", old).paidHours, 5.17, "took it then - the minutes are pay");
+  assert.equal(patchesFor(q, "no", old).paidHours, 5, "took it earlier - already paid as worked time");
+
+  const never = patchesFor(q, "notaken", old);
+  assert.equal(never.paidHours, 5, "never took it - no minutes");
+  assert.equal(never.restTaken, 0, "and it stops counting as a break she had");
+  assert.equal(never.restViolation, true, "which is what puts the premium on");
+
+  // THE SAME ANSWERS ON A SHEET BUILT AFTER THE FLIP, where the ten is already
+  // in paidHours. A delta would have landed 5.34 here; an absolute lands 5.17.
+  const fresh = day({ date: "07/31/26", paidHours: 5.17, restsOffClockMin: 10, restTaken: 1, restRequired: 1 });
+  assert.equal(patchesFor(q, "yes", fresh).paidHours, 5.17, "unchanged, whichever batch it came from");
+  assert.equal(patchesFor(q, "no", fresh).paidHours, 5);
+  assert.equal(patchesFor(q, "notaken", fresh).paidHours, 5);
+});
+
+test("a ten in an unpaid schedule gap is asked about like any other", () => {
+  // Mánu 2026-08-11: the gap case had no question at all before this.
+  const days = [day({
+    date: "07/28/26", restTaken: 1, restRequired: 2,
+    punches: [{ min: 8 * 60 }, { min: 12 * 60 }, { min: 14 * 60 }, { min: 16 * 60 }],
+  })];
+  const restRows = [offClockRow("07/28/26", "1:00 PM", "1:10 PM", "8:00 AM to 12:00 PM")];
+  const q = buildQuestions({ days }, { restRows, sourceName: "Martinez, April" })
+    .find((x) => x.kind === "restOutsideScheduled");
+  assert.ok(q, "the gap between two punched shifts still raises it");
+  assert.equal(q.row.minutes, 10);
+  assert.equal(q.needsOn, "no", "the time is asked for on the correction, not the confirmation");
+  assert.equal(q.needs.length, 1, "one slot per row");
+  assert.equal(q.needs[0].date, "07/28/26");
+});
+
 
 // -------------------------------------------------------------- Bucio / Devine
 
@@ -181,9 +189,14 @@ test("a question only ever belongs to the person whose sheet it is", () => {
 });
 
 test("ids are stable across a rebuild, so an answer still matches its question", () => {
-  const days = [day({ restsOutsideScheduled: 1, restsOutsideScheduledMin: 10, restsOutsideScheduledDetail: [{ wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day", service: null, from: null, to: null }] })];
-  const a = buildQuestions({ days }, { restRows: [], sourceName: "X" });
-  const b = buildQuestions({ days: [{ ...days[0], paidHours: 8 }] }, { restRows: [], sourceName: "X" });
+  const days = [day({ punches: [{ min: 8 * 60 }, { min: 17 * 60 }] })];
+  const restRows = [{
+    name: "X", date: "07/20/26", out: "7:00 AM", in: "7:10 AM",
+    minutes: 10, counted: true, shift: "8:00 AM to 11:00 AM",
+  }];
+  const a = buildQuestions({ days }, { restRows, sourceName: "X" });
+  const b = buildQuestions({ days: [{ ...days[0], paidHours: 8 }] }, { restRows, sourceName: "X" });
+  assert.ok(a.length, "there is a question to be stable about");
   assert.equal(a[0].id, b[0].id, "the sheet is rebuilt on every answer");
 });
 
@@ -313,10 +326,14 @@ test("a grouped question is still settled by any one of its dates", () => {
   // April's eleven 7:00-7:10 entries are one habit and one answer. Counting
   // those per date would leave her permanently ten answers short.
   const days = [
-    ndDay("07/20/26", { restsOutsideScheduled: 1, restsOutsideScheduledMin: 10, restsOutsideScheduledDetail: [{ wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day", service: null, from: null, to: null }] }),
-    ndDay("07/21/26", { restsOutsideScheduled: 1, restsOutsideScheduledMin: 10, restsOutsideScheduledDetail: [{ wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day", service: null, from: null, to: null }] }),
+    ndDay("07/20/26", { punches: [{ min: 8 * 60 }, { min: 17 * 60 }] }),
+    ndDay("07/21/26", { punches: [{ min: 8 * 60 }, { min: 17 * 60 }] }),
   ];
-  const qs = buildQuestions({ days }, { restRows: [], sourceName: "T" })
+  const restRows = ["07/20/26", "07/21/26"].map((date) => ({
+    name: "T", date, out: "7:00 AM", in: "7:10 AM",
+    minutes: 10, counted: true, shift: "8:00 AM to 11:00 AM",
+  }));
+  const qs = buildQuestions({ days }, { restRows, sourceName: "T" })
     .filter((q) => q.kind === "restOutsideScheduled");
   assert.equal(qs.length, 1, "one question over both days");
   assert.equal(

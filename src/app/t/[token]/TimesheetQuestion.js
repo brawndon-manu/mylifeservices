@@ -161,55 +161,71 @@ function copyFor(q, standing) {
       const shapes = new Set((q.row.detail || []).map((x) => x.where));
       const shapeWords = shapes.has("unpaid-gap") && shapes.size === 1
         ? "in a gap in your schedule, when you were not booked with anyone"
-        : shapes.has("before-day") && shapes.size === 1
-          ? "before your first shift of the day started"
-          : shapes.has("after-day") && shapes.size === 1
-            ? "after your last shift of the day had ended"
-            : shapes.has("service-edge") && shapes.size === 1
-              ? "right on the edge of the shift it was filed under"
-              : "outside the hours you were scheduled to be working";
+        : shapes.has("before") && shapes.size === 1
+          ? "before the shift it was filed under had started"
+          : shapes.has("after") && shapes.size === 1
+            ? "after the shift it was filed under had ended"
+            : "outside the hours you were scheduled to be working";
+      const canClear = (q.row.detail || []).some((x) => x.clearsARest);
       return {
-        title: "One of your breaks is logged outside your scheduled hours",
+        title: "One of your breaks is outside your scheduled hours",
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your ten minute rest break is
-            recorded <b>{shapeWords}</b>. A rest period is paid time, so we have taken it at face
-            value and <b>paid you those {q.row.minutes} minutes</b> - they are on the timesheet
-            below, along with any overtime they created.
+            recorded <b>{shapeWords}</b>, and you were not clocked in for it. A rest period is paid
+            time, so we have taken it at face value and are <b>paying you those {q.row.minutes}{" "}
+            minutes</b> on top of your hours.
             <br /><br />
-            <b>Was that the right time?</b> If it is, leave it and you keep the pay. If the time
-            was entered wrongly, tell us and we will need to know when you actually stopped, so
-            your corrected timesheet can show it in the right place.
+            <b>Is that right?</b> If it is, leave it and keep the pay. If you actually took it
+            earlier, inside your shift, tell us when. And if you never got it at all, say so - that
+            is a break you are owed.
           </>
         ),
         dates: q.dates,
         evidence: (q.row.detail || []).slice(0, 8).map(
           (x) => `${x.date}: logged ${x.wasFrom}-${x.wasTo}` +
             (x.service ? ` · filed under your ${x.service} shift` : " · no shift on the row") +
-            (x.from ? ` · inside it would be ${x.from}-${x.to}` : ""),
+            (x.from ? ` · inside it would be ${x.from}` : ""),
         ),
         yes: {
           label: "Yes, that is when I took it",
           why: "You stopped then, off the clock. The minutes stay paid.",
         },
         no: {
-          label: "No, the time is wrong",
-          why: "We take the minutes back off, and you tell us when it really was.",
+          label: "I took it earlier, in my shift",
+          why: "Tell us when. It was already paid, so nothing is added.",
         },
-        timeLabel: "When did you actually take these breaks?",
+        // THE THIRD OUTCOME. Mánu 2026-08-11: "or if she didnt take it at all."
+        // Without it somebody who never got the break had to claim they did, on
+        // a day the sheet is currently counting as a rest taken.
+        third: {
+          value: "notaken",
+          label: "I did not take it at all",
+          why: canClear
+            ? "It stops counting as a break you had, so the penalty for it goes on."
+            : "It stops counting as a break you had.",
+        },
+        timeLabel: "When did you actually take it?",
         yesEffect: <>Nothing changes. The <b>{q.row.minutes} minutes</b> stay on your timesheet.</>,
         noEffect: (
           <>
-            <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off your timesheet, along
-            with any overtime they created, and your breaks move to the times you give us. Your
-            sheet will be rebuilt.
+            <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off, along with any
+            overtime they created, and your break moves to the time you give us.
+          </>
+        ),
+        thirdEffect: (
+          <>
+            <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off, and the break stops
+            counting as one you had.{" "}
+            {canClear
+              ? <>Your penalty pay goes <b>up</b> by an hour for each day that leaves short.</>
+              : <>Your penalty pay does not change - the day was already short.</>}
           </>
         ),
         footnote: (
           <>
-            <b>The minutes are already paid</b>, so leaving this alone costs you nothing. A rest
-            period is paid time wherever you took it - only tell us the time is wrong if you were
-            not actually on a break then.
+            <b>The minutes are already paid</b>, so leaving this alone costs you nothing. Only move
+            it or take it off if that is what actually happened.
           </>
         ),
       };
@@ -370,7 +386,7 @@ function Choice({ on, tone, label, why, onClick, busy }) {
 
 // one question inside the card: the choices, the optional typed time, and the
 // confirm panel that has to be got past before anything is written
-function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
+function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction, showDate }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [at, setAt] = useState("");
@@ -384,9 +400,14 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
   // takes it back off - staged answers just clear, and a SAVED one stages a
   // deletion the confirm panel then commits. Mánu 2026-08-11: "clicking on a
   // box clicked should also unclick the box and unhighlight."
+  // A DECLINED ANSWER WITH TIMES ON IT IS "I took it earlier"; one without is
+  // the third outcome. Same trick as the partial - the times are what tell them
+  // apart, so the card comes back on the right choice after a reload.
   const shown = proposed
     ? proposed.choice
-    : answer === "accepted" ? "yes" : answer === "declined" ? "no" : null;
+    : answer === "accepted" ? "yes"
+      : answer === "declined" ? (c.third && !answerHasTimes ? c.third.value : "no")
+        : null;
   const pick = (v) => setProposed(shown === v ? { choice: null } : { choice: v });
 
   // WHICH ANSWER OPENS THE TIME BOX, and whether it may be left empty.
@@ -467,6 +488,16 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
           why={!answered ? c.no.why : null}
           onClick={() => pick("no")}
         />
+        {c.third && (
+          <Choice
+            on={shown === c.third.value}
+            tone="no"
+            busy={pending}
+            label={c.third.label}
+            why={!answered ? c.third.why : null}
+            onClick={() => pick(c.third.value)}
+          />
+        )}
       </div>
 
       {/* THE TIME GOES UNDER THE ANSWER THAT NEEDS IT, not beside it as a third
@@ -530,9 +561,9 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
         <div className={`mt-3 rounded-lg border-2 p-4 ${
           proposed.choice === "yes"
             ? "border-emerald-500 bg-emerald-500/10"
-            : proposed.choice === "no"
-              ? "border-rose-500 bg-rose-500/10"
-              : "border-border-strong bg-surface-2"
+            : proposed.choice === null
+              ? "border-border-strong bg-surface-2"
+              : "border-rose-500 bg-rose-500/10"
         }`}>
           <p className="text-base font-semibold text-foreground">
             {proposed.choice === null ? "Take your answer off?" : "Are you sure you want to confirm?"}
@@ -541,7 +572,8 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
             <p>
               {proposed.choice === "yes" ? c.yesEffect
                 : proposed.choice === "no" ? c.noEffect
-                  : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
+                  : proposed.choice === c.third?.value ? c.thirdEffect
+                    : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
             </p>
             {needsTime && typedHHMM && (
               <p>
@@ -565,7 +597,7 @@ function OneQuestion({ token, q, answer, standing, submitAction, showDate }) {
               onClick={commit}
               className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
                 proposed.choice === "yes" ? "bg-emerald-600"
-                  : proposed.choice === "no" ? "bg-rose-600" : "bg-brand"
+                  : proposed.choice === null ? "bg-brand" : "bg-rose-600"
               }`}
             >
               {proposed.choice === null ? "Take it off" : "Yes, confirm"}
@@ -1090,6 +1122,7 @@ export default function TimesheetQuestion({
             token={token}
             q={q}
             answer={answers?.[q.id] || null}
+            answerHasTimes={!!partials?.[q.id]}
             standing={standing}
             submitAction={submitAction}
             showDate={perDay}

@@ -36,7 +36,7 @@
 // could not READ it. See `MANDATORY_KINDS`.
 
 import {
-  restKey, isMealLengthRest, clockMin, FULL_REST_MIN, REST_LONG_MAX_MIN,
+  restKey, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
 import { shortTime, scheduleGaps, rosteredMeal } from "./recorded-breaks.js";
 
@@ -306,55 +306,106 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   // ---- APPLY, THEN ASK -----------------------------------------------------
 
   // 4. A TEN LOGGED OUTSIDE DOCUMENTED WORKING HOURS - before the rostered day,
-  //    after it, hard against a service edge, or in an unpaid gap. One question
-  //    since 2026-08-11, where there were three separate readings of the same
-  //    event and one of them asked nothing at all.
+  //    after it, hard against a service edge, or in an unpaid gap.
   //
-  //    ONE card for the lot: April Martinez has eleven identical 7:00-7:10 rows
-  //    and eleven cards would be unusable. It is one habit, not eleven decisions.
+  //    BUILT FROM THE REST ROWS, NOT FROM A FLAG ON THE DAY, and that is the
+  //    whole reason it works. It read `d.restsOutsideScheduled` first, which
+  //    `analyzeDay` sets at UPLOAD - and `rebuildSheetFor` never re-runs
+  //    analyzeDay, so on every batch already in the database the flag is absent
+  //    and the question could never appear. Aranda has two of these on screen,
+  //    hatched, and was asked nothing about either. Mánu 2026-08-11: "why isnt
+  //    aranda asked about the hazard colored tens?"
   //
-  //    THE MINUTES ARE PAID UNTIL THEY SAY THE TIME WAS WRONG. Mánu 2026-08-11:
-  //    "they'll get that additional ten minutes if it is [correct] ... They also
-  //    gotta input the time if it was wrong, so the new generated time sheet can
-  //    be corrected."
+  //    The report rows and the stored punches are enough to work it out, and
+  //    both survive on every sheet - which is how `repair`, `restIsMealLength`
+  //    and `restNoTimes` have always been built.
   //
-  //    SO THE POLARITY IS THE OTHER WAY ROUND FROM THE BREAK QUESTIONS, and that
-  //    is deliberate rather than an oversight. Everywhere else "yes I took it"
-  //    removes a premium. Here the question is "was that the right time?", so
-  //    YES agrees with the sheet and keeps the ten, and NO is the correction that
-  //    takes it off. The rule that actually holds across all of them is: an
-  //    answer that CONFIRMS the record never moves money, and only a correction
-  //    does. Silence keeps the pay either way.
-  const outside = days.filter((d) => (d.restsOutsideScheduled || 0) > 0);
-  if (outside.length) {
-    const minutes = outside.reduce((n, d) => n + (d.restsOutsideScheduledMin || 0), 0);
-    const detail = outside.flatMap((d) =>
-      (d.restsOutsideScheduledDetail || []).map((x) => ({ date: d.date, ...x })));
+  //    THREE OUTCOMES, his words: "she needs to get those hours added unless she
+  //    confirms an earlier time in a service, or if she didnt take it at all."
+  //
+  //      took-then    the ten happened when the record says, off the clock, so
+  //                   the minutes are PAID. The default, and what silence keeps.
+  //      took-earlier it was really inside her shift - she gives the time, and
+  //                   the minutes are not added because they were already paid
+  //      not-taken    she never got it. No minutes, AND the rest stops counting
+  //                   as taken, which can put a premium on the day.
+  const offClockRows = [];
+  for (const r of mine) {
+    if (!r.counted || r.repair || mealReadingWins(r)) continue;
+    const d = dayOf(r.date);
+    if (!d) continue;
+    const out = clockMin(r.out);
+    const inn = clockMin(r.in);
+    if (out == null || inn == null || inn <= out) continue;
+    // inside a punch pair means they were on the clock for it, so it is already
+    // paid and there is nothing to add and nothing to ask
+    const punches = (d.punches || []).map((x) => x.min).filter((n) => Number.isFinite(n));
+    let onClock = false;
+    for (let i = 0; i + 1 < punches.length; i += 2) {
+      if (out >= punches[i] && inn <= punches[i + 1]) { onClock = true; break; }
+    }
+    if (onClock) continue;
+    offClockRows.push({ r, d, out, inn, minutes: inn - out });
+  }
+
+  if (offClockRows.length) {
+    const minutes = offClockRows.reduce((n, x) => n + x.minutes, 0);
+    // HOW MANY OF THOSE MINUTES THE STORED DAY ALREADY PAYS. On a sheet built
+    // since the flip that is all of them; on one built before it, only the rows
+    // the old engine did not read as a mis-click. The patches below work from
+    // this rather than assuming, so an answer lands the same figure on a batch
+    // uploaded last week and one uploaded today.
+    const seenDays = new Set();
+    let inPaid = 0;
+    for (const { d } of offClockRows) {
+      if (seenDays.has(d.date)) continue;
+      seenDays.add(d.date);
+      inPaid += d.restsOffClockMin || 0;
+    }
+    const detail = offClockRows.map(({ r, d, out, inn, minutes: m }) => {
+      const fit = r.fit || serviceFit(r);
+      const svcFrom = fit?.from ?? null;
+      const svcTo = fit?.to ?? null;
+      // where the assumption would put it: inside the service it was filed
+      // under, at the edge it is sitting against
+      const inside = svcFrom == null ? null
+        : fit.where === "after" ? { from: svcTo - m, to: svcTo }
+          : fit.where === "before" ? { from: svcFrom, to: svcFrom + m }
+            : null;
+      return {
+        date: r.date,
+        wasFrom: shortTime(r.out), wasTo: shortTime(r.in),
+        minutes: m,
+        where: fit?.where === "inside" ? "unpaid-gap" : (fit?.where || "unknown"),
+        abuts: !!fit?.abuts,
+        service: svcFrom != null ? `${clock(svcFrom)}-${clock(svcTo)}` : null,
+        from: inside ? clock(inside.from) : null,
+        to: inside ? clock(inside.to) : null,
+        // whether losing this one would leave the day short a rest
+        clearsARest: (d.restTaken ?? 0) <= (d.restRequired ?? 0),
+      };
+    });
     // one slot per row, so a corrected time lands on the day it belongs to
-    // rather than being applied to all eleven of April's at once
     const needs = detail.map((x, i) => ({
       slot: `outside${i + 1}`,
       kindOf: "rest",
       date: x.date,
-      label: `${x.date} - when did you actually take it?`,
+      label: `${x.date} - when did you take it?`,
       minutes: x.minutes,
       prefill: null,
       source: null,
-      // where the service says it should have been, offered as one tap. Only
-      // where the report gave us a shift to put it in.
       suggest: x.from || null,
       hint: x.from
-        ? `your ${x.service} shift that day - tapping this puts it at ${x.from}`
-        : "we have no shift on this row to point at, so you will have to remember",
+        ? `inside your ${x.service} shift that would be ${x.from}`
+        : "no shift on this row to point at - you will have to remember",
     }));
     out.push({
       kind: "restOutsideScheduled",
-      dates: outside.map((d) => d.date),
-      // confirming the record changes nothing; correcting it takes the time off
+      dates: [...new Set(offClockRows.map((x) => x.r.date))],
+      // the default already pays these, so confirming moves nothing
       moves: 0,
       movesOnDecline: -r2(minutes / 60),
-      row: { minutes, days: outside.length, detail },
-      // asked only when they say the time was wrong
+      row: { minutes, days: new Set(offClockRows.map((x) => x.r.date)).size, detail, inPaid },
       needs,
       needsOn: "no",
       canGiveTime: true,
@@ -573,15 +624,44 @@ export function patchesFor(question, choice, day) {
     case "restNoTimes":
       // "yes, I took it" - no rest premium owed for the day
       return yes ? { restViolation: false } : { restViolation: null };
-    case "restOutsideScheduled":
-      // THE OTHER WAY ROUND FROM THE REST OF THEM, on purpose. This asks "was
-      // that the right time?", so confirming keeps the ten where it is and
-      // DECLINING is the correction that takes the minutes back off. Mánu
-      // 2026-08-11: "they'll get that additional ten minutes if it is [correct]
-      // ... they also gotta input the time if it was wrong."
-      return yes
-        ? { paidHours: null }
-        : { paidHours: r2(Math.max(0, (day?.paidHours || 0) - (day?.restsOutsideScheduledMin || 0) / 60)) };
+    case "restOutsideScheduled": {
+      // THREE OUTCOMES, and the figure is worked out as an ABSOLUTE rather than
+      // a delta. Mánu 2026-08-11: "she needs to get those hours added unless she
+      // confirms an earlier time in a service, or if she didnt take it at all."
+      //
+      // The stored day may or may not already pay these minutes - a sheet built
+      // since the flip does, one built before it only pays the rows the old
+      // engine did not read as a mis-click. Subtracting a delta would land on a
+      // different figure depending on when the batch was uploaded, so the
+      // question carries `inPaid` and the target is computed from it.
+      const rows = (question.row?.detail || []).filter((x) => x.date === day?.date);
+      const mins = rows.reduce((n, x) => n + (x.minutes || 0), 0);
+      // exactly how many of these minutes the stored day already pays: all of
+      // them on a sheet built since the flip, only the non-mis-click ones on a
+      // sheet built before it
+      const already = day?.restsOffClockMin || 0;
+      const base = (day?.paidHours || 0) - already / 60;
+
+      // "yes, that is when I took it" - off the clock, so the minutes are pay
+      if (yes) return { paidHours: r2(Math.max(0, base + mins / 60)) };
+
+      // "I did not take it at all" - no minutes, AND the rest stops counting as
+      // taken, which is what can put a premium on the day. Aranda 07/31 reads
+      // 1 of 1 today; without this she says she never got her break and the
+      // sheet carries on saying she did.
+      if (choice === "notaken") {
+        const taken = Math.max(0, (day?.restTaken ?? 0) - rows.length);
+        return {
+          paidHours: r2(Math.max(0, base)),
+          restTaken: taken,
+          restViolation: taken < (day?.restRequired ?? 0),
+        };
+      }
+
+      // "I took it earlier, inside my shift" - it was already paid as worked
+      // time, so nothing is added and the break still counts.
+      return { paidHours: r2(Math.max(0, base)) };
+    }
     case "nothingDocumented":
       // "Yes, I took them" - they took them and did not write them down, so the
       // premium comes off. "No" agrees with what the day already says, so the

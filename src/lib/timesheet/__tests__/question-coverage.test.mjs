@@ -55,10 +55,14 @@ function everyKind() {
   };
   add([day({ mealViolation: true })]);                                   // nothingDocumentedMeal
   add([day({ restViolation: true })]);                                   // nothingDocumentedRest
-  add([day({
-    restsOutsideScheduled: 1, restsOutsideScheduledMin: 10,
-    restsOutsideScheduledDetail: [{ wasFrom: "7a", wasTo: "7:10a", minutes: 10, where: "before-day", service: "8a-11a", from: "8a", to: "8:10a" }],
-  })]);                                                                  // restOutsideScheduled
+  // off the clock: the punches say 8a-5p and the ten is recorded at 7a. Built
+  // from the ROWS and the punches, never from a flag analyzeDay sets at upload.
+  add([day({ punches: [{ min: 8 * 60 }, { min: 17 * 60 }] })], {
+    restRows: [{
+      name: "Newperson, Someone", date: "04/02/27", out: "7:00 AM", in: "7:10 AM",
+      minutes: 10, counted: true, shift: "8:00 AM to 11:00 AM",
+    }],
+  });                                                                    // restOutsideScheduled
   add([day({ restsFromShortMeals: 1, restTaken: 1, restRequired: 2, restViolation: true })]); // shortMealRest
   // repair comes off a REST ROW the parser had to fix, not off the day
   add([day({ restViolation: true })], {

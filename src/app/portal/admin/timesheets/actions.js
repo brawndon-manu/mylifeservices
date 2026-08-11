@@ -1528,7 +1528,10 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
   // A NULL CHOICE TAKES AN ANSWER BACK OFF THE RECORD. Mánu 2026-08-11:
   // "clicking on a box clicked should also unclick the box." Unhighlighting it
   // while the row stayed in the database would have been a lie on screen.
-  if (asked.some((a) => a.choice != null && !["yes", "no", "partial"].includes(a.choice))) {
+  // "notaken" is the third outcome on `restOutsideScheduled`: the break never
+  // happened at all, so the minutes are not added AND it stops counting as a
+  // rest taken. Distinct from "no", which means the time was wrong.
+  if (asked.some((a) => a.choice != null && !["yes", "no", "partial", "notaken"].includes(a.choice))) {
     return { ok: false, error: "badchoice" };
   }
 
@@ -1573,7 +1576,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
     // is written, so a bad time on the ninth day cannot leave the first eight
     // saved and the sheet half rebuilt.
     let statedBreaks = null;
-    if ((a.choice === "yes" || a.choice === "partial") && q.needs?.length) {
+    if ((a.choice === "yes" || a.choice === "partial" || a.choice === "no") && q.needs?.length
+        && (q.needsOn || "yes") === (a.choice === "partial" ? "yes" : a.choice)) {
       const given = a.times || {};
       const list = [];
       for (const need of q.needs) {
@@ -1627,7 +1631,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
         select: { id: true },
       });
       const record = {
-        // a partial settles as a decline: the premium stands either way
+        // a partial and a "never took it" both settle as declines: the premium
+        // stands either way, and what differs is the record
         status: pick === "yes" ? "accepted" : "declined",
         resolvedAt: new Date(),
         resolvedById: ts.userId || null,
@@ -1638,7 +1643,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
         // got. A PARTIAL KEEPS THEM, and that is also what marks it as one -
         // times surviving on a declined row cannot mean anything else, which is
         // how the page shows "Took one" again after a reload.
-        statedBreaks: pick === "no" ? null : statedBreaks,
+        statedBreaks: pick === "no" || pick === "notaken" ? null : statedBreaks,
       };
       if (existing) {
         await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
@@ -1661,7 +1666,15 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
       const a = answers.find((x) => x.date === date && x.kind === `q_${q2.kind}`);
       if (!a) continue;
       const day = (ts.data?.days || []).find((d) => d.date === date);
-      const patch = patchesFor(q2, a.status === "accepted" ? "yes" : "no", day);
+      // WHICH OF THE THREE, rebuilt from what the row carries. A declined
+      // `restOutsideScheduled` with times on it is "I took it earlier"; one
+      // without is "I never took it", and only the second drops the rest count.
+      // Same shape as the partial - no third status, no migration.
+      const hasTimes = Array.isArray(a.statedBreaks) && a.statedBreaks.length > 0;
+      const back = a.status === "accepted"
+        ? "yes"
+        : q2.kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no";
+      const patch = patchesFor(q2, back, day);
       const clean = Object.fromEntries(
         Object.entries(patch).filter(([, v]) => v != null),
       );
