@@ -57,26 +57,26 @@ const NOTEINK = rgb(0.42, 0.32, 0.06);
 // wrong one is indistinguishable from page two of the right one, so the banner
 // is drawn on EVERY page rather than only the first.
 //
-// `corrected` IS THE DOCUMENT PEOPLE SIGN, as of 2026-08-09 late. Its banner
-// explains the model rather than warning you off, because there is nothing to
-// warn anybody off - this is their timesheet. The other two are admin readings
-// and say so.
+// THE NAMES AND THE ROLES SWAPPED ON 2026-08-11. `projected` used to be the
+// engine's small proposal and `ignoring` the reference copy nobody should
+// mistake for a payslip. The flip makes the full figure the default, so
+// `projected` IS the document people sign and `assumed` is the admin reading.
 //
-// `ignoring` used to be the signed document and carried no banner at all. It
-// now charges every assumption the company is not making, which is the one
-// figure nobody should mistake for a payslip, so it is labelled too.
+// `projected` therefore carries NO WARNING BANNER: there is nothing to warn
+// anybody off, it is their timesheet, and every hour the engine could find for
+// them is on it. The other two are readings of an open question and say so.
 const BASIS_BANNER = {
   projected: {
-    title: "PROJECTED COPY - the engine's proposal, before anyone answered.",
-    body: "Breaks with nothing on file recording them are assumed taken and are not charged. Not the copy sent for signature.",
+    title: "Breaks with nothing on file recording them are paid as missed.",
+    body: "The penalty for each one is already on this timesheet. If you did take a break and did not record it, say so on your timesheet page and it comes off.",
+  },
+  assumed: {
+    title: "IF EVERY ASSUMPTION HOLDS - reference copy, not a payslip.",
+    body: "Every break with nothing on file is treated as taken here, whether or not it was. Not the copy sent for signature.",
   },
   corrected: {
-    title: "Breaks with nothing on file recording them are assumed taken.",
-    body: "Nothing is charged for them. Confirm them on your timesheet page, and say so if you missed any.",
-  },
-  ignoring: {
-    title: "IGNORING ASSUMPTIONS - reference copy, not a payslip.",
-    body: "Every break with nothing on file is charged here, whether or not it was missed. Not the copy sent for signature.",
+    title: "AS CORRECTED - what would be left once everyone has answered.",
+    body: "Assumptions are applied here except where somebody has told us they missed the break. Not the copy sent for signature.",
   },
 };
 
@@ -492,17 +492,20 @@ export async function renderCorrected(sheet, opts = {}) {
     if (shown.some((x) => x.mark === "unknown-rest")) hasUnknown = true;
 
     for (const e of entries) {
-      // Ten minutes recorded before the day started or after it ended. Since
-      // Mánu's ruling of 2026-08-09 (evening) this is read as a MISCLICK rather
-      // than as ten minutes worked, so the minutes are NOT added. The copy said
-      // "paid time and have been added" and would now be describing the
-      // opposite of what the engine does.
+      // Ten minutes recorded before the day started or after it ended.
+      //
+      // THIS SENTENCE HAS NOW BEEN WRONG IN BOTH DIRECTIONS. It said the
+      // minutes were "paid time and have been added"; the 2026-08-09 evening
+      // misclick ruling withheld them and it was rewritten to say so; the
+      // 2026-08-11 flip pays them again, because reading a misclick into a
+      // correct-looking entry is an ASSUMPTION and assumptions are not applied
+      // on their own. Caught by reading the rendered sheet, not the build.
       if (e.kindOf === "rest" && e.outsideShift) {
         footnotes.push(
           `${d.date}: the ${e.from}-${e.to} rest break is recorded outside the shifts ` +
-          `you were rostered for that day, so we have read the time as entered wrongly ` +
-          `rather than as extra minutes worked. Your break still counts and no break ` +
-          `premium is owed. Please confirm this on your timesheet page.`,
+          `you were rostered for that day. We have taken it at face value and paid those ` +
+          `minutes as a break off the clock. If the time was entered wrongly and you were ` +
+          `not on a break then, say so on your timesheet page and they come back off.`,
         );
       }
       // the report says a break happened and holds neither end of it
@@ -631,14 +634,15 @@ export async function renderCorrected(sheet, opts = {}) {
         const bad = (t) => notes.push({ t, tone: "bad" });
         const good = (t) => notes.push({ t, tone: "good" });
         // NOTED, NOT CHARGED - the tone this sheet already uses for "+0.17
-        // added" and "overlap *". A premium the engine assumed away keeps its
+        // added" and "overlap *". A premium an assumption took away keeps its
         // words and loses its colour, which is the whole difference between the
         // documents: same finding, not being charged for.
         const noted = (t) => notes.push({ t, tone: "muted" });
-        // set only on a projected or corrected render. `projectDays` cleared the
-        // violation flags this row would otherwise have been drawn from, so
-        // without this the row goes silent and prints "compliant" - 359 rows on
-        // the live batch would claim a clean day for a break nobody verified.
+        // set only on an ASSUMED or CORRECTED render, never on the projected one
+        // that goes out - `applyAssumptions` cleared the violation flags this row
+        // would otherwise have been drawn from, so without this the row goes
+        // silent and prints "compliant". 359 rows on the live batch would claim
+        // a clean day for a break nobody verified.
         const pn = d.premiumNote || null;
         if (d.mealLate) bad("meal started late");
         // a day past ten hours owes a SECOND meal, and "you got the first one
@@ -857,7 +861,7 @@ export async function renderCorrected(sheet, opts = {}) {
     keyItems.push({ fill: MEAL, bar: MEAL_BAR, label: "Meal Break - recorded as a rest break, and not counted as either" });
   }
   if (hasOutside) {
-    keyItems.push({ fill: MEAL, bar: OUTSIDE_BAR, label: "Rest Break recorded outside your shift - counted, time not added, no premium owed" });
+    keyItems.push({ fill: MEAL, bar: OUTSIDE_BAR, label: "Rest Break recorded outside your shift - counted, and the minutes paid as time off the clock" });
   }
   if (hasUnknown) {
     keyItems.push({ fill: MEAL, label: "??? - a rest break with no times recorded. Not charged to anyone." });
@@ -918,7 +922,7 @@ export async function renderCorrected(sheet, opts = {}) {
       page,
       due
         ? "GREY BREAK NOTES: a meal or rest break with nothing on file recording it. The date for replying has passed, so these are being treated as taken and nothing is charged for them. Say so if any of them were missed."
-        : "GREY BREAK NOTES: a meal or rest break with nothing on file recording it. These are assumed taken and nothing is charged for them, and they need your confirmation before this timesheet can be signed.",
+        : "GREY BREAK NOTES: a meal or rest break with nothing on file recording it. This copy treats them as taken and charges nothing for them. The timesheet you sign charges every one, so these come off only if you confirm you took them.",
       L, y, R - L, { font: italic, size: 6.5, color: NOTEINK, leading: 8 },
     );
     y -= 4;
