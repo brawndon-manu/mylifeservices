@@ -438,11 +438,17 @@ export default function FormFiller({
         <p>
           {/* sign mode was built for timesheets and said so, which read as
               somebody else's document once an HR form started using it. The
-              caller names the thing; the fallback stays generic. */}
-          {signMode
-            ? signIntro ||
-              "Read it through, sign at the bottom, then submit. Your signed copy is kept on file."
-            : `Nothing is saved here. Fill it in, then ${reviewTeam ? "submit it to the review team or download the PDF." : "download the official PDF to your device."}`}
+              caller names the thing; the fallback stays generic.
+
+              `signIntro` is honoured OUTSIDE sign mode too, as of 2026-08-11.
+              A timesheet that cannot be signed yet is rendered here read-only -
+              no reviewer, no submit - and the generic line told the employee to
+              "fill it in and submit it to the review team", which is neither
+              what the page does nor something they are allowed to do. */}
+          {signIntro ||
+            (signMode
+              ? "Read it through, sign at the bottom, then submit. Your signed copy is kept on file."
+              : `Nothing is saved here. Fill it in, then ${reviewTeam ? "submit it to the review team or download the PDF." : "download the official PDF to your device."}`)}
         </p>
       </div>
 

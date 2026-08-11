@@ -298,28 +298,44 @@ export default async function SignTimesheetPage({ params }) {
             </div>
           )}
 
-          {!gate.canSign ? (
-            <div className="mt-5 rounded-xl border border-dashed border-border-strong p-5">
+          {/* THE SHEET IS ALWAYS ON THE PAGE NOW, and it updates as answers go
+              in. Mánu 2026-08-11: "let's make the current time sheet appear at
+              the bottom like it did for Amanda and update itself as answers are
+              inputted, so I can see it live."
+
+              It used to appear only once somebody could sign, so the four people
+              with a blocking question could not see the document the questions
+              were about - which is the wrong way round, since they are the ones
+              being asked to check something on it.
+
+              `answerCount` is the remount key. The PDF route is no-store and
+              answering revalidates this page, but FormFiller fetches the file
+              once on mount, so without a key change the viewer would keep
+              showing the sheet from before the answer. */}
+          {!gate.canSign && (
+            <div className="mt-5 rounded-xl border border-dashed border-border-strong p-4">
               <p className="text-sm text-muted">
                 {gate.blocking === 1
-                  ? "Answer the question above and your timesheet will appear here to sign."
-                  : `Answer the ${gate.blocking} questions marked as needed above, and your timesheet will appear here to sign.`}
+                  ? "There is one question above that needs an answer before you can sign. Your timesheet is below either way - it updates as you answer."
+                  : `There are ${gate.blocking} questions above that need answering before you can sign. Your timesheet is below either way - it updates as you answer.`}
               </p>
             </div>
-          ) : (
-            <TimesheetSigner
-              token={token}
-              fileUrl={`/t/${token}/pdf`}
-              title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
-              submitAction={submitSignedTimesheet}
-              /* THE POPUP IS REASSURANCE, NOT A WARNING. Ignoring these is the
-                 safe choice for the employee now, so the panel says the pay is
-                 already on the sheet rather than nagging them to finish. The
-                 count is this person's own. */
-              unansweredOptional={gate.optionalOpen}
-              premiumOnSheet={standing.charged}
-            />
           )}
+          <TimesheetSigner
+            key={`sheet-${answered.length}`}
+            token={token}
+            fileUrl={`/t/${token}/pdf?v=${answered.length}`}
+            title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
+            submitAction={submitSignedTimesheet}
+            /* THE POPUP IS REASSURANCE, NOT A WARNING. Ignoring these is the
+               safe choice for the employee now, so the panel says the pay is
+               already on the sheet rather than nagging them to finish. The
+               count is this person's own. */
+            unansweredOptional={gate.optionalOpen}
+            premiumOnSheet={standing.charged}
+            canSign={gate.canSign}
+            blocking={gate.blocking}
+          />
           <ReportProblem
             token={token}
             days={ts.data?.days || []}

@@ -16,6 +16,11 @@ export default function TimesheetSigner({
   // on their sheet. Both are theirs, not the batch's.
   unansweredOptional = 0,
   premiumOnSheet = 0,
+  // WHETHER THE SIGN CONTROLS SHOW. The document itself always does now - the
+  // people who cannot sign yet are exactly the people being asked to check
+  // something on it, so hiding it from them was backwards.
+  canSign = true,
+  blocking = 0,
 }) {
   // THE CONFIRMATION IS REASSURANCE, NOT A WARNING, and that is the whole point
   // of it existing after the 2026-08-11 flip. Before the flip, signing with
@@ -52,6 +57,20 @@ export default function TimesheetSigner({
     });
   };
 
+  // A GATED SHEET IS SHOWN, NOT SIGNED - and that takes BOTH of these props.
+  //
+  // `signMode={false}` alone was wrong: FormFiller then renders its own "Submit
+  // to review team" button whenever `reviewTeam` is set, wired to the same
+  // action, so somebody with an unanswered mandatory question could submit
+  // anyway and the gate would have been decoration. Dropping `reviewTeam` too
+  // is what leaves no submit path at all.
+  //
+  // A plain <object> embed was the first attempt and is worse: Chrome would not
+  // render it here and mobile browsers routinely refuse inline PDFs, which is
+  // most of the staff. FormFiller's pdf.js viewer already works everywhere, so
+  // the document is drawn by the same code either way.
+  const gated = !canSign;
+
   return (
     <div className="mt-6">
       <FormFiller
@@ -59,9 +78,13 @@ export default function TimesheetSigner({
         title={title}
         formId={token}
         submitAction={submit}
-        reviewTeam={{ recipientLabel: "payroll", recipients: [], ccNames: [] }}
-        signIntro="Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
-        signMode
+        reviewTeam={gated ? null : { recipientLabel: "payroll", recipients: [], ccNames: [] }}
+        signIntro={
+          gated
+            ? `This is your timesheet as it stands right now, and it updates every time you answer a question above. You can sign it once the ${blocking === 1 ? "question" : `${blocking} questions`} marked as needed ${blocking === 1 ? "has" : "have"} an answer.`
+            : "Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
+        }
+        signMode={!gated}
       />
 
       {asking && (
