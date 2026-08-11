@@ -66,6 +66,9 @@ function sendErrorText(code) {
       // wrong, so this must not read like a failure - the timesheet signer uses
       // it when somebody decides to go back and answer their questions first.
       cancelled: "No problem - nothing has been submitted.",
+      // a rest period has to sit inside a shift that was worked - the same rule
+      // the "outside your scheduled hours" question is about
+      outsideshift: "That break time is outside the shift you worked. Pick a time inside it.",
     }[code] || "Couldn't send. Please try again."
   );
 }

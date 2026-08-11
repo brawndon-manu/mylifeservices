@@ -14,11 +14,12 @@ import {
   parseTimesheetPdf,
   analyzeTimesheet,
   applyOvertime,
+  reentitle,
   analyzeDay,
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildQuestions, patchesFor } from "@/lib/timesheet/questions";
+import { buildQuestions, patchesFor, restTimeFits } from "@/lib/timesheet/questions";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
@@ -1383,7 +1384,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   const payPeriod =
     stored.payPeriod || { from: ts.batch.periodFrom, to: ts.batch.periodTo };
 
-  const next = recomputeSheet({ days, payPeriod, overrides }, applyOvertime);
+  const next = recomputeSheet({ days, payPeriod, overrides }, applyOvertime, reentitle);
 
   // A rebuild renders to CHECK, and to refresh the approval rectangle, then
   // discards the bytes - the sheet itself is built on demand. This is the loop
@@ -1512,14 +1513,17 @@ function shortClock(min) {
 // EVERY ID IS STILL RE-DERIVED FROM THE CLASSIFIER, one at a time, exactly as
 // before. A batch is a batch of writes, not a relaxation of the check: a client
 // cannot answer a question nobody asked, whichever shape it arrives in.
-export async function answerTimesheetQuestion({ token, id, choice, at, batch }) {
+export async function answerTimesheetQuestion({ token, id, choice, at, times, batch }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
 
   const asked = Array.isArray(batch) && batch.length
     ? batch.map((b) => ({ id: b?.id, choice: b?.choice, at: b?.at ?? null, times: b?.times || null }))
-    : [{ id, choice, at: at ?? null, times: null }];
+    // A SINGLE QUESTION CAN CARRY TIMES TOO. It could not until 2026-08-11, so a
+    // grouped card covering three days had one box for the lot - which asked
+    // somebody to pick which of their three days to be honest about.
+    : [{ id, choice, at: at ?? null, times: times || null }];
   if (asked.length > 40) return { ok: false, error: "toomany" };
   // "partial" is a rest day where they got SOME of their tens. It settles as a
   // DECLINE - one hour per workday on which a rest period was not provided, so
@@ -1591,6 +1595,17 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
           return { ok: false, error: "missingtime" };
         }
         if (start + need.minutes > 1439) return { ok: false, error: "badtime" };
+        // A REST HAS TO LAND INSIDE A SHIFT, and inside its own half of one.
+        // Checked here as well as in the browser: the card above this exists
+        // because a ten was logged outside a shift, and a client that skipped
+        // the check could write exactly that through this route.
+        if (need.kindOf === "rest") {
+          const d = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
+          const ordinal = Number(String(need.slot).replace(/\D/g, "")) || 1;
+          if (d && !restTimeFits(d, ordinal, start, need.minutes).ok) {
+            return { ok: false, error: "outsideshift" };
+          }
+        }
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
         // client. It only drives the sheet's footnote, but "you typed this" is
         // a claim about where a figure on a signed document came from and a
@@ -1603,6 +1618,11 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
         list.push({
           slot: need.slot, kindOf: need.kindOf, minutes: need.minutes,
           from, to: shortClock(start + need.minutes), source,
+          // the date this one belongs to, and the recorded row it supersedes.
+          // Both only exist on kinds whose slots are per-day; everything else
+          // leaves them undefined and nothing downstream looks for them.
+          date: need.date ?? null,
+          replaces: need.replaces ?? null,
         });
       }
       if (a.choice === "partial" && !list.length) return { ok: false, error: "missingtime" };
@@ -1638,12 +1658,28 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
         resolvedById: ts.userId || null,
         note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
         resolutionNote: resolutionFor(q, pick, stated, statedBreaks),
-        // cleared on a plain "no", so changing your mind from yes does not
-        // leave times on the record for breaks you have since said you never
-        // got. A PARTIAL KEEPS THEM, and that is also what marks it as one -
-        // times surviving on a declined row cannot mean anything else, which is
-        // how the page shows "Took one" again after a reload.
-        statedBreaks: pick === "no" || pick === "notaken" ? null : statedBreaks,
+        // WHATEVER THE ANSWER ACTUALLY COLLECTED, and nothing else.
+        //
+        // This used to null the times on any "no", which was right while "no"
+        // always meant "I never got it". It is not right for a card whose "no"
+        // IS the one that asks for times: `restOutsideScheduled` collects them
+        // on the decline, and clearing them lost the very thing that tells "I
+        // took it during a shift" apart from "I did not take it at all". Mánu
+        // 2026-08-11: "when i chose those time options it goes back to selecting
+        // i did not take it at all."
+        //
+        // Storing the resolved value clears them just as well where it should:
+        // `statedBreaks` is only ever built when the chosen answer is the one
+        // this kind asks times on, so changing from "yes I took them" to "no I
+        // missed them" still lands null and still wipes the old times.
+        //
+        // SCOPED TO THIS DATE where the slots carry one. A grouped question
+        // writes a row per date, and the whole list was going onto every one of
+        // them - so Uribe's 07/28 carried the times for 07/29 and 07/31 too, and
+        // his sheet would have drawn three rests on a day with one.
+        statedBreaks: statedBreaks
+          ? statedBreaks.filter((b) => !b.date || b.date === date)
+          : null,
       };
       if (existing) {
         await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
@@ -1661,11 +1697,25 @@ export async function answerTimesheetQuestion({ token, id, choice, at, batch }) 
     select: { date: true, kind: true, status: true, resolutionNote: true, statedBreaks: true },
   });
   const overrides = {};
+  // PATCH THE PRISTINE DAY, NEVER THE ALREADY-PATCHED ONE.
+  //
+  // `rebuildSheetFor` has recomputed from `daysOriginal` since 2f0b194 for
+  // exactly this reason, and this loop was left reading `data.days` - which the
+  // PREVIOUS answer has already rewritten. It did not matter while every patch
+  // was a boolean or was derived from a stored minute count; it matters the
+  // moment one sets an absolute figure.
+  //
+  // Mánu 2026-08-11, on his own sheet: he answered "I took it during a shift"
+  // (6.17 -> 6.00), then changed to "yes, that is when I took it". The second
+  // patch computed its target from the 6.00 the first one had written, so it
+  // landed back on 6.00 and his hours stayed down. It reads as "I cannot change
+  // my answer once I confirm it", which is what he reported.
+  const pristine = ts.data?.daysOriginal || ts.data?.days || [];
   for (const q2 of questions) {
     for (const date of q2.dates || [q2.date]) {
       const a = answers.find((x) => x.date === date && x.kind === `q_${q2.kind}`);
       if (!a) continue;
-      const day = (ts.data?.days || []).find((d) => d.date === date);
+      const day = pristine.find((d) => d.date === date);
       // WHICH OF THE THREE, rebuilt from what the row carries. A declined
       // `restOutsideScheduled` with times on it is "I took it earlier"; one
       // without is "I never took it", and only the second drops the rest count.
