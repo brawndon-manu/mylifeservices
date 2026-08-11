@@ -90,9 +90,9 @@ function noticeFor(standing) {
   return {
     title: `PROVISIONAL. ${standing.waiting} of ${standing.people} have not answered yet.`,
     body:
-      `Breaks nobody recorded are assumed taken and are not charged here. Up to ` +
-      `${f2(standing.assumed)} more hours go on if everyone still to answer says they missed theirs. ` +
-      "This total can rise and cannot fall.",
+      `Every break the reports do not show is charged here. Up to ` +
+      `${f2(standing.assumptions)} hours come off if everyone still to answer confirms they took theirs. ` +
+      "This total can fall and cannot rise.",
     good: false,
   };
 }

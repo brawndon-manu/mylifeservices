@@ -54,7 +54,7 @@ export default async function PayoutReportPage({ params }) {
     doubleHours: t.doubleHours,
     paidHours: t.paidHours,
     premiumHours: standing.byId[t.id]?.charged ?? 0,
-    assumedHours: standing.byId[t.id]?.assumed ?? 0,
+    assumptionHours: standing.byId[t.id]?.assumptions ?? 0,
     payable: (t.paidHours || 0) + (standing.byId[t.id]?.charged ?? 0),
     partialWeek: t.partialWeek,
     signedAt: t.signedAt,
@@ -118,23 +118,26 @@ export default async function PayoutReportPage({ params }) {
         <Big label="Total hours payable" value={fmt(totals.payable)} strong />
       </div>
 
-      {/* WHETHER THE PREMIUM COLUMN IS FINISHED CHANGING. Until everybody has
-          answered, a break somebody says they missed is a premium coming back,
-          so this total can only go UP. A payout page that looks final while
-          most of the batch has an open question is the one way this model can
-          shortchange somebody. */}
+      {/* WHETHER THE PREMIUM COLUMN IS FINISHED CHANGING, AND WHICH WAY.
+          THIS INVERTED ON 2026-08-11. It used to read "can rise and cannot
+          fall": a break somebody said they missed put a premium back on. Now
+          every fault is charged from the start and confirming one is what takes
+          it off, so the total can only come DOWN. The warning is no longer that
+          an employee gets shortchanged - it is that payroll budgets a figure
+          that has not finished shrinking. */}
       {standing.settled ? (
         <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
           <strong>Final.</strong> All {standing.people} have answered what they were
-          asked about their breaks. Nothing further can move the premium column.
+          asked about their breaks. Nothing further can move the premium column,
+          in either direction.
         </div>
       ) : (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           <strong>Provisional.</strong> {standing.waiting} of {standing.people} have not
-          answered yet. Breaks nobody recorded are assumed taken and are not charged
-          here, so up to <strong>{fmt(standing.assumed)}</strong> more premium hours go
-          on if everyone still to answer says they missed theirs. This total can rise
-          and cannot fall.
+          answered yet. Every break the reports do not show is charged here, so up to{" "}
+          <strong>{fmt(standing.assumptions)}</strong> premium hours come OFF if everyone
+          still to answer confirms they took theirs. This total can fall and cannot
+          rise.
         </div>
       )}
 

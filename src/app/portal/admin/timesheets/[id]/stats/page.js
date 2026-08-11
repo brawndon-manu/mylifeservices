@@ -89,15 +89,14 @@ export default async function TimesheetStatsPage({ params }) {
           sub="floored up to QSP's printed daily figure"
           tone="good"
         />
-        {/* The headline is the PROJECTED figure, not the raw total. Under the
-            2026-08-09 model a break nobody recorded is assumed taken and
-            charged nothing, so leading with the raw total would put a number on
-            this page that the company is not proposing to pay. The exposure is
-            not hidden - it is the card right below. */}
+        {/* The headline is the PROJECTED figure, and after 2026-08-11 that IS
+            the raw total: every fault the reports show, with its penalty. It is
+            what the company is proposing to pay. The subtitle is what the policy
+            assumptions would take off it once people confirm them. */}
         <Card
           label="Premium hours projected"
           value={n2(premiumSplit.projected)}
-          sub={`${n2(premiumSplit.ignoringAssumptions)} ignoring assumptions`}
+          sub={`${n2(premiumSplit.assumptions)} could come off on confirmation`}
           tone="warn"
         />
       </div>
@@ -105,21 +104,20 @@ export default async function TimesheetStatsPage({ params }) {
       {/* the money question */}
       <Section title="Break premiums owed" hint="California Labor Code 226.7 - one hour per missed meal period, one per missed rest break, max one of each per day.">
         {/* THE THREE FIGURES, same as the pay period page and the same as the
-            three documents. Staff author their own schedules and signed an
-            acknowledgment to record their breaks, so a missing entry is assumed
-            taken rather than charged. That makes one number impossible to state
-            honestly: the projected one alone hides the exposure, and the raw
-            one alone charges for breaks people took. The gap IS the unanswered
-            work, and it closes as people reply. */}
+            three documents. The projected one is what payroll pays: every fault
+            taken literally. The policy assumptions are what we would assume
+            instead, each of which REDUCES it and each of which needs an employee
+            to confirm it. So the gap is work outstanding, and the total can only
+            come down as people reply. */}
         <div className="grid gap-3 sm:grid-cols-3">
           <Mini label="Projected" value={`${n2(premiumSplit.projected)} hrs`} strong />
-          <Mini label="Ignoring assumptions" value={`${n2(premiumSplit.ignoringAssumptions)} hrs`} />
-          <Mini label="Nobody has answered yet" value={`${n2(premiumSplit.assumed)} hrs`} />
+          <Mini label="Policy assumptions" value={`${n2(premiumSplit.assumptions)} hrs`} />
+          <Mini label="If every assumption holds" value={`${n2(premiumSplit.ifAssumptionsHold)} hrs`} />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <Mini label="Meal period premiums" value={`${n2(t.mealPremiumHours)} hrs`} />
           <Mini label="Rest break premiums" value={`${n2(t.restPremiumHours)} hrs`} />
-          <Mini label="Charged before any assumption" value={`${n2(t.premiumHours)} hrs`} />
+          <Mini label="Stored at upload" value={`${n2(t.premiumHours)} hrs`} />
         </div>
 
         {t.neverPunchedCount > 0 && (

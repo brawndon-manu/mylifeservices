@@ -96,8 +96,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       t.corrections,
     );
 
-  // the projected figure and the ignoring-assumptions one. A premium somebody
-  // has told us they ARE owed stops being an assumption, so the answers feed in.
+  // the projected figure and what the policy assumptions would take off it. A
+  // premium somebody has told us they ARE owed can no longer be assumed away, so
+  // the answers feed in.
   // WHICH PREMIUMS SOMEBODY HAS SAID THEY ARE OWED. Derived in
   // premium-split.js now rather than here: the PDF route needs the same answer
   // to build the corrected copy, and a screen and a document disagreeing about
@@ -135,12 +136,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     otHours: t.otHours,
     doubleHours: t.doubleHours,
     premiumHours: t.premiumHours,
-    // projected = the engine's proposal, blind to the answers on purpose.
+    // projected = every fault charged, which is the sheet that goes out.
+    // assumed   = every policy assumption applied, blind to the answers.
     // corrected = the same with this person's answers folded in.
-    // ignoring  = every violation charged, which is the sheet as it is today.
-    premiumProjected: engineOnly.projected,
-    premiumCorrected: split.projected,
-    premiumIgnoring: split.ignoringAssumptions,
+    premiumProjected: split.projected,
+    premiumAssumed: engineOnly.ifAssumptionsHold,
+    premiumCorrected: split.ifAssumptionsHold,
     partialWeek: t.partialWeek,
     // a lunch that HAPPENED but started after the fifth hour still owes a
     // premium, and it reads as an error to anyone who remembers taking it.
@@ -504,12 +505,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             sign off on that figure without reading one of these.
           </p>
 
-          {/* TWO FIGURES, BECAUSE ONE CANNOT BE STATED HONESTLY. Staff author
-              their own schedules and signed an acknowledgment to enter their
-              breaks, so a missing entry is assumed taken rather than charged -
-              which makes the charged figure small and the exposure invisible if
-              it is shown alone. The gap between these two IS the unanswered
-              work, and it shrinks as people reply. Mánu 2026-08-09. */}
+          {/* TWO FIGURES, AND AFTER 2026-08-11 THE FIRST ONE IS THE ANSWER.
+              The projected figure is every fault the reports show, and it is
+              what payroll pays. The second is what the policy assumptions would
+              take off it - each one needs an employee to confirm it before it
+              does anything, so the gap is work outstanding rather than exposure,
+              and the total can only come down. */}
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-border bg-surface-2 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -519,22 +520,21 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
                 {premiumSplit.projected.toFixed(2)}
               </p>
               <p className="mt-1 text-xs text-muted">
-                What we think is owed, after the engine&apos;s assumptions. Only
-                penalties a document records on its own, plus anything an
-                employee has told us they are owed.
+                Every fault the reports show, taken literally, with its penalty.
+                This is what payroll pays, and it can only fall from here.
               </p>
             </div>
             <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
               <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                Ignoring assumptions
+                Policy assumptions
               </p>
               <p className="mt-1 text-2xl font-semibold text-amber-900 dark:text-amber-200">
-                {premiumSplit.ignoringAssumptions.toFixed(2)}
+                {premiumSplit.assumptions.toFixed(2)}
               </p>
               <p className="mt-1 text-xs text-amber-800 dark:text-amber-200/80">
-                What would be owed if every assumption we made turned out to be
-                wrong. The {premiumSplit.assumed.toFixed(2)} hour gap is what
-                nobody has answered yet.
+                What comes off the figure beside this one if every employee
+                confirms our reading. None of it is applied yet, and it leaves{" "}
+                {premiumSplit.ifAssumptionsHold.toFixed(2)} hours if it all holds.
               </p>
             </div>
           </div>

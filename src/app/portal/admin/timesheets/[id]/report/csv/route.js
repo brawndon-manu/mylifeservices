@@ -60,7 +60,7 @@ export async function GET(_req, { params }) {
     "Double time hours",
     "Hours worked",
     "Premium hours",
-    "Premium hours assumed, not charged",
+    "Premium hours that come off if assumptions confirmed",
     "Total hours payable",
     "Partial week",
     "Status",
@@ -68,18 +68,18 @@ export async function GET(_req, { params }) {
   ];
 
   const lines = [header.map(cell).join(",")];
-  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumed: 0, payable: 0 };
+  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumptions: 0, payable: 0 };
 
   for (const ts of batch.timesheets) {
     const charged = standing.byId[ts.id]?.charged ?? 0;
-    const assumed = standing.byId[ts.id]?.assumed ?? 0;
+    const assumptions = standing.byId[ts.id]?.assumptions ?? 0;
     const payable = (ts.paidHours || 0) + charged;
     t.reg += ts.regularHours || 0;
     t.ot += ts.otHours || 0;
     t.dbl += ts.doubleHours || 0;
     t.paid += ts.paidHours || 0;
     t.prem += charged;
-    t.assumed += assumed;
+    t.assumptions += assumptions;
     t.payable += payable;
 
     lines.push(
@@ -92,7 +92,7 @@ export async function GET(_req, { params }) {
         r2(ts.doubleHours),
         r2(ts.paidHours),
         r2(charged),
-        r2(assumed),
+        r2(assumptions),
         r2(payable),
         ts.partialWeek ? "yes" : "no",
         ts.corrections.some((c) => c.status === "open")
@@ -119,7 +119,7 @@ export async function GET(_req, { params }) {
       r2(t.dbl),
       r2(t.paid),
       r2(t.prem),
-      r2(t.assumed),
+      r2(t.assumptions),
       r2(t.payable),
       "",
       "",
@@ -135,7 +135,7 @@ export async function GET(_req, { params }) {
   lines.push([
     standing.settled
       ? `FINAL: all ${standing.people} have answered. Nothing further can move the premium column.`
-      : `PROVISIONAL: ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumed)} more premium hours go on if they all say they missed theirs. This total can rise and cannot fall.`,
+      : `PROVISIONAL: ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumptions)} premium hours come OFF if they all confirm they took their breaks. This total can fall and cannot rise.`,
   ].map(cell).join(","));
 
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");

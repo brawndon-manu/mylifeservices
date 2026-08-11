@@ -325,11 +325,11 @@ function SheetLinks({ r }) {
   const base = `/portal/admin/timesheets/sheet/${r.id}/download`;
   const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
   // a signed or approved copy is a stored artefact of the sheet as it stood,
-  // and it is always the ignoring-assumptions one. Say which it is.
+  // and it is always the projected one. Say which it is.
   const settled = r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : null;
 
   const same =
-    r.premiumProjected === r.premiumCorrected && r.premiumCorrected === r.premiumIgnoring;
+    r.premiumProjected === r.premiumCorrected && r.premiumCorrected === r.premiumAssumed;
 
   const link = (href, label, muted) => (
     <a
@@ -354,7 +354,7 @@ function SheetLinks({ r }) {
         {settled || "Preview PDF"}
       </span>
       {link(`${base}?basis=projected`, `projected ${f2(r.premiumProjected)}`)}
-      {link(`${base}?basis=ignoring`, `ignoring assumptions ${f2(r.premiumIgnoring)}`, true)}
+      {link(`${base}?basis=assumed`, `if assumptions hold ${f2(r.premiumAssumed)}`, true)}
       {link(`${base}?basis=corrected`, `as corrected ${f2(r.premiumCorrected)}`, true)}
     </div>
   );

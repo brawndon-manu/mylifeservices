@@ -34,23 +34,25 @@ export async function GET(req, { params }) {
   });
   if (!ts) return new NextResponse("Not found", { status: 404 });
 
-  // WHICH OF THE THREE DOCUMENTS. Anything unrecognised falls back to the sheet
-  // as it has always been, so a mistyped link cannot silently hand somebody a
-  // figure 670 hours away from the one they asked for.
+  // WHICH OF THE THREE DOCUMENTS. Anything unrecognised falls back to the
+  // default sheet, so a mistyped link cannot silently hand somebody a figure 664
+  // hours away from the one they asked for. That fallback is now the FULL
+  // figure rather than the reduced one, which is the safe direction to be wrong
+  // in: a mistyped basis over-states what is owed instead of hiding it.
   const query = new URL(req.url).searchParams;
   const asked = query.get("basis");
-  const basis = BASES.includes(asked) ? asked : "ignoring";
+  const basis = BASES.includes(asked) ? asked : "projected";
 
   // A SIGNED or APPROVED copy is a stored artefact - it carries somebody's
   // actual signature and cannot be regenerated. The unsigned sheet is built
   // from `data` on demand, so there is no stale blob to go looking for.
   //
-  // A PROJECTED OR CORRECTED COPY IS NEVER SERVED FROM THE BLOB. Those two are
+  // AN ASSUMED OR CORRECTED COPY IS NEVER SERVED FROM THE BLOB. Those two are
   // a reading of an open question as it stands today; the stored file is the
   // document somebody signed, which is a different claim and a different total.
   const wantOriginal = query.get("original") === "1";
   const storedUrl =
-    wantOriginal || basis !== "ignoring" ? null : ts.approvedPdfUrl || ts.signedPdfUrl;
+    wantOriginal || basis !== "projected" ? null : ts.approvedPdfUrl || ts.signedPdfUrl;
 
   let buf;
   if (storedUrl) {
@@ -72,7 +74,7 @@ export async function GET(req, { params }) {
 
   const safe = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
   const suffix =
-    basis !== "ignoring"
+    basis !== "projected"
       ? `-${basis}`
       : wantOriginal ? "" : ts.approvedPdfUrl ? "-approved" : ts.signedPdfUrl ? "-signed" : "";
   return new NextResponse(buf, {

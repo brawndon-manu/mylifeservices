@@ -60,8 +60,8 @@ export default async function ApproveTimesheetPage({ params }) {
         {standing.charged > 0 && (
           <Fig label="Break penalty pay to pay out" value={standing.charged} tone="prem" />
         )}
-        {standing.assumed > 0 && (
-          <Fig label="Assumed taken, not charged" value={standing.assumed} />
+        {standing.assumptions > 0 && (
+          <Fig label="Comes off if they confirm they took them" value={standing.assumptions} />
         )}
       </div>
 

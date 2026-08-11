@@ -126,10 +126,11 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
 
       // WHETHER THE PENALTY COLUMN IS FINISHED CHANGING. Mánu 2026-08-09 late:
       // the projected report is the one, "updated as people confirm with a
-      // notice when everyone has confirmed". Until every question has an answer
-      // the penalty total can only go UP, so a report that looks final while
-      // most of the batch has an open question is the one way this model can
-      // shortchange somebody.
+      // notice when everyone has confirmed". THE DIRECTION INVERTED 2026-08-11 -
+      // every fault is charged from the start and confirming one takes it off,
+      // so the total can only come DOWN. A report that looks final while most of
+      // the batch has an open question now over-states payroll rather than
+      // shortchanging an employee.
       if (standing?.people) {
         const good = standing.settled;
         const title = good
@@ -137,7 +138,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
           : `PROVISIONAL. ${standing.waiting} of ${standing.people} have not answered yet.`;
         const body = good
           ? `All ${standing.people} confirmed what they were asked about their breaks. Nothing further can move the penalty column.`
-          : `Breaks nobody recorded are assumed taken and are not charged. Up to ${f2(standing.assumed)} more penalty hours go on if everyone still to answer says they missed theirs. The penalty column can rise and cannot fall.`;
+          : `Every break the reports do not show is charged here. Up to ${f2(standing.assumptions)} penalty hours come off if everyone still to answer confirms they took theirs. The penalty column can fall and cannot rise.`;
         const ink = good ? OKINK : WAITINK;
         const lines = wrapAt(body, R - L - 16, font, 7.5);
         const boxH = 17 + lines.length * 9;
