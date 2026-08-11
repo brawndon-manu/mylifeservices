@@ -125,16 +125,24 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 
   // 1. a rest entry one mis-picked field would explain. The oldest of the five
   //    and the only one that already had a card.
-  // WHICH READING WINS WHEN A ROW HAS TWO. Martinez 07/23 is typed backwards,
-  // flips to 50 minutes, and sits on a day with no meal rostered at all. The
-  // mechanical guess is "the IN hour was also an hour out" - two typos. The
-  // simpler reading is that he took a 50 minute lunch and swapped the boxes,
-  // which is one. Mánu 2026-08-10 was told this and it stands: where the day is
-  // MISSING A MEAL and the row is meal-length, the meal question wins and the
-  // repair is not asked, so nobody gets two incompatible questions about one row.
+  // WHICH READING WINS WHEN A ROW HAS TWO. A MECHANICAL FIX BEATS A GUESS AT
+  // INTENT, and Martinez 07/23 is why.
+  //
+  // I had this the other way round for an hour on 2026-08-10: his row flips to
+  // 50 minutes on a day with no meal rostered, so a 50 minute lunch looked like
+  // the simpler story. THE SERVICE COLUMN SETTLES IT. A rest cannot be logged
+  // without a service to hang it on, and his is attached to the 1:40-4:10
+  // Toleldo shift with BOTH times inside it. A lunch is not attached to a client
+  // service, and his day is 5.92 hours so no meal is owed at all - it is already
+  // waived. There is no missing lunch for it to be. Mánu 2026-08-11: "to me that
+  // clearly shows it meant to be 3:50-4pm which inside toledo."
+  //
+  // So a row a single mis-picked field explains is a REPAIR - corrected, applied,
+  // counted. The meal question is for a row nothing mechanical explains, on a day
+  // that really is short its lunch.
   const mealReadingWins = (r) => {
     const d = dayOf(r.date);
-    return isMealLengthRest(r) && !!d?.mealMissing;
+    return !r.repair && isMealLengthRest(r) && !!d?.mealMissing;
   };
 
   for (const r of mine) {

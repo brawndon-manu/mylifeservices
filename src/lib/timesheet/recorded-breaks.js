@@ -444,7 +444,20 @@ export function recordedBreaksFor(sourceName, restsByDate, scheduleByDate) {
     // them IS the repair. Printing it in stored order put "12:10p-12p" on the
     // signed sheet - a break that ends before it starts, in the column that is
     // supposed to be the trustworthy one.
-    const [from, to] = r.reversed ? [r.in, r.out] : [r.out, r.in];
+    //
+    // A ROW WITH A REPAIR IS DRAWN WHERE THE REPAIR PUTS IT, for the same
+    // reason. Since 2026-08-11 a row a single mis-picked field explains is no
+    // longer marked reversed - the repair is the better reading - and Martinez
+    // 07/23 then printed "3:50p-3p", straight back to a break ending before it
+    // starts. The proposal is where the break actually was: his OUT is right and
+    // his IN had an hour rolled off it, so it draws 3:50p-4p, inside the Toleldo
+    // service it is attached to.
+    //
+    // It is still `counted: false`, so the renderer marks it and nothing about
+    // the premium moves until he answers the repair question.
+    const [from, to] = r.repair
+      ? (r.repair.field === "out" ? [r.repair.to, r.in] : [r.out, r.repair.to])
+      : r.reversed ? [r.in, r.out] : [r.out, r.in];
     // AN ENTRY THAT IS THE LENGTH OF A MEAL IS DRAWN AS ONE. It sits in the rest
     // report, but thirty minutes is not a rest break, and the two on this batch
     // are on days with no meal rostered at all. Shown blue and striped so it

@@ -44,15 +44,26 @@ test("a reversed row is flipped, and counts", () => {
   assert.equal(c.kind, "reversed-repaired");
 });
 
-test("reversed is a modifier, not a verdict - the flipped LENGTH decides", () => {
-  // Jose Martinez 07/23. There is no separate "backwards therefore rejected"
-  // case: it flips to 50 minutes and is rejected for being 50 minutes, which is
-  // the reason worth telling somebody.
+test("a row is only BACKWARDS if nothing simpler explains it", () => {
+  // Jose Martinez 07/23, and the reason this changed on 2026-08-11. Read as
+  // backwards it becomes 3:00-3:50, fifty minutes, and the SHEET DRAWS THAT.
+  // But his rest is attached to the 1:40-4:10 Toleldo service and the OUT time
+  // is right: the IN has an hour rolled off it, giving 3:50-4:00, a ten minute
+  // rest inside the service it was logged against. Mánu: "to me that clearly
+  // shows it meant to be 3:50-4pm which inside toledo."
   const c = classifyRest(row("3:50 PM", "3:00 PM", -0.83));
-  assert.equal(c.counted, false);
-  assert.equal(c.reversed, true);
-  assert.equal(c.minutes, 50);
+  assert.equal(c.counted, false, "it still does not count until somebody says so");
+  assert.equal(c.minutes, 50, "the raw length is still reported honestly");
   assert.equal(c.kind, "too-long", "judged on length, not on being backwards");
+  assert.equal(c.reversed, false, "a repair explains it, so it is NOT drawn flipped");
+  assert.equal(c.repair.to, "4:00 PM", "and the repair is the better reading");
+
+  // THE COUNTER-CASE, or this is only asserting that repairs exist: a row that
+  // really is backwards, where no single field fixes it, still flips.
+  const backwards = classifyRest(row("4:30 PM", "3:30 PM", -1));
+  assert.equal(backwards.reversed, true, "nothing explains this one but a swap");
+  assert.equal(backwards.minutes, 60);
+  assert.equal(backwards.repair, null);
 });
 
 test("the arithmetic behind the printed column is spelled out", () => {
@@ -235,13 +246,16 @@ test("any MEAL-LENGTH rest row is recognised, not just an exact thirty", () => {
   assert.equal(isMealLengthRest({ ...meal, minutes: 20 }), false, "still rest-shaped");
   assert.equal(isMealLengthRest({ ...meal, minutes: 91 }), false, "too long for a meal");
   assert.equal(isMealLengthRest({ ...meal, counted: true }), false, "a counted row stands");
-  // A ROW WITH A REPAIR IS NO LONGER EXCLUDED. Martinez has both a proposed
-  // hour-roll and a meal-length reading; which one is asked is decided in
-  // questions.js by whether the day is missing a meal, not here.
+  // A ROW A SINGLE MIS-PICKED FIELD EXPLAINS IS NOT THIS, restored 2026-08-11.
+  // Martinez 07/23 read as meal-length, so the sheet drew his fifty minutes as a
+  // lunch - and once the reversed flag correctly went, it drew "3:50p-3p", a
+  // meal ending before it began. His rest is attached to the 1:40-4:10 Toleldo
+  // service with the OUT time right and an hour rolled off the IN. A mechanical
+  // fix beats a guess at intent.
   assert.equal(
     isMealLengthRest({ ...meal, repair: { field: "in", minutes: 10 } }),
-    true,
-    "the repair no longer suppresses it - precedence lives with the day",
+    false,
+    "the repair explains it, so it is not a lunch",
   );
   assert.equal(isMealLengthRest(null), false);
 });
@@ -302,4 +316,76 @@ test("the email asks about it and never answers it", async () => {
       .some((k) => k.kind === "restIsMealLength"),
     false,
   );
+});
+
+// ---------------------------------------------------------------------------
+// THE SERVICE A REST WAS LOGGED AGAINST.
+//
+// Mánu 2026-08-11: "rest periods are tied to a service. theres no way to
+// document them without having a service to add it to." The report has carried
+// Shift Start/End, Client Name and Service Type all along and the engine used
+// none of it - `restOffOwnShift` existed, was tested, and was called from
+// nowhere but its own test. Everything about where a break belonged was being
+// inferred from punch gaps instead.
+
+test("a rest is placed against the service it was logged under", async () => {
+  const { serviceFit } = await import("../rests.js");
+  const r = (sFrom, sTo, rOut, rIn) => ({
+    "Shift Start Time": sFrom, "Shift End Time": sTo,
+    "Rest Period Time Out": rOut, "Rest Period Time In": rIn,
+  });
+  assert.equal(serviceFit(r("8:00 AM", "5:00 PM", "10:00 AM", "10:10 AM")).where, "inside");
+  assert.equal(serviceFit(r("1:00 PM", "2:30 PM", "3:00 PM", "3:10 PM")).where, "after", "Aranda 07/16");
+  assert.equal(serviceFit(r("4:30 PM", "9:30 PM", "3:30 PM", "4:30 PM")).where, "before", "Hatt 07/20");
+  assert.equal(serviceFit(r("8:00 AM", "12:00 PM", "11:55 AM", "12:05 PM")).where, "straddles");
+  assert.equal(serviceFit(r("", "", "10:00 AM", "10:10 AM")).where, "unknown");
+});
+
+test("ABUTS is what makes the two edge mistakes the same species", async () => {
+  const { serviceFit } = await import("../rests.js");
+  const at = (sFrom, sTo, rOut, rIn) => serviceFit({
+    "Shift Start Time": sFrom, "Shift End Time": sTo,
+    "Rest Period Time Out": rOut, "Rest Period Time In": rIn,
+  });
+  // Uribe 07/28: the break starts exactly as the Rincon service ends.
+  // Hatt 07/20: it ends exactly as the Flores service starts. One mistake at
+  // opposite ends of a shift, and nothing before 2026-08-11 could see they were
+  // related - 10 rows across 6 people on this period.
+  const uribe = at("10:00 AM", "12:00 PM", "12:00 PM", "12:10 PM");
+  const hatt = at("4:30 PM", "9:30 PM", "3:30 PM", "4:30 PM");
+  assert.equal(uribe.where, "after");
+  assert.equal(hatt.where, "before");
+  assert.ok(uribe.abuts && hatt.abuts, "both sit hard against the edge");
+
+  // AND IT DISCRIMINATES: a rest half an hour clear of its shift is a misfiled
+  // row, not somebody logging at the boundary. Aranda 07/16 is that shape.
+  const aranda = at("1:00 PM", "2:30 PM", "3:00 PM", "3:10 PM");
+  assert.equal(aranda.where, "after");
+  assert.equal(aranda.abuts, false, "30 minutes clear, so not the same mistake");
+  assert.equal(aranda.gapMin, 30);
+
+  // a break sitting properly inside its service has no edge to speak of
+  assert.equal(at("8:00 AM", "5:00 PM", "10:00 AM", "10:10 AM").abuts, undefined);
+});
+
+test("a repair that lands INSIDE the service beats one that does not", () => {
+  // Martinez 07/23 on the 1:40-4:10 Toleldo service. Rolling the IN hour forward
+  // gives 3:50-4:00, inside it. Before 2026-08-11 the search returned whichever
+  // candidate came first in a hard-coded list, which is picking by accident.
+  const jose = classifyRest({
+    "Rest Period Time Out": "3:50 PM", "Rest Period Time In": "3:00 PM",
+    "Shift Start Time": "1:40 PM", "Shift End Time": "4:10 PM",
+    "Total Rest Time": -0.83,
+  });
+  assert.equal(jose.repair.to, "4:00 PM");
+  assert.equal(jose.repair.fits, true, "chosen BECAUSE it lands inside the service");
+
+  // with no service on the row there is nothing to tie-break on, and the search
+  // falls back to the first candidate - so `fits` is null rather than a fib
+  const noService = classifyRest({
+    "Rest Period Time Out": "3:50 PM", "Rest Period Time In": "3:00 PM",
+    "Total Rest Time": -0.83,
+  });
+  assert.equal(noService.repair.fits, null);
+  assert.equal(noService.repair.to, "4:00 PM", "same answer here, but by position not by fit");
 });

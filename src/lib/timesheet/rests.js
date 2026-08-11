@@ -58,10 +58,16 @@ const MEAL_LENGTH_MAX_MIN = 90;
 //
 // Read off the stored row rather than off `kind`, so it works on the batch
 // already in the database instead of needing a re-upload to take effect.
+// A ROW A SINGLE MIS-PICKED FIELD EXPLAINS IS NOT THIS. Restored 2026-08-11
+// after Martinez: his 50 minutes read as meal-length, so the sheet drew it as a
+// lunch - and with the reversed flag correctly gone, it drew "3:50p-3p", a meal
+// ending before it began. A mechanical fix beats a guess at intent, and the
+// repair question already covers the row.
 export function isMealLengthRest(row) {
   const mins = Number(row?.minutes);
   return !!row
     && !row.counted
+    && !row.repair
     && Number.isFinite(mins)
     && mins >= MEAL_LENGTH_MIN_MIN
     && mins <= MEAL_LENGTH_MAX_MIN;
@@ -112,7 +118,17 @@ const hhmm = (m) => {
 // Hatt 07/20 (3:30 PM -> 4:30 PM) gets NO proposal: no single field fixes it,
 // so it stays owed and stays a question for a person. That is the point of
 // only proposing what is unambiguous.
-function proposeRepair(out, back) {
+// THE SERVICE IS THE TIE-BREAKER, added 2026-08-11. A rest is logged against a
+// shift and belongs inside it, so a candidate fix that lands the break INSIDE
+// its own service is better than one that does not - and where several are
+// plausible, "first in the list wins" was picking by accident.
+//
+// Martinez 07/23 is the case: out 3:50 PM, in 3:00 PM, on the 1:40-4:10 Toleldo
+// service. Rolling the IN hour forward gives 3:50-4:00, inside the service. That
+// is the answer, and now it is chosen because it fits rather than because it was
+// listed third. The hour-roll on OUT is also absent from the list entirely,
+// which is its own gap - a mistake on that field simply gets no proposal.
+function proposeRepair(out, back, shift = null) {
   const tries = [
     ["in", -720, "the IN time was picked as PM"],
     ["in", 720, "the IN time was picked as AM"],
@@ -121,21 +137,27 @@ function proposeRepair(out, back) {
     ["out", 720, "the OUT time was picked as AM"],
     ["out", -720, "the OUT time was picked as PM"],
   ];
+  const found = [];
   for (const [field, delta, why] of tries) {
     const o = field === "out" ? out + delta : out;
     const i = field === "in" ? back + delta : back;
     if (o < 0 || i < 0 || o > 1439 || i > 1439) continue;
     const mins = i - o;
     if (mins < FULL_REST_MIN || mins > REST_LONG_MAX_MIN) continue;
-    return {
+    found.push({
       field,
       from: hhmm(field === "out" ? out : back),
       to: hhmm(field === "out" ? o : i),
       minutes: mins,
       why,
-    };
+      // does this land the break inside the shift it was filed against?
+      fits: shift?.from != null && shift?.to != null
+        ? o >= shift.from && i <= shift.to
+        : null,
+    });
   }
-  return null;
+  if (!found.length) return null;
+  return found.find((f) => f.fits === true) || found[0];
 }
 
 // What one row of the report actually is.
@@ -191,11 +213,31 @@ export function classifyRest(row) {
   const reversed = raw < 0;
   const minutes = reversed ? -raw : raw;
 
+  // A ROW IS ONLY BACKWARDS IF NOTHING SIMPLER EXPLAINS IT. `reversed` is decided
+  // from `in < out` alone, before anything has asked whether ONE mis-picked field
+  // accounts for the row - and the sheet draws from `reversed`.
+  //
+  // Martinez 07/23 is the case. Recorded out 3:50 PM, in 3:00 PM, attached to the
+  // 1:40-4:10 Toleldo service. Read as backwards it becomes 3:00-3:50, fifty
+  // minutes, and the sheet prints that. But the OUT is right and the IN has an
+  // hour rolled off it: 3:50-4:00, a ten minute rest sitting inside the service
+  // it was logged against. Mánu 2026-08-11: "to me that clearly shows it meant to
+  // be 3:50-4pm which inside toledo."
+  //
+  // So where a repair exists, it is the better reading and the row is not
+  // reversed. The flip stands only when nothing else explains the order.
+  const shift = {
+    from: clockMin(row["Shift Start Time"]),
+    to: clockMin(row["Shift End Time"]),
+  };
+  const repairIfBad = proposeRepair(out, back, shift);
+  const trulyReversed = reversed && !repairIfBad;
+
   if (minutes < FULL_REST_MIN) {
-    return { ...base, reversed, counted: false, minutes, kind: "short", repair: proposeRepair(out, back) };
+    return { ...base, reversed: trulyReversed, counted: false, minutes, kind: "short", repair: repairIfBad };
   }
   if (minutes > REST_LONG_MAX_MIN) {
-    return { ...base, reversed, counted: false, minutes, kind: "too-long", repair: proposeRepair(out, back) };
+    return { ...base, reversed: trulyReversed, counted: false, minutes, kind: "too-long", repair: repairIfBad };
   }
 
   return {
@@ -239,6 +281,39 @@ export function restOffOwnShift(row) {
   // a reversed rest is malformed, and the rest reader already handles it
   if (restIn <= restOut) return false;
   return restOut < shiftOut || restIn > shiftIn;
+}
+
+// WHERE A REST SITS RELATIVE TO THE SERVICE IT WAS LOGGED AGAINST.
+//
+// Mánu 2026-08-11 explaining how the system actually works: "rest periods are
+// tied to a service. theres no way to document them without having a service to
+// add it to." So every rest has an owning shift, and its natural home is inside
+// that shift's window. Where it is not, the row was entered wrong - which is a
+// different claim from the break not happening.
+//
+// Measured on 07/16-07/31: 309 of 350 sit inside their own service, 40 do not,
+// and 37 of those 40 are entirely before it or entirely after it rather than
+// overlapping an edge. The boundary cases are the interesting ones:
+//
+//   Uribe 07/28, 07/29, 07/31   rest 12:00-12:10, service 10:00-12:00 Rincon
+//                               the break starts exactly as the service ends
+//   Hatt 07/20                  rest 3:30-4:30, service 4:30-9:30 Flores
+//                               the mirror: ends exactly as the service starts
+//
+// "abuts" is what makes those two the same species and separates them from a
+// rest logged hours away from its shift.
+export function serviceFit(row) {
+  const sO = clockMin(row?.["Shift Start Time"] ?? row?.shiftFrom);
+  const sI = clockMin(row?.["Shift End Time"] ?? row?.shiftTo);
+  const a = clockMin(row?.["Rest Period Time Out"] ?? row?.out);
+  const b = clockMin(row?.["Rest Period Time In"] ?? row?.in);
+  if (sO == null || sI == null || a == null || b == null) return { where: "unknown" };
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (lo >= sO && hi <= sI) return { where: "inside" };
+  if (hi <= sO) return { where: "before", abuts: hi === sO, gapMin: sO - hi };
+  if (lo >= sI) return { where: "after", abuts: lo === sI, gapMin: lo - sI };
+  return { where: "straddles" };
 }
 
 export function restKey(name) {
@@ -331,6 +406,21 @@ export function allRestRows(bytes) {
         ? `${String(r["Shift Start Time"]).trim()} to ${String(r["Shift End Time"]).trim()}`
         : null,
       offOwnShift,
+      // THE SERVICE ITSELF, carried rather than summarised. A rest cannot be
+      // logged without one, so this is the shift it was MEANT to sit in - the
+      // strongest thing the report says about where a break belongs, and until
+      // 2026-08-11 the engine threw all of it away and reasoned from punch gaps
+      // instead. `restOffOwnShift` had existed and been tested since the start
+      // and was called from nowhing but its own test.
+      shiftFrom: String(r["Shift Start Time"] ?? "").trim() || null,
+      shiftTo: String(r["Shift End Time"] ?? "").trim() || null,
+      client: String(r["Client Name"] ?? "").trim() || null,
+      serviceType: String(r["Service Type"] ?? "").trim() || null,
+      scheduleNotes: String(r["Schedule Notes"] ?? "").trim() || null,
+      // inside | before | after | straddles | unknown, and whether it sits hard
+      // against the edge. Uribe's three and Hatt's 07/20 are the same mistake at
+      // opposite ends of a shift, which only this makes visible.
+      fit: serviceFit(r),
       // the printed column, kept only so a reader can match our row to theirs.
       // it is rounded - never decide anything from it. `derivation` shows the
       // arithmetic ("-0.83 hr x 60 = -50 min") so nobody has to trust the jump.
