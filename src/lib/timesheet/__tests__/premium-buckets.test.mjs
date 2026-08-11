@@ -467,34 +467,33 @@ test("without rest times or without a rostered lunch there is no answer", () => 
 // These four tests used to assert the discount. They now assert the payment,
 // and each still pairs the case with its opposite.
 
-test("a rest logged outside the ROSTERED day counts, and is NOT paid for", () => {
+test("a rest logged outside the ROSTERED day is PAID, and the misclick is only an assumption", () => {
   // April Martinez's shape: a 7:00-7:10 rest on a shift that starts at 8:00,
   // eleven days running. A QSClock default nobody changed.
   //
-  // MÁNU 2026-08-09 (evening) REVERSED THE PAYMENT HALF OF THE RULING ABOVE for
-  // this one case: "if people clock their breaks before the start of their
-  // shift then we will assume it was wrong... no 10 minutes should be added to
-  // her corrected hours... hence no overtime". It is a misclick, not ten
-  // minutes worked. It still COUNTS as a rest taken, so it still clears the
-  // premium; what stops is paying for it.
+  // MÁNU 2026-08-09 (evening) read this as a misclick and stopped paying the ten
+  // minutes. THE 2026-08-11 FLIP PUT THEM BACK. The reading is unchanged - it
+  // probably IS a misclick - but "we think you meant something else" is an
+  // ASSUMPTION, and an assumption is never applied on its own. So the minutes are
+  // paid, the count survives as the amount an answer would remove, and April is
+  // asked. This test asserted the withholding until the flip.
   const before = analyzeDay({
     date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
     scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
     restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 14 * 60, in: 14 * 60 + 10 }],
   });
   assert.equal(before.restsOutsideShift, 1, "still flagged - Mánu asked for this one by name");
-  assert.equal(before.restsMisclicked, 1, "and read as a misclick, which is what stops the pay");
-  assert.equal(before.restsMisclickedMin, 10);
-  assert.equal(before.restsOffClock, 0, "no longer in the paid-for bucket");
-  assert.equal(before.restsOffClockMin, 0);
+  assert.equal(before.restsMisclicked, 1, "still READ as a misclick");
+  assert.equal(before.restsMisclickedMin, 10, "and this is what confirming would take off");
+  assert.equal(before.restsOffClock, 1, "but it is in the paid-for bucket now");
+  assert.equal(before.restsOffClockMin, 10);
   assert.equal(before.restTaken, 2, "the report said 2 and both still count");
   assert.equal(before.restRequired, 2);
   assert.equal(before.restViolation, false, "so no premium");
-  // 9 hours on the clock and nothing added. On the live batch this is the
-  // difference between 8.17 with 0.17 overtime and a flat 8.00, which is what
-  // QSP printed in the first place.
-  assert.equal(Number(before.paidHours.toFixed(2)), 9);
-  assert.equal(before.addedHours, 0, "nothing was added, so nothing to declare as added");
+  // 9 hours on the clock plus the ten minutes she recorded. Under the old
+  // default this was a flat 9.00.
+  assert.equal(Number(before.paidHours.toFixed(2)), 9.17);
+  assert.equal(Number(before.addedHours.toFixed(2)), 0.17, "and the sheet declares it as added");
 
   // THE OPPOSITE: the same two rests taken inside the shift add nothing, or the
   // assertion above is just measuring that rests exist.
@@ -508,10 +507,8 @@ test("a rest logged outside the ROSTERED day counts, and is NOT paid for", () =>
   assert.equal(onClock.restsOffClockMin, 0);
   assert.equal(onClock.paidHours, 9, "nothing added, those minutes were already paid");
 
-  // after clock-out, the other direction. NO SCHEDULE HERE, so there is no
-  // rostered day to be outside of and we cannot call it a misclick. It stays
-  // paid, which is the conservative reading and the same thing `mealUnknown`
-  // does when no schedule covers a day.
+  // after clock-out with NO SCHEDULE: no rostered day to be outside of, so there
+  // is not even an assumption to make. Paid, as it always was.
   const after = analyzeDay({
     date: "07/20/26", punches: [at(8), at(16, 30)], printed: null, restRecorded: 1,
     restTimes: [{ out: 21 * 60 + 40, in: 21 * 60 + 50 }],
@@ -521,37 +518,51 @@ test("a rest logged outside the ROSTERED day counts, and is NOT paid for", () =>
   assert.equal(after.restsOffClockMin, 10, "and so still paid");
 
   // Miranda Gabriel's real shape: the same 9:40pm rest, but WITH a roster that
-  // ends at 16:30. Now it can be called, and it stops being paid.
+  // ends at 16:30. The misclick CAN be called now - and it still does not stop
+  // the pay, which is the whole distinction the flip draws.
   const afterRostered = analyzeDay({
     date: "07/27/26", punches: [at(8), at(16, 30)], printed: null, restRecorded: 1,
     scheduleBlocks: [{ start: 8 * 60, end: 16 * 60 + 30, meal: false }],
     restTimes: [{ out: 21 * 60 + 40, in: 21 * 60 + 50 }],
   });
   assert.equal(afterRostered.restsMisclicked, 1, "after the last shift is a misclick too");
-  assert.equal(afterRostered.restsOffClockMin, 0);
-  assert.equal(afterRostered.paidHours, 8.5, "not 8.67");
+  assert.equal(afterRostered.restsMisclickedMin, 10, "so ten minutes are assumable");
+  assert.equal(afterRostered.restsOffClockMin, 10, "and paid until she says otherwise");
+  assert.equal(Number(afterRostered.paidHours.toFixed(2)), 8.67, "not 8.5");
 
-  // AND THE ONE THAT MUST NOT FIRE: a rest that merely straddles the edge of
-  // the roster is a break that started early, not one nobody could have taken.
-  // Without this the assertions above are just measuring that rests exist.
+  // AND THE ONE THAT MUST NOT BE CALLED A MISCLICK: a rest that merely straddles
+  // the edge of the roster is a break that started early, not one nobody could
+  // have taken. It is paid either way now, so what this proves is that no
+  // assumption is offered against it - nobody will be asked to give it up.
   const straddle = analyzeDay({
     date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
     scheduleBlocks: LUNCH_BLOCKS, restRecorded: 1,
     restTimes: [{ out: 7 * 60 + 55, in: 8 * 60 + 5 }],
   });
   assert.equal(straddle.restsMisclicked, 0, "straddling the start is not a misclick");
-  assert.equal(straddle.restsOffClockMin, 10, "so those minutes are still paid");
+  assert.equal(straddle.restsMisclickedMin, 0, "so there is nothing to ask her about");
+  assert.equal(straddle.restsOffClockMin, 10, "and those minutes are paid");
 });
 
-// ------------------------------ a rest clocked the instant the shift ended
+// ------------------------- a rest logged hard against the edge of its service
 
 // MÁNU 2026-08-09: "shift ended at 12p and break out 12:10p... engine should
-// assume i meant 11:50a-12p", which removes the added hours and any overtime.
-// His own 07/28, 07/29 and 07/31, plus Aranda, Jones and Lazo.
-test("a rest clocked as the shift ends is moved back inside it, and not paid", () => {
-  // Uribe 07/31's real shape: punched out 12:00-13:00, break recorded
-  // 12:00-12:10, and more of the day after it. The break has to be INSIDE the
-  // punched day for this rule - after the last punch is the other rule.
+// assume i meant 11:50a-12p", which removed the added hours and any overtime.
+//
+// MÁNU 2026-08-11, having seen that all three rows it caught were his own and
+// all three were real off-clock breaks: "those 10 minutes were documented
+// outside of a shift in between a time with no scheduling so its time added."
+//
+// So it stopped being a silent correction and became a policy assumption, and it
+// stopped guessing from punch gaps. A rest is tied to a SERVICE - there is no way
+// to log one without a shift to hang it on - so the report says which shift each
+// break belongs to, and "hard against its edge" is a fact rather than an
+// inference. Ten rows across six people this period; the punch-gap rule found
+// three, and only by coincidence of what the gaps looked like.
+test("a rest logged against its service edge is PAID, and moving it is only an assumption", () => {
+  // Uribe 07/31's real shape: a 10:00-12:00 Rincon service, break recorded
+  // 12:00-12:10 - starting exactly as the service ends.
+  const fitAfter = { where: "after", abuts: true, gapMin: 0, from: 10 * 60, to: 12 * 60 };
   const d = analyzeDay({
     date: "07/31/26",
     punches: [at(8), at(9, 30), at(10), at(12), at(13), at(16)],
@@ -560,53 +571,78 @@ test("a rest clocked as the shift ends is moved back inside it, and not paid", (
       { start: 8 * 60, end: 12 * 60, meal: false },
       { start: 13 * 60, end: 16 * 60, meal: false },
     ],
-    restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }, { out: 15 * 60, in: 15 * 60 + 10 }],
+    restTimes: [
+      { out: 12 * 60, in: 12 * 60 + 10, fit: fitAfter },
+      { out: 15 * 60, in: 15 * 60 + 10 },
+    ],
   });
-  assert.equal(d.restsSnapped, 1);
-  assert.equal(d.restsSnappedMin, 10);
-  assert.deepEqual(d.restsSnappedDetail, [
-    { wasFrom: "12p", wasTo: "12:10p", from: "11:50a", to: "12p", minutes: 10 },
+  assert.equal(d.restsAtServiceEdge, 1);
+  assert.equal(d.restsAtServiceEdgeMin, 10, "what confirming would take off");
+  assert.deepEqual(d.restsAtServiceEdgeDetail, [
+    {
+      wasFrom: "12p", wasTo: "12:10p", from: "11:50a", to: "12p",
+      minutes: 10, where: "after", service: "10a-12p",
+    },
   ]);
-  assert.equal(d.restsOffClockMin, 0, "so nothing is added");
-  assert.equal(Number(d.paidHours.toFixed(2)), 6.5, "not 6.67");
+  assert.equal(d.restsOffClockMin, 10, "and the minutes are PAID until he says otherwise");
+  assert.equal(Number(d.paidHours.toFixed(2)), 6.67, "not 6.5");
   assert.equal(d.restTaken, 2, "both still count as breaks taken");
 
-  // THE ONE THAT MUST NOT FIRE: the same ten minutes an hour into the gap is a
-  // break genuinely taken off the clock, and the 08/09 morning ruling pays it.
-  // Without this the assertion above is only measuring that rests exist.
-  const later = analyzeDay({
+  // HATT'S SHAPE, THE MIRROR: a break ending exactly as its service begins. The
+  // punch-gap rule could not see this one at all, and seeing that it is the same
+  // mistake at the other end of a shift is what the service data bought.
+  const fitBefore = { where: "before", abuts: true, gapMin: 0, from: 16 * 60 + 30, to: 21 * 60 + 30 };
+  const mirror = analyzeDay({
+    date: "07/20/26", punches: [at(8), at(12)], printed: null, restRecorded: 1,
+    scheduleBlocks: [{ start: 8 * 60, end: 12 * 60, meal: false }],
+    restTimes: [{ out: 16 * 60 + 20, in: 16 * 60 + 30, fit: fitBefore }],
+  });
+  assert.equal(mirror.restsAtServiceEdge, 1, "before its service counts too");
+  assert.deepEqual(mirror.restsAtServiceEdgeDetail[0].from, "4:30p", "moved to the START of it");
+  assert.deepEqual(mirror.restsAtServiceEdgeDetail[0].to, "4:40p");
+
+  // THE ONE THAT MUST NOT FIRE: a rest sitting an hour off its service is not
+  // this. Without it the assertions above only measure that rests exist.
+  const away = analyzeDay({
     date: "07/28/26", punches: [at(8), at(12), at(14), at(16)], printed: null,
     scheduleBlocks: [
       { start: 8 * 60, end: 12 * 60, meal: false },
       { start: 14 * 60, end: 16 * 60, meal: false },
     ],
     restRecorded: 1,
-    restTimes: [{ out: 13 * 60, in: 13 * 60 + 10 }],
+    restTimes: [{
+      out: 13 * 60, in: 13 * 60 + 10,
+      fit: { where: "after", abuts: false, gapMin: 60, from: 8 * 60, to: 12 * 60 },
+    }],
   });
-  assert.equal(later.restsSnapped, 0, "an hour past the shift end is not a mis-tap");
-  assert.equal(later.restsOffClockMin, 10, "so those minutes are still paid");
+  assert.equal(away.restsAtServiceEdge, 0, "an hour off the edge is not against it");
+  assert.equal(away.restsOffClockMin, 10, "and it is paid either way");
 
-  // fifteen minutes is the window, because fifteen is the rostered transition
-  const edge = analyzeDay({
+  // NEITHER DOES A ROW WITH NO SERVICE ON IT. The old rule reasoned from punch
+  // gaps and would have caught this; keying off the service means a row the
+  // report could not place is left alone rather than guessed at.
+  const noFit = analyzeDay({
     date: "07/28/26", punches: [at(8), at(12), at(14), at(16)], printed: null,
-    scheduleBlocks: [
-      { start: 8 * 60, end: 12 * 60, meal: false },
-      { start: 14 * 60, end: 16 * 60, meal: false },
-    ],
+    scheduleBlocks: [{ start: 8 * 60, end: 12 * 60, meal: false }],
     restRecorded: 1,
-    restTimes: [{ out: 12 * 60 + 15, in: 12 * 60 + 25 }],
+    restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }],
   });
-  assert.equal(edge.restsSnapped, 1, "fifteen minutes past still counts");
+  assert.equal(noFit.restsAtServiceEdge, 0, "no service, no verdict");
+  assert.equal(noFit.restsOffClockMin, 10);
 
-  // A 730-MINUTE AM/PM SLIP IS NOT A MIS-TAP. Snapping one produced a paid
-  // figure of -4.17 when this was measured. It belongs to the repair question.
+  // A 730-MINUTE AM/PM SLIP IS NOT A TEN, however hard it abuts. Without the
+  // length cap this would read as twelve hours of off-clock break and be moved
+  // wholesale; it belongs to the repair question.
   const slip = analyzeDay({
     date: "07/30/26", punches: [at(8), at(12)], printed: null,
     scheduleBlocks: [{ start: 8 * 60, end: 12 * 60, meal: false }],
     restRecorded: 1,
-    restTimes: [{ out: 10 * 60 + 10, in: 22 * 60 + 20 }],
+    restTimes: [{
+      out: 10 * 60 + 10, in: 22 * 60 + 20,
+      fit: { where: "after", abuts: true, gapMin: 0, from: 8 * 60, to: 10 * 60 + 10 },
+    }],
   });
-  assert.equal(slip.restsSnapped, 0, "too long to be a mis-tapped ten");
+  assert.equal(slip.restsAtServiceEdge, 0, "too long to be a mis-logged ten");
   assert.ok(slip.paidHours > 0, "and nothing invented a negative day");
 });
 
@@ -674,23 +710,20 @@ test("a rest inside a punched-out gap is paid for, not deducted", () => {
   });
   assert.equal(d.restsUnpaid, 1);
   assert.equal(d.restsOutsideShift, 0, "it is inside the shift, just not on the clock");
-  // REVERSED 2026-08-09 EVENING. This used to assert restsOffClock 1, 10
-  // minutes added and 6.67 paid: the 08/08 ruling that a rest in a punched-out
-  // gap is unpaid time and therefore owed. Mánu then looked at THIS ROW - it is
-  // his own - and ruled the timestamp a mis-tap instead: "shift ended at 12p and
-  // break out 12:10p... engine should assume i meant 11:50a-12p", which "removes
-  // my added in hours".
+  // THE 08/08 RULING, RESTORED. This asserted the payment, then asserted the
+  // withholding after Mánu read his own row as a mis-tap on 08/09, and now
+  // asserts the payment again: the 2026-08-11 flip made that reading an
+  // assumption, and an assumption does not move a figure on its own.
   //
-  // The 08/08 ruling survives everywhere else. Only a rest logged within fifteen
-  // minutes of the punch-out moves, and never one inside a rostered meal - see
-  // the lunch test below, which is the case this rule must not touch.
-  assert.equal(d.restsSnapped, 1, "logged the instant he punched out");
-  assert.equal(d.restsOffClock, 0, "so it is no longer in the paid-for bucket");
-  assert.equal(d.restsOffClockMin, 0);
+  // There is no service on these rows, so no assumption is even offered here -
+  // this is simply the 08/08 rule, which never went away for anybody else.
+  assert.equal(d.restsAtServiceEdge, 0, "no service on the row, so nothing to move it to");
+  assert.equal(d.restsOffClock, 1, "and a rest off the clock is paid time");
+  assert.equal(d.restsOffClockMin, 10);
   assert.equal(d.restTaken, 2, "both still count");
   assert.equal(d.restViolation, false);
-  // 6.5 hours on the clock and nothing added
-  assert.equal(Number(d.paidHours.toFixed(2)), 6.5);
+  // 6.5 hours on the clock plus the ten minutes
+  assert.equal(Number(d.paidHours.toFixed(2)), 6.67);
 
   // THE OPPOSITE: the same rest taken while still clocked in is neither flagged
   // nor paid again.

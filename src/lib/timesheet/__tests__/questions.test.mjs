@@ -1,10 +1,12 @@
-// The five questions an employee must answer before signing, and what each
-// answer does to the figures. Mánu 2026-08-09.
+// The questions an employee is asked before signing, and what each answer does
+// to the figures.
 //
-// The point of this file is the SHAPE of each question, and above all which way
-// the money moves. Two of the five arrive with the correction already applied,
-// so for those it is DECLINING that changes a number, and getting that backwards
-// would quietly hand somebody less than they are owed.
+// The point of this file is the SHAPE of each question, and above all WHICH WAY
+// THE MONEY MOVES. That reversed on 2026-08-11: the sheet now arrives carrying
+// every fault with its penalty, so "yes I took it" is what takes pay OFF and
+// "no" agrees with what the sheet already says. Getting this backwards would
+// quietly hand somebody less than they are owed, which is why the direction is
+// asserted rather than just the arithmetic.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildQuestions, patchesFor, answerProgress } from "../questions.js";
@@ -25,19 +27,51 @@ test("rests recorded outside the rostered day become ONE question, not eleven", 
   assert.equal(outside.length, 1, "one card, or eleven identical ones on the real batch");
   assert.deepEqual(outside[0].dates, ["07/16/26", "07/17/26", "07/20/26"]);
   assert.equal(outside[0].row.minutes, 30);
-  assert.equal(outside[0].moves, 0, "confirming our correction changes nothing");
-  assert.equal(outside[0].movesOnDecline, 0.5, "declining puts the minutes back");
+  // INVERTED BY THE FLIP. The minutes are PAID on her sheet; confirming the
+  // mis-click is what takes them off, and declining leaves her alone.
+  assert.equal(outside[0].moves, -0.5, "confirming removes the half hour");
+  assert.equal(outside[0].movesOnDecline, 0, "declining changes nothing");
 });
 
-test("confirming leaves April alone; declining pays the minutes back", () => {
-  const d = day({ restsMisclicked: 1, restsMisclickedMin: 10 });
+test("confirming takes April's minutes off; declining leaves her alone", () => {
   const q = { kind: "restOutsideShift" };
 
-  assert.deepEqual(patchesFor(q, "yes", d), { paidHours: null }, "nothing to patch");
-  // 8.17 was the figure BEFORE the engine withheld the minutes; the stored day
-  // now reads 8.00, so declining has to land back on 8.17 rather than on 8.00.
-  const back = patchesFor(q, "no", day({ paidHours: 8, restsMisclickedMin: 10 }));
-  assert.equal(back.paidHours, 8.17, "and the overtime that comes with it");
+  // the stored day now reads 8.17 - the ten minutes she recorded are PAID - so
+  // confirming the mis-click has to land back on 8.00.
+  const off = patchesFor(q, "yes", day({ paidHours: 8.17, restsMisclickedMin: 10 }));
+  assert.equal(off.paidHours, 8, "and the overtime goes with them");
+
+  assert.deepEqual(
+    patchesFor(q, "no", day({ paidHours: 8.17, restsMisclickedMin: 10 })),
+    { paidHours: null },
+    "declining agrees with the sheet, so there is nothing to patch",
+  );
+
+  // AND IT CANNOT GO BELOW ZERO. A day whose stored figure is somehow smaller
+  // than the minutes being removed must not produce negative pay.
+  const floored = patchesFor(q, "yes", day({ paidHours: 0.05, restsMisclickedMin: 10 }));
+  assert.equal(floored.paidHours, 0);
+});
+
+test("the service-edge break is paid, and confirming is what moves it inside", () => {
+  // MÁNU'S OWN THREE. He ruled the minutes are time added, so the assumption
+  // that he meant it inside his shift needs his say-so before it does anything.
+  const days = ["07/28/26", "07/29/26", "07/31/26"].map((date) =>
+    day({ date, restsAtServiceEdge: 1, restsAtServiceEdgeMin: 10 }));
+  const qs = buildQuestions({ days }, { restRows: [], sourceName: "Uribe, Brandon" });
+
+  const edge = qs.filter((q) => q.kind === "restAtServiceEdge");
+  assert.equal(edge.length, 1, "one card for the habit, not three");
+  assert.deepEqual(edge[0].dates, ["07/28/26", "07/29/26", "07/31/26"]);
+  assert.equal(edge[0].row.minutes, 30);
+  assert.equal(edge[0].moves, -0.5, "confirming moves it inside and removes the time");
+  assert.equal(edge[0].movesOnDecline, 0, "declining leaves the pay on");
+
+  const q = { kind: "restAtServiceEdge" };
+  const off = patchesFor(q, "yes", day({ paidHours: 8.17, restsAtServiceEdgeMin: 10 }));
+  assert.equal(off.paidHours, 8);
+  assert.deepEqual(patchesFor(q, "no", day({ paidHours: 8.17, restsAtServiceEdgeMin: 10 })),
+    { paidHours: null });
 });
 
 // -------------------------------------------------------------- Bucio / Devine
@@ -168,9 +202,11 @@ test("the breaks question is one per BREAK, and each is worth one hour", () => {
     ["07/20/26", "nothingDocumentedRest"],
     ["07/21/26", "nothingDocumentedRest"],
   ]);
-  // EVERY ONE IS WORTH EXACTLY ONE HOUR. The old combined question was worth two
-  // on a day short both, which is what made it all-or-nothing.
-  assert.ok(nd.every((q) => q.movesOnDecline === 1));
+  // EVERY ONE IS WORTH EXACTLY ONE HOUR, and after the flip that hour comes OFF
+  // on a yes. The old combined question was worth two on a day short both, which
+  // is what made it all-or-nothing.
+  assert.ok(nd.every((q) => q.moves === -1), "one hour off each, on a yes");
+  assert.ok(nd.every((q) => q.movesOnDecline === 0), "and nothing on a no");
   // the day's shape still rides along, so the card can group by date
   assert.deepEqual(nd.map((q) => q.row.parts), [2, 2, 1]);
   // distinct ids, or two decisions would share an answer and the split is pointless
@@ -305,7 +341,7 @@ test("saying yes never clears a premium the schedule documented", () => {
   assert.equal(qs.length, 1, "the day is asked about, for its REST");
   assert.equal(qs[0].row.meal, false, "the late lunch is not what is being asked");
   assert.equal(qs[0].row.rest, true);
-  assert.equal(qs[0].movesOnDecline, 1, "one hour, the rest - not two");
+  assert.equal(qs[0].moves, -1, "one hour comes off, the rest - not two");
 
   // yes clears the rest and CANNOT REACH the documented meal - since the split
   // the rest question only ever touches restViolation, which is a stronger
@@ -319,7 +355,7 @@ test("saying yes never clears a premium the schedule documented", () => {
   const q2 = buildQuestions({ days: undoc }, { restRows: [], sourceName: "T" })
     .filter((q) => String(q.kind).startsWith("nothingDocumented"));
   assert.equal(q2.length, 2, "two decisions now, one per break");
-  assert.ok(q2.every((q) => q.movesOnDecline === 1), "one hour each");
+  assert.ok(q2.every((q) => q.moves === -1), "one hour each");
   assert.deepEqual(patchesFor(q2[0], "yes", undoc[0]), { mealViolation: false });
   assert.deepEqual(patchesFor(q2[1], "yes", undoc[0]), { restViolation: false });
 });

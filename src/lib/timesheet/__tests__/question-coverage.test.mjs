@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { buildQuestions } from "../questions.js";
+import { buildQuestions, isMandatory, signingGate } from "../questions.js";
 
 const root = path.resolve(import.meta.dirname, "../../../..");
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
@@ -56,7 +56,7 @@ function everyKind() {
   add([day({ mealViolation: true })]);                                   // nothingDocumentedMeal
   add([day({ restViolation: true })]);                                   // nothingDocumentedRest
   add([day({ restsMisclicked: 1, restsMisclickedMin: 10 })]);            // restOutsideShift
-  add([day({ restsSnapped: 1, restsSnappedMin: 10 })]);                  // restSnappedToShift
+  add([day({ restsAtServiceEdge: 1, restsAtServiceEdgeMin: 10 })]);      // restAtServiceEdge
   add([day({ restsFromShortMeals: 1, restTaken: 1, restRequired: 2, restViolation: true })]); // shortMealRest
   // repair comes off a REST ROW the parser had to fix, not off the day
   add([day({ restViolation: true })], {
@@ -134,10 +134,10 @@ test("the kinds are a known set, so a new one cannot arrive unnoticed", () => {
       "nothingDocumentedMeal",
       "nothingDocumentedRest",
       "repair",
+      "restAtServiceEdge",
       "restIsMealLength",
       "restNoTimes",
       "restOutsideShift",
-      "restSnappedToShift",
       "restTooLongOffClock",
       "shortMealRest",
     ],
@@ -156,4 +156,49 @@ test("the same shape raises the same question on any date, in any period", () =>
   for (const other of ["01/01/27", "08/01/26", "12/31/28", "02/29/28"]) {
     assert.deepEqual(kindsOn(other), july, `a ${other} day should raise what a 07/20/26 day raises`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// THE GATE. Added with the 2026-08-11 flip, and it is the guard that matters
+// most on this file: silence now leaves an employee's pay ALONE, so a question
+// that quietly becomes optional is a discrepancy somebody signs past without
+// ever seeing it. The safe failure is asking too much.
+
+test("a kind nobody classified blocks signing rather than slipping through", () => {
+  // the whole point of the default. If `isMandatory` fell open, a new kind would
+  // be optional from the day it shipped and nothing would say so.
+  assert.equal(isMandatory("aKindNobodyHasWrittenYet"), true);
+  assert.equal(isMandatory("repair"), true, "we changed their punches");
+  assert.equal(isMandatory("restNoTimes"), true, "we could not read the row");
+  assert.equal(isMandatory("nothingDocumentedRest"), false, "ignoring it keeps their pay");
+  assert.equal(isMandatory("restAtServiceEdge"), false);
+});
+
+test("the gate lets somebody sign past every optional question and no mandatory one", () => {
+  const questions = [
+    { kind: "nothingDocumentedRest", date: "07/20/26", mandatory: false },
+    { kind: "nothingDocumentedMeal", date: "07/20/26", mandatory: false },
+    { kind: "restNoTimes", date: "07/21/26", mandatory: true },
+  ];
+  const open = signingGate(questions, []);
+  assert.equal(open.canSign, false, "the unreadable row still holds it up");
+  assert.equal(open.blocking, 1);
+  assert.equal(open.optionalOpen, 2, "and this is what the popup counts");
+
+  // answering ONLY the mandatory one is enough to sign
+  const settled = signingGate(questions, [
+    { kind: "q_restNoTimes", date: "07/21/26", status: "accepted" },
+  ]);
+  assert.equal(settled.canSign, true);
+  assert.equal(settled.blocking, 0);
+  assert.equal(settled.optionalOpen, 2, "still unanswered, still not blocking");
+
+  // and the check that proves this can fail: answering only the optional ones
+  // must NOT open the gate
+  const wrongOnes = signingGate(questions, [
+    { kind: "q_nothingDocumentedRest", date: "07/20/26", status: "accepted" },
+    { kind: "q_nothingDocumentedMeal", date: "07/20/26", status: "accepted" },
+  ]);
+  assert.equal(wrongOnes.canSign, false);
+  assert.equal(wrongOnes.optionalOpen, 0);
 });
