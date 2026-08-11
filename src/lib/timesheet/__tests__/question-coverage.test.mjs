@@ -226,3 +226,72 @@ test("the gate lets somebody sign past every optional question and no mandatory 
   assert.equal(wrongOnes.canSign, false);
   assert.equal(wrongOnes.optionalOpen, 0);
 });
+
+// ---------------------------------------------------------------------------
+// WHICH ANSWER A STORED ROW READS BACK AS.
+//
+// There are three outcomes on `restOutsideScheduled` and only two statuses, so
+// a declined row is told apart by whether it carries times: with them it is "I
+// took it during a shift", without them "I did not take it at all". That makes
+// the times load-bearing, and the action nulled them on every decline - so
+// choosing the middle option, filling in three times and confirming came back
+// as the third. Mánu 2026-08-11: "when i chose those time options it goes back
+// to selecting i did not take it at all."
+//
+// The rule is asserted here rather than left to a comment, because it is the
+// only thing keeping two different answers apart on one status.
+
+const readsBackAs = (kind, status, statedBreaks) => {
+  if (status === "accepted") return "yes";
+  const hasTimes = Array.isArray(statedBreaks) && statedBreaks.length > 0;
+  return kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no";
+};
+
+test("a declined row with times is a different answer from one without", () => {
+  const times = [{ slot: "outside1", from: "11:50a", to: "12p" }];
+
+  assert.equal(readsBackAs("restOutsideScheduled", "accepted", null), "yes");
+  assert.equal(
+    readsBackAs("restOutsideScheduled", "declined", times), "no",
+    "times on a decline mean they took it during a shift",
+  );
+  assert.equal(
+    readsBackAs("restOutsideScheduled", "declined", null), "notaken",
+    "no times on a decline mean they never got it",
+  );
+  // and the one that broke: storing null alongside a set of times somebody
+  // actually gave turns the middle answer into the third
+  assert.notEqual(
+    readsBackAs("restOutsideScheduled", "declined", null),
+    readsBackAs("restOutsideScheduled", "declined", times),
+    "so the times cannot be cleared on this kind's decline",
+  );
+
+  // EVERY OTHER KIND IS UNAFFECTED - a decline is a decline, times or not.
+  assert.equal(readsBackAs("nothingDocumentedRest", "declined", null), "no");
+  assert.equal(readsBackAs("nothingDocumentedRest", "declined", times), "no");
+});
+
+test("the action stores the times it resolved, and does not second-guess them", () => {
+  // the fix, read out of the source: a bare `statedBreaks` rather than a
+  // conditional that nulls it on a decline. Crude, and it is the assertion that
+  // would have caught this.
+  const src = read("src/app/portal/admin/timesheets/actions.js");
+  const record = src.slice(src.indexOf("const record = {"), src.indexOf("if (existing)"));
+  // THE INVARIANT IS ABOUT THE CHOICE, not the exact expression. Filtering the
+  // list down to the date being written is fine - and necessary, or a grouped
+  // question puts every date's times on every date's row. Branching on `pick`
+  // is what loses the middle answer.
+  assert.ok(
+    /statedBreaks/.test(record),
+    "statedBreaks has to be stored at all",
+  );
+  assert.ok(
+    !/statedBreaks:\s*pick\s*===/.test(record),
+    "nulling times on a decline breaks restOutsideScheduled - it is the decline that carries them",
+  );
+  assert.ok(
+    !/pick === "no".*statedBreaks/s.test(record.slice(0, record.indexOf("statedBreaks"))),
+    "the stored times must not depend on which answer was picked",
+  );
+});

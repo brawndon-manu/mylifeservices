@@ -11,7 +11,7 @@ import {
   answerTimesheetQuestion,
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
-import { buildQuestions, signingGate } from "@/lib/timesheet/questions";
+import { buildQuestions, signingGate, dependencyGate } from "@/lib/timesheet/questions";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
@@ -85,14 +85,23 @@ export default async function SignTimesheetPage({ params }) {
   // "Took one" instead of "Missed them" after a reload. No third status and no
   // migration for it.
   const partials = {};
+  // the times they gave, so an answered card can show what they said instead of
+  // re-rendering the whole question. Mánu 2026-08-11: "after the answer is given
+  // i dont think it should show the options like this ... so they arent in
+  // scrolling hell after a long time sheet."
+  const answerTimes = {};
   for (const q of questions) {
-    const hit = answered.find(
-      (c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date),
-    );
-    if (!hit) continue;
-    answers[q.id] = hit.status;
-    if (hit.status === "declined" && Array.isArray(hit.statedBreaks) && hit.statedBreaks.length) {
-      partials[q.id] = true;
+    const dates = q.dates || [q.date];
+    // EVERY ROW THE ANSWER WROTE, not just the first. A grouped question writes
+    // one correction per date and each now carries only ITS OWN times, so
+    // reading the first row showed one date on a card that covers three.
+    const hits = answered.filter((c) => c.kind === `q_${q.kind}` && dates.includes(c.date));
+    if (!hits.length) continue;
+    answers[q.id] = hits[0].status;
+    const times = hits.flatMap((h) => (Array.isArray(h.statedBreaks) ? h.statedBreaks : []));
+    if (times.length) {
+      answerTimes[q.id] = times;
+      if (hits[0].status === "declined") partials[q.id] = true;
     }
   }
   // WHO MAY SIGN, AND WHAT THE POPUP COUNTS. Two tiers: a question where the
@@ -101,6 +110,11 @@ export default async function SignTimesheetPage({ params }) {
   // that keeps their pay. Measured on the live batch: 54 of 59 could sign
   // straight away, 5 gated on 6 questions.
   const gate = signingGate(questions, ts.corrections);
+  // WHAT CANNOT BE ANSWERED YET, and what changing an answer would disturb.
+  // A question whose answer moves the hours re-derives the day, so the break
+  // questions for those same dates are asking about premiums that may be about
+  // to stop existing. Scoped to the overlapping dates only.
+  const deps = dependencyGate(questions, ts.corrections);
 
   // ONE CARD PER `batch`, FALLING BACK TO THE KIND. `restIsMealLength` keeps a
   // row per day inside its card, which the component handles when it is handed
@@ -283,6 +297,9 @@ export default async function SignTimesheetPage({ params }) {
               questions={group}
               answers={answers}
               partials={partials}
+              answerTimes={answerTimes}
+              waiting={deps.waiting}
+              disturbs={deps.disturbs}
               standing={standing}
               submitAction={answerTimesheetQuestion}
             />

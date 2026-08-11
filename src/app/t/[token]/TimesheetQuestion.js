@@ -17,6 +17,7 @@
 // COLOUR CARRIES THE SAME MEANING AS THE SHEET: amber while we are still asking,
 // green once an answer has left the figures alone, plain once it has not.
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -168,17 +169,29 @@ function copyFor(q, standing) {
             : "outside the hours you were scheduled to be working";
       const canClear = (q.row.detail || []).some((x) => x.clearsARest);
       return {
-        title: "One of your breaks is outside your scheduled hours",
+        // ONE CARD COVERS ALL OF THEM, so the heading has to count. Mánu
+        // 2026-08-11 asked whether it was a notice for one or for any number:
+        // it is one card however many rows there are, and saying "one of your
+        // breaks" above three dates made that look like a bug.
+        title: q.row.days === 1
+          ? "One of your breaks is outside your scheduled hours"
+          : "Some of your breaks are outside your scheduled hours",
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your ten minute rest break is
-            recorded <b>{shapeWords}</b>, and you were not clocked in for it. A rest period is paid
-            time, so we have taken it at face value and are <b>paying you those {q.row.minutes}{" "}
-            minutes</b> on top of your hours.
+            recorded <b>{shapeWords}</b>, and you were not clocked in for it.
             <br /><br />
-            <b>Is that right?</b> If it is, leave it and keep the pay. If you actually took it
-            earlier, inside your shift, tell us when. And if you never got it at all, say so - that
-            is a break you are owed.
+            {/* WHY IT IS ADDED, in his words: the break sits outside any
+                scheduled shift, so it was never counted as time at all. A rest
+                period is paid, so it has to be added rather than assumed. */}
+            A break only counts as time when it sits inside a shift you were
+            scheduled for. Yours does not, so it was never counted - and a rest period is paid
+            time, so we have taken it at face value and <b>added those {q.row.minutes} minutes</b>{" "}
+            to your hours.
+            <br /><br />
+            <b>Is that right?</b> If it is, leave it and keep the pay. If it really happened during
+            one of your shifts, tell us when and the time comes back off. And if you never got it at
+            all, say so - that is a break you are owed.
           </>
         ),
         dates: q.dates,
@@ -192,8 +205,13 @@ function copyFor(q, standing) {
           why: "You stopped then, off the clock. The minutes stay paid.",
         },
         no: {
-          label: "I took it earlier, in my shift",
-          why: "Tell us when. It was already paid, so nothing is added.",
+          // "I took it earlier, in my shift" and "it was already paid, so
+          // nothing is added" were both wrong. Mánu 2026-08-11: "If you took it
+          // earlier in your shift, then the time gets taken away." Nothing is
+          // ADDED is true of the arithmetic and false of what he sees - his
+          // hours drop by the same half hour the card is about.
+          label: "I took it during a shift",
+          why: "Tell us when. The minutes come back off your hours.",
         },
         // THE THIRD OUTCOME. Mánu 2026-08-11: "or if she didnt take it at all."
         // Without it somebody who never got the break had to claim they did, on
@@ -205,12 +223,14 @@ function copyFor(q, standing) {
             ? "It stops counting as a break you had, so the penalty for it goes on."
             : "It stops counting as a break you had.",
         },
-        timeLabel: "When did you actually take it?",
+        timeLabel: "When during your shift did you take it?",
+        timeHint: "The record has a time on it, it just is not inside a shift. Tell us when it really was.",
         yesEffect: <>Nothing changes. The <b>{q.row.minutes} minutes</b> stay on your timesheet.</>,
         noEffect: (
           <>
             <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off, along with any
-            overtime they created, and your break moves to the time you give us.
+            overtime they created, and your break moves to the time you give us. You were on the
+            clock then, so that time is already in your hours as work.
           </>
         ),
         thirdEffect: (
@@ -245,7 +265,7 @@ function copyFor(q, standing) {
     case "nothingDocumentedMeal":
     case "nothingDocumentedRest":
       return {
-        title: "We could not find your breaks on record",
+        title: "We could not find some of your breaks on record",
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> we cannot find a ten minute
@@ -386,10 +406,40 @@ function Choice({ on, tone, label, why, onClick, busy }) {
 
 // one question inside the card: the choices, the optional typed time, and the
 // confirm panel that has to be got past before anything is written
-function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction, showDate }) {
+function OneQuestion({
+  token, q, answer, answerHasTimes, answerTimes, locked, disturbCount,
+  standing, submitAction, showDate,
+}) {
+  // THE PAGE HAS TO REFETCH, AND `revalidatePath` ALONE DID NOT DO IT.
+  //
+  // Mánu 2026-08-11: "the hours up top doesn't change as I answer stuff, and it
+  // should", and "I'm not able to go back and change it once I confirm it, even
+  // though it says I can". Both are the same fault. The server action
+  // revalidates the path, but nothing asked this tree to re-render, so the
+  // summary kept the old hours AND `answer` stayed stale - so the card had no
+  // idea it had been answered and would not let him change it.
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [at, setAt] = useState("");
+  // ONE TIME PER DATE, keyed by slot. A grouped card covers several days and
+  // each of them is its own ten minute break - Mánu 2026-08-11: "it should ask
+  // for the times for each of these 10 minute rest periods not just grouped all
+  // together." One box for three days asked him to pick which day to be honest
+  // about.
+  const [slotAt, setSlotAt] = useState({});
+  // AN ANSWERED CARD COLLAPSES. Mánu 2026-08-11: "after the answer is given i
+  // dont think it should show the options like this. i think it should show the
+  // times they chose and then an option to go back ... so they arent in
+  // scrolling hell after a long time sheet."
+  //
+  // Three full-width choice boxes and a wall of body text stay on the page for
+  // ever once a question is settled, and a sheet with a dozen of them becomes
+  // something you scroll past rather than read. Answered shows one line of what
+  // they said; "Change this" puts the question back.
+  const [editing, setEditing] = useState(false);
+  // "are you sure" before reopening an answer that others were derived from
+  const [warning, setWarning] = useState(false);
   const [proposed, setProposed] = useState(null);
   const c = copyFor(q, standing);
   if (!c) return null;
@@ -422,10 +472,31 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
   // typing one is a correction and staying quiet accepts the proposal.
   const timeOn = q.needsOn || "yes";
   const needsTime = !!q.canGiveTime && proposed?.choice === timeOn;
-  const timeRequired = needsTime && !!(q.needs || []).length;
-  const suggestion = (q.needs || [])[0]?.suggest || q.proposed?.from || null;
-  // a required box with nothing readable in it is what holds the confirm
-  const timeBlocked = timeRequired ? !typedHHMM : !!(at.trim() && !typedHHMM);
+  const slots = needsTime ? (q.needs || []) : [];
+  const timeRequired = needsTime && slots.length > 0;
+  const suggestion = q.proposed?.from || null;
+  const slotMin = (need) => parseLooseTime(slotAt[need.slot] || "", { assumeWorkday: true });
+  // EVERY slot has to be readable, not just the first. Each one is a separate
+  // day's break and the sheet redraws all of them.
+  const timeBlocked = timeRequired
+    ? slots.some((need) => !slotMin(need))
+    : !!(at.trim() && !typedHHMM);
+
+  // WHAT THE COLLAPSED CARD SHOWS: the answer in their own words, and the times
+  // they gave paired back to the dates they belong to. `statedBreaks` carries a
+  // slot but not a date, so the dates come from `q.needs` - the same list the
+  // boxes were built from, which is what keeps them in step.
+  const chosenLabel =
+    shown === "yes" ? c.yes.label
+      : shown === "no" ? c.no.label
+        : shown === c.third?.value ? c.third.label
+          : "Answered";
+  const statedPairs = (answerTimes || [])
+    .map((b) => {
+      const need = (q.needs || []).find((n) => n.slot === b.slot);
+      return need?.date ? { slot: b.slot, date: need.date, from: b.from } : null;
+    })
+    .filter(Boolean);
 
   function commit() {
     if (!proposed || timeBlocked) return;
@@ -433,12 +504,15 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
     start(async () => {
       const res = await submitAction({
         token, id: q.id, choice: proposed.choice,
-        // the box only exists on the answer that needs it, so a time typed and
-        // then switched away from is never sent
-        at: needsTime && typedHHMM ? typedHHMM : null,
+        // the boxes only exist on the answer that needs them, so a time typed
+        // and then switched away from is never sent
+        at: needsTime && !slots.length && typedHHMM ? typedHHMM : null,
+        times: slots.length
+          ? Object.fromEntries(slots.map((need) => [need.slot, slotMin(need)]).filter(([, m]) => m))
+          : null,
       });
       if (!res?.ok) setErr(res?.error || "failed");
-      else { setProposed(null); setAt(""); }
+      else { setProposed(null); setAt(""); setSlotAt({}); setEditing(false); router.refresh(); }
     });
   }
 
@@ -446,15 +520,68 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
     <div className={showDate ? "mt-4 border-t border-border pt-4 first:mt-0 first:border-0 first:pt-0" : ""}>
       {showDate && <p className="text-sm font-semibold text-foreground">{q.date}</p>}
 
-      {answered ? (
-        <p className="mt-1 text-sm text-muted">
-          <b className="text-foreground">
-            {answer === "accepted" ? "Confirmed" : "You told us no"}
-          </b>
-          {" - "}
-          {answer === "accepted" ? "thank you." : "your timesheet has been rebuilt."}{" "}
-          You can change this any time before you sign.
-        </p>
+      {answered && !editing ? (
+        // WHAT THEY SAID, ON ONE LINE. The dates and their times sit inline so a
+        // settled question costs a couple of rows instead of a screenful.
+        <div className="mt-1">
+          <p className="text-sm text-muted">
+            <b className="text-foreground">{chosenLabel}</b>
+            {" - "}
+            {answer === "accepted" ? "thank you." : "your timesheet has been rebuilt."}
+          </p>
+          {statedPairs.length > 0 && (
+            <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+              {statedPairs.map((x) => (
+                <span key={x.slot}>
+                  <span className="font-mono text-xs text-foreground">{x.date}</span>{" "}
+                  {x.from}
+                </span>
+              ))}
+            </p>
+          )}
+          {/* CHANGING AN UPSTREAM ANSWER REACHES THE ONES BELOW IT, and only
+              then is there anything to warn about. Mánu 2026-08-11: "if they go
+              to change this, it should say are you sure - it will change the
+              answers below ONLY IF they'll be changed." */}
+          {warning ? (
+            <div className="mt-2 rounded-lg border-2 border-amber-500 bg-amber-500/10 p-3">
+              <p className="text-sm font-semibold text-foreground">Are you sure?</p>
+              <p className="mt-1 text-sm text-muted">
+                Changing this changes your hours for{" "}
+                {q.dates?.length === 1 ? "that day" : `those ${q.dates?.length} days`}, and{" "}
+                <b className="text-foreground">
+                  {disturbCount} {disturbCount === 1 ? "answer" : "answers"}
+                </b>{" "}
+                you have already given below {disturbCount === 1 ? "is" : "are"} worked out from
+                those hours. {disturbCount === 1 ? "It" : "They"} may change or go away.
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => { setWarning(false); setEditing(true); }}
+                  className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Change it anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWarning(false)}
+                  className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-foreground"
+                >
+                  Leave it
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => (disturbCount > 0 ? setWarning(true) : setEditing(true))}
+              className="mt-2 text-sm font-semibold text-brand transition hover:text-brand-dark"
+            >
+              Change this
+            </button>
+          )}
+        </div>
       ) : (
         showDate && (
           <p className="mt-1 text-sm leading-relaxed text-muted">{c.body}</p>
@@ -471,6 +598,20 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
           only way out of a mis-tap was to pick the other answer, which on a
           question about somebody's pay means asserting the opposite of what you
           meant just to clear the first mistake. */}
+      {/* LOCKED: an answer above this one moves the hours, and the hours decide
+          what this question is even asking. Showing the buttons would invite an
+          answer that is about to be recomputed out from under them. */}
+      {locked && !answered && (
+        <div className="mt-3 rounded-lg border border-dashed border-border-strong bg-surface-2 p-3">
+          <p className="text-sm text-muted">
+            <b className="text-foreground">Answer the question above first.</b> Your hours for{" "}
+            {q.dates?.length > 1 ? "these days" : "this day"} depend on it, and your hours decide
+            whether this break is owed at all.
+          </p>
+        </div>
+      )}
+
+      {(!answered || editing) && !locked && (
       <div className="mt-3 flex flex-wrap gap-2.5">
         <Choice
           on={shown === "yes"}
@@ -499,6 +640,7 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
           />
         )}
       </div>
+      )}
 
       {/* THE TIME GOES UNDER THE ANSWER THAT NEEDS IT, not beside it as a third
           option. Mánu 2026-08-11: "yes i took it should have an option to enter
@@ -511,46 +653,100 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
           WHICH answer needs it depends on the question. Everywhere else it is
           "yes"; on `restOutsideScheduled` the correction is "no", so that is
           where the box has to appear. `needsOn` says which. */}
-      {needsTime && !answered && (
+      {/* THE TIME BOX IS NOT GATED ON `answered`, and that gate was a dead end.
+          Once anything had been confirmed the box vanished while the confirm
+          panel still said "put the time in above first" - so the answer could
+          never be changed to the one that needs a time. Mánu 2026-08-11:
+          "doesnt let me go back and change it to this." */}
+      {needsTime && (
         <div className="mt-3 rounded-lg border border-border-strong bg-surface-2 p-3">
-          <label htmlFor={`at-${q.id}`} className="block text-sm font-semibold text-foreground">
-            {c.timeLabel}
-          </label>
+          <p className="text-sm font-semibold text-foreground">{c.timeLabel}</p>
           <p className="mt-1 text-xs text-muted">
-            {timeRequired
-              ? "We need this before you can confirm - the record has no time on it at all."
-              : "Optional. Leave it blank and we will use the time already on the record."}
+            {c.timeHint
+              || (timeRequired
+                ? "We need this before you can confirm - the record has no time on it at all."
+                : "Optional. Leave it blank and we will use the time already on the record.")}
           </p>
-          <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-            <input
-              id={`at-${q.id}`}
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              value={at}
-              onChange={(e) => setAt(e.target.value)}
-              placeholder="e.g. 230 or 2:30pm"
-              className={`w-40 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
-                at.trim() && !typedHHMM ? "border-rose-500" : "border-border-strong"
-              }`}
-            />
-            {suggestion && !at.trim() && (
-              <button
-                type="button"
-                onClick={() => setAt(suggestion)}
-                className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-              >
-                Use {suggestion}
-              </button>
-            )}
-            <span className="text-sm text-muted">
-              {at.trim()
-                ? typedHHMM
-                  ? <>reads as <b className="text-foreground">{formatTimeDisplay(typedHHMM)}</b></>
-                  : <span className="text-rose-600 dark:text-rose-400">not a time we can read</span>
-                : null}
-            </span>
-          </div>
+
+          {slots.length > 0 ? (
+            <div className="mt-2.5 space-y-2">
+              {slots.map((need) => {
+                const raw = slotAt[need.slot] || "";
+                const mins = slotMin(need);
+                return (
+                  <div key={need.slot} className="flex flex-wrap items-center gap-2.5">
+                    <label
+                      htmlFor={`at-${q.id}-${need.slot}`}
+                      className="w-24 font-mono text-sm text-foreground"
+                    >
+                      {need.date || need.label}
+                    </label>
+                    <input
+                      id={`at-${q.id}-${need.slot}`}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      disabled={pending}
+                      value={raw}
+                      onChange={(e) => setSlotAt((t) => ({ ...t, [need.slot]: e.target.value }))}
+                      placeholder="e.g. 230 or 2:30pm"
+                      className={`w-36 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
+                        mins ? "border-emerald-500" : raw.trim() ? "border-rose-500" : "border-amber-500/70"
+                      }`}
+                    />
+                    {!mins && need.suggest && (
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => setSlotAt((t) => ({ ...t, [need.slot]: need.suggest }))}
+                        className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                      >
+                        Use {need.suggest}
+                      </button>
+                    )}
+                    {mins && (
+                      <span className="text-sm text-muted">
+                        reads as <b className="text-foreground">{formatTimeDisplay(mins)}</b>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+              <input
+                id={`at-${q.id}`}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                disabled={pending}
+                value={at}
+                onChange={(e) => setAt(e.target.value)}
+                placeholder="e.g. 230 or 2:30pm"
+                className={`w-40 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
+                  at.trim() && !typedHHMM ? "border-rose-500" : "border-border-strong"
+                }`}
+              />
+              {suggestion && !at.trim() && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setAt(suggestion)}
+                  className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                >
+                  Use {suggestion}
+                </button>
+              )}
+              <span className="text-sm text-muted">
+                {at.trim()
+                  ? typedHHMM
+                    ? <>reads as <b className="text-foreground">{formatTimeDisplay(typedHHMM)}</b></>
+                    : <span className="text-rose-600 dark:text-rose-400">not a time we can read</span>
+                  : null}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -575,17 +771,31 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
                   : proposed.choice === c.third?.value ? c.thirdEffect
                     : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
             </p>
-            {needsTime && typedHHMM && (
+            {needsTime && !slots.length && typedHHMM && (
               <p>
                 The sheet will show <b className="text-foreground">{formatTimeDisplay(typedHHMM)}</b>,
                 and say it came from you rather than from the break record.
               </p>
             )}
+            {needsTime && slots.length > 0 && !timeBlocked && (
+              <p>
+                Your sheet will show{" "}
+                {slots.map((need, i) => (
+                  <span key={need.slot}>
+                    {i > 0 ? ", " : ""}
+                    <b className="text-foreground">{need.date} at {formatTimeDisplay(slotMin(need))}</b>
+                  </span>
+                ))}
+                , and say the times came from you rather than from the break record.
+              </p>
+            )}
             {timeBlocked && (
               <p className="font-semibold text-rose-600 dark:text-rose-400">
-                {timeRequired && !at.trim()
-                  ? "Put the time in above first."
-                  : "That time cannot be read - check it above."}
+                {slots.length > 0
+                  ? `Put a time in for ${slots.filter((n) => !slotMin(n)).map((n) => n.date).join(", ")} above first.`
+                  : timeRequired && !at.trim()
+                    ? "Put the time in above first."
+                    : "That time cannot be read - check it above."}
               </p>
             )}
             <p className="text-xs">You can change your answer any time before you sign.</p>
@@ -639,7 +849,10 @@ function OneQuestion({ token, q, answer, answerHasTimes, standing, submitAction,
 // NOTHING IS PRE-SELECTED, same as every other card. The staged answers live
 // here in client state until the confirm panel is got past, and until then the
 // database has not been touched.
-function BatchCard({ token, list, answers, partials, standing, submitAction, copy }) {
+function BatchCard({ token, list, answers, partials, waiting, standing, submitAction, copy }) {
+  // see the note in OneQuestion - the figures at the top of the page are server
+  // rendered, so an answer that does not refresh the tree leaves them stale
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [picked, setPicked] = useState({});
@@ -675,13 +888,44 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
     if (raw.trim()) return parseLooseTime(raw, { assumeWorkday: true });
     return need.prefill ? parseLooseTime(need.prefill, { assumeWorkday: true }) : null;
   };
+  // A REST HAS TO LAND INSIDE A SHIFT, and inside its own half of one.
+  //
+  // BOTH CHECKS, not just the window. 12:05p on a 10a-12p / 12:15p-2:15p day is
+  // inside the first ten's window and inside NO SHIFT - it is the unscheduled
+  // hole the old suggestion used to point at. Checking only the window showed it
+  // in green and left the server to refuse it on submit, which is the worst of
+  // both: they type a time the page accepts and the save then fails.
+  //
+  // `restTimeFits` on the server is the authority; this is the same rule said
+  // early enough to be useful.
+  const min = (t) => parseLooseTime(t, { assumeWorkday: true });
+  const badTime = (q, need) => {
+    if (need.kindOf !== "rest") return null;
+    const m = minutesAt(q, need);
+    if (m == null) return null;
+    const spans = (need.shifts || [])
+      .map((x) => x.split("-"))
+      .map(([a, b]) => [min(a), min(b)])
+      .filter(([a, b]) => a != null && b != null);
+    if (spans.length && !spans.some(([a, b]) => m >= a && m + (need.minutes || 10) <= b)) {
+      return "outside";
+    }
+    const windows = (need.window || [])
+      .map((x) => x.split("-"))
+      .map(([a, b]) => [min(a), min(b)])
+      .filter(([a, b]) => a != null && b != null);
+    if (windows.length && !windows.some(([a, b]) => m >= a && m + (need.minutes || 10) <= b)) {
+      return "window";
+    }
+    return null;
+  };
   // EVERY DAY ANSWERED "took them" OWES ITS TIMES. Mánu 2026-08-10: required,
   // "because we need a record of this". A day answered "missed them" owes none -
   // there is nothing to say when about.
   const missingTimes = list.reduce((n, q) => {
     const v = valueFor(q);
     if (v === "yes") {
-      return n + (q.needs || []).filter((need) => !minutesAt(q, need)).length;
+      return n + (q.needs || []).filter((need) => !minutesAt(q, need) || badTime(q, need)).length;
     }
     // A PARTIAL OWES AT LEAST ONE TIME, not all of them. They are telling us
     // they got some of their tens and not the others, so the blanks are the
@@ -692,7 +936,7 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
     return n;
   }, 0);
 
-  const chosen = list.map((q) => ({ q, v: valueFor(q) }));
+  const chosen = list.map((q) => ({ q, v: waiting?.has?.(q.id) ? null : valueFor(q) }));
   // A PARTIAL COUNTS AS MISSED FOR THE MONEY. One hour per workday on which a
   // rest period was not provided, per UPS v. Superior Court - so one of two
   // tens is exactly as much premium as none of two. What differs is the record,
@@ -732,7 +976,7 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
         })),
       });
       if (!res?.ok) setErr(res?.error || "failed");
-      else { setConfirming(false); setPicked({}); setTimes({}); }
+      else { setConfirming(false); setPicked({}); setTimes({}); router.refresh(); }
     });
   }
 
@@ -767,7 +1011,13 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
   // it and took them." One outline, one filled segment, no row tint.
   //
   // CLICKING THE CHOSEN SEGMENT CLEARS IT, same as the single questions.
+  // A ROW CAN BE LOCKED ON ITS OWN. The question that moves the hours covers
+  // some of these dates and not others, so locking the whole card would hold up
+  // nine days over three. Per row, per date.
   const Toggle = ({ item: { q, v } }) => (
+    waiting?.has?.(q.id) ? (
+      <span className="text-xs text-muted">waiting on the question above</span>
+    ) : (
     <span className="flex overflow-hidden rounded-lg border border-border-strong">
       {optionsFor(q).map((opt, i) => (
         <button
@@ -795,6 +1045,7 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
         </button>
       ))}
     </span>
+    )
   );
 
   // the times a "took them" owes. Now scoped to ONE part, so a both-day answered
@@ -814,10 +1065,35 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
             way - but the record will say which you had.
           </p>
         )}
+        {/* THEIR OWN SHIFTS, not the gaps between them. Mánu 2026-08-11: a rest
+            has to sit inside a service, so offering the unscheduled gap was
+            proposing the very thing the card above penalises. */}
+        {(q.needs[0]?.shifts || []).length > 0 && (
+          <p className="mt-1.5 text-xs text-muted">
+            You worked{" "}
+            <b className="font-mono text-foreground">{q.needs[0].shifts.join("  ")}</b> that day.
+          </p>
+        )}
+        {(q.needs[0]?.known || []).length > 0 && (
+          <p className="mt-1 text-xs text-muted">
+            Already on record:{" "}
+            {q.needs[0].known.map((k, i) => (
+              <span key={k.from}>
+                {i > 0 ? ", " : ""}
+                <b className="font-mono text-foreground">{k.from}</b>
+                {/* saying WHERE it came from, or the card looks like it always
+                    held a time the employee only just gave it */}
+                {k.corrected ? " (as you corrected it above)" : ""}
+              </span>
+            ))}
+            .
+          </p>
+        )}
         <div className="mt-2 space-y-2">
           {q.needs.map((need) => {
             const raw = rawAt(q, need.slot);
             const mins = minutesAt(q, need);
+            const bad = badTime(q, need);
             return (
               <div key={need.slot} className="flex flex-wrap items-center gap-2.5">
                 <label htmlFor={`t-${q.id}-${need.slot}`} className="w-28 text-sm text-foreground">
@@ -833,10 +1109,12 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
                   onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
                   placeholder="e.g. 115 or 1:15p"
                   className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
-                    mins ? "border-emerald-500" : partial ? "border-border-strong" : "border-amber-500/70"
+                    bad ? "border-rose-500"
+                      : mins ? "border-emerald-500"
+                        : partial ? "border-border-strong" : "border-amber-500/70"
                   }`}
                 />
-                {!mins && need.suggest && (
+                {false && need.suggest && (
                   <button
                     type="button"
                     disabled={pending}
@@ -846,8 +1124,12 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
                     use {need.suggest}
                   </button>
                 )}
-                <span className="text-xs text-muted">
-                  {mins && raw.trim() ? `reads as ${formatTimeDisplay(mins)}` : need.hint}
+                <span className={`text-xs ${bad ? "text-rose-600 dark:text-rose-400" : "text-muted"}`}>
+                  {bad === "outside"
+                    ? "that is not inside any shift you worked that day"
+                    : bad === "window"
+                      ? `that has to be inside ${(need.window || []).join(" or ")}`
+                      : mins && raw.trim() ? `reads as ${formatTimeDisplay(mins)}` : need.hint}
                 </span>
               </div>
             );
@@ -1041,7 +1323,7 @@ function BatchCard({ token, list, answers, partials, standing, submitAction, cop
 }
 
 export default function TimesheetQuestion({
-  token, questions, answers, partials, standing, submitAction,
+  token, questions, answers, partials, answerTimes, waiting, disturbs, standing, submitAction,
 }) {
   const list = questions || [];
   if (!list.length) return null;
@@ -1073,6 +1355,7 @@ export default function TimesheetQuestion({
         <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
         <BatchCard
           partials={partials}
+          waiting={waiting}
           token={token}
           list={list}
           answers={answers}
@@ -1087,7 +1370,10 @@ export default function TimesheetQuestion({
   return (
     <div className={`mt-5 rounded-xl p-5 ${tone}`}>
       <p className="text-base font-semibold text-foreground">{c.title}</p>
-      {!perDay && <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>}
+      {/* THE EXPLANATION IS FOR SOMEBODY DECIDING. Once they have, it is just
+          height between them and the rest of their timesheet - and the answered
+          card below carries "Change this" to bring the question back. */}
+      {!perDay && !allAnswered && <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>}
       {perDay && (
         <p className="mt-2 text-sm leading-relaxed text-muted">
           There {list.length === 2 ? "are two of these" : `are ${list.length} of these`} on your
@@ -1096,7 +1382,7 @@ export default function TimesheetQuestion({
         </p>
       )}
 
-      {c.dates && (
+      {c.dates && !allAnswered && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {c.dates.map((d) => (
             <span
@@ -1123,6 +1409,9 @@ export default function TimesheetQuestion({
             q={q}
             answer={answers?.[q.id] || null}
             answerHasTimes={!!partials?.[q.id]}
+            answerTimes={answerTimes?.[q.id] || null}
+            locked={waiting?.has?.(q.id)}
+            disturbCount={(disturbs?.[q.id] || []).length}
             standing={standing}
             submitAction={submitAction}
             showDate={perDay}
