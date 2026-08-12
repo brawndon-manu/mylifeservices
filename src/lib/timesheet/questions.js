@@ -39,6 +39,9 @@ import {
   restKey, restNameFor, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
+// the entitlement rules, so answering "it was work" re-earns exactly what
+// `analyzeDay` would have, rather than a second copy of that arithmetic
+import { workGroupsFor, entitlementFor } from "./parse.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -467,6 +470,35 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   //    meal?" has no answer behind it and no premium to move. The question
   //    exists because a meal is missing and something meal-shaped is sitting in
   //    the wrong report.
+  // TIME ROSTERED AS MISC, OVER TEN MINUTES, WHICH THE DAY WAS NOT CHARGED FOR.
+  //
+  // Mánu 2026-08-12: "that time is typically used for sick pay and pto. it can
+  // be used for work not with a client so we need to ask." The engine has
+  // already discounted it - see MISC_COUNTS_UP_TO_MIN - so this question is the
+  // only route by which it comes back, and the only one of these that can ADD a
+  // premium rather than clear one.
+  //
+  // NOT ASKED once the answer is known. A reviewer can classify it first, on the
+  // grounds that PTO is nothing the employee has to change in QSP and asking
+  // them about their own sick day is not a question worth sending.
+  for (const d of days) {
+    if (!(d.miscBlocks || []).length) continue;
+    if (d.miscKind || d.miscWorked) continue;
+    out.push({
+      kind: "miscTime",
+      date: d.date,
+      at: d.miscBlocks[0]?.from || "",
+      // the only kind here that can put a premium ON. Everything else on this
+      // page can only take one off, which is why `moves` is negative elsewhere.
+      moves: 1,
+      row: {
+        blocks: d.miscBlocks.map((b) => ({ from: b.from, to: b.to, minutes: b.min })),
+        minutes: d.miscMin || 0,
+        hours: Math.round(((d.miscMin || 0) / 60) * 100) / 100,
+      },
+    });
+  }
+
   for (const r of mine) {
     if (!mealReadingWins(r)) continue;
     const d = dayOf(r.date);
@@ -969,6 +1001,52 @@ export function answerProgress(questions, corrections) {
 export function patchesFor(question, choice, day) {
   const yes = choice === "yes";
   switch (question.kind) {
+    // WHAT THE MISC TIME ACTUALLY WAS.
+    //
+    // Four answers, and only one of them moves a figure. "worked" puts the time
+    // back into the stretch it sits in, which re-earns the rests and the meal
+    // that stretch is owed, which can put a premium ON. The other three leave
+    // the day exactly as the engine already had it and are recorded because
+    // "PTO" and "sick pay" and "a ten I could not fit in my service hours" are
+    // three different facts, not three spellings of "not work".
+    //
+    // THE ENTITLEMENT IS RECOMPUTED HERE, not left to a rebuild. `analyzeDay`
+    // reads `miscWorked` at the top and never runs again on a stored batch, so
+    // an answer that only set the flag would change nothing anybody could see.
+    // Every field written here is on the `applyOverrides` whitelist - check it
+    // before adding a fifth.
+    case "miscTime": {
+      // THREE ANSWERS, WHICH IS WHAT THE CARD CAN ACTUALLY SHOW. It was drafted
+      // with four - the fourth being "a ten I could not fit in my service hours"
+      // - and Mánu cut it to PTO, sick pay, worked hours. That is the better
+      // shape as well as the buildable one: `MISC_COUNTS_UP_TO_MIN` already lets
+      // a block of ten minutes or less through as worked time, so a block over
+      // ten minutes is by definition not a ten, and the option could only ever
+      // have appeared beside something it does not describe.
+      //
+      // `yes` and `no` are the card's own two, and `third.value` is "worked".
+      // The reviewer path writes "pto" / "sick" / "worked" straight through
+      // without a card, which is why both spellings are accepted here.
+      const kind =
+        choice === "yes" ? "pto"
+          : choice === "no" ? "sick"
+            : choice;
+      const worked = kind === "worked";
+      if (!worked) return { miscKind: kind, miscWorked: false };
+      const groups = workGroupsFor(day?.punches, [], { miscWorked: true });
+      const { restRequired, mealRequired } = entitlementFor({
+        workGroups: groups.length ? groups : day?.workGroups,
+        paidHours: day?.paidHours,
+      });
+      return {
+        miscKind: "worked",
+        miscWorked: true,
+        restRequired,
+        mealRequired,
+        restViolation: !day?.restUnknown && (day?.restTaken ?? 0) < restRequired,
+        mealViolation: mealRequired && day?.mealScheduled !== true,
+      };
+    }
     case "repair":
       // A CONFIRMED REPAIR IS A BREAK THAT HAPPENED, so it is counted as one.
       //

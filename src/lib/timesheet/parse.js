@@ -318,6 +318,126 @@ export function restsRequired(hours) {
   return 1 + Math.ceil((h - 6) / 4);
 }
 
+// A GAP OVER AN HOUR ENDS THE STRETCH THE ENTITLEMENT IS COUNTED OVER.
+//
+// Mánu 2026-08-12: "if there is unscheduled time > 1 hour then we stop the count
+// for checking rest periods and meal breaks owed. for example if i work 9a-12
+// then 1:10p-4:10p then 6p-8p then im owed no rest periods, no meal breaks."
+//
+// Eight hours on the clock, and none of it earns a break, because nobody worked
+// a stretch long enough to be owed one. Measured on the PUNCHES, his call - the
+// roster and the punches agree on this anyway.
+//
+// A ten recorded inside one of those gaps does NOT rejoin the stretches. It was
+// either entered against the wrong time or it should be Misc time logged as a
+// break in QSP, and either way the gap is still a gap. That rest already draws
+// its own card as a rest recorded off the clock.
+export const GAP_SPLITS_ENTITLEMENT_MIN = 60;
+
+// TIME ROSTERED AS MISC, OVER TEN MINUTES, IS NOT TIME WORKED.
+//
+// Same conversation: "that time is typically used for sick pay and pto. it can
+// be used for work not with a client". So by default it earns no entitlement
+// and no premium, and the employee is asked what it was - or the reviewer says
+// so first and they are never asked at all.
+//
+// Under ten minutes it DOES count: that is the shape of a ten somebody could
+// not fit inside their service hours, which is a rest, not a day off.
+//
+// This is the one rule in the engine that defaults to NOT charging. Everywhere
+// else silence means the premium stands; here silence means the time was not
+// worked. Deliberate, and the reason the question exists.
+export const MISC_COUNTS_UP_TO_MIN = 10;
+
+// minutes past midnight to "8:30a". Local because the surfaces that show a Misc
+// block all read it off the stored day rather than formatting it themselves.
+export function clock12(min) {
+  if (!Number.isFinite(min)) return null;
+  const h24 = Math.floor(min / 60) % 24;
+  const mm = min % 60;
+  const ap = h24 >= 12 ? "p" : "a";
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return mm === 0 ? `${h}${ap}` : `${h}:${String(mm).padStart(2, "0")}${ap}`;
+}
+
+// the stretches a day's entitlement is counted over, after both rules.
+// `miscWorked` is set once somebody says the Misc time really was work.
+export function workGroupsFor(punches, blocks, { miscWorked = false } = {}) {
+  const p = Array.isArray(punches) ? punches : [];
+  const segs = [];
+  for (let i = 0; i + 1 < p.length; i += 2) {
+    const a = p[i]?.min, b = p[i + 1]?.min;
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
+    segs.push({ a, b });
+  }
+  segs.sort((x, y) => x.a - y.a);
+
+  const groups = [];
+  for (const s of segs) {
+    const last = groups[groups.length - 1];
+    // exactly an hour does not split it; the rule is MORE than an hour
+    if (last && s.a - last.end <= GAP_SPLITS_ENTITLEMENT_MIN) {
+      last.end = Math.max(last.end, s.b);
+      last.min += s.b - s.a;
+    } else {
+      groups.push({ start: s.a, end: s.b, min: s.b - s.a });
+    }
+  }
+
+  // MISC IS HELD SEPARATELY, NOT SUBTRACTED FROM `min`.
+  //
+  // `min` stays the punched span, because that is what the day's paid hours get
+  // shared out over in `entitlementFor`. Netting it off here made the remaining
+  // groups absorb the discounted time when those hours were redistributed, which
+  // is the opposite of discounting it.
+  for (const g of groups) g.miscMin = 0;
+  if (!miscWorked) {
+    for (const b of blocks || []) {
+      if (!b?.misc) continue;
+      if (!((b.end - b.start) > MISC_COUNTS_UP_TO_MIN)) continue;
+      for (const g of groups) {
+        const ov = Math.min(b.end, g.end) - Math.max(b.start, g.start);
+        if (ov > 0) g.miscMin = Math.min(g.min, g.miscMin + ov);
+      }
+    }
+  }
+  return groups;
+}
+
+// ONE PLACE DECIDES WHAT A DAY IS OWED. `analyzeDay` and `reentitle` both call
+// this; the note on `reentitle` explains why a second copy of that arithmetic is
+// the risk worth engineering away.
+//
+// FALLS BACK TO PAID HOURS WHEN THERE ARE NO PUNCH PAIRS. A day with hours and
+// no punches is not a day that earns nothing - it is a day we cannot group - and
+// zeroing it would drop entitlement on every stored day from before punches were
+// kept.
+// THE GROUPS DECIDE THE BOUNDARIES, THE DAY'S PAID HOURS ARE WHAT GETS SHARED
+// OUT OVER THEM. The first version summed raw punch spans instead, and on a day
+// whose paid hours differ from its punched span - a repaired day, a day floored
+// up to QSP's printed figure, a day carrying added minutes - the entitlement
+// moved for a reason that has nothing to do with either new rule. `engine.test`
+// caught it on Mánu's real 07/28: 6.50 paid over 6.00 punched, and a rest
+// quietly stopped being owed.
+//
+// So: share `paidHours` across the groups in proportion to punched time, then
+// take the Misc share back off at the same rate. A day with one group and no
+// Misc lands on exactly `restsRequired(paidHours)`, which is what it was before
+// either rule existed.
+export function entitlementFor({ workGroups, paidHours }) {
+  const gs = Array.isArray(workGroups) ? workGroups : [];
+  const punched = gs.reduce((n, g) => n + (g.min || 0), 0);
+  const h = paidHours || 0;
+  if (!gs.length || punched <= 0) {
+    return { restRequired: restsRequired(h), mealRequired: h > RULES.mealRequiredAfterHours };
+  }
+  const hoursOf = (g) => (Math.max(0, (g.min || 0) - (g.miscMin || 0)) / punched) * h;
+  return {
+    restRequired: gs.reduce((n, g) => n + restsRequired(hoursOf(g)), 0),
+    mealRequired: gs.some((g) => hoursOf(g) > RULES.mealRequiredAfterHours),
+  };
+}
+
 // Minutes actually ON the clock before an instant, from punches in document
 // order. This is the measure every timing question here uses, and it is not
 // the same as elapsed time from the first punch: a split shift with a two hour
@@ -350,17 +470,32 @@ export function restsRequired(hours) {
 // input to `analyzeDay` and gets frozen into the stored day, so a rebuild that
 // re-derives the count has to re-derive what hangs off it too - and doing that
 // with a copy of this arithmetic is how the two quietly stop agreeing.
-export function restsTakenFrom(recorded, restsFromShortMeals = 0, restsNotCounted = 0) {
+// `restsFromMiscBreaks` is the fourth credit and defaults to zero, so every
+// existing caller - `rebuildSheetFor` among them - keeps its old answer. It
+// counts only the Misc breaks NObody filed a rest row for; a filed one is
+// already inside `recorded`.
+export function restsTakenFrom(
+  recorded, restsFromShortMeals = 0, restsNotCounted = 0, restsFromMiscBreaks = 0,
+) {
   return (
     Math.max(0, (recorded === null || recorded === undefined ? 0 : recorded) - restsNotCounted)
     + (restsFromShortMeals || 0)
+    + (restsFromMiscBreaks || 0)
   );
 }
 
 export function reentitle(day, paidHours) {
   const paid = paidHours ?? day.paidHours ?? 0;
-  const restRequired = restsRequired(paid);
-  const mealRequired = paid > RULES.mealRequiredAfterHours;
+  // THE SAME FUNCTION `analyzeDay` USES, off the groups it stored. Recomputing
+  // the groups here is impossible - `scheduleBlocks` is dropped by `stored.js` -
+  // and recomputing the ENTITLEMENT from paid hours would put this back to
+  // charging a break on a day the new rules say earns none, only on the paths
+  // that pass through here. `entitlementFor` falls back to paid hours by itself
+  // when a stored day has no groups, which is every batch uploaded before today.
+  const { restRequired, mealRequired } = entitlementFor({
+    workGroups: day.workGroups,
+    paidHours: paid,
+  });
 
   // stored facts about the day that the hours cannot change
   const mealScheduled = day.mealScheduled ?? null;
@@ -717,8 +852,33 @@ export function analyzeDay(day) {
   const onSiteMin = firstPunch != null && lastPunch != null ? lastPunch - firstPunch : null;
   const compressedDay = onSiteMin != null && workedMin > onSiteMin + 1;
 
-  const restRequired = restsRequired(paidHours);
-  const mealRequired = paidHours > RULES.mealRequiredAfterHours;
+  // WHAT THE DAY IS OWED, over the stretches it was actually worked.
+  //
+  // This was `restsRequired(paidHours)` and `paidHours > 5` - the whole day as
+  // one lump. Two rules broke that: a gap over an hour ends the stretch, and
+  // Misc time over ten minutes is not worked at all. See the notes on
+  // `GAP_SPLITS_ENTITLEMENT_MIN` and `MISC_COUNTS_UP_TO_MIN`.
+  //
+  // The groups are STORED, because `scheduleBlocks` is a raw input that
+  // `stored.js` drops on purpose - so `reentitle`, which only ever sees the
+  // stored day, could never work out which blocks were Misc. Storing the answer
+  // rather than the input is what keeps the two agreeing.
+  const workGroups = workGroupsFor(p, day.scheduleBlocks, {
+    miscWorked: day.miscWorked === true,
+  });
+  const { restRequired, mealRequired } = entitlementFor({ workGroups, paidHours });
+
+  // the Misc blocks this day was discounted for, kept so the question can quote
+  // the actual times back and the reviewer can classify the right one. Only the
+  // ones over ten minutes: a shorter one is a rest, and counts.
+  const miscBlocks = (day.scheduleBlocks || [])
+    .filter((b) => b.misc && (b.end - b.start) > MISC_COUNTS_UP_TO_MIN)
+    // the times come along as WORDS as well as minutes, because every surface
+    // that shows this - the question, the reviewer's card, the day-by-day - has
+    // to quote them back, and formatting them in three places is how three
+    // places end up disagreeing about what 12:00 means.
+    .map((b) => ({ start: b.start, end: b.end, min: b.end - b.start, from: clock12(b.start), to: clock12(b.end) }));
+  const miscMin = miscBlocks.reduce((n, b) => n + b.min, 0);
 
   // ---- a "rest" recorded inside the lunch ---------------------------------
   //
@@ -835,7 +995,38 @@ export function analyzeDay(day) {
   // satisfied the meal rule to begin with.
   const restsFromShortMeals = shortMealBlocks.length;
 
-  const restTaken = restsTakenFrom(recorded, restsFromShortMeals, restsNotCounted);
+  // A MISC BLOCK OF TEN MINUTES OR LESS IS A BREAK SOMEBODY TOOK, and the only
+  // question is whether they also filed a rest row for it.
+  //
+  // Mánu's own 07/30 is the shape: his schedule reads "12p-12:10p -ILS Misc
+  // (0:10)", he punched it, AND the Rest Periods Report carries 12:00 PM to
+  // 12:10 PM against that shift. That is the case that should read "Misc Break"
+  // on the calendar, because everything about it is right.
+  //
+  // When the row is MISSING it is still a ten they took - "we still treat it as
+  // a 10 minute rest period so no added premium" - so it is credited here rather
+  // than left to become a violation. What it is not is silent: `covered: false`
+  // is what the calendar turns into "needs rest period in QSP".
+  //
+  // Only the UNCOVERED ones are credited. A covered one is already inside
+  // `recorded`, and counting it twice would clear a rest the person never took.
+  const miscBreaks = (day.scheduleBlocks || [])
+    .filter((b) => b.misc && (b.end - b.start) <= MISC_COUNTS_UP_TO_MIN)
+    .map((b) => ({
+      start: b.start,
+      end: b.end,
+      min: b.end - b.start,
+      from: clock12(b.start),
+      to: clock12(b.end),
+      // any recorded rest overlapping the block at all. Not an exact match:
+      // a row filed 12:00-12:10 against a block of 12:00-12:10 is the same
+      // break as one filed 12:01-12:11, and demanding the minute would fail
+      // the person for being a minute out.
+      covered: (usableRests || []).some((r) => r.out < b.end && r.in > b.start),
+    }));
+  const restsFromMiscBreaks = miscBreaks.filter((b) => !b.covered).length;
+
+  const restTaken = restsTakenFrom(recorded, restsFromShortMeals, restsNotCounted, restsFromMiscBreaks);
 
   // Can ANY source speak to whether a rest break happened on this day?
   //
@@ -1099,6 +1290,20 @@ export function analyzeDay(day) {
     restTaken,
     restSource: recorded === null ? "none" : "rest-report",
     restRequired,
+    // the stretches the entitlement above was counted over, and the Misc time
+    // taken out of them. Stored because `reentitle` cannot see `scheduleBlocks`.
+    workGroups,
+    miscBlocks,
+    miscMin,
+    // the ten-minute Misc breaks and whether a rest row was filed for each.
+    // `covered: true` draws as "Misc Break"; `covered: false` is the one that
+    // needs a row adding in QSP, and is credited as a rest either way.
+    miscBreaks,
+    restsFromMiscBreaks,
+    // set once somebody says that Misc time really was work - by the employee
+    // answering, or by a reviewer classifying it first so they are never asked.
+    // Read at the top of `analyzeDay`, so it only takes effect on a re-analyse.
+    miscWorked: day.miscWorked === true,
     mealRequired,
     mealScheduled,
     // no schedule for the day, so whether a meal was provided is unanswerable

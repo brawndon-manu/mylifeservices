@@ -226,6 +226,18 @@ export function applyOverrides(days, overrides) {
     if (patch.addedHours != null) next.addedHours = patch.addedHours;
     if (patch.restsOffClock != null) next.restsOffClock = patch.restsOffClock;
     if (patch.restsOffClockMin != null) next.restsOffClockMin = patch.restsOffClockMin;
+    // WHAT MISC TIME TURNED OUT TO BE, and the entitlement that hangs off it.
+    //
+    // Same trap as the three above, one rule later. Saying "that Misc time was
+    // hours worked" puts the time back into the stretch it sits in, which moves
+    // `restRequired` and `mealRequired`, which moves both violations. Leave any
+    // of the five out of this list and the answer saves, the card says it was
+    // recorded, and not one figure moves - silently, because a field missing
+    // here is ignored rather than refused.
+    if (patch.miscKind != null) next.miscKind = patch.miscKind;
+    if (patch.miscWorked != null) next.miscWorked = patch.miscWorked;
+    if (patch.restRequired != null) next.restRequired = patch.restRequired;
+    if (patch.mealRequired != null) next.mealRequired = patch.mealRequired;
     next.corrected = true;
     out.push(next);
   }

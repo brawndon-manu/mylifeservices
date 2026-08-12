@@ -38,6 +38,12 @@ export const REQUIRED_DAY_FIELDS = [
   // whether a correction we already applied still needs confirming
   "restsFromShortMeals",
   "restsOutsideScheduled", "restsOutsideScheduledMin", "restsOutsideScheduledDetail",
+  // the 2026-08-12 entitlement rules. `workGroups` is the ONLY record of which
+  // stretches a day was counted over, because `scheduleBlocks` is dropped below
+  // - lose it and `reentitle` falls back to whole-day paid hours and starts
+  // charging breaks the rules say are not owed.
+  "workGroups", "miscBlocks", "miscMin", "miscWorked",
+  "miscBreaks", "restsFromMiscBreaks",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
@@ -147,6 +153,21 @@ export function storedDay(d) {
     onSiteMin: d.onSiteMin ?? null,
     restRequired: d.restRequired,
     mealRequired: d.mealRequired,
+    // THE BASIS FOR THE TWO ABOVE, and it has to be stored rather than derived.
+    // `scheduleBlocks` is deliberately dropped from this projection, so nothing
+    // downstream can work out again which blocks were Misc - and `reentitle`
+    // runs on the stored day. Without these, a recompute would silently go back
+    // to charging breaks the new rules say are not owed.
+    workGroups: d.workGroups || null,
+    miscBlocks: d.miscBlocks || null,
+    miscMin: d.miscMin ?? 0,
+    miscWorked: d.miscWorked || false,
+    // the ten minute Misc breaks and whether a rest row was filed for each.
+    // The calendar reads `covered` to decide between "Misc Break" and "needs
+    // rest period in QSP", and `restsFromMiscBreaks` is a rest CREDIT, so
+    // dropping it here would put a premium back on a break somebody took.
+    miscBreaks: d.miscBreaks || null,
+    restsFromMiscBreaks: d.restsFromMiscBreaks ?? 0,
     // true = a meal was rostered, false = the schedule covers the day and
     // rosters none, null = no schedule for the day so nobody can say
     mealScheduled: d.mealScheduled ?? null,

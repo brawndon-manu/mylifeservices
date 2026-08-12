@@ -503,12 +503,29 @@ export function serviceOf(text) {
 // punch gap falls relative to them. Meal blocks are kept and marked rather than
 // dropped: a gap that lines up with a rostered meal is a different animal from
 // one that lines up with the seam between two clients.
+// CARRIES THE SERVICE NOW, because the entitlement rules need it.
+//
+// This used to return {start, end, meal} and throw the text away, which meant
+// `analyzeDay` could see WHEN a block was but never WHAT it was. Mánu
+// 2026-08-12: time rostered as Misc over ten minutes is not time worked - it is
+// usually PTO or sick pay - so it cannot drive the hours that decide whether a
+// rest or a meal is owed. Deciding that needs the service, so the service comes
+// along. `misc` is precomputed rather than left to callers so the test for it
+// lives in one place.
 export function scheduleBlocks(entries) {
   return (entries || [])
     .map((e) => {
       const t = blockTimes(e.text);
-      return t ? { ...t, meal: !!e.meal } : null;
+      if (!t) return null;
+      const service = serviceOf(e.text);
+      return { ...t, meal: !!e.meal, service, misc: isMiscService(service) };
     })
     .filter(Boolean)
     .sort((a, b) => a.start - b.start);
+}
+
+// "ILS Misc", "Misc", "misc" - what `serviceOf` returns for a miscellaneous
+// block. Kept beside `serviceOf` because it is a fact about that output format.
+export function isMiscService(service) {
+  return /(^|\s)misc$/i.test(String(service || "").trim());
 }

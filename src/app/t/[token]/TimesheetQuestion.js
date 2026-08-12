@@ -294,6 +294,57 @@ function copyFor(q, standing) {
     // above". Caught by looking at the rendered page rather than the build.
     case "nothingDocumented":
     case "nothingDocumentedMeal":
+    // TIME YOUR SCHEDULE PUT DOWN AS MISC, AND WHAT IT ACTUALLY WAS.
+    //
+    // Mánu 2026-08-12: Misc time over ten minutes is usually PTO or sick pay, so
+    // the engine stops counting it toward the hours that decide whether a break
+    // is owed. This is the only route by which it counts again.
+    //
+    // THREE ANSWERS, not four. The draft had "a ten I could not fit into my
+    // service hours" as a fourth, which the card cannot show and which describes
+    // nothing here anyway: a block of ten minutes or less already counts as
+    // worked without being asked about.
+    //
+    // NOTHING ON THIS CARD PROMISES PAY. It says what the answer does to the
+    // record and to the hours the entitlement is measured over, and stops. The
+    // premium is admin's business and appears on admin's screens.
+    case "miscTime":
+      return {
+        title: "Time on your schedule marked as Misc",
+        body: (
+          <>
+            Your schedule has {q.row?.hours} hours down as Misc
+            {q.row?.blocks?.length === 1
+              ? <> on this day, {q.row.blocks[0].from} to {q.row.blocks[0].to}</>
+              : null}
+            . Time marked as Misc is paid on your timesheet, but it does not
+            count toward the hours that decide whether a rest break or meal
+            period is required. Tell us what it was.
+          </>
+        ),
+        yes: {
+          label: "Paid time off",
+          why: "You were not working. Nothing on your timesheet changes.",
+        },
+        no: {
+          label: "Sick pay",
+          why: "You were not working. Nothing on your timesheet changes.",
+        },
+        third: {
+          value: "worked",
+          label: "I was working",
+          why: "You worked those hours, they just were not booked to a client.",
+        },
+        yesEffect: <>Your record says that time was paid time off.</>,
+        noEffect: <>Your record says that time was sick pay.</>,
+        thirdEffect: (
+          <>
+            Your record says you worked those hours, so they count toward
+            whether a rest break or meal period was required that day.
+          </>
+        ),
+      };
+
     case "nothingDocumentedRest":
       // NO HEADING AND NO INTRO. Mánu 2026-08-12 had the whole block removed:
       // "We could not find some of your breaks on record", the count of days,
