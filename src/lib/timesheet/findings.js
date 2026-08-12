@@ -653,7 +653,11 @@ export function buildFindings(batch) {
         // labelled with the date. Handing over `d` cost about 300KB of RSC
         // payload across 120 rows and shipped every hour, premium and violation
         // on the day to a browser that draws none of them.
-        day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [] },
+        // `miscBreaks` rides along because the calendar labels a short Misc
+        // block "Misc Break" and says when no rest period was filed for it.
+        // It is four small objects on the days that have any and absent on
+        // the rest, so it does not undo the trimming this payload exists for.
+        day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [], miscBreaks: d.miscBreaks || [] },
         rests: drawn,
         scheduled: blocks,
       });

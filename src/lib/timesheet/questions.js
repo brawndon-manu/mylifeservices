@@ -39,9 +39,6 @@ import {
   restKey, restNameFor, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
-// the entitlement rules, so answering "it was work" re-earns exactly what
-// `analyzeDay` would have, rather than a second copy of that arithmetic
-import { workGroupsFor, entitlementFor } from "./parse.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -1031,21 +1028,27 @@ export function patchesFor(question, choice, day) {
         choice === "yes" ? "pto"
           : choice === "no" ? "sick"
             : choice;
-      const worked = kind === "worked";
-      if (!worked) return { miscKind: kind, miscWorked: false };
-      const groups = workGroupsFor(day?.punches, [], { miscWorked: true });
-      const { restRequired, mealRequired } = entitlementFor({
-        workGroups: groups.length ? groups : day?.workGroups,
-        paidHours: day?.paidHours,
-      });
-      return {
-        miscKind: "worked",
-        miscWorked: true,
-        restRequired,
-        mealRequired,
-        restViolation: !day?.restUnknown && (day?.restTaken ?? 0) < restRequired,
-        mealViolation: mealRequired && day?.mealScheduled !== true,
-      };
+      // THE FLAG IS THE WHOLE ANSWER NOW, and that is a change of 2026-08-12.
+      //
+      // This used to work the entitlement out here and write four more fields,
+      // for the reason the note above still gave: `analyzeDay` read `miscWorked`
+      // at the top and never ran again on a stored batch, so an answer that only
+      // set the flag would have changed nothing anybody could see.
+      //
+      // `rebuildSheetFor` re-runs the engine now, so that is no longer true, and
+      // computing it here was not merely redundant - it was WRONG on 3 of the 33
+      // real Misc days. `mealViolation` here was `mealRequired && mealScheduled
+      // !== true`, which ignores the waiver, the late meal and the second meal
+      // that the engine's own `mealViolation` folds in. Cain 07/30 came out
+      // under-charged and Stafford 07/20 and 07/27 over-charged, and the patch
+      // won, because `applyOverrides` writes after the re-analysis.
+      //
+      // The entitlement also came from `workGroupsFor(punches, [], ...)` with an
+      // EMPTY block list, because this function cannot see `scheduleBlocks`. The
+      // re-analysis can. So the answer records what the time WAS and the engine
+      // decides what that costs, which is the only arrangement where one rule
+      // has one implementation.
+      return { miscKind: kind, miscWorked: kind === "worked" };
     }
     case "repair":
       // A CONFIRMED REPAIR IS A BREAK THAT HAPPENED, so it is counted as one.

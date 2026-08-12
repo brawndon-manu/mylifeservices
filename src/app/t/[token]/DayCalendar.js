@@ -72,6 +72,26 @@ const isMisc = (service) => /misc/i.test(service || "");
 // characters of nothing. Everything else stays verbatim, because the whole point
 // of printing the service is that it matches the document they can open.
 const serviceLabel = (service) => (isMisc(service) ? "Misc" : service);
+
+// A MISC BLOCK OF TEN MINUTES OR LESS IS A BREAK SOMEBODY TOOK.
+//
+// Mánu 2026-08-12: a short Misc block is not the "is this really work" question
+// that a long one is - at that length it is a ten, and the only open question is
+// whether a rest period was also filed for it. `analyzeDay` answers that with
+// `miscBreaks[].covered` and credits the uncovered ones as rests either way, so
+// no premium ever appears for a break that happened.
+//
+// His own 07/30 is the covered shape: the schedule reads "12p-12:10p -ILS Misc",
+// he punched it, and the Rest Periods Report carries 12:00 to 12:10 PM against
+// that shift. Everything about it is right, so it reads "Misc Break". Urena
+// 07/23 is the other one: same block, no row, so it needs one adding in QSP.
+//
+// Matched on the exact minutes because that is how `analyzeDay` built them, off
+// the same schedule blocks this calendar draws.
+const miscBreakFor = (miscBreaks, s, booked) => {
+  if (!isMisc(booked)) return null;
+  return (miscBreaks || []).find((b) => b.start === s.from && b.end === s.to) || null;
+};
 const washFor = (service) => `${edgeFor(service)}${isMisc(service) ? "30" : "1a"}`;
 
 // TWO THINGS AT THE SAME MINUTE HAVE TO SIT BESIDE EACH OTHER, NOT ON TOP.
@@ -615,7 +635,7 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
                   )}
                   {booked && (
                     <span className="max-w-full truncate text-[12px] leading-[15px] text-muted">
-                      {serviceLabel(booked)}
+                      {miscBreakFor(day.miscBreaks, s, booked) ? "Misc Break" : serviceLabel(booked)}
                     </span>
                   )}
                 </>
@@ -748,6 +768,24 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
           </div>
         ))}
       </div>
+
+      {/* A MISC BREAK WITH NO REST PERIOD FILED FOR IT.
+          The block above reads "Misc Break" either way, because either way the
+          break happened and is credited as a rest - the difference is whether
+          the Rest Periods Report has a row for it. Said under the picture rather
+          than inside the block: a ten minute block is fifteen pixels tall and
+          holds one short label, and this is a sentence.
+          No pay language. This draws on the employee's own page too. */}
+      {(day.miscBreaks || []).some((b) => !b.covered) && (
+        <p className="mt-2 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+          {(day.miscBreaks || [])
+            .filter((b) => !b.covered)
+            .map((b) => `${b.from} to ${b.to}`)
+            .join(", ")}{" "}
+          is logged as Misc time, not as a rest period. It still counts as a break
+          taken. It needs a rest period adding against it in QSP.
+        </p>
+      )}
     </figure>
   );
 }

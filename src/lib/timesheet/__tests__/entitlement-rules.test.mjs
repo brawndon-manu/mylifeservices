@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  workGroupsFor, entitlementFor, restsRequired, restsTakenFrom,
+  workGroupsFor, entitlementFor, restsRequired, restsTakenFrom, analyzeDay,
   GAP_SPLITS_ENTITLEMENT_MIN, MISC_COUNTS_UP_TO_MIN,
 } from "../parse.js";
 import { scheduleBlocks, isMiscService } from "../schedule.js";
@@ -251,21 +251,31 @@ test("the card route and the reviewer route reach the same patch", () => {
   );
 });
 
-test("HOURS WORKED puts the time back and re-earns what the stretch owes", () => {
+test("HOURS WORKED records the flag and leaves the arithmetic to the engine", () => {
+  // THIS PATCH USED TO CARRY THE ENTITLEMENT. It stopped on 2026-08-12, when
+  // `rebuildSheetFor` started re-running `analyzeDay`: computing it here was
+  // then both redundant and cruder than the thing it pre-empted, because this
+  // function cannot see `scheduleBlocks` and its meal test ignored the waiver.
+  // It disagreed with the engine on 3 of the 33 real Misc days.
   const p = patchesFor({ kind: "miscTime" }, "worked", miscDay());
   assert.equal(p.miscWorked, true);
   assert.equal(p.miscKind, "worked");
-  // eight hours in one stretch: two rests and a meal
-  assert.equal(p.restRequired, 2);
-  assert.equal(p.mealRequired, true);
-  assert.equal(p.restViolation, true, "none were taken, so now they are short");
-  assert.equal(p.mealViolation, true, "no meal was rostered on the day");
+  assert.deepEqual(Object.keys(p).sort(), ["miscKind", "miscWorked"]);
 });
 
-test("a rostered meal means answering 'worked' does not invent a meal violation", () => {
-  const p = patchesFor({ kind: "miscTime" }, "worked", miscDay({ mealScheduled: true }));
-  assert.equal(p.mealRequired, true);
-  assert.equal(p.mealViolation, false, "they were given a lunch");
+test("the engine, not the patch, decides what worked Misc time costs", () => {
+  // the same eight hour day, re-analysed the way a rebuild does it: one stretch
+  // of real work owes two rests and a meal
+  const day = miscDay();
+  const blocks = scheduleBlocks([{ text: "8:30a-4:30p -ILS Misc(8:00)", meal: false }]);
+  const a = analyzeDay({ ...day, miscWorked: true, scheduleBlocks: blocks, restsAlreadyPaid: true });
+  assert.equal(a.restRequired, 2);
+  assert.equal(a.mealRequired, true);
+  // and with the flag off it owes nothing, which is the rule the answer exists
+  // to overturn
+  const b = analyzeDay({ ...day, scheduleBlocks: blocks, restsAlreadyPaid: true });
+  assert.equal(b.restRequired, 0);
+  assert.equal(b.mealRequired, false);
 });
 
 // THE TRAP. `applyOverrides` copies a WHITELIST, and a field left off it is

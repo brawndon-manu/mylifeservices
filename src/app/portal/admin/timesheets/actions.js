@@ -45,6 +45,7 @@ import {
   CORRECTION_KINDS,
   patchFor,
   mergeOverride,
+  MISC_PATCH_FIELDS,
   recomputeSheet,
 } from "@/lib/timesheet/corrections";
 
@@ -1396,6 +1397,102 @@ export async function overrideDayHours(timesheetId, formData) {
   });
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  return { ok: true };
+}
+
+// WHAT THE MISC TIME ON A DAY ACTUALLY WAS, answered by a reviewer.
+//
+// Mánu 2026-08-12: "that time is typically used for sick pay and pto. it can be
+// used for work not with a client so we need to ask." The engine discounts Misc
+// time over ten minutes from the hours that decide whether a rest or a meal is
+// owed, so this is the only route by which it comes back.
+//
+// A REVIEWER ANSWERING FIRST MEANS THE EMPLOYEE IS NEVER ASKED. PTO is nothing
+// they have to change in QSP, and asking somebody about their own sick day is
+// not a question worth sending. `buildQuestions` skips the day once `miscKind`
+// is set, and a test asserts that.
+//
+// The patch comes from `patchesFor`, the SAME function the employee's own answer
+// goes through, so the two routes cannot drift. Only "worked" moves a figure: it
+// re-earns the stretch's entitlement and is the one answer on either surface
+// that can put a premium ON.
+export async function classifyMiscTime(timesheetId, date, kind) {
+  const user = await requireTimesheetAccess();
+  if (!["pto", "sick", "worked"].includes(kind)) return { ok: false, error: "badkind" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    include: {
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "gone" };
+  // same guard as every other admin correction: changing the figures under a
+  // signature would leave them attesting to a document that no longer says what
+  // they signed
+  if (ts.signedAt) return { ok: false, error: "signed" };
+
+  const day = (ts.data?.days || []).find((d) => d.date === date);
+  if (!day) return { ok: false, error: "noday" };
+  // NOT A VACUOUS CHECK. `miscBlocks` is absent from every day stored before
+  // 2026-08-12, so a day that has never been recomputed genuinely has nothing to
+  // classify and saying so is better than writing an override nothing reads.
+  if (!(day.miscBlocks || []).length) return { ok: false, error: "nomisc" };
+
+  const patch = patchesFor({ kind: "miscTime" }, kind, day);
+  const overrides = mergeOverride(ts.overrides, date, {
+    ...patch,
+    _was: { restRequired: day.restRequired, mealRequired: day.mealRequired },
+    _by: preferredName(user) || user.id,
+    _at: new Date().toISOString(),
+    _source: "misc-classify",
+  });
+
+  // rebuilt straight away rather than left for somebody to press Recompute.
+  // "worked" changes what the day owes, and a card that says the time was
+  // recorded while the figures still say otherwise is the disagreement between a
+  // page and its own document that 11c3e3a exists to stop.
+  const res = await rebuildSheetFor({ ...ts, overrides }, overrides);
+  if (!res?.ok) return res;
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
+  return { ok: true };
+}
+
+// undo a classification, so a wrong click is not permanent. Only the five fields
+// the Misc patch writes come off; anything else on the day's override was put
+// there by a different decision and is none of this one's business.
+export async function clearMiscClassification(timesheetId, date) {
+  await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    include: {
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "gone" };
+  if (ts.signedAt) return { ok: false, error: "signed" };
+
+  const existing = ts.overrides?.[date];
+  if (!existing) return { ok: false, error: "gone" };
+  const next = { ...ts.overrides };
+  const rest = { ...existing };
+  // the fields the patch writes come from the engine's own list, so a sixth one
+  // added to `patchesFor` is removed here without anybody remembering to
+  for (const k of [...MISC_PATCH_FIELDS, "_was", "_by", "_at", "_source"]) {
+    delete rest[k];
+  }
+  if (Object.keys(rest).length) next[date] = rest;
+  else delete next[date];
+
+  const res = await rebuildSheetFor({ ...ts, overrides: next }, next);
+  if (!res?.ok) return res;
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
   return { ok: true };
 }
 

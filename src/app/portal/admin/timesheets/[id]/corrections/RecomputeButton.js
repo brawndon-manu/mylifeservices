@@ -10,10 +10,15 @@ export default function RecomputeButton({ timesheetId, accepted }) {
   const [error, setError] = useState(null);
 
   async function run() {
+    // "Nothing was accepted, so the figures won't change" was true until
+    // 2026-08-12, when a rebuild started re-running the engine. A batch uploaded
+    // before a rule landed now moves the moment it is rebuilt, with no
+    // correction involved, so a dialog promising otherwise would be lying at the
+    // one moment somebody is deciding whether to press it.
     const ok = window.confirm(
       accepted > 0
         ? "Rebuild this timesheet with the accepted corrections applied?\n\nThe figures are recalculated, a new PDF is generated, and it goes back to unsent so you can send it for signature again. Any signature already on it is cleared."
-        : "Nothing was accepted, so the figures won't change. Rebuild it anyway and send it back out for signature?",
+        : "Rebuild this timesheet?\n\nNo correction is waiting, but rebuilding re-runs the engine over their stored days, so any rule that landed after this batch was uploaded reaches them now. Their premium hours can change. It goes back to unsent, and any signature on it is cleared.",
     );
     if (!ok) return;
     setBusy(true);

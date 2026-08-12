@@ -3,16 +3,19 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { restKey, restNameFor } from "@/lib/timesheet/rests";
+import { restKey, restNameFor, restRowTimes, clockMin, serviceFit } from "@/lib/timesheet/rests";
 import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
 import { violationsFor, VIOLATION_KINDS, violationHead } from "@/lib/timesheet/violations";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
+import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
 import FlagButton from "../../checks/FlagButton";
+import MiscClassify from "./MiscClassify";
+import RecomputeButton from "../../corrections/RecomputeButton";
 
 export const metadata = { title: "Their schedule", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -89,6 +92,20 @@ function Reported({ list }) {
   );
 }
 
+// WHAT SAYING "IT WAS WORK" WOULD ADD TO THIS DAY, in premium hours.
+//
+// Run through `reanalyzeDays`, which is the same code the rebuild runs, so the
+// figure a reviewer sees before clicking is the figure they get after. One day
+// at a time: the answer only ever changes the day it is given on.
+function costOfWorked(day, inputs) {
+  const [after] = reanalyzeDays([day], inputs).days;
+  if (!after) return 0;
+  return (
+    (after.restViolation && !day.restViolation ? 1 : 0) +
+    (after.mealViolation && !day.mealViolation ? 1 : 0)
+  );
+}
+
 // ONE PERSON, THEIR WHOLE PERIOD, EVERY DAY OF IT.
 //
 // The checks list is one row per person because the job is a conversation, not
@@ -108,7 +125,11 @@ export default async function PersonSchedulePage({ params }) {
   const { id, sheetId } = await params;
   const sheet = await prisma.timesheet.findUnique({
     where: { id: sheetId },
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, partialPeriod: true, partialFrom: true, partialThrough: true, restsByDate: true } } },
+    // `restsUrl` because the preview asks whether a rest report was
+    // collected at all. Left off the select it comes back undefined, which
+    // is indistinguishable from "no report", which reads as restUnknown -
+    // the difference between charging somebody and not.
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, partialPeriod: true, partialFrom: true, partialThrough: true, restsByDate: true, restsUrl: true } } },
   });
   // a sheet id from another batch would render somebody's days under the wrong
   // period heading, so the pairing is checked rather than assumed
@@ -181,6 +202,22 @@ export default async function PersonSchedulePage({ params }) {
   const v = violationsFor(sheet.data);
   const byDate = sheet.data?.scheduleCheck?.byDate || {};
 
+  // THE INPUTS THE RE-ANALYSIS NEEDS, built once for this person. Same two the
+  // rebuild reconstructs, keyed the same way - `restNameFor` because the report
+  // files Delgado Pineda, Ruth under "Delgado Pineda, Angel".
+  const windows = restWindowsByDate(
+    (sheet.batch.restsByDate || []).filter(
+      (r) => restKey(r?.name || "") === restKey(restNameFor(sheet.sourceName, sheet.data)),
+    ),
+    { restRowTimes, clockMin, serviceFit },
+  );
+  const previewFor = (date) => ({
+    scheduleByDate: byDate,
+    restTimesFor: () => windows.get(date) || null,
+    restSourceAvailable: !!sheet.batch.restsUrl,
+    overrides: { [date]: { miscWorked: true } },
+  });
+
   // a finding on a date they did not work, so no day card exists to hang it
   // under. Rest report rows do this: the report can carry a row for a date the
   // timesheet has no hours on. Shown rather than dropped.
@@ -207,7 +244,7 @@ export default async function PersonSchedulePage({ params }) {
       if (at) drawn.push(at);
     }
     dayViews.set(d.date, {
-      day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [] },
+      day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [], miscBreaks: d.miscBreaks || [] },
       rests: drawn,
       scheduled: blocks,
     });
@@ -256,6 +293,25 @@ export default async function PersonSchedulePage({ params }) {
         </div>
       </div>
 
+      {/* REBUILD THIS ONE SHEET.
+          Until now the only way to reach `recomputeTimesheet` was a button that
+          appears when a sheet has an override or a reported problem, so a clean
+          sheet could not be rebuilt from anywhere in the portal at all. That
+          matters more since the engine started re-running on rebuild: a batch
+          uploaded before a rule landed keeps the old answer until something
+          rebuilds it, and one person at a time is the safe way to start. */}
+      {!sheet.signedAt && (
+        <div className="mt-4 rounded-lg border border-border bg-surface-2 p-4">
+          <RecomputeButton timesheetId={sheet.id} accepted={0} />
+          <p className="mt-2 text-xs leading-relaxed text-faint">
+            Rebuilding re-runs the engine over their stored days, so any rule that
+            landed after this batch was uploaded reaches them. It changes nobody
+            else. What they are PAID cannot move: if it does, the rebuild refuses
+            the re-analysis and keeps the figures the sheet already had.
+          </p>
+        </div>
+      )}
+
       {/* WHY their rests are missing, once. Every one of their rest violations
           below is real and charged, but the cause is the same on all of them:
           the Rest Periods Report does not mention this person, so nothing
@@ -288,6 +344,25 @@ export default async function PersonSchedulePage({ params }) {
           const also = findingsByDate.get(d.date) || [];
           const said = correctionsByDate.get(d.date) || [];
           const quiet = !list.length && !also.length && !said.length;
+
+          // MISC TIME NOBODY HAS ACCOUNTED FOR YET.
+          //
+          // `miscBlocks` is absent from every day stored before 2026-08-12, so
+          // this control appears only on a batch that has been recomputed or
+          // re-uploaded since. That is the honest behaviour: the field is the
+          // engine's own answer, and inventing it on the screen would be a
+          // second opinion about which blocks were Misc.
+          const misc = d.miscBlocks || [];
+          const ov = sheet.overrides?.[d.date] || {};
+          // WHAT THE EXPENSIVE ANSWER WOULD COST.
+          //
+          // Worked out through the SAME re-analysis the rebuild runs, not
+          // through `patchesFor`. The patch no longer carries an entitlement at
+          // all - it records the flag and the engine decides - so asking it what
+          // "worked" costs would now come back with nothing, and asking it the
+          // old way was wrong on 3 of 33 days because it could not see the
+          // schedule blocks and its meal test ignored the waiver.
+          const wouldAdd = misc.length && !ov.miscKind ? costOfWorked(d, previewFor(d.date)) : 0;
           return (
           <div
             key={d.date}
@@ -345,6 +420,22 @@ export default async function PersonSchedulePage({ params }) {
                 it was fine" is the answer somebody needs on the phone. */}
             <Findings list={findingsByDate.get(d.date)} />
             <Reported list={correctionsByDate.get(d.date)} />
+
+            {misc.length > 0 && (
+              <MiscClassify
+                timesheetId={sheet.id}
+                date={d.date}
+                blocks={misc}
+                miscMin={d.miscMin || 0}
+                paidHours={d.paidHours || 0}
+                kind={ov.miscKind || d.miscKind || null}
+                by={ov._source === "misc-classify" ? ov._by : null}
+                at={ov._source === "misc-classify" ? ov._at : null}
+                wouldAdd={wouldAdd}
+                restRequired={d.restRequired || 0}
+                mealRequired={!!d.mealRequired}
+              />
+            )}
 
             <DayPeek {...(dayViews.get(d.date) || {})} />
           </div>

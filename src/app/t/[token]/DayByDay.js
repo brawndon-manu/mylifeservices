@@ -202,6 +202,20 @@ export default function DayByDay({
           >
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <h3 className="font-mono text-sm font-semibold text-foreground">{day.date}</h3>
+              {/* WHAT THE MISC TIME ON THIS DAY TURNED OUT TO BE.
+                  Once a reviewer or the employee has said, the day should say it
+                  too: a block sitting on the calendar labelled only "Misc" is
+                  the question, not the answer. "worked" is deliberately absent -
+                  that answer puts the time back into the day and every figure
+                  already moved to match, so a label would be describing the
+                  ordinary state of the sheet.
+                  NO PAY LANGUAGE. This is the employee's own page, so it names
+                  the kind of time and stops. */}
+              {(day.miscKind === "pto" || day.miscKind === "sick") && (
+                <p className="rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300">
+                  {day.miscKind === "pto" ? "Misc PTO" : "Misc Sick Pay"}
+                </p>
+              )}
               <p className="text-sm text-muted">
                 {(Math.round(onFile(day) * 100) / 100).toFixed(2)} hrs
               </p>

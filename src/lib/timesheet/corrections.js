@@ -173,6 +173,25 @@ export function patchFor(kind, day, claimedHours) {
 }
 
 // merge a patch into whatever is already stored for that date
+// EVERY FIELD THE MISC ANSWER WRITES, named once.
+//
+// Undoing a classification has to take off exactly what it put on, and a list
+// written out at the undo site is a list that goes stale the day a sixth field
+// joins the patch. Same shape of trap as the `applyOverrides` whitelist, which
+// silently ignored three fields for a build and left Uribe's sheet claiming
+// 0.17 hours were added while the total said otherwise.
+//
+// A test walks `patchesFor` for all three answers and fails if it writes a key
+// that is not here.
+export const MISC_PATCH_FIELDS = [
+  "miscKind",
+  "miscWorked",
+  "restRequired",
+  "mealRequired",
+  "restViolation",
+  "mealViolation",
+];
+
 export function mergeOverride(overrides, date, patch) {
   if (!date || !patch || !Object.keys(patch).length) return overrides || {};
   const next = { ...(overrides || {}) };
