@@ -25,9 +25,19 @@ export const GROUPS = [
     hint: "The schedule has the day and the timesheet has no hours, so it pays nothing. Ask whether they worked it.",
   },
   {
+    key: "violation",
+    label: "Violations to raise",
+    // counted in PEOPLE, and the label says so. The others count days, and the
+    // reason the old counters were torn out was three units pretending to be
+    // comparable - so this one names its unit rather than leaving it implied.
+    // People because the row IS a person: you have one conversation with
+    // somebody about all five of their days, not five conversations.
+    hint: "A break the rules required and the record says they did not get. One person per row, with every day of theirs behind it.",
+  },
+  {
     key: "anomaly",
     label: "Anomalies",
-    hint: "The figures are right and the day still does not make sense. Nothing to fix here, but somebody should know.",
+    hint: "The record disagrees with itself and the figures still come out right. Repaired here or worth fixing at source, but no rule was broken.",
   },
   {
     key: "settled",
@@ -45,6 +55,13 @@ const TONE = {
   unworked: {
     on: "border-2 border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40",
     num: "text-amber-600 dark:text-amber-400",
+  },
+  // fuchsia, and deliberately not violet: violations sit next to anomalies and
+  // the two must not read as shades of one thing. Same Tailwind v4 rule as
+  // below - these full literals are what makes the colour exist.
+  violation: {
+    on: "border-2 border-fuchsia-400 bg-fuchsia-50 dark:border-fuchsia-700 dark:bg-fuchsia-950/40",
+    num: "text-fuchsia-600 dark:text-fuchsia-400",
   },
   // violet is new to the codebase. Tailwind v4 only compiles classes it finds in
   // SOURCE, so these literals ARE the thing that makes the colour exist - it
@@ -68,10 +85,13 @@ export default function ChecksFilter({ counts, groups, kinds = [], notes = [], c
   // then make you click something before it will show you anything. When both
   // actionable groups are empty it falls through to the next thing that exists:
   // anomalies first, and only then the settled pile.
-  const nothingToDo = !counts.decide && !counts.unworked;
+  // Violations join the two that open by default: they are the group somebody
+  // has to act on, and the screen exists so two people can work down them.
+  const nothingToDo = !counts.decide && !counts.unworked && !counts.violation;
   const [on, setOn] = useState({
     decide: true,
     unworked: true,
+    violation: true,
     anomaly: nothingToDo,
     settled: nothingToDo && !counts.anomaly,
   });
@@ -119,7 +139,7 @@ export default function ChecksFilter({ counts, groups, kinds = [], notes = [], c
 
   return (
     <>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {GROUPS.map((g) => {
           const active = on[g.key];
           return (

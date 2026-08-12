@@ -13,6 +13,7 @@ import {
 } from "@/lib/timesheet/anomalies";
 import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
+import { violationsFor, VIOLATION_KINDS } from "@/lib/timesheet/violations";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
 import DayPeek from "./DayPeek";
@@ -144,15 +145,23 @@ function batchNotes(sheets) {
   // break only counts if something recorded it, every qualifying day of theirs
   // owes a premium. It is the single biggest assumption in the period's total
   // and it is the one David will ask about, so it does not get to stay implicit.
+  //
+  // COUNTED BY `violationsFor`, NOT BY A LOOP OF ITS OWN. This used to test
+  // `d.restViolation && d.restSource === "none"` inline, which became the SECOND
+  // place that predicate was written the moment violations.js started testing it
+  // too. Both said 30 and would have gone on agreeing right up until somebody
+  // changed the rest rule in one of them - the exact shape of every bug found on
+  // 2026-08-11. The panel's wording is unchanged; only who does the counting is.
+  //
+  // `noReport` is per DAY, one per day at most, which is what this note has
+  // always meant by its number.
   let noSourceDays = 0;
   const noSourcePeople = new Set();
   for (const t of sheets) {
-    for (const d of t.data?.days || []) {
-      if (d.restViolation && d.restSource === "none") {
-        noSourceDays++;
-        noSourcePeople.add(t.sourceName);
-      }
-    }
+    const { noReport } = violationsFor(t.data);
+    if (!noReport) continue;
+    noSourceDays += noReport;
+    noSourcePeople.add(t.sourceName);
   }
   if (noSourceDays) {
     out.push({
@@ -941,11 +950,50 @@ export default async function ChecksPage({ params }) {
     }
   }
 
+  // ONE ROW PER PERSON, NOT PER DAY - the only group on this screen that works
+  // that way, and on purpose.
+  //
+  // Mánu 2026-08-12: the screen is for two people to go down a list and tell
+  // somebody to fix it in QuickSolve. That makes the unit of work a PERSON. Per
+  // day it came to 118 cards on this batch, two thirds of them the same names
+  // repeating - Aranda alone had five identical ones - and you do not have five
+  // conversations with her about five days.
+  //
+  // The day detail is not lost, it moves to her own page. Nothing here is a
+  // second definition of a violation: `violationsFor` is the only thing that
+  // decides, and the person page reads the same function.
+  for (const t of batch.timesheets) {
+    const v = violationsFor(t.data);
+    if (!v.total) continue;
+    entries.push({
+      timesheetId: t.id,
+      rowKey: `person-${t.id}`,
+      who: t.sourceName,
+      signed: !!t.signedAt,
+      overrides: {},
+      dayByDate: {},
+      dayHours: {},
+      byDate: {},
+      kind: "violation",
+      // no date: the row is about a person across the period, so quoting one
+      // day's date on it would be picking one of five arbitrarily
+      date: null,
+      v,
+      d: {
+        group: "violation",
+        head: `${v.total} to raise over ${v.dayCount} ${v.dayCount === 1 ? "day" : "days"}`,
+        tone: "text-fuchsia-700 dark:text-fuchsia-300",
+        lead: null,
+      },
+    });
+  }
+
   // What each row is ABOUT, so the list can be grouped by it. The anomaly pile
   // went from 21 to 69 in a day as the rest-timing work landed, and a flat list
   // that long stops being something anybody reads - six kinds of finding
   // interleaved by surname is a wall, not a screen.
   const KINDS = {
+    violation: { label: "Rest periods and meal periods not taken", order: 0 },
     overlap: { label: "Bookings billed over each other", order: 0 },
     punch: { label: "Punches that do not read", order: 1 },
     flag: { label: "Punches the schedule can settle", order: 2 },
@@ -963,7 +1011,7 @@ export default async function ChecksPage({ params }) {
   };
   const kindOf = (e) => KINDS[e.kind] || { label: "Other", order: 9 };
 
-  const ORDER = { decide: 0, unworked: 1, anomaly: 2, settled: 3 };
+  const ORDER = { decide: 0, unworked: 1, violation: 2, anomaly: 3, settled: 4 };
   entries.sort(
     (a, b) =>
       ORDER[a.d.group] - ORDER[b.d.group] ||
@@ -972,9 +1020,11 @@ export default async function ChecksPage({ params }) {
       String(a.date).localeCompare(String(b.date)),
   );
 
-  const counts = { decide: 0, unworked: 0, anomaly: 0, settled: 0 };
+  const counts = { decide: 0, unworked: 0, violation: 0, anomaly: 0, settled: 0 };
   for (const e of entries) counts[e.d.group]++;
-  const needsPerson = counts.decide + counts.unworked;
+  // violations need a person more than anything else here does - somebody has to
+  // ask whether the break happened - so they belong in this total
+  const needsPerson = counts.decide + counts.unworked + counts.violation;
 
   const notes = batchNotes(batch.timesheets);
 
@@ -999,9 +1049,15 @@ export default async function ChecksPage({ params }) {
         {batch.periodFrom} to {batch.periodTo}
       </h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
+        {/* This used to end "so everything below is a problem in the source data
+            rather than in the arithmetic", which stopped being true the moment
+            violations landed: on a missing lunch the source data is correct and
+            the rule is what was broken. The sentence described the whole page,
+            so adding a group to the page meant rewriting it. */}
         Nothing here has changed anybody&apos;s hours. The engine reproduces what
-        QSP exported to the hundredth of an hour, so everything below is a problem
-        in the source data rather than in the arithmetic.{" "}
+        QSP exported to the hundredth of an hour, so nothing below is an
+        arithmetic fault: either the source data disagrees with itself, or it
+        agrees and records a break somebody did not get.{" "}
         {entries.length === 0 ? (
           "Nothing was flagged in this batch."
         ) : (
@@ -1039,7 +1095,38 @@ export default async function ChecksPage({ params }) {
           kinds={entries.map((e) => kindOf(e).label)}
           notes={notes}
         >
-          {entries.map((e) => (
+          {entries.map((e) =>
+            // A PERSON ROW, NOT A DAY ROW. It carries no lead, no day picture
+            // and no evidence panel, because all three are on their own page -
+            // repeating them here is what made the per-day version 118 cards
+            // long. What it needs is the name, what kinds they have, and a way
+            // in. The flag stays, keyed on the person, so "I have called them"
+            // is recordable without a schema change.
+            e.kind === "violation" ? (
+              <Link
+                key={e.rowKey}
+                href={`/portal/admin/timesheets/${batch.id}/person/${e.timesheetId}`}
+                className="block rounded-lg border border-border bg-surface p-4 border-l-4 border-l-fuchsia-500 transition hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_var(--color-brand-light)]"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <p className="text-sm font-semibold text-foreground">{e.who}</p>
+                  <p className={`text-sm font-semibold ${e.d.tone}`}>{e.d.head}</p>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {e.v.kinds.map((k) => (
+                    <span
+                      key={k}
+                      className="rounded-full border border-fuchsia-300 bg-fuchsia-50 px-2 py-0.5 text-[11px] font-medium text-fuchsia-700 dark:border-fuchsia-900/60 dark:bg-fuchsia-950/40 dark:text-fuchsia-300"
+                    >
+                      {VIOLATION_KINDS[k].label}
+                    </span>
+                  ))}
+                  <span className="ml-auto text-xs font-semibold text-brand">
+                    View their schedule →
+                  </span>
+                </div>
+              </Link>
+            ) : (
             <div
               key={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
               className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
@@ -1207,7 +1294,8 @@ export default async function ChecksPage({ params }) {
                 )}
               </div>
             </div>
-          ))}
+            ),
+          )}
         </ChecksFilter>
       )}
 
