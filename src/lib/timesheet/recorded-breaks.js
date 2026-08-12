@@ -10,7 +10,7 @@
 // carrying a logged rest have nothing in the punch record to point at. The
 // times have to come from the report itself.
 
-import { restKey, isMealLengthRest } from "./rests.js";
+import { restKey, restRowTimes, isMealLengthRest, countsAsTaken, clockMin, serviceFit } from "./rests.js";
 
 const RANGE = /^\s*(\d{1,2}(?::\d{2})?[ap])\s*-\s*(\d{1,2}(?::\d{2})?[ap])/i;
 
@@ -403,6 +403,161 @@ export function scheduledDay(scheduleByDate, date) {
   };
 }
 
+// ONE REPORT ROW, AS A BLOCK ON A CALENDAR - or null where there is nothing to
+// draw.
+//
+// Every screen that draws a day was building this list for itself, and each one
+// dropped a different set of rows on the floor:
+//
+//   a REPAIRED row was drawn at its recorded time or not at all. `restWindowsFor`
+//   on the checks screen requires `in > out`, and Martinez 07/23 reads 3:50 PM to
+//   3:00 PM, so it was filtered out entirely; the employee's page kept it with
+//   Math.min and drew a fifty minute rest starting at 3p. The engine counts that
+//   row as a ten at 3:50-4:00 and the signed sheet draws it there, so both
+//   pictures disagreed with the document they sit beside.
+//
+//   a MEAL-LENGTH row was drawn nowhere at all, on either screen, because both
+//   filter on `countsAsTaken` and that is the one thing it returns false for.
+//   Mánu 2026-08-12: "for the ones that say sixty minutes too long to be rest,
+//   it's not there as well. thirty minutes too long. it's not showing up. should
+//   be there." The row is the entire subject of the card it sits under.
+//
+// So the times come from the REPAIR where there is one - the same expression
+// `recordedBreaksFor` uses below, and for the same reason - and a meal-length row
+// comes back as a provisional MEAL rather than as nothing.
+//
+// `mealScheduled` is the stored day's, and it only changes what the block is
+// CALLED: with no lunch rostered the row is being read as the lunch, which is
+// what the sheet draws it as; with one already rostered it stands as neither and
+// says so. Provisional either way - dashed and translucent - because a reading
+// nobody has confirmed must never look like a record.
+export function drawnRest(row, { mealScheduled = null } = {}) {
+  if (!row) return null;
+  // the repair applied and a backwards row flipped - `restRowTimes` is the one
+  // expression for that, shared with the engine since 2026-08-12. It used to be
+  // written out here, again in `recordedBreaksFor` below, and NOT at all in the
+  // window builder that feeds `analyzeDay`, which is how the picture and the
+  // arithmetic came to disagree about the same break.
+  const { from: rawFrom, to: rawTo } = restRowTimes(row);
+  const a = clockMin(rawFrom);
+  const b = clockMin(rawTo);
+  // a row with no times on it, or one still backwards after the repair. The
+  // sheet draws those as ??? inside the shift they were filed against; an axis
+  // has nowhere to put a time nobody recorded.
+  if (a == null || b == null || b <= a) return null;
+
+  // A MEAL-LENGTH ROW IS DRAWN AS A MEAL, AND HOW IT IS DRAWN FOLLOWS THE SHEET.
+  //
+  //   no lunch rostered   the row IS being read as the lunch, and the sheet
+  //                       draws it blue with hazard stripes - a meal nobody has
+  //                       confirmed. Provisional here means the same thing.
+  //
+  //   a lunch rostered    TWO LUNCHES, and both are drawn PLAIN BLUE. Mánu
+  //                       2026-08-12: "it needs to be drawn so they can see the
+  //                       issue" - two identical meal blocks on one day IS the
+  //                       issue, and striping one of them would quietly nominate
+  //                       which is the wrong one before anybody has been asked.
+  //                       `restTooLongOffClock` is the question that settles it.
+  if (isMealLengthRest(row)) {
+    const twoLunches = mealScheduled === true;
+    return {
+      min: a,
+      minutes: b - a,
+      kind: "meal",
+      provisional: !twoLunches,
+      label: twoLunches ? null : "Meal?",
+    };
+  }
+  // WHERE THE ROW SAYS IT BELONGS, when that is not where it is.
+  //
+  // A rest cannot be logged in QSP without a service to hang it on, so every row
+  // names a shift - and 40 of 350 on 07/16-07/31 name one the break does not
+  // fall inside. Solorzano 08/04 is the shape: a 9:40-9:50 rest filed under an
+  // 8:00-9:30 shift, sitting in the 9:30-9:50 booking instead.
+  //
+  // Mánu 2026-08-12: "can we include a tether to the rest and the service it's
+  // tied to if it's filed against the wrong shift just so there's a visual of
+  // where it was supposed to be in?" The sentence beside the picture already
+  // says both times; the tether is what makes the two ends one fact.
+  //
+  // Only when the two actually disagree - a rest sitting inside its own service
+  // needs no line drawn to itself - and only when the row carries a readable
+  // service window to point at.
+  const fit = row.fit || serviceFit(row);
+  const filed = fit && fit.from != null && fit.to != null
+    && fit.where !== "inside" && fit.where !== "unknown"
+    ? { from: fit.from, to: fit.to }
+    : null;
+
+  return {
+    min: a,
+    minutes: b - a,
+    kind: "rest",
+    // the repair moved it, so the block says so rather than quietly appearing
+    // somewhere the report does not read. SHORT, because the label shares its
+    // lane with the times: "Rest (corrected) 3:50p-4p" clipped to "3:5..." at
+    // the width the break layer gets, and the time is the half worth keeping.
+    label: row.repair ? "Rest (fixed)" : null,
+    // A REPAIRED ROW IS NOT MISFILED. The repair already moved it to where the
+    // service says it belongs, so a tether would point from a block to itself.
+    filed: row.repair ? null : filed,
+  };
+}
+
+// THE BLOCKS AN EMPLOYEE'S OWN CALENDAR DRAWS FOR ONE DAY - what the reports
+// recorded, MINUS anything their answer superseded, PLUS what they told us.
+//
+// The sheet has always done this, through `withStatedBreaks` in `entriesFor`.
+// The employee's own page did not: it built its list straight from the report
+// rows and knew nothing about the answer. So Uribe answered "yes, the time was
+// entered wrong - it was 11:50a", the sheet rebuilt and drew it at 11:50a, the
+// card said "your timesheet has been rebuilt" - and the calendar an inch below
+// it still drew the rest at 12p-12:10p. The one picture that exists to show
+// somebody what their answer did was the one picture their answer never reached.
+//
+// Superseded rows are matched the same way `withStatedBreaks` matches them, on
+// the SHORT form of the times the row actually reads - `restRowTimes` first, so
+// a repaired row is compared at its corrected time, which is the time the answer
+// was given about.
+//
+// NOT FOR THE CHECKS SCREEN. That one draws the day as the documents hold it,
+// deliberately and always - see the note on `dayViews` there.
+export function drawnBreaksFor(rows, day, { mealScheduled = null, dropped = null } = {}) {
+  const stated = [
+    ...(day?.statedRest ? [{ ...day.statedRest, kindOf: "rest" }] : []),
+    ...(day?.statedBreaks || []),
+  ].filter((b) => b?.from && b?.to);
+  const superseded = new Set(
+    stated.map((b) => b.replaces).filter((x) => x?.from && x?.to).map((x) => `${x.from}|${x.to}`),
+  );
+
+  const out = [];
+  for (const row of rows || []) {
+    // answered "that one was added by accident", so it stops being drawn
+    if (dropped?.has(`${row.date}|${row.out}`)) continue;
+    const t = restRowTimes(row);
+    if (superseded.has(`${shortTime(t.from)}|${shortTime(t.to)}`)) continue;
+    const at = drawnRest(row, { mealScheduled });
+    if (at) out.push(at);
+  }
+  for (const b of stated) {
+    const a = toMin(b.from);
+    const z = toMin(b.to);
+    if (a == null || z == null || z <= a) continue;
+    out.push({
+      min: a,
+      minutes: z - a,
+      kind: b.kindOf === "meal" ? "meal" : "rest",
+      // `corrected` is what makes the block say "(you corrected this)". Only a
+      // break that REPLACED a recorded one has been corrected; one they simply
+      // told us about is an addition, and calling it a correction would claim
+      // they changed a record that never existed.
+      corrected: !!b.replaces,
+    });
+  }
+  return out.sort((x, y) => x.min - y.min);
+}
+
 // -> Map(date -> { meals: [{from,to}], rests: [{from,to,minutes,counted,kind}] })
 export function recordedBreaksFor(sourceName, restsByDate, scheduleByDate) {
   const out = new Map();
@@ -471,11 +626,13 @@ export function recordedBreaksFor(sourceName, restsByDate, scheduleByDate) {
     // his IN had an hour rolled off it, so it draws 3:50p-4p, inside the Toleldo
     // service it is attached to.
     //
-    // It is still `counted: false`, so the renderer marks it and nothing about
-    // the premium moves until he answers the repair question.
-    const [from, to] = r.repair
-      ? (r.repair.field === "out" ? [r.repair.to, r.in] : [r.out, r.repair.to])
-      : r.reversed ? [r.in, r.out] : [r.out, r.in];
+    // AND IT IS COUNTED, since 2026-08-12. It used to draw at the corrected time
+    // while still carrying `counted: false`, so the signed sheet showed the
+    // repaired break uncoloured with a marker beside it and printed "rest 1/2"
+    // underneath - the correction was visible and disowned in the same picture.
+    // Mánu: "the projected timesheet needs to show our corrections made ... it
+    // says rests 1/2 but isnt displayed on the timesheet generation."
+    const { from, to } = restRowTimes(r);
     // AN ENTRY THAT IS THE LENGTH OF A MEAL IS DRAWN AS ONE. It sits in the rest
     // report, but thirty minutes is not a rest break, and the two on this batch
     // are on days with no meal rostered at all. Shown blue and striped so it
@@ -514,7 +671,10 @@ export function recordedBreaksFor(sourceName, restsByDate, scheduleByDate) {
       // only a break that counted gets coloured as one. the rest are shown
       // uncoloured with a marker, because "QSP holds something unreadable here"
       // is worth telling the person signing rather than hiding.
-      counted: !!r.counted,
+      //
+      // `countsAsTaken` and not `r.counted`, so this reads the same rule the
+      // engine now counts by - including on a batch parsed before it existed.
+      counted: countsAsTaken(r),
       kind: r.kind || null,
       // so the sheet can say we flipped it rather than just showing the fixed
       // version and hoping nobody wonders.

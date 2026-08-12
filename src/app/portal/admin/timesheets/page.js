@@ -84,6 +84,19 @@ export default async function TimesheetBatchesPage() {
                           Test sends
                         </span>
                       )}
+                      {/* a partial batch stops looking partial the moment you
+                          stop remembering uploading it, and its hours are not a
+                          whole period - so it says so wherever it is listed */}
+                      {b.partialPeriod && (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                          Partial
+                          {b.partialFrom && b.partialThrough
+                            ? ` · ${b.partialFrom}–${b.partialThrough}`
+                            : b.partialThrough
+                              ? ` · through ${b.partialThrough}`
+                              : ""}
+                        </span>
+                      )}
                       {unmatched > 0 && (
                         <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
                           {unmatched} unmatched

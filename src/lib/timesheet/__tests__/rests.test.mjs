@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyRest, isSaneRest, REST_KIND_NOTE, isMealLengthRest } from "../rests.js";
+import { classifyRest, isSaneRest, restKindNote, countsAsTaken, isMealLengthRest } from "../rests.js";
 import { recordedBreaksFor, insertRecordedBreaks } from "../recorded-breaks.js";
 
 const row = (out, back, printed) => ({
@@ -52,9 +52,13 @@ test("a row is only BACKWARDS if nothing simpler explains it", () => {
   // rest inside the service it was logged against. Mánu: "to me that clearly
   // shows it meant to be 3:50-4pm which inside toledo."
   const c = classifyRest(row("3:50 PM", "3:00 PM", -0.83));
-  assert.equal(c.counted, false, "it still does not count until somebody says so");
+  // APPLIED, NOT PROPOSED, since 2026-08-12. Mánu: "the engine should know it
+  // was a miss click ... the rest period should still be accounted for and no
+  // premium should be given."
+  assert.equal(c.counted, true, "a mis-click is a break that happened");
+  assert.equal(c.countedMinutes, 10, "counted as the ten it really was");
   assert.equal(c.minutes, 50, "the raw length is still reported honestly");
-  assert.equal(c.kind, "too-long", "judged on length, not on being backwards");
+  assert.equal(c.kind, "repaired");
   assert.equal(c.reversed, false, "a repair explains it, so it is NOT drawn flipped");
   assert.equal(c.repair.to, "4:00 PM", "and the repair is the better reading");
 
@@ -72,10 +76,14 @@ test("the arithmetic behind the printed column is spelled out", () => {
   assert.equal(classifyRest(row("3:30 PM", "4:30 PM", 1)).derivation, "1 hr x 60 = 60 min");
 });
 
-test("an obvious single-field misclick is PROPOSED, never applied", () => {
+test("an obvious single-field misclick is APPLIED, and still asked about", () => {
   // Jose Martinez 07/23: the IN hour rolled back. 4:00 PM gives a normal ten.
+  //
+  // It used to be proposed and left uncounted, which charged a premium over a
+  // dropdown. The question is still generated - `buildQuestions` builds it from
+  // `repair`, not from `counted` - so the correction is applied AND signed off.
   const jose = classifyRest(row("3:50 PM", "3:00 PM", -0.83));
-  assert.equal(jose.counted, false, "still does not count until somebody says so");
+  assert.equal(jose.counted, true, "the break is credited");
   assert.deepEqual(
     { field: jose.repair.field, to: jose.repair.to, minutes: jose.repair.minutes },
     { field: "in", to: "4:00 PM", minutes: 10 },
@@ -101,11 +109,15 @@ test("no repair is proposed when no single field explains it", () => {
   assert.equal(classifyRest(row("2:00 PM", "2:30 PM", 0.5)).repair, null);
 });
 
-test("under ten minutes is a deficient rest and owes the premium", () => {
+test("under ten minutes still counts as a break taken", () => {
+  // Mánu 2026-08-12: "if they took it for two minutes. It's a mistake. and can
+  // be fixed, but count it. breaks under 10 minutes are no longer going to be
+  // treated as not taken." Four minutes is a typo, not four minutes of rest.
   const c = classifyRest(row("2:00 PM", "2:04 PM", 0.07));
-  assert.equal(c.counted, false);
-  assert.equal(c.minutes, 4);
-  assert.equal(c.kind, "short");
+  assert.equal(c.counted, true);
+  assert.equal(c.minutes, 4, "reported honestly");
+  assert.equal(c.countedMinutes, 10, "credited as the ten it was meant to be");
+  assert.equal(c.kind, "short", "and still marked, so the sheet says so");
 });
 
 test("eleven to fifteen minutes counts, owes nothing, and is still flagged", () => {
@@ -114,29 +126,49 @@ test("eleven to fifteen minutes counts, owes nothing, and is still flagged", () 
   assert.equal(c.minutes, 13);
   assert.equal(c.kind, "over-ten", "but visible");
   // and it carries the compliance wording, not a penalty
-  assert.match(REST_KIND_NOTE[c.kind], /one and a half times the entitlement/);
+  assert.match(restKindNote(c), /one and a half times the entitlement/);
 });
 
-test("the threshold is exclusive above fifteen, inclusive at it", () => {
-  assert.equal(classifyRest(row("2:00 PM", "2:15 PM", 0.25)).counted, true);
-  assert.equal(classifyRest(row("2:00 PM", "2:16 PM", 0.27)).counted, false);
-  assert.equal(classifyRest(row("2:00 PM", "2:16 PM", 0.27)).kind, "too-long");
+test("over fifteen is still MARKED as over, even though it counts", () => {
+  // the length no longer decides whether it counts - it decides what the sheet
+  // says about it
+  assert.equal(classifyRest(row("2:00 PM", "2:15 PM", 0.25)).kind, "over-ten");
+  const over = classifyRest(row("2:00 PM", "2:16 PM", 0.27));
+  assert.equal(over.counted, true);
+  assert.equal(over.kind, "too-long");
 });
 
-test("thirty and sixty minute rows are too long to be rests", () => {
-  // Hernadez 07/25 and 07/26 are exactly 30, Hatt 07/20 is 60
+test("a meal-length row is the ONE thing that still does not count as a rest", () => {
+  // Hernadez 07/25 and 07/26 are exactly 30, Hatt 07/20 is 60. These are read as
+  // the LUNCH - drawn blue and striped, asked about as a meal - so counting them
+  // as rests too would let one entry clear two different violations.
   for (const [o, i] of [["2:00 PM", "2:30 PM"], ["3:30 PM", "4:30 PM"]]) {
     const c = classifyRest(row(o, i, 0.5));
-    assert.equal(c.counted, false);
+    assert.equal(c.counted, false, `${o}-${i} is a meal candidate, not a rest`);
     assert.equal(c.kind, "too-long");
   }
+  // and a row PAST meal length is back to counting
+  assert.equal(classifyRest(row("9:00 AM", "2:00 PM", 5)).counted, true);
 });
 
-test("an AM/PM slip reads as 730 minutes and does not count", () => {
-  // Rotter 07/27 and Romero-Alba 07/30
+test("an AM/PM slip reports 730 minutes and counts as the ten it was", () => {
+  // Rotter 07/27 and Romero-Alba 07/30. Twelve hours and ten minutes is not a
+  // rest period, and it is not an absence either - somebody clocked a break and
+  // the IN was picked as PM.
   const c = classifyRest(row("11:20 AM", "11:30 PM", 12.17));
-  assert.equal(c.counted, false);
-  assert.equal(c.minutes, 730);
+  assert.equal(c.counted, true, "no premium for a dropdown");
+  assert.equal(c.minutes, 730, "what the document literally says, for the card");
+  assert.equal(c.countedMinutes, 10, "what it is credited as");
+  assert.equal(c.kind, "repaired");
+  assert.equal(c.repair.to, "11:30 AM");
+});
+
+test("a row nothing explains counts anyway, and carries no repair", () => {
+  // it stopped being about whether we can explain the row and became about
+  // whether the row exists at all
+  const c = classifyRest(row("9:00 AM", "2:00 PM", 5));
+  assert.equal(c.repair, null, "no single field explains five hours");
+  assert.equal(c.counted, true, "somebody still clocked a break");
   assert.equal(c.kind, "too-long");
 });
 
@@ -162,9 +194,14 @@ test("a row with no times at all still COUNTS, and asks for the times", () => {
   assert.equal(ok.missing, undefined);
 });
 
-test("exactly ten counts; the boundary is inclusive", () => {
-  assert.equal(classifyRest(row("9:00 AM", "9:10 AM", 0.17)).counted, true);
-  assert.equal(classifyRest(row("9:00 AM", "9:09 AM", 0.15)).counted, false);
+test("ten is clean and nine is marked, and both count", () => {
+  // the boundary decides what the sheet SAYS, not whether the break happened
+  const ten = classifyRest(row("9:00 AM", "9:10 AM", 0.17));
+  assert.equal(ten.counted, true);
+  assert.equal(ten.kind, null, "nothing to remark on");
+  const nine = classifyRest(row("9:00 AM", "9:09 AM", 0.15));
+  assert.equal(nine.counted, true, "a minute short is a typo, not a missed break");
+  assert.equal(nine.kind, "short", "but the sheet still says it is short");
 });
 
 test("isSaneRest still judges the printed column only", () => {
@@ -388,4 +425,39 @@ test("a repair that lands INSIDE the service beats one that does not", () => {
   });
   assert.equal(noService.repair.fits, null);
   assert.equal(noService.repair.to, "4:00 PM", "same answer here, but by position not by fit");
+});
+
+// THE WORDS AND THE ARITHMETIC HAVE TO AGREE.
+//
+// `restKindNote` renders directly under the card `describeRestRow` writes on the
+// checks screen, and again on the employee's own page. Three of its six entries
+// still said a row did not count - the rule until 2026-08-12 - so the same card
+// printed "It still counts as a 10 minute break taken" above "it does not count
+// until somebody confirms what it was". This walks every kind and asserts the
+// note agrees with `countsAsTaken` about that row, which is the one thing the
+// two must never disagree on.
+test("every rest-kind note agrees with countsAsTaken about the same row", () => {
+  const cases = [
+    ["short", row("2:00 PM", "2:02 PM", 0.03)],
+    ["over-ten", row("2:00 PM", "2:13 PM", 0.22)],
+    ["too-long, counted", row("11:00 AM", "11:10 PM", 12.17)],
+    ["too-long, meal-length", row("2:00 PM", "2:30 PM", 0.5)],
+    ["plain ten", row("2:00 PM", "2:10 PM", 0.17)],
+  ];
+  for (const [label, r] of cases) {
+    const c = classifyRest(r);
+    const note = restKindNote(c);
+    if (!note) continue;
+    const denies = /does not count|not counted as a rest|nothing can say a break was taken/.test(note);
+    assert.equal(
+      denies, !countsAsTaken(c),
+      `${label}: note says ${denies ? "it does NOT count" : "it counts"} but countsAsTaken is ${countsAsTaken(c)} - "${note}"`,
+    );
+  }
+});
+
+test("a meal-length row is the only one whose note may deny the break", () => {
+  const meal = classifyRest(row("2:00 PM", "2:30 PM", 0.5));
+  assert.equal(countsAsTaken(meal), false);
+  assert.match(restKindNote(meal), /length of a meal/);
 });

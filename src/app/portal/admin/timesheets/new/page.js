@@ -12,10 +12,11 @@ const ERRORS = {
   notpdf: "That needs to be the PDF export from QSP.",
   parse: "Couldn't read that PDF. Make sure it's the Simple Timesheet export, not a scan.",
   future:
-    "That export contains days that haven't happened yet. QSP prints scheduled shifts exactly like worked ones, so those would become timesheets asking people to sign for time they haven't worked. Pull the period again once it has ended.",
+    "That export contains days that haven't happened yet. QSP prints scheduled shifts exactly like worked ones, so those would become timesheets asking people to sign for time they haven't worked. Pull the period again once it has ended - or tick \"partial pay period\" below to drop the unworked days and keep what has been worked.",
   twoperiods:
     "That export covers more than one pay period, so every employee appears twice. QSP snaps to whole pay periods - asking for a range that crosses a boundary returns both of them. Request a single period.",
   empty: "No employee hours found in that file. Is it the right export?",
+  range: "That date range doesn't work: the start is after the end.",
   punches:
     "The punch times in that timesheet don't add up to QSP's own totals printed beside them, which almost always means it's a print-to-PDF rather than the download. Printing merges two times into a single cell, so everything after the first punch of each pair never reaches us. The file itself is fine and complete - that's the problem, because every employee, every row and every daily total still look right, and the premium hours come out wrong anyway. Pull it again from Reports → Timesheets and save the download rather than printing. It's the SMALLER file, around 920KB against 4.9MB. Nothing was created.",
   noschedule:
@@ -83,7 +84,10 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
           </dl>
           <p className="mt-3 text-amber-700 dark:text-amber-400">
             Only pull a period after it has ended. QSP prints shifts that
-            haven&apos;t been worked yet exactly like real ones.
+            haven&apos;t been worked yet exactly like real ones, and it returns
+            the whole period whatever range you ask it for. To test one
+            mid-period, tick <b>partial pay period</b> and give the range you
+            actually wanted - everything outside it is dropped.
           </p>
         </div>
         <div>

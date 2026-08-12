@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { restKey, clockMin } from "@/lib/timesheet/rests";
+import { restKey, restNameFor, clockMin, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { workedBeforeMin, RULES } from "@/lib/timesheet/parse";
 import {
   anomalyLabel,
@@ -11,8 +11,12 @@ import {
   describePunchIssue,
   scheduledPaidHours,
 } from "@/lib/timesheet/anomalies";
+import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
+import { drawnRest } from "@/lib/timesheet/recorded-breaks";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
+import DayPeek from "./DayPeek";
+import FlagButton from "./FlagButton";
 import Evidence from "./Evidence";
 import ChecksFilter from "./ChecksFilter";
 import RecomputeButton from "../corrections/RecomputeButton";
@@ -24,7 +28,9 @@ const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
 // Two client bookings that overlap in time are not a punch error. QSP writes
 // them as one run of punches, so the second booking's start lands before the
-// first one's end and the engine reads a break running backwards.
+// first one's end. The engine calls any space between two work segments a break,
+// so it computes that one as minus thirty minutes - which is arithmetic, not a
+// break anybody took.
 //
 // On 07/16-07/31 EVERY punch issue in the batch was this - 17 of 17 - and every
 // one of them offered a "repair" that cut hours, 23.59 in total. Delgado Pineda
@@ -73,18 +79,54 @@ function overlapInfo(shifts) {
     .filter((x) => x && x.a != null && x.b != null)
     .sort((x, y) => x.a - y.a);
 
+  // HOW MUCH OF IT THERE IS, not just that it happened. Mánu 2026-08-12: "A
+  // client service block and a travel block are overlapping each other. and they
+  // are getting billed. for both at the same time? And that is a violation."
+  //
+  // He is right and the card was saying the opposite. Both blocks bill in full,
+  // so every overlapping minute is a minute paid twice - across the two live
+  // batches that is 1071 minutes and 17.54 hours billed beyond the time anybody
+  // was on site. A card reading "Nothing to do" in green over Mira 08/05, which
+  // is four hours of two client services at once, is not a description of that.
+  //
+  // Every pair is measured, not just the first: Mira has four overlapping pairs
+  // in one day and returning at the first one under-reported her by three hours.
+  let overlapMin = 0;
+  let subject = null;
   for (let i = 1; i < r.length; i++) {
     if (r[i].a >= r[i - 1].b) continue;
+    overlapMin += Math.min(r[i].b, r[i - 1].b) - r[i].a;
+    if (subject) continue;
     const one = blockKind(r[i - 1].text);
     const two = blockKind(r[i].text);
     if (one === two) {
       const plural =
         one === "another scheduled block" ? "scheduled blocks" : `${one.replace(/^an? /, "")}s`;
-      return { subject: `Two ${plural}` };
+      subject = `Two ${plural}`;
+    } else {
+      subject = `${one.charAt(0).toUpperCase()}${one.slice(1)} and ${two}`;
     }
-    return { subject: `${one.charAt(0).toUpperCase()}${one.slice(1)} and ${two}` };
   }
-  return null;
+  return subject ? { subject, overlapMin } : null;
+}
+
+// the hours the day pays beyond the time somebody was actually on site: first
+// booking to last, less any rostered meal. That difference IS the double-billed
+// time, and it is the number worth putting in front of a person.
+function billedOver(shifts, paidHours) {
+  const r = (shifts || [])
+    .map((sh) => {
+      const m = RANGE.exec(String(sh.text || "").trim());
+      return m ? { a: toMin(m[1]), b: toMin(m[2]), meal: !!sh.meal, min: sh.minutes || 0 } : null;
+    })
+    .filter((x) => x && x.a != null && x.b != null);
+  const work = r.filter((x) => !x.meal);
+  if (!work.length || paidHours == null) return null;
+  const lo = Math.min(...work.map((x) => x.a));
+  const hi = Math.max(...work.map((x) => x.b));
+  const mealMin = r.filter((x) => x.meal).reduce((n, x) => n + x.min, 0);
+  const onSite = (hi - lo - mealMin) / 60;
+  return { onSite, over: paidHours - onSite };
 }
 
 // The findings that are not about a single day, so they get no row.
@@ -177,17 +219,41 @@ function describePunchRow(p, ctx = {}) {
 
   // an overlap the schedule accounts for is not a problem with the punches
   if (ctx.overlapping) {
-    const agrees = ctx.scheduledHours != null && Math.abs((ctx.paidHours ?? 0) - ctx.scheduledHours) < 0.05;
+    // EVERY OVERLAP IS A FINDING, whether or not it costs a premium hour.
+    //
+    // This had a "costs nothing" branch that filed a seven minute overlap under
+    // no-action, on the reasoning that the day's hours came out right anyway.
+    // That is the wrong test, and Mánu 2026-08-12 said why: "the anomaly should
+    // find issues with the schedule for us to essentially notify the employees
+    // of the wrongdoings with their scheduling. there is no office for people to
+    // come into. Everyone is in the field going to see their clients, and we
+    // don't have people as we should watching over every clock in and out. So
+    // that's why I'm building this to show the anomalies, to show what is going
+    // unnoticed."
+    //
+    // Two bookings billed over each other is a scheduling fault on its own. What
+    // it costs in premium hours is a separate question and sometimes the answer
+    // is nothing - that does not make it not a fault, it makes it a cheap one.
+    //
+    // THE HEADLINE IS THE OVERLAP, not the day's total. "7.89 hrs" is the figure
+    // the day pays and has nothing to do with the finding; the finding is that
+    // seven minutes were sold twice.
+    const mins = ctx.overlapping.overlapMin || 0;
+    const over = ctx.billed?.over ?? null;
+    const costly = over != null && over >= 0.05;
     return {
-      // NOT "settled". The figures are right, but "no action" is exactly what
-      // this is not - two bookings billed over the top of each other is a thing
-      // somebody should know about, and filing it under settled buried it.
-      group: "anomaly",
-      head: `${f2(p.hoursNow)} hrs${agrees ? ", confirmed" : ""}`,
-      tone: agrees ? "text-emerald-700 dark:text-emerald-400" : "text-muted",
-      lead: agrees
-        ? `${ctx.overlapping.subject} overlap in time, which QSP writes as one run of punches, so one reads as a break running backwards. It is not. The schedule has both and they come to ${f2(ctx.scheduledHours)} hrs, which is what this day pays. Nothing to do.`
-        : `${ctx.overlapping.subject} overlap in time, so one reads as a break running backwards. That part is expected. The schedule comes to ${f2(ctx.scheduledHours)} hrs against the ${f2(p.hoursNow)} paid here, so this one is worth opening.`,
+      group: "decide",
+      head: mins >= 60
+        ? `${f2(mins / 60)} hrs overlapped`
+        : `${mins} min overlapped`,
+      tone: "text-rose-700 dark:text-rose-400",
+      lead:
+        `${ctx.overlapping.subject} are booked at the same time for ${mins} minutes, and QSP bills both in full. `
+        + (costly
+          ? `The day pays ${f2(p.hoursNow)} hrs against ${f2(ctx.billed.onSite)} hrs between the first booking and the last, so ${f2(over)} hrs is paid twice. `
+          : "")
+        + `The punches cannot show two things at once, so they read oddly - that part needs no repair. `
+        + `The scheduling does.`,
     };
   }
 
@@ -228,7 +294,7 @@ function describePunchRow(p, ctx = {}) {
     tone: applied ? "text-emerald-700 dark:text-emerald-400" : "text-muted",
     lead: applied
       ? `Repaired: ${(p.say.applied || []).join("; ") || "punches reordered"}. Applied because the schedule independently agrees with the repaired figure.`
-      : `A possible repair was found (${(p.say.applied || []).join("; ") || "punches reordered"}). It would make the day ${f2(p.say.hours)} hrs instead of ${f2(p.say.was)}${cuts ? ", which is less" : ""}. It has NOT been applied and nothing here has changed the pay.`,
+      : `A possible repair was found (${(p.say.applied || []).join("; ") || "punches reordered"}). It would make the day ${f2(p.say.hours)} hrs instead of ${f2(p.say.was)}${cuts ? ", which is less" : ""}. It has not been applied and nothing here has changed the pay.`,
   };
 }
 
@@ -268,40 +334,115 @@ function describeFlagRow(f) {
 // already errs towards paying - so they are an anomaly to go and correct in
 // QSP rather than a decision. The eleven we flipped are settled, and shown so
 // the repair can be audited rather than taken on trust.
-function describeRestRow(r) {
+// THE VERDICT COMES FROM `countsAsTaken`, AND THE SENTENCE FROM `kind`.
+//
+// This read `r.counted` and then assumed the counted case was always an
+// over-ten, which was true when only an 11-15 minute row could count. Since
+// 2026-08-12 a row that EXISTS is a break that happened whatever its length, so
+// `counted` covers no-times, short, too-long and repaired as well - and every
+// one of them printed "Longer than the ten minutes a paid rest period allows".
+// Flores 07/29 records no times at all and was being told her break ran long.
+//
+// `countsAsTaken` rather than `r.counted` for the same reason `recordedBreaksFor`
+// and the employee's own page use it: `batch.restsByDate` is stored at upload,
+// so a batch parsed before the rule changed still carries the old verdicts. The
+// three rows on this batch that read "probably a mis-pick" are exactly that.
+//
+// `mealScheduled` is the stored day's, and it is passed in because the row alone
+// cannot answer the question the meal branch below asks. `isMealLengthRest` is a
+// LENGTH test - it knows nothing about the roster - while whether the row is
+// actually drawn as the lunch depends on the day having no lunch of its own
+// (`recordedBreaksFor`). Hatt 07/20 is sixty minutes with her lunch rostered and
+// taken at noon, so "the schedule rosters no lunch that day" was false on the
+// one row it was written for.
+function describeRestRow(r, mealScheduled) {
   const len = r.minutes == null ? "no times" : `${r.minutes} min`;
-  if (r.counted) {
-    return r.reversed
-      ? {
-          group: "settled",
-          head: "read as a normal rest",
-          tone: "text-muted",
-          lead: `QSP has the out and in times the wrong way round, so its own total reads ${r.derivation}. Flipped, it is a ${r.minutes} minute break like any other, and it counts as one.`,
-        }
-      : {
-          group: "anomaly",
-          head: `${len}, counted`,
-          tone: "text-violet-700 dark:text-violet-300",
-          lead: `Longer than the ten minutes a paid rest period allows. It counts and owes nothing, but it is worth knowing about - fifteen minutes is one and a half times the entitlement.`,
-        };
+  const anomaly = (head, lead) => ({
+    group: "anomaly", head, tone: "text-violet-700 dark:text-violet-300", lead,
+  });
+  const settled = (head, lead) => ({ group: "settled", head, tone: "text-muted", lead });
+
+  // THE ONE ROW IN THE REPORT THAT DOES NOT COUNT, checked first so everything
+  // below can say "it counts" without qualifying it. A meal-length row on a day
+  // with no rostered lunch is being read as the LUNCH instead - counting it here
+  // as well would let one entry clear two different violations.
+  if (!countsAsTaken(r)) {
+    return anomaly(
+      `${len}, too long to be a rest`,
+      `QSP reads ${r.derivation}, which is the length of a meal rather than a rest, so it is not ` +
+      `counted as a rest taken. ` +
+      (mealScheduled === true
+        ? `The schedule already rosters a lunch that day, so this row is not it either - it ` +
+          `counts as neither, and the sheet leaves it uncoloured.`
+        : mealScheduled === false
+          ? `The schedule rosters no lunch that day, so it is being read as the lunch and drawn ` +
+            `as one on the sheet, striped, for the employee to confirm.`
+          : `No schedule covers that day, so whether it was the lunch is unanswerable from what ` +
+            `we hold.`) +
+      ` Moving the meal premium is a person's call rather than a threshold's, which is why it is here.`,
+    );
   }
+
+  // A REPAIR IS APPLIED, NOT OFFERED. It used to be a decision for whoever read
+  // this screen, because accepting it removed a premium; since 2026-08-12 the
+  // engine applies it and the EMPLOYEE confirms it on their own sheet. Read off
+  // `r.repair` and not off `r.kind`, so a row stored under the old kind
+  // ("too-long", with a repair hanging off it) lands here too.
   if (r.repair) {
-    return {
-      group: "decide",
-      head: `${len}, probably a mis-pick`,
-      tone: "text-rose-700 dark:text-rose-400",
-      lead: `QSP reads ${r.derivation}, which is not a rest break. It looks like ${r.repair.why}: ${r.repair.from} should be ${r.repair.to}, which gives a normal ${r.repair.minutes} minute break. Accepting that REMOVES a rest premium, so it needs you rather than the engine.`,
-    };
+    return settled(
+      `${len}, one time mis-picked`,
+      `QSP reads ${r.derivation}, which is not a rest break. One field explains it: ` +
+      `${r.repair.why}, so ${r.repair.from} should be ${r.repair.to} - a normal ` +
+      `${r.repair.minutes} minute break. That correction is applied and the break counts. The ` +
+      `employee is asked to confirm it on their own sheet, so nothing here needs you.`,
+    );
   }
-  return {
-    group: "anomaly",
-    head: r.minutes == null ? "no times recorded" : `${len}, not a rest`,
-    tone: "text-violet-700 dark:text-violet-300",
-    lead:
-      r.minutes == null
-        ? "Neither an out nor an in time was recorded, so nothing can say a break was taken. The premium stands. Worth fixing in QSP so the next period reads properly."
-        : `QSP reads ${r.derivation}. No single mis-picked field turns that into a rest break, so the engine will not guess at it. The premium stands and the entry should be corrected in QSP.`,
-  };
+
+  if (r.reversed) {
+    return settled(
+      "read as a normal rest",
+      `QSP has the out and in times the wrong way round, so its own total reads ${r.derivation}. ` +
+      `Flipped, it is a ${r.minutes} minute break like any other, and it counts as one.`,
+    );
+  }
+
+  switch (r.kind) {
+    case "no-times":
+      return anomaly(
+        "no times recorded",
+        `The report files a break against this shift and holds neither end of it. It counts as ` +
+        `taken - somebody opened the break screen and logged it, and the times are what did not ` +
+        `survive - so the day owes no premium for it. The sheet draws it inside the shift with ` +
+        `the times as ???, and the entry is worth fixing in QSP.`,
+      );
+    case "short":
+      return anomaly(
+        `${len}, under ten`,
+        `Shorter than the ten minutes California requires. It counts as a full ten taken: a ` +
+        `${r.minutes} minute row is a mistyped time rather than a ${r.minutes} minute break, and ` +
+        `crediting ${r.minutes} would invent a shortfall out of the same typo. Worth correcting ` +
+        `in QSP so the next period reads properly.`,
+      );
+    case "too-long":
+      return anomaly(
+        `${len}, over the limit`,
+        `Too long to be a rest period, and no single mis-picked field explains it. It still ` +
+        `counts as a ${FULL_REST_MIN} minute break taken - the length is a typing mistake, not an ` +
+        `absence - so the day owes no premium. The entry should be corrected in QSP.`,
+      );
+    case "over-ten":
+      return anomaly(
+        `${len}, counted`,
+        `Longer than the ten minutes a paid rest period allows. It counts and owes nothing, but ` +
+        `it is worth knowing about - fifteen minutes is one and a half times the entitlement.`,
+      );
+    default:
+      return anomaly(
+        `${len}, counted`,
+        `The report records this break and it counts as taken. It is here because QSP wrote ` +
+        `something worth a second look at the row rather than at the break.`,
+      );
+  }
 }
 
 export default async function ChecksPage({ params }) {
@@ -321,6 +462,15 @@ export default async function ChecksPage({ params }) {
     },
   });
   if (!batch) notFound();
+
+  // THE RED MARKS SOMEBODY HAS ALREADY PUT ON THIS BATCH, by row. A working
+  // marker between reviewers - it moves no figure and never reaches an employee.
+  const flags = new Map(
+    (await prisma.timesheetCheckFlag.findMany({
+      where: { batchId: id },
+      select: { rowKey: true, flaggedName: true, flaggedImage: true },
+    })).map((f) => [f.rowKey, f]),
+  );
 
   const entries = [];
   let anySchedule = false;
@@ -349,12 +499,18 @@ export default async function ChecksPage({ params }) {
       const withSay = { ...p, say: describePunchIssue(p, scheduledPaidHours(schedDay)) };
       entries.push({
         ...common,
-        kind: "punch",
+        // NOT A PUNCH FAULT, SO NOT IN THE PUNCH PILE. Mánu 2026-08-12: "I
+        // don't like that Garcia is under punches that do not read." He is
+        // right - her punches are exactly what QSP wrote, and the thing worth
+        // looking at is two bookings sold over each other. Only genuine punch
+        // faults stay under that heading.
+        kind: overlapInfo(schedDay?.shifts) ? "overlap" : "punch",
         date: p.date,
         p: withSay,
         overlapping: !!overlapInfo(schedDay?.shifts),
         d: describePunchRow(withSay, {
           overlapping: overlapInfo(schedDay?.shifts),
+          billed: billedOver(schedDay?.shifts, common.dayHours[p.date]),
           scheduledHours: scheduledPaidHours(schedDay),
           paidHours: common.dayHours[p.date],
           // a repair only counts as applied if the stored day actually moved to it
@@ -373,7 +529,16 @@ export default async function ChecksPage({ params }) {
   // Rows of the Rest Periods Report worth a person's attention. These belong to
   // the BATCH rather than to a timesheet - the report is one document - so they
   // are matched back to a person by name for display only.
-  const restByName = new Map(batch.timesheets.map((t) => [restKey(t.sourceName), t]));
+  //
+  // KEYED ON THE REPORT'S OWN SPELLING, not the timesheet's. QSP files "Delgado
+  // Pineda, Ruth" under "Delgado Pineda, Angel" here, so every one of her rows
+  // came back unmatched: her cards said "The Rest Periods Report records on a
+  // day worked 4 hours" with the times missing, and her day view drew no rest at
+  // all. `restNameFor` reads back the spelling upload matched through her portal
+  // account - nothing is scored on this screen. See `restNameFor`.
+  const restByName = new Map(
+    batch.timesheets.map((t) => [restKey(restNameFor(t.sourceName, t.data)), t]),
+  );
   for (const r of (batch.restsByDate || []).filter((x) => x.kind)) {
     const t = restByName.get(restKey(r.name));
     entries.push({
@@ -393,7 +558,9 @@ export default async function ChecksPage({ params }) {
       kind: "rest",
       date: r.date,
       r,
-      d: describeRestRow(r),
+      // the stored day's own answer about whether a lunch was rostered, which is
+      // what decides whether a meal-length row is being read as the lunch
+      d: describeRestRow(r, (t?.data?.days || []).find((x) => x.date === r.date)?.mealScheduled),
     });
   }
 
@@ -440,8 +607,20 @@ export default async function ChecksPage({ params }) {
               `day reads ${day.restTaken} of ${day.restRequired} rests. The row is misfiled, not ` +
               `the break. `
             : day
-              ? `It falls in no paid stretch of the day either, so it has not been counted and ` +
-                `this day reads ${day.restTaken} of ${day.restRequired} rests. `
+              // NOT IN A WORKED STRETCH IS NO LONGER A REASON IT DOES NOT COUNT.
+              // This said "it falls in no paid stretch of the day either, so it
+              // has not been counted", which was the rule until 2026-08-09.
+              // Whether it counts is `countsAsTaken` and nothing else, so the
+              // only row that reaches the second sentence is a meal-length one,
+              // and it says why in its own terms.
+              ? (countsAsTaken(r)
+                  ? `It falls in no stretch the punches have them working either. It still counts ` +
+                    `as taken, so the day is charged no rest premium: this day reads ` +
+                    `${day.restTaken} of ${day.restRequired} rests. The minutes are not added to ` +
+                    `their hours unless they confirm the break was taken there. `
+                  : `It falls in no paid stretch of the day either, and at ${r.minutes} minutes it ` +
+                    `is the length of a meal rather than a rest - so it does not stand as a rest ` +
+                    `taken, and this day reads ${day.restTaken} of ${day.restRequired} rests. `)
               : `Whether it counts is worked out from the punches, never from the shift on this row. `) +
           `Worth correcting in QSP so the next period files it against the shift it happened in.`,
       },
@@ -513,19 +692,68 @@ export default async function ChecksPage({ params }) {
   // it holds meal breaks only - so the employer gave a standalone lunch in
   // every one of these and the break was stacked against it afterwards. Where
   // the opportunity was provided the premium is not owed.
-  // the day's recorded rest windows, for quoting the actual times back
+  // the day's recorded rest windows, for quoting the actual times back. The
+  // MINUTES travel with the printed text, because a row about one break has to
+  // be able to pick its own out of the day's list - see `restsPlaced` below.
+  //
+  // `countsAsTaken` and not `r.counted`, the same rule the engine counts by and
+  // the same one `describeRestRow` reads: a batch stored before 2026-08-12
+  // carries verdicts that no longer hold, and quoting a break the sheet credits
+  // is the whole job of this text.
   const restWindowsFor = new Map();
   for (const r of batch.restsByDate || []) {
-    if (!r.counted || !r.date) continue;
+    if (!countsAsTaken(r) || !r.date) continue;
     const out = clockMin(r.out);
     const inn = clockMin(r.in);
     if (out == null || inn == null || inn <= out) continue;
     const k = `${restKey(r.name)}|${r.date}`;
     if (!restWindowsFor.has(k)) restWindowsFor.set(k, []);
-    restWindowsFor.get(k).push(`${r.out} to ${r.in}`);
+    restWindowsFor.get(k).push({ text: `${r.out} to ${r.in}`, out, in: inn });
   }
-  const restTimesText = (t, d) =>
-    (restWindowsFor.get(`${restKey(t.sourceName)}|${d.date}`) || []).join(", ");
+  // the REPORT's spelling of them, same as `restByName` above - matching on the
+  // timesheet's own name returned nothing for the person QSP spells two ways,
+  // and the card then printed a rest with no times on it.
+  const windowsFor = (t, d) =>
+    restWindowsFor.get(`${restKey(restNameFor(t.sourceName, t.data))}|${d.date}`) || [];
+  const say = (list) => list.map((w) => w.text).join(", ");
+
+  // WHICH OF THE DAY'S RESTS A ROW IS ACTUALLY ABOUT.
+  //
+  // This used to quote every rest the report held for the day, on every row, so
+  // a card about one ten minute break printed both of the day's breaks and the
+  // sentence around it described them all the same way. Jones 07/28 records two
+  // and only one is in the lunch.
+  //
+  // The stored day keeps its punches, so the engine's own predicates are
+  // reproduced here rather than approximated: `outside` is `outsideShift` from
+  // analyzeDay - before the first punch or after the last - and `inGap` is
+  // `unpaidRest`, wholly inside a punched-OUT pair. Same arithmetic, same
+  // answers, so the times a row quotes are the times it counted.
+  //
+  // Falling back to the whole list when a bucket comes back empty: a stored day
+  // from before punches were kept would otherwise quote nothing at all, and a
+  // row with no times on it is worse than one with too many.
+  const restsPlaced = (t, d) => {
+    const all = windowsFor(t, d);
+    const p = Array.isArray(d.punches) ? d.punches : [];
+    const mins = p.map((x) => x.min);
+    const lo = mins.length ? Math.min(...mins) : null;
+    const hi = mins.length ? Math.max(...mins) : null;
+    const outside = (w) => lo != null && (w.out < lo || w.in > hi);
+    const inGap = (w) => {
+      for (let i = 1; i + 1 < mins.length; i += 2) {
+        if (mins[i] <= w.out && mins[i + 1] >= w.in) return true;
+      }
+      return false;
+    };
+    const off = all.filter((w) => !outside(w) && inGap(w));
+    const beyond = all.filter(outside);
+    return {
+      all,
+      offClock: off.length ? off : all,
+      outsideShift: beyond.length ? beyond : all,
+    };
+  };
   const restRow = (t, d, key, head, lead) => ({
     timesheetId: t.id,
     rowKey: `${key}-${t.id}-${d.date}`,
@@ -540,48 +768,150 @@ export default async function ChecksPage({ params }) {
     d: { group: "anomaly", head, tone: "text-violet-700 dark:text-violet-300", lead },
   });
 
+  // WHAT EVERY ROW'S DAY LOOKED LIKE, ready for `DayPeek` to draw on demand.
+  //
+  // Built here rather than in the component because `schedule.js` pulls in the
+  // pdf stack and none of that belongs in a browser bundle - the same reason the
+  // employee's own page reads its blocks on the server. The client is handed
+  // plain {from, to, service, meal} and nothing else, and the client NAME is
+  // dropped by `serviceOf` before it ever leaves this function.
+  //
+  // Keyed on timesheet AND date, so a rest row that matched no timesheet simply
+  // finds nothing and draws no control - which is right, since there is no
+  // stored day behind it to draw.
+  const dayViews = new Map();
   for (const t of batch.timesheets) {
     for (const d of t.data?.days || []) {
-      // A rest recorded INSIDE the rostered lunch. The one rest finding that
-      // moves a figure: unpaid meal minutes were never a rest period, so it
-      // does not count and the premium follows.
-      if (d.restsInsideMeal) {
-        entries.push(restRow(t, d, "rest-in-meal",
-          d.restsInsideMeal === 1 ? "a rest recorded inside the lunch" : `${d.restsInsideMeal} rests recorded inside the lunch`,
-          `The report puts a rest at ${restTimesText(t, d)}, inside the lunch the schedule rostered. ` +
-          `A rest period is PAID time and a meal period is unpaid, so ten minutes inside the lunch ` +
-          `cannot be a rest period - most often it is part of the lunch that got logged as one. ` +
-          `It has not been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
-          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. The opportunity to take ` +
-          `a ten minute break always exists here, so this was not one the employer failed to provide.`));
+      const blocks = [];
+      for (const sh of t.data?.scheduleCheck?.byDate?.[d.date]?.shifts || []) {
+        const at = blockTimes(sh.text);
+        const service = serviceOf(sh.text);
+        if (at && service) blocks.push({ from: at.start, to: at.end, service, meal: !!sh.meal });
       }
+      // EVERY ROW THE REPORT HOLDS FOR THIS DAY, drawn as `drawnRest` says.
+      //
+      // Not `windowsFor`, which is filtered to the rows that COUNT and keyed on
+      // `in > out` - between them those two dropped exactly the rows the cards
+      // above are about: a repaired row reads backwards until the repair is
+      // applied, and a meal-length row never counts. Both drew nothing at all.
+      //
+      // AS THE DOCUMENT HOLDS IT, ALWAYS - NO ANSWERS APPLIED HERE. Mánu
+      // 2026-08-12: "make sure the calendar view from the data checks is always
+      // as they put it so we can see the issue there at all times." The
+      // employee's own calendar moves when they answer; this one is the audit
+      // picture and must keep showing what QSP recorded, or the screen for
+      // checking the source data stops showing the source data. Do not thread
+      // answers or overrides into this list.
+      const drawn = [];
+      for (const row of batch.restsByDate || []) {
+        if (row.date !== d.date || restKey(row.name) !== restKey(restNameFor(t.sourceName, t.data))) continue;
+        const at = drawnRest(row, { mealScheduled: d.mealScheduled });
+        if (at) drawn.push(at);
+      }
+      dayViews.set(`${t.id}|${d.date}`, {
+        // THE THREE FIELDS THE CALENDAR READS, not the whole stored day.
+        // `shiftsOf` wants punches, `dayWindow` wants breaks, and the axis is
+        // labelled with the date. Handing over `d` cost about 300KB of RSC
+        // payload across 120 rows and shipped every hour, premium and violation
+        // on the day to a browser that draws none of them.
+        day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [] },
+        rests: drawn,
+        scheduled: blocks,
+      });
+    }
+  }
+
+  for (const t of batch.timesheets) {
+    for (const d of t.data?.days || []) {
       // A rest logged before clock-in or after clock-out. It was not a rest
       // taken during work, and it STILL COUNTS - Mánu's call was to surface it
       // rather than move premiums on the engine's say-so. Which makes saying it
       // plainly the whole job of this row.
+      //
+      // WHETHER THE MINUTES REACHED PAY IS READ, NEVER ASSERTED. `addedHours` is
+      // set to the amount added when the employee has confirmed the break and to
+      // zero otherwise (see `offClockConfirmed` in parse.js), so it is the only
+      // thing that can answer this - and it answers it per day, which a sentence
+      // written once cannot. Both of the cards below said flatly that the
+      // minutes were paid, which was the rule until 2026-08-12 and has been
+      // wrong on every card since. Nobody has confirmed one yet on either live
+      // batch, so today the second branch is the whole of it; the first exists
+      // so the first confirmation does not make these cards lie the other way.
+      const addedOnDay = (d.addedHours || 0) > 0;
       if (d.restsOutsideShift) {
         entries.push(restRow(t, d, "rest-outside",
           d.restsOutsideShift === 1 ? "a rest logged outside the shift" : `${d.restsOutsideShift} rests logged outside the shift`,
-          `The Rest Periods Report records ${restTimesText(t, d)} on a day worked ` +
+          `The Rest Periods Report records ${say(restsPlaced(t, d).outsideShift)} on a day worked ` +
           `${d.workedMin ? Math.round((d.workedMin / 60) * 100) / 100 : d.paidHours} hours. ` +
-          `A break before clock-in or after clock-out is not paid time, so it was never a rest ` +
-          `period - most often it is a default nobody changed rather than anything that happened. ` +
-          `It has not been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
-          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. That the entry was not ` +
-          `caught during the work day is on us, not on them, so the premium is not theirs to lose. ` +
+          `A break before clock-in or after clock-out is not paid time - most often it is a default ` +
+          `nobody changed rather than anything that happened. It still counts as a rest taken: this ` +
+          `day reads ${d.restTaken} of ${d.restRequired}` +
+          `${d.restViolation ? " and owes a premium for other reasons" : ""}, so no rest premium is ` +
+          `charged for it - the report says the break happened, and the premium is for one that did ` +
+          `not. ` +
+          (addedOnDay
+            ? `They have confirmed they took it then, so the ${f2(d.addedHours)} hrs are in their hours. `
+            : `Nothing is added to their hours. A rest period is paid time because it happens on the ` +
+              `clock, so an entry outside every shift is read as a time typed wrong until the ` +
+              `employee confirms they took it there, and they are asked on their own sheet. `) +
           `Worth fixing at source in QSP so the next period does not repeat it.`));
       }
-      // A rest that fell inside a punched-out gap. Paid time that went unpaid.
-      if (d.restsUnpaid) {
+      // A rest that fell inside a punched-out gap. Paid time that went unpaid -
+      // and since 2026-08-09 the fix is to pay the minutes, not to charge the
+      // day a premium for a break the report says was taken.
+      //
+      // A REST INSIDE THE ROSTERED LUNCH IS ONE OF THESE, NOT A SECOND FINDING.
+      // `restsInsideMeal` used to get a card of its own, and on 07/16-07/31 all
+      // four of them were also punched-out-gap rests - Aranda 07/29, Hernadez
+      // 07/30, Jones 07/28, Lazo 07/30 - so the same ten minutes was told to
+      // somebody twice under two headings. The lunch is WHY the rest was off the
+      // clock, so it belongs in this sentence rather than in another card.
+      //
+      // Both conditions, because the two are not identical by construction:
+      // `restsUnpaid` is read off the PUNCHES and `restsInsideMeal` off the
+      // ROSTER, so a day somebody never punched out of its rostered lunch has
+      // the second without the first. `where` says which sentence to print.
+      if (d.restsUnpaid || d.restsInsideMeal) {
+        const inLunch = !!d.restsInsideMeal;
+        const n = Math.max(d.restsUnpaid || 0, d.restsInsideMeal || 0);
+        // ONLY THE RESTS THIS ROW IS ABOUT, so the lunch clause is attached to
+        // the times it is actually true of. Jones 07/28 records two rests, one
+        // of them in the lunch, and quoting the day's whole list said both were.
+        //
+        // `restsInsideMeal` is roster-derived and this list is punch-derived, so
+        // they can still disagree about HOW MANY - the clause below covers that
+        // rather than assuming they line up.
+        const placed = restsPlaced(t, d).offClock;
+        const times = say(placed);
+        const lunchAll = inLunch && d.restsInsideMeal >= placed.length;
+        const where =
+          `The report records a rest at ${times}, and the punches have them off the clock across ` +
+          `it. ` +
+          (lunchAll
+            ? `That is the lunch the schedule rostered: a rest period is paid time and a meal ` +
+              `period is unpaid, so most often this is part of the lunch that got logged as a break. `
+            : inLunch
+              ? `${d.restsInsideMeal} of them sat inside the lunch the schedule rostered - a rest ` +
+                `period is paid time and a meal period is unpaid, so most often that is part of ` +
+                `the lunch that got logged as a break. `
+              : `A rest period is paid time, so those minutes should have been on the clock and ` +
+                `were not. `);
         entries.push(restRow(t, d, "rest-unpaid",
-          d.restsUnpaid === 1 ? "a rest that was not paid" : `${d.restsUnpaid} rests that were not paid`,
-          `The report records a rest at ${restTimesText(t, d)}, and the punches have them off the ` +
-          `clock across it. A rest period is paid time, so unpaid minutes were not one, so it has not ` +
-          `been counted as a rest taken, which is why this day reads ${d.restTaken} of ` +
-          `${d.restRequired}${d.restViolation ? " and owes a premium" : ""}. No hours are added ` +
-          `back: the premium is what compensates a rest that did not happen, and paying for the ` +
-          `minutes as well would be paying for a break we have just said was not taken. Wages would ` +
-          `only be owed if they were WORKING while off the clock, and nothing here says they were.`));
+          n === 1 ? "a rest recorded off the clock" : `${n} rests recorded off the clock`,
+          where +
+          `It still counts as a rest taken - this day reads ${d.restTaken} of ` +
+          `${d.restRequired}${d.restViolation ? " and owes a premium for other reasons" : ""} - so ` +
+          `the day is charged no rest premium for it: the break happened, and the premium is for ` +
+          `one that did not. ` +
+          (addedOnDay
+            ? `They have confirmed they took it then, so the ${f2(d.addedHours)} hrs are in their hours.`
+            : `The minutes are not added to their hours either. They were off the clock for them, ` +
+              `and the engine adds them only once the employee confirms the break was taken there, ` +
+              `which is asked on their own sheet.`) +
+          (inLunch
+            ? ` The opportunity to take a ten always exists here, so this was not one the employer ` +
+              `failed to provide. Worth fixing at source in QSP so the next period does not repeat it.`
+            : ``)));
       }
       if (!d.restTackedOn) continue;
       entries.push({
@@ -616,13 +946,18 @@ export default async function ChecksPage({ params }) {
   // that long stops being something anybody reads - six kinds of finding
   // interleaved by surname is a wall, not a screen.
   const KINDS = {
-    punch: { label: "Punches that do not read", order: 0 },
-    flag: { label: "Punches the schedule can settle", order: 1 },
+    overlap: { label: "Bookings billed over each other", order: 0 },
+    punch: { label: "Punches that do not read", order: 1 },
+    flag: { label: "Punches the schedule can settle", order: 2 },
     rest: { label: "Rest report entries that cannot be read", order: 2 },
     "rest-off-shift": { label: "Rests filed against the wrong shift", order: 3 },
-    "rest-in-meal": { label: "Rests recorded inside the lunch", order: 4 },
+    // no "rest-in-meal" - a rest inside the rostered lunch is folded into
+    // "rest-unpaid" below, because it is the same ten minutes.
     "rest-outside": { label: "Rests logged outside the shift", order: 5 },
-    "rest-unpaid": { label: "Rests that were never paid", order: 6 },
+    // "never paid" was the old heading, and it prejudged the answer: the
+    // minutes are not paid, and whether they should be is the employee's to
+    // say. Recorded off the clock is what the finding is.
+    "rest-unpaid": { label: "Rests recorded off the clock", order: 6 },
     "rest-tacked": { label: "Rests taken against the lunch", order: 7 },
     "rest-late": { label: "Rests taken late in the shift", order: 8 },
   };
@@ -725,6 +1060,21 @@ export default async function ChecksPage({ params }) {
 
               <p className="mt-1.5 text-sm leading-relaxed text-muted">{e.d.lead}</p>
 
+              {/* the day this row is about, drawn the way the employee's own
+                  sheet draws it. Every row here names a person and a date and
+                  the picture is what the sentence is describing. */}
+              <DayPeek {...(dayViews.get(`${e.timesheetId}|${e.date}`) || {})} />
+
+              {/* the red mark, bottom right, where a reviewer's eye ends up
+                  after reading the row */}
+              <div className="mt-2 flex justify-end">
+                <FlagButton
+                  batchId={batch.id}
+                  rowKey={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
+                  flag={flags.get(e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`) || null}
+                />
+              </div>
+
               <details className="group mt-2">
                 <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-brand">
                   <span aria-hidden="true" className="transition-transform group-open:rotate-90">
@@ -733,7 +1083,10 @@ export default async function ChecksPage({ params }) {
                   What the documents say
                 </summary>
                 <div className="mt-2 rounded-md border border-border bg-surface-2 p-3">
-                  {e.kind === "punch" && (
+                  {/* the raw punches and what the schedule booked, for both
+                      kinds - an overlap row still has to show its evidence, and
+                      it is the same evidence */}
+                  {(e.kind === "punch" || e.kind === "overlap") && (
                     <>
                       {e.p.anomalies.map((a, j) => (
                         <p key={j} className="mb-1 text-xs leading-relaxed text-muted">
@@ -784,7 +1137,7 @@ export default async function ChecksPage({ params }) {
                       </p>
                       {e.r.repair && (
                         <p className="mt-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
-                          Likely: {e.r.repair.field === "out" ? "out" : "in"} {e.r.repair.from} →{" "}
+                          Likely: {e.r.repair.field === "both" ? "both times" : e.r.repair.field === "out" ? "out" : "in"} {e.r.repair.from} →{" "}
                           {e.r.repair.to} = {e.r.repair.minutes} min
                         </p>
                       )}

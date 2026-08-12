@@ -198,33 +198,44 @@ test("a kind nobody classified blocks signing rather than slipping through", () 
   assert.equal(isMandatory("restOutsideScheduled"), false);
 });
 
-test("the gate lets somebody sign past every optional question and no mandatory one", () => {
+// A SHEET IS SIGNABLE AT ANY TIME - Mánu 2026-08-12.
+//
+// This test used to assert the opposite: an unanswered MANDATORY question held
+// the signature up. That premise died with the 2026-08-11 flip, which made
+// silence the answer that keeps the employee's pay ON - so the gate was holding
+// somebody's timesheet hostage to a question whose safe answer they had already
+// given by leaving it alone.
+//
+// The questions are still asked and still counted; they simply no longer decide
+// who may sign.
+test("nothing holds a signature up - not a mandatory question, not anything", () => {
   const questions = [
     { kind: "nothingDocumentedRest", date: "07/20/26", mandatory: false },
     { kind: "nothingDocumentedMeal", date: "07/20/26", mandatory: false },
     { kind: "restNoTimes", date: "07/21/26", mandatory: true },
   ];
   const open = signingGate(questions, []);
-  assert.equal(open.canSign, false, "the unreadable row still holds it up");
-  assert.equal(open.blocking, 1);
+  assert.equal(open.canSign, true, "even with the unreadable row wide open");
+  assert.equal(open.blocking, 0, "so no surface can print a 'before you can sign' warning");
+  assert.equal(open.unanswered, 1, "the mandatory one is still counted");
   assert.equal(open.optionalOpen, 2, "and this is what the popup counts");
 
-  // answering ONLY the mandatory one is enough to sign
+  // answering things only ever reduces the counts - it never unlocks anything,
+  // because nothing was locked
   const settled = signingGate(questions, [
     { kind: "q_restNoTimes", date: "07/21/26", status: "accepted" },
   ]);
   assert.equal(settled.canSign, true);
-  assert.equal(settled.blocking, 0);
+  assert.equal(settled.unanswered, 0);
   assert.equal(settled.optionalOpen, 2, "still unanswered, still not blocking");
 
-  // and the check that proves this can fail: answering only the optional ones
-  // must NOT open the gate
-  const wrongOnes = signingGate(questions, [
+  const optionalOnly = signingGate(questions, [
     { kind: "q_nothingDocumentedRest", date: "07/20/26", status: "accepted" },
     { kind: "q_nothingDocumentedMeal", date: "07/20/26", status: "accepted" },
   ]);
-  assert.equal(wrongOnes.canSign, false);
-  assert.equal(wrongOnes.optionalOpen, 0);
+  assert.equal(optionalOnly.canSign, true);
+  assert.equal(optionalOnly.unanswered, 1, "the mandatory one is still open, and still fine");
+  assert.equal(optionalOnly.optionalOpen, 0);
 });
 
 // ---------------------------------------------------------------------------

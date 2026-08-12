@@ -16,9 +16,10 @@
 //
 // COLOUR CARRIES THE SAME MEANING AS THE SHEET: amber while we are still asking,
 // green once an answer has left the figures alone, plain once it has not.
-import { createContext, useContext, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
+import { useStagedPublisher } from "./StagedTimes";
 
 // THE BATCH ANSWER, SHARED SO ITS ROWS CAN BE SPLIT ACROSS THE PAGE.
 //
@@ -35,25 +36,46 @@ const BatchCtx = createContext(null);
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
+// 730 -> "12 hours 10 minutes". Spelled out rather than left as a decimal,
+// because "12.17 hrs" is a figure and "12 hours 10 minutes" is an argument -
+// nobody reads the second one and thinks it might be a rest period.
+const spellMinutes = (n) => {
+  const m = Math.round(Number(n) || 0);
+  if (m <= 0) return null;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  const parts = [];
+  if (h) parts.push(`${h} hour${h === 1 ? "" : "s"}`);
+  if (mm) parts.push(`${mm} minute${mm === 1 ? "" : "s"}`);
+  return parts.join(" ");
+};
+
+// "1:15p" / "115" -> minutes past midnight, for drawing on the day's axis
+const toMin = (raw) => {
+  const t = parseLooseTime(raw || "", { assumeWorkday: true });
+  if (!t) return null;
+  const [h, m] = t.split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+};
+
 // what each kind asks, and what each answer means. Kept as data so the wording
 // can be read in one place rather than chased through six branches of JSX.
 //
-// EVERY ONE OF THESE REVERSED ON 2026-08-11. `standing.charged` is the penalty
-// pay actually on the sheet, and after the flip that is EVERY fault the reports
-// show. So the sheet arrives carrying the money, and an answer can only take it
-// off: "yes I took my break" removes an hour, "no I missed it" agrees with what
-// the sheet already says and changes nothing.
+// NOT ONE OF THESE CARDS TALKS ABOUT PAY. Mánu 2026-08-12: "remove any talk of
+// penalty or added time. audit every single possibility to not mention that."
 //
-// The old copy said the opposite in every card - "nothing is charged for this
-// day right now", "saying no is what adds an hour" - and all of it sat above a
-// signature. There is no half-way version of this file.
+// Every card used to quote a figure and what the answer would do to it - "your
+// penalty pay goes from 10.00 hours to 9.00 hours", "those 10 minutes go on to
+// your hours", "that hour comes off". All of it is gone, and with it `standing`,
+// `prem`, `leftIfYes` and `q.moves`, which existed only to compute those
+// sentences. The arithmetic still happens; the employee is simply not asked to
+// weigh their answer against it.
+//
+// What every card says now is what the answer does to THE RECORD. That is the
+// question actually being asked - "when did you take your break" - and it is the
+// only one the person answering is in a position to know. `standing` is still a
+// parameter because callers pass it; nothing here reads it.
 function copyFor(q, standing) {
-  const base = standing?.charged || 0;
-  const prem = (n) => `${r2(n).toFixed(2)} hours`;
-  // saying YES is what takes pay off now. Saying no leaves the sheet alone.
-  // `q.moves` is negative and already knows whether this day owes anything.
-  const off = Math.abs(q.moves || 0);
-  const leftIfYes = () => prem(Math.max(0, base - off));
   switch (q.kind) {
     case "repair":
       return {
@@ -72,21 +94,42 @@ function copyFor(q, standing) {
           `${q.row.derivation}, which is not a break`,
           `What we think: out ${q.proposed.from} · in ${q.proposed.to} = ${q.row.minutes} min`,
         ],
-        yes: { label: "Yes, I took that break", why: "You stopped for about ten minutes around then." },
-        no: { label: "No, I did not take it", why: "You worked through. Your penalty pay stays as it is." },
+        // THE SAME TWO FACTS, SHORT ENOUGH FOR THE SIMPLE VIEW. Mánu 2026-08-12:
+        // "I know I said simplify the day by day but it still needs context ...
+        // there's what it looks like, and we put our estimate."
+        //
+        // Stripping the body left "Rest break time looks mis-entered" and two
+        // buttons, which asks somebody to confirm a break without showing them
+        // the times being confirmed. The long card said all of this in
+        // paragraphs; this is the same evidence with the prose taken out.
+        facts: [
+          {
+            label: "The record says",
+            value: `${q.row.out || "(blank)"} to ${q.row.in || "(blank)"}`,
+            // the length it implies, in red, right beside it. Mánu 2026-08-12:
+            // "put next to it in red, twelve hours ten minutes."
+            aside: spellMinutes(q.row.recordedMinutes),
+          },
+          { label: "We think", value: `${q.proposed.from} to ${q.proposed.to}`, ours: true },
+        ],
+        // THE SAME WORDS AS `restOutsideScheduled`, because they mean the same
+        // thing. "No, I did not take it" here and "I did not take it at all"
+        // there were one outcome under two labels, on two cards somebody reads
+        // one after the other.
+        //
+        // `canGiveTime` with no `needsOn` puts the time box on YES, so "that is
+        // when I took it" is also where somebody corrects the time we proposed -
+        // they accept the reading, then adjust it if we guessed the minute wrong.
+        // There is no separate "I took it at a different time" button because it
+        // would land on the same patch as yes.
+        yes: {
+          label: "Yes, that is when I took it",
+          why: "You stopped for about ten minutes around then. Change the time below if it was not exactly that.",
+        },
+        no: { label: "I did not take it at all", why: "You worked through that time." },
         timeLabel: `What time did your break start on ${q.date}?`,
-        yesEffect: off > 0
-          ? <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>
-          : <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        footnote: (
-          <>
-            <b>This day is already paid a penalty.</b>{" "}
-            {off > 0
-              ? <>Saying you took the break is what removes it, taking your penalty pay from {prem(base)} to {leftIfYes()}. Only say yes if you really did stop.</>
-              : <>Neither answer changes your pay. We are asking so the record is right.</>}
-          </>
-        ),
+        yesEffect: <>Your break is recorded at that time.</>,
+        noEffect: <>The record stays as it is, with no break on that day.</>,
       };
 
     case "restIsMealLength":
@@ -105,19 +148,9 @@ function copyFor(q, standing) {
           "A rest break is ten minutes. A meal is thirty.",
         ],
         yes: { label: "Yes, that was my meal", why: "You took your thirty minutes and it was logged in the wrong place." },
-        no: { label: "No, that was a rest break", why: "You did not get a meal that day. Your penalty pay stays as it is." },
-        yesEffect: off > 0
-          ? <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>
-          : <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        footnote: (
-          <>
-            <b>This day is being paid for a missed meal.</b>{" "}
-            {off > 0
-              ? <>Telling us the thirty minutes WAS your meal is what removes it, taking your penalty pay from {prem(base)} to {leftIfYes()}.</>
-              : <>Neither answer changes your pay. We are asking so the record is right.</>}
-          </>
-        ),
+        no: { label: "No, that was a rest break", why: "You did not get a meal that day." },
+        yesEffect: <>Those thirty minutes are recorded as your meal break.</>,
+        noEffect: <>The record stays as it is, with no meal break on that day.</>,
       };
 
     case "restNoTimes":
@@ -134,37 +167,19 @@ function copyFor(q, standing) {
           <>
             On <b>{q.date}</b> the break record has a rest break for you with <b>no times on it</b>.
             We cannot tell when it was, or whether it happened. Your timesheet says you took{" "}
-            <b>{q.row.taken} of {q.row.owed}</b> rest breaks that day
-            {off > 0
-              ? <> and pays you an hour of penalty pay for the shortfall.</>
-              : <>, so the break is counted and no penalty is owed. What is missing is the time.</>}
+            <b>{q.row.taken} of {q.row.owed}</b> rest breaks that day. What is missing is the time.
           </>
         ),
         evidence: [
           "Rest entry: no start, no end",
           `Your punches: ${(q.row.punches || []).join(" | ") || "none recorded"}`,
-          `Hours paid that day: ${q.row.hours} · rest breaks owed: ${q.row.owed}`,
+          `Hours that day: ${q.row.hours} · rest breaks due: ${q.row.owed}`,
         ],
         yes: { label: "Yes, I took it", why: "Somebody logged it without the times." },
-        no: { label: "No, I did not take it", why: "You worked through. Your penalty pay stays as it is." },
+        no: { label: "No, I did not take it", why: "You worked through that time." },
         timeLabel: `What time did your break start on ${q.date}?`,
-        yesEffect: off > 0
-          ? <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>
-          : <>Your record gets the time on it. Your pay does not change either way.</>,
-        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        footnote: off > 0
-          ? (
-            <>
-              <b>This day is already paid a penalty.</b> Saying you took the break is what removes
-              it, taking your penalty pay from {prem(base)} to {leftIfYes()}.
-            </>
-          )
-          : (
-            <>
-              <b>Neither answer costs you anything.</b> The break is already counted - what is
-              missing is the time it started, so the record can say when.
-            </>
-          ),
+        yesEffect: <>Your record gets the time on it.</>,
+        noEffect: <>The record stays as it is, with no break on that day.</>,
       };
 
     // A TEN LOGGED OUTSIDE DOCUMENTED WORKING HOURS. Before the rostered day,
@@ -183,7 +198,6 @@ function copyFor(q, standing) {
           : shapes.has("after") && shapes.size === 1
             ? "after the shift it was filed under had ended"
             : "outside the hours you were scheduled to be working";
-      const canClear = (q.row.detail || []).some((x) => x.clearsARest);
       // THE SAME FAULT IN FOUR WORDS, for the simple view. Mánu 2026-08-11: "we
       // don't have to over explain for the day by day view because this is the
       // simple view. It can just say rest taken after shift time."
@@ -200,25 +214,32 @@ function copyFor(q, standing) {
         // it is one card however many rows there are, and saying "one of your
         // breaks" above three dates made that look like a bug.
         title: q.row.days === 1
-          ? "One of your breaks is outside your scheduled hours"
-          : "Some of your breaks are outside your scheduled hours",
+          ? "A rest break is recorded outside your shifts. Was that a mistake?"
+          : "Some rest breaks are recorded outside your shifts. Was that a mistake?",
         short: shapeShort,
+        // what was logged, and the shift it was logged against - the two things
+        // somebody needs to see before saying whether that is when they took it
+        facts: (q.row.detail || []).slice(0, 2).flatMap((x) => [
+          { label: "Logged at", value: `${x.wasFrom} to ${x.wasTo}` },
+          ...(x.service ? [{ label: "Your shift", value: x.service }] : []),
+        ]),
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your ten minute rest break is
             recorded <b>{shapeWords}</b>, and you were not clocked in for it.
             <br /><br />
-            {/* WHY IT IS ADDED, in his words: the break sits outside any
-                scheduled shift, so it was never counted as time at all. A rest
-                period is paid, so it has to be added rather than assumed. */}
-            A break only counts as time when it sits inside a shift you were
-            scheduled for. Yours does not, so it was never counted - and a rest period is paid
-            time, so we have taken it at face value and <b>added those {q.row.minutes} minutes</b>{" "}
-            to your hours.
+            {/* NOT ADDED UNTIL SOMEBODY SAYS SO. Mánu 2026-08-12: "the engine
+                should automatically not add in more hours. It should treat it
+                as put in wrong and only add the time once they confirm it was
+                taken there." The card used to open by telling them the minutes
+                had already been added and asking whether to keep them. */}
+            A ten minute rest period belongs <b>inside a shift</b>, so it only counts when you
+            were on the clock for it. This one is recorded where you were not, which usually means
+            the time was entered wrong.
             <br /><br />
-            <b>Is that right?</b> If it is, leave it and keep the pay. If it really happened during
-            one of your shifts, tell us when and the time comes back off. And if you never got it at
-            all, say so - that is a break you are owed.
+            <b>Was that a mistake?</b> If it was, tell us when you really took it and we will put it
+            there. If it was not - you did take it at that time - say so. And if you never got the
+            break at all, say that instead.
           </>
         ),
         dates: q.dates,
@@ -227,18 +248,18 @@ function copyFor(q, standing) {
             (x.service ? ` · filed under your ${x.service} shift` : " · no shift on the row") +
             (x.from ? ` · inside it would be ${x.from}` : ""),
         ),
+        // THE POLARITY TURNED OVER ON 2026-08-12 with the default. "Yes" used to
+        // mean "yes, keep the minutes you already paid me"; it now means "no, it
+        // was not a mistake" and it is the answer that ADDS them. The labels say
+        // what happened rather than yes/no, because the question above them is
+        // "was that a mistake?" and a bare "Yes" would answer it backwards.
         yes: {
-          label: "Yes, that is when I took it",
-          why: "You stopped then, off the clock. The minutes stay paid.",
+          label: "No - I did take it then",
+          why: "That was a real break, recorded at the time it happened.",
         },
         no: {
-          // "I took it earlier, in my shift" and "it was already paid, so
-          // nothing is added" were both wrong. Mánu 2026-08-11: "If you took it
-          // earlier in your shift, then the time gets taken away." Nothing is
-          // ADDED is true of the arithmetic and false of what he sees - his
-          // hours drop by the same half hour the card is about.
-          label: "I took it during a shift",
-          why: "Tell us when. The minutes come back off your hours.",
+          label: "Yes, the time was entered wrong",
+          why: "Tell us when you really took it. You were on the clock then, so it is already in your hours.",
         },
         // THE THIRD OUTCOME. Mánu 2026-08-11: "or if she didnt take it at all."
         // Without it somebody who never got the break had to claim they did, on
@@ -246,35 +267,18 @@ function copyFor(q, standing) {
         third: {
           value: "notaken",
           label: "I did not take it at all",
-          why: canClear
-            ? "It stops counting as a break you had, so the penalty for it goes on."
-            : "It stops counting as a break you had.",
+          why: "It stops counting as a break you had.",
         },
         timeLabel: "When during your shift did you take it?",
         timeHint: "The record has a time on it, it just is not inside a shift. Tell us when it really was.",
-        yesEffect: <>Nothing changes. The <b>{q.row.minutes} minutes</b> stay on your timesheet.</>,
-        noEffect: (
-          <>
-            <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off, along with any
-            overtime they created, and your break moves to the time you give us. You were on the
-            clock then, so that time is already in your hours as work.
-          </>
-        ),
-        thirdEffect: (
-          <>
-            <b>{r2(Math.abs(q.movesOnDecline)).toFixed(2)} hours</b> come off, and the break stops
-            counting as one you had.{" "}
-            {canClear
-              ? <>Your penalty pay goes <b>up</b> by an hour for each day that leaves short.</>
-              : <>Your penalty pay does not change - the day was already short.</>}
-          </>
-        ),
-        footnote: (
-          <>
-            <b>The minutes are already paid</b>, so leaving this alone costs you nothing. Only move
-            it or take it off if that is what actually happened.
-          </>
-        ),
+        // NO HOURS CLAIM HERE. This read "<n> hours go on to your timesheet,
+        // along with any overtime they create" - Mánu 2026-08-12 had it removed
+        // along with every other sentence on these cards that talks about
+        // gaining time. The answer records where the break was; what that does
+        // to pay is not the confirm box's business.
+        yesEffect: <>We will record that you took your break at that time.</>,
+        noEffect: <>Your break moves to the time you give us.</>,
+        thirdEffect: <>The break stops counting as one you had.</>,
       };
     }
 
@@ -291,47 +295,112 @@ function copyFor(q, standing) {
     case "nothingDocumented":
     case "nothingDocumentedMeal":
     case "nothingDocumentedRest":
+      // NO HEADING AND NO INTRO. Mánu 2026-08-12 had the whole block removed:
+      // "We could not find some of your breaks on record", the count of days,
+      // "we have paid you the penalty for every one", and the paragraph about
+      // what saying yes would take off. The day rows below carry the question,
+      // each beside its own calendar, which is where somebody answers it.
+      //
+      // Both are null rather than empty strings, because `BatchHeading` and the
+      // batched card test for them and drop the whole panel when there is
+      // nothing to put in it - an empty amber box is worse than no box.
       return {
-        title: "We could not find some of your breaks on record",
-        body: (
-          <>
-            On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> we cannot find a ten minute
-            rest period{q.row.mealDays > 0 ? " or a meal break" : ""} recorded for you. Rather than
-            assume you took them, we have <b>paid you the penalty</b> for every one - it is on the
-            timesheet below.
-            <br /><br />
-            <b>Did you actually take them?</b> Answer each day below. If you did take a break and
-            simply did not write it down, say so and that hour comes off. If you are not sure,
-            leave it - nothing is taken off unless you tell us to.
-          </>
-        ),
+        title: null,
+        body: null,
         yes: {
           label: "Yes, I took my breaks",
-          why: "You took them and just did not write them down. That hour comes off.",
+          why: "You took them and just did not write them down.",
         },
         no: {
           label: "No, I missed them",
-          why: "You worked through. The penalty pay stays on your sheet.",
+          why: "You worked through that day.",
         },
-        yesEffect: <>Your penalty pay goes from <b>{prem(base)}</b> to <b>{leftIfYes()}</b>.</>,
-        noEffect: <>Nothing changes. Your penalty pay stays at <b>{prem(base)}</b>.</>,
-        footnote: (
-          <>
-            <b>You are legally entitled to these breaks</b>, and to be paid a penalty if you did
-            not get them. That pay is already on your sheet, so you lose nothing by ignoring this.
-            Only say you took a break if you really did.
-          </>
-        ),
+        yesEffect: <>Your record says you took your breaks and did not write them down.</>,
+        noEffect: <>Your record says the breaks were missed.</>,
+        // the "you are legally entitled to these breaks ... you lose nothing by
+        // ignoring this" footnote was removed 2026-08-12 at Mánu's instruction.
       };
 
     // A BREAK TOO LONG TO BE A REST, ON A DAY WHOSE LUNCH IS ACCOUNTED FOR.
     // Hatt 07/20: sixty minutes logged while clocked out between two shifts,
     // with her lunch already rostered at noon. Before 2026-08-10 the row was
     // thrown away, she lost the rest credit, and nobody asked her anything.
+    // TWO LUNCHES ON ONE DAY. Hatt 07/20 has her rostered noon lunch AND a sixty
+    // minute entry at 3:30, so the day carries two meal periods and the honest
+    // card is about that rather than about "a break that is not a break".
+    //
+    // THREE OUTCOMES, Mánu 2026-08-12: "if they have 2 lunches then make it be
+    // asked if its correct or if it accidentally added in or if one needs to be
+    // removed." The three are not the same claim: both real, the extra one never
+    // happened, or one lunch happened and the wrong record is the rostered one.
+    // Only the middle one can say which block to take off the calendar, which is
+    // why "removed" is its own answer rather than a shade of "mistake".
     case "restTooLongOffClock":
+      if (q.row.twoLunches) {
+        return {
+          title: "Two lunches are on record for this day",
+          short: "Two lunches on record",
+          facts: [
+            { label: "Your schedule has", value: "a lunch that day" },
+            {
+              label: "And this is recorded",
+              value: `${q.row.from || "(blank)"} to ${q.row.to || "(blank)"}`,
+              aside: spellMinutes(q.row.minutes),
+            },
+          ],
+          body: (
+            <>
+              On <b>{q.date}</b> your schedule rosters a lunch, and a second break of{" "}
+              <b>{q.row.minutes} minutes</b> is also recorded from <b>{q.row.from}</b> to{" "}
+              <b>{q.row.to}</b>. That is two lunches on one day
+              {q.row.onClock ? "" : ", and you were clocked out for the second one"}.
+              <br /><br />
+              We have <b>changed nothing</b> on your timesheet. Both are drawn on the day below so
+              you can see them. We just need to know which of these it is.
+            </>
+          ),
+          yes: {
+            label: "Both are right, I took two",
+            why: "We will keep both on the record.",
+          },
+          no: {
+            label: "The second one was added by mistake",
+            why: "We will take it off the record, and off the picture below.",
+          },
+          third: {
+            value: "wrongone",
+            label: "I only took one, and it was this one",
+            why: "The lunch on your schedule is the wrong record, and that one is corrected instead.",
+          },
+          yesEffect: <>Both stay on the record, exactly as they are.</>,
+          noEffect: <>The entry is marked as a mis-entry and stops being drawn on your day.</>,
+          thirdEffect: (
+            <>
+              The rostered lunch is marked as the wrong record, and this one stands as your real
+              lunch.
+            </>
+          ),
+          footnote: (
+            <>
+              <b>This one is about the record.</b> Two lunches on a day is a data-entry problem, and
+              guessing which one to throw away would be us deciding what happened on your day.
+            </>
+          ),
+        };
+      }
       return {
         title: "One of your breaks does not look like a break",
         short: "Break too long to be a rest",
+        // the same two lines the other cards carry: what the record holds, and
+        // how long that actually is. A card asking "was this a real break?"
+        // without showing the break was asking somebody to confirm a blank.
+        facts: [
+          {
+            label: "The record says",
+            value: `${q.row.from || "(blank)"} to ${q.row.to || "(blank)"}`,
+            aside: spellMinutes(q.row.minutes),
+          },
+        ],
         body: (
           <>
             On <b>{q.date}</b> a break is recorded from <b>{q.row.from}</b> to <b>{q.row.to}</b>,
@@ -339,25 +408,24 @@ function copyFor(q, standing) {
             that day is already accounted for
             {q.row.onClock ? "" : ", and you were clocked out at the time"}.
             <br /><br />
-            We have left it as it is and <b>changed nothing</b> about your hours or your pay.
-            We would just like to know what it was, so the record is right.
+            We have left it exactly as it is. We would just like to know what it was, so the
+            record is right.
           </>
         ),
         yes: {
           label: "That was a real break I took",
-          why: "We will note it as a break you took. Your hours do not change.",
+          why: "We will note it as a break you took.",
         },
         no: {
           label: "That looks like a mistake",
           why: "We will note it as a mis-entry so payroll knows to ignore it.",
         },
-        yesEffect: <>Nothing changes. Your hours and your penalty pay stay exactly as they are.</>,
-        noEffect: <>Nothing changes. Your hours and your penalty pay stay exactly as they are.</>,
+        yesEffect: <>The entry stands on your record as a break you took.</>,
+        noEffect: <>The entry is marked as a mis-entry so it is not read as a break.</>,
         footnote: (
           <>
-            <b>Neither answer costs you anything.</b> This one is about the record, not the money -
-            it is here because throwing the entry away without asking would be us deciding what
-            happened on your day.
+            <b>This one is about the record.</b> It is here because throwing the entry away without
+            asking would be us deciding what happened on your day.
           </>
         ),
       };
@@ -377,12 +445,10 @@ function copyFor(q, standing) {
         yes: { label: "Yes, that was my rest break", why: "Our reading stands. Nothing more changes." },
         no: {
           label: "No, I did not take a break then",
-          why: "The credit comes off, and any premium it cleared goes back on.",
+          why: "It stops being read as your rest break.",
         },
         yesEffect: <>Nothing changes. Your timesheet stays as it is below.</>,
-        noEffect: q.movesOnDecline > 0
-          ? <>Your break premium goes back up by <b>{r2(q.movesOnDecline).toFixed(2)} hours</b>, and your sheet will be rebuilt.</>
-          : <>Your record is corrected. Your pay does not change either way.</>,
+        noEffect: <>The block stops being read as your rest break, and your sheet is rebuilt.</>,
         footnote: (
           <>
             <b>We already made this change</b>, so confirming it changes nothing. Say no if you did
@@ -436,7 +502,7 @@ function Choice({ on, tone, label, why, onClick, busy }) {
 // one question inside the card: the choices, the optional typed time, and the
 // confirm panel that has to be got past before anything is written
 function OneQuestion({
-  token, q, answer, answerHasTimes, answerTimes, locked, disturbCount,
+  token, q, answer, answerHasTimes, answerTimes, savedChoice, locked, disturbCount,
   standing, submitAction, showDate, terse,
 }) {
   // THE PAGE HAS TO REFETCH, AND `revalidatePath` ALONE DID NOT DO IT.
@@ -470,6 +536,35 @@ function OneQuestion({
   // "are you sure" before reopening an answer that others were derived from
   const [warning, setWarning] = useState(false);
   const [proposed, setProposed] = useState(null);
+  // WHETHER THE BOXES ARE SHOWING, worked out before the early return below so
+  // the publisher hooks can sit above it. `needsTime` further down is the same
+  // condition and stays the one the rendering uses.
+  const wantsTime = !!q.canGiveTime && proposed?.choice === (q.needsOn || "yes");
+
+  // PUBLISH WHAT IS IN THE BOXES so the day's calendar can draw it. Derived from
+  // `slotAt` rather than written from each handler, so the "Use 12p" buttons,
+  // typing, clearing and switching answers all go through one path - and picking
+  // a choice that needs no time publishes nothing, which takes the block back
+  // off the axis.
+  const publishStaged = useStagedPublisher();
+  const stagedKey = JSON.stringify(slotAt);
+  useEffect(() => {
+    if (!wantsTime) return publishStaged(q.id, []);
+    const entries = [];
+    for (const need of q.needs || []) {
+      const min = toMin(slotAt[need.slot]);
+      if (min == null) continue;
+      entries.push({
+        date: need.date || q.date,
+        min,
+        minutes: need.minutes,
+        kind: need.kindOf,
+      });
+    }
+    publishStaged(q.id, entries);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.id, q.date, q.needs, wantsTime, stagedKey, publishStaged]);
+
   const c = copyFor(q, standing);
   if (!c) return null;
 
@@ -479,14 +574,22 @@ function OneQuestion({
   // takes it back off - staged answers just clear, and a SAVED one stages a
   // deletion the confirm panel then commits. Mánu 2026-08-11: "clicking on a
   // box clicked should also unclick the box and unhighlight."
-  // A DECLINED ANSWER WITH TIMES ON IT IS "I took it earlier"; one without is
-  // the third outcome. Same trick as the partial - the times are what tell them
-  // apart, so the card comes back on the right choice after a reload.
+  // THE STORED CHOICE FIRST, and the old guess only where there is not one.
+  //
+  // `status` collapses every non-yes answer to "declined", so this used to tell
+  // the third outcome from "no" by whether times came back with it. That works
+  // on `restOutsideScheduled`, whose "no" is the one that collects a time, and
+  // it is simply wrong on `restTooLongOffClock`: its "added by accident" and
+  // "the rostered one is wrong" are both declines carrying no times, so every
+  // reload came back showing the third. `TimesheetCorrection.choice` records
+  // what they actually picked; the inference stays for rows written before that
+  // column existed, where it is still the best reading available.
   const shown = proposed
     ? proposed.choice
-    : answer === "accepted" ? "yes"
-      : answer === "declined" ? (c.third && !answerHasTimes ? c.third.value : "no")
-        : null;
+    : savedChoice ? savedChoice
+      : answer === "accepted" ? "yes"
+        : answer === "declined" ? (c.third && !answerHasTimes ? c.third.value : "no")
+          : null;
   const pick = (v) => setProposed(shown === v ? { choice: null } : { choice: v });
 
   // WHICH ANSWER OPENS THE TIME BOX, and whether it may be left empty.
@@ -510,6 +613,7 @@ function OneQuestion({
   const timeBlocked = timeRequired
     ? slots.some((need) => !slotMin(need))
     : !!(at.trim() && !typedHHMM);
+
 
   // WHAT THE COLLAPSED CARD SHOWS: the answer in their own words, and the times
   // they gave paired back to the dates they belong to. `statedBreaks` carries a
@@ -635,7 +739,7 @@ function OneQuestion({
           <p className="text-sm text-muted">
             <b className="text-foreground">Answer the question above first.</b> Your hours for{" "}
             {q.dates?.length > 1 ? "these days" : "this day"} depend on it, and your hours decide
-            whether this break is owed at all.
+            what this question is asking.
           </p>
         </div>
       )}
@@ -733,6 +837,22 @@ function OneQuestion({
                         Use {need.suggest}
                       </button>
                     )}
+                    {/* EVERY GAP A LUNCH FITS IN, as something to pick. One per
+                        gap rather than only the longest, and none of them
+                        selected - typing their own is still the first-class
+                        answer, which is why the box comes first. */}
+                    {!mins &&
+                      (need.options || []).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          disabled={pending}
+                          onClick={() => setSlotAt((t) => ({ ...t, [need.slot]: opt }))}
+                          className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                        >
+                          Use {opt}
+                        </button>
+                      ))}
                     {mins && (
                       <span className="text-sm text-muted">
                         reads as <b className="text-foreground">{formatTimeDisplay(mins)}</b>
@@ -858,9 +978,16 @@ function OneQuestion({
         <p className="mt-3 text-sm font-semibold text-rose-700 dark:text-rose-400">
           {err === "already"
             ? "This timesheet is already signed, so it cannot be changed."
-            : err === "badtime"
-              ? "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight."
-              : "That didn't save. Refresh the page and try again."}
+            // PREVIEW REFUSES EVERY WRITE ON PURPOSE - see `refuse` in page.js,
+            // which is what stops a test click landing on a real person's record.
+            // It came back as the generic failure, so the one person who ever
+            // sees it was told to refresh and try again, which cannot work: the
+            // block is the point, not a fault.
+            : err === "preview"
+              ? "Preview only - nothing is saved from this view. Open the employee's own link to answer for real."
+              : err === "badtime"
+                ? "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight."
+                : "That didn't save. Refresh the page and try again."}
         </p>
       )}
     </div>
@@ -885,10 +1012,12 @@ function OneQuestion({
 export function BatchHeading({ question, standing, className = "" }) {
   const c = copyFor(question, standing);
   if (!c) return null;
+  // a kind with no title and no body draws no panel at all
+  if (!c.title && !c.body) return null;
   return (
     <div className={className}>
-      <p className="text-base font-semibold text-foreground">{c.title}</p>
-      <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
+      {c.title && <p className="text-base font-semibold text-foreground">{c.title}</p>}
+      {c.body && <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>}
     </div>
   );
 }
@@ -932,6 +1061,33 @@ export function BatchProvider({
     setTimes((t) => ({ ...t, [q.id]: { ...(t[q.id] || {}), [slot]: v } }));
   // a slot is satisfied by anything the loose parser can read - "115", "1:15p",
   // "1.15 pm" - or by the schedule time it arrived pre-filled with
+  // THE BATCH'S HALF-TYPED TIMES, onto the same axis. Only for a question whose
+  // chosen answer actually asks for one - the box only renders on "yes" and
+  // "partial", so un-picking or switching to "missed it" publishes an empty list
+  // and the block leaves the calendar with it.
+  const publishStaged = useStagedPublisher();
+  const stagedKey = JSON.stringify([times, picked]);
+  useEffect(() => {
+    for (const q of list) {
+      const v = q.id in picked ? picked[q.id] : savedValue(q);
+      if (v !== "yes" && v !== "partial") { publishStaged(q.id, []); continue; }
+      const entries = [];
+      for (const need of q.needs || []) {
+        const raw = times[q.id]?.[need.slot] ?? "";
+        const min = toMin(raw.trim() ? raw : need.prefill);
+        if (min == null) continue;
+        entries.push({
+          date: need.date || q.date,
+          min,
+          minutes: need.minutes,
+          kind: need.kindOf,
+        });
+      }
+      publishStaged(q.id, entries);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, stagedKey, publishStaged]);
+
   const minutesAt = (q, need) => {
     const raw = rawAt(q, need.slot);
     if (raw.trim()) return parseLooseTime(raw, { assumeWorkday: true });
@@ -1085,7 +1241,13 @@ export function BatchProvider({
   // A ROW CAN BE LOCKED ON ITS OWN. The question that moves the hours covers
   // some of these dates and not others, so locking the whole card would hold up
   // nine days over three. Per row, per date.
-  const Toggle = ({ item: { q, v } }) => (
+  // CALLED, NOT MOUNTED - and named in lower camel case so it cannot be written
+  // as <Toggle/> again. See the note on `renderTimes` below: both of these are
+  // defined inside this component, so each render makes a new function, and a new
+  // function used as a JSX type is a new component type that React unmounts and
+  // rebuilds. Toggle holds only buttons so it never showed the damage; the time
+  // box did.
+  const renderToggle = ({ item: { q, v } }) => (
     waiting?.has?.(q.id) ? (
       <span className="text-xs text-muted">waiting on the question above</span>
     ) : (
@@ -1121,7 +1283,24 @@ export function BatchProvider({
 
   // the times a "took them" owes. Now scoped to ONE part, so a both-day answered
   // "took my lunch, missed my tens" asks for one time and not three.
-  const TimesFor = ({ q, v }) => {
+  // AS SOON AS ONE KEYSTROKE PARSED, THE FIELD WENT AWAY UNDER THE CURSOR.
+  //
+  // Mánu 2026-08-12: "as soon as i press one value (that works) it takes me out
+  // of the typing option. Now imagine how that's annoying if you wanna type
+  // three thirty." Typing "3" is a valid time, so `setAt` re-rendered the
+  // provider - which rebuilt this function, which React read as a DIFFERENT
+  // component type, which meant unmounting the subtree and mounting a fresh
+  // <input>. A brand new DOM node has no focus, so "330" could never be typed:
+  // the "3" landed and the box was gone before the rest of it.
+  //
+  // Called rather than mounted, so its JSX is inlined into the parent's tree and
+  // there is no component type to compare. The lower-case name is the guard -
+  // `{renderTimes({ q, v })}` is the only way to write it.
+  //
+  // It uses no hooks, which is what makes calling it legal. If one is ever
+  // needed here, this has to be hoisted to module scope and read the context
+  // instead - do NOT put it back to <TimesFor/>.
+  const renderTimes = ({ q, v }) => {
     if ((v !== "yes" && v !== "partial") || !(q.needs || []).length) return null;
     const partial = v === "partial";
     return (
@@ -1132,8 +1311,7 @@ export function BatchProvider({
         {partial && (
           <p className="mt-1 text-xs text-muted">
             Fill in the {q.needs.length === 2 ? "one" : "ones"} you did get and leave the rest
-            blank. Your penalty pay does not change - the law pays one hour for the day either
-            way - but the record will say which you had.
+            blank. The record will say which you had.
           </p>
         )}
         {/* THEIR OWN SHIFTS, not the gaps between them. Mánu 2026-08-11: a rest
@@ -1222,7 +1400,7 @@ export function BatchProvider({
   return (
     <BatchCtx.Provider
       value={{
-        Toggle, TimesFor, missingLabel, byDay, list, copy,
+        renderToggle, renderTimes, missingLabel, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
         dirty, missingTimes, undecided, missed, took, hours, base, answeredAll,
       }}
@@ -1238,7 +1416,7 @@ export function BatchProvider({
 export function BatchDays({ dates }) {
   const ctx = useContext(BatchCtx);
   if (!ctx) return null;
-  const { Toggle, TimesFor, missingLabel } = ctx;
+  const { renderToggle, renderTimes, missingLabel } = ctx;
   const byDay = dates ? ctx.byDay.filter((d) => dates.includes(d.date)) : ctx.byDay;
   if (!byDay.length) return null;
 
@@ -1270,7 +1448,7 @@ export function BatchDays({ dates }) {
                   </span>
                 )}
               </span>
-              {items.length === 1 && <Toggle item={items[0]} />}
+              {items.length === 1 && renderToggle({ item: items[0] })}
             </div>
             {items.length > 1 &&
               items.map((item) => (
@@ -1279,11 +1457,14 @@ export function BatchDays({ dates }) {
                   className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-l-2 border-border py-1 pl-3"
                 >
                   <span className="text-sm text-foreground">{missingLabel(item.q)}</span>
-                  <Toggle item={item} />
+                  {renderToggle({ item })}
                 </div>
               ))}
+            {/* keyed on a Fragment, whose type is a module constant - keying on
+                `renderTimes` itself would put the JSX type back in the tree and
+                bring the remount with it */}
             {items.map(({ q, v }) => (
-              <TimesFor key={`t-${q.id}`} q={q} v={v} />
+              <Fragment key={`t-${q.id}`}>{renderTimes({ q, v })}</Fragment>
             ))}
           </li>
         ))}
@@ -1309,7 +1490,11 @@ export function BatchConfirm() {
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={pending || !dirty.length || missingTimes > 0}
+            // NEVER GREYED OUT. Mánu 2026-08-12. It used to disable itself with
+            // nothing changed or a time still blank, so the one control on the
+            // page looked broken while the reason sat somewhere else on screen.
+            // Only an in-flight save disables it now.
+            disabled={pending}
             onClick={() => setConfirming(true)}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:opacity-40"
           >
@@ -1344,50 +1529,13 @@ export function BatchConfirm() {
         >
           <p className="text-base font-semibold text-foreground">Are you sure you want to confirm?</p>
           <div className="mt-2 space-y-1.5 text-sm text-muted">
-            {missed.length ? (
-              <>
-                <p>
-                  You are telling us you missed breaks on{" "}
-                  <b className="text-foreground">
-                    {missed.length} of {list.length} {list.length === 1 ? "day" : "days"}
-                  </b>
-                  {took.length ? `, and took them on the other ${took.length}` : ""}.
-                </p>
-                <p>
-                  <b className="text-foreground">{r2(hours).toFixed(2)} hours</b> of penalty pay go
-                  onto your timesheet, taking it from{" "}
-                  <b className="text-foreground">{r2(base).toFixed(2)} hours</b> to{" "}
-                  <b className="text-foreground">{r2(base + hours).toFixed(2)} hours</b> - one hour
-                  for a missed meal and one for missed rest breaks on each day. Your sheet will be
-                  rebuilt.
-                </p>
-              </>
-            ) : (
-              <>
-                <p>
-                  You are telling us you took your breaks on{" "}
-                  <b className="text-foreground">
-                    all {took.length} {took.length === 1 ? "day" : "days"}
-                  </b>{" "}
-                  and simply did not write them down.
-                </p>
-                <p>
-                  Nothing changes. Your penalty pay stays at{" "}
-                  <b className="text-foreground">{r2(base).toFixed(2)} hours</b>.
-                </p>
-              </>
-            )}
-            {took.length > 0 && (
-              <p>
-                The times you gave go onto your timesheet as your own record of those breaks.
-              </p>
-            )}
-            {undecided.length > 0 && (
-              <p className="text-amber-700 dark:text-amber-400">
-                {undecided.length} {undecided.length === 1 ? "day is" : "days are"} still unanswered
-                and will stay that way. You cannot sign until every day has an answer.
-              </p>
-            )}
+            {/* EVERY TALLY AND EVERY FIGURE CAME OUT 2026-08-12, at Mánu's
+                instruction: the days-missed count, the penalty arithmetic
+                ("N hours of penalty pay go onto your timesheet, taking it from
+                X to Y"), the line about the times going on as their own record,
+                and the warning that unanswered days block signing - which is no
+                longer true in any case, since the sheet is signable at any time.
+                What is left is a plain confirm. */}
             <p className="text-xs">You can change your answer any time before you sign.</p>
           </div>
           <div className="mt-3 flex flex-wrap gap-2.5">
@@ -1417,7 +1565,14 @@ export function BatchConfirm() {
         <p className="mt-3 text-sm font-semibold text-rose-700 dark:text-rose-400">
           {err === "already"
             ? "This timesheet is already signed, so it cannot be changed."
-            : "That didn't save. Refresh the page and try again."}
+            // PREVIEW REFUSES EVERY WRITE ON PURPOSE - see `refuse` in page.js,
+            // which is what stops a test click landing on a real person's record.
+            // It came back as the generic failure, so the one person who ever
+            // sees it was told to refresh and try again, which cannot work: the
+            // block is the point, not a fault.
+            : err === "preview"
+              ? "Preview only - nothing is saved from this view. Open the employee's own link to answer for real."
+              : "That didn't save. Refresh the page and try again."}
         </p>
       )}
 
@@ -1431,7 +1586,7 @@ export function BatchConfirm() {
 }
 
 export default function TimesheetQuestion({
-  token, questions, answers, partials, answerTimes, waiting, disturbs, standing, submitAction,
+  token, questions, answers, partials, answerTimes, choices, waiting, disturbs, standing, submitAction,
   terse,
 }) {
   const list = questions || [];
@@ -1460,8 +1615,8 @@ export default function TimesheetQuestion({
   if (batched) {
     return (
       <div className={`mt-5 rounded-xl p-5 ${tone}`}>
-        <p className="text-base font-semibold text-foreground">{c.title}</p>
-        <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>
+        {c.title && <p className="text-base font-semibold text-foreground">{c.title}</p>}
+        {c.body && <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>}
         <BatchProvider
           partials={partials}
           waiting={waiting}
@@ -1496,6 +1651,31 @@ export default function TimesheetQuestion({
         {c.dates?.length > 1 && (
           <p className="mt-1 font-mono text-xs text-muted">{c.dates.join("  ")}</p>
         )}
+        {/* WHAT IT LOOKS LIKE, AND WHAT WE MADE OF IT. Two lines rather than the
+            long card's paragraphs, but the same pair of facts - a question that
+            asks you to confirm a time has to show you the time. Our own reading
+            is marked, because "we think" is a proposal and the record is not. */}
+        {c.facts?.length > 0 && (
+          <dl className="mt-1.5 space-y-0.5">
+            {c.facts.map((f) => (
+              <div key={`${f.label}-${f.value}`} className="flex gap-2 text-xs leading-5">
+                <dt className="w-24 flex-none text-muted">{f.label}</dt>
+                <dd
+                  className={`font-mono ${
+                    f.ours ? "font-semibold text-foreground" : "text-foreground"
+                  }`}
+                >
+                  {f.value}
+                  {f.aside && (
+                    <span className="ml-2 font-sans font-semibold text-rose-700 dark:text-rose-400">
+                      {f.aside}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
         <div className={perDay ? "mt-2" : ""}>
           {list.map((q) => (
             <OneQuestion
@@ -1505,6 +1685,7 @@ export default function TimesheetQuestion({
               answer={answers?.[q.id] || null}
               answerHasTimes={!!partials?.[q.id]}
               answerTimes={answerTimes?.[q.id] || null}
+              savedChoice={choices?.[q.id] || null}
               locked={waiting?.has?.(q.id)}
               disturbCount={(disturbs?.[q.id] || []).length}
               standing={standing}
@@ -1561,6 +1742,7 @@ export default function TimesheetQuestion({
             answer={answers?.[q.id] || null}
             answerHasTimes={!!partials?.[q.id]}
             answerTimes={answerTimes?.[q.id] || null}
+            savedChoice={choices?.[q.id] || null}
             locked={waiting?.has?.(q.id)}
             disturbCount={(disturbs?.[q.id] || []).length}
             standing={standing}

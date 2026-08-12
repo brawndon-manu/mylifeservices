@@ -1,5 +1,7 @@
 import { parseLooseTime } from "@/lib/loose-time";
+import { movesHours } from "@/lib/timesheet/questions";
 import DayCalendar from "./DayCalendar";
+import { StagedTimesProvider } from "./StagedTimes";
 import TimesheetQuestion, {
   BatchProvider,
   BatchDays,
@@ -28,8 +30,8 @@ import TimesheetQuestion, {
 //     it went - rendering it under each of its dates would put three copies of
 //     one question on the page, each able to answer for all three.
 export default function DayByDay({
-  days, groups, token, answers, partials, answerTimes,
-  waiting, disturbs, standing, submitAction,
+  days, groups, token, answers, partials, answerTimes, choices,
+  waiting, disturbs, standing, submitAction, scheduled = {}, restsOnRecord = {},
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -55,17 +57,94 @@ export default function DayByDay({
     return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
   };
 
-  const restsByDate = new Map();
+  // THE REPORT'S OWN ROWS FIRST, matched to this person on the server, and the
+  // question's `known` list only where a date has none.
+  //
+  // `known` was the only source until 2026-08-12 and it has a hole in it: it
+  // lives on a question, so a day with nothing left to ask carries no times at
+  // all. His 07/30 records a rest, asks nothing, and drew nothing. The rows
+  // cover every day; the questions add back anything the employee has since
+  // CORRECTED, which the report cannot know about.
+  const restsByDate = new Map(
+    Object.entries(restsOnRecord).map(([date, list]) => [date, list.map((r) => ({ ...r }))]),
+  );
   for (const group of groups) {
     for (const q of group) {
       const known = (q.needs || []).find((n) => n.kindOf === "rest")?.known;
-      if (!known?.length || !q.date || restsByDate.has(q.date)) continue;
+      if (!known?.length || !q.date) continue;
       const placed = known
         .map((k) => ({ min: toMinutes(k.from), corrected: k.corrected }))
         .filter((k) => k.min != null);
-      if (placed.length) restsByDate.set(q.date, placed);
+      if (!placed.length) continue;
+      // a corrected time supersedes the row it corrects, so these win outright
+      if (placed.some((p) => p.corrected) || !restsByDate.has(q.date)) {
+        restsByDate.set(q.date, placed);
+      }
     }
   }
+
+  // WHAT WE THINK A MIS-ENTERED BREAK WAS, drawn where we think it was.
+  //
+  // Mánu 2026-08-12: "there's what it looks like, and we put our estimate."
+  // Dinley 08/07 is the case that makes it matter - the report has a rest from
+  // 11:00 AM to 11:10 PM, twelve hours long, and the engine reads it as the IN
+  // time picked as PM. The card now says what the record holds and what we make
+  // of it, but the calendar beside it drew neither: the bad row is not counted
+  // so it is not on record, and the repair is only a proposal. The picture and
+  // the question looked like they were about different days.
+  //
+  // Drawn like a half-typed answer rather than like a fact, because that is what
+  // it is - a reading somebody still has to confirm.
+  //
+  // NOT WHERE THE ROW IS ALREADY DRAWN THERE. Since `drawnRest` started placing
+  // a repaired row at its CORRECTED time, the record and the proposal are the
+  // same ten minutes: Martinez 07/23 drew "Rest (corrected) 3:50p-4p" and "We
+  // think 3:50p-4p" in two lanes beside each other, both truncated to make room
+  // for the other, on a day that has one break. The applied correction is the
+  // better block - it is what the signed sheet draws - so the guess gives way.
+  const proposalsByDate = new Map();
+  for (const group of groups) {
+    for (const q of group) {
+      const at = toMinutes(q.proposed?.from);
+      if (at == null || !q.date) continue;
+      if ((restsByDate.get(q.date) || []).some((r) => r.min === at)) continue;
+      const list = proposalsByDate.get(q.date) || [];
+      list.push({ min: at, minutes: q.row?.minutes || 10, kind: "rest" });
+      proposalsByDate.set(q.date, list);
+    }
+  }
+
+  // THE HOURS WE HAVE ON FILE, NOT THE HOURS AN ANSWER COULD REACH.
+  //
+  // A ten logged outside a shift is paid at face value, so the engine's figure
+  // for Uribe 07/28 is 6.17 - and putting that at the top of the card, above a
+  // question about whether the ten happened, advertises what the generous answer
+  // is worth. Mánu 2026-08-12: "if they see a higher number that's there, there
+  // will be incentive for them to be... yep. That's when I took it so they can
+  // get those extra ten minutes paid. that's why we're just asking the way we
+  // are."
+  //
+  // So the card shows the figure BEFORE the addition until they confirm it, and
+  // only then does 6.00 become 6.17. THIS IS THE CORRECTIONS VIEW ONLY - the
+  // stored figure, the payroll total and the signed sheet are all untouched, and
+  // silence still resolves to paid exactly as it did. What changes is what the
+  // screen leads with while somebody is deciding.
+  const moverFor = (date) =>
+    groups.flat().find((q) => movesHours(q.kind) && (q.dates || [q.date]).includes(date)) || null;
+
+  const onFile = (day) => {
+    const added = day.addedHours || 0;
+    if (!added) return day.paidHours || 0;
+    const q = moverFor(day.date);
+    const confirmed = q && answers?.[q.id] === "yes";
+    return confirmed ? day.paidHours || 0 : (day.paidHours || 0) - added;
+  };
+
+  // whether this date's breaks row is still waiting on the ten above it. Reads
+  // `waiting` from `dependencyGate` rather than re-deciding, so the row that
+  // hides here is exactly the row the server would have refused.
+  const gatedOn = (date) =>
+    (batched || []).some((q) => q.date === date && waiting?.has?.(q.id));
 
   const anchored = new Map();   // date -> [group]
   const alsoAsked = new Map();  // date -> [anchor date]
@@ -100,6 +179,7 @@ export default function DayByDay({
       answers={answers}
       partials={partials}
       answerTimes={answerTimes}
+      choices={choices}
       waiting={waiting}
       disturbs={disturbs}
       standing={standing}
@@ -123,15 +203,37 @@ export default function DayByDay({
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <h3 className="font-mono text-sm font-semibold text-foreground">{day.date}</h3>
               <p className="text-sm text-muted">
-                {(Math.round((day.paidHours || 0) * 100) / 100).toFixed(2)} hrs
+                {(Math.round(onFile(day) * 100) / 100).toFixed(2)} hrs
               </p>
             </div>
 
             {/* the picture beside the question on a wide screen, above it on a
                 phone - so the day is still in front of you while you answer */}
             <div className="mt-3 gap-5 sm:flex sm:items-start">
-              <div className="shrink-0 sm:w-52">
-                <DayCalendar day={day} rests={restsByDate.get(day.date) || []} />
+              {/* WIDENED TWICE. w-52 truncated every label to "Res..." as soon
+                  as two breaks shared a lane, and w-64 was still tight.
+
+                  THE CEILING IS THE ANSWER OPTIONS, not the calendar. The card
+                  caps at max-w-5xl, so there is about 916px of content; the
+                  three-outcome cards are `basis-60` and need ~492px to stay two
+                  to a row rather than stacking. 384px here left 512px, which
+                  cleared it - and anything wider started costing the questions
+                  more than it gave the picture.
+
+                  THE PAGE PAID FOR THE THIRD WIDENING. Mánu 2026-08-12: "let's
+                  extend the width of the calendar in the time sheet views
+                  because for the overlaps, I can't see what kind of service it
+                  is." Taking the extra 64px off the questions would have stacked
+                  them, so `page.js` went to max-w-6xl instead - about 1104px of
+                  content, which leaves the options 636px and breaks nothing. The
+                  ceiling this note describes still holds; the budget grew. */}
+              <div className="shrink-0 sm:w-80 lg:w-[28rem]">
+                <DayCalendar
+                  day={day}
+                  rests={restsByDate.get(day.date) || []}
+                  scheduled={scheduled[day.date] || []}
+                  proposed={proposalsByDate.get(day.date) || []}
+                />
               </div>
               <div className="mt-4 min-w-0 flex-1 sm:mt-0">
                 {/* THE HOUR-MOVING QUESTION FIRST, THEN THE BREAKS ROW.
@@ -142,7 +244,21 @@ export default function DayByDay({
                     matches what has to happen: the answer that re-derives the
                     day is given before the premium question that reads it. */}
                 {mine.map(card)}
-                {batchDates.has(day.date) && <BatchDays dates={[day.date]} />}
+                {/* THE DOMINO. A day's breaks row only exists because the ten
+                    above it pushed the day past six hours - which owes a lunch
+                    and a second rest that a 6.00 day does not. Until that is
+                    confirmed the entitlement is hypothetical, so the row is not
+                    shown at all rather than shown greyed out saying "waiting".
+                    Mánu 2026-08-12: "That should only appear once they answer
+                    the question in that same card... then another part opens up
+                    ... Domino effect."
+
+                    Answering the other way needs nothing here: declining moves
+                    the day back to 6.00 and `reentitle` stops generating these
+                    questions at all, so they never come back. */}
+                {batchDates.has(day.date) && !gatedOn(day.date) && (
+                  <BatchDays dates={[day.date]} />
+                )}
                 {!asks &&
                   (elsewhere.length > 0 ? (
                     <p className="text-sm text-muted">
@@ -162,7 +278,10 @@ export default function DayByDay({
     </ol>
   );
 
+  // the calendars and the answer boxes are cousins in this tree, not parent and
+  // child, so the half-typed time gets to them through here
   return (
+    <StagedTimesProvider>
     <div className="mt-5">
       {undated.length > 0 && <div className="mb-6">{undated.map(card)}</div>}
 
@@ -194,5 +313,6 @@ export default function DayByDay({
         list
       )}
     </div>
+    </StagedTimesProvider>
   );
 }

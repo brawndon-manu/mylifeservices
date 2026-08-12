@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  recordedBreaksFor, shortTime, insertRecordedBreaks, withStatedRest,
+  recordedBreaksFor, shortTime, insertRecordedBreaks, withStatedRest, drawnBreaksFor,
 } from "../recorded-breaks.js";
 import { renderCorrected } from "../render.js";
 
@@ -561,4 +561,61 @@ test("the sheet says a stated time came from the employee", async () => {
     { printedBy: "Test, Person", generatedOn: "8/9/2026" },
   );
   assert.doesNotMatch(await pdfText(plain.bytes), /you told us/);
+});
+
+// THE ANSWER HAS TO MOVE THE PICTURE.
+//
+// Uribe 07/28: the report logs a ten at 12p-12:10p against a 10a-12p shift. He
+// answered "the time was entered wrong - it was 11:50a", which writes a
+// `statedBreaks` entry carrying `replaces: {from:"12p", to:"12:10p"}`. The sheet
+// has always applied that through `withStatedBreaks`; his own calendar built its
+// list straight from the report rows, so it kept drawing 12p-12:10p under a card
+// reading "your timesheet has been rebuilt". `drawnBreaksFor` is the one place
+// that now folds the answer in for both.
+const ROW_1228 = {
+  name: "Uribe, Brandon", date: "07/28/26", out: "12:00 PM", in: "12:10 PM",
+  minutes: 10, counted: true, reversed: false, kind: null,
+};
+const ANSWERED = {
+  date: "07/28/26", mealScheduled: false,
+  statedBreaks: [{
+    date: "07/28/26", from: "11:50a", to: "12p", minutes: 10, kindOf: "rest",
+    replaces: { from: "12p", to: "12:10p" },
+  }],
+};
+
+test("an answered break is drawn where the employee said it was", () => {
+  const blocks = drawnBreaksFor([ROW_1228], ANSWERED, { mealScheduled: false });
+  assert.equal(blocks.length, 1, "the recorded row it replaced stops being drawn");
+  assert.equal(blocks[0].min, 11 * 60 + 50);
+  assert.equal(blocks[0].minutes, 10);
+  assert.equal(blocks[0].corrected, true, "so the block can say (you corrected this)");
+});
+
+test("an unanswered day is untouched - the record stands", () => {
+  const blocks = drawnBreaksFor([ROW_1228], { date: "07/28/26" }, { mealScheduled: false });
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].min, 12 * 60, "drawn at 12p, exactly as the report holds it");
+  assert.ok(!blocks[0].corrected);
+});
+
+test("a break they simply told us about is added, not called a correction", () => {
+  const day = {
+    date: "07/28/26",
+    statedBreaks: [{ from: "3p", to: "3:10p", minutes: 10, kindOf: "rest" }],
+  };
+  const blocks = drawnBreaksFor([ROW_1228], day, { mealScheduled: false });
+  assert.equal(blocks.length, 2, "the recorded one stays - nothing replaced it");
+  const added = blocks.find((b) => b.min === 15 * 60);
+  assert.ok(added, "and theirs is drawn at 3p");
+  assert.ok(!added.corrected, "it replaced no record, so it is not a correction");
+});
+
+test("blocks come back in clock order", () => {
+  const day = {
+    date: "07/28/26",
+    statedBreaks: [{ from: "9a", to: "9:10a", minutes: 10, kindOf: "rest" }],
+  };
+  const blocks = drawnBreaksFor([ROW_1228], day, { mealScheduled: false });
+  assert.deepEqual(blocks.map((b) => b.min), [9 * 60, 12 * 60]);
 });

@@ -24,11 +24,40 @@ export const ANOMALY_KINDS = {
   },
   backwards_segment: {
     label: "Clocked out before clocking in",
+    // left as it was: this one really does move a figure. A negative stretch is
+    // subtracted from the day, which is a genuine cost and worth saying plainly.
     why: "The clock-out is earlier than the clock-in, so this stretch counts as negative time and quietly reduces the day.",
   },
+  // THE KEY STAYS `reversed_break`; THE WORDS DO NOT.
+  //
+  // Stored `punchIssues` on every existing batch carry this string, so renaming
+  // it would orphan them. But nothing a person reads should use it. Mánu
+  // 2026-08-12: "I still don't get what you mean by break running backwards ...
+  // The break is from twelve thirty to one PM. Full stop."
+  //
+  // He is right, and the name was the engine talking to itself. It assumes
+  // punches alternate work-gap-work-gap, so it calls ANY space between two work
+  // segments a break; when two bookings overlap, that space computes to minus
+  // thirty minutes and the condition got named after the arithmetic. There is no
+  // second break on her day. There is one meal at 12:30, and two bookings that
+  // run at the same time.
   reversed_break: {
-    label: "Clocked back in before clocking out",
-    why: "The time out and time in look swapped - the break reads backwards, so it isn't counted as a rest period at all.",
+    label: "Two bookings at the same time",
+    // SAME CORRECTION AS THE `note` IN `findAnomalies` - this said "so it isn't
+    // counted as a rest period at all", and rest credit has come only from the
+    // Rest Periods Report since 2026-08-06. Two places said it, so both had to
+    // change: a stale sentence repeated is still read once.
+    //
+    // On the live batches this shape is ALWAYS two concurrent bookings rather
+    // than a typo - 22 of 22 across both, with the schedule confirming the paid
+    // figure on every one - so the wording leads with that instead of implying
+    // somebody mis-keyed a punch.
+    why:
+      "Two bookings run at the same time and QSP bills both in full, but a row of "
+      + "punches can only say one thing at once - so it writes them one after the "
+      + "other and the second one starts before the first has ended. Nothing was "
+      + "mis-punched and no break is involved: hours are unaffected, and rest "
+      + "credit comes from the Rest Periods Report rather than from the punches.",
   },
 };
 
@@ -79,7 +108,21 @@ export function findAnomalies(day) {
           at: i + 1,
           shown: `out ${hm(p[i + 1].min)}, back in ${hm(next.min)}`,
           countedMin: gap,
-          note: "the break reads backwards so no rest period is credited",
+          // WHAT IT COSTS, WHICH IS NOTHING. This said "so no rest period is
+          // credited" until 2026-08-12, and that stopped being true on 08-06
+          // when the export set was cut to three reports: rest credit now comes
+          // only from the Rest Periods Report - `restTaken` is `restRecorded`
+          // plus short-meal blocks and nothing else - so a punch gap running
+          // backwards costs nobody a break.
+          //
+          // It matters because of what this screen is FOR. Every one of the 22
+          // rows in this category across both live batches is two concurrent
+          // bookings written as one punch run, the schedule confirms the paid
+          // figure on all 22, and the sentence was telling whoever reads it
+          // that somebody had lost a rest period over it.
+          note:
+            "the second booking starts before the first one ends. Hours are "
+            + "unaffected and no break is involved",
         });
       }
     }

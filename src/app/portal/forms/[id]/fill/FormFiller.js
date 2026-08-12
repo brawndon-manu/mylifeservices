@@ -69,6 +69,9 @@ function sendErrorText(code) {
       // a rest period has to sit inside a shift that was worked - the same rule
       // the "outside your scheduled hours" question is about
       outsideshift: "That break time is outside the shift you worked. Pick a time inside it.",
+      // the mirror of the above for lunch: a rest goes INSIDE a shift, a meal
+      // goes in the gap between two, and only where a full half hour fits
+      nolunchgap: "There isn't a free half hour at that time. Pick one of the gaps offered.",
     }[code] || "Couldn't send. Please try again."
   );
 }

@@ -14,6 +14,7 @@
 // rebuilding all 59 documents; now it means deploying.
 
 import { renderCorrected } from "./render.js";
+import { restNameFor } from "./rests.js";
 import { addedOvertimeHours } from "./parse.js";
 import { applyAssumptions, premiumsFromDays } from "./premium-split.js";
 
@@ -32,17 +33,30 @@ import { applyAssumptions, premiumsFromDays } from "./premium-split.js";
 //
 //   projected   every fault the reports show, with its penalty. THE DEFAULT,
 //               the copy that is emailed and signed, and what payroll pays.
-//   assumed     every policy assumption applied - breaks assumed taken, minutes
-//               assumed mis-tapped. Blind to the answers on purpose: it is the
-//               engine's alternative reading, and comparing it to what came back
-//               is the entire point of having it.
 //   corrected   the same, WITH the answers folded in. An assumption somebody has
 //               settled by telling us they missed the break is NOT applied here,
 //               so the gap between the two is the work the batch has done.
 //
-// Only `projected` may be served from a stored blob. The other two are opinions
-// about an open question and have to be built from what is true right now.
-export const BASES = ["projected", "assumed", "corrected"];
+// `assumed` WAS A THIRD ONE AND IS GONE, removed 2026-08-12. It rendered every
+// policy assumption applied and blind to the answers, and it earned its place
+// while the engine actually APPLIED one: an off-clock ten was paid on sight, so
+// there was a real reading where the assumptions held and a reading where they
+// did not, and holding the two side by side was the point.
+//
+// The same day's reversal - "only add the time once they confirm it was taken
+// there" - means the engine assumes nothing on its own, so that render had
+// become the projected one with a different name and a different filename. Two
+// names for one document above somebody's signature is exactly what the
+// renaming note above this exists to prevent.
+//
+// NOT the same thing as `premiumStanding().ifAssumptionsHold`, which is alive
+// and still means something: what the premium total WOULD come to if every open
+// question came back confirmed. That is a figure about unanswered questions, not
+// a document that pretends they were.
+//
+// Only `projected` may be served from a stored blob. `corrected` is an opinion
+// about an open question and has to be built from what is true right now.
+export const BASES = ["projected", "corrected"];
 
 // Everything a render needs, so every caller selects the same fields and none
 // of them quietly omits one and produces a subtly different document.
@@ -63,24 +77,35 @@ export const RENDER_SELECT = {
 // document has to add up.
 const sum = (days, k) => Math.round(days.reduce((n, d) => n + (d[k] || 0), 0) * 100) / 100;
 
-export async function renderSheet(ts, { basis = "projected", confirmed, answers, pastDue } = {}) {
+export async function renderSheet(ts, { basis: asked = "projected", confirmed, answers, pastDue } = {}) {
   const d = ts.data || {};
   const stored = d.days || [];
   if (!stored.length) return null;
 
-  // The assumed copy is the engine's own alternative reading, so it is
-  // deliberately blind to `confirmed`: an answer belongs to the corrected copy.
+  // AN UNKNOWN BASIS BECOMES THE DEFAULT, and it has to be normalised HERE
+  // rather than only at the route. `basis` is passed on to `renderCorrected`,
+  // which prints the banner from the string - so when `assumed` was removed
+  // below without this, a stale `?basis=assumed` produced the PROJECTED days
+  // under a page header reading "IF EVERY ASSUMPTION HOLDS - reference copy,
+  // not a payslip". Wrong days is a bug; wrong days under a confident heading
+  // is the kind that gets signed.
+  const basis = BASES.includes(asked) ? asked : "projected";
+
   // `projected` is the stored days untouched, which is the whole point of it.
+  // An unknown basis lands here too, which is the safe way round: the default
+  // is the document payroll actually pays.
   const days =
-    basis === "assumed"
-      ? applyAssumptions(stored, { pastDue: false })
-      : basis === "corrected"
-        ? applyAssumptions(stored, { confirmed, answers, pastDue })
-        : stored;
+    basis === "corrected"
+      ? applyAssumptions(stored, { confirmed, answers, pastDue })
+      : stored;
 
   return renderCorrected(
     {
       employee: ts.sourceName,
+      // the spelling the Rest Periods Report used, which is what the Breaks
+      // column is matched on. Separate from `employee`, which is what the page
+      // PRINTS - the sheet has to carry the name payroll knows them by.
+      restName: restNameFor(ts.sourceName, d),
       payPeriod: d.payPeriod || { from: ts.batch?.periodFrom, to: ts.batch?.periodTo },
       days,
       basis,

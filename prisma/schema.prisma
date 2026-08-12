@@ -653,6 +653,18 @@ model TimesheetBatch {
   // whether sends from this batch were redirected to the test inbox. recorded
   // per batch so a test run can never be mistaken for a real one later.
   testMode     Boolean  @default(true)
+  // uploaded before the pay period ended, with the days that had not happened
+  // yet dropped. Recorded for the same reason testMode is: this batch's hours
+  // are a partial record, its last workweek is cut off mid-week, and nothing
+  // else on the batch would say so afterwards.
+  partialPeriod Boolean @default(false)
+  // the first and last day that actually survived the trim, e.g. "08/01/26" and
+  // "08/09/26". periodFrom/periodTo still say what QSP printed on the export,
+  // because that is what the document says - and on a partial upload the two
+  // disagree on purpose, since QSP returns the whole period whatever range it
+  // was asked for.
+  partialFrom    String?
+  partialThrough String?
   uploadedById String
   uploadedBy   User     @relation("TimesheetBatchUploadedBy", fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
@@ -753,6 +765,39 @@ model Timesheet {
 // one thing an employee says is wrong with their timesheet. scoped to a single
 // day where it makes sense, because that's how people actually report it ("the
 // 20th is wrong"), and because accepting one has to adjust exactly one day.
+// SOMEBODY HAS PUT A RED MARK ON A DATA-CHECKS ROW.
+//
+// Mánu 2026-08-12: "on the bottom right of each card, let's also add a little
+// mark as red button that then puts whoever presses it as marked as red using
+// their avatar picture." It is a working marker between the people reviewing a
+// batch - "I have looked at this and it needs someone" - not a figure and not
+// anything the employee ever sees.
+//
+// SCALARS ONLY, no relation to User or TimesheetBatch. Two reasons: the marker
+// is a record of who flagged it AT THE TIME, so it should not follow a later
+// rename or a changed avatar, and a row whose user is deleted should keep
+// saying somebody flagged it rather than cascade away. So `batchId` does NOT
+// cascade either, and `deleteBatch` clears these rows itself - unlike the
+// corrections, which fall away with their own relation. Without that a deleted
+// batch left its red marks behind and a re-upload could inherit them on any
+// row key that happened to match.
+//
+// `rowKey` is the checks screen's own key for a card, which already has to be
+// stable enough to be a React key across renders.
+model TimesheetCheckFlag {
+  id           String   @id @default(cuid())
+  batchId      String
+  rowKey       String
+  flaggedById  String
+  // copied at the moment of flagging, so the mark keeps saying who put it there
+  flaggedName  String?
+  flaggedImage String?
+  createdAt    DateTime @default(now())
+
+  @@unique([batchId, rowKey])
+  @@index([batchId])
+}
+
 model TimesheetCorrection {
   id          String    @id @default(cuid())
   timesheetId String
@@ -777,6 +822,20 @@ model TimesheetCorrection {
 
   // open | accepted | declined
   status         String    @default("open")
+  // THE ANSWER THEY ACTUALLY PICKED, where a kind offers more than two.
+  //
+  // `status` collapses everything that is not "yes" into "declined", which was
+  // enough while every card had two outcomes. It is lossy for a three-outcome
+  // one: `restTooLongOffClock` asks whether two lunches are both real, whether
+  // the second was added by accident, or whether the ROSTERED one is the wrong
+  // record - and the last two are both declines that move no figure, so on
+  // reload nothing could tell them apart. The client was guessing from whether
+  // times came back with the answer.
+  //
+  // Null on every row written before 2026-08-12, and on any answer whose status
+  // already says everything - readers fall back to `status`.
+  choice         String?
+
   resolvedAt     DateTime?
   resolvedById   String?
   resolvedBy     User?     @relation("TimesheetCorrectionResolvedBy", fields: [resolvedById], references: [id])

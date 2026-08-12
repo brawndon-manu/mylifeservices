@@ -17,8 +17,8 @@
 // shapes, then re-derive from the stored day alone and demand the same answer.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyzeDay, reentitle, restsRequired } from "../parse.js";
-import { applyOverrides } from "../corrections.js";
+import { analyzeDay, reentitle, restsRequired, applyOvertime } from "../parse.js";
+import { applyOverrides, recomputeSheet } from "../corrections.js";
 import { patchesFor } from "../questions.js";
 
 const at = (h, m = 0) => ({ min: h * 60 + m });
@@ -166,4 +166,67 @@ test("taking the minutes off stops the sheet declaring them as added", () => {
   const [kept] = applyOverrides([d], { "07/28/26": patchesFor(q, "yes", d) });
   assert.equal(kept.paidHours, 6.17);
   assert.equal(kept.addedHours, 0.17, "still added, so still declared");
+});
+
+// AN ANSWER MUST SURVIVE THE RE-DERIVATION IT TRIGGERS.
+//
+// Dinley 08/07: her 11:00 AM rest is filed to 11:10 PM, so it is not counted and
+// the day reads one of two taken. She answers "yes, I took that break". The
+// override sets `restViolation: false` - and `reentitle`, which works the
+// violation out from `restTaken < restRequired`, put it straight back to true on
+// every rebuild. Her answer was recorded and then computed away, and the sheet
+// went on charging her for a break she had confirmed.
+test("a confirmed repair counts the break and the violation stays cleared", () => {
+  const day = {
+    date: "08/07/26",
+    paidHours: 6.5,
+    restRequired: 2,
+    restTaken: 1,
+    restRecorded: 1,
+    restUnknown: false,
+    restViolation: true,
+    mealScheduled: false,
+    mealsRostered: 1,
+    punches: [{ min: 9 * 60 + 30 }, { min: 16 * 60 }],
+    breaks: [],
+    rawHours: 6.5,
+    regularHours: 6.5,
+    otHours: 0,
+    doubleHours: 0,
+    printed: { daily: 6.5 },
+  };
+  const patch = patchesFor({ kind: "repair" }, "yes", day);
+  assert.equal(patch.restTaken, 2, "the repaired ten is counted as taken");
+  assert.equal(patch.restViolation, false);
+
+  const out = recomputeSheet(
+    { days: [day], payPeriod: null, overrides: { "08/07/26": patch } },
+    applyOvertime,
+    reentitle,
+  );
+  const got = out.days[0];
+  assert.equal(got.restTaken, 2, "two of two on the rebuilt day");
+  assert.equal(
+    got.restViolation,
+    false,
+    "and reentitle does not put the violation back from the old count",
+  );
+});
+
+test("an explicit answer outranks reentitle even when the counts disagree", () => {
+  // restNoTimes clears the violation WITHOUT touching restTaken, so the counts
+  // still read short - the answer has to win anyway
+  const day = {
+    date: "08/07/26", paidHours: 8, restRequired: 2, restTaken: 0,
+    restUnknown: false, restViolation: true, mealScheduled: false, mealsRostered: 1,
+    punches: [{ min: 9 * 60 }, { min: 17 * 60 }], breaks: [],
+    rawHours: 8, regularHours: 8, otHours: 0, doubleHours: 0, printed: { daily: 8 },
+  };
+  const out = recomputeSheet(
+    { days: [day], payPeriod: null, overrides: { "08/07/26": { restViolation: false } } },
+    applyOvertime,
+    reentitle,
+  );
+  assert.equal(out.days[0].restViolation, false);
+  assert.equal(out.days[0].restRequired, 2, "the entitlement is still re-derived");
 });

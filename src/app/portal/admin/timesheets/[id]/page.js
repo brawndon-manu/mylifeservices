@@ -15,8 +15,11 @@ import {
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "../_components/SendModeBanner";
 import ReviewTable from "../_components/ReviewTable";
+import { signTimesheetToken } from "@/lib/timesheet-token";
+import { isSuper } from "@/lib/roles";
 import SendPanel from "../_components/SendPanel";
 import DeleteBatchButton from "../_components/DeleteBatchButton";
+import ResetAnswersButton from "../_components/ResetAnswersButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
 import { companyDate } from "@/lib/company-time";
 
@@ -111,17 +114,33 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   }
   const premiumSplit = splitPremiumForSheets(batch.timesheets, { confirmedBySheet });
 
+  // SEEING EXACTLY WHAT ONE EMPLOYEE SEES, without waiting for their email.
+  //
+  // Mánu 2026-08-12: "I want super privileges to be able to test run every
+  // employee's time sheet corrections and generated time sheet." The link is the
+  // employee's own signed token, so what opens is not an admin rendering of
+  // their sheet - it IS their sheet, down to the questions and the figures.
+  //
+  // SUPER ONLY, AND NOT BECAUSE THE PAGE IS SECRET. That token is a bearer
+  // credential: whoever holds it can answer and sign as that person, and this
+  // batch already lost one answer to a stray click. So the link is minted only
+  // for the one role that could reach everything anyway, and it opens in preview
+  // mode - see `?preview=1` and the banner it raises on the far side.
+  const canPreview = isSuper(user?.role);
+
   const rows = batch.timesheets.map((t) => {
     // THE SAME THREE FIGURES THE THREE DOCUMENTS PRINT, computed from the
     // function the documents are built with rather than read off the stored
     // column. Every link on the row carries the total it is about to open, so
     // nobody has to click twice to find out which one they wanted.
     const split = splitPremium(t.data?.days || [], { confirmed: confirmedBySheet[t.id] });
-    const engineOnly = splitPremium(t.data?.days || []);
     const progress = progressFor(t);
     return {
     id: t.id,
     sourceName: t.sourceName,
+    // null for everyone but SUPER, so the token never reaches a page that is
+    // not entitled to it
+    previewToken: canPreview ? signTimesheetToken(t.id) : null,
     matchMethod: t.matchMethod,
     confidence: t.data?.confidence ?? null,
     suggestions: (t.data?.suggestions || []).map((s) => ({
@@ -136,12 +155,15 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     otHours: t.otHours,
     doubleHours: t.doubleHours,
     premiumHours: t.premiumHours,
-    // projected = every fault charged, which is the sheet that goes out.
-    // assumed   = every policy assumption applied, blind to the answers.
-    // corrected = the same with this person's answers folded in.
+    // projected = every fault charged, which is the sheet that goes out, and
+    // now the only figure a row quotes.
+    //
+    // `premiumAssumed` and `premiumCorrected` were both here and both went on
+    // 2026-08-12 - the first with the `assumed` render basis, the second with
+    // the "as corrected" link. Each was read by exactly one thing, a preview-PDF
+    // link, and the column is two documents now: the projected sheet and the
+    // signed one. See the note on `SheetLinks`.
     premiumProjected: split.projected,
-    premiumAssumed: engineOnly.ifAssumptionsHold,
-    premiumCorrected: split.ifAssumptionsHold,
     partialWeek: t.partialWeek,
     // a lunch that HAPPENED but started after the fifth hour still owes a
     // premium, and it reads as an error to anyone who remembers taking it.
@@ -228,6 +250,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const unmatched = total - matched;
   const sent = rows.filter((r) => r.sentAt).length;
   const signed = rows.filter((r) => r.signedAt).length;
+  // what a reset would destroy, counted from the rows already loaded rather than
+  // with a second query - the `q_` rows ARE the answers
+  const answersGiven = batch.timesheets.reduce(
+    (n, t) => n + t.corrections.filter((c) => String(c.kind || "").startsWith("q_")).length,
+    0,
+  );
   const approved = rows.filter((r) => r.approvedAt).length;
   const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
   const disputed = rows.filter((r) => r.disputed).length;
@@ -320,6 +348,27 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         {sourceDocs > 0 && ` · ${sourceDocs} source document${sourceDocs === 1 ? "" : "s"}`}
       </p>
 
+      {/* THE TESTING ROW, up with the batch's own numbers rather than buried in
+          the downloads card three screens down - which is where this sat first,
+          and Mánu could not find it: "I don't see the test button."
+
+          Its neighbours matter. Next to Delete it read as another way to throw
+          the batch away; up here, beside the counts it is about to change, it
+          reads as what it is. SUPER only, same gate as the preview links. */}
+      {canPreview && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border-strong bg-surface-2 px-3 py-2">
+          <p className="text-xs text-muted">
+            <b className="text-foreground">Testing.</b> Answer as anyone from
+            their row below, then put every question back with this.
+          </p>
+          <ResetAnswersButton
+            batchId={batch.id}
+            answers={answersGiven}
+            signed={signed}
+          />
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap gap-2 text-xs">
         <Stat label="employees" value={total} />
         <Stat label="matched" value={matched} tone={unmatched ? "warn" : "ok"} />
@@ -382,6 +431,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             period={`${batch.periodFrom} to ${batch.periodTo}`}
           />
         </div>
+
       </div>
 
       {punchDays > 0 && (
@@ -522,19 +572,6 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               <p className="mt-1 text-xs text-muted">
                 Every fault the reports show, taken literally, with its penalty.
                 This is what payroll pays, and it can only fall from here.
-              </p>
-            </div>
-            <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                Policy assumptions
-              </p>
-              <p className="mt-1 text-2xl font-semibold text-amber-900 dark:text-amber-200">
-                {premiumSplit.assumptions.toFixed(2)}
-              </p>
-              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200/80">
-                What comes off the figure beside this one if every employee
-                confirms our reading. None of it is applied yet, and it leaves{" "}
-                {premiumSplit.ifAssumptionsHold.toFixed(2)} hours if it all holds.
               </p>
             </div>
           </div>

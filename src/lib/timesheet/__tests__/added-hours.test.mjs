@@ -36,13 +36,35 @@ const OFF_CLOCK_DAY = {
   printed: null,
   restRecorded: 2,
   restsAlreadyPaid: true,
+  // CONFIRMED. Since 2026-08-12 the engine adds nothing for an off-clock rest
+  // on its own - Mánu: "only add the time once they confirm it was taken
+  // there" - so every "added" case below is a confirmed one, which is the only
+  // kind there is. The unconfirmed default has its own test at the top.
+  restsOffClockConfirmed: true,
   restTimes: [
     { out: 10 * 60, in: 10 * 60 + 10 },          // on the clock, already paid
     { out: 16 * 60 + 30, in: 16 * 60 + 40 },     // after clock-out, not paid
   ],
 };
 
-test("a rest taken off the clock adds its minutes, and the day says how many", () => {
+// THE DEFAULT, AND IT IS THE OPPOSITE OF WHAT IT WAS. Mánu 2026-08-12: "the
+// engine should automatically not add in more hours. It should treat it as put
+// in wrong and only add the time once they confirm it was taken there."
+//
+// From 2026-08-09 to 2026-08-12 these minutes were paid on sight and the
+// employee was asked afterwards whether to take them back off. This is the test
+// that pins which way silence goes, and it is the whole point of the reversal:
+// the sheet no longer asserts hours nobody has stood behind.
+test("an off-clock rest adds NOTHING until it is confirmed", () => {
+  const { restsOffClockConfirmed, ...unconfirmed } = OFF_CLOCK_DAY;
+  const d = analyzeDay(unconfirmed);
+  assert.equal(d.restsOffClock, 1, "still counted");
+  assert.equal(d.restsOffClockMin, 10, "and the minutes still reported, so it can be asked about");
+  assert.equal(d.addedHours, 0, "but nothing is added");
+  assert.equal(d.paidHours, 8, "and the day pays exactly what was worked");
+});
+
+test("a rest taken off the clock adds its minutes once confirmed, and the day says how many", () => {
   const d = analyzeDay(OFF_CLOCK_DAY);
   assert.equal(d.restsOffClock, 1);
   assert.equal(d.restsOffClockMin, 10);
@@ -143,7 +165,7 @@ test("a sheet with nothing added says nothing about adding", async () => {
 test("eleven ten-minute additions on eight-hour days are all overtime, and say so", () => {
   const day = (date) => ({
     date, punches: [at(8), at(16)], printed: { daily: 8 },
-    restRecorded: 2, restsAlreadyPaid: true,
+    restRecorded: 2, restsAlreadyPaid: true, restsOffClockConfirmed: true,
     restTimes: [
       { out: 7 * 60, in: 7 * 60 + 10 },        // before clock-in, like hers
       { out: 12 * 60 + 30, in: 12 * 60 + 40 }, // on the clock
@@ -191,6 +213,7 @@ test("sheets of every ordinary length render with the added paragraph on them", 
         printed: null,
         restRecorded: 1,
         restsAlreadyPaid: true,
+        restsOffClockConfirmed: true,
         restTimes: [{ out: 10 * 60, in: 10 * 60 + 10 }, { out: 17 * 60 + 30, in: 17 * 60 + 40 }],
       });
     }
@@ -270,7 +293,7 @@ test("stored totals equal the sum of the days as printed, not the rounded true s
   // eleven eight-hour days, each gaining a ten-minute off-clock rest
   const day = (date) => ({
     date, punches: [at(8), at(16)], printed: { daily: 8 },
-    restRecorded: 2, restsAlreadyPaid: true,
+    restRecorded: 2, restsAlreadyPaid: true, restsOffClockConfirmed: true,
     restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 12 * 60, in: 12 * 60 + 10 }],
   });
   const dates = ["07/16/26","07/17/26","07/20/26","07/21/26","07/22/26","07/23/26",

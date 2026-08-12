@@ -63,6 +63,43 @@ const MEAL_LENGTH_MAX_MIN = 90;
 // lunch - and with the reversed flag correctly gone, it drew "3:50p-3p", a meal
 // ending before it began. A mechanical fix beats a guess at intent, and the
 // repair question already covers the row.
+// DOES THIS ROW STAND AS A REST BREAK TAKEN?
+//
+// Read off the STORED row, so a change to the rule reaches batches already in
+// the database instead of needing them re-uploaded - the same reason
+// `isMealLengthRest` is written this way.
+//
+// A ROW THAT EXISTS IS A BREAK THAT HAPPENED. That is the whole rule now, and
+// LENGTH HAS NOTHING TO DO WITH IT. Mánu 2026-08-12: "if they show up in the
+// Rest period Report, for a certain day, for a certain shift, they took it. even
+// if there is no time, they took it. They just didn't document it. If the time
+// is ten years, they took it. There was just a mistake in typing. if they took
+// it for two minutes. It's a mistake. and can be fixed, but count it. breaks
+// under 10 minutes are no longer going to be treated as not taken."
+//
+// It arrived in three steps over one afternoon and they all pointed the same
+// way: first a repair the shift confirms, then any repair at all, then this.
+// Each time the thing being defended was a length - a two minute row, a twelve
+// hour row - and a length is a typing mistake, not an absence. Somebody stood in
+// the break room; a dropdown got the time wrong.
+//
+// A rest is PAID and on the clock, so counting one moves no hours. All it does
+// is stop the day owing a premium for a break it can see was taken.
+//
+// WHAT THIS STILL CANNOT DO is invent a break on a day the report holds nothing
+// for. Ford has five premium days and three rest rows; only one is a mis-click.
+// Removing a premium takes money OFF somebody, so a missing row stays missing.
+export function countsAsTaken(row) {
+  if (!row) return false;
+  if (row.counted === true) return true;
+  // THE ONE EXCEPTION, and it is not about length. A meal-length row on a day
+  // with no rostered lunch is being read as the LUNCH - drawn blue and striped,
+  // asked about as a meal. Counting it as a rest as well would let one entry
+  // clear two different violations, which is the same break paid for twice.
+  if (isMealLengthRest(row)) return false;
+  return true;
+}
+
 export function isMealLengthRest(row) {
   const mins = Number(row?.minutes);
   return !!row
@@ -156,6 +193,50 @@ function proposeRepair(out, back, shift = null) {
         : null,
     });
   }
+  // A WHOLE-ROW AM/PM SWAP, where BOTH times were picked on the wrong side.
+  //
+  // Paulin 08/07: a rest of 11:00 PM to 11:10 PM filed against a 10:00 AM to
+  // 12:00 PM shift. Mánu 2026-08-12: "I thought the engine auto fixed issues
+  // like this. that's an am/pm swap." It did not, and the reason is that every
+  // try above moves ONE field, which breaks the length - so a row whose length
+  // is already a perfect ten was never offered a repair at all. It sailed
+  // through as a counted rest sitting twelve hours from its own service.
+  //
+  // GATED HARD, because a both-field shift preserves the length and would
+  // otherwise "explain" every well-formed row on the sheet. It is only offered
+  // when the row does NOT sit inside its own service and the shifted version
+  // DOES - which is the whole evidence that a swap happened. Aranda 07/16 (a
+  // 3:00 PM rest on a 1:00-2:30 PM shift, really worked 2:30-5:00) shifts to
+  // 3:00 AM, fits nothing, and is correctly left alone.
+  const inShift = (o, i) =>
+    shift?.from != null && shift?.to != null && o >= shift.from && i <= shift.to;
+  if (!inShift(out, back)) {
+    for (const [delta, why] of [
+      [-720, "both times were picked as PM"],
+      [720, "both times were picked as AM"],
+    ]) {
+      const o = out + delta;
+      const i = back + delta;
+      if (o < 0 || i < 0 || o > 1439 || i > 1439) continue;
+      const mins = i - o;
+      if (mins < FULL_REST_MIN || mins > REST_LONG_MAX_MIN) continue;
+      if (!inShift(o, i)) continue;
+      found.push({
+        field: "both",
+        // both ends move, so the pair is quoted rather than one field
+        from: `${hhmm(out)} to ${hhmm(back)}`,
+        to: `${hhmm(o)} to ${hhmm(i)}`,
+        // and carried separately, so a consumer can place the block without
+        // parsing the sentence back apart
+        outTo: hhmm(o),
+        inTo: hhmm(i),
+        minutes: mins,
+        why,
+        fits: true,
+      });
+    }
+  }
+
   if (!found.length) return null;
   return found.find((f) => f.fits === true) || found[0];
 }
@@ -233,11 +314,65 @@ export function classifyRest(row) {
   const repairIfBad = proposeRepair(out, back, shift);
   const trulyReversed = reversed && !repairIfBad;
 
+  // A REPAIR THE SHIFT CONFIRMS IS APPLIED, NOT MERELY OFFERED.
+  //
+  // Mánu 2026-08-12 on Dinley 08/07: "The engine and the projection engine
+  // should always count that as a break taken even if it extends way fucking
+  // longer than a ten should be. What the engine should also do is assume the
+  // correction. Change it. Change it in the time sheet. And just to have them
+  // sign off, we ask it anyway even though we already know the answer. It's
+  // rhetorical."
+  //
+  // Her row reads 11:00 AM to 11:10 PM - twelve hours and ten minutes, which is
+  // not a rest period and not a shift either. One field explains it: the IN was
+  // picked as PM. Corrected it is 11:00-11:10 AM, ten minutes, sitting inside
+  // the 9:30-12:30 service it was filed against. Treating that as "no break" was
+  // charging somebody a premium over a dropdown.
+  //
+  // ANY row at all, whatever it says - see `countsAsTaken`. A repair, where one
+  // exists, is what the row is COUNTED as and where it is drawn; without one the
+  // row still counts and still gets asked about.
+  //
+  // The row keeps its RECORDED minutes so the question can still show what the
+  // document says, and carries `countedMinutes` for what it is being counted as.
+  // The question is still asked - see `buildQuestions`, which generates it from
+  // `repair` and not from `counted` - because a swapped AM/PM is exactly the
+  // thing worth having somebody look at, even when we are confident.
+  if (repairIfBad) {
+    return {
+      ...base,
+      reversed: false,
+      counted: true,
+      minutes,
+      countedMinutes: repairIfBad.minutes,
+      kind: "repaired",
+      repair: repairIfBad,
+    };
+  }
+
+  // TOO SHORT AND TOO LONG BOTH COUNT NOW, and keep their kind so the sheet can
+  // still mark them and the question can still ask. `countedMinutes` is ten: a
+  // two minute row is a ten minute break somebody mistyped, and crediting two
+  // would be inventing a shortfall out of the same typo.
   if (minutes < FULL_REST_MIN) {
-    return { ...base, reversed: trulyReversed, counted: false, minutes, kind: "short", repair: repairIfBad };
+    return {
+      ...base, reversed: trulyReversed, counted: true, minutes,
+      countedMinutes: FULL_REST_MIN, kind: "short", repair: repairIfBad,
+    };
   }
   if (minutes > REST_LONG_MAX_MIN) {
-    return { ...base, reversed: trulyReversed, counted: false, minutes, kind: "too-long", repair: repairIfBad };
+    // EXCEPT A MEAL-LENGTH ROW, which is being read as the LUNCH rather than as
+    // a rest - drawn blue and striped, asked about as a meal. Counting it here
+    // as well would let one entry clear two different violations. Same exception
+    // `countsAsTaken` makes, and it has to be made in both or they disagree
+    // about the same row.
+    const mealShaped =
+      !repairIfBad && minutes >= MEAL_LENGTH_MIN_MIN && minutes <= MEAL_LENGTH_MAX_MIN;
+    return {
+      ...base, reversed: trulyReversed, counted: !mealShaped, minutes,
+      ...(mealShaped ? {} : { countedMinutes: FULL_REST_MIN }),
+      kind: "too-long", repair: repairIfBad,
+    };
   }
 
   return {
@@ -253,13 +388,36 @@ export function classifyRest(row) {
 }
 
 // Why a row is being shown, in words, for the screen and the signed sheet.
-export const REST_KIND_NOTE = {
+//
+// THREE OF THESE STILL SAID A ROW DID NOT COUNT, which stopped being true on
+// 2026-08-12 when `countsAsTaken` became "any row at all, whatever it says".
+// They render directly under the card `describeRestRow` writes, so the checks
+// screen was printing "It still counts as a 10 minute break taken" and, one line
+// below it, "it does not count until somebody confirms what it was" - about the
+// same row. `short` and `no-times` were the same contradiction. This map also
+// feeds the EMPLOYEE's own page, so the wrong half was going to the person whose
+// premium turns on it.
+const REST_KIND_NOTE = {
   "reversed-repaired": "The out and in times were entered the wrong way round. Read as a normal rest break.",
+  repaired: "One time was picked wrong. Corrected and counted as a rest break, and still worth confirming.",
   "over-ten": `Longer than the ten minutes a paid rest period allows. It still counts and owes nothing, but ${REST_LONG_MAX_MIN} minutes is one and a half times the entitlement.`,
-  short: "Shorter than the ten minutes California requires, so it does not count as a rest period taken.",
-  "too-long": "Too long to be a rest period. Most likely a mis-picked time, and it does not count until somebody confirms what it was.",
-  "no-times": "No out or in time was recorded, so nothing can say a break was taken.",
+  short: `Shorter than the ten minutes California requires. It still counts as a break taken and is credited as the full ${FULL_REST_MIN} - a short row is a mistyped time, not a short break.`,
+  "too-long": `Too long to be a rest period, and no single mis-picked field explains it. It still counts as a ${FULL_REST_MIN} minute break taken: the length is a typing mistake, not an absence.`,
+  "no-times": "No out or in time was recorded. The break still counts as taken - it is the times that did not survive, not the break.",
 };
+
+// The note for a row, which `kind` alone cannot always give. A "too-long" row
+// is counted unless it is the length of a MEAL, in which case it is being read
+// as the lunch instead and counting it as a rest as well would let one entry
+// clear two violations. Same exception `countsAsTaken` makes, made here too so
+// the sentence and the arithmetic cannot disagree.
+export function restKindNote(row) {
+  if (!row) return null;
+  if (row.kind === "too-long" && !countsAsTaken(row)) {
+    return "The length of a meal rather than a rest period, so it does not count as a rest taken. Whether it was the lunch is a question for a person.";
+  }
+  return REST_KIND_NOTE[row.kind] || null;
+}
 
 // Does this rest actually fall inside the shift the report filed it under?
 //
@@ -275,10 +433,21 @@ export const REST_KIND_NOTE = {
 export function restOffOwnShift(row) {
   const shiftOut = clockMin(row?.["Shift Start Time"]);
   const shiftIn = clockMin(row?.["Shift End Time"]);
-  const restOut = clockMin(row?.["Rest Period Time Out"]);
-  const restIn = clockMin(row?.["Rest Period Time In"]);
+  // MEASURED ON THE CORRECTED TIME, or a row we have already explained gets
+  // reported as a second, different fault. Espinoza 08/05 is a 4:00 AM rest the
+  // classifier repairs to 4:00 PM precisely BECAUSE that lands inside the
+  // 3:40-5:10 PM shift it names - and this then called it filed against the
+  // wrong shift, on the strength of the time the repair exists to discard. The
+  // row is not misfiled; one field was mis-picked, and that card already exists.
+  //
+  // A row still outside its own shift AFTER the repair is a real misfile and
+  // still reported. Callers pass the classified row for this to see anything;
+  // a raw one has no repair on it and reads exactly as it did before.
+  const t = restRowTimes(row);
+  const restOut = clockMin(t.from);
+  const restIn = clockMin(t.to);
   if (shiftOut == null || shiftIn == null || restOut == null || restIn == null) return false;
-  // a reversed rest is malformed, and the rest reader already handles it
+  // still backwards once resolved - malformed, and the rest reader handles it
   if (restIn <= restOut) return false;
   return restOut < shiftOut || restIn > shiftIn;
 }
@@ -313,12 +482,47 @@ const splitShift = (s) => {
   return m ? { from: m[1], to: m[2] } : { from: null, to: null };
 };
 
+// WHAT A REST ROW ACTUALLY SAYS, once the two things we already know about it
+// are applied: a repair replaces the field it names, and a row with no repair
+// but recorded backwards is read the other way round.
+//
+// This expression existed in THREE places - `drawnRest`, `recordedBreaksFor`,
+// and nowhere at all in the engine, which is the bug. The window builder that
+// feeds `analyzeDay` read `row.out`/`row.in` raw, so Espinoza 08/05 - a 4:00 AM
+// row the engine itself had already corrected to 4:00 PM, `fits: true`, sitting
+// inside his 3:40-5:10 PM shift - was measured against the uncorrected time and
+// came back `restsOutsideShift: 1`. The sheet drew the break inside his shift
+// while the cards beside it said it was outside one, about the same ten minutes.
+//
+// Reversed rows were the same story: 15 of them across the two live batches
+// reach the engine with out AFTER in, so every on-the-clock test they meet is
+// asking whether a negative-length break fits inside a segment.
+//
+// Takes a RAW report row or a stored one - the keys differ and both are read -
+// so the classifier can use it before a repair exists and the engine after.
+export function restRowTimes(row) {
+  const rawOut = row?.["Rest Period Time Out"] ?? row?.out ?? null;
+  const rawIn = row?.["Rest Period Time In"] ?? row?.in ?? null;
+  const rep = row?.repair;
+  if (rep) {
+    if (rep.field === "both") return { from: rep.outTo, to: rep.inTo };
+    if (rep.field === "out") return { from: rep.to, to: rawIn };
+    return { from: rawOut, to: rep.to };
+  }
+  if (row?.reversed) return { from: rawIn, to: rawOut };
+  return { from: rawOut, to: rawIn };
+}
+
 export function serviceFit(row) {
   const said = splitShift(row?.shift);
   const sO = clockMin(row?.["Shift Start Time"] ?? row?.shiftFrom ?? said.from);
   const sI = clockMin(row?.["Shift End Time"] ?? row?.shiftTo ?? said.to);
-  const a = clockMin(row?.["Rest Period Time Out"] ?? row?.out);
-  const b = clockMin(row?.["Rest Period Time In"] ?? row?.in);
+  // the times the row MEANS, not the ones it holds - a repaired row is filed
+  // against the shift its correction lands in, which is the whole reason the
+  // repair was believed in the first place (`fits: true`).
+  const t = restRowTimes(row);
+  const a = clockMin(t.from);
+  const b = clockMin(t.to);
   if (sO == null || sI == null || a == null || b == null) return { where: "unknown" };
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
@@ -334,6 +538,32 @@ export function serviceFit(row) {
 
 export function restKey(name) {
   return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// THE SPELLING THE REST PERIODS REPORT USED FOR THIS PERSON, which is not always
+// the spelling on their timesheet.
+//
+// QSP prints one person under two names across its own exports. Ruth Delgado
+// Pineda's Simple Timesheet says "Delgado Pineda, Ruth" and her Rest Periods
+// Report says "Delgado Pineda, Angel" - her preferred name. The engine already
+// bridges that at upload through her portal account (see identity.js), so her
+// stored day carries the rest and her premium is right.
+//
+// Every DISPLAY path then matched rest rows on the raw timesheet name and found
+// nothing. Her SIGNED SHEET printed an empty Breaks column while the engine had
+// counted the break and charged her no premium - a document contradicting
+// itself - and her own timesheet page and the checks screen drew no rest at all.
+//
+// The answer was already stored. `lookupAcross` returns the spelling it matched
+// through and upload writes it to `readAs.rests`, so nothing has to be
+// re-uploaded and no screen has to do fuzzy matching of its own. One place
+// computes it at upload, one function reads it back, every display asks here.
+//
+// Falls back to the timesheet's own name, which is the right answer for the 117
+// of 119 sheets QSP spells consistently and for any batch stored before the
+// `readAs` block existed.
+export function restNameFor(sourceName, data) {
+  return data?.premiumSupport?.readAs?.rests?.name || sourceName || "";
 }
 
 const REQUIRED = ["Employee Name", "Start Date", "Total Rest Time"];
@@ -380,7 +610,7 @@ export function parseRestReport(bytes) {
     const c = classifyRest(r);
     if (!p.byDate[date]) p.byDate[date] = { taken: 0, malformed: 0, repaired: 0, kinds: [] };
     const day = p.byDate[date];
-    if (c.counted) { day.taken++; p.taken++; if (c.reversed) { day.repaired++; p.repaired++; } }
+    if (countsAsTaken(c)) { day.taken++; p.taken++; if (c.reversed) { day.repaired++; p.repaired++; } }
     else { day.malformed++; p.malformed++; }
     if (c.kind) day.kinds.push(c.kind);
   }
@@ -408,7 +638,7 @@ export function allRestRows(bytes) {
     // break. 40 rows in the period are like this and 12 of them are that shape.
     const shiftOut = clockMin(r["Shift Start Time"]);
     const shiftIn = clockMin(r["Shift End Time"]);
-    const offOwnShift = restOffOwnShift(r);
+    const offOwnShift = restOffOwnShift({ ...r, repair: c.repair, reversed: c.reversed });
 
     out.push({
       name: String(r["Employee Name"] || "").trim(),
@@ -436,7 +666,10 @@ export function allRestRows(bytes) {
       // inside | before | after | straddles | unknown, and whether it sits hard
       // against the edge. Uribe's three and Hatt's 07/20 are the same mistake at
       // opposite ends of a shift, which only this makes visible.
-      fit: serviceFit(r),
+      // computed from the CLASSIFIED row, so a repair the classifier just found
+      // is the reading the fit is measured on. Passing the raw row filed every
+      // repaired break against the shift its uncorrected time missed.
+      fit: serviceFit({ ...r, repair: c.repair, reversed: c.reversed }),
       // the printed column, kept only so a reader can match our row to theirs.
       // it is rounded - never decide anything from it. `derivation` shows the
       // arithmetic ("-0.83 hr x 60 = -50 min") so nobody has to trust the jump.
@@ -446,7 +679,7 @@ export function allRestRows(bytes) {
       reversed: c.reversed,
       counted: c.counted,
       kind: c.kind,
-      note: REST_KIND_NOTE[c.kind] || null,
+      note: restKindNote(c),
       // a single mis-picked field that would explain it. NOT applied.
       repair: c.repair,
     });

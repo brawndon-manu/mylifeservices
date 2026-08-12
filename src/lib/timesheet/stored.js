@@ -103,7 +103,8 @@ export function storedDay(d) {
     secondMealUnknown: !!d.secondMealUnknown,
     // rests taken hard against the rostered lunch. reported, never charged.
     restTackedOn: d.restTackedOn ?? null,
-    // recorded inside the lunch, so not counted as a rest taken.
+    // recorded inside the lunch. it COUNTS as a rest taken and the minutes are
+    // paid under the off-clock rule, so this is reported only.
     restsInsideMeal: d.restsInsideMeal ?? null,
     // a rest logged outside the shift, and a rest that fell in an unpaid
     // gap. both reported only, neither moves a figure.

@@ -245,8 +245,15 @@ export async function renderCorrected(sheet, opts = {}) {
   // stored rest times, in which case the Breaks column simply stays blank -
   // which is honest, and better than the old behaviour of colouring punch gaps
   // that nothing had recorded.
+  //
+  // MATCHED ON `restName`, NOT ON THE NAME PRINTED AT THE TOP OF THE PAGE. QSP
+  // spells one person two ways across its own exports, and the Breaks column
+  // came out EMPTY for the person it does that to while the engine had counted
+  // her breaks and charged her no premium - the signed document disagreeing with
+  // itself. See `restNameFor`. Falls back to the printed name, which is the same
+  // string for everybody QSP spells consistently.
   const recorded = recordedBreaksFor(
-    sheet.employee,
+    sheet.restName || sheet.employee,
     sheet.restsByDate || [],
     sheet.scheduleByDate || null,
   );
@@ -564,26 +571,37 @@ export async function renderCorrected(sheet, opts = {}) {
         (off ? ` ${off === (d.statedBreaks || []).length ? "Those times came" : "One of those times came"} from your schedule and you accepted ${off === 1 ? "it" : "them"}.` : ""),
       );
     }
+    // EVERY `why` HERE IS ONE `insertRecordedBreaks` ACTUALLY PUSHES, and the
+    // list is the whole of it: "recorded with no times", "unreadable times",
+    // "not counted as a rest", "reversed in the report", "matches no punch".
+    //
+    // Two more branches used to sit at the top of this chain - "added off the
+    // clock" and "added outside the shift" - and nothing had produced either
+    // since before the off-clock rule was written. They were dead, and what they
+    // said was "a rest period is paid time, so those minutes have been added to
+    // the day", which stopped being true on 2026-08-12 when Mánu ruled that
+    // nothing is added until the employee confirms the break. Dead copy asserting
+    // a rule the engine does not follow is a trap for whoever reads this next.
     for (const u of unplaced) {
       const why =
-        u.why === "added off the clock"
-          ? "recorded while you were clocked out. A rest period is paid time, so those minutes have been added to the day."
-          : u.why === "added outside the shift"
-            ? "recorded outside your shift. A rest period is paid time, so those minutes have been added to the day. Worth fixing in QSClock so it records inside the shift."
-            : u.why === "reversed in the report"
-              // says what we did AND that it was a judgement, not a fact. The
-              // report held the end before the start, which cannot happen, so we
-              // read it as the two boxes being filled in the wrong order. If
-              // that presumption is wrong the times are wrong, and the person
-              // signing is the one who would know.
-              ? "was entered with the start and end the wrong way round in QSP's report. We have presumed that a mistake and reversed it to the times shown here."
-            : u.why === "not counted as a rest"
-              // said out loud rather than drawn. It is not coloured, because
-              // nothing was added and the stripe means minutes were; it is not
-              // silent either, because "QSP holds something unreadable here" is
-              // worth telling the person who signs the page.
-              ? "is too long to be a rest break, so it has not been counted or added to your hours. Worth fixing in QSClock."
-              : "matches no punch";
+        u.why === "reversed in the report"
+          // says what we did AND that it was a judgement, not a fact. The report
+          // held the end before the start, which cannot happen, so we read it as
+          // the two boxes being filled in the wrong order. If that presumption is
+          // wrong the times are wrong, and the person signing is the one who
+          // would know.
+          ? "was entered with the start and end the wrong way round in QSP's report. We have presumed that a mistake and reversed it to the times shown here."
+          : u.why === "not counted as a rest"
+            // said out loud rather than drawn. It is not coloured, because
+            // nothing was added and the stripe means minutes were; it is not
+            // silent either, because "QSP holds something unreadable here" is
+            // worth telling the person who signs the page.
+            ? "is too long to be a rest break, so it has not been counted or added to your hours. Worth fixing in QSClock."
+            : u.why === "recorded with no times"
+              ? "was recorded with no start or end time, and the shift it was filed against has no room on this row to draw it in. Nothing is charged for it."
+              : u.why === "unreadable times"
+                ? "was recorded with times we could not read, so it is not drawn on this row. Nothing is charged for it."
+                : "does not fall inside any punch recorded on this day, so it is not drawn on this row.";
       footnotes.push(`${d.date}: ${u.kindOf} ${u.from}-${u.to} ${why}`);
     }
 
@@ -857,14 +875,35 @@ export async function renderCorrected(sheet, opts = {}) {
     { fill: REST, label: "10-Minute Paid Rest Break" },
     { fill: MEAL, label: "30-Minute Unpaid Meal Break" },
   ];
+  // THE KEY MAY NOT PROMISE MINUTES THE SHEET DID NOT PAY.
+  //
+  // Both striped entries used to state flatly that the time had been added -
+  // "the minutes paid as time off the clock". That was true from 2026-08-09 to
+  // 2026-08-12, when a rest recorded off the clock was paid on sight. Mánu
+  // reversed it on the 12th: nothing is added until the employee confirms the
+  // break was taken there, and he was emphatic that paying it otherwise is
+  // against policy. The key kept saying the old thing on the document they sign.
+  //
+  // Gated on `addedHours`, which is the only figure that can answer it: it is
+  // what the totals row prints as ADDED, so the key and the total now agree by
+  // construction. Nothing added means the sentence has to say so, because a
+  // striped cell with no explanation reads as extra pay.
+  //
+  // NEITHER ENTRY TALKS ABOUT PAY ANY MORE. Mánu 2026-08-12 had "the minutes
+  // have been added to your hours" removed from the key. The stripe says WHERE
+  // the record puts the break and that we marked it; what the minutes did to the
+  // total is the ADDED line's job, and it only prints when there is one.
   if (hasAdded) {
-    keyItems.push({ fill: REST, bar: ADDED_BAR, label: "Rest Break Added - recorded off the clock" });
+    keyItems.push({ fill: REST, bar: ADDED_BAR, label: "Rest Break recorded off the clock" });
   }
   if (hasAdjustedMeal) {
     keyItems.push({ fill: MEAL, bar: MEAL_BAR, label: "Meal Break - recorded as a rest break, and not counted as either" });
   }
   if (hasOutside) {
-    keyItems.push({ fill: MEAL, bar: OUTSIDE_BAR, label: "Rest Break recorded outside your shift - counted, and the minutes paid as time off the clock" });
+    keyItems.push({
+      fill: MEAL, bar: OUTSIDE_BAR,
+      label: "Rest Break recorded outside your shift - counted as a break you took",
+    });
   }
   if (hasUnknown) {
     keyItems.push({ fill: MEAL, label: "??? - a rest break with no times recorded. Not charged to anyone." });
@@ -938,7 +977,11 @@ export async function renderCorrected(sheet, opts = {}) {
       : "";
     y = wrap(
       page,
-      `ADDED: ${f2(sheet.totals.addedHours)} hrs on top of the export. The striped cells are rest breaks the report recorded while you were clocked out. A rest period is paid time, so those minutes have been paid rather than deducted from your breaks.${ot}`,
+      // Only ever printed when `addedHours > 0`, which since 2026-08-12 means
+      // the employee CONFIRMED the break. So it says that, rather than "a rest
+      // period is paid time, so those minutes have been paid", which read as an
+      // entitlement the engine applies on its own - the thing it stopped doing.
+      `ADDED: ${f2(sheet.totals.addedHours)} hrs on top of the export. The striped cells are rest breaks the report recorded while you were clocked out, and you told us you took them then, so those minutes have been paid.${ot}`,
       L, y, R - L, { font: italic, size: 6.5, color: INK, leading: 8 },
     );
     y -= 4;
@@ -1286,10 +1329,31 @@ export async function renderCorrected(sheet, opts = {}) {
   const moved = Math.abs(sheet.totals.paidHours - sheet.totals.rawHours) >= 0.005;
   const added = sheet.totals.addedHours || 0;
   const addedOt = sheet.totals.addedOtHours || 0;
+  // AND IT STILL SAID IT, on 14 of the 119 sheets in the two live batches.
+  //
+  // "rest breaks the export left out are paid time and have been added back" is
+  // the only sentence the moved branch had, and on every one of those 14 sheets
+  // it was false. Measured 2026-08-12: 13 of the 15 moved days differ by exactly
+  // 0.01 hrs, which is rounding - the day is summed from its own punch minutes
+  // and QSP rounds each segment separately, so Solorzano's 480 worked minutes
+  // print as 7.99 there and 8.00 here. The other two are `restsFromShortMeals`:
+  // a meal block the roster booked for only ten minutes is a rest period, and a
+  // rest period is paid.
+  //
+  // NONE of it is a rest break added back, and none of it is the off-clock
+  // minutes - `addedHours` is zero on all 119, because nobody has confirmed one.
+  // Mánu 2026-08-12: the sheet must not talk about gaining hours that way at all.
+  // So each cause says its own name, and where nothing was added the line says
+  // so outright rather than leaving a difference for somebody to read as pay.
+  const shortMealDays = (sheet.days || []).filter((d) => (d.restsFromShortMeals || 0) > 0).length;
   text(
-    moved
-      ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Corrected to ${f2(sheet.totals.paidHours)} hrs - rest breaks the export left out are paid time and have been added back.`
-      : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export. This sheet corrects break premiums only.`,
+    !moved
+      ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export. This sheet corrects break premiums only.`
+      : added > 0
+        ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs: ${f2(added)} hrs of rest breaks you told us you took while clocked out have been added.`
+        : shortMealDays > 0
+          ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. On ${shortMealDays} ${shortMealDays === 1 ? "day" : "days"} the roster booked a meal break only ten minutes long - that is a rest period, not a meal, and a rest period is paid - so those minutes are in your hours. No other break time has been added.`
+          : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. The difference is rounding: each day is worked out from its own punch times, and QSP rounds each segment separately. No break time has been added.`,
     L, y, { size: 6.5, color: MUTED, f: italic },
   );
 

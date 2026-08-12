@@ -7,9 +7,17 @@
 // not that one is wrong, it is that somebody reads the wrong one.
 //
 // THE DEFAULT MOVED ON 2026-08-11 AND SO DID THE NAMES. `projected` is now the
-// full figure and the copy people sign; `assumed` is the reduced reading that
+// full figure and the copy people sign; `assumed` was the reduced reading that
 // used to be called projected. Every assertion below ran the other way before
 // the flip.
+//
+// AND THERE ARE TWO DOCUMENTS NOW, not three. `assumed` was removed on
+// 2026-08-12 with the engine behaviour it described - once an off-clock ten
+// stopped being paid on sight, the engine assumed nothing of its own and that
+// copy became the projected one with a second name. The assertions it carried
+// were not thrown away: they were about `applyAssumptions`, which `corrected`
+// still runs, so they moved onto that basis. The file keeps its name because
+// the history above is the part worth being able to find.
 //
 // These tests are about what the PAGE SAYS, not what the arithmetic does.
 // premium-split.test.mjs covers the arithmetic.
@@ -87,8 +95,8 @@ test("each copy says which one it is, and only the signed one reads as a payslip
   assert.match(projected, /paid as missed/, "the sentence survives, beside the premium table");
   assert.match(projected, /3\.00 hrs/, "and it charges every one of them");
 
-  const assumed = await pdfText((await renderSheet(ts, { basis: "assumed" })).bytes);
-  assert.match(assumed, /IF EVERY ASSUMPTION HOLDS - reference copy, not a payslip/);
+  const assumed = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
+  assert.match(assumed, /AS CORRECTED/);
   assert.match(assumed, /Not the copy sent for signature/);
 
   const corrected = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
@@ -103,7 +111,7 @@ test("the default copy charges everything and the assumed one charges what survi
   const projected = await pdfText((await renderSheet(ts)).bytes);
   assert.match(projected, /3\.00 hrs/, "meal + rest on the 20th, meal on the 21st");
 
-  const assumed = await pdfText((await renderSheet(ts, { basis: "assumed" })).bytes);
+  const assumed = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
   assert.match(assumed, /1\.00 hrs/, "the late lunch, which no assumption can reach");
   assert.ok(!/3\.00 hrs/.test(assumed), "and not the two it assumed away");
 });
@@ -113,7 +121,7 @@ test("an assumed day is still a finding on the assumed copy, never a clean one",
   // goes quiet and prints "compliant". 359 rows on the live batch would have
   // claimed a clean day for a break nobody verified.
   const assumed = await pdfText(
-    (await renderSheet(sheetFor([ASSUMED]), { basis: "assumed" })).bytes);
+    (await renderSheet(sheetFor([ASSUMED]), { basis: "corrected" })).bytes);
   assert.match(assumed, /meal \+ rest: to confirm/);
   assert.ok(!/compliant/.test(assumed), "the one day on this sheet is not clean");
   assert.match(assumed, /GREY BREAK NOTES/, "and the colour is explained in words");
@@ -124,7 +132,7 @@ test("a copy that charges nothing still accounts for what it left out", async ()
   // premium section there. "No premiums due" standing alone would be a clean
   // bill of health for something nobody checked.
   const assumed = await pdfText(
-    (await renderSheet(sheetFor([ASSUMED]), { basis: "assumed" })).bytes);
+    (await renderSheet(sheetFor([ASSUMED]), { basis: "corrected" })).bytes);
   assert.match(assumed, /No break premiums are being charged/);
   assert.match(assumed, /Assumed taken, not charged: 1 meal period and 1 rest break/);
   assert.match(assumed, /nothing on file says these were missed/);
@@ -132,13 +140,13 @@ test("a copy that charges nothing still accounts for what it left out", async ()
   // THE OPPOSITE: a genuinely clean sheet assumed nothing and must not carry
   // the paragraph at all, or it is an apology for a finding that never existed.
   const clean = await pdfText(
-    (await renderSheet(sheetFor([day()]), { basis: "assumed" })).bytes);
+    (await renderSheet(sheetFor([day()]), { basis: "corrected" })).bytes);
   assert.match(clean, /No meal or rest break premiums due/);
   assert.ok(!/Assumed taken, not charged/.test(clean));
   assert.ok(!/GREY BREAK NOTES/.test(clean));
 });
 
-test("declining holds a premium onto the corrected copy and leaves the assumed one alone", async () => {
+test("declining holds a premium onto the corrected copy, and never moves the signed one", async () => {
   const ts = sheetFor([ASSUMED]);
   const answered = {
     confirmed: new Set(["07/20/26:meal", "07/20/26:rest"]),
@@ -150,13 +158,15 @@ test("declining holds a premium onto the corrected copy and leaves the assumed o
   assert.match(corrected, /2\.00 hrs/, "the hours survive on the corrected copy");
   assert.ok(!/to confirm/.test(corrected), "nothing is left to ask about");
 
-  // the assumed copy is the engine's alternative reading and does not move.
-  // Holding the two side by side is how you see what the asking actually changed.
-  const assumed = await pdfText((await renderSheet(ts, { basis: "assumed", ...answered })).bytes);
-  assert.match(assumed, /No break premiums are being charged/);
-  assert.match(assumed, /to confirm/);
+  // THE ASSUMED COPY USED TO BE COMPARED HERE and is gone with the basis, on
+  // 2026-08-12. It was the engine's alternative reading, blind to the answers on
+  // purpose, and holding it beside the corrected one showed what the asking had
+  // changed. The engine no longer applies an assumption of its own, so that
+  // document had become the projected one under another name - and the same
+  // comparison is made below against the copy she actually signs, which is the
+  // one that matters anyway.
 
-  // AND THE SHEET SHE ACTUALLY SIGNS NEVER MOVED AT ALL. Under the old default
+  // THE SHEET SHE ACTUALLY SIGNS NEVER MOVED AT ALL. Under the old default
   // this answer is what put the two hours ON; now it only stops them coming off.
   const projected = await pdfText((await renderSheet(ts, { ...answered })).bytes);
   assert.match(projected, /2\.00 hrs/, "charged before she answered and after");
@@ -351,13 +361,21 @@ test("the copy an employee signs prints exactly what their page says is charged"
   assert.match(signed, /3\.00 hrs/, "and the document has to agree with it");
   assert.ok(!/Not the copy sent for signature/.test(signed));
 
-  // AND THE TWO ADMIN READINGS MUST NOT BE IT. Either one under a signature is
-  // the defect this test exists for, so name them both.
-  for (const basis of ["assumed", "corrected"]) {
-    const other = await pdfText((await renderSheet(ts, { basis })).bytes);
-    assert.match(other, /Not the copy sent for signature/,
-      `${basis} must say so - it charges ${basis === "assumed" ? "1.00" : "1.00"} against a page saying 3.00`);
-    assert.ok(!new RegExp(`${standing.charged}\\.00 hrs`).test(other),
-      `${basis} prints a different figure from the page, which is why it is not signable`);
-  }
+  // AND THE ADMIN READING MUST NOT BE IT. It under a signature is the defect
+  // this test exists for. `assumed` was checked here too and went with the basis
+  // on 2026-08-12 - see the note in render-sheet.js.
+  const other = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
+  assert.match(other, /Not the copy sent for signature/,
+    "corrected must say so - it charges 1.00 against a page saying 3.00");
+  assert.ok(!new RegExp(`${standing.charged}\\.00 hrs`).test(other),
+    "corrected prints a different figure from the page, which is why it is not signable");
+
+  // A STALE `?basis=assumed` URL FALLS BACK TO THE SIGNED COPY, rather than
+  // rendering the projected days under the old "IF EVERY ASSUMPTION HOLDS"
+  // banner - which is what it did for a few minutes while the basis was being
+  // taken out, and is the worse of the two failures by a long way.
+  const stale = await pdfText((await renderSheet(ts, { basis: "assumed" })).bytes);
+  assert.ok(!/IF EVERY ASSUMPTION HOLDS/.test(stale), "no banner for a basis that no longer exists");
+  assert.ok(!/Not the copy sent for signature/.test(stale), "it IS the signed copy now");
+  assert.match(stale, /3\.00 hrs/, "and it prints what the page says");
 });

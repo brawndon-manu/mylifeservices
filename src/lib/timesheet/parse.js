@@ -344,6 +344,19 @@ export function restsRequired(hours) {
 // Every rule here is the same expression `analyzeDay` uses, and
 // `parse.reentitle.test.mjs` asserts they agree on real analyzed days - a copy
 // that drifts is the whole risk of having one.
+// HOW MANY RESTS A DAY IS TREATED AS HAVING TAKEN, from the report's count.
+//
+// Exported because `rebuildSheetFor` has to reproduce it: `restRecorded` is an
+// input to `analyzeDay` and gets frozen into the stored day, so a rebuild that
+// re-derives the count has to re-derive what hangs off it too - and doing that
+// with a copy of this arithmetic is how the two quietly stop agreeing.
+export function restsTakenFrom(recorded, restsFromShortMeals = 0, restsNotCounted = 0) {
+  return (
+    Math.max(0, (recorded === null || recorded === undefined ? 0 : recorded) - restsNotCounted)
+    + (restsFromShortMeals || 0)
+  );
+}
+
 export function reentitle(day, paidHours) {
   const paid = paidHours ?? day.paidHours ?? 0;
   const restRequired = restsRequired(paid);
@@ -526,11 +539,15 @@ export function analyzeDay(day) {
     return null;
   };
 
-  // NOTHING IS WITHHELD FROM PAID TIME ANY MORE. This list used to exclude both
-  // the misclicked rows and the snapped ones, which is what made the withholding
-  // happen at all. Under the flip every rest recorded off the clock is paid in
-  // the projected reading, and the two assumptions below are what would take
-  // those minutes back off - once somebody confirms them.
+  // EVERY REST RECORDED OFF THE CLOCK, whatever the reason. This list used to
+  // exclude the misclicked rows and the snapped ones, which is what made the old
+  // withholding happen at all.
+  //
+  // From 2026-08-09 to 2026-08-12 these minutes were PAID in the projected
+  // reading and the assumptions below were what took them back off. Mánu
+  // reversed that on the 12th and the default is now the other way: nothing is
+  // added until the employee confirms the break was taken there. See
+  // `paidOffClockMin` below, which is the only place these minutes reach pay.
   const offClockRests = usableRests.filter((r) => !onClock(r));
   const restsOffClock = restTimes && segments.length ? offClockRests.length : null;
   const restsOffClockMin = restTimes && segments.length
@@ -607,11 +624,36 @@ export function analyzeDay(day) {
 
   const restsArePaidBySource = day.restsAlreadyPaid === true;
   const restMinToAddBack = restsArePaidBySource ? 0 : restMin;
-  // ...plus any rest the report recorded while the person was off the clock.
-  // Nothing paid for those minutes and a rest period is paid time, so they are
-  // added here rather than taken out of the rest count. Mánu 2026-08-09.
-  // This is the first thing in this engine that can pay ABOVE what QSP exported.
-  const paidMin = workedMin + restMinToAddBack + restsOffClockMin + shortMealPaidMin;
+  // A REST LOGGED OUTSIDE A SHIFT ADDS NOTHING UNTIL SOMEBODY CONFIRMS IT.
+  //
+  // From 2026-08-09 to 2026-08-12 these minutes were PAID on sight: a rest is
+  // paid time, so a ten recorded off the clock was taken at face value and the
+  // employee was asked afterwards whether to take it back off. Mánu 2026-08-12
+  // reversed it: "I think the engine should automatically not add in more hours.
+  // It should treat it as put in wrong and only add the time once they confirm
+  // it was taken there."
+  //
+  // Which is the more defensible default anyway. A rest period is paid time
+  // BECAUSE it happens on the clock, so a ten recorded outside every shift is
+  // first of all a record that disagrees with itself - and paying it on sight
+  // meant the sheet asserted hours nobody had stood behind, on the strength of
+  // an entry the same sheet was about to question. `restsOutsideScheduled` is
+  // still counted and still asked about; what changed is which way silence goes.
+  //
+  // NOTE this is the one place in the engine that pays UNDER the recorded
+  // minutes rather than over. The floor below still holds the day at QSP's own
+  // printed figure, so nobody drops beneath what payroll already exported - the
+  // day simply stops rising above it on an unconfirmed entry.
+  //
+  // `restsOffClockConfirmed` is what the answer sets, and it puts the old
+  // arithmetic back exactly. It exists so a REBUILD reproduces a confirmed
+  // addition: the answer's patch carries `paidHours` and `addedHours`, but the
+  // day is re-analyzed from its punches every time anything else on the sheet
+  // is corrected, and a rebuild that could not see the confirmation would drop
+  // the hours somebody was told they had gained.
+  const offClockConfirmed = day.restsOffClockConfirmed === true;
+  const paidOffClockMin = offClockConfirmed ? restsOffClockMin : 0;
+  const paidMin = workedMin + restMinToAddBack + paidOffClockMin + shortMealPaidMin;
   // the correction only ever ADDS unpaid rest time back, so the corrected hours
   // must never come out below what payroll already exported. QSP rounds each
   // punch segment its own way, which can leave our exact figure a hundredth or
@@ -644,7 +686,16 @@ export function analyzeDay(day) {
   // was not, all eleven of her days are exactly 8.00 before the addition. Ten
   // minutes is 0.1667 and eleven of them is 1.8333; it is only 1.87 if you
   // round each one to 0.17 first. Display rounds, storage rounds, this does not.
-  const addedHours = paidHours - withFloor(paidMin - restsOffClockMin);
+  // NOTHING IS ADDED UNTIL SOMEBODY CONFIRMS IT, so this is zero on an ordinary
+  // day and the sheet draws no "added" line at all.
+  //
+  // Where it IS confirmed the arithmetic is exactly what it always was: the
+  // difference QSP's floor actually let through, not the raw minutes. A day
+  // already being floored up has those minutes inside the figure already, and
+  // saying "added" there would claim pay nobody gained.
+  const addedHours = offClockConfirmed
+    ? paidHours - withFloor(paidMin - restsOffClockMin)
+    : 0;
   // what QSP printed for this day, reproduced exactly (see ceil2 above).
   const rawHoursAsPrinted = segments.reduce((n, s) => n + ceil2(s.min / 60), 0);
 
@@ -669,21 +720,26 @@ export function analyzeDay(day) {
   const restRequired = restsRequired(paidHours);
   const mealRequired = paidHours > RULES.mealRequiredAfterHours;
 
-  // ---- a "rest" recorded inside the lunch is not a rest period ------------
+  // ---- a "rest" recorded inside the lunch ---------------------------------
   //
   // A rest period is PAID and counts as hours worked. A meal period is unpaid.
-  // Ten minutes sitting inside an unpaid thirty minute meal cannot satisfy the
-  // rest obligation, whatever the report calls it - most often it is part of
-  // the lunch that got logged as a break.
+  // Ten minutes sitting inside an unpaid thirty minute meal is most often part
+  // of the lunch that got logged as a break.
   //
-  // Mánu's ruling 2026-08-08: the opportunity to take a ten minute rest always
-  // exists here - staff are in the field, choose their own moment, and somebody
-  // chases anyone who has not taken one - so a rest that landed inside the
-  // lunch was not one the employer failed to provide. It simply was not taken,
-  // and the premium follows. THIS IS THE ONE PLACE A RECORDED REST IS
-  // DISCOUNTED, and it has to be computed before restTaken is decided below.
+  // Mánu's ruling 2026-08-08 struck it off the day's count: the opportunity to
+  // take a ten always exists here - staff are in the field, choose their own
+  // moment, and somebody chases anyone who has not taken one - so a rest that
+  // landed inside the lunch was not one the employer failed to provide. It
+  // simply was not taken, and the premium followed.
   //
-  // Adjacent is a different thing and still counts: taking your ten right
+  // SUPERSEDED 2026-08-09, AND THIS IS A FLAG ONLY NOW. The off-clock ruling
+  // PAYS those ten minutes rather than charging an hour's premium for them, and
+  // somebody punched out for lunch is off the clock, so this is the same ten
+  // minutes `restsOffClock` already compensated further up. Discounting it here
+  // as well would compensate one break twice. `restTaken` is left alone - see
+  // `restsNotCounted` below, which is where all three discounts used to live.
+  //
+  // Adjacent is a different thing and always counted: taking your ten right
   // before or after lunch is a compliance habit, not an uncompensated break.
   const rosteredMeals = Array.isArray(day.scheduleBlocks)
     ? day.scheduleBlocks.filter((b) => b.meal)
@@ -754,10 +810,11 @@ export function analyzeDay(day) {
   // `day.restRecorded` is the Rest Periods Report's count. No coverage means no
   // record, which means none taken - the reading that pays the employee.
   const recorded = Number.isFinite(day.restRecorded) ? day.restRecorded : null;
-  // ...less any that landed inside the lunch, which are unpaid minutes and so
-  // were never rest periods. See the ruling above. This is the only place the
-  // report's own count is reduced, and it can only ever move the day toward
-  // owing a premium, never away from one.
+  // ...and NOTHING IS TAKEN OFF IT. The count used to be reduced by the rests
+  // that landed inside the lunch, outside the shift, or in an unpaid gap; since
+  // 2026-08-09 those minutes are paid instead, `restsNotCounted` is zero, and
+  // the report's own figure goes through whole. The only thing that moves
+  // `restTaken` now ADDS to it:
   // A SCHEDULE ROW LABELLED "Meal Break" BUT ONLY REST-LENGTH IS A REST PERIOD.
   // Mánu 2026-08-09: "she put her 10 minutes rest period for her meal break and
   // at the midnight time... engine should detect she already has a meal break
@@ -778,8 +835,7 @@ export function analyzeDay(day) {
   // satisfied the meal rule to begin with.
   const restsFromShortMeals = shortMealBlocks.length;
 
-  const restTaken =
-    Math.max(0, (recorded === null ? 0 : recorded) - restsNotCounted) + restsFromShortMeals;
+  const restTaken = restsTakenFrom(recorded, restsFromShortMeals, restsNotCounted);
 
   // Can ANY source speak to whether a rest break happened on this day?
   //
@@ -908,11 +964,12 @@ export function analyzeDay(day) {
   //
   // `day.restTimes` is [{out, in}] in minutes, from the Rest Periods Report.
   // Absent, the question is unanswerable and the count stays null. Both it and
-  // the rostered meals are worked out further up, because `restsInsideMeal`
-  // has to be known before `restTaken` is decided.
+  // the rostered meals are worked out further up, alongside `restsInsideMeal`
+  // and the other positional flags.
   //
-  // UNPAID, reported. The count is kept so the screen can name the days; the
-  // discount itself happens in `restsNotCounted` above, alongside the other two.
+  // UNPAID, reported. The count is kept so the screen can name the days, and
+  // nothing hangs off it: `restsNotCounted` above is zero and has been since
+  // 2026-08-09, for this and for the other two.
   //
   // NOTE the hours are still NOT adjusted. Those ten minutes were worked and
   // went unpaid, which is wages owed on top of the premium, and paying above
@@ -921,10 +978,11 @@ export function analyzeDay(day) {
   // separate thing somebody still has to decide about.
   const restsUnpaid = restTimes && p.length ? usableRests.filter(unpaidRest).length : null;
 
-  // Adjacent, but NOT inside. The two are mutually exclusive now: one is
-  // reported and still counts, the other is discounted and pays a premium, so
-  // a row appearing under both headings would be telling two stories about the
-  // same ten minutes.
+  // Adjacent, but NOT inside. Both count and both are reported only, but they
+  // are different things to say about a day - a ten against the lunch is the
+  // employee's own choice, a ten inside it is the lunch mislogged - so they are
+  // kept mutually exclusive rather than letting one row appear under both
+  // headings and tell two stories about the same ten minutes.
   let restTackedOn = null;
   if (restTimes && rosteredMeals) {
     const tol = RULES.restTackedOnToleranceMin;
@@ -1072,8 +1130,9 @@ export function analyzeDay(day) {
     // how many of the day's rests were taken hard against the rostered lunch.
     // reported, never charged - see the note above. null when unanswerable.
     restTackedOn,
-    // recorded inside the lunch, so discounted from restTaken above. the ONE
-    // rest finding that moves a figure.
+    // recorded inside the lunch. REPORTED ONLY since 2026-08-09 - the off-clock
+    // ruling pays those minutes instead of charging the day a premium, so this
+    // moves no figure, exactly like the two below it.
     restsInsideMeal,
     // rests logged outside the shift, and rests that fell in an unpaid gap.
     // BOTH ARE FLAGS ONLY since 2026-08-09 - neither moves `restTaken`.
@@ -1240,6 +1299,23 @@ export function applyOvertime(days, payPeriod = null) {
     //
     // Complete weeks are left alone on purpose: there we can prove the split
     // from the punches, so we compute it rather than take it on trust.
+    //
+    // AND IT IMPORTS QSP'S MISTAKES ALONG WITH ITS KNOWLEDGE. Jones, Aaron
+    // 08/02/26 - a Sunday - reads paid 4.00, regular 1, overtime 3, because that
+    // is what QSP printed. Mánu confirmed 2026-08-12 that the row is a QSP data
+    // error: he holds no timesheet for Aaron in 07/16-07/31, so there is no
+    // cross-boundary week for those three hours to have come from. That is the
+    // whole of it across both live batches - 5 days and 7.42 hours at 1.5x, of
+    // which the four on 07/19 above are genuine and this one is not.
+    //
+    // The fix considered and NOT taken: defer only where we cannot see the
+    // adjoining days. Aaron's invisible half-week (07/27-08/01) is in a batch we
+    // DO hold and he has no sheet in it, so we could compute it ourselves, while
+    // the July four's invisible days sit in a period we do not hold and would
+    // still defer. It needs adjoining-period coverage threaded into a function
+    // that is currently pure over one sheet, and it moves overtime on a payroll
+    // document, so Mánu's call 2026-08-12 was to leave it and revisit it as its
+    // own piece of work rather than fold it into the rest-break fix.
     if (partial) {
       for (const d of week) {
         const printedOt = Number(d.printed?.overtime || 0);

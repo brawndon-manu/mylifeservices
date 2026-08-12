@@ -1,0 +1,12 @@
+-- Which answer they picked, where a card offers more than two.
+--
+-- `status` only ever holds accepted | declined, so a three-outcome question
+-- cannot be read back: `restTooLongOffClock` now asks whether two lunches are
+-- both real, whether the second was entered by accident, or whether the
+-- ROSTERED one is the wrong record. The last two are both declines and neither
+-- moves a figure, so nothing on the row distinguished them and the client was
+-- inferring it from whether times came back with the answer.
+--
+-- Nullable and additive: every row already stored keeps its meaning through
+-- `status`, and readers fall back to it when this is null.
+ALTER TABLE "TimesheetCorrection" ADD COLUMN "choice" TEXT;

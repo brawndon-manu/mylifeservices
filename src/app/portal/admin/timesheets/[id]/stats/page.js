@@ -96,7 +96,6 @@ export default async function TimesheetStatsPage({ params }) {
         <Card
           label="Premium hours projected"
           value={n2(premiumSplit.projected)}
-          sub={`${n2(premiumSplit.assumptions)} could come off on confirmation`}
           tone="warn"
         />
       </div>
@@ -109,10 +108,14 @@ export default async function TimesheetStatsPage({ params }) {
             instead, each of which REDUCES it and each of which needs an employee
             to confirm it. So the gap is work outstanding, and the total can only
             come down as people reply. */}
+        {/* ONE FIGURE, not three. The other two were "Policy assumptions" and
+            "If every assumption holds" - a reading of the sheet where every open
+            question came back confirmed. Mánu 2026-08-12 asked for them gone:
+            they describe a document nobody is paid from, beside the one that
+            is, and reading the pair as a range invites treating the lower number
+            as real before anybody has answered. */}
         <div className="grid gap-3 sm:grid-cols-3">
           <Mini label="Projected" value={`${n2(premiumSplit.projected)} hrs`} strong />
-          <Mini label="Policy assumptions" value={`${n2(premiumSplit.assumptions)} hrs`} />
-          <Mini label="If every assumption holds" value={`${n2(premiumSplit.ifAssumptionsHold)} hrs`} />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <Mini label="Meal period premiums" value={`${n2(t.mealPremiumHours)} hrs`} />

@@ -35,35 +35,35 @@ export const CORRECTION_KINDS = {
   meal_missed: {
     label: "It shows a lunch, but I worked through it",
     help:
-      "Your punches have a meal break on this day, so no meal premium was added. If you worked through it, that time should be paid and a premium is owed.",
+      "Your punches have a meal break on this day. Tell us if you worked through it and we will correct the record.",
     scope: "day",
     asksHours: false,
   },
   meal_taken: {
     label: "I did take my lunch, it just isn't punched",
     help:
-      "This day has no meal break in the punches, so a meal premium was added. If you did take it and forgot to clock out, that premium shouldn't be there.",
+      "This day has no meal break in the punches. Tell us if you took one and forgot to clock out, and we will correct the record.",
     scope: "day",
     asksHours: false,
   },
   meal_ontime: {
     label: "I took my lunch on time, the punch is wrong",
     help:
-      "Your punches put this meal after the fifth hour, which owes a premium on its own. If you actually went on time and the clock-out is what's off, that premium shouldn't be there.",
+      "Your punches put this meal after the fifth hour. Tell us if you actually went on time and the clock-out is what is wrong.",
     scope: "day",
     asksHours: false,
   },
   rest_missed: {
     label: "I didn't get my rest breaks",
     help:
-      "Your punches show your rest breaks on this day. If you didn't actually get them, a rest premium is owed.",
+      "Your punches show your rest breaks on this day. Tell us if you did not actually get them.",
     scope: "day",
     asksHours: false,
   },
   rest_taken: {
     label: "I did take my rest breaks, they just aren't punched",
     help:
-      "This day is short on rest breaks in the punches, so a rest premium was added. If you took them without clocking out, that premium shouldn't be there.",
+      "This day is short on rest breaks in the punches. Tell us if you took them without clocking out.",
     scope: "day",
     asksHours: false,
   },
@@ -276,7 +276,21 @@ export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, re
   // answered about keeps exactly what the engine said at upload.
   const touched = new Set(Object.keys(overrides || {}));
   const rebanded = reentitle
-    ? patched.map((d) => (touched.has(d.date) ? { ...d, ...reentitle(d, d.paidHours) } : d))
+    ? patched.map((d) => {
+        if (!touched.has(d.date)) return d;
+        const banded = { ...d, ...reentitle(d, d.paidHours) };
+        // AN ANSWER OUTRANKS A RE-DERIVATION. `reentitle` works the violations
+        // out from the hours and the counts, which is right for a day nobody has
+        // spoken about - but a question answered "yes, I took it" is a fact from
+        // the person who was there, and it was being computed away on every
+        // rebuild. Dinley 08/07 answered her mis-entered ten and the sheet kept
+        // saying one of two missing, because the override set
+        // `restViolation: false` and this line put it straight back to true.
+        const p = (overrides || {})[d.date] || {};
+        if (p.restViolation != null) banded.restViolation = p.restViolation;
+        if (p.mealViolation != null) banded.mealViolation = p.mealViolation;
+        return banded;
+      })
     : patched;
   const withOt = applyOvertime(rebanded, payPeriod || null);
 

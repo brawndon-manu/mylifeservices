@@ -467,6 +467,38 @@ export function blockTimes(text) {
   return start == null || end == null ? null : { start, end };
 }
 
+// WHAT KIND OF TIME A BLOCK WAS BOOKED AS - "ILS Service", "ILS Admin",
+// "ILS Misc", "ILS Travel", "Meal Break".
+//
+// Mánu 2026-08-12: "can we add in after the time what the service is? Admin,
+// travel, miscellaneous, ILS service. Just don't include the client's name." The
+// timesheet punches know only that time was worked; the roster is the only
+// document that says what it was worked ON, and his 07/30 is why it matters -
+// the schedule books "12p-12:10p -ILS Misc(0:10)" and the calendar drew it as
+// two anonymous minutes of work.
+//
+// THE CLIENT NAME IS DELIBERATELY DROPPED. He asked for it to be, and it is the
+// right call twice over: the employee already knows who they were with, and this
+// page is reached by a signed link rather than a login, so every name left on it
+// is a name that leaves the building.
+//
+// Parsed right to left, because the left is ambiguous and the right is not. The
+// text runs "10a-12p Rincon, R-ILS Service (2:00)": the time range holds a
+// hyphen, the client name holds a comma and may hold a hyphen of its own, and
+// the only reliable landmarks are the trailing "(h:mm)" and the LAST hyphen
+// before it. A day with no client reads "12p-12:10p -ILS Misc(0:10)", which the
+// same two steps handle without a special case.
+const LEADING_TIMES = /^\d{1,2}(?::\d{2})?\s*[ap]\s*-\s*\d{1,2}(?::\d{2})?\s*[ap]\s*/i;
+
+export function serviceOf(text) {
+  const s = String(text || "")
+    .replace(LEADING_TIMES, "")        // "10a-12p "
+    .replace(/\([^)]*\)\s*$/, "")      // "(2:00)"
+    .trim();
+  const cut = s.lastIndexOf("-");
+  return (cut >= 0 ? s.slice(cut + 1) : s).trim() || null;
+}
+
 // A day's rostered blocks as minutes, in order, so the engine can ask where a
 // punch gap falls relative to them. Meal blocks are kept and marked rather than
 // dropped: a gap that lines up with a rostered meal is a different animal from

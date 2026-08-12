@@ -76,6 +76,9 @@ export default function UploadForm({ action, aside }) {
   const [schedName, setSchedName] = useState("");
   const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
+  // the partial-period box, held in state only so the date range can be revealed
+  // under it - the value the action reads is the checkbox's own
+  const [partial, setPartial] = useState(false);
   // bytes per picker, so the form can add them up before it sends anything
   const [sizes, setSizes] = useState({});
   const totalBytes = Object.values(sizes).reduce((n, b) => n + b, 0);
@@ -214,6 +217,59 @@ export default function UploadForm({ action, aside }) {
         }}
       />
         </div>
+        {/* TESTING A PERIOD THAT IS STILL RUNNING. Deliberately plain and
+            deliberately last: the upload refuses a file holding days nobody has
+            worked, and this is the way past that check, so it should read like
+            what it is rather than an ordinary option. */}
+        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              name="partial"
+              checked={partial}
+              onChange={(e) => setPartial(e.target.checked)}
+              className="mt-0.5 h-4 w-4 flex-none accent-amber-600"
+            />
+            <span className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+              <span className="font-semibold">Testing: partial pay period.</span>{" "}
+              Keep only the days in the range below and drop the rest. The batch
+              is marked partial, and any workweek cut off part-way through has
+              provisional overtime.
+            </span>
+          </label>
+
+          {/* THE RANGE HAS TO BE TYPED. QSP returns the whole pay period
+              whatever range it was asked for, so the file cannot say what was
+              wanted and the only record of it is this. */}
+          {partial && (
+            <div className="mt-3 border-t border-amber-300 pt-3 dark:border-amber-800">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                  <span className="block">Keep days from</span>
+                  <input
+                    type="date"
+                    name="partialFrom"
+                    className="mt-1 rounded border border-amber-400 bg-surface px-2 py-1 font-mono text-xs text-foreground dark:border-amber-700"
+                  />
+                </label>
+                <label className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                  <span className="block">to</span>
+                  <input
+                    type="date"
+                    name="partialTo"
+                    className="mt-1 rounded border border-amber-400 bg-surface px-2 py-1 font-mono text-xs text-foreground dark:border-amber-700"
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                Leave either blank for no limit at that end. Days after today are
+                always dropped whatever you pick here - QSP prints shifts nobody
+                has worked yet exactly like real ones.
+              </p>
+            </div>
+          )}
+        </div>
+
         {totalBytes > 0 && (
           <p className={`mt-5 text-xs ${overLimit ? "font-semibold text-rose-600 dark:text-rose-400" : "text-muted"}`}>
             {mb(totalBytes)} selected

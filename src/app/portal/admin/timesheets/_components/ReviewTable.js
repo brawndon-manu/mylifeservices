@@ -228,6 +228,30 @@ export default function ReviewTable({
                   >
                     Hours &amp; penalties →
                   </a>
+                  {/* WHAT THIS PERSON SEES, opened as them. Only rendered when
+                      the server minted a token for it, which it only does for
+                      SUPER - see the note beside `canPreview`. Read-only on the
+                      far side: `?preview=1` blocks every write. */}
+                  {r.previewToken && (
+                    <>
+                      <a
+                        href={`/t/${r.previewToken}?preview=1`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-muted transition hover:text-brand"
+                      >
+                        Their corrections page →
+                      </a>
+                      <a
+                        href={`/t/${r.previewToken}/pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-muted transition hover:text-brand"
+                      >
+                        Their generated sheet →
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -312,15 +336,29 @@ export default function ReviewTable({
   );
 }
 
-// THE THREE DOCUMENTS FOR ONE PERSON, each carrying the total it opens.
+// THE DOCUMENTS FOR ONE PERSON, each carrying the total it opens.
 //
-// Mánu 2026-08-09 wants to hold them side by side. They differ by every premium
-// the engine assumed away - Aranda is 19.00 hours on one and 2.00 on another -
-// so the figure belongs on the link rather than behind it.
+// Mánu 2026-08-09 wanted them side by side. They differ by every premium the
+// engine assumed away - Aranda was 19.00 hours on one and 2.00 on another - so
+// the figure belongs on the link rather than behind it.
 //
-// WHERE THEY AGREE, ONLY ONE LINK SHOWS. Ten of the 59 owe nothing under any
-// reading and would otherwise get three identical links to the same document,
-// which teaches people that the labels do not mean anything.
+// "IF ASSUMPTIONS HOLD" IS GONE, dropped 2026-08-12 with the thing it described.
+// That basis existed because the engine APPLIED an assumption: an off-clock ten
+// was paid on sight, so there was a reading of the sheet where those assumptions
+// turned out right and a reading where they did not. The reversal the same day -
+// "only add the time once they confirm it was taken there" - means the engine
+// now assumes nothing, so the assumed and projected sheets are the same document
+// with two names on it. Mánu: "we should remove the if assumptions hold and
+// their generated sheet from the preview PDF."
+//
+// What is left is the honest pair: what the sheet says NOW, and what it says
+// once the corrections on record are applied.
+//
+// AN UNSIGNED ROW SHOWS ONE LINK, because until they sign there is nothing to
+// compare the projected sheet against. The old "where they agree, collapse to
+// one" rule went with the third document: it existed because ten of the 59 owed
+// nothing under any reading and got three identical links, which teaches people
+// that the labels do not mean anything.
 function SheetLinks({ r }) {
   const base = `/portal/admin/timesheets/sheet/${r.id}/download`;
   const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
@@ -328,8 +366,6 @@ function SheetLinks({ r }) {
   // and it is always the projected one. Say which it is.
   const settled = r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : null;
 
-  const same =
-    r.premiumProjected === r.premiumCorrected && r.premiumCorrected === r.premiumAssumed;
 
   const link = (href, label, muted) => (
     <a
@@ -344,18 +380,38 @@ function SheetLinks({ r }) {
     </a>
   );
 
-  if (same) {
-    return <div className="flex flex-col items-end">{link(base, settled || "Preview PDF")}</div>;
+  // Nothing to compare against until they have signed, so a row with no
+  // signature is one link whatever the figures say.
+  if (!settled) {
+    return (
+      <div className="flex flex-col items-end">
+        {link(`${base}?basis=projected`, `projected ${f2(r.premiumProjected)}`)}
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col items-end gap-0.5">
       <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">
-        {settled || "Preview PDF"}
+        {settled ? "Timesheet" : "Preview PDF"}
       </span>
-      {link(`${base}?basis=projected`, `projected ${f2(r.premiumProjected)}`)}
-      {link(`${base}?basis=assumed`, `if assumptions hold ${f2(r.premiumAssumed)}`, true)}
-      {link(`${base}?basis=corrected`, `as corrected ${f2(r.premiumCorrected)}`, true)}
+      {/* TWO DOCUMENTS, AND ONLY ONCE THERE ARE TWO. Mánu 2026-08-12: "i want
+          to keep the projected timesheet before corrections. i want a new
+          option for the final timesheet once theyve signed off on it."
+
+          FINAL is the stored signed or approved artefact - the plain base URL,
+          which the download route serves from the blob on the projected basis.
+          It is first because it is the only one carrying a signature.
+
+          PROJECTED is the sheet as it stood before any of their answers, kept
+          deliberately so payroll can see what changed.
+
+          The "as corrected" link that used to sit here is gone with it: it was a
+          generated mid-flight reading of a sheet that now has a final version,
+          and offering a third document differing from both was the thing that
+          made this column hard to read. */}
+      {link(base, r.approvedAt ? "Approved (final)" : "Final - signed")}
+      {link(`${base}?basis=projected&original=1`, `projected ${f2(r.premiumProjected)}`, true)}
     </div>
   );
 }

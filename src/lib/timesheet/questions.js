@@ -36,7 +36,7 @@
 // could not READ it. See `MANDATORY_KINDS`.
 
 import {
-  restKey, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
+  restKey, restNameFor, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
 
@@ -52,8 +52,16 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 // all of them are no or all of them are yes." A day he worked through is not the
 // same event as a day he took his ten and forgot to log it, and 432 day
 // decisions across the batch were being forced through one switch.
+//
+// `restOutsideScheduled` LEFT IT on 2026-08-12, for the same reason and on the
+// same objection. Mánu, on his own card again: "you have three dates under one
+// card. It should just show the same thing with the yellow warning line and then
+// the answers to choose from." One card carrying 07/28, 07/29 and 07/31 answers
+// for all three at once, and the day-by-day view then has to pick one date to
+// hang it on and tell the other two where it went. A ten logged after one day's
+// shift is not the same event as a ten logged after another's.
 const GROUPED = new Set([
-  "restOutsideScheduled", "shortMealRest",
+  "shortMealRest",
 ]);
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
@@ -79,6 +87,29 @@ export const questionId = (q) =>
 const MOVES_HOURS = new Set(["restOutsideScheduled"]);
 export const movesHours = (kind) => MOVES_HOURS.has(kind);
 
+// WHOSE ANSWER CHANGES WHAT ELSE GETS ASKED - which is a wider set than the one
+// that moves hours, and the gate wants this one.
+//
+// Mánu 2026-08-12 on Dinley 08/07: "I don't understand why it says rest break
+// one of two missing. she has both in. One of them is an AM/PM slip, so it
+// should be counted as a break. That's why it has that rest time looks
+// mis-entered."
+//
+// Both cards were about THE SAME TEN. Her 11:00 AM row is filed to 11:10 PM, so
+// it is not counted, so the day reads one rest short - and the day being one
+// rest short is what generates "one of two missing". The repair card asks
+// whether she took that break; answering yes sets `restViolation: false`, the
+// day leaves `restUndocumented`, and the second card stops existing. She was
+// being asked twice about one break and charged for it in the meantime.
+//
+// Every kind here clears a violation the breaks question is generated from:
+// `repair` and `restNoTimes` clear the rest one, `restIsMealLength` the meal.
+// None of them moves an hour, which is why `MOVES_HOURS` did not catch them.
+const CHANGES_WHAT_IS_ASKED = new Set([
+  "restOutsideScheduled", "repair", "restNoTimes", "restIsMealLength",
+]);
+const gatesOthers = (kind) => CHANGES_WHAT_IS_ASKED.has(kind);
+
 // the dates one question speaks for
 const datesOf = (q) => q.dates || (q.date ? [q.date] : []);
 
@@ -96,14 +127,14 @@ export function dependencyGate(questions, corrections) {
   const answered = (q) =>
     rows.some((c) => c.kind === `q_${q.kind}` && datesOf(q).includes(c.date));
 
-  const movers = (questions || []).filter((q) => movesHours(q.kind));
+  const movers = (questions || []).filter((q) => gatesOthers(q.kind));
   const openMoverDates = new Set(
     movers.filter((q) => !answered(q)).flatMap(datesOf),
   );
 
   const waiting = new Set();
   for (const q of questions || []) {
-    if (movesHours(q.kind)) continue;
+    if (gatesOthers(q.kind)) continue;
     if (datesOf(q).some((d) => openMoverDates.has(d))) waiting.add(q.id);
   }
 
@@ -113,7 +144,7 @@ export function dependencyGate(questions, corrections) {
   for (const q of movers) {
     const mine = new Set(datesOf(q));
     disturbs[q.id] = (questions || [])
-      .filter((x) => !movesHours(x.kind) && datesOf(x).some((d) => mine.has(d)) && answered(x))
+      .filter((x) => !gatesOthers(x.kind) && datesOf(x).some((d) => mine.has(d)) && answered(x))
       .map((x) => x.id);
   }
   return { waiting, disturbs };
@@ -184,6 +215,53 @@ export function restWindow(day, ordinal) {
 }
 
 // is a chosen start inside one of the day's shifts, and inside its own window?
+// A LUNCH GOES IN A GAP, WHICH IS THE OPPOSITE OF WHERE A TEN GOES.
+//
+// A rest period is paid and stays ON the clock, so it sits inside a shift. A
+// meal is unpaid and OFF it, so the only place one can have happened is a gap
+// between two shifts - the punch-out IS the record. That asymmetry is the whole
+// reason these are two functions and not one.
+//
+// OFFERED, NEVER ASSUMED. Mánu 2026-08-12: "The engine should pick up the meal
+// breaks if they're called meal breaks. We do not assume that those are meal
+// breaks." So a gap of the right length is a candidate the employee can pick,
+// not a lunch the sheet declares - and every qualifying gap is offered rather
+// than only the longest, because "offer both gaps or let them choose their own
+// as long as the time is 30 minutes of availability for lunch."
+//
+// THIRTY, not the 21 that `parse.js` uses to recognise a meal-shaped gap after
+// the fact. Reading a 25 minute gap as somebody's short lunch is one thing;
+// telling them they could have taken a lawful half hour in it is another.
+export const MEAL_MIN_MINUTES = 30;
+
+export function mealWindows(day, minMinutes = MEAL_MIN_MINUTES) {
+  const shifts = shiftsOf(day);
+  const out = [];
+  for (let i = 1; i < shifts.length; i++) {
+    const from = shifts[i - 1].to;
+    const to = shifts[i].from;
+    if (to - from >= minMinutes) out.push({ from, to });
+  }
+  return out;
+}
+
+// A typed time is accepted only where a full half hour actually fits. Uribe
+// 08/02 has gaps of 30 and 225 minutes: the 30 holds a lunch exactly, the 225 is
+// unscheduled unpaid time and holds one with room to spare. A day with no gap at
+// all offers nothing, because a meal nobody clocked out for is a meal nobody
+// could have taken.
+// Shaped like `restTimeFits` - {ok, why} rather than a bare boolean - because a
+// refusal has to be able to say which rule it broke.
+export function mealTimeFits(day, startMin, minutes = MEAL_MIN_MINUTES) {
+  const shifts = shiftsOf(day);
+  if (!shifts.length) return { ok: true, why: null };   // nothing to judge it by
+  if (startMin == null || !Number.isFinite(startMin)) return { ok: false, why: "notime" };
+  const windows = mealWindows(day, minutes);
+  if (!windows.length) return { ok: false, why: "nogap" };
+  const fits = windows.some((w) => startMin >= w.from && startMin + minutes <= w.to);
+  return fits ? { ok: true, why: null } : { ok: false, why: "window" };
+}
+
 export function restTimeFits(day, ordinal, startMin, minutes = FULL_REST_MIN) {
   const shifts = shiftsOf(day);
   if (!shifts.length) return { ok: true, why: null };   // nothing to judge it by
@@ -214,15 +292,27 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
   const out = [];
   if (wantMeal) {
     const m = rosteredMeal(entry);
+    // every gap a lawful half hour fits in, offered as something to pick. NOT
+    // prefilled - a gap is where a lunch COULD have gone, and the whole point of
+    // this question is that nothing recorded where it did.
+    const windows = mealWindows(day);
+    const asText = windows.map((w) => `${clock(w.from)}-${clock(w.to)}`);
     out.push({
       slot: "meal",
       kindOf: "meal",
       label: "Lunch started",
-      minutes: 30,
+      minutes: MEAL_MIN_MINUTES,
       // the roster booked it, so it is a time and not a guess
       prefill: m ? clock(m.from) : null,
       source: m ? "schedule" : null,
-      hint: m ? "from your schedule - change it if that is not when you went" : null,
+      // the gaps themselves, so they can pick one or type their own
+      options: windows.map((w) => clock(w.from)),
+      windows: asText,
+      hint: m
+        ? "from your schedule - change it if that is not when you went"
+        : asText.length
+          ? `has to be a half hour inside ${asText.join(" or ")}`
+          : "there is no gap in this day long enough to have taken one",
     });
   }
   if (wantRest) {
@@ -269,8 +359,12 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   const days = data.days || [];
   const dates = new Set(days.map((d) => d.date));
   const dayOf = (date) => days.find((d) => d.date === date) || null;
+  // under the spelling the REST REPORT used, which is not always the timesheet's
+  // - see `restNameFor`. Resolved here rather than at the five call sites, since
+  // every one of them already hands over the `data` that holds the answer.
+  const mineKey = restKey(restNameFor(sourceName, data));
   const mine = (restRows || []).filter(
-    (r) => restKey(r.name) === restKey(sourceName || "") && dates.has(r.date),
+    (r) => restKey(r.name) === mineKey && dates.has(r.date),
   );
   const out = [];
 
@@ -340,14 +434,24 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 
   for (const r of mine) {
     if (!r.repair || mealReadingWins(r)) continue;
-    const fixedOut = r.repair.field === "out" ? r.repair.to : r.out;
-    const fixedIn = r.repair.field === "out" ? r.in : r.repair.to;
+    // `both` moves the whole row twelve hours - see `proposeRepair`. Reading it
+    // as a single-field fix would leave the untouched end at its recorded value
+    // and propose a break running from 11:00 AM to 11:10 PM.
+    const both = r.repair.field === "both";
+    const fixedOut = both ? r.repair.outTo : r.repair.field === "out" ? r.repair.to : r.out;
+    const fixedIn = both ? r.repair.inTo : r.repair.field === "out" ? r.in : r.repair.to;
     out.push({
       kind: "repair",
       date: r.date,
       at: r.out || "",
       moves: takesOff(r.date, "rest"),
-      row: { out: r.out, in: r.in, derivation: r.derivation, minutes: r.repair.minutes },
+      // `minutes` is what it is being COUNTED as; `recordedMinutes` is what the
+      // document literally says, which is the number worth putting in front of
+      // somebody - twelve hours and ten minutes is its own argument.
+      row: {
+        out: r.out, in: r.in, derivation: r.derivation,
+        minutes: r.repair.minutes, recordedMinutes: r.minutes,
+      },
       proposed: { from: fixedOut, to: fixedIn },
       canGiveTime: true,
     });
@@ -452,6 +556,18 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       const s = clockMin(r.out), e = clockMin(r.in);
       return a != null && z != null && s != null && e != null && s >= a && e <= z;
     });
+    // TWO LUNCHES ON ONE DAY, which is what this shape usually is. The row is
+    // meal-length and the schedule already rosters a meal, so the day carries
+    // two of them and the card has to say so rather than calling the second one
+    // "not a break". Mánu 2026-08-12: "if they have 2 lunches then make it be
+    // asked if its correct or if it accidentally added in or if one needs to be
+    // removed."
+    //
+    // `mealScheduled` and not `mealMissing`: the first says a lunch was
+    // ROSTERED, which is the other lunch. The second is false on a day that
+    // needed no lunch at all, and a 5.92 hour day with one long entry is not two
+    // lunches.
+    const twoLunches = d.mealScheduled === true && isMealLengthRest(r);
     out.push({
       kind: "restTooLongOffClock",
       date: r.date,
@@ -463,6 +579,7 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
         to: shortTime(r.reversed ? r.out : r.in),
         minutes: r.minutes,
         onClock,
+        twoLunches,
         hours: r2(d.paidHours),
       },
       canGiveTime: true,
@@ -514,19 +631,37 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     offClockRows.push({ r, d, out, inn, minutes: inn - out });
   }
 
-  if (offClockRows.length) {
+  // ONE CARD PER DATE. The arithmetic below is unchanged - it just runs over one
+  // day's rows at a time instead of every day's at once, and the days are
+  // disjoint so the totals still add up to what a single card produced.
+  const offClockByDate = new Map();
+  for (const x of offClockRows) {
+    if (!offClockByDate.has(x.r.date)) offClockByDate.set(x.r.date, []);
+    offClockByDate.get(x.r.date).push(x);
+  }
+  for (const [offClockDate, offClockRows] of offClockByDate) {
     const minutes = offClockRows.reduce((n, x) => n + x.minutes, 0);
     // HOW MANY OF THOSE MINUTES THE STORED DAY ALREADY PAYS. On a sheet built
     // since the flip that is all of them; on one built before it, only the rows
     // the old engine did not read as a mis-click. The patches below work from
     // this rather than assuming, so an answer lands the same figure on a batch
     // uploaded last week and one uploaded today.
+    // `addedHours`, NOT `restsOffClockMin`. The two were the same number while
+    // the engine paid these minutes on sight, and they came apart on 2026-08-12:
+    // `restsOffClockMin` is what the report RECORDED and `addedHours` is what
+    // the day actually GAINED. Reading the recorded figure on a sheet built
+    // since the reversal said the day already paid all of it, so `moves` came
+    // out at zero and the card promised nothing for the answer that adds them.
+    //
+    // It is also the right number in the floor cases, which the raw minutes
+    // never were: `addedHours` is what QSP's printed floor actually let
+    // through, so a day being floored up already reads zero here.
     const seenDays = new Set();
-    let inPaid = 0;
+    let inPaidHours = 0;
     for (const { d } of offClockRows) {
       if (seenDays.has(d.date)) continue;
       seenDays.add(d.date);
-      inPaid += d.restsOffClockMin || 0;
+      inPaidHours += d.addedHours || 0;
     }
     const detail = offClockRows.map(({ r, d, out, inn, minutes: m }) => {
       const fit = r.fit || serviceFit(r);
@@ -572,11 +707,20 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     }));
     out.push({
       kind: "restOutsideScheduled",
-      dates: [...new Set(offClockRows.map((x) => x.r.date))],
-      // the default already pays these, so confirming moves nothing
-      moves: 0,
-      movesOnDecline: -r2(minutes / 60),
-      row: { minutes, days: new Set(offClockRows.map((x) => x.r.date)).size, detail, inPaid },
+      date: offClockDate,
+      dates: [offClockDate],
+      // THE DEFAULT NO LONGER PAYS THESE, so it is CONFIRMING that moves the
+      // figure and declining that leaves it alone - the exact opposite of the
+      // 2026-08-09 flip this replaces. Mánu 2026-08-12: "only add the time once
+      // they confirm it was taken there."
+      //
+      // `inPaid` is what the STORED day already carries, which on a sheet built
+      // before 2026-08-12 is all of these minutes and after it is none. The
+      // patch works from that rather than assuming, so one answer lands the same
+      // hours on a batch uploaded last week and one uploaded today.
+      moves: r2(Math.max(0, minutes / 60 - inPaidHours)),
+      movesOnDecline: -r2(inPaidHours),
+      row: { minutes, days: 1, detail, inPaid: Math.round(inPaidHours * 60) },
       needs,
       needsOn: "no",
       canGiveTime: true,
@@ -763,9 +907,27 @@ export function signingGate(questions, corrections) {
   const outstanding = required.filter((q) => !answered(q));
   const optionalOpen = all.filter((q) => !(q.mandatory ?? isMandatory(q.kind))).filter((q) => !answered(q));
   return {
-    // nothing left that has to be settled, so they may sign
-    canSign: outstanding.length === 0,
-    blocking: outstanding.length,
+    // A SHEET IS SIGNABLE AT ANY TIME. Mánu 2026-08-12.
+    //
+    // This used to be `outstanding.length === 0`, so an unanswered mandatory
+    // question held the signature up and the page said so - "you cannot sign
+    // until every day has an answer". The premise was that a question we could
+    // not read had to be settled before anybody signed off on the figures.
+    //
+    // It does not survive the 2026-08-11 flip. Leaving a question alone now
+    // keeps the pay ON: silence is the answer that costs the employee nothing,
+    // and every card says so. Blocking the signature on silence therefore held
+    // somebody's timesheet hostage to a question whose safe answer they had
+    // already given by not touching it.
+    //
+    // `outstanding` is still counted and still returned - the questions are
+    // still asked, and a surface that wants to say how many are open can - it
+    // simply no longer decides who may sign. Nothing enforced this server-side,
+    // so this is the whole of the gate.
+    canSign: true,
+    blocking: 0,
+    // still open and still mandatory, for anything that wants to report it
+    unanswered: outstanding.length,
     // what the reassurance popup counts. Ignoring these is the safe choice.
     optionalOpen: optionalOpen.length,
   };
@@ -808,8 +970,20 @@ export function patchesFor(question, choice, day) {
   const yes = choice === "yes";
   switch (question.kind) {
     case "repair":
-      // unchanged behaviour: yes clears the rest violation for the day
-      return yes ? { restViolation: false } : { restViolation: null };
+      // A CONFIRMED REPAIR IS A BREAK THAT HAPPENED, so it is counted as one.
+      //
+      // Mánu 2026-08-12 on Dinley 08/07: "she has both in. One of them is an
+      // AM/PM slip, so it should be counted as a break."
+      //
+      // Clearing `restViolation` alone left the day reading `restTaken: 1` of 2
+      // - so the sheet said one rest short while charging nothing for it, and
+      // `reentitle` then recomputed the violation straight back from that count.
+      // Counting the ten is what makes the day internally consistent: two of two
+      // taken, no violation, and nothing left for the re-derivation to disagree
+      // with.
+      return yes
+        ? { restViolation: false, restTaken: (day?.restTaken ?? 0) + 1 }
+        : { restViolation: null };
     case "restIsMealLength":
       // "yes, that was my meal" - the day's meal was taken, so no meal premium
       return yes ? { mealViolation: false } : { mealViolation: null };
@@ -831,11 +1005,38 @@ export function patchesFor(question, choice, day) {
       // exactly how many of these minutes the stored day already pays: all of
       // them on a sheet built since the flip, only the non-mis-click ones on a
       // sheet built before it
+      // WHAT THE DAY WOULD PAY WITH NO ADDITION AT ALL, which is the only stable
+      // thing to build an absolute on. This read `restsOffClockMin`, the
+      // RECORDED minutes - true of what the day paid only while the engine paid
+      // them on sight. Since 2026-08-12 it pays none of them by default, so
+      // subtracting the recorded figure took off ten minutes that were never
+      // there: confirming landed back where it started and declining went
+      // BELOW the worked hours.
+      //
+      // `addedHours` is defined as `paidHours - withFloor(paidMin - offClock)`,
+      // so this is exact under both policies and in the floor cases too.
+      const base = (day?.paidHours || 0) - (day?.addedHours || 0);
+      // the RECORDED off-clock minutes, which is a different number and still
+      // the right one for the counters below - they describe what the report
+      // holds, not what the day paid for it
       const already = day?.restsOffClockMin || 0;
-      const base = (day?.paidHours || 0) - already / 60;
 
-      // "yes, that is when I took it" - off the clock, so the minutes are pay
-      if (yes) return { paidHours: r2(Math.max(0, base + mins / 60)) };
+      // "No, it was not a mistake - I took it then." Off the clock, so the
+      // minutes become pay, AND `addedHours` has to be SET rather than left
+      // alone: since 2026-08-12 the day adds nothing on its own, so it arrives
+      // here at zero and the sheet's "added" line is drawn from it. Before the
+      // reversal this branch could stay silent because the minutes were already
+      // in both figures.
+      //
+      // The arithmetic is unchanged and deliberately absolute - `base` strips
+      // whatever the stored day happened to pay - so this lands the same hours
+      // on a sheet built before the reversal and one built after it.
+      if (yes) {
+        return {
+          paidHours: r2(Math.max(0, base + mins / 60)),
+          addedHours: r2(mins / 60),
+        };
+      }
 
       // THE MINUTES STOP BEING OFF-CLOCK TIME, and everything the sheet draws
       // from that has to follow. `restsOffClock*` is what stripes the cell and

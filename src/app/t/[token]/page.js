@@ -13,8 +13,17 @@ import {
   answerTimesheetQuestion,
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
-import { buildQuestions, signingGate, dependencyGate } from "@/lib/timesheet/questions";
+import { buildQuestions, signingGate, dependencyGate, questionId } from "@/lib/timesheet/questions";
+import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
+import { restKey, restNameFor } from "@/lib/timesheet/rests";
+import { drawnBreaksFor } from "@/lib/timesheet/recorded-breaks";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
+import { getCurrentUser } from "@/lib/current-user";
+import { isSuper } from "@/lib/roles";
+import { sendModeSummary } from "@/lib/timesheet-mode";
+import { sendTimesheets } from "@/app/portal/admin/timesheets/actions";
+import PreviewSend from "./PreviewSend";
+import PreviewReset from "./PreviewReset";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
@@ -27,16 +36,40 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function SignTimesheetPage({ params }) {
+export default async function SignTimesheetPage({ params, searchParams }) {
   const { token } = await params;
   const id = verifyTimesheetToken(token);
   if (!id) notFound();
 
+  // PREVIEW: A SUPER LOOKING AT SOMEBODY ELSE'S PAGE.
+  //
+  // The token alone is enough to open this page - it is the credential, and it
+  // has to be, because the person it belongs to has no login. So `?preview=1` is
+  // NOT what grants access; it only ever takes things away, and only for someone
+  // who is signed in as SUPER. A stranger appending it to a leaked link gets the
+  // ordinary page, and the employee's own link is unaffected either way.
+  //
+  // What it takes away is every write. Mánu asked to "test run" these, and the
+  // thing that must not happen while testing is an answer or a signature landing
+  // on a real person's record - this batch has already lost one answer to a
+  // stray click. So the actions are replaced with a refusal rather than hidden:
+  // a hidden button cannot be tested, and a refused one proves the block works.
+  const sp = await searchParams;
+  const viewer = sp?.preview ? await getCurrentUser() : null;
+  const preview = !!sp?.preview && isSuper(viewer?.role);
+
+  const refuse = async () => {
+    "use server";
+    return { ok: false, error: "preview" };
+  };
+
   const ts = await prisma.timesheet.findUnique({
     where: { id },
     include: {
-      batch: { select: { periodFrom: true, periodTo: true, restsByDate: true } },
-      user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      // `id` and the employee's email are for the preview's send button, which
+      // is the only thing on this page that needs either
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } },
+      user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
       // every correction, not just the open ones: the open ones block signing,
       // and the resolved `q_` rows are the answers already given to the five
       // pre-signing questions. one relation, so it cannot be included twice.
@@ -44,6 +77,10 @@ export default async function SignTimesheetPage({ params }) {
         select: {
           id: true, date: true, kind: true, note: true, status: true,
           createdAt: true, resolutionNote: true,
+          // which of a three-outcome card they picked. Same trap as
+          // `statedBreaks` below: left out it is undefined rather than absent,
+          // and every such answer reloads showing the wrong button.
+          choice: true,
           // needed to tell a partial from a plain decline - see `partials`
           // below. Left out, it comes back undefined and every partial reloads
           // as "Missed them", which is a different thing to have told payroll.
@@ -92,6 +129,12 @@ export default async function SignTimesheetPage({ params }) {
   // i dont think it should show the options like this ... so they arent in
   // scrolling hell after a long time sheet."
   const answerTimes = {};
+  // WHICH OF A CARD'S OUTCOMES THEY PICKED, where there are more than two.
+  // `status` cannot say - it holds accepted or declined - and on
+  // `restTooLongOffClock` two of the three answers are declines that move no
+  // figure. Null on rows written before the column existed; the card falls back
+  // to reading the status the way it always did.
+  const choices = {};
   for (const q of questions) {
     const dates = q.dates || [q.date];
     // EVERY ROW THE ANSWER WROTE, not just the first. A grouped question writes
@@ -100,6 +143,7 @@ export default async function SignTimesheetPage({ params }) {
     const hits = answered.filter((c) => c.kind === `q_${q.kind}` && dates.includes(c.date));
     if (!hits.length) continue;
     answers[q.id] = hits[0].status;
+    if (hits[0].choice) choices[q.id] = hits[0].choice;
     const times = hits.flatMap((h) => (Array.isArray(h.statedBreaks) ? h.statedBreaks : []));
     if (times.length) {
       answerTimes[q.id] = times;
@@ -127,10 +171,118 @@ export default async function SignTimesheetPage({ params }) {
   // separate cards asking about the same days, one for lunches and one for tens.
   // They share a `batch`, so they stay one card and the day keeps its parts
   // together.
+  //
+  // FALLING BACK TO `questionId`, NOT THE BARE KIND, since 2026-08-12. The kind
+  // was the same thing as the id right up until `restOutsideScheduled` started
+  // emitting one question per date - and grouping on the kind put all three of
+  // Uribe's back into the single card he had just asked to be rid of, which is
+  // why splitting them in the engine appeared to do nothing at all on screen.
+  //
+  // `questionId` is already the right authority: it returns the bare kind for a
+  // GROUPED kind and `kind:date` for everything else, so what shares a card is
+  // decided in exactly one place instead of two that can disagree.
+  // WHAT THE ROSTER BOOKED EACH STRETCH OF THE DAY AS, so the calendar can name
+  // it. Read here, on the server, because `schedule.js` pulls in the pdf stack
+  // and none of that belongs in a browser bundle - the client is handed plain
+  // {from, to, service} and nothing else. The client name is dropped in
+  // `serviceOf`, so it never reaches the page at all.
+  // WHAT THE TWO-LUNCHES ANSWER DOES TO THE PICTURE.
+  //
+  // Mánu 2026-08-12: "when they confirm what it is the change can happen live to
+  // that calendar view." All three answers move no money, so the ONLY thing they
+  // can change is what the day shows - which makes the picture the entire point
+  // of asking, and a card whose answer changed nothing visible would read as
+  // having been ignored.
+  //
+  //   yes        both lunches are real, so both stay drawn
+  //   no         the recorded one was added by accident - it comes off
+  //   wrongone   only one lunch happened and the RECORDED one is it, so the
+  //              lunch on the SCHEDULE is the wrong record and that comes off
+  //
+  // Keyed on date AND the row's own out-time, so a day carrying two of these
+  // does not answer for both at once.
+  //
+  // THE DATA CHECKS CALENDAR DOES NONE OF THIS, deliberately - see the note on
+  // `dayViews` there. That one is the audit picture and stays as QSP wrote it.
+  const droppedRest = new Set();
+  const droppedRosteredMeal = new Set();
+  for (const q of questions) {
+    if (q.kind !== "restTooLongOffClock" || !q.date) continue;
+    const picked = choices[q.id];
+    if (picked === "no") droppedRest.add(`${q.date}|${q.at}`);
+    if (picked === "wrongone") droppedRosteredMeal.add(q.date);
+  }
+
+  const scheduledByDate = {};
+  for (const [date, row] of Object.entries(ts.data?.scheduleCheck?.byDate || {})) {
+    const blocks = [];
+    for (const sh of row?.shifts || []) {
+      const t = blockTimes(sh.text);
+      const service = serviceOf(sh.text);
+      if (!t || !service) continue;
+      // they told us the rostered lunch is the record that is wrong
+      if (sh.meal && droppedRosteredMeal.has(date)) continue;
+      blocks.push({ from: t.start, to: t.end, service, meal: !!sh.meal });
+    }
+    if (blocks.length) scheduledByDate[date] = blocks;
+  }
+
+  // THE REST ROWS FILED UNDER THIS PERSON'S OWN NAME, by date.
+  //
+  // Read straight off the report rather than out of a question, because a day
+  // whose rests are all accounted for asks nothing - and that is exactly the day
+  // that was drawing no rest at all. Mánu 2026-08-12 on his 07/30: "it says
+  // nothing to check on this day ... it should show the miscellaneous time from
+  // twelve to twelve ten. as well as the rest overlapping that exact time."
+  //
+  // MATCHED WITH THE ENGINE'S OWN `restKey`, not a second spelling of it, and
+  // only where the name matches exactly. This is display only - it draws a block
+  // and moves no figure - which is the difference between it and the recount
+  // that once invented three premium hours for the wrong Delgado Pineda.
+  //
+  // AGAINST THE NAME THE REPORT USES, which is not always the one on the sheet.
+  // "Delgado Pineda, Ruth" is filed under "Delgado Pineda, Angel" in the rest
+  // report, and this page drew her no rest blocks at all while her signed sheet
+  // counted them. `restNameFor` reads back the spelling upload already matched
+  // through her portal account; it scores nothing here. See `restNameFor`.
+  // WHERE EACH ROW IS DRAWN IS `drawnRest`'S ANSWER, not this loop's.
+  //
+  // It used to filter on `countsAsTaken` and take `Math.min` of the two columns,
+  // and that is wrong in both directions on the rows that matter most. A
+  // meal-length row never counts, so it drew nothing; a REPAIRED row drew at its
+  // recorded time, so Martinez 07/23 - which the engine reads as a ten at
+  // 3:50-4:00 and the signed sheet draws there - appeared on his own calendar as
+  // fifty minutes starting at 3p. A picture beside a question about a break has
+  // to agree with the document the question is about.
+  //
+  // AND THE ANSWER MOVES THE BLOCK. `drawnBreaksFor` folds in `statedBreaks` and
+  // `statedRest` exactly as the sheet's `entriesFor` does, so a break the
+  // employee has corrected is drawn where they said it was and the recorded one
+  // it replaced stops being drawn. This loop used to read the report rows alone:
+  // Uribe answered his 07/28 ten "the time was entered wrong, it was 11:50a",
+  // the sheet rebuilt to 11:50a, the card said so - and the calendar underneath
+  // still drew 12p-12:10p, which is the one place he would look to check.
+  const mine = restKey(restNameFor(ts.sourceName, ts.data));
+  const dayOn = new Map((ts.data?.days || []).map((d) => [d.date, d]));
+  const rowsByDate = {};
+  for (const row of ts.batch.restsByDate || []) {
+    if (!row.date || restKey(row.name) !== mine) continue;
+    (rowsByDate[row.date] ||= []).push(row);
+  }
+  const restsByDate = {};
+  for (const date of new Set([...Object.keys(rowsByDate), ...dayOn.keys()])) {
+    const d = dayOn.get(date) || null;
+    const blocks = drawnBreaksFor(rowsByDate[date] || [], d, {
+      mealScheduled: d?.mealScheduled ?? null,
+      dropped: droppedRest,
+    });
+    if (blocks.length) restsByDate[date] = blocks;
+  }
+
+  const cardKey = (q) => q.batch || questionId(q);
   const byKind = [];
   for (const q of questions) {
-    const key = q.batch || q.kind;
-    const found = byKind.find((g) => (g[0].batch || g[0].kind) === key);
+    const found = byKind.find((g) => cardKey(g[0]) === cardKey(q));
     if (found) found.push(q);
     else byKind.push([q]);
   }
@@ -166,7 +318,39 @@ export default async function SignTimesheetPage({ params }) {
     // wider than a reading column on purpose: the main thing on this page is a
     // dense letter-size timesheet, and squeezing it into 768px put its 7pt table
     // text at roughly 7 pixels tall.
-    <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
+    // max-w-6xl since 2026-08-12, to buy the day-by-day calendar the width its
+    // overlapping blocks need without stacking the answer options beside them.
+    // See the note on the calendar column in DayByDay.
+    <section className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
+      {/* SAYING WHOSE PAGE THIS IS. Without it a preview is indistinguishable
+          from your own sheet - same layout, same questions, somebody else's
+          hours - and the first thing anybody does on a page like this is click
+          something. Named, not just flagged: "you are previewing" is a state,
+          "previewing Uribe, Brandon" is a fact you can check against the row you
+          came from. */}
+      {preview && (
+        <div
+          role="status"
+          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30"
+        >
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Preview &mdash; this is {ts.sourceName}&apos;s page, exactly as they see it.
+          </p>
+          <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+            Nothing you do here is saved. Answering a question or signing will be
+            refused, so their record cannot be changed from this tab.
+          </p>
+          {/* the one exception, and it goes the other way: this does not add an
+              answer, it takes every answer off. Mánu 2026-08-12: "I meant to
+              reset page. When you open up someone's time sheet corrections." */}
+          <PreviewReset
+            timesheetId={ts.id}
+            name={ts.sourceName}
+            answers={answered.length}
+            signed={!!ts.signedAt}
+          />
+        </div>
+      )}
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         My Life Services
       </p>
@@ -183,29 +367,23 @@ export default async function SignTimesheetPage({ params }) {
         <Figure label="Hours worked" value={ts.paidHours} strong />
         {ts.otHours > 0 && <Figure label="Overtime" value={ts.otHours} />}
         {ts.doubleHours > 0 && <Figure label="Double time" value={ts.doubleHours} />}
-        {/* WHAT IS BEING PAID. After the flip the penalty pay is ON the sheet
-            and the second line is what would come OFF it - the opposite of what
-            these two said until 2026-08-11, when the charged figure was small
-            and the assumed one was the invisible exposure. */}
-        {standing.charged > 0 && (
-          <Figure label="Break penalty pay included" value={standing.charged} tone="prem" />
-        )}
-        {standing.assumptions > 0 && (
-          <Figure
-            label="Comes off only if you tell us you took them"
-            value={standing.assumptions}
-            tone="muted"
-          />
-        )}
+        {/* HOURS ONLY. "Break penalty pay included" and "Comes off only if you
+            tell us you took them" both came out 2026-08-12 - Mánu: "make the top
+            only show the hours worked". Overtime and double time stay: they are
+            hours worked, not penalty pay, and they are what the sheet below
+            prints. `standing` is still computed - the policy line and the
+            questions read it. */}
       </div>
       {standing.assumptions > 0 && (
-        /* WHAT THE QUESTIONS ARE FOR, now that they cannot cost anybody money by
-           being ignored. The policy is still named and still linked - it is why
-           we are entitled to ask at all - but it is no longer holding a figure
-           off somebody's sheet, so the paragraph says what it does say. */
+        /* THE POLICY, NAMED AND LINKED, AND NOTHING ELSE. Mánu 2026-08-12 cut
+           this back to one sentence: the paragraph used to open "Those N hours
+           ARE on this timesheet and you will be paid them unless you tell us
+           otherwise" and go on to explain what saying so would cost. Every
+           figure and every consequence is gone; what remains is why we are
+           entitled to ask at all. Still shown only when there is an assumption
+           on the sheet, which is what makes the policy relevant to the page. */
         <p className="mt-2 text-sm leading-relaxed text-muted">
-          Those {standing.assumptions.toFixed(2)} hours <b>are</b> on this timesheet and you will be
-          paid them unless you tell us otherwise. Under the{" "}
+          Under the{" "}
           {policy ? (
             <a
               href={policy.path}
@@ -218,10 +396,8 @@ export default async function SignTimesheetPage({ params }) {
           ) : (
             <b>Rest &amp; Meal Period Policy and Acknowledgement</b>
           )}{" "}
-          you signed, recording your rest periods and meal breaks is your responsibility. Where a
-          break is not on record we have paid the penalty for it rather than assume you took it.
-          If you did take those breaks and simply did not write them down, say so below and the
-          pay comes off. If you are not sure, leave it - nothing is taken off unless you say so.
+          you signed, recording your rest periods and meal breaks is to be documented in your
+          schedule.
         </p>
       )}
 
@@ -302,14 +478,17 @@ export default async function SignTimesheetPage({ params }) {
               <DayByDay
                 days={ts.data.days}
                 groups={byKind}
+                scheduled={scheduledByDate}
+                restsOnRecord={restsByDate}
                 token={token}
                 answers={answers}
                 partials={partials}
                 answerTimes={answerTimes}
+                choices={choices}
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
-                submitAction={answerTimesheetQuestion}
+                submitAction={preview ? refuse : answerTimesheetQuestion}
               />
             }
             detailed={byKind.map((group) => (
@@ -320,10 +499,11 @@ export default async function SignTimesheetPage({ params }) {
                 answers={answers}
                 partials={partials}
                 answerTimes={answerTimes}
+                choices={choices}
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
-                submitAction={answerTimesheetQuestion}
+                submitAction={preview ? refuse : answerTimesheetQuestion}
               />
             ))}
           />
@@ -368,21 +548,16 @@ export default async function SignTimesheetPage({ params }) {
               answering revalidates this page, but FormFiller fetches the file
               once on mount, so without a key change the viewer would keep
               showing the sheet from before the answer. */}
-          {!gate.canSign && (
-            <div className="mt-5 rounded-xl border border-dashed border-border-strong p-4">
-              <p className="text-sm text-muted">
-                {gate.blocking === 1
-                  ? "There is one question above that needs an answer before you can sign. Your timesheet is below either way - it updates as you answer."
-                  : `There are ${gate.blocking} questions above that need answering before you can sign. Your timesheet is below either way - it updates as you answer.`}
-              </p>
-            </div>
-          )}
+          {/* The "there are N questions above that need answering before you can
+              sign" panel stood here. It went with the gate on 2026-08-12 - the
+              sheet is signable at any time, so there is nothing to warn about.
+              See `signingGate`. */}
           <TimesheetSigner
             key={`sheet-${answered.length}`}
             token={token}
             fileUrl={`/t/${token}/pdf?v=${answered.length}`}
             title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
-            submitAction={submitSignedTimesheet}
+            submitAction={preview ? refuse : submitSignedTimesheet}
             /* THE POPUP IS REASSURANCE, NOT A WARNING. Ignoring these is the
                safe choice for the employee now, so the panel says the pay is
                already on the sheet rather than nagging them to finish. The
@@ -392,10 +567,41 @@ export default async function SignTimesheetPage({ params }) {
             canSign={gate.canSign}
             blocking={gate.blocking}
           />
+          {/* WHERE THE SIGNATURE WOULD GO, because that is the one thing this
+              tab cannot supply. Mánu 2026-08-12: "The email them their link
+              should go to the bottom where it says sign and submit because you
+              can't sign and submit for them."
+
+              It sits under the signer rather than replacing it: on a call you
+              want to be able to say "you will see a box asking for your name,
+              then a Submit button" while looking at the same thing they will.
+              What the page cannot do is press it for them - so the way out is
+              here, at the point where the conversation runs out of things an
+              admin is allowed to do. */}
+          {preview && (
+            <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                You cannot sign this for them.
+              </p>
+              <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+                A signature has to come from {ts.sourceName}. Send them the link
+                and they can sign it themselves once you have been through it.
+              </p>
+              <PreviewSend
+                action={sendTimesheets.bind(null, ts.batch.id)}
+                timesheetId={ts.id}
+                name={ts.sourceName}
+                email={ts.user?.email || null}
+                mode={sendModeSummary()}
+                alreadySent={!!ts.sentAt}
+              />
+            </div>
+          )}
+
           <ReportProblem
             token={token}
             days={ts.data?.days || []}
-            submitAction={submitTimesheetCorrections}
+            submitAction={preview ? refuse : submitTimesheetCorrections}
           />
         </>
       )}

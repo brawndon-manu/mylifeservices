@@ -7,25 +7,27 @@ import { randomBytes } from "node:crypto";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
+import { futureDates, trimDays, isoDate } from "@/lib/timesheet/partial";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageTimesheets } from "@/lib/roles";
+import { canManageTimesheets, isSuper } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   parseTimesheetPdf,
   analyzeTimesheet,
   applyOvertime,
   reentitle,
+  restsTakenFrom,
   analyzeDay,
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildQuestions, patchesFor, restTimeFits } from "@/lib/timesheet/questions";
+import { buildQuestions, patchesFor, restTimeFits, mealTimeFits } from "@/lib/timesheet/questions";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
-import { parseRestReport, restKey, allRestRows, clockMin, serviceFit, FULL_REST_MIN } from "@/lib/timesheet/rests";
+import { parseRestReport, restKey, restNameFor, restRowTimes, allRestRows, clockMin, serviceFit, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -104,6 +106,25 @@ export async function uploadBatch(formData) {
   // while this action runs. namespaced under the user inside progressKey - it is
   // never trusted as a key by itself. A null key makes every write a no-op, so
   // an upload with no id behaves exactly as it did before.
+  // TESTING A PERIOD THAT HAS NOT ENDED. Off unless the box is ticked, and what
+  // it does is drop days - never widen what counts.
+  //
+  // THE RANGE IS TYPED BECAUSE THE EXPORT DOES NOT CARRY IT. Mánu 2026-08-12:
+  // "on QSP, I put August first to August ninth, and it still spit out
+  // everything else." QSP snaps to whole pay periods, so the file says
+  // 08/01-08/15 whatever was asked for, and the only record of the intended
+  // window is the person who typed it. Both ends optional: no end means today.
+  const wantPartial = formData.get("partial") === "on";
+  const partialFromInput = isoDate((formData.get("partialFrom") || "").toString());
+  const partialToInput = isoDate((formData.get("partialTo") || "").toString());
+  if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {
+    redirect(
+      `/portal/admin/timesheets/new?error=range&why=${encodeURIComponent(
+        "the start of the range is after its end",
+      )}`,
+    );
+  }
+
   const prog = progressKey(user.id, formData.get("uploadId"));
   // the whole reported state, held here so each write is a single set
   const P = { stage: "reading", done: 0, total: null, recent: [] };
@@ -150,23 +171,51 @@ export async function uploadBatch(formData) {
   // on the 3rd had 454 of 510 day-cases in the future, all carrying punch times.
   // generating timesheets from that asks people to attest to shifts that
   // haven't happened.
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  const futureDates = new Set();
-  for (const s of withHours) {
-    for (const d of s.days) {
-      const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d.date || "");
-      if (!m) continue;
-      if (new Date(2000 + +m[3], +m[1] - 1, +m[2]) > today) futureDates.add(d.date);
-    }
-  }
-  if (futureDates.size) {
-    const sample = [...futureDates].sort().slice(0, 3).join(", ");
+  //
+  // UNLESS THE UPLOAD SAYS IT IS A PARTIAL PERIOD ON PURPOSE. Mánu 2026-08-11 is
+  // testing partial weeks while August is still running, so the box on the form
+  // trims the days that have not happened instead of refusing the file. Both
+  // paths ask `partial.js` what "future" means, so the day the guard would have
+  // refused and the day the trim removes are always the same day.
+  let partialDropped = [];
+  let partialFrom = null;
+  let partialThrough = null;
+  const future = futureDates(withHours);
+  if (future.size && !wantPartial) {
+    const sample = [...future].sort().slice(0, 3).join(", ");
     redirect(
       `/portal/admin/timesheets/new?error=future&why=${encodeURIComponent(
-        `${futureDates.size} dated after today (${sample}). Wait until the pay period has ended.`,
+        `${future.size} dated after today (${sample}). Wait until the pay period has ended, ` +
+          `or tick "partial pay period" to drop them and keep what has been worked.`,
       )}`,
     );
+  }
+  // RUN ON EVERY PARTIAL UPLOAD, not only one holding future days. The range is
+  // the point of the box now: asking QSP for 08/01-08/09 returns the whole
+  // period, and the days to trim off the FRONT of that are all in the past, so
+  // gating this on `future.size` would silently ignore the start date on any
+  // export pulled after the period ended.
+  if (wantPartial) {
+    const trimmed = trimDays(withHours, { from: partialFromInput, to: partialToInput });
+    partialDropped = trimmed.dropped;
+    partialFrom = trimmed.from;
+    partialThrough = trimmed.through;
+    withHours.length = 0;
+    withHours.push(...trimmed.sheets);
+    console.log(
+      `partial period: kept ${partialFrom} to ${partialThrough}, dropped ` +
+        `${trimmed.dropped.length} date(s) and ${trimmed.droppedPeople} employee(s) ` +
+        `with nothing in range${trimmed.clamped ? " (end date pulled back to today)" : ""}`,
+    );
+    if (!withHours.length) {
+      redirect(
+        `/portal/admin/timesheets/new?error=empty&why=${encodeURIComponent(
+          "no day in that export falls inside the range you picked, so there is nothing to generate from",
+        )}`,
+      );
+    }
+    P.total = withHours.length;
+    await setProgress(prog, P);
   }
 
   // asking QSP for a range that spans two pay periods returns BOTH, as separate
@@ -427,6 +476,14 @@ export async function uploadBatch(formData) {
       // so gating the badge on the environment would mark every real batch
       // "test" purely because of where it was uploaded from.
       testMode: !liveSendConfigured(),
+      // uploaded mid-period with the unworked days trimmed off. The hours here
+      // are a partial record and the last workweek is cut off mid-week, so its
+      // >40 overtime is provisional in exactly the way a period boundary makes
+      // it provisional - and six weeks from now nothing else on this row would
+      // say the file was ever incomplete.
+      partialPeriod: partialDropped.length > 0,
+      partialFrom,
+      partialThrough,
       uploadedById: user.id,
     },
   });
@@ -476,11 +533,24 @@ export async function uploadBatch(formData) {
   // meant to sit, and until now the engine threw that away and guessed from
   // punch gaps instead - which is why the old snap rule found 3 of the 10 rows
   // that actually sit hard against a service edge.
+  //
+  // AS THE ROW READS, NOT AS IT WAS TYPED. `restRowTimes` applies the repair and
+  // un-reverses the row, which is what every screen and the signed sheet have
+  // always drawn - and what this, the one place the ENGINE reads the times, did
+  // not. Espinoza 08/05 is the shape: a 4:00 AM rest the classifier had already
+  // corrected to 4:00 PM with `fits: true`, measured here at 4:00 AM against a
+  // 3:40-5:10 PM shift and so counted as taken outside it. The document drew the
+  // break inside his shift and the cards beside it called it outside one.
+  //
+  // A row still unreadable after that is skipped exactly as before: a window
+  // nobody can place is worse than no window, because `restsOutsideShift` reads
+  // absence as "not outside" and a wrong pair of minutes as fact.
   const restWindows = new Map();
   for (const row of restsByDate) {
     if (!row.counted || !row.date) continue;
-    const out = clockMin(row.out);
-    const inn = clockMin(row.in);
+    const t = restRowTimes(row);
+    const out = clockMin(t.from);
+    const inn = clockMin(t.to);
     if (out == null || inn == null) continue;
     const k = `${restKey(row.name)}|${row.date}`;
     if (!restWindows.has(k)) restWindows.set(k, []);
@@ -661,6 +731,10 @@ export async function uploadBatch(formData) {
         {
           ...t,
           punchCorrections,
+          // the rest report's own spelling, straight from the match that already
+          // happened above. `readAs.rests` below is the same string stored, and
+          // it is what every later render resolves through `restNameFor`.
+          restName: rest?.name || t.employee,
           // the Breaks column shows what the two reports RECORDED. it is not
           // derived from the punches, so it has to be handed in.
           restsByDate,
@@ -864,6 +938,14 @@ export async function deleteBatch(batchId) {
   const signed = await prisma.timesheet.count({
     where: { batchId, OR: [{ signedAt: { not: null } }, { approvedAt: { not: null } }] },
   });
+
+  // THE CHECK FLAGS DO NOT CASCADE, because they carry no relation to the batch
+  // - see the note on the model, which records who flagged a row at the time and
+  // is deliberately not tied to a user or a batch row that can be deleted out
+  // from under it. That is right for the USER end and wrong here: nothing else
+  // would ever remove them, so a deleted batch left its red marks behind and a
+  // re-upload could inherit somebody else's flags on matching row keys.
+  await prisma.timesheetCheckFlag.deleteMany({ where: { batchId } });
 
   // the timesheets and their corrections cascade from the batch row
   await prisma.timesheetBatch.delete({ where: { id: batchId } });
@@ -1336,6 +1418,86 @@ export async function clearDayOverride(timesheetId, date) {
 //
 // only this one sheet is touched. the batch, and everyone else in it, is left
 // exactly as it was.
+// PUTTING A BATCH BACK TO THE DAY IT WAS UPLOADED.
+//
+// Mánu 2026-08-12: "I need to reset all button." Testing the answer flow means
+// answering as somebody, seeing what it does, and then needing the question
+// back - and there was no way back short of editing rows by hand.
+//
+// It is exactly two steps, both of which already exist: delete the `q_` answers,
+// then rebuild each sheet with NO overrides. `rebuildSheetFor` recomputes from
+// `daysOriginal` - the pristine set stashed on the first rebuild - so this lands
+// on the same figures the upload produced rather than on whatever the last
+// correction left behind.
+//
+// WHAT IT DESTROYS, stated plainly because the button has to say it: every
+// answer anybody has given on this batch, and with it every signature, because
+// a rebuild un-signs deliberately - a signed PDF quotes figures that are about
+// to change. On a live batch that is somebody's attestation gone. Hence SUPER
+// only, and hence the count in the confirm.
+//
+// It does NOT touch the uploaded documents, the name matches, or the batch
+// itself. Re-answering from scratch is the whole point; re-uploading is not.
+export async function resetBatchAnswers(batchId) {
+  const user = await requireTimesheetAccess();
+  if (!isSuper(user?.role)) return { ok: false, error: "auth" };
+
+  const sheets = await prisma.timesheet.findMany({
+    where: { batchId },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } } },
+  });
+  if (!sheets.length) return { ok: false, error: "notfound" };
+
+  const { count } = await prisma.timesheetCorrection.deleteMany({
+    where: { timesheetId: { in: sheets.map((t) => t.id) }, kind: { startsWith: "q_" } },
+  });
+
+  let rebuilt = 0;
+  let failed = 0;
+  for (const ts of sheets) {
+    // `{}` and not `ts.overrides` - that is the whole difference between this
+    // and Recompute, which keeps them
+    const res = await rebuildSheetFor({ ...ts, overrides: {} }, {});
+    if (res?.ok) rebuilt++;
+    else failed++;
+  }
+
+  revalidatePath(`/portal/admin/timesheets/${batchId}`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/corrections`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
+  return { ok: true, answers: count, rebuilt, failed };
+}
+
+// THE SAME RESET, FOR ONE SHEET, FROM THE PAGE YOU ARE LOOKING AT.
+//
+// Mánu 2026-08-12: "I meant to reset page. When you open up someone's time sheet
+// corrections." The batch-level one is for starting a period over; this is for
+// the loop somebody is actually in while testing - open a person's page, work
+// through their questions, put them back, do it again. Walking out to the batch
+// screen to reset all fifty-nine to retry one of them is the wrong shape.
+//
+// Same two steps as the batch version, and the same honesty about what goes:
+// every answer on THIS sheet, and its signature if it has one.
+export async function resetTimesheetAnswers(timesheetId) {
+  const user = await requireTimesheetAccess();
+  if (!isSuper(user?.role)) return { ok: false, error: "auth" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } } },
+  });
+  if (!ts) return { ok: false, error: "notfound" };
+
+  const { count } = await prisma.timesheetCorrection.deleteMany({
+    where: { timesheetId: ts.id, kind: { startsWith: "q_" } },
+  });
+  const res = await rebuildSheetFor({ ...ts, overrides: {} }, {});
+  if (!res?.ok) return res;
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  return { ok: true, answers: count };
+}
+
 export async function recomputeTimesheet(timesheetId) {
   await requireTimesheetAccess();
 
@@ -1373,11 +1535,77 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   //
   // So the untouched set is kept once, the first time a sheet is rebuilt, and
   // every rebuild starts from it.
-  const days = stored.daysOriginal || stored.days || [];
+  const daysStored = stored.daysOriginal || stored.days || [];
+
+  // RE-DERIVE HOW MANY RESTS THE REPORT RECORDS, from the rows kept on the batch.
+  //
+  // `restRecorded` is an INPUT to `analyzeDay`, worked out from the rest report
+  // when the batch was uploaded and then frozen into `daysOriginal`. So a change
+  // to what counts as a rest could never reach a batch already in the database -
+  // a rebuild starts from those pristine days and faithfully reproduces the old
+  // count. Mánu 2026-08-12, after the repair rule went in: "Why is it still
+  // saying one of two missing?"
+  //
+  // Counted here with `countsAsTaken`, which is the same rule the parser now
+  // applies at upload, over the same rows the parser produced. This is STILL NOT
+  // a re-match: `restNameFor` returns the one spelling the upload already
+  // resolved through this person's portal account, and rows are then compared
+  // with the engine's own `restKey` - exact only. No name is scored here, which
+  // is the difference between this and the recount that once invented three
+  // premium hours for the wrong Delgado Pineda.
+  //
+  // Reading the stored spelling rather than the timesheet's own is what lets THE
+  // right Delgado Pineda be rebuilt at all: the report files her under "Delgado
+  // Pineda, Angel", so this filter came back empty and her rebuild quietly kept
+  // whatever the upload had said, immune to every later change in the rule.
+  //
+  // A batch with no stored rows - or a person the report never covered - keeps
+  // whatever the day already had, so nothing is lost by rebuilding.
+  const restRowsForSheet = (ts.batch?.restsByDate || []).filter(
+    (r) => restKey(r?.name || "") === restKey(restNameFor(ts.sourceName, stored)),
+  );
+  const takenByDate = new Map();
+  for (const r of restRowsForSheet) {
+    if (!countsAsTaken(r) || !r.date) continue;
+    takenByDate.set(r.date, (takenByDate.get(r.date) || 0) + 1);
+  }
+  // `restTaken` follows `restRecorded` - it is derived from it in `analyzeDay`
+  // and `recomputeSheet` never re-runs that, so moving one without the other
+  // changes a count nothing reads and leaves the violation exactly as it was.
+  // AND THE VIOLATION HAS TO FOLLOW THE COUNT. `recomputeSheet` re-derives only
+  // the days an OVERRIDE touched - deliberately, so a day nobody answered about
+  // keeps exactly what the engine said at upload - and a rebuild carries no
+  // overrides at all. So the day whose count just moved is re-entitled here,
+  // and only that day: same rule, different trigger.
+  const days = restRowsForSheet.length
+    ? daysStored.map((d) => {
+        // NEVER FEWER THAN THE DAY ALREADY HAD.
+        //
+        // The upload resolves the rest report through the staff table, so it can
+        // pair a sheet with rows filed under a different spelling of the name.
+        // This matches on the sheet's own name and cannot, so a straight
+        // recount would report zero for anyone matched that way and take their
+        // rest credit off - which is exactly how a recount once invented three
+        // premium hours for Delgado Pineda, Ruth, whose rows are all filed under
+        // "Delgado Pineda, Angel".
+        //
+        // Taking the larger of the two makes this strictly additive: it can only
+        // ever credit the mis-clicked rows the old rule refused, and can never
+        // remove a credit somebody already has.
+        const recorded = Math.max(d.restRecorded ?? 0, takenByDate.get(d.date) || 0);
+        if (recorded === (d.restRecorded ?? 0)) return d;
+        const next = {
+          ...d,
+          restRecorded: recorded,
+          restTaken: restsTakenFrom(recorded, d.restsFromShortMeals),
+        };
+        return { ...next, ...reentitle(next, next.paidHours) };
+      })
+    : daysStored;
   // batches uploaded before corrections existed don't carry the punch detail the
   // renderer needs, so there's nothing to rebuild from. say so plainly rather
   // than emit a sheet with an empty punch column.
-  if (!days.length || !days.some((d) => Array.isArray(d.punches))) {
+  if (!daysStored.length || !daysStored.some((d) => Array.isArray(d.punches))) {
     return { ok: false, error: "nodetail" };
   }
 
@@ -1400,6 +1628,8 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
     const rendered = await renderCorrected(
       {
         employee: ts.sourceName,
+        // the rest report's own spelling for this person - see `restNameFor`
+        restName: restNameFor(ts.sourceName, stored),
         payPeriod,
         days: next.days,
         totals: next.totals,
@@ -1456,7 +1686,11 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
         partialWeekDates: next.partialWeekDates,
         generatedOn,
         // stashed on the first rebuild only, and never overwritten after
-        daysOriginal: days,
+        // THE PRISTINE SET, not the one with `restRecorded` re-derived above.
+        // That re-derivation is an input to this rebuild, not a new baseline -
+        // stashing it would make "as uploaded" mean "as uploaded, plus whatever
+        // the rest rule said the last time somebody pressed recompute".
+        daysOriginal: daysStored,
         days: next.days,
       },
     },
@@ -1535,7 +1769,12 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // "notaken" is the third outcome on `restOutsideScheduled`: the break never
   // happened at all, so the minutes are not added AND it stops counting as a
   // rest taken. Distinct from "no", which means the time was wrong.
-  if (asked.some((a) => a.choice != null && !["yes", "no", "partial", "notaken"].includes(a.choice))) {
+  // "wrongone" is the third outcome on `restTooLongOffClock`, on a day carrying
+  // two lunches: only one happened and the RECORDED one is it, so the lunch on
+  // the schedule is the record to remove. Distinct from "no", which says the
+  // recorded one is the mis-entry - opposite conclusions, same decline.
+  if (asked.some((a) => a.choice != null
+      && !["yes", "no", "partial", "notaken", "wrongone"].includes(a.choice))) {
     return { ok: false, error: "badchoice" };
   }
 
@@ -1606,6 +1845,24 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
             return { ok: false, error: "outsideshift" };
           }
         }
+        // A LUNCH HAS TO LAND IN A GAP LONG ENOUGH TO HOLD ONE. Mánu
+        // 2026-08-12: "let them choose their own as long as the time is 30
+        // minutes of availability for lunch."
+        //
+        // ONLY "window" IS REFUSED, never "nogap". On 176 of the 263 meal slots
+        // in this batch there is no half-hour gap anywhere in the day - because
+        // a meal taken without clocking out leaves no gap to find, which is the
+        // whole reason nothing documented it. Refusing those would mean the only
+        // answer left is "I missed it", and the tool would be telling somebody
+        // who took their lunch that they did not. So the rule constrains WHERE
+        // when the punches show availability, and stays quiet when they show
+        // nothing at all.
+        if (need.kindOf === "meal") {
+          const d = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
+          if (d && mealTimeFits(d, start, need.minutes).why === "window") {
+            return { ok: false, error: "nolunchgap" };
+          }
+        }
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
         // client. It only drives the sheet's footnote, but "you typed this" is
         // a claim about where a figure on a signed document came from and a
@@ -1613,7 +1870,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         const from = shortClock(start);
         const source =
           need.prefill && from === need.prefill ? "schedule"
-            : need.suggest && from === need.suggest ? "gap"
+            : (need.suggest && from === need.suggest) || (need.options || []).includes(from) ? "gap"
               : "typed";
         list.push({
           slot: need.slot, kindOf: need.kindOf, minutes: need.minutes,
@@ -1654,6 +1911,9 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         // a partial and a "never took it" both settle as declines: the premium
         // stands either way, and what differs is the record
         status: pick === "yes" ? "accepted" : "declined",
+        // the answer itself, because `status` cannot hold a third outcome and
+        // two of `restTooLongOffClock`'s three are declines that move nothing
+        choice: pick,
         resolvedAt: new Date(),
         resolvedById: ts.userId || null,
         note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
@@ -1801,13 +2061,19 @@ function resolutionFor(q, choice, stated, statedBreaks) {
     case "restOutsideScheduled":
       // CONFIRMING KEEPS THE TIME HERE, unlike every other kind. The question is
       // whether the recorded time is right, not whether the break happened.
+      //
+      // NO PAY LANGUAGE AND NO SHOUTING. "The minutes stand as paid" and
+      // "FLAG FOR PAYROLL: the ten is being entered against the wrong time in
+      // QSClock" both came out 2026-08-12 at Mánu's instruction. The note is a
+      // record of what the employee said; what it does to pay is worked out
+      // from the answer, not asserted in prose beside it.
       return yes
-        ? "Employee confirmed they took the break at the time recorded, off the clock. The minutes stand as paid."
+        ? "Employee confirmed they took the break at the time recorded, off the clock."
         : "Employee said the recorded time was wrong" +
           ((statedBreaks || []).length
             ? `, and gave ${statedBreaks.map((b) => `${b.from}-${b.to}`).join(", ")} instead`
             : "") +
-          ". The added minutes have been taken back off and the break moved. FLAG FOR PAYROLL: the ten is being entered against the wrong time in QSClock.";
+          ". The break has been moved to the time they gave.";
     case "nothingDocumented":
       // THE TIMES GO IN THE NOTE, not just on the day row. This note is the
       // audit trail payroll reads, and "they said they took them" without the
@@ -1851,9 +2117,24 @@ function resolutionFor(q, choice, stated, statedBreaks) {
       }${when}. No premium owed, per the signed acknowledgment that recording them is theirs to do.`;
     }
     case "restTooLongOffClock":
-      // NEITHER ANSWER MOVES A FIGURE. The row was already not counted and the
-      // day already stands as it stands; this exists so the record says what
+      // NO ANSWER MOVES A FIGURE. The row was already not counted and the day
+      // already stands as it stands; this exists so the record says what
       // happened rather than the entry being binned unexamined.
+      //
+      // THREE OUTCOMES on a day carrying two lunches, and the last two reach
+      // OPPOSITE conclusions about which record is wrong - so payroll is told
+      // which one to go and remove, not just that something is wrong.
+      if (choice === "wrongone") {
+        return "Employee says only one lunch happened and the RECORDED one is it. "
+          + "The lunch on their schedule is the wrong record - remove that one in QSP. "
+          + "No change to hours or premium.";
+      }
+      if (q.row?.twoLunches) {
+        return yes
+          ? "Employee confirmed both lunches are real. Both stand; no change to hours or premium."
+          : "Employee says the second lunch was entered by accident. Flagged for payroll to remove "
+            + "that entry in QSP; no change to hours or premium.";
+      }
       return yes
         ? "Employee confirmed this was a real break they took. Recorded as taken; no change to hours or premium."
         : "Employee says the entry was a mistake. Flagged for payroll as a mis-entry; no change to hours or premium.";

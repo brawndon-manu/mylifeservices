@@ -11,6 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildQuestions, patchesFor, answerProgress, dependencyGate, restWindow, restTimeFits, shiftsOf,
+  questionId,
 } from "../questions.js";
 
 const day = (over = {}) => ({
@@ -41,11 +42,21 @@ test("a ten recorded off the clock is asked about, from the rows and the punches
   const qs = buildQuestions({ days }, { restRows, sourceName: "Martinez, April" });
   const outside = qs.filter((q) => q.kind === "restOutsideScheduled");
 
-  assert.equal(outside.length, 1, "one card, or eleven identical ones on the real batch");
-  assert.deepEqual(outside[0].dates, ["07/16/26", "07/17/26"]);
-  assert.equal(outside[0].row.minutes, 20);
+  // ONE CARD PER DATE since 2026-08-12. A ten logged after the 16th's shift is a
+  // different event from one logged after the 17th's, and the day-by-day view
+  // has to be able to put each on its own day rather than hang both on the first
+  // and tell the second where it went.
+  assert.equal(outside.length, 2, "one card per date");
+  assert.deepEqual(outside.map((q) => q.date), ["07/16/26", "07/17/26"]);
+  assert.deepEqual(outside[0].dates, ["07/16/26"]);
+  assert.equal(outside[0].row.days, 1);
+  // the minutes SPLIT rather than sum - 10 each, where one card carried 20
+  assert.equal(outside[0].row.minutes, 10);
+  assert.equal(outside[1].row.minutes, 10);
   assert.equal(outside[0].row.detail[0].where, "before", "before the shift it was filed under");
   assert.equal(outside[0].row.detail[0].from, "8a", "and inside it would start at 8a");
+  // and each carries its own id, or one answer would settle the other
+  assert.notEqual(questionId(outside[0]), questionId(outside[1]));
 
   // THE ONE THAT MUST NOT FIRE: the same ten while clocked in is already paid,
   // so there is nothing to add and nothing to ask.
@@ -74,12 +85,33 @@ test("the three outcomes land three different figures", () => {
   assert.equal(never.restTaken, 0, "and it stops counting as a break she had");
   assert.equal(never.restViolation, true, "which is what puts the premium on");
 
-  // THE SAME ANSWERS ON A SHEET BUILT AFTER THE FLIP, where the ten is already
-  // in paidHours. A delta would have landed 5.34 here; an absolute lands 5.17.
-  const fresh = day({ date: "07/31/26", paidHours: 5.17, restsOffClockMin: 10, restTaken: 1, restRequired: 1 });
-  assert.equal(patchesFor(q, "yes", fresh).paidHours, 5.17, "unchanged, whichever batch it came from");
-  assert.equal(patchesFor(q, "no", fresh).paidHours, 5);
-  assert.equal(patchesFor(q, "notaken", fresh).paidHours, 5);
+  // THE SAME ANSWERS ON A SHEET BUILT BETWEEN THE TWO FLIPS, where the ten was
+  // paid on sight. A delta would have landed 5.34 here; an absolute lands 5.17.
+  //
+  // `addedHours` is what says the day PAID them - a real stored day always has
+  // it, and the patch reads it rather than `restsOffClockMin`, which only says
+  // the report recorded them.
+  const flipped = day({
+    date: "07/31/26", paidHours: 5.17, restsOffClockMin: 10, addedHours: 0.17,
+    restTaken: 1, restRequired: 1,
+  });
+  assert.equal(patchesFor(q, "yes", flipped).paidHours, 5.17, "unchanged, whichever batch it came from");
+  assert.equal(patchesFor(q, "no", flipped).paidHours, 5);
+  assert.equal(patchesFor(q, "notaken", flipped).paidHours, 5);
+
+  // AND ON A SHEET BUILT SINCE 2026-08-12, where the minutes are recorded and
+  // NOT paid. This is the case the patch got wrong for a few hours: it read
+  // `restsOffClockMin` as "what the day already pays", so `base` came out ten
+  // minutes under the worked hours - confirming added nothing and declining
+  // took off time that was never there.
+  const now = day({
+    date: "07/31/26", paidHours: 5, restsOffClockMin: 10, addedHours: 0,
+    restTaken: 1, restRequired: 1,
+  });
+  assert.equal(patchesFor(q, "yes", now).paidHours, 5.17, "confirming is what ADDS them now");
+  assert.equal(patchesFor(q, "yes", now).addedHours, 0.17, "and the sheet declares them");
+  assert.equal(patchesFor(q, "no", now).paidHours, 5, "declining leaves the day alone");
+  assert.equal(patchesFor(q, "notaken", now).paidHours, 5);
 });
 
 test("a ten in an unpaid schedule gap is asked about like any other", () => {
@@ -324,9 +356,10 @@ test("progress is counted per question, not per kind", () => {
   ]).answered, 0);
 });
 
-test("a grouped question is still settled by any one of its dates", () => {
-  // April's eleven 7:00-7:10 entries are one habit and one answer. Counting
-  // those per date would leave her permanently ten answers short.
+test("an off-clock ten is counted per date, so answering one leaves the other", () => {
+  // WAS the grouped case, until 2026-08-12. April's eleven 7:00-7:10 entries
+  // looked like one habit and one answer, but a day is a day: answering the 20th
+  // must not silently settle the 21st, and the progress count has to say so.
   const days = [
     ndDay("07/20/26", { punches: [{ min: 8 * 60 }, { min: 17 * 60 }] }),
     ndDay("07/21/26", { punches: [{ min: 8 * 60 }, { min: 17 * 60 }] }),
@@ -337,26 +370,26 @@ test("a grouped question is still settled by any one of its dates", () => {
   }));
   const qs = buildQuestions({ days }, { restRows, sourceName: "T" })
     .filter((q) => q.kind === "restOutsideScheduled");
-  assert.equal(qs.length, 1, "one question over both days");
+  assert.equal(qs.length, 2, "one question per day");
   assert.equal(
     answerProgress(qs, [
       { kind: "q_restOutsideScheduled", date: "07/20/26", status: "accepted" },
     ]).settled,
-    true,
+    false,
+    "the 21st is still outstanding",
   );
 
-  // AND THE COUNT DOES NOT DOUBLE. One answer to a grouped question writes a
-  // correction row PER DATE, so counting rows rather than questions reports two
-  // answers to a card that has one - and the batch list would read "2 of 1".
-  // This is the assertion that discriminates; the settled check above passes
-  // either way.
+  // AND THE COUNT MATCHES THE CARDS ON SCREEN. Two dates is two questions and
+  // two answers - the old grouped reading collapsed these to "1 of 1", which now
+  // would under-report by one every time somebody has two of these.
   const p = answerProgress(qs, [
     { kind: "q_restOutsideScheduled", date: "07/20/26", status: "accepted" },
     { kind: "q_restOutsideScheduled", date: "07/21/26", status: "accepted" },
   ]);
-  assert.equal(p.asked, 1);
-  assert.equal(p.answered, 1, "two rows, one question, one answer");
+  assert.equal(p.asked, 2);
+  assert.equal(p.answered, 2, "one row and one answer per date");
   assert.equal(p.declined, 0);
+  assert.equal(p.settled, true, "both answered");
 });
 
 
@@ -521,8 +554,10 @@ test("answering, changing, and changing back lands the same figure every time", 
     row: { detail: [{ date: "07/28/26", minutes: 10 }] },
   };
   // his own 07/28: 6.17 with the ten included
+  // an old-model day: the minutes were paid on sight, so `addedHours` says so.
+  // The patch reads THAT, not the recorded minutes - see the note on `base`.
   const pristine = day({
-    date: "07/28/26", paidHours: 6.17, restsOffClockMin: 10,
+    date: "07/28/26", paidHours: 6.17, restsOffClockMin: 10, addedHours: 0.17,
     restTaken: 1, restRequired: 2,
   });
 

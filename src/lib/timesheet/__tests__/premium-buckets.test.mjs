@@ -467,7 +467,7 @@ test("without rest times or without a rostered lunch there is no answer", () => 
 // These four tests used to assert the discount. They now assert the payment,
 // and each still pairs the case with its opposite.
 
-test("a ten logged outside the rostered day is PAID, and moving it is only an assumption", () => {
+test("a ten logged outside the rostered day is paid ONCE CONFIRMED, and moving it is only an assumption", () => {
   // April Martinez's shape: a 7:00-7:10 rest on a shift that starts at 8:00,
   // eleven days running. A QSClock default nobody changed.
   //
@@ -478,6 +478,9 @@ test("a ten logged outside the rostered day is PAID, and moving it is only an as
   const before = analyzeDay({
     date: "07/20/26", punches: [at(8), at(17)], printed: null, mealScheduled: true,
     scheduleBlocks: LUNCH_BLOCKS, restRecorded: 2,
+    // CONFIRMED - since 2026-08-12 the minutes only go on once the employee
+    // says the entry was not a mistake. Unconfirmed is asserted below.
+    restsOffClockConfirmed: true,
     restTimes: [{ out: 7 * 60, in: 7 * 60 + 10 }, { out: 14 * 60, in: 14 * 60 + 10 }],
   });
   assert.equal(before.restsOutsideShift, 1, "still flagged - Mánu asked for this one by name");
@@ -508,11 +511,25 @@ test("a ten logged outside the rostered day is PAID, and moving it is only an as
   const after = analyzeDay({
     date: "07/27/26", punches: [at(8), at(16, 30)], printed: null, restRecorded: 1,
     scheduleBlocks: [{ start: 8 * 60, end: 16 * 60 + 30, meal: false }],
+    restsOffClockConfirmed: true,
     restTimes: [{ out: 21 * 60 + 40, in: 21 * 60 + 50 }],
   });
   assert.equal(after.restsOutsideScheduledDetail[0].where, "after-day");
-  assert.equal(after.restsOffClockMin, 10, "paid until she says otherwise");
+  assert.equal(after.restsOffClockMin, 10, "reported, and paid because she confirmed it");
   assert.equal(Number(after.paidHours.toFixed(2)), 8.67, "not 8.5");
+
+  // AND UNCONFIRMED IT PAYS NOTHING, which is the 2026-08-12 reversal. Without
+  // this the assertion above would pass whichever way the default ran.
+  const { restsOffClockConfirmed: _drop, ...afterRaw } = {
+    date: "07/27/26", punches: [at(8), at(16, 30)], printed: null, restRecorded: 1,
+    scheduleBlocks: [{ start: 8 * 60, end: 16 * 60 + 30, meal: false }],
+    restsOffClockConfirmed: true,
+    restTimes: [{ out: 21 * 60 + 40, in: 21 * 60 + 50 }],
+  };
+  const unconfirmed = analyzeDay(afterRaw);
+  assert.equal(unconfirmed.restsOffClockMin, 10, "still reported, so it is still asked about");
+  assert.equal(unconfirmed.addedHours, 0, "but nothing added");
+  assert.equal(Number(unconfirmed.paidHours.toFixed(2)), 8.5, "the day pays what was worked");
 
   // AND THE UNPAID GAP, which nothing asked about before 2026-08-11. Mánu: "if
   // they have an hour gap in their schedule with no service listed, that is an
@@ -543,7 +560,7 @@ test("a ten logged outside the rostered day is PAID, and moving it is only an as
 // It is no longer a rule of its own - it is one shape of "logged outside
 // scheduled hours", and the only thing that makes it special is the wording on
 // the card and the fact that the service gives us somewhere to move it TO.
-test("a rest against its service edge is paid, and carries where it would move to", () => {
+test("a rest against its service edge is paid once confirmed, and carries where it would move to", () => {
   const fitAfter = { where: "after", abuts: true, gapMin: 0, from: 10 * 60, to: 12 * 60 };
   const d = analyzeDay({
     date: "07/31/26",
@@ -553,6 +570,9 @@ test("a rest against its service edge is paid, and carries where it would move t
       { start: 8 * 60, end: 12 * 60, meal: false },
       { start: 13 * 60, end: 16 * 60, meal: false },
     ],
+    // CONFIRMED - since 2026-08-12 the minutes only go on once the employee
+    // says the entry was not a mistake. Unconfirmed is asserted below.
+    restsOffClockConfirmed: true,
     restTimes: [
       { out: 12 * 60, in: 12 * 60 + 10, fit: fitAfter },
       { out: 15 * 60, in: 15 * 60 + 10 },
@@ -648,12 +668,15 @@ test("a schedule block called a meal but only rest-length is credited as a rest"
   assert.equal(properMeal.restViolation, true, "so the premium stands");
 });
 
-test("a rest inside a punched-out gap is paid for, not deducted", () => {
+test("a rest inside a punched-out gap is paid for once confirmed, not deducted", () => {
   // Uribe 07/31: punched out 12:00-13:00 with the rest recorded 12:00-12:10.
   const d = analyzeDay({
     date: "07/31/26",
     punches: [at(8), at(9, 30), at(10), at(12), at(13), at(16)],
     printed: null, restRecorded: 2,
+    // CONFIRMED - since 2026-08-12 the minutes only go on once the employee
+    // says the entry was not a mistake. Unconfirmed is asserted below.
+    restsOffClockConfirmed: true,
     restTimes: [{ out: 12 * 60, in: 12 * 60 + 10 }, { out: 15 * 60, in: 15 * 60 + 10 }],
   });
   assert.equal(d.restsUnpaid, 1);
@@ -770,6 +793,7 @@ test("ten minutes added past the eighth hour are OVERTIME, not straight time", (
       printed: null,
       restRecorded: 2,
       restsAlreadyPaid: true,
+      restsOffClockConfirmed: true,
       // one taken while clocked in, one after clocking out
       restTimes: [
         { out: 10 * 60, in: 10 * 60 + 10 },

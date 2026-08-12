@@ -106,26 +106,11 @@ export default function TimesheetSigner({
               unanswered. That is fine.
             </p>
 
-            {/* THE TWO FIGURES PULLED OUT. "12 questions" and "12.00 hours" in
-                one sentence read as the same number, and one of them is
-                somebody's pay. */}
-            {premiumOnSheet > 0 && (
-              <div className="mt-4 rounded-lg border border-border bg-surface-2 p-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm text-muted">Break penalty pay included</span>
-                  <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-                    {f2(premiumOnSheet)} hrs
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <p className="mt-4 text-sm leading-relaxed text-muted">
-              Signing now accepts your timesheet exactly as it is
-              {premiumOnSheet > 0 ? ", including the break pay already on it" : ""}.{" "}
-              <b className="text-foreground">Nothing will be taken off.</b>
-            </p>
-
+            {/* THE PREMIUM FIGURE, THE "NOTHING WILL BE TAKEN OFF" LINE AND THE
+                "the questions only ever take pay off" footer all came out
+                2026-08-12 at Mánu's instruction. What is left is the count of
+                unanswered questions, that it is fine to leave them, and the two
+                buttons. The dialog talks about answering, not about pay. */}
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -143,9 +128,6 @@ export default function TimesheetSigner({
               </button>
             </div>
 
-            <p className="mt-4 border-t border-border pt-3 text-xs text-muted">
-              The questions only ever take pay off, so leaving them is the safe choice.
-            </p>
           </div>
         </div>
       )}

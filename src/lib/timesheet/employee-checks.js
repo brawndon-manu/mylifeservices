@@ -11,7 +11,7 @@
 // Ordering is deliberate: the item where somebody might be UNDERPAID comes
 // first. Everything else on this list pays them; a missing day pays nothing.
 
-import { restKey, isMealLengthRest } from "./rests.js";
+import { restKey, restNameFor, isMealLengthRest } from "./rests.js";
 import { shortTime, recordedBreaksFor } from "./recorded-breaks.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -69,6 +69,9 @@ export function buildEmployeeChecks(data, { restRows, sourceName, confirmed } = 
   const days = data.days || [];
   const byDate = data.scheduleCheck?.byDate || {};
   const out = [];
+  // the spelling the rest report used for this person, which is not always the
+  // one on their timesheet. See `restNameFor`.
+  const restName = restNameFor(sourceName, data);
 
   // 1. A DAY THAT PAYS NOTHING. First, always. Every other item on this list
   //    pays them something; this one is hours they may simply not be getting.
@@ -141,7 +144,7 @@ export function buildEmployeeChecks(data, { restRows, sourceName, confirmed } = 
   //    Without restRows the check simply does not appear, which is why the
   //    caller has to select them.
   const mealLen = (restRows || [])
-    .filter((r) => restKey(r.name) === restKey(sourceName || "") && isMealLengthRest(r))
+    .filter((r) => restKey(r.name) === restKey(restName) && isMealLengthRest(r))
     .map((r) => ({
       date: r.date,
       from: shortTime(r.reversed ? r.in : r.out),
@@ -156,7 +159,7 @@ export function buildEmployeeChecks(data, { restRows, sourceName, confirmed } = 
   // only days the sheet actually lists, so the email never asks about a date
   // the person cannot see on their own timesheet
   const dates = new Set(days.map((d) => d.date));
-  const rec = recordedBreaksFor(sourceName || "", restRows || [], byDate);
+  const rec = recordedBreaksFor(restName, restRows || [], byDate);
   const outside = [], noTimes = [], ampm = [];
   for (const [date, v] of rec) {
     if (!dates.has(date)) continue;
@@ -189,7 +192,7 @@ export function checkSummaryLine(check) {
     case "restGap":
       return `${days} with a gap in your schedule but no rest break recorded - assumed taken, nothing charged`;
     case "restNoGap":
-      return `${days} with no rest break recorded - assumed taken, nothing charged`;
+      return `${days} with no rest break recorded`;
     case "corrected":
       return `${days} where punch times were recorded in reverse and have been corrected`;
     case "mealUnknown":
@@ -197,7 +200,7 @@ export function checkSummaryLine(check) {
     case "restIsMealLength":
       return `${days} with a 30 minute break filed as a rest break - tell us whether it was your meal`;
     case "restOutsideShift":
-      return `${days} where your rest break was recorded outside your shift - paid, no premium owed`;
+      return `${days} where your rest break was recorded outside your shift`;
     case "restNoTimes":
       return `${days} with a rest break recorded and no times on it - tell us when you took it`;
     case "mealAmPm":
