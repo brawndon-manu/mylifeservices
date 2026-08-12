@@ -7,6 +7,9 @@ import { restKey, restNameFor } from "@/lib/timesheet/rests";
 import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
 import { violationsFor, VIOLATION_KINDS, violationHead } from "@/lib/timesheet/violations";
+import { buildFindings, kindOf } from "@/lib/timesheet/findings";
+import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
+import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
 import FlagButton from "../../checks/FlagButton";
@@ -15,6 +18,76 @@ export const metadata = { title: "Their schedule", robots: { index: false, follo
 export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
+
+// WHICH PILE A FINDING CAME FROM, said on the row rather than left implied.
+// The checks screen answers this with five coloured boxes you filter by; a
+// person's page has no filter, so the group has to travel with the row or
+// "needs you to decide" and "settled, nothing to do" look identical.
+//
+// Full literal strings: Tailwind v4 compiles only what it can see in source.
+const GROUP = {
+  decide: { label: "Needs a decision", cls: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300" },
+  unworked: { label: "Never worked", cls: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/40 dark:text-amber-300" },
+  violation: { label: "Violation", cls: "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 dark:border-fuchsia-800/70 dark:bg-fuchsia-950/40 dark:text-fuchsia-300" },
+  anomaly: { label: "Anomaly", cls: "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800/70 dark:bg-violet-950/40 dark:text-violet-300" },
+  settled: { label: "Settled, no action", cls: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300" },
+};
+
+// One day's findings, in the checks screen's own words. `lead` is that screen's
+// card copy and it is READ, never rewritten - the whole reason the builder moved
+// into `findings.js` was so one finding cannot be described two ways.
+function Findings({ list }) {
+  if (!list?.length) return null;
+  return (
+    <ul className="mt-2 space-y-2 border-t border-border pt-2">
+      {list.map((e, i) => {
+        const g = GROUP[e.d.group] || GROUP.anomaly;
+        return (
+          <li key={e.rowKey || `${e.kind}-${e.date}-${i}`} className="text-xs">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${g.cls}`}>
+                {g.label}
+              </span>
+              <span className="font-semibold text-foreground">{kindOf(e).label}</span>
+              {e.d.head && <span className={`font-semibold ${e.d.tone || "text-muted"}`}>{e.d.head}</span>}
+            </div>
+            {e.d.lead && <p className="mt-1 leading-relaxed text-muted">{e.d.lead}</p>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// What THEY said about the day, and what was decided. Empty on every batch today
+// because there are no correction rows in the database at all.
+function Reported({ list }) {
+  if (!list?.length) return null;
+  return (
+    <ul className="mt-2 space-y-2 border-t border-border pt-2">
+      {list.map((c) => (
+        <li key={c.id} className="text-xs">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300">
+              {c.kind.startsWith("q_") ? "They answered" : "They reported"}
+            </span>
+            <span className="font-semibold text-foreground">
+              {CORRECTION_KINDS[c.kind]?.label || c.kind.replace(/^q_/, "")}
+            </span>
+            <span className="text-faint">{c.status}</span>
+          </div>
+          {c.note && <p className="mt-1 leading-relaxed text-muted">{c.note}</p>}
+          {c.resolutionNote && (
+            <p className="mt-1 leading-relaxed text-faint">
+              {c.resolutionNote}
+              {c.resolvedBy && ` (${preferredName(c.resolvedBy)})`}
+            </p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 // ONE PERSON, THEIR WHOLE PERIOD, EVERY DAY OF IT.
 //
@@ -46,8 +119,73 @@ export default async function PersonSchedulePage({ params }) {
     select: { rowKey: true, flaggedName: true, flaggedImage: true },
   });
 
+  // EVERYTHING THE CHECKS SCREEN WOULD SAY ABOUT THEM, tied to the day it
+  // happened on. Mánu 2026-08-12: "anything that would come up in the
+  // corrections page should be tied to this. anything that comes up in the
+  // datachecks page should be tied to this. even if our engine resolved it."
+  //
+  // This page used to render violations only, which is how Uribe 07/28 came to
+  // read "nothing flagged" while the checks list carried a card saying his rest
+  // was recorded off the clock. One day, two screens, opposite answers.
+  //
+  // The whole batch has to be loaded because the Rest Periods Report is one
+  // document held on the BATCH and its rows are matched back to people by name -
+  // there is no way to ask it for one person without it. The checks screen pays
+  // the same cost.
+  const full = await prisma.timesheetBatch.findUnique({
+    where: { id },
+    include: {
+      timesheets: {
+        orderBy: { sourceName: "asc" },
+        select: { id: true, sourceName: true, signedAt: true, overrides: true, data: true },
+      },
+    },
+  });
+  const mine = buildFindings(full).entries.filter(
+    (e) =>
+      e.timesheetId === sheet.id &&
+      // the violation row is ABOUT A PERSON and carries no date, and every one
+      // of its findings is already drawn per day below with its own detail.
+      // Keeping it would say the same thing twice under a vaguer heading.
+      e.kind !== "violation",
+  );
+  const findingsByDate = new Map();
+  for (const e of mine) {
+    const k = e.date || "";
+    if (!findingsByDate.has(k)) findingsByDate.set(k, []);
+    findingsByDate.get(k).push(e);
+  }
+  for (const list of findingsByDate.values()) {
+    list.sort((a, b) => kindOf(a).order - kindOf(b).order);
+  }
+
+  // Problems they reported, and the questions they answered. There are none in
+  // the database on any batch today - Mánu clears them between test runs - so
+  // this renders nothing until somebody reports or answers something. Wired
+  // rather than left out, because the day it exists is the day somebody is on
+  // the phone asking about it.
+  const corrections = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: sheet.id },
+    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+    include: {
+      resolvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+    },
+  });
+  const correctionsByDate = new Map();
+  for (const c of corrections) {
+    const k = c.date || "";
+    if (!correctionsByDate.has(k)) correctionsByDate.set(k, []);
+    correctionsByDate.get(k).push(c);
+  }
+
   const v = violationsFor(sheet.data);
   const byDate = sheet.data?.scheduleCheck?.byDate || {};
+
+  // a finding on a date they did not work, so no day card exists to hang it
+  // under. Rest report rows do this: the report can carry a row for a date the
+  // timesheet has no hours on. Shown rather than dropped.
+  const dayDates = new Set((sheet.data?.days || []).map((d) => d.date));
+  const orphans = [...findingsByDate.entries()].filter(([date]) => !dayDates.has(date));
 
   // THE SAME PICTURE THE CHECKS SCREEN DRAWS, built the same way - see the long
   // note in checks/page.js. Schedule parsing pulls in the pdf stack, so the
@@ -141,21 +279,42 @@ export default async function PersonSchedulePage({ params }) {
       </h2>
 
       <div className="mt-3 space-y-3">
-        {v.days.map(({ day: d, list }) => (
+        {v.days.map(({ day: d, list }) => {
+          // "NOTHING FLAGGED" HAS TO MEAN NOTHING, and it did not: this page
+          // knew only about violations, so a day carrying an off-clock rest and
+          // a misfiled report row still announced itself as clean. Uribe 07/28
+          // is the one Mánu opened. The claim now counts everything the day
+          // actually holds.
+          const also = findingsByDate.get(d.date) || [];
+          const said = correctionsByDate.get(d.date) || [];
+          const quiet = !list.length && !also.length && !said.length;
+          return (
           <div
             key={d.date}
             className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
-              list.length ? "border-l-fuchsia-500" : "border-l-emerald-700/40"
+              list.length
+                ? "border-l-fuchsia-500"
+                : also.length || said.length
+                  ? "border-l-violet-500"
+                  : "border-l-emerald-700/40"
             }`}
           >
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p className="text-sm font-semibold tabular-nums text-foreground">{d.date}</p>
               <p className="text-xs text-faint">{f2(d.paidHours)} hrs</p>
-              {list.length ? (
+              {list.length > 0 && (
                 <p className="text-sm font-semibold text-fuchsia-700 dark:text-fuchsia-300">
                   {list.map(violationHead).join(", ")}
                 </p>
-              ) : (
+              )}
+              {!list.length && (also.length > 0 || said.length > 0) && (
+                <p className="text-sm font-semibold text-violet-700 dark:text-violet-300">
+                  {also.length + said.length === 1
+                    ? "1 thing to look at"
+                    : `${also.length + said.length} things to look at`}
+                </p>
+              )}
+              {quiet && (
                 <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
                   nothing flagged
                 </p>
@@ -179,10 +338,44 @@ export default async function PersonSchedulePage({ params }) {
               </ul>
             )}
 
+            {/* EVERYTHING ELSE THE CHECKS SCREEN HOLDS ABOUT THIS DAY, in its
+                own words - the copy comes from `findings.js` rather than being
+                written again here, so the two screens cannot describe one
+                finding two ways. The settled ones are here too: "we looked and
+                it was fine" is the answer somebody needs on the phone. */}
+            <Findings list={findingsByDate.get(d.date)} />
+            <Reported list={correctionsByDate.get(d.date)} />
+
             <DayPeek {...(dayViews.get(d.date) || {})} />
           </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* A finding on a date they did not work, so there is no day card to hang
+          it under. The Rest Periods Report does this: it can carry a row for a
+          date the timesheet has no hours on. Dropping them would be the same
+          fault this page was just fixed for. */}
+      {orphans.length > 0 && (
+        <>
+          <h2 className="mt-9 text-xs font-bold uppercase tracking-wide text-faint">
+            On days with no hours{" "}
+            <span className="text-[11px] font-semibold normal-case tracking-normal tabular-nums">
+              {orphans.reduce((n, [, l]) => n + l.length, 0)}
+            </span>
+          </h2>
+          <div className="mt-3 space-y-3">
+            {orphans.map(([date, l]) => (
+              <div key={date || "no-date"} className="rounded-lg border border-border bg-surface p-4 border-l-4 border-l-violet-500">
+                <p className="text-sm font-semibold tabular-nums text-foreground">
+                  {date || "No date on the record"}
+                </p>
+                <Findings list={l} />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="mt-8 rounded-lg border border-border bg-surface-2 p-4 text-sm text-muted">
         <p className="font-semibold text-foreground">Fixing these</p>
