@@ -28,6 +28,7 @@ import {
 } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, restNameFor, restRowTimes, allRestRows, clockMin, serviceFit, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
+import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -1444,7 +1445,11 @@ export async function resetBatchAnswers(batchId) {
 
   const sheets = await prisma.timesheet.findMany({
     where: { batchId },
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } } },
+    // `restsUrl` is here because the re-analysis reads it. A column left off a
+    // select comes back undefined, which is indistinguishable from "this batch
+    // has no rest report" - and that reads as restUnknown, which is the
+    // difference between charging somebody and not.
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
   });
   if (!sheets.length) return { ok: false, error: "notfound" };
 
@@ -1484,7 +1489,7 @@ export async function resetTimesheetAnswers(timesheetId) {
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } } },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
   });
   if (!ts) return { ok: false, error: "notfound" };
 
@@ -1504,7 +1509,7 @@ export async function recomputeTimesheet(timesheetId) {
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } },
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
   });
@@ -1612,7 +1617,56 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   const payPeriod =
     stored.payPeriod || { from: ts.batch.periodFrom, to: ts.batch.periodTo };
 
-  const next = recomputeSheet({ days, payPeriod, overrides }, applyOvertime, reentitle);
+  // RE-RUN THE ENGINE, which until now never happened on a stored batch.
+  //
+  // `rebuildSheetFor` recomputed overtime and re-entitled the days an override
+  // touched, but `analyzeDay` itself was last run at upload. So every rule that
+  // landed afterwards reached nothing: the two entitlement rules of 2026-08-12
+  // move August from 148 premium hours to 106 and July from 676 to 600, and
+  // before this line not one of those hours could be seen on any screen.
+  //
+  // The six inputs `stored.js` drops are rebuilt in `reanalyze.js` - see the note
+  // there, and note that rebuilding only `scheduleBlocks` is NOT enough.
+  //
+  // SIGNED AND APPROVED SHEETS ARE LEFT ALONE. Mánu's position on 2026-08-12 is
+  // that nothing goes out officially before Tuesday 2026-08-18, so anything
+  // signed before then is null and void anyway - which buys the room to build
+  // this, not permission to skip the guard. Both live batches have 0 signed and
+  // 0 approved, so today this changes nothing; from the 18th it is the whole
+  // difference between a correction and rewriting somebody's signed document.
+  // Whether it should instead re-analyse and surface the move is Mánu's call and
+  // is still open.
+  const frozen = !!(ts.signedAt || ts.approvedAt);
+  let reanalysis = { moved: [], skipped: 0, paidDrift: 0, ran: false };
+  let analysed = days;
+  if (!frozen) {
+    const windows = restWindowsByDate(restRowsForSheet, { restRowTimes, clockMin, serviceFit });
+    const res = reanalyzeDays(days, {
+      scheduleByDate: stored.scheduleCheck?.byDate || null,
+      restTimesFor: (date) => windows.get(date) || null,
+      // whether a rest report was collected for the BATCH at all, which is what
+      // decides `restUnknown`. Not whether it covers this person: uncovered
+      // means no break was recorded, which is a premium.
+      restSourceAvailable: !!ts.batch?.restsUrl,
+      overrides,
+    });
+    analysed = res.days;
+    reanalysis = { ...res, days: undefined, ran: true };
+  }
+  // A RE-ANALYSIS MUST NOT MOVE WHAT SOMEBODY IS PAID. Paid hours come from the
+  // punches and QSP's printed floor, neither of which a rule change touches, so
+  // drift here means an input was rebuilt wrongly rather than a rule taking
+  // effect. Falling back to the stored days is the safe answer: the sheet keeps
+  // the figures it already had instead of publishing hours nobody can explain.
+  if (reanalysis.paidDrift > 0) {
+    console.error(
+      `timesheet re-analysis moved paid hours for ${ts.sourceName} on ${reanalysis.paidDrift} day(s); keeping stored days`,
+      reanalysis.moved.filter((m) => m.suspect),
+    );
+    analysed = days;
+  }
+
+  const next = recomputeSheet({ days: analysed, payPeriod, overrides }, applyOvertime, reentitle);
 
   // A rebuild renders to CHECK, and to refresh the approval rectangle, then
   // discards the bytes - the sheet itself is built on demand. This is the loop
@@ -1698,7 +1752,11 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/corrections`);
-  return { ok: true };
+  // what the re-analysis moved travels back with the result, so a caller that
+  // rebuilds a whole batch can say which figures changed rather than leaving it
+  // to somebody noticing. Nothing reads it yet; the alternative was throwing the
+  // record away at the only point it exists.
+  return { ok: true, reanalysis };
 }
 
 // "13:15" -> 795, or null if it is not a time on this clock. One parser, so the
@@ -1781,7 +1839,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   const ts = await prisma.timesheet.findUnique({
     where: { id: tsId },
     include: {
-      batch: { select: { id: true, restsByDate: true } },
+      batch: { select: { id: true, restsByDate: true, restsUrl: true } },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
   });
