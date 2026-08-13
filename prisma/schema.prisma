@@ -784,17 +784,147 @@ model Timesheet {
 //
 // `rowKey` is the checks screen's own key for a card, which already has to be
 // stable enough to be a React key across renders.
+// WHERE A PERSON HAS GOT TO, on a batch two people are working through together.
+//
+// This was a single red mark - flagged or not - and Mánu 2026-08-13 asked for the
+// states that actually describe the job: "I want it so me and Gabe can see who
+// has contacted who. And, also, if we've messaged them, if they got back to us,
+// so we can have record for ourselves to keep on contacting people."
+//
+// So the mark carries a STATUS now. "Contacted" and "No response" are different
+// facts about the same message - one says it was sent, the other says it was
+// sent and nothing came back - and only the second one tells you to chase.
+// "Verified on QSP" is the end of the line: they fixed it and somebody looked.
+//
+// `flaggedName` and `flaggedImage` are copied at the moment of marking rather
+// than joined, so the mark keeps saying who put it there even if that person
+// later changes their photo or leaves. That is the half Mánu is asking for when
+// he says "who has contacted who".
 model TimesheetCheckFlag {
   id           String   @id @default(cuid())
   batchId      String
   rowKey       String
   flaggedById  String
-  // copied at the moment of flagging, so the mark keeps saying who put it there
+  // "contacted" | "no-response" | "verified". Defaulted rather than nullable so
+  // there is no third meaning for a row that exists with nothing on it - the
+  // absence of the row IS "not started". Every row in the table predates this
+  // column by zero rows, so the default rewrites nothing.
+  status       String   @default("contacted")
+  // HOW they were contacted: "phone" | "email", null on the states where the
+  // question does not arise. Mánu 2026-08-13: "under contacted. We can choose
+  // phone or email. So it can show the little phone or email icon with whoever
+  // chose contacted."
+  //
+  // It rides on the same row rather than getting a table of its own because it
+  // is one more fact about the same mark, and a mark only ever has one current
+  // state. A HISTORY of every attempt is a different feature and would need one.
+  via          String?
   flaggedName  String?
   flaggedImage String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@unique([batchId, rowKey])
+  @@index([batchId])
+}
+
+// EVERY TIME SOMEBODY WAS CONTACTED, not just the last time.
+//
+// Mánu 2026-08-13: "I want to log all the times we've contacted and show every
+// time. In case we contact them more than once, we wanna have record of this."
+//
+// `TimesheetCheckFlag` holds the CURRENT state, because that is what the screens
+// group and colour by and it wants one row per person to stay cheap. This holds
+// the HISTORY, appended to and never updated. The two are written in one
+// transaction by `setCheckFlag`, so the flag is always the newest row here
+// materialised - if they ever disagree, this table is the truth, because it is
+// the one nothing overwrites.
+//
+// CLEARING A MARK DOES NOT ERASE THE HISTORY. Taking the current state off means
+// "this person is back on the pile", not "nobody ever called them" - and the
+// second reading would quietly delete the record he is asking for.
+// SOMEBODY WANTS EYES ON THIS ONE, and more than one person can say so.
+//
+// Mánu 2026-08-13: "Give a little flag icon under mark again. If you flag it,
+// the card gets a red outline over it. And multiple people can flag it. And
+// it'll show by who next to the flag."
+//
+// NOT `TimesheetCheckFlag`, despite the name, and the difference is the shape:
+// that one is ONE row per person holding the current status (contacted, waiting,
+// verified). This is MANY rows per person, one per reviewer, and holds no state
+// beyond "I flagged this". Two people flagging the same card is the normal case
+// rather than a conflict, which is exactly why it cannot live on a table with a
+// unique key on (batch, row).
+//
+// A reviewer only ever toggles their OWN, so pressing it can never take
+// somebody else's flag off the card.
+model TimesheetRowFlag {
+  id        String   @id @default(cuid())
+  batchId   String
+  // same key the status mark uses: "person-<timesheetId>" today
+  rowKey    String
+  userId    String
+  // copied at the moment, so the flag keeps saying who raised it even if they
+  // later change their photo or leave
+  userName  String?
+  userImage String?
+  createdAt DateTime @default(now())
+
+  // one flag per person per row. Pressing twice is an undo, not a second flag.
+  @@unique([batchId, rowKey, userId])
+  @@index([batchId, rowKey])
+  @@index([batchId])
+}
+
+// WHAT SOMEBODY WANTS THE OTHER REVIEWER TO KNOW about this person.
+//
+// Mánu 2026-08-13: "I also want to add a little comment section. Underneath each
+// card."
+//
+// The contact log answers WHAT HAPPENED and cannot hold "she says her phone is
+// broken, try the email" - that is a sentence, not an event, and squeezing it
+// into a status would lose it. This is the free text beside the record.
+//
+// INTERNAL, and it stays that way: it lives on the review screens behind
+// `canManageTimesheets` and nothing renders it to an employee. It is not a
+// correction, it moves no figure, and it never reaches the sheet.
+//
+// Kept even when the mark is cleared, for the same reason the log is: clearing
+// means back on the pile, not that the conversation never happened.
+model TimesheetRowComment {
+  id        String   @id @default(cuid())
+  batchId   String
+  // same key the mark and the flag use: "person-<timesheetId>" today
+  rowKey    String
+  userId    String
+  // copied at the moment, so a comment keeps saying who wrote it
+  userName  String?
+  userImage String?
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([batchId, rowKey])
+  @@index([batchId])
+}
+
+model TimesheetContactLog {
+  id        String   @id @default(cuid())
+  batchId   String
+  // same key the flag uses, so a row on any of the three screens can find its
+  // own history: "person-<timesheetId>" today
+  rowKey    String
+  // what it was set TO. "contacted" | "no-response" | "verified"
+  status    String
+  // "phone" | "email", only on contacted
+  via       String?
+  byId      String
+  // copied at the moment, so an entry keeps saying who made it even if that
+  // person later changes their photo or leaves
+  byName    String?
+  byImage   String?
+  createdAt DateTime @default(now())
+
+  @@index([batchId, rowKey])
   @@index([batchId])
 }
 

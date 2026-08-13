@@ -14,6 +14,7 @@ import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
 import FlagButton from "../../checks/FlagButton";
+import CheckStatusChip from "@/components/CheckStatusChip";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
 
@@ -118,11 +119,28 @@ function costOfWorked(day, inputs) {
 // often the comparison. Flores has a ten minute punch gap at 12:30 on the 1st
 // and the same gap on the 2nd, which reads as a rest nobody logged rather than
 // two unrelated days, and you can only see that with both in front of you.
-export default async function PersonSchedulePage({ params }) {
+export default async function PersonSchedulePage({ params, searchParams }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) redirect("/portal");
 
   const { id, sheetId } = await params;
+  // WHERE THEY CAME FROM, so Back goes there.
+  //
+  // Mánu 2026-08-13: opening somebody from the all-employees list and pressing
+  // Back landed on Data checks, which is not where he was. This page is now
+  // reachable from two screens - the checks list and the employee list - and a
+  // single hard-coded Back is wrong on one of them whichever one it names.
+  //
+  // Carried in the query string rather than read off the Referer header: a
+  // header is absent on a hard reload and unreliable behind proxies, and this
+  // has to be right every time or it is worse than not existing. Anything other
+  // than the one value we set falls back to Data checks, so a hand-typed or
+  // stale URL cannot produce a broken link.
+  const from = (await searchParams)?.from;
+  const back =
+    from === "people"
+      ? { href: `/portal/admin/timesheets/${id}/people`, label: "Back to all employees" }
+      : { href: `/portal/admin/timesheets/${id}/checks`, label: "Back to Data checks" };
   const sheet = await prisma.timesheet.findUnique({
     where: { id: sheetId },
     // `restsUrl` because the preview asks whether a rest report was
@@ -137,7 +155,11 @@ export default async function PersonSchedulePage({ params }) {
 
   const flag = await prisma.timesheetCheckFlag.findUnique({
     where: { batchId_rowKey: { batchId: id, rowKey: `person-${sheet.id}` } },
-    select: { rowKey: true, flaggedName: true, flaggedImage: true },
+    // `status` is what the chip reads. Left off the select it comes back
+      // undefined, the chip renders as unset, and every mark on the batch
+      // silently looks like nobody has started - which is the same trap
+      // `restsUrl` sprang three times yesterday.
+      select: { rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true },
   });
 
   // EVERYTHING THE CHECKS SCREEN WOULD SAY ABOUT THEM, tied to the day it
@@ -257,7 +279,7 @@ export default async function PersonSchedulePage({ params }) {
 
   return (
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
-      <BackLink href={`/portal/admin/timesheets/${id}/checks`}>Back to Data checks</BackLink>
+      <BackLink href={back.href}>{back.label}</BackLink>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         {sheet.sourceName}
@@ -289,7 +311,10 @@ export default async function PersonSchedulePage({ params }) {
           </div>
         ))}
         <div className="ml-auto self-center">
-          <FlagButton batchId={id} rowKey={`person-${sheet.id}`} flag={flag} />
+          <span className="flex items-center gap-2">
+            <CheckStatusChip flag={flag} />
+            <FlagButton batchId={id} rowKey={`person-${sheet.id}`} flag={flag} />
+          </span>
         </div>
       </div>
 

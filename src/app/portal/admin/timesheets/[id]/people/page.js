@@ -4,15 +4,41 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { restKey, restNameFor } from "@/lib/timesheet/rests";
+import { preferredName } from "@/lib/contacts";
+import Avatar from "@/components/Avatar";
+import CheckStatusChip from "@/components/CheckStatusChip";
+import ContactViaIcon from "@/components/ContactViaIcon";
 import { violationsFor } from "@/lib/timesheet/violations";
 import { tagsForPerson, isClean } from "@/lib/timesheet/person-tags";
+import { STANDING_STATUSES, MARK_OPTIONS, checkStatus } from "@/lib/timesheet/check-status";
 import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
+import RowFlagButton from "../checks/RowFlagButton";
+import RowComments from "../checks/RowComments";
 
 export const metadata = { title: "Everybody on this timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
+
+// IS THE PORTAL'S NAME FOR THEM THE SAME HUMAN NAME THE EXPORT PRINTS?
+//
+// "Uribe, Brandon" and "Brandon Uribe" are one name written two ways, and
+// printing both on the row is noise. Compared as an unordered set of words so
+// the surname-first form matches, lowercased and stripped of punctuation.
+//
+// NOT `restKey`, which looks like the obvious tool and is not: it is built for
+// the Rest Periods Report's own "Last, First" spelling and would call these two
+// different. The nearest wrong function is worse than a small right one.
+const nameWords = (s) =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+const sameHuman = (a, b) => nameWords(a) === nameWords(b);
 
 // FULL LITERAL CLASS STRINGS. Tailwind v4 compiles what it can see in source, so
 // a class assembled from a variable produces no colour - the violations group
@@ -52,17 +78,108 @@ export default async function AllPeoplePage({ params }) {
         orderBy: { sourceName: "asc" },
         select: {
           id: true, sourceName: true, paidHours: true, premiumHours: true,
+          otHours: true, doubleHours: true,
           signedAt: true, sentAt: true, data: true,
+          // HOW TO REACH THEM, which is the whole job of this screen.
+          //
+          // `sharePhonePublicly` is NOT consulted, and that is deliberate: its
+          // own comment says it hides the phone on the PUBLIC shared link
+          // (/c/[id]) and that it is "still shown to signed-in staff in the
+          // portal". This is an admin screen behind `canManageTimesheets`.
+          //
+          // The NAME still comes from `sourceName`, the export's own spelling,
+          // for the same reason it does on the checks list: every figure here
+          // is quoted from those documents and the name has to be the one a
+          // reader can find in the PDF. The portal name rides underneath when
+          // the two differ, because that is who you are about to call.
+          user: {
+            select: {
+              name: true, preferredFirstName: true, preferredLastName: true,
+              image: true, email: true, phone: true,
+            },
+          },
         },
       },
     },
   });
   if (!batch) notFound();
 
+  // EVERY CONTACT EVER MADE ON THIS BATCH, oldest first so a card reads down the
+  // way it happened. One query for the batch rather than one per person: sixty
+  // rows would otherwise be sixty round trips for a list that is usually short.
+  const history = new Map();
+  for (const e of await prisma.timesheetContactLog.findMany({
+    // only the ACTIONS. Rows with a derived status exist from when "waiting"
+    // was a button somebody could press, and they say nothing the line above
+    // them does not already say.
+    where: { batchId: id, status: { in: MARK_OPTIONS } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, rowKey: true, status: true, via: true, byName: true, byImage: true, createdAt: true },
+  })) {
+    if (!history.has(e.rowKey)) history.set(e.rowKey, []);
+    history.get(e.rowKey).push({
+      id: e.id,
+      status: e.status,
+      via: e.via,
+      byName: e.byName,
+      byImage: e.byImage,
+      // formatted server side, in Pacific, for the same reason the mark's own
+      // timestamp is: a shared worklist where "yesterday" must mean one thing
+      when: e.createdAt.toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit",
+      }),
+    });
+  }
+
+  // EVERY NOTE ON THE BATCH, grouped by row, oldest first so a card reads down
+  // the way the conversation went. One query rather than sixty.
+  const notes = new Map();
+  for (const c of await prisma.timesheetRowComment.findMany({
+    where: { batchId: id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, rowKey: true, userId: true, userName: true, userImage: true, body: true, createdAt: true },
+  })) {
+    if (!notes.has(c.rowKey)) notes.set(c.rowKey, []);
+    notes.get(c.rowKey).push({
+      id: c.id,
+      userName: c.userName,
+      userImage: c.userImage,
+      body: c.body,
+      // `isMine` decides whether a delete link shows. Worked out here so the
+      // client is never handed a user id to compare against.
+      isMine: c.userId === user.id,
+      // formatted server side in Pacific, for the same reason every other
+      // timestamp on this screen is: two people share this list.
+      when: c.createdAt.toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit",
+      }),
+    });
+  }
+
+  // EVERY FLAG ON THE BATCH, grouped by row. Many per row on purpose: two
+  // people wanting eyes on the same person is the normal case, not a clash.
+  const rowFlags = new Map();
+  for (const f of await prisma.timesheetRowFlag.findMany({
+    where: { batchId: id },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, rowKey: true, userId: true, userName: true, userImage: true },
+  })) {
+    if (!rowFlags.has(f.rowKey)) rowFlags.set(f.rowKey, []);
+    // `isMe` so the button knows whether pressing it raises or lowers, without
+    // the client ever being handed a user id to compare
+    rowFlags.get(f.rowKey).push({ ...f, isMe: f.userId === user.id, userId: undefined });
+  }
+
   const flags = new Map(
     (await prisma.timesheetCheckFlag.findMany({
       where: { batchId: id },
-      select: { rowKey: true, flaggedName: true, flaggedImage: true },
+      // `status` is what the chip reads. Left off the select it comes back
+      // undefined, the chip renders as unset, and every mark on the batch
+      // silently looks like nobody has started - which is the same trap
+      // `restsUrl` sprang three times yesterday.
+      select: { rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true, updatedAt: true },
     })).map((f) => [f.rowKey, f]),
   );
 
@@ -83,18 +200,47 @@ export default async function AllPeoplePage({ params }) {
   const people = batch.timesheets.map((t) => {
     const v = violationsFor(t.data);
     const tags = tagsForPerson(t, { restRowCount: restRows.get(t.id) || 0 });
+    // the portal's own name for them, shown under the export's spelling only
+    // when the two actually differ - "Uribe, Brandon" over "Brandon Uribe" is
+    // noise, and this list already has enough on each row.
+    const portal = t.user ? preferredName(t.user) : null;
     return {
       id: t.id,
       who: t.sourceName,
+      portal: portal && !sameHuman(portal, t.sourceName) ? portal : null,
       paid: t.paidHours,
+      ot: t.otHours,
+      double: t.doubleHours,
       premium: t.premiumHours,
       days: v.days.length,
       toRaise: v.total,
       tags,
       clean: isClean(tags),
       flag: flags.get(`person-${t.id}`) || null,
+      status: flags.get(`person-${t.id}`)?.status || null,
+      via: flags.get(`person-${t.id}`)?.via || null,
+      // formatted here rather than in the client: a Date crossing the boundary
+      // renders in whatever timezone the browser is in, and this is a shared
+      // worklist where "yesterday" has to mean the same thing to both of them.
+      log: history.get(`person-${t.id}`) || [],
+      rowFlags: rowFlags.get(`person-${t.id}`) || [],
+      notes: notes.get(`person-${t.id}`) || [],
+      flaggedByMe: (rowFlags.get(`person-${t.id}`) || []).some((f) => f.isMe),
+      markedOn: flags.get(`person-${t.id}`)?.updatedAt
+        ? flags.get(`person-${t.id}`).updatedAt.toLocaleString("en-US", {
+            timeZone: "America/Los_Angeles", month: "short", day: "numeric",
+            hour: "numeric", minute: "2-digit",
+          })
+        : null,
+      image: t.user?.image || null,
+      email: t.user?.email || null,
+      phone: t.user?.phone || null,
     };
   });
+
+  // whoever is looking, for the flag button to show while its write is in
+  // flight. Name and picture only - the client never needs an id.
+  const me = { name: preferredName(user) || user.name, email: user.email, image: user.image };
 
   const clean = people.filter((p) => p.clean).length;
   const period = batch.partialPeriod
@@ -121,9 +267,15 @@ export default async function AllPeoplePage({ params }) {
       <div className="mt-6 flex flex-wrap gap-x-10 gap-y-4 rounded-xl border border-border bg-surface p-5">
         {[
           ["People", String(people.length)],
+          // THE PERIOD'S OWN TOTALS. Summed from the sheets rather than read off
+          // the batch, because the batch carries no total of its own - the same
+          // arithmetic the payout report does, and it moves the moment a sheet
+          // is rebuilt.
+          ["Total hours", f2(people.reduce((n, p) => n + (p.paid || 0), 0))],
+          ["Overtime", f2(people.reduce((n, p) => n + (p.ot || 0), 0))],
+          ["Premium hours", f2(people.reduce((n, p) => n + (p.premium || 0), 0))],
           ["With something to raise", String(people.filter((p) => p.toRaise > 0).length)],
           ["Nothing flagged", String(clean)],
-          ["Premium hours", f2(people.reduce((n, p) => n + (p.premium || 0), 0))],
         ].map(([k, val]) => (
           <div key={k}>
             <span className="block text-[11px] font-bold uppercase tracking-wide text-faint">{k}</span>
@@ -141,20 +293,153 @@ export default async function AllPeoplePage({ params }) {
           The name sits in a fixed width column so the names line up down the
           page. That is what makes sixty rows scannable: the eye runs down one
           edge instead of hunting for where each name starts. */}
+      {/* WHO HAS GOT WHERE, at a glance, before you start reading rows.
+          Mánu 2026-08-13 pointed at the meeting attendance screen: a heading per
+          state, a count, and the faces underneath. The faces here are the
+          EMPLOYEES in that state, which is what the pattern he pointed at does -
+          the face of whoever MARKED them is on their own row, where it answers
+          "who has contacted who" for that one person.
+          "Nobody" is spelled out rather than left as an empty row, because an
+          empty space under a heading reads as something failing to load. */}
+      <div className="mt-6 grid gap-4 rounded-xl border border-border bg-surface p-5 sm:grid-cols-3">
+        {/* THREE HEADINGS, AND THE FIRST ONE COUNTS DIFFERENTLY.
+            Mánu 2026-08-13: "There should still be a contact there on the top. I
+            know it'll be pretty much tied with waiting response, but still leave
+            it there at the very top."
+            Nobody RESTS in "contacted" any more - contacting leaves them waiting
+            - so counting it the way the other two are counted would show zero
+            for ever. It counts people who have been contacted AT LEAST ONCE,
+            read off the log. That deliberately overlaps the other two: somebody
+            verified was contacted first, and Mánu knows it reads that way. It is
+            the number you want when the question is "how many have we actually
+            reached", which no state can answer once the state has moved on. */}
+        {[
+          { ...checkStatus("contacted"), people: people.filter((p) => p.log.some((e) => e.status === "contacted")) },
+          ...STANDING_STATUSES.map((s) => ({ ...s, people: people.filter((p) => p.status === s.key) })),
+        ].map((s) => {
+          const mine = s.people;
+          return (
+            <div key={s.key}>
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true" className={`h-2 w-2 rounded-full ${s.dot}`} />
+                <span className="text-[11px] font-bold uppercase tracking-wide text-faint">
+                  {s.label}
+                </span>
+                <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] font-bold tabular-nums text-foreground">
+                  {mine.length}
+                </span>
+              </div>
+              {mine.length === 0 ? (
+                <p className="mt-2 text-xs text-faint">nobody</p>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center">
+                  {mine.slice(0, 10).map((p) => (
+                    <span
+                      key={p.id}
+                      title={p.via ? `${p.who} (${p.via})` : p.who}
+                      className="relative -ml-2 rounded-full ring-2 ring-surface first:ml-0"
+                    >
+                      <Avatar name={p.portal || p.who} email={p.email} image={p.image} size={24} />
+                      {/* the little phone or envelope, tucked on the corner of
+                          the face, so the stack says HOW as well as who */}
+                      {p.via && (
+                        <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-surface p-0.5 text-muted ring-1 ring-border">
+                          <ContactViaIcon via={p.via} size={9} />
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                  {mine.length > 10 && (
+                    <span className="ml-2 text-xs text-faint">+{mine.length - 10}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
       <div className="mt-6 space-y-2">
-        {people.map((p) => (
+        {people.map((p) => {
+          const statusMeta = checkStatus(p.status);
+          return (
           <div
             key={p.id}
+            // A FLAGGED CARD IS OUTLINED RED, whoever raised it. Mánu asked for
+            // the outline rather than a tint so it reads at a glance down a list
+            // of sixty without fighting the left-hand status stripe.
             className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
               p.clean ? "border-l-emerald-600/50" : "border-l-fuchsia-500"
-            }`}
+            } ${p.rowFlags.length ? "ring-2 ring-rose-500" : ""}`}
           >
             <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-              <div className="w-full shrink-0 sm:w-56">
-                <p className="text-sm font-semibold text-foreground">{p.who}</p>
-                <p className="mt-0.5 text-xs tabular-nums text-faint">
-                  {f2(p.paid)} paid · {p.days} {p.days === 1 ? "day" : "days"}
-                </p>
+              {/* WHO THEY ARE AND HOW TO REACH THEM, which is what this screen
+                  is for: the next thing that happens after reading a row is
+                  somebody picking up the phone. The address and the number are
+                  real links, so it is one tap on a phone rather than a
+                  copy-paste.
+                  The picture earns its place by making sixty rows scannable by
+                  face rather than by surname. `Avatar` falls back to initials on
+                  a tinted circle when nobody has set one. */}
+              <div className="flex w-full shrink-0 items-start gap-3 sm:w-72">
+                <Avatar name={p.portal || p.who} email={p.email} image={p.image} size={36} />
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                    {p.who}
+                    {/* the state's own icon beside the name, so a face and a
+                        name already say where this person is before the eye
+                        reaches the right-hand side of the row */}
+                    {statusMeta && (
+                      <span className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-bold uppercase ${statusMeta.chip}`}>
+                        <ContactViaIcon via={p.via} size={10} />
+                        {statusMeta.short}
+                      </span>
+                    )}
+                  </p>
+                  {p.portal && <p className="text-xs text-faint">{p.portal}</p>}
+                  <p className="mt-0.5 text-xs tabular-nums text-faint">
+                    {f2(p.paid)} hrs
+                    {p.ot > 0 && (
+                      <span className="font-semibold text-amber-700 dark:text-amber-400">
+                        {" "}· {f2(p.ot)} OT
+                      </span>
+                    )}
+                    {" "}· {p.days} {p.days === 1 ? "day" : "days"}
+                  </p>
+                  {/* ONE LINE EACH, and that is the fix rather than the layout.
+                      They shared a line with `truncate` on it, and in a 288px
+                      column a work email fills the row on its own - so the phone
+                      was ellipsised into the three dots Mánu asked about. A
+                      phone number is short and is the thing you are most likely
+                      to want to read, so it never truncates now.
+                      The email keeps `truncate`: it is long, it is a link, and
+                      the full address is in the title and one click away. */}
+                  {p.email && (
+                    <a
+                      href={`mailto:${p.email}`}
+                      title={p.email}
+                      className="mt-0.5 block truncate text-xs text-brand underline underline-offset-2"
+                    >
+                      {p.email}
+                    </a>
+                  )}
+                  {p.phone && (
+                    <a
+                      href={`tel:${p.phone.replace(/[^\d+]/g, "")}`}
+                      className="mt-0.5 block whitespace-nowrap text-xs text-brand underline underline-offset-2"
+                    >
+                      {p.phone}
+                    </a>
+                  )}
+                  {/* NO ACCOUNT AT ALL is a real state and worth saying out
+                      loud: it means nothing can be sent to them, which somebody
+                      needs to know before they wonder why no email arrived. */}
+                  {!p.email && (
+                    <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                      No portal account, so nothing can be sent to them.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* WHAT THEY ARE CHARGED, as a figure rather than a chip.
@@ -215,18 +500,117 @@ export default async function AllPeoplePage({ params }) {
                   Their page draws every day of the period with the real calendar
                   under it, clean days included, which is the thing you read
                   before picking up the phone. */}
-              <div className="ml-auto flex shrink-0 items-center gap-3">
-                <FlagButton batchId={id} rowKey={`person-${p.id}`} flag={p.flag} />
+              <div className="ml-auto flex shrink-0 flex-col items-stretch gap-1.5">
+                {/* `from=people` so their page knows to send Back here rather
+                    than to Data checks, which is where it always went and is
+                    not where you were. */}
                 <Link
-                  href={`/portal/admin/timesheets/${batch.id}/person/${p.id}`}
-                  className="card-lift block rounded-md border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-brand shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  href={`/portal/admin/timesheets/${batch.id}/person/${p.id}?from=people`}
+                  className="card-lift block rounded-md border border-border bg-surface-2 px-3 py-2 text-center text-xs font-semibold text-brand shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 >
                   View their day by day
                 </Link>
+                {/* THE STATE IN ITS COLOUR, under the link on the right.
+                    Mánu 2026-08-13: "On the right, under view their day, put the
+                    color of contacted, waiting for response, verified in QSP."
+                    READ ONLY on purpose. The control that CHANGES it is along
+                    the bottom of the card, and two things that both look
+                    pressable and set the same field is how somebody ends up
+                    clicking the one that does nothing. This one is a label: the
+                    same colours, so the right-hand edge of a row says where the
+                    person is from across the list without reading a word.
+                    Absent rather than greyed when nobody has marked them - an
+                    empty slot is the honest picture of "not started", and the
+                    bottom of the card already says so in words. */}
+                {statusMeta && (
+                  <span
+                    className={`rounded-md border px-2 py-1 text-center text-[11px] font-semibold ${statusMeta.chip}`}
+                  >
+                    {statusMeta.label}
+                  </span>
+                )}
               </div>
             </div>
+
+            {/* WHERE THIS PERSON HAS GOT TO, along the bottom of their card.
+                Mánu 2026-08-13: "I wanna have it on the bottom of their card."
+                It was sharing the right-hand group with the link, which put the
+                thing you press most often beside the thing you press once and
+                made both easy to hit by mistake. On its own line it also has
+                room to say WHO marked it and WHEN, which is the record he wants
+                to keep - a chip alone says the state and loses the history. */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3">
+              {/* WHERE THEY ARE ON THE LEFT, THE ACT OF MARKING ON THE RIGHT.
+                  Mánu 2026-08-13: "leave where it says contacted on the left,
+                  though. and the ability to mark should stay. even if they've
+                  selected something." The chip is a label now and the button is
+                  always pressable, so contacting somebody a second time has
+                  somewhere to happen - and every one of those is a row in the
+                  log below. */}
+              <CheckStatusChip flag={p.flag} />
+              {/* THREE STATES, NOT TWO. A mark with no history is a real one:
+                  the marks made before the log existed have nothing behind them,
+                  and saying "nobody has picked this person up" beside a
+                  Contacted chip would have the card contradicting itself. */}
+              {p.log.length === 0 && !p.flag && (
+                <span className="text-[11px] text-faint">
+                  Nobody has picked this person up yet.
+                </span>
+              )}
+              {p.log.length === 0 && p.flag && (
+                <span className="text-[11px] text-faint">
+                  {p.flag.flaggedName || "somebody"}
+                  {p.markedOn && `, ${p.markedOn}`}
+                  {" "}· marked before contacts were logged, so there is no history behind it
+                </span>
+              )}
+              {/* the act of marking, then the flag to its right. They were
+                  stacked; Mánu 2026-08-13: "Put the mark button on the left side
+                  of the flag." Side by side also stops the strip growing a
+                  second row on every card. */}
+              <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                <FlagButton batchId={id} rowKey={`person-${p.id}`} flag={p.flag} />
+                <RowFlagButton
+                  batchId={id}
+                  rowKey={`person-${p.id}`}
+                  flags={p.rowFlags}
+                  mine={p.flaggedByMe}
+                  me={me}
+                />
+              </span>
+            </div>
+
+            {/* EVERY TIME, not just the last time.
+                Mánu 2026-08-13: "I want to log all the times we've contacted and
+                show every time. In case we contact them more than once, we wanna
+                have record of this."
+                Oldest first, so it reads down the way it happened. It survives
+                the mark being cleared, because clearing means the person is back
+                on the pile rather than that nobody ever called them. */}
+            {p.log.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {p.log.map((e) => {
+                  const m = checkStatus(e.status);
+                  return (
+                    <li key={e.id} className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
+                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${m?.dot || "bg-border-strong"}`} />
+                      <ContactViaIcon via={e.via} size={11} />
+                      <span className="font-semibold text-foreground">{m?.label || e.status}</span>
+                      <span className="text-faint">{e.byName || "somebody"}</span>
+                      <span className="tabular-nums text-faint">{e.when}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {/* THE NOTES, last thing on the card. The status says where they
+                are, the log says what was done, and this is the sentence
+                neither can hold. */}
+            <RowComments batchId={id} rowKey={`person-${p.id}`} comments={p.notes} />
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

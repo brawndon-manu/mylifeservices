@@ -10,6 +10,7 @@ import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
 import DayPeek from "./DayPeek";
 import FlagButton from "./FlagButton";
+import CheckStatusChip from "@/components/CheckStatusChip";
 import Evidence from "./Evidence";
 import ChecksFilter from "./ChecksFilter";
 import RecomputeButton from "../corrections/RecomputeButton";
@@ -136,7 +137,11 @@ export default async function ChecksPage({ params }) {
   const flags = new Map(
     (await prisma.timesheetCheckFlag.findMany({
       where: { batchId: id },
-      select: { rowKey: true, flaggedName: true, flaggedImage: true },
+      // `status` is what the chip reads. Left off the select it comes back
+      // undefined, the chip renders as unset, and every mark on the batch
+      // silently looks like nobody has started - which is the same trap
+      // `restsUrl` sprang three times yesterday.
+      select: { rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true },
     })).map((f) => [f.rowKey, f]),
   );
 
@@ -298,14 +303,45 @@ export default async function ChecksPage({ params }) {
                   the picture is what the sentence is describing. */}
               <DayPeek {...(dayViews.get(`${e.timesheetId}|${e.date}`) || {})} />
 
-              {/* the red mark, bottom right, where a reviewer's eye ends up
-                  after reading the row */}
-              <div className="mt-2 flex justify-end">
-                <FlagButton
-                  batchId={batch.id}
-                  rowKey={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
-                  flag={flags.get(e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`) || null}
-                />
+              {/* A WAY THROUGH TO THE PERSON, on every row and not only the
+                  violation ones.
+                  Mánu's list had "View their schedule on every card, not just
+                  violation rows" and this was the last thing on it. Until now an
+                  anomaly, a punch or a rest row was a dead end: you could read
+                  the finding and had no way to reach the person it is about,
+                  which is backwards on a screen whose whole job is to start a
+                  conversation with them.
+                  NOT A WRAPPING LINK. This card holds a flag button and two
+                  expandable panels, and nesting those inside an anchor makes
+                  them unreachable by keyboard and unpredictable by mouse. The
+                  violation row can wrap because it holds nothing but text.
+                  A rest report row that matched NO timesheet has no person to
+                  open - the report can name somebody the export never did - so
+                  the link is conditional rather than pointing at /person/null. */}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                {e.timesheetId ? (
+                  <Link
+                    href={`/portal/admin/timesheets/${batch.id}/person/${e.timesheetId}`}
+                    className="text-xs font-semibold text-brand underline underline-offset-4"
+                  >
+                    View their schedule →
+                  </Link>
+                ) : (
+                  <span className="text-xs text-faint">
+                    This row came from the Rest Periods Report and matched nobody on the timesheet.
+                  </span>
+                )}
+                {/* the state as a label, then the way to change it. They used
+                    to be one control and split on 2026-08-13, so that marking
+                    somebody a second time has somewhere to happen. */}
+                <span className="flex items-center gap-2">
+                  <CheckStatusChip flag={flags.get(e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`) || null} />
+                  <FlagButton
+                    batchId={batch.id}
+                    rowKey={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
+                    flag={flags.get(e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`) || null}
+                  />
+                </span>
               </div>
 
               <details className="group mt-2">
