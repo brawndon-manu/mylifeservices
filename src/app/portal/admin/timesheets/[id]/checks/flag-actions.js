@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { isCheckStatus, isContactVia, asksHow, statusAfter, isMarkAction } from "@/lib/timesheet/check-status";
+import { bumpBatchVersion } from "@/lib/timesheet-presence";
 
 // WHERE A PERSON HAS GOT TO, set from any of the three screens that list them.
 //
@@ -97,6 +98,9 @@ export async function setCheckFlag({ batchId, rowKey, status, via = null }) {
 
   // all three screens carry these marks now, so all three have to be refreshed
   // or the one you are not looking at keeps yesterday's answer
+  // tell anybody else's open tab that something moved, so their poll picks it
+  // up without them reloading
+  await bumpBatchVersion(batchId);
   revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
   return { ok: true, status: resting, via: how };
@@ -138,6 +142,9 @@ export async function toggleRowFlag({ batchId, rowKey }) {
     });
   }
 
+  // tell anybody else's open tab that something moved, so their poll picks it
+  // up without them reloading
+  await bumpBatchVersion(batchId);
   revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
   return { ok: true, flagged: !mine };
@@ -172,6 +179,9 @@ export async function addRowComment({ batchId, rowKey, body }) {
     },
   });
 
+  // tell anybody else's open tab that something moved, so their poll picks it
+  // up without them reloading
+  await bumpBatchVersion(batchId);
   revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
   return { ok: true };
@@ -193,6 +203,7 @@ export async function deleteRowComment(id) {
   if (row.userId !== user.id) return { ok: false, error: "notyours" };
 
   await prisma.timesheetRowComment.delete({ where: { id: row.id } });
+  await bumpBatchVersion(row.batchId);
   revalidatePath(`/portal/admin/timesheets/${row.batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${row.batchId}/people`);
   return { ok: true };

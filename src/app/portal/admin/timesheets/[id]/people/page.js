@@ -15,7 +15,7 @@ import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
-import PresenceProvider, { PresenceBar, RowPresence } from "../Presence";
+import PresenceProvider, { PresenceBar, PresenceCard } from "../Presence";
 
 export const metadata = { title: "Everybody on this timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -368,16 +368,22 @@ export default async function AllPeoplePage({ params }) {
         {people.map((p) => {
           const statusMeta = checkStatus(p.status);
           return (
-          <div
+          // PresenceCard carries the row's own styling rather than wrapping it,
+          // so reporting the pointer does not put a second box around every
+          // card. It draws whoever else is on this row in the top right.
+          //
+          // A FLAGGED CARD IS OUTLINED RED, whoever raised it. An outline rather
+          // than a tint, so it reads at a glance down a list of sixty without
+          // fighting the left-hand status stripe.
+          //
+          // `card-lift` is the standard hover across the portal - the lift plus
+          // the hard light-blue offset shadow - so these rows behave like every
+          // other card rather than being the one list that sits flat. The
+          // resting border and shadow-sm stay inline, per the note on the class
+          // in globals.css.
+          <PresenceCard
             key={p.id}
-            // A FLAGGED CARD IS OUTLINED RED, whoever raised it. Mánu asked for
-            // the outline rather than a tint so it reads at a glance down a list
-            // of sixty without fighting the left-hand status stripe.
-            // `card-lift` is the standard hover across the portal - the lift
-            // plus the hard light-blue offset shadow - so these rows behave like
-            // every other card rather than being the one list that sits flat.
-            // The resting border and shadow-sm stay inline, per the note on the
-            // class in globals.css.
+            rowKey={`person-${p.id}`}
             className={`card-lift rounded-lg border border-border bg-surface p-4 shadow-sm border-l-4 ${
               p.clean ? "border-l-emerald-600/50" : "border-l-fuchsia-500"
             } ${p.rowFlags.length ? "ring-2 ring-rose-500" : ""}`}
@@ -405,10 +411,6 @@ export default async function AllPeoplePage({ params }) {
                         {statusMeta.short}
                       </span>
                     )}
-                    {/* somebody has this person OPEN right now. Exact, because
-                        it comes from their page rather than from a guess about
-                        where anybody has scrolled to. */}
-                    <RowPresence rowKey={`person-${p.id}`} />
                   </p>
                   {p.portal && <p className="text-xs text-faint">{p.portal}</p>}
                   <p className="mt-0.5 text-xs tabular-nums text-faint">
@@ -622,7 +624,7 @@ export default async function AllPeoplePage({ params }) {
                 are, the log says what was done, and this is the sentence
                 neither can hold. */}
             <RowComments batchId={id} rowKey={`person-${p.id}`} comments={p.notes} />
-          </div>
+          </PresenceCard>
           );
         })}
       </div>

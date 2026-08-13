@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { heartbeat, clearPresence, whoIsHere } from "@/lib/timesheet-presence";
+import { heartbeat, clearPresence, whoIsHere, getBatchVersion } from "@/lib/timesheet-presence";
 
 // WHERE EVERYBODY IS ON THIS BATCH, and a note that I am still here.
 //
@@ -47,6 +47,10 @@ export async function POST(req, { params }) {
 
   await heartbeat({
     batchId: id,
+    // a hover is a pointer resting on a card; anything else is the page they
+    // have open. Only the sender can tell them apart - see the note in
+    // Presence.js about why this stopped being inferred.
+    hover: body.hover === true,
     userId: user.id,
     name: preferredName(user) || user.name || user.email || null,
     image: user.image || null,
@@ -54,7 +58,13 @@ export async function POST(req, { params }) {
     page,
   });
 
-  const here = await whoIsHere(id, { exceptUserId: user.id });
+  const [here, version] = await Promise.all([
+    whoIsHere(id, { exceptUserId: user.id }),
+    // WHAT ELSE MOVED. The poll is already happening, so the counter rides back
+    // with it: a client whose number changed re-fetches the page, which is how
+    // somebody else's note or flag appears without a reload.
+    getBatchVersion(id),
+  ]);
 
-  return NextResponse.json({ here }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ here, version }, { headers: { "Cache-Control": "no-store" } });
 }

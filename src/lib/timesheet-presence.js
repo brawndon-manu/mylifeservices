@@ -48,12 +48,12 @@ const keyFor = (batchId) =>
 //
 // `rowKey` is optional: on a list page somebody is on the batch but not on any
 // one person, and saying so is more honest than guessing from scroll position.
-export async function heartbeat({ batchId, userId, name, image, rowKey = null, page = null }) {
+export async function heartbeat({ batchId, userId, name, image, rowKey = null, page = null, hover = false }) {
   const key = keyFor(batchId);
   if (!key || !userId) return;
   try {
     await redis.hset(key, {
-      [userId]: { userId, name: name || null, image: image || null, rowKey, page, at: Date.now() },
+      [userId]: { userId, name: name || null, image: image || null, rowKey, page, hover: !!hover, at: Date.now() },
     });
     await redis.expire(key, TTL_SECONDS);
   } catch {
@@ -104,5 +104,48 @@ function safeParse(s) {
     return JSON.parse(s);
   } catch {
     return null;
+  }
+}
+
+// HAS ANYTHING ON THIS BATCH CHANGED SINCE I LAST LOOKED?
+//
+// Marks, flags, notes and contacts are written by one person and have to appear
+// for the other without them reloading. The screens already poll for presence,
+// so the cheapest honest answer is a counter: every write bumps it, and the poll
+// that is already happening carries it back. A client whose number moved asks
+// the page to re-fetch.
+//
+// A COUNTER RATHER THAN THE DATA ITSELF. Sending the rows would mean the poll
+// grows with the batch and the client re-implements the page's own queries. A
+// number says "something moved" and the server components stay the one place
+// that knows how to read any of it.
+//
+// It is also why this is not a postgres query: asking four tables for their
+// newest row every three seconds, per open tab, is a real cost for an answer
+// that is almost always "nothing". One redis INCR per write and one GET per poll
+// is the whole thing.
+const versionKey = (batchId) =>
+  batchId ? `mls:ts:v:${String(batchId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 64)}` : null;
+
+export async function bumpBatchVersion(batchId) {
+  const key = versionKey(batchId);
+  if (!key) return;
+  try {
+    await redis.incr(key);
+    await redis.expire(key, TTL_SECONDS);
+  } catch {
+    // a missed bump costs somebody a manual refresh, never the write itself
+  }
+}
+
+export async function getBatchVersion(batchId) {
+  const key = versionKey(batchId);
+  if (!key) return 0;
+  try {
+    return Number(await redis.get(key)) || 0;
+  } catch {
+    // unknown reads as 0, which never differs from itself, so a redis blip
+    // means no refreshes rather than a refresh loop
+    return 0;
   }
 }

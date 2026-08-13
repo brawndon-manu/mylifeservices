@@ -17,7 +17,7 @@ import FlagButton from "../../checks/FlagButton";
 import CheckStatusChip from "@/components/CheckStatusChip";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
-import PresenceProvider, { PresenceBar } from "../../Presence";
+import PresenceProvider, { PresenceBar, PresenceCard } from "../../Presence";
 
 export const metadata = { title: "Their schedule", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -395,9 +395,21 @@ export default async function PersonSchedulePage({ params, searchParams }) {
           // schedule blocks and its meal test ignored the waiver.
           const wouldAdd = misc.length && !ov.miscKind ? costOfWorked(d, previewFor(d.date)) : 0;
           return (
-          <div
+          // EACH DAY REPORTS ITSELF, so two people inside the same person's page
+          // can see which day the other is reading. Hovering a day outranks the
+          // page's own row - it is the more precise answer - and letting go
+          // falls back to "they have this person open".
+          //
+          // The date is stripped to digits because the row key is sanitised to
+          // letters, numbers and dashes on the way to redis, and "07/31/26"
+          // would otherwise collide with "073126" from any other shape.
+          <PresenceCard
             key={d.date}
-            className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
+            rowKey={`day-${sheet.id}-${String(d.date).replace(/\D/g, "")}`}
+            // `card-lift` here too, so a day behaves like every other card in
+            // the portal. The employee rows got it and these did not, which made
+            // this the one list that sat flat under the pointer.
+            className={`card-lift rounded-lg border border-border bg-surface p-4 shadow-sm border-l-4 ${
               list.length
                 ? "border-l-fuchsia-500"
                 : also.length || said.length
@@ -469,7 +481,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
             )}
 
             <DayPeek {...(dayViews.get(d.date) || {})} />
-          </div>
+          </PresenceCard>
           );
         })}
       </div>
