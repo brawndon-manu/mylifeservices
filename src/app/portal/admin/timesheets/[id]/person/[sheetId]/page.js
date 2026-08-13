@@ -17,6 +17,7 @@ import FlagButton from "../../checks/FlagButton";
 import CheckStatusChip from "@/components/CheckStatusChip";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
+import PresenceProvider, { PresenceBar } from "../../Presence";
 
 export const metadata = { title: "Their schedule", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -278,8 +279,13 @@ export default async function PersonSchedulePage({ params, searchParams }) {
     : `${b.periodFrom} to ${b.periodTo}`;
 
   return (
+    // THE ONE PAGE WHERE "WHICH CARD ARE THEY ON" IS EXACT. They opened one
+    // person; that is the row. On a scrolling list it would be a guess from
+    // scroll position, so the list reads this rather than inventing its own.
+    <PresenceProvider batchId={id} rowKey={`person-${sheet.id}`} page="person">
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
       <BackLink href={back.href}>{back.label}</BackLink>
+      <PresenceBar />
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         {sheet.sourceName}
@@ -513,5 +519,6 @@ export default async function PersonSchedulePage({ params, searchParams }) {
         </p>
       </div>
     </section>
+    </PresenceProvider>
   );
 }

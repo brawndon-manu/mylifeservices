@@ -15,6 +15,7 @@ import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
+import PresenceProvider, { PresenceBar, RowPresence } from "../Presence";
 
 export const metadata = { title: "Everybody on this timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -248,8 +249,12 @@ export default async function AllPeoplePage({ params }) {
     : `${batch.periodFrom} to ${batch.periodTo}`;
 
   return (
+    // the list reports itself as on the BATCH but on no row - saying "somewhere
+    // on this page" is honest, and guessing a row from scroll position is not.
+    <PresenceProvider batchId={id} page="people">
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href={`/portal/admin/timesheets/${batch.id}/checks`}>Back to Data checks</BackLink>
+      <PresenceBar />
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
@@ -368,7 +373,12 @@ export default async function AllPeoplePage({ params }) {
             // A FLAGGED CARD IS OUTLINED RED, whoever raised it. Mánu asked for
             // the outline rather than a tint so it reads at a glance down a list
             // of sixty without fighting the left-hand status stripe.
-            className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
+            // `card-lift` is the standard hover across the portal - the lift
+            // plus the hard light-blue offset shadow - so these rows behave like
+            // every other card rather than being the one list that sits flat.
+            // The resting border and shadow-sm stay inline, per the note on the
+            // class in globals.css.
+            className={`card-lift rounded-lg border border-border bg-surface p-4 shadow-sm border-l-4 ${
               p.clean ? "border-l-emerald-600/50" : "border-l-fuchsia-500"
             } ${p.rowFlags.length ? "ring-2 ring-rose-500" : ""}`}
           >
@@ -395,6 +405,10 @@ export default async function AllPeoplePage({ params }) {
                         {statusMeta.short}
                       </span>
                     )}
+                    {/* somebody has this person OPEN right now. Exact, because
+                        it comes from their page rather than from a guess about
+                        where anybody has scrolled to. */}
+                    <RowPresence rowKey={`person-${p.id}`} />
                   </p>
                   {p.portal && <p className="text-xs text-faint">{p.portal}</p>}
                   <p className="mt-0.5 text-xs tabular-nums text-faint">
@@ -613,5 +627,6 @@ export default async function AllPeoplePage({ params }) {
         })}
       </div>
     </section>
+    </PresenceProvider>
   );
 }
