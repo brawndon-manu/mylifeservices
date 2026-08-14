@@ -23,6 +23,10 @@ import Avatar from "@/components/Avatar";
 // after ten minutes so a laptop left open overnight stops claiming somebody is
 // at work.
 const PresenceContext = createContext([]);
+// WHO IS IN WHICH UPLOAD. Only the batch list asks for this: it draws one card
+// per fortnight with the earlier uploads folded under it, and a face has to land
+// on the upload somebody is actually reading rather than on the newest one.
+const ByBatchContext = createContext({});
 const ReportContext = createContext(() => {});
 
 // TWO SPEEDS, because hover and "has it open" want different things.
@@ -59,6 +63,20 @@ const DWELL_MS = 700;
 
 export function usePresence() {
   return useContext(PresenceContext);
+}
+
+// everybody in ONE upload, by its id. Two uploads of a fortnight are two
+// documents with two sets of timesheet rows, so somebody open in the older one
+// is not open in this one.
+export function useBatchPresence(batchId) {
+  const byBatch = useContext(ByBatchContext);
+  return useMemo(() => byBatch[batchId] || [], [byBatch, batchId]);
+}
+
+// the whole map, for a caller that needs several uploads at once. A hook cannot
+// be called once per id in a loop, so the loop reads this instead.
+export function useAllBatchPresence() {
+  return useContext(ByBatchContext);
 }
 
 // tell the provider which card I am on. Null means "on the page, no card".
@@ -104,6 +122,7 @@ export default function PresenceProvider({
 }) {
   const router = useRouter();
   const [here, setHere] = useState([]);
+  const [byBatch, setByBatch] = useState({});
   // the batch's change counter as of the last poll. Starts unknown so the first
   // answer only records it - refreshing on arrival would be a reload nobody
   // asked for.
@@ -191,6 +210,7 @@ export default function PresenceProvider({
         if (!alive) return;
         const list = Array.isArray(data.here) ? data.here : [];
         setHere(list);
+        if (data.byBatch && typeof data.byBatch === "object") setByBatch(data.byBatch);
         someoneHere.current = list.length > 0;
 
         // SOMETHING ELSE MOVED, so re-fetch. `router.refresh` re-runs the server
@@ -277,7 +297,9 @@ export default function PresenceProvider({
 
   return (
     <PresenceContext.Provider value={here}>
-      <ReportContext.Provider value={report}>{children}</ReportContext.Provider>
+      <ByBatchContext.Provider value={byBatch}>
+        <ReportContext.Provider value={report}>{children}</ReportContext.Provider>
+      </ByBatchContext.Provider>
     </PresenceContext.Provider>
   );
 }

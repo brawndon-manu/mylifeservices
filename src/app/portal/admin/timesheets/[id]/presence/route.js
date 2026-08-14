@@ -91,21 +91,21 @@ export async function POST(req, { params }) {
       .slice(0, 12)
     : [];
 
+  // GROUPED BY UPLOAD, NOT MERGED INTO ONE LIST.
+  //
+  // This merged them at first, which put somebody reading the 12:36 AM upload on
+  // the live card. They are in that upload, not this one - two uploads of one
+  // fortnight are two different documents with two different sets of timesheet
+  // rows, and a face has to say which one somebody is actually looking at.
   const gather = async () => {
-    const lists = await Promise.all(
-      [id, ...also].map((b) => whoIsHere(b, { exceptUserId: user.id })),
-    );
-    const byUser = new Map();
-    for (const list of lists) {
-      for (const p of list) {
-        const prev = byUser.get(p.userId);
-        if (!prev || (p.at || 0) > (prev.at || 0)) byUser.set(p.userId, p);
-      }
-    }
-    return [...byUser.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
+    const ids = [id, ...also];
+    const lists = await Promise.all(ids.map((b) => whoIsHere(b, { exceptUserId: user.id })));
+    const byBatch = {};
+    ids.forEach((b, i) => { byBatch[b] = lists[i]; });
+    return byBatch;
   };
 
-  const [here, version] = await Promise.all([
+  const [byBatch, version] = await Promise.all([
     gather(),
     // WHAT ELSE MOVED. The poll is already happening, so the counter rides back
     // with it: a client whose number changed re-fetches the page, which is how
@@ -113,5 +113,11 @@ export async function POST(req, { params }) {
     getBatchVersion(id),
   ]);
 
-  return NextResponse.json({ here, version }, { headers: { "Cache-Control": "no-store" } });
+  // `here` stays the answer for THIS batch, which is what every screen inside a
+  // batch asks for. `byBatch` is the extra the list needs, so it can put a face
+  // on the upload somebody is actually in rather than on the newest one.
+  return NextResponse.json(
+    { here: byBatch[id] || [], byBatch, version },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

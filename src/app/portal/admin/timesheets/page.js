@@ -8,7 +8,7 @@ import BackLink from "@/components/BackLink";
 import SendModeBanner from "./_components/SendModeBanner";
 import { companyDate } from "@/lib/company-time";
 import LiveBadge from "./_components/LiveBadge";
-import CardPresence from "./_components/CardPresence";
+import PeriodPresence, { BatchFaces, FoldedCount } from "./_components/CardPresence";
 import { groupByPeriod, batchState } from "@/lib/timesheet/batch-state";
 
 export const metadata = { title: "Timesheets", robots: { index: false, follow: false } };
@@ -73,6 +73,15 @@ export default async function TimesheetBatchesPage() {
             const state = batchState(b);
             return (
               <li key={g.key} className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+                {/* ONE POLL FOR THE WHOLE PERIOD, answered per upload. The card
+                    reads its own slice and each folded row reads its own, so a
+                    face lands on the upload somebody is actually in rather than
+                    on the newest one. Only while the period is unfinished: a
+                    poller per period per tab grows for ever. */}
+                <PeriodPresence
+                  batchId={state.key === "final" ? null : b.id}
+                  alsoBatchIds={g.earlier.map((o) => o.id)}
+                >
                 <div className="relative">
                   {/* THE FACES SIT OUTSIDE THE LINK. A card that is one big anchor
                       cannot hold a second interactive thing, and a tooltip inside
@@ -83,15 +92,11 @@ export default async function TimesheetBatchesPage() {
                           period is still open. A finished fortnight is not one
                           anybody is chasing, and a poller per card would be a
                           request per pay period per tab, for ever. */}
-                      {state.key !== "final" && (
-                        <CardPresence
-                          batchId={b.id}
-                          // and the older uploads of the same fortnight: somebody
-                          // reading a superseded one is still inside this period,
-                          // and the fold must not hide them
-                          alsoBatchIds={g.earlier.map((o) => o.id)}
-                        />
-                      )}
+                      {/* THIS upload only. Somebody reading the 12:36 AM export
+                          is in that one, not this one - two uploads of a
+                          fortnight are two documents with two sets of timesheet
+                          rows. */}
+                      <BatchFaces batchId={b.id} />
                     </div>
                   </div>
 
@@ -175,6 +180,9 @@ export default async function TimesheetBatchesPage() {
                     <summary className="cursor-pointer list-none px-5 py-2.5 text-xs font-semibold text-muted hover:text-foreground">
                       <span className="mr-1.5 inline-block text-[10px] text-faint">&#9656;</span>
                       {g.earlier.length} earlier upload{g.earlier.length === 1 ? "" : "s"} of this period
+                      {/* a shut fold must not hide a person. The face itself is
+                          on the row inside; this is only the reason to open it. */}
+                      <FoldedCount batchIds={g.earlier.map((o) => o.id)} />
                     </summary>
                     <ul>
                       {g.earlier.map((o) => (
@@ -195,6 +203,7 @@ export default async function TimesheetBatchesPage() {
                               {o.timesheets.length} sheets
                             </span>
                             <LiveBadge batch={o} size="sm" newerInPeriod />
+                            <BatchFaces batchId={o.id} compact />
                             <span className="ml-auto font-semibold text-brand">Open &rarr;</span>
                           </Link>
                         </li>
@@ -202,6 +211,7 @@ export default async function TimesheetBatchesPage() {
                     </ul>
                   </details>
                 )}
+                </PeriodPresence>
               </li>
             );
           })}
