@@ -45,6 +45,17 @@ export const BATCH_STATES = {
     dot: "bg-amber-500",
     pulses: false,
   },
+  superseded: {
+    key: "superseded",
+    label: "SUPERSEDED",
+    // grey and mute. This is history: a later export of the same fortnight
+    // exists and is the one being worked. Three batches all pulsing LIVE said
+    // three periods were in progress when there is only ever one.
+    pill: "border-border-strong bg-surface-2 text-faint",
+    edge: "border-l-border-strong",
+    dot: "bg-slate-400",
+    pulses: false,
+  },
   final: {
     key: "final",
     label: "FINAL",
@@ -59,12 +70,18 @@ export const BATCH_STATES = {
 // days or `restsByDate`, so the reach can be read. Given neither, reach is null
 // and the period is treated as still coming in - the safe direction, because it
 // is the one that refuses to send.
-export function batchState(batch) {
+export function batchState(batch, { newerInPeriod = false } = {}) {
   const reach = batchReach(batch);
   const end = asDate(batch?.periodTo);
   const at = asDate(reach);
   const covered = !!(end && at && at >= end);
-  const key = batch?.lockedAt ? "final" : covered ? "needs-decision" : "live";
+  // SUPERSEDED BEATS EVERYTHING. Only one upload of a fortnight is the one being
+  // worked, and it is the newest. The three August batches all read LIVE, which
+  // said three periods were in progress and put a blinking light on two exports
+  // nobody will ever open again.
+  const key = newerInPeriod
+    ? "superseded"
+    : batch?.lockedAt ? "final" : covered ? "needs-decision" : "live";
   return {
     ...BATCH_STATES[key],
     reach,
@@ -81,8 +98,22 @@ export function batchState(batch) {
 // Only a period somebody has attested may be sent. The precondition is not
 // enough on its own: the data reaching the 15th does not mean the schedule
 // stopped moving, and that is the whole reason the question exists.
-export function canSendAll(batch) {
-  return batchState(batch).key === "final";
+export function canSendAll(batch, opts) {
+  return batchState(batch, opts).key === "final";
+}
+
+// which batch of each period is the one being worked. Given every batch, the
+// ids of the ones that have a newer sibling - so a caller can hand
+// `newerInPeriod` in without asking the database a second question per row.
+export function supersededIds(batches = []) {
+  const newest = new Map();
+  for (const b of batches) {
+    const k = `${b.periodFrom}..${b.periodTo}`;
+    const prev = newest.get(k);
+    if (!prev || new Date(b.createdAt) > new Date(prev.createdAt)) newest.set(k, b);
+  }
+  const keep = new Set([...newest.values()].map((b) => b.id));
+  return new Set(batches.filter((b) => !keep.has(b.id)).map((b) => b.id));
 }
 
 // Every day of the period, and whether the export covers it. Drives the strip

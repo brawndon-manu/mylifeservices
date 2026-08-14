@@ -295,7 +295,17 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // LIVE / NEEDS A DECISION / FINAL, worked out once and read by both the badge
   // and the send gate, so the two can never disagree about whether a period is
   // finished.
-  const state = batchState(batch);
+  // IS THERE A NEWER UPLOAD OF THIS SAME FORTNIGHT? This page loads one batch,
+  // so unlike the list it has to ask. One count, and it decides whether the
+  // header claims to be the live copy.
+  const newerInPeriod = (await prisma.timesheetBatch.count({
+    where: {
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+      createdAt: { gt: batch.createdAt },
+    },
+  })) > 0;
+  const state = batchState(batch, { newerInPeriod });
   const lockedOn = batch.lockedAt
     ? companyDate(batch.lockedAt, {
       month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
@@ -349,7 +359,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           {batch.periodFrom} to {batch.periodTo}
         </h1>
-        <LiveBadge batch={batch} />
+        <LiveBadge batch={batch} newerInPeriod={newerInPeriod} />
       </div>
       {/* WHAT IS ACTUALLY IN, rather than a number to trust. This is the screen
           where the answer decides whether sixty people get emailed. */}
@@ -361,6 +371,11 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               the period runs to <span className="font-semibold text-foreground">{batch.periodTo}</span>.
               {state.daysToCome ? ` ${state.daysToCome} day${state.daysToCome === 1 ? "" : "s"} still to come.` : ""}
             </>
+          ) : state.key === "superseded" ? (
+            <>
+              A later upload of this pay period exists, and that one is the live copy.
+              This is kept as the record of what the export said at the time.
+            </>
           ) : state.key === "needs-decision" ? (
             <>The whole period is in the export, up to <span className="font-semibold text-foreground">{state.reach}</span>.</>
           ) : (
@@ -368,13 +383,17 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           )}
         </p>
         <PeriodStrip batch={batch} />
-        <LockPeriod
-          batchId={batch.id}
-          locked={!!batch.lockedAt}
-          lockedByName={batch.lockedByName}
-          lockedAt={lockedOn}
-          covered={state.covered}
-        />
+        {/* nothing to decide about a replaced export - the question belongs to
+            whichever upload is current */}
+        {state.key !== "superseded" && (
+          <LockPeriod
+            batchId={batch.id}
+            locked={!!batch.lockedAt}
+            lockedByName={batch.lockedByName}
+            lockedAt={lockedOn}
+            covered={state.covered}
+          />
+        )}
       </div>
       {/* two runs of the same dates are indistinguishable without this, and
           nothing else on the page says when the export was pulled. */}
@@ -709,7 +728,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         blockedWhy={
           state.key === "live"
             ? `Cannot send until the pay period comes to an end. The export reaches ${state.reach}, the period runs to ${batch.periodTo}.`
-            : "The whole period is in, but nobody has said the schedule is locked yet."
+            : state.key === "superseded"
+              ? "A later upload of this pay period exists. Send from that one."
+              : "The whole period is in, but nobody has said the schedule is locked yet."
         }
       />
 

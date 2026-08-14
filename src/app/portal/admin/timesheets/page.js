@@ -8,6 +8,9 @@ import BackLink from "@/components/BackLink";
 import SendModeBanner from "./_components/SendModeBanner";
 import { companyDate } from "@/lib/company-time";
 import LiveBadge from "./_components/LiveBadge";
+import PresenceProvider from "./[id]/Presence";
+import WorkingNow from "./_components/WorkingNow";
+import { supersededIds } from "@/lib/timesheet/batch-state";
 
 export const metadata = { title: "Timesheets", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -23,6 +26,15 @@ export default async function TimesheetBatchesPage() {
       timesheets: { select: { id: true, sentAt: true, signedAt: true, userId: true } },
     },
   });
+
+  // ONLY THE NEWEST UPLOAD OF A FORTNIGHT IS THE LIVE ONE. Worked out from
+  // the list we already have rather than a query per row.
+  const stale = supersededIds(batches);
+
+  // the one batch anybody is likely to be working: the newest. Watching all of
+  // them would be a poll per row for an answer that is almost always about this
+  // one.
+  const live = batches.find((b) => !stale.has(b.id)) || null;
 
   const mode = sendModeSummary();
 
@@ -48,6 +60,17 @@ export default async function TimesheetBatchesPage() {
       </p>
 
       <SendModeBanner mode={mode} />
+
+      {/* WHO IS MID-JOB, BEFORE YOU PRESS UPLOAD. Quiet tone here because this
+          page is where you find out, not where you are about to act - the upload
+          screen carries the same thing in amber with the consequence spelled
+          out. Only the live batch is watched: a poll per row would be several
+          requests for an answer that is nearly always about the newest one. */}
+      {live && (
+        <PresenceProvider batchId={live.id} page="list">
+          <WorkingNow period={`${live.periodFrom} to ${live.periodTo}`} quiet />
+        </PresenceProvider>
+      )}
 
       {batches.length === 0 ? (
         <div className="mt-10 rounded-xl border border-dashed border-border-strong bg-surface-2 p-10 text-center">
@@ -83,7 +106,7 @@ export default async function TimesheetBatchesPage() {
                             goes - which shows LIVE and refuses to send. Wrong in
                             the safe direction. The batch page has the full data
                             and is the one that decides. */}
-                        <LiveBadge batch={b} size="sm" />
+                        <LiveBadge batch={b} size="sm" newerInPeriod={stale.has(b.id)} />
                       </div>
                       <p className="mt-1 text-xs text-muted">
                         {total} employee{total === 1 ? "" : "s"} ·{" "}

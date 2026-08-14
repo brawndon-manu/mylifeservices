@@ -9,8 +9,8 @@
 // group once shipped with a plain white border for exactly that reason.
 import { batchState, periodDays } from "@/lib/timesheet/batch-state";
 
-export default function LiveBadge({ batch, size = "md" }) {
-  const s = batchState(batch);
+export default function LiveBadge({ batch, size = "md", newerInPeriod = false }) {
+  const s = batchState(batch, { newerInPeriod });
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-bold tracking-wide ${s.pill} ${
@@ -19,9 +19,11 @@ export default function LiveBadge({ batch, size = "md" }) {
       title={
         s.key === "live"
           ? `The export reaches ${s.reach}. The period runs to ${batch.periodTo}.`
-          : s.key === "final"
-            ? `Marked final${s.lockedByName ? ` by ${s.lockedByName}` : ""}.`
-            : "The whole period is in. Nobody has said the schedule is locked."
+          : s.key === "superseded"
+            ? "A later upload of this same pay period exists. That one is the live copy."
+            : s.key === "final"
+              ? `Marked final${s.lockedByName ? ` by ${s.lockedByName}` : ""}.`
+              : "The whole period is in. Nobody has said the schedule is locked."
       }
     >
       <span className="relative flex h-2 w-2">

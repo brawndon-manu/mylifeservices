@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
 import { uploadBatch } from "../actions";
 import UploadForm from "./UploadForm";
+import PresenceProvider from "../[id]/Presence";
+import WorkingNow from "../_components/WorkingNow";
 
 export const metadata = { title: "Upload timesheets", robots: { index: false, follow: false } };
 
@@ -43,6 +46,13 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
   const sp = await searchParams;
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
   const why = typeof sp?.why === "string" ? sp.why : null;
+
+  // the batch a new upload would land on top of: the most recent one. Only its
+  // id and period, because all this drives is a presence poll and a sentence.
+  const latest = await prisma.timesheetBatch.findFirst({
+    orderBy: { createdAt: "desc" },
+    select: { id: true, periodFrom: true, periodTo: true },
+  });
 
   // Everything below is built the way the admin dashboard is: a short line of
   // copy, then cards that use the width. That matters at 1280px - a paragraph
@@ -114,6 +124,18 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
       <p className="mt-2 text-base text-muted">
         Four exports from QSP. Every corrected timesheet is generated from them.
       </p>
+
+      {/* WHO IS MID-JOB ON THE BATCH THIS IS ABOUT TO REPLACE. Uploading while
+          somebody is working through the checks changes the screen underneath
+          them, and a mark set in that moment is set against findings that are
+          being replaced. A warning rather than a block - two people working at
+          once is normal, doing it unknowingly is the problem.
+          Heartbeats as `upload`, so the other end sees where we are too. */}
+      {latest && (
+        <PresenceProvider batchId={latest.id} page="upload">
+          <WorkingNow period={`${latest.periodFrom} to ${latest.periodTo}`} />
+        </PresenceProvider>
+      )}
 
       {error && (
         <div role="alert" className="mt-6 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
