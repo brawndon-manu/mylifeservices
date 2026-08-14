@@ -279,7 +279,7 @@ export default async function ChecksPage({ params }) {
               </Link>
             ) : (
             <div
-              key={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
+              key={e.rowKey}
               className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
                 e.d.group === "decide"
                   ? "border-l-rose-500"
@@ -335,11 +335,11 @@ export default async function ChecksPage({ params }) {
                     to be one control and split on 2026-08-13, so that marking
                     somebody a second time has somewhere to happen. */}
                 <span className="flex items-center gap-2">
-                  <CheckStatusChip flag={flags.get(e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`) || null} />
+                  <CheckStatusChip flag={flags.get(e.rowKey) || null} />
                   <FlagButton
                     batchId={batch.id}
-                    rowKey={e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`}
-                    flag={flags.get(e.rowKey || `${e.timesheetId}-${e.kind}-${e.date}`) || null}
+                    rowKey={e.rowKey}
+                    flag={flags.get(e.rowKey) || null}
                   />
                 </span>
               </div>

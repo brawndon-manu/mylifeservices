@@ -79,6 +79,10 @@ export default async function AllPeoplePage({ params }) {
         orderBy: { sourceName: "asc" },
         select: {
           id: true, sourceName: true, paidHours: true, premiumHours: true,
+          // the SCALAR, not just the `user` relation below. a mark hangs off
+          // this, and a select that omits it makes every person key null on
+          // this screen while the checks screen reads them fine.
+          userId: true,
           otHours: true, doubleHours: true,
           signedAt: true, sentAt: true, data: true,
           // HOW TO REACH THEM, which is the whole job of this screen.

@@ -320,6 +320,16 @@ export function buildFindings(batch) {
     const byDate = sched.byDate || {};
     const common = {
       timesheetId: t.id,
+      // WHO THIS IS, IN A WAY THAT OUTLIVES THE UPLOAD.
+      //
+      // `timesheetId` is remade by every upload, so anything keyed on it dies
+      // the next morning - 70 marks did exactly that when the 08/12 export
+      // landed on top of the 08/09 one. `userId` is the same value across all
+      // four batches on all 239 sheets, so it is what a mark hangs off.
+      //
+      // Nullable on purpose. An unmatched sheet has no account behind it, and a
+      // null here has to stay null rather than quietly becoming somebody.
+      personKey: t.userId ?? null,
       // the export's own spelling, "Martinez, Jose", NOT the portal's preferred
       // name. this screen audits our figures against the source documents and
       // every other column on it quotes those documents, so the name has to be
@@ -336,14 +346,24 @@ export function buildFindings(batch) {
     for (const p of t.data?.punchIssues || []) {
       const schedDay = byDate[p.date];
       const withSay = { ...p, say: describePunchIssue(p, scheduledPaidHours(schedDay)) };
+      // NOT A PUNCH FAULT, SO NOT IN THE PUNCH PILE. Her punches are exactly
+      // what QSP wrote, and the thing worth looking at is two bookings sold
+      // over each other. Only genuine punch faults stay under that heading.
+      //
+      // Lifted out of the object because the KEY needs it too, and computing it
+      // twice is how a row ends up filed under one heading and keyed under
+      // another.
+      const kind = overlapInfo(schedDay?.shifts) ? "overlap" : "punch";
       entries.push({
         ...common,
-        // NOT A PUNCH FAULT, SO NOT IN THE PUNCH PILE. Mánu 2026-08-12: "I
-        // don't like that Garcia is under punches that do not read." He is
-        // right - her punches are exactly what QSP wrote, and the thing worth
-        // looking at is two bookings sold over each other. Only genuine punch
-        // faults stay under that heading.
-        kind: overlapInfo(schedDay?.shifts) ? "overlap" : "punch",
+        kind,
+        // THESE TWO ROWS HAD NO KEY AT ALL until now, and the checks page was
+        // quietly minting one for them: `e.rowKey || \`${e.timesheetId}-${e.kind}-${e.date}\``.
+        // So five marks got stored in a shape nothing else uses, back to front
+        // against every other row here, and grepping this file for the shape
+        // would never have shown it. One place mints keys now.
+        rowKey: `${kind}-${t.id}-${p.date}`,
+        findingKey: `${kind}-${p.date}`,
         date: p.date,
         p: withSay,
         overlapping: !!overlapInfo(schedDay?.shifts),
@@ -386,6 +406,11 @@ export function buildFindings(batch) {
       // several - Zuchniak has eight.
       timesheetId: t?.id || null,
       rowKey: `rest-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
+      // the person comes off the MATCHED sheet, not the report's spelling -
+      // `restNameFor` is what finds Delgado Pineda, Ruth under "Angel", and
+      // without it three of her rows resolve to nobody
+      personKey: t?.userId ?? null,
+      findingKey: `rest-${r.date}-${r.out || "x"}`,
       // same rule as above. an unmatched row keeps the report's own spelling,
       // because that is the only name the document actually carries.
       who: t ? t.sourceName : r.name,
@@ -426,6 +451,8 @@ export function buildFindings(batch) {
     entries.push({
       timesheetId: t?.id || null,
       rowKey: `rest-offshift-${restKey(r.name)}-${r.date}-${r.out || "x"}`,
+      personKey: t?.userId ?? null,
+      findingKey: `rest-offshift-${r.date}-${r.out || "x"}`,
       who: t ? t.sourceName : r.name,
       signed: false,
       overrides: {},
@@ -503,6 +530,8 @@ export function buildFindings(batch) {
     entries.push({
       timesheetId: t.id,
       rowKey: `rest-late-${name}-${date}`,
+      personKey: t.userId ?? null,
+      findingKey: `rest-late-${date}`,
       who: t.sourceName,
       signed: !!t.signedAt,
       overrides: {},
@@ -596,6 +625,8 @@ export function buildFindings(batch) {
   const restRow = (t, d, key, head, lead) => ({
     timesheetId: t.id,
     rowKey: `${key}-${t.id}-${d.date}`,
+    personKey: t.userId ?? null,
+    findingKey: `${key}-${d.date}`,
     who: t.sourceName,
     signed: !!t.signedAt,
     overrides: {},
@@ -761,6 +792,8 @@ export function buildFindings(batch) {
       entries.push({
         timesheetId: t.id,
         rowKey: `rest-tacked-${t.id}-${d.date}`,
+        personKey: t.userId ?? null,
+        findingKey: `rest-tacked-${d.date}`,
         who: t.sourceName,
         signed: !!t.signedAt,
         overrides: {},
@@ -803,6 +836,10 @@ export function buildFindings(batch) {
     entries.push({
       timesheetId: t.id,
       rowKey: `person-${t.id}`,
+      // the whole-person card. no date, no kind - there is one per person and
+      // "person" is the whole of what identifies it once the id is gone.
+      personKey: t.userId ?? null,
+      findingKey: "person",
       who: t.sourceName,
       signed: !!t.signedAt,
       overrides: {},

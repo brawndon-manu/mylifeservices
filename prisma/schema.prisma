@@ -821,11 +821,49 @@ model TimesheetCheckFlag {
   via          String?
   flaggedName  String?
   flaggedImage String?
+
+  // ---- THE KEY THAT OUTLIVES AN UPLOAD ----------------------------------
+  //
+  // `batchId` + `rowKey` cannot. Every upload makes a new batch row and new
+  // timesheet rows, and rowKey carries a timesheet id, so a mark is orphaned
+  // twice over the next morning. It has already happened: 70 marks made on the
+  // 08/01-08/09 batch vanished the moment the 08/01-08/12 export landed, and
+  // all 60 people carried over perfectly while not one mark did.
+  //
+  // The three below identify a mark by what it is ABOUT rather than by which
+  // upload it was made on:
+  //
+  //   period      QSP's own "Pay Period:" line, so two uploads of one fortnight
+  //               are one period. Semi-monthly: 1st-15th, then 16th to the end.
+  //   personKey   the account. 239 of 239 sheets across all four batches have
+  //               one, so it never falls back to matching names - which is what
+  //               files Delgado Pineda, Ruth under "Angel".
+  //   findingKey  what the finding is, with no id in it. `person`,
+  //               `overlap-08/07/26`, `rest-late-08/03/26`.
+  //
+  // NULLABLE, and `batchId`/`rowKey` are kept rather than dropped, because
+  // production is whatever is on `main`: a column the deployed code does not
+  // know about must not be the only place the answer lives. They are backfilled
+  // by a script rather than by the migration, so the write can be read first.
+  periodFrom   String?
+  periodTo     String?
+  personKey    String?
+  findingKey   String?
+
+  // HOW FAR THE DATA REACHED WHEN THIS WAS MARKED, as QSP prints a date.
+  //
+  // "Contacted" has to mean "I went through everything they had as of the 12th",
+  // not "I sent them a message". Without it, tomorrow's upload adds a finding
+  // and the old mark silently claims to cover it. With it, a new day can add
+  // something to raise without disturbing what was already settled.
+  coveredThrough String?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@unique([batchId, rowKey])
   @@index([batchId])
+  @@index([periodFrom, periodTo, personKey])
 }
 
 // EVERY TIME SOMEBODY WAS CONTACTED, not just the last time.
@@ -922,10 +960,21 @@ model TimesheetContactLog {
   // person later changes their photo or leaves
   byName    String?
   byImage   String?
+
+  // the same key as the mark it belongs to - see TimesheetCheckFlag. The log is
+  // the half that must NOT be lost on a re-upload: a mark can be re-made, but
+  // "we rang them on the 12th and again on the 13th" cannot be reconstructed
+  // from anything. 12 of these events were already stranded.
+  periodFrom String?
+  periodTo   String?
+  personKey  String?
+  findingKey String?
+
   createdAt DateTime @default(now())
 
   @@index([batchId, rowKey])
   @@index([batchId])
+  @@index([periodFrom, periodTo, personKey])
 }
 
 model TimesheetCorrection {
