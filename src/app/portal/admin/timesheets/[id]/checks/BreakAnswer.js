@@ -20,10 +20,15 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import { setBreakAnswer } from "./flag-actions";
 import { BREAK_ANSWERS, HEARD_VIA, breakAnswer } from "@/lib/timesheet/break-answers";
+import { useReadOnly } from "../ReadOnly";
 
 export default function BreakAnswer({
   batchId, personKey, findingKey, date = null, kind = "meal", answer = null,
 }) {
+  // A REPLACED UPLOAD IS READ ONLY. The server refuses every write on one
+  // regardless - this only stops the click being wasted, and says why.
+  const readOnly = useReadOnly();
+
   const [asking, setAsking] = useState(null);
   const [reason, setReason] = useState("");
   const [via, setVia] = useState("phone");
@@ -151,7 +156,8 @@ export default function BreakAnswer({
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || !!readOnly}
+          title={readOnly ? "This upload has been replaced. Answer it on the current one." : undefined}
           onClick={() => setAsking("not-taken")}
           className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
         >
@@ -159,7 +165,8 @@ export default function BreakAnswer({
         </button>
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || !!readOnly}
+          title={readOnly ? "This upload has been replaced. Answer it on the current one." : undefined}
           onClick={() => write("took-it")}
           className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
         >

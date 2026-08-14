@@ -13,6 +13,7 @@
 // a layout that redirected would be a second place for that rule to drift from.
 import Link from "next/link";
 import BatchPresence from "./BatchPresence";
+import ReadOnlyProvider from "./ReadOnly";
 import { supersededBy } from "@/lib/timesheet/superseded";
 import { companyDate } from "@/lib/company-time";
 
@@ -21,6 +22,9 @@ export default async function TimesheetBatchLayout({ children, params }) {
   const newer = await supersededBy(id);
   return (
     <BatchPresence batchId={id}>
+      {/* every control below reads this rather than each screen asking. The
+          server refuses regardless - this only stops a wasted click. */}
+      <ReadOnlyProvider readOnly={!!newer}>
       {newer && (
         <div className="mx-auto max-w-7xl px-6 pt-8">
           <div className="rounded-xl border border-border-strong bg-surface-2 p-4">
@@ -52,7 +56,8 @@ export default async function TimesheetBatchLayout({ children, params }) {
           </div>
         </div>
       )}
-      {children}
+        {children}
+      </ReadOnlyProvider>
     </BatchPresence>
   );
 }

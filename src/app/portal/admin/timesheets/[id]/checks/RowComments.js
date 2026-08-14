@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Avatar from "@/components/Avatar";
 import { addRowComment, deleteRowComment } from "./flag-actions";
+import { useReadOnly } from "../ReadOnly";
 
 // NOTES BETWEEN THE PEOPLE WORKING THE LIST.
 //
@@ -18,6 +19,10 @@ import { addRowComment, deleteRowComment } from "./flag-actions";
 // card has something worth reading. It opens automatically when there are
 // comments, because a note nobody sees is a note nobody wrote.
 export default function RowComments({ batchId, rowKey, comments = [] }) {
+  // A REPLACED UPLOAD IS READ ONLY. The server refuses every write on one
+  // regardless - this only stops the click being wasted, and says why.
+  const readOnly = useReadOnly();
+
   const [open, setOpen] = useState(comments.length > 0);
   const [body, setBody] = useState("");
   const [error, setError] = useState(null);
@@ -92,6 +97,7 @@ export default function RowComments({ batchId, rowKey, comments = [] }) {
 
       <div className="flex items-start gap-2">
         <textarea
+          disabled={!!readOnly}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
