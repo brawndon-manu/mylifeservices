@@ -243,6 +243,18 @@ export default async function AllPeoplePage({ params }) {
       // normalised on the way in, so the summary strip below can group on the
       // current key without every legacy row falling out of its heading
       status: normalizeCheckStatus(flags.get(markKey(t.userId, "person"))?.status),
+      // THE MARK IS ABOUT SOMETHING THAT NO LONGER EXISTS.
+      //
+      // Bucio, Mary was marked Waiting response on the 08/09 export. On the
+      // 08/13 one she has a day more, seven hours more pay and no finding at
+      // all - so the fix landed. The mark followed her across, correctly, and
+      // then sat on the worklist in amber saying chase her about nothing.
+      //
+      // Not cleared: somebody did ring her and that is worth keeping. It just
+      // stops being a to-do, which is the difference between a record and a
+      // job.
+      settledByEngine:
+        !!flags.get(markKey(t.userId, "person")) && isClean(tags) && v.total === 0,
       via: flags.get(markKey(t.userId, "person"))?.via || null,
       // formatted here rather than in the client: a Date crossing the boundary
       // renders in whatever timezone the browser is in, and this is a shared
@@ -344,7 +356,21 @@ export default async function AllPeoplePage({ params }) {
             reached", which no state can answer once the state has moved on. */}
         {[
           { ...checkStatus("contacted"), people: people.filter((p) => p.log.some((e) => e.status === "contacted")) },
-          ...STANDING_STATUSES.map((s) => ({ ...s, people: people.filter((p) => p.status === s.key) })),
+          // `settledByEngine` people are deliberately excluded from their own
+          // state's heading: they are not waiting on anybody, the export
+          // already answered it. They keep their chip and their log on the card.
+          ...STANDING_STATUSES.map((s) => ({
+            ...s,
+            people: people.filter((p) => p.status === s.key && !p.settledByEngine),
+          })),
+          {
+            key: "settled-by-engine",
+            label: "Settled by the export",
+            short: "Settled",
+            chip: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300",
+            dot: "bg-emerald-600",
+            people: people.filter((p) => p.settledByEngine),
+          },
         ].map((s) => {
           const mine = s.people;
           return (
@@ -390,7 +416,17 @@ export default async function AllPeoplePage({ params }) {
 
       <div className="mt-6 space-y-2">
         {people.map((p) => {
-          const statusMeta = checkStatus(p.status);
+          // SETTLED BY THE EXPORT WEARS ITS OWN COLOUR, not the state it came
+          // from. Amber next to a name means chase them, and there is nothing
+          // left to chase - the fix is already in the file.
+          const statusMeta = p.settledByEngine
+            ? {
+              ...checkStatus(p.status),
+              short: "Settled",
+              label: "Settled by the export",
+              chip: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300",
+            }
+            : checkStatus(p.status);
           return (
           // PresenceCard carries the row's own styling rather than wrapping it,
           // so reporting the pointer does not put a second box around every
@@ -564,6 +600,11 @@ export default async function AllPeoplePage({ params }) {
                     bottom of the card already says so in words. */}
                 {statusMeta && (
                   <span
+                    title={
+                      p.settledByEngine
+                        ? `Marked ${checkStatus(p.status)?.label || p.status}, and the export no longer flags anything for them.`
+                        : undefined
+                    }
                     className={`rounded-md border px-2 py-1 text-center text-[11px] font-semibold ${statusMeta.chip}`}
                   >
                     {statusMeta.label}
