@@ -30,6 +30,14 @@ export default function WorkingNow({ period = null, quiet = false }) {
       ? names[0]
       : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
+  // SOMEBODY IN QUICKSOLVE WITH THE BATCH OPEN IS THE CASE THIS EXISTS FOR, and
+  // their window is behind another one, so they read as hidden. Worth saying out
+  // loud rather than folding into "working": switching away is usually them
+  // going to make the fix, which is the least safe moment to replace the export
+  // underneath them.
+  const away = here.filter((p) => p.hidden).length;
+  const looking = here.length - away;
+
   return (
     <div
       className={`mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5 ${
@@ -42,8 +50,16 @@ export default function WorkingNow({ period = null, quiet = false }) {
         {here.slice(0, 6).map((p) => (
           <span
             key={p.userId}
-            title={p.page === "upload" ? `${p.name || "Somebody"} is on the upload screen` : p.name || "somebody"}
-            className="-ml-1.5 rounded-full ring-2 ring-surface first:ml-0"
+            title={
+              p.hidden
+                ? `${p.name || "Somebody"} has it open in another window`
+                : p.page === "upload"
+                  ? `${p.name || "Somebody"} is on the upload screen`
+                  : `${p.name || "Somebody"} is looking at it`
+            }
+            // a dimmed face for a window that is not in front of them, so the
+            // strip says at a glance who is reading and who has stepped out
+            className={`-ml-1.5 rounded-full ring-2 ring-surface first:ml-0 ${p.hidden ? "opacity-55" : ""}`}
           >
             <Avatar name={p.name} image={p.image} size={22} />
           </span>
@@ -51,10 +67,18 @@ export default function WorkingNow({ period = null, quiet = false }) {
       </span>
       <span className={`text-sm ${quiet ? "text-sky-900 dark:text-sky-300" : "text-amber-900 dark:text-amber-200"}`}>
         <b>{who}</b>{" "}
-        {names.length === 1 ? "is" : "are"} working {period ? `the ${period} batch` : "this batch"} right now.
+        {names.length === 1 ? "has" : "have"} {period ? `the ${period} batch` : "this batch"} open
+        {away > 0 && looking === 0
+          ? ", in another window right now"
+          : away > 0
+            ? `, ${away} of them in another window`
+            : ""}
+        .
         {!quiet && (
           <span className="block text-xs opacity-90">
-            Uploading replaces what they are looking at. Worth a word first.
+            {away > 0
+              ? "A window switched away is usually somebody in QuickSolve making the fix. Uploading now replaces what they come back to."
+              : "Uploading replaces what they are looking at. Worth a word first."}
           </span>
         )}
       </span>

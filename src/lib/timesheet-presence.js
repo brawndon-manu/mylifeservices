@@ -48,12 +48,12 @@ const keyFor = (batchId) =>
 //
 // `rowKey` is optional: on a list page somebody is on the batch but not on any
 // one person, and saying so is more honest than guessing from scroll position.
-export async function heartbeat({ batchId, userId, name, image, rowKey = null, page = null, hover = false }) {
+export async function heartbeat({ batchId, userId, name, image, rowKey = null, page = null, hover = false, hidden = false }) {
   const key = keyFor(batchId);
   if (!key || !userId) return;
   try {
     await redis.hset(key, {
-      [userId]: { userId, name: name || null, image: image || null, rowKey, page, hover: !!hover, at: Date.now() },
+      [userId]: { userId, name: name || null, image: image || null, rowKey, page, hover: !!hover, hidden: !!hidden, at: Date.now() },
     });
     await redis.expire(key, TTL_SECONDS);
   } catch {

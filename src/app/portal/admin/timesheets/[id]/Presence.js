@@ -16,8 +16,12 @@ import Avatar from "@/components/Avatar";
 // same person", a face being five seconds stale is invisible, and it costs a
 // request every ten seconds per open tab instead of a socket per tab.
 //
-// It stops when the tab is hidden. A backgrounded list is nobody's presence, and
-// polling from a tab nobody is looking at is how a nicety turns into load.
+// A HIDDEN TAB SLOWS DOWN, IT DOES NOT STOP. It used to stop, and that took the
+// face off thirty seconds after somebody switched to QuickSolve - which is the
+// one moment they are certainly working the batch, since that is where the fix
+// gets made. Hidden beats go out every 20 seconds, marked hidden, and give up
+// after ten minutes so a laptop left open overnight stops claiming somebody is
+// at work.
 const PresenceContext = createContext([]);
 const ReportContext = createContext(() => {});
 
@@ -32,6 +36,18 @@ const ReportContext = createContext(() => {});
 // left open all day at 3 seconds is about 86,000 of them. Fast only while
 // somebody is actually working the list is what keeps this cheap.
 const POLL_IDLE_MS = 12_000;
+// A TAB BEHIND ANOTHER WINDOW IS STILL SOMEBODY MID-JOB.
+//
+// Hidden tabs used to stop beating outright, which took a face off the screen
+// thirty seconds after somebody switched to QuickSolve - the one moment they are
+// most certainly working the batch, because that is where the fix gets made.
+// They keep beating, just slowly, and say they are hidden so the screen can tell
+// "has it open" from "is looking at it".
+const POLL_HIDDEN_MS = 20_000;
+// ...but not for ever. A laptop left open overnight would otherwise report
+// somebody as working the batch until the tab is closed. After this long out of
+// sight it goes quiet and the 30 second timeout takes the face off.
+const HIDDEN_GRACE_MS = 10 * 60_000;
 const POLL_ACTIVE_MS = 3_000;
 // how long after the last pointer movement the page still counts as active
 const ACTIVE_FOR_MS = 20_000;
@@ -86,6 +102,11 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
   const activeUntil = useRef(0);
   // whether anybody else is on this batch, read by the timer to decide its speed
   const someoneHere = useRef(false);
+  // when this tab was last in front of somebody, so a hidden one knows whether
+  // it is a quick trip to QuickSolve or a laptop left open
+  // null until the effect stamps it. Date.now() in a ref initialiser runs during
+  // render, which is the impurity the note below is already about.
+  const lastVisible = useRef(null);
   const beatNow = useRef(() => {});
   // held in a ref so changing what I am looking at does not restart the timer.
   // Synced in an effect rather than assigned during render: a ref written while
@@ -113,9 +134,12 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
     const url = `/portal/admin/timesheets/${batchId}/presence`;
 
     const beat = async () => {
-      // a hidden tab is not presence. It also stops a wall of open tabs from
-      // polling all day.
-      if (document.visibilityState === "hidden") return;
+      // hidden, but only recently: still on the batch, just not looking at it
+      const hiddenNow = document.visibilityState === "hidden";
+      // no stamp yet means the tab has not been visible since mount, so treat it
+      // as fresh rather than expired - the alternative silences a tab that was
+      // opened in the background and is about to be looked at
+      if (hiddenNow && lastVisible.current && Date.now() - lastVisible.current > HIDDEN_GRACE_MS) return;
       try {
         const res = await fetch(url, {
           method: "POST",
@@ -131,7 +155,10 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
           body: JSON.stringify({
             ...what.current,
             rowKey: hovered.current ?? what.current.rowKey,
-            hover: hovered.current != null,
+            hover: hovered.current != null && !hiddenNow,
+            // said, not inferred: only this end knows whether the window is in
+            // front of them
+            hidden: hiddenNow,
           }),
           cache: "no-store",
         });
@@ -161,6 +188,7 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
     };
 
     beatNow.current = beat;
+    if (document.visibilityState === "visible") lastVisible.current = Date.now();
     beat();
     // re-armed each time rather than a fixed interval, so the speed can change
     // with whether anybody is actually working the list
@@ -175,15 +203,18 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
       // live at all.
       //
       // Alone on a batch there is nothing to be quick about, so it stays lazy.
+      const hiddenNow = typeof document !== "undefined" && document.visibilityState === "hidden";
       const active = Date.now() < activeUntil.current || someoneHere.current;
       timer = setTimeout(async () => {
         await beat();
         arm();
-      }, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+      }, hiddenNow ? POLL_HIDDEN_MS : active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     };
     arm();
     // coming back to the tab should not wait out the interval
-    const onVisible = () => { if (document.visibilityState === "visible") beat(); };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") { lastVisible.current = Date.now(); beat(); }
+    };
     document.addEventListener("visibilitychange", onVisible);
 
     // SAY SO ON THE WAY OUT where we can. `keepalive` because the request has to
