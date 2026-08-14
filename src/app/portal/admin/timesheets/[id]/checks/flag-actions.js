@@ -8,6 +8,7 @@ import { preferredName } from "@/lib/contacts";
 import { isCheckStatus, isContactVia, asksHow, statusAfter, isMarkAction } from "@/lib/timesheet/check-status";
 import { bumpBatchVersion } from "@/lib/timesheet-presence";
 import { isBreakAnswer, isHeardVia } from "@/lib/timesheet/break-answers";
+import { supersededBy, supersededByForTimesheet, refusal } from "@/lib/timesheet/superseded";
 
 // WHERE A PERSON HAS GOT TO, set from any of the three screens that list them.
 //
@@ -37,6 +38,12 @@ export async function setCheckFlag({
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
   if (!batchId || !rowKey) return { ok: false, error: "missing" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a button is a suggestion and this one has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
   // a horizon that is not a date QSP would print is dropped rather than stored.
   // A junk value here would make every staleness comparison silently false.
   const covered = /^\d{2}\/\d{2}\/\d{2}$/.test(String(coveredThrough || "")) ? coveredThrough : null;
@@ -179,6 +186,12 @@ export async function toggleRowFlag({ batchId, rowKey }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
   if (!batchId || !rowKey) return { ok: false, error: "missing" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a button is a suggestion and this one has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
 
   const mine = await prisma.timesheetRowFlag.findUnique({
     where: { batchId_rowKey_userId: { batchId, rowKey, userId: user.id } },
@@ -219,6 +232,12 @@ export async function addRowComment({ batchId, rowKey, body }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
   if (!batchId || !rowKey) return { ok: false, error: "missing" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a button is a suggestion and this one has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
 
   // trimmed and capped here rather than trusted from the client. An empty
   // comment is a no-op rather than a row, so a stray Enter leaves nothing.
@@ -258,6 +277,11 @@ export async function deleteRowComment(id) {
   });
   if (!row) return { ok: false, error: "gone" };
   if (row.userId !== user.id) return { ok: false, error: "notyours" };
+  // a replaced upload is read only, and a note is a change like any other
+  {
+    const newer = await supersededBy(row.batchId);
+    if (newer) return refusal(newer);
+  }
 
   await prisma.timesheetRowComment.delete({ where: { id: row.id } });
   await bumpBatchVersion(row.batchId);
@@ -284,6 +308,12 @@ export async function setBreakAnswer({
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
   if (!batchId || !personKey || !findingKey) return { ok: false, error: "missing" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a button is a suggestion and this one has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
 
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },

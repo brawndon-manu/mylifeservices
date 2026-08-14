@@ -38,7 +38,9 @@ export default function BreakAnswer({
         batchId, personKey, findingKey, date, kind, answer: next, reason: why, via,
       });
       if (res?.ok) { setAsking(null); setReason(""); router.refresh(); }
-      else setErr(res?.error || "failed");
+      // the refusal explains itself - see superseded.js. Showing "superseded"
+      // instead would be a code where a sentence was already written.
+      else setErr(res?.say || res?.error || "failed");
     });
 
   // ALREADY ANSWERED
