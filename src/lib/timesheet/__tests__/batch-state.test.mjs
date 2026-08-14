@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { batchState, canSendAll, periodDays, supersededIds } from "../batch-state.js";
+import { batchState, canSendAll, periodDays, supersededIds, groupByPeriod } from "../batch-state.js";
 
 const batch = (reachDay, extra = {}) => ({
   periodFrom: "08/01/26",
@@ -121,4 +121,39 @@ test("one batch on its own is never superseded", () => {
   const stale = supersededIds([{ id: "only", periodFrom: "08/01/26", periodTo: "08/15/26", createdAt: "2026-08-13T09:04:00Z" }]);
   assert.equal(stale.size, 0);
   assert.equal(supersededIds([]).size, 0);
+});
+
+// ------------------------------------------- one card per period, not per upload
+
+test("four uploads of one fortnight become one group, newest current", () => {
+  const rows = [
+    { id: "a", periodFrom: "08/01/26", periodTo: "08/15/26", createdAt: "2026-08-12T14:36:00Z" },
+    { id: "b", periodFrom: "08/01/26", periodTo: "08/15/26", createdAt: "2026-08-14T13:29:00Z" },
+    { id: "c", periodFrom: "08/01/26", periodTo: "08/15/26", createdAt: "2026-08-13T09:04:00Z" },
+    { id: "july", periodFrom: "07/16/26", periodTo: "07/31/26", createdAt: "2026-08-12T14:30:00Z" },
+  ];
+  const g = groupByPeriod(rows);
+  assert.equal(g.length, 2, "two periods, not four rows");
+  assert.equal(g[0].periodFrom, "08/01/26", "the period with the newest upload leads");
+  assert.equal(g[0].current.id, "b");
+  assert.equal(g[0].uploads, 3);
+  // earlier ones stay reachable, newest first
+  assert.deepEqual(g[0].earlier.map((x) => x.id), ["c", "a"]);
+  assert.equal(g[1].current.id, "july");
+  assert.equal(g[1].earlier.length, 0);
+});
+
+// a start day is not a period. 08/01-08/15 and 08/01-08/31 open on the same
+// date and are not the same fortnight.
+test("periods sharing a start day but not an end are separate", () => {
+  const g = groupByPeriod([
+    { id: "half", periodFrom: "08/01/26", periodTo: "08/15/26", createdAt: "2026-08-14T00:00:00Z" },
+    { id: "whole", periodFrom: "08/01/26", periodTo: "08/31/26", createdAt: "2026-08-13T00:00:00Z" },
+  ]);
+  assert.equal(g.length, 2);
+});
+
+test("nothing in, nothing out", () => {
+  assert.deepEqual(groupByPeriod([]), []);
+  assert.deepEqual(groupByPeriod(), []);
 });

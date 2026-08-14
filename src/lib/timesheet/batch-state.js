@@ -135,3 +135,37 @@ export function periodDays(batch) {
   }
   return out;
 }
+
+// ONE CARD PER PAY PERIOD, NEWEST FIRST.
+//
+// Four uploads of one fortnight were four rows that all looked equally current,
+// and only one of them is. The period is the thing being worked; the uploads are
+// versions of it. So they fold: the newest is the card and the rest are reachable
+// underneath it.
+//
+// Grouped on the printed period rather than on the start day alone, because
+// 08/01-08/15 and a hypothetical 08/01-08/31 are not the same fortnight even
+// though they open on the same date.
+export function groupByPeriod(batches = []) {
+  const groups = new Map();
+  for (const b of batches) {
+    const k = `${b.periodFrom}..${b.periodTo}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(b);
+  }
+  return [...groups.entries()]
+    .map(([key, rows]) => {
+      const sorted = [...rows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return {
+        key,
+        periodFrom: sorted[0].periodFrom,
+        periodTo: sorted[0].periodTo,
+        // the one being worked. Everything else is history that still opens.
+        current: sorted[0],
+        earlier: sorted.slice(1),
+        uploads: sorted.length,
+      };
+    })
+    // newest period first, by its newest upload
+    .sort((a, b) => new Date(b.current.createdAt) - new Date(a.current.createdAt));
+}
