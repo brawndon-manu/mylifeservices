@@ -7,6 +7,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { isCheckStatus, isContactVia, asksHow, statusAfter, isMarkAction } from "@/lib/timesheet/check-status";
 import { bumpBatchVersion } from "@/lib/timesheet-presence";
+import { isBreakAnswer, isHeardVia } from "@/lib/timesheet/break-answers";
 
 // WHERE A PERSON HAS GOT TO, set from any of the three screens that list them.
 //
@@ -263,4 +264,90 @@ export async function deleteRowComment(id) {
   revalidatePath(`/portal/admin/timesheets/${row.batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${row.batchId}/people`);
   return { ok: true };
+}
+
+// WHAT THEY SAID ABOUT A BREAK THEY DID NOT TAKE.
+//
+// The one thing none of the four QSP exports carries. The rest report's
+// Schedule Notes are about late clock-ins - "forgot to punch in", "traffic" -
+// and the timesheet's comments block is the same field time-ranged against a
+// shift. So every reason here is gathered fresh, from a call or a text, or from
+// what the employee writes on their own page.
+//
+// KEYED ON (period, person, finding), never on the timesheet. Corrections are
+// timesheet-scoped and die on every re-upload, which is what stranded 70
+// contact marks. A reason taken off a phone call must survive the next export.
+export async function setBreakAnswer({
+  batchId, personKey, findingKey, date = null, kind = "meal",
+  answer, reason = null, via = null,
+}) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
+  if (!batchId || !personKey || !findingKey) return { ok: false, error: "missing" };
+
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: { periodFrom: true, periodTo: true },
+  });
+  if (!batch) return { ok: false, error: "nobatch" };
+  const where = {
+    periodFrom_periodTo_personKey_findingKey: {
+      periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
+    },
+  };
+
+  // null clears it, the same shape as the contact marks: pressing the answer it
+  // already holds takes it back off rather than writing it twice.
+  if (answer == null) {
+    await prisma.timesheetBreakAnswer.deleteMany({
+      where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey },
+    });
+    await bumpBatchVersion(batchId);
+    revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
+    revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
+    return { ok: true, answer: null };
+  }
+  if (!isBreakAnswer(answer)) return { ok: false, error: "badanswer" };
+
+  // trimmed and capped here rather than trusted. An empty reason is NOT an
+  // empty string: null is a state - nobody gathered one - and it is what moves
+  // the question to the employee.
+  const why = String(reason ?? "").trim().slice(0, 1000) || null;
+  const heard = isHeardVia(via) ? via : null;
+  const who = {
+    byId: user.id,
+    byName: preferredName(user) || user.name || user.email || null,
+    byImage: user.image || null,
+  };
+  const fields = {
+    date, kind,
+    answer,
+    // "they took it" has nothing to explain - the fix is the punch, not a
+    // sentence - so a reason arriving on it is dropped rather than stored
+    reason: answer === "not-taken" ? why : null,
+    via: heard,
+    ...who,
+  };
+
+  await prisma.timesheetBreakAnswer.upsert({
+    where,
+    update: {
+      ...fields,
+      // OUR WORDING CHANGED, SO THEIR AGREEMENT TO THE OLD ONE IS STALE. They
+      // confirmed a sentence, not a row, and quietly keeping the tick against
+      // different words is how somebody ends up having attested to something
+      // nobody read to them.
+      confirmedAt: null,
+      confirmedText: null,
+    },
+    create: {
+      periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
+      ...fields,
+    },
+  });
+
+  await bumpBatchVersion(batchId);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
+  return { ok: true, answer, reason: fields.reason };
 }

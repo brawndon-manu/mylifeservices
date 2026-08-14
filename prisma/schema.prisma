@@ -1218,3 +1218,63 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+// WHY A BREAK WAS NOT TAKEN, recorded by whoever asked them.
+//
+// QSP has no field for this. The rest report's Schedule Notes are about late
+// clock-ins - "forgot to punch in", "traffic", "accidental late clock in" - and
+// the timesheet's comments block is the same field's sibling, time-ranged
+// against a shift. Not one of the four exports carries a reason for a missed
+// meal or rest, so every one of these is gathered fresh: from a call, a text,
+// or from what the employee writes on their own page.
+//
+// KEYED ON (period, person, finding) FROM THE FIRST DAY, not on the timesheet.
+// Corrections are timesheet-scoped and die on every re-upload, which is exactly
+// what stranded 70 contact marks. A reason taken off a phone call must not
+// evaporate because a new export landed.
+//
+// TWO ANSWERS, and they behave oppositely on the next upload:
+//
+//   not-taken  they confirm they did not take it. There is nothing to punch, so
+//              the finding will still be there on every future export and must
+//              read as settled rather than as them failing to act.
+//   took-it    they say they took it and it is not punched. THAT is a QSP fix,
+//              and the next export either shows it or does not.
+model TimesheetBreakAnswer {
+  id         String   @id @default(cuid())
+  periodFrom String
+  periodTo   String
+  personKey  String
+  findingKey String
+
+  // kept for reading and for printing on the sheet, so nothing has to be
+  // recovered by parsing the finding key back apart
+  date       String?
+  kind       String
+  answer     String
+
+  // WHY. Null means nobody gathered one, and that is not a blank field - it is
+  // the state that moves the question to the employee, whose timesheet does not
+  // generate until they answer it.
+  reason     String?
+  // how we heard it: "phone" | "email" | "in-person"
+  via        String?
+
+  // scalars, like the check flags: this records who took the answer AT THE TIME
+  // and must not follow a later rename or cascade away with an account.
+  byId       String
+  byName     String?
+  byImage    String?
+
+  // set when the employee has seen our wording and agreed it. Their own
+  // correction, when they disagree, is a second row rather than an overwrite -
+  // both go on the printed sheet.
+  confirmedAt   DateTime?
+  confirmedText String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([periodFrom, periodTo, personKey, findingKey])
+  @@index([periodFrom, periodTo, personKey])
+}

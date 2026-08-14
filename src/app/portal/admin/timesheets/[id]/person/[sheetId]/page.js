@@ -15,7 +15,9 @@ import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
 import FlagButton from "../../checks/FlagButton";
 import CheckStatusChip from "@/components/CheckStatusChip";
-import { batchReach } from "@/lib/timesheet/mark-key";
+import { batchReach, markKey } from "@/lib/timesheet/mark-key";
+import BreakAnswer from "../../checks/BreakAnswer";
+import { answersByFinding } from "@/lib/timesheet/break-answers";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
 import PresenceProvider, { PresenceBar, PresenceCard } from "../../Presence";
@@ -159,6 +161,21 @@ export default async function PersonSchedulePage({ params, searchParams }) {
   // batch and is the freshest thing in the export, so its last date is the
   // batch's reach even though only one sheet is loaded here.
   const reach = batchReach({ restsByDate: sheet.batch.restsByDate, timesheets: [sheet] });
+
+  // WHAT THEY HAVE ALREADY SAID ABOUT A MISSED BREAK, for this person across
+  // the whole period. Keyed the same way the marks are, so an answer taken on
+  // Wednesday's export is still the answer on Thursday's.
+  const breakAnswers = answersByFinding(
+    sheet.userId
+      ? await prisma.timesheetBreakAnswer.findMany({
+        where: {
+          periodFrom: sheet.batch.periodFrom,
+          periodTo: sheet.batch.periodTo,
+          personKey: sheet.userId,
+        },
+      })
+      : [],
+  );
 
   // BY PERSON AND PERIOD, not by this upload's sheet id. findFirst rather than
   // findUnique because there is no unique index on the new key yet: two uploads
@@ -466,6 +483,21 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                 </p>
               )}
             </div>
+
+            {/* WHAT DID THEY SAY? The one thing none of the four exports
+                carries. One control per day rather than per violation: the
+                conversation is "did you get your breaks on the 3rd", not one
+                call per kind. */}
+            {list.length > 0 && sheet.userId && (
+              <BreakAnswer
+                batchId={id}
+                personKey={sheet.userId}
+                findingKey={`breaks-${d.date}`}
+                date={d.date}
+                kind={list.some((x) => String(x.kind).includes("meal")) ? "meal" : "rest"}
+                answer={breakAnswers.get(markKey(sheet.userId, `breaks-${d.date}`)) || null}
+              />
+            )}
 
             {list.length > 0 && (
               <ul className="mt-2 divide-y divide-border border-y border-border">
