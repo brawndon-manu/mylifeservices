@@ -6,6 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import { violationsFor, VIOLATION_KINDS } from "@/lib/timesheet/violations";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
+import { markKeyOf, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
 import DayPeek from "./DayPeek";
@@ -134,16 +135,29 @@ export default async function ChecksPage({ params }) {
 
   // THE RED MARKS SOMEBODY HAS ALREADY PUT ON THIS BATCH, by row. A working
   // marker between reviewers - it moves no figure and never reaches an employee.
-  const flags = new Map(
-    (await prisma.timesheetCheckFlag.findMany({
-      where: { batchId: id },
+  const flags = (
+    // BY THE PERIOD, NOT THE BATCH. Two uploads of one fortnight are one
+    // period, so a mark made on Wednesday's export is still the answer on
+    // Thursday's. Scoped to the batch, 70 marks went invisible the morning the
+    // 08/12 export landed.
+    marksByKey(await prisma.timesheetCheckFlag.findMany({
+      where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo },
       // `status` is what the chip reads. Left off the select it comes back
       // undefined, the chip renders as unset, and every mark on the batch
       // silently looks like nobody has started - which is the same trap
-      // `restsUrl` sprang three times yesterday.
-      select: { rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true },
-    })).map((f) => [f.rowKey, f]),
+      // `restsUrl` sprang three times yesterday. `personKey`/`findingKey` are
+      // the same trap one layer down: without them every mark keys to "-|-".
+      select: {
+        rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true,
+        personKey: true, findingKey: true, coveredThrough: true, updatedAt: true,
+      },
+    }))
   );
+
+  // HOW FAR THIS SCREEN'S DATA GOES. Stamped on any mark set from here, so
+  // "contacted" records what was actually in front of the reviewer rather
+  // than implying they saw days that are not in the export yet.
+  const reach = batchReach(batch);
 
   const { entries, dayViews, anySchedule } = buildFindings(batch);
 
@@ -335,11 +349,14 @@ export default async function ChecksPage({ params }) {
                     to be one control and split on 2026-08-13, so that marking
                     somebody a second time has somewhere to happen. */}
                 <span className="flex items-center gap-2">
-                  <CheckStatusChip flag={flags.get(e.rowKey) || null} />
+                  <CheckStatusChip flag={flags.get(markKeyOf(e)) || null} reach={reach} />
                   <FlagButton
                     batchId={batch.id}
                     rowKey={e.rowKey}
-                    flag={flags.get(e.rowKey) || null}
+                    personKey={e.personKey}
+                    findingKey={e.findingKey}
+                    coveredThrough={reach}
+                    flag={flags.get(markKeyOf(e)) || null}
                   />
                 </span>
               </div>

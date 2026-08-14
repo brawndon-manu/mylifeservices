@@ -20,10 +20,25 @@ import { bumpBatchVersion } from "@/lib/timesheet-presence";
 // worklist rather than a personal one, so a mark nobody can move but its author
 // is a mark that outlives its usefulness. WHO set it is still recorded and is
 // the point: Mánu and Gabe need to see who has contacted who.
-export async function setCheckFlag({ batchId, rowKey, status, via = null }) {
+export async function setCheckFlag({
+  batchId, rowKey, status, via = null,
+  // WHAT THE MARK IS ACTUALLY ABOUT - see mark-key.js. Passed alongside the old
+  // rowKey rather than instead of it: the old columns still carry the audit of
+  // which upload a mark was first made on, and production may still be reading
+  // them.
+  personKey = null, findingKey = null,
+  // HOW FAR THE DATA REACHED ON THE SCREEN THEY WERE LOOKING AT. Comes from the
+  // page rather than being re-derived here, because the honest claim is "I went
+  // through everything this screen showed me", and the screen is the authority
+  // on what that was.
+  coveredThrough = null,
+}) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
   if (!batchId || !rowKey) return { ok: false, error: "missing" };
+  // a horizon that is not a date QSP would print is dropped rather than stored.
+  // A junk value here would make every staleness comparison silently false.
+  const covered = /^\d{2}\/\d{2}\/\d{2}$/.test(String(coveredThrough || "")) ? coveredThrough : null;
   // null clears it. Anything else has to be one of the three - an unknown string
   // would land in the column and render as no chip at all, which looks exactly
   // like "not started" while occupying the row.
@@ -46,11 +61,31 @@ export async function setCheckFlag({ batchId, rowKey, status, via = null }) {
   // flag and then immediately removed it, and the mark vanished on reload with
   // nothing in the log to say why. Sending what the button should END UP as
   // makes a repeat call a no-op instead of an undo.
+  // THE PERIOD, which is what makes a mark outlive the upload. Read here rather
+  // than trusted from the client, because it decides which marks a later upload
+  // will find and it is printed on the document either way.
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: { periodFrom: true, periodTo: true },
+  });
+  if (!batch) return { ok: false, error: "nobatch" };
+  const keyed = !!(personKey && findingKey);
+  const where = {
+    periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
+  };
+
   if (status == null) {
     // THE HISTORY SURVIVES. Clearing means "back on the pile", not "nobody ever
     // called them" - and deleting the log here would quietly destroy the record
     // this whole thing exists to keep.
-    await prisma.timesheetCheckFlag.deleteMany({ where: { batchId, rowKey } });
+    //
+    // Cleared BY THE PERIOD KEY when we have one, so taking a mark off on the
+    // 08/12 batch also takes off the copy made on the 08/09 one. Clearing only
+    // this batch's row would leave the older copy behind and the mark would
+    // reappear on the next read.
+    await prisma.timesheetCheckFlag.deleteMany(
+      keyed ? { where } : { where: { batchId, rowKey } },
+    );
   } else {
     // WHOEVER MOVED IT LAST OWNS THE MARK. On `update` the name and picture are
     // rewritten, not left alone: if Gabe messages somebody Mánu had already
@@ -69,12 +104,30 @@ export async function setCheckFlag({ batchId, rowKey, status, via = null }) {
     // THE LOG RECORDS WHAT SOMEBODY DID, and only that. "Waiting response" is
     // where contacting them leaves the person, not an act - logging it would put
     // a line under the card that says the same thing as the line above it.
+    //
+    // FOUND BY THE PERIOD KEY, NOT UPSERTED ON IT. There is no unique index on
+    // (period, person, finding) yet - two marks from two uploads of one
+    // fortnight can still share a key, and collapsing them means deleting a row
+    // somebody made. So the existing mark is looked up and moved, and its
+    // batchId and rowKey are left ALONE: those columns are now the record of
+    // which upload it was first raised on.
+    const existing = keyed
+      ? await prisma.timesheetCheckFlag.findFirst({
+        where, orderBy: { updatedAt: "desc" }, select: { id: true },
+      })
+      : null;
+    const fields = {
+      status: resting, via: how, ...who,
+      ...where, coveredThrough: covered,
+    };
     const writes = [
-      prisma.timesheetCheckFlag.upsert({
-        where: { batchId_rowKey: { batchId, rowKey } },
-        update: { status: resting, via: how, ...who },
-        create: { batchId, rowKey, status: resting, via: how, ...who },
-      }),
+      existing
+        ? prisma.timesheetCheckFlag.update({ where: { id: existing.id }, data: fields })
+        : prisma.timesheetCheckFlag.upsert({
+          where: { batchId_rowKey: { batchId, rowKey } },
+          update: fields,
+          create: { batchId, rowKey, ...fields },
+        }),
     ];
     if (isMarkAction(status)) {
       writes.push(
@@ -82,6 +135,9 @@ export async function setCheckFlag({ batchId, rowKey, status, via = null }) {
           data: {
             batchId,
             rowKey,
+            // the log carries the same key, and it is the half that CANNOT be
+            // rebuilt: a mark can be re-made, "we rang them twice" cannot
+            ...where,
             status,
             via: how,
             byId: user.id,

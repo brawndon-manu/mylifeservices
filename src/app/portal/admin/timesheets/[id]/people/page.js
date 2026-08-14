@@ -11,6 +11,7 @@ import ContactViaIcon from "@/components/ContactViaIcon";
 import { violationsFor } from "@/lib/timesheet/violations";
 import { tagsForPerson, isClean } from "@/lib/timesheet/person-tags";
 import { STANDING_STATUSES, MARK_STATUS_VALUES, checkStatus, normalizeCheckStatus } from "@/lib/timesheet/check-status";
+import { markKey, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
 import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
@@ -117,12 +118,22 @@ export default async function AllPeoplePage({ params }) {
     // only the ACTIONS. Rows with a derived status exist from when "waiting"
     // was a button somebody could press, and they say nothing the line above
     // them does not already say.
-    where: { batchId: id, status: { in: MARK_STATUS_VALUES } },
+    // BY THE PERIOD. The log is the half that cannot be rebuilt - a mark can be
+    // re-made, "we rang them on the 12th and again on the 13th" cannot - so it
+    // must not be scoped to the upload that happened to be open at the time.
+    where: {
+      periodFrom: batch.periodFrom, periodTo: batch.periodTo,
+      status: { in: MARK_STATUS_VALUES },
+    },
     orderBy: { createdAt: "asc" },
-    select: { id: true, rowKey: true, status: true, via: true, byName: true, byImage: true, createdAt: true },
+    select: {
+      id: true, rowKey: true, status: true, via: true, byName: true, byImage: true, createdAt: true,
+      personKey: true, findingKey: true,
+    },
   })) {
-    if (!history.has(e.rowKey)) history.set(e.rowKey, []);
-    history.get(e.rowKey).push({
+    const hk = markKey(e.personKey, e.findingKey);
+    if (!history.has(hk)) history.set(hk, []);
+    history.get(hk).push({
       id: e.id,
       status: e.status,
       via: e.via,
@@ -177,15 +188,21 @@ export default async function AllPeoplePage({ params }) {
     rowFlags.get(f.rowKey).push({ ...f, isMe: f.userId === user.id, userId: undefined });
   }
 
-  const flags = new Map(
-    (await prisma.timesheetCheckFlag.findMany({
-      where: { batchId: id },
+  // the horizon this screen is showing - see mark-key.js
+  const reach = batchReach(batch);
+
+  const flags = (
+    marksByKey(await prisma.timesheetCheckFlag.findMany({
+      where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo },
       // `status` is what the chip reads. Left off the select it comes back
       // undefined, the chip renders as unset, and every mark on the batch
       // silently looks like nobody has started - which is the same trap
       // `restsUrl` sprang three times yesterday.
-      select: { rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true, updatedAt: true },
-    })).map((f) => [f.rowKey, f]),
+      select: {
+        rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true, updatedAt: true,
+        personKey: true, findingKey: true, coveredThrough: true,
+      },
+    }))
   );
 
   // Rest report rows worth a person's attention, counted per person. KEYED ON
@@ -221,20 +238,21 @@ export default async function AllPeoplePage({ params }) {
       toRaise: v.total,
       tags,
       clean: isClean(tags),
-      flag: flags.get(`person-${t.id}`) || null,
+      userId: t.userId,
+      flag: flags.get(markKey(t.userId, "person")) || null,
       // normalised on the way in, so the summary strip below can group on the
       // current key without every legacy row falling out of its heading
-      status: normalizeCheckStatus(flags.get(`person-${t.id}`)?.status),
-      via: flags.get(`person-${t.id}`)?.via || null,
+      status: normalizeCheckStatus(flags.get(markKey(t.userId, "person"))?.status),
+      via: flags.get(markKey(t.userId, "person"))?.via || null,
       // formatted here rather than in the client: a Date crossing the boundary
       // renders in whatever timezone the browser is in, and this is a shared
       // worklist where "yesterday" has to mean the same thing to both of them.
-      log: history.get(`person-${t.id}`) || [],
+      log: history.get(markKey(t.userId, "person")) || [],
       rowFlags: rowFlags.get(`person-${t.id}`) || [],
       notes: notes.get(`person-${t.id}`) || [],
       flaggedByMe: (rowFlags.get(`person-${t.id}`) || []).some((f) => f.isMe),
-      markedOn: flags.get(`person-${t.id}`)?.updatedAt
-        ? flags.get(`person-${t.id}`).updatedAt.toLocaleString("en-US", {
+      markedOn: flags.get(markKey(t.userId, "person"))?.updatedAt
+        ? flags.get(markKey(t.userId, "person")).updatedAt.toLocaleString("en-US", {
             timeZone: "America/Los_Angeles", month: "short", day: "numeric",
             hour: "numeric", minute: "2-digit",
           })
@@ -569,7 +587,7 @@ export default async function AllPeoplePage({ params }) {
                   always pressable, so contacting somebody a second time has
                   somewhere to happen - and every one of those is a row in the
                   log below. */}
-              <CheckStatusChip flag={p.flag} />
+              <CheckStatusChip flag={p.flag} reach={reach} />
               {/* THREE STATES, NOT TWO. A mark with no history is a real one:
                   the marks made before the log existed have nothing behind them,
                   and saying "nobody has picked this person up" beside a
@@ -591,7 +609,14 @@ export default async function AllPeoplePage({ params }) {
                   of the flag." Side by side also stops the strip growing a
                   second row on every card. */}
               <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                <FlagButton batchId={id} rowKey={`person-${p.id}`} flag={p.flag} />
+                <FlagButton
+                  batchId={id}
+                  rowKey={`person-${p.id}`}
+                  personKey={p.userId}
+                  findingKey="person"
+                  coveredThrough={reach}
+                  flag={p.flag}
+                />
                 <RowFlagButton
                   batchId={id}
                   rowKey={`person-${p.id}`}

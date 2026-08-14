@@ -25,7 +25,13 @@ import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter, norma
 // OPTIMISTIC, because the server action revalidates the whole page and half a
 // second of nothing after a click reads as a dead button. The state is re-seeded
 // from the server on the next render, so a failed write corrects itself.
-export default function FlagButton({ batchId, rowKey, flag }) {
+export default function FlagButton({
+  batchId, rowKey, flag,
+  // what the mark is ABOUT, so it survives the next upload - see mark-key.js
+  personKey = null, findingKey = null,
+  // how far the data on this screen reached, stamped on the mark as its horizon
+  coveredThrough = null,
+}) {
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState(null);
   const [pending, start] = useTransition();
@@ -47,7 +53,7 @@ export default function FlagButton({ batchId, rowKey, flag }) {
       // It was redundant even working. The chip beside it changes to the new
       // state and a line appears in the log underneath - the row confirms the
       // write twice already, in the places somebody is actually looking.
-      await setCheckFlag({ batchId, rowKey, status, via });
+      await setCheckFlag({ batchId, rowKey, status, via, personKey, findingKey, coveredThrough });
     });
 
   const choose = (key) => {
