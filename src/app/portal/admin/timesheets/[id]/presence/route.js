@@ -45,23 +45,35 @@ export async function POST(req, { params }) {
   const rowKey = String(body.rowKey || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 80) || null;
   const page = String(body.page || "").replace(/[^a-z]/g, "").slice(0, 20) || null;
 
-  await heartbeat({
-    batchId: id,
-    // a hover is a pointer resting on a card; anything else is the page they
-    // have open. Only the sender can tell them apart - see the note in
-    // Presence.js about why this stopped being inferred.
-    hover: body.hover === true,
-    // WHETHER THE WINDOW IS IN FRONT OF THEM. Only the sender knows, same as
-    // `hover`. Left off here it arrives undefined and every hidden tab reads as
-    // somebody sitting looking at the screen - which is the difference between
-    // "he has it open" and "do not upload on top of him".
-    hidden: body.hidden === true,
-    userId: user.id,
-    name: preferredName(user) || user.name || user.email || null,
-    image: user.image || null,
-    rowKey,
-    page,
-  });
+  // WATCHING IS NOT BEING THERE.
+  //
+  // The batch list shows who is inside each period, which meant mounting a
+  // poller per card - and a poller announced itself, so opening the LIST put you
+  // inside every batch you could see a card for. Being on the list is not being
+  // in the batch, and a screen whose whole job is "is anybody in there" must not
+  // be what puts somebody in there.
+  //
+  // So a watcher reads and does not write. It gets the same answer and leaves no
+  // trace of itself.
+  if (body.watch !== true) {
+    await heartbeat({
+      batchId: id,
+      // a hover is a pointer resting on a card; anything else is the page they
+      // have open. Only the sender can tell them apart - see the note in
+      // Presence.js about why this stopped being inferred.
+      hover: body.hover === true,
+      // WHETHER THE WINDOW IS IN FRONT OF THEM. Only the sender knows, same as
+      // `hover`. Left off here it arrives undefined and every hidden tab reads as
+      // somebody sitting looking at the screen - which is the difference between
+      // "he has it open" and "do not upload on top of him".
+      hidden: body.hidden === true,
+      userId: user.id,
+      name: preferredName(user) || user.name || user.email || null,
+      image: user.image || null,
+      rowKey,
+      page,
+    });
+  }
 
   const [here, version] = await Promise.all([
     whoIsHere(id, { exceptUserId: user.id }),

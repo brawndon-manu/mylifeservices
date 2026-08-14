@@ -44,14 +44,19 @@ function Faces() {
   );
 }
 
+// WATCH ONLY. Reading a card is not opening the batch, and the first version of
+// this announced itself - so loading the list put you inside every period you
+// could see, and the screen asking "is anybody in there" was what put somebody
+// in there.
+//
 // ONLY POINTED AT PERIODS SOMEBODY MIGHT ACTUALLY BE IN. Every card polling
 // would be one request per pay period per tab, and a period finished months ago
-// is not one anybody is chasing. The caller decides; this just refuses to
-// mount a poller it was not given a batch for.
+// is not one anybody is chasing. The caller decides; this just refuses to mount
+// a poller it was not given a batch for.
 export default function CardPresence({ batchId }) {
   if (!batchId) return null;
   return (
-    <PresenceProvider batchId={batchId} page="list">
+    <PresenceProvider batchId={batchId} watchOnly>
       <Faces />
     </PresenceProvider>
   );

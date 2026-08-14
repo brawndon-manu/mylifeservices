@@ -90,7 +90,14 @@ export function useRowActivity(rowKey) {
   );
 }
 
-export default function PresenceProvider({ batchId, rowKey = null, page = null, children }) {
+export default function PresenceProvider({
+  batchId, rowKey = null, page = null, children,
+  // READ WITHOUT ANNOUNCING YOURSELF. The batch list shows who is inside each
+  // period, and a poller that announced itself put you inside every batch you
+  // could see a card for - so the screen asking "is anybody in there" was what
+  // put somebody in there. Being on a list is not being in a batch.
+  watchOnly = false,
+}) {
   const router = useRouter();
   const [here, setHere] = useState([]);
   // the batch's change counter as of the last poll. Starts unknown so the first
@@ -152,14 +159,19 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
           // everything there reports page "person", so hovering a DAY card came
           // back as "has this open" and drew the pulsing ring instead of the
           // hover border. Only the sender knows which it is.
-          body: JSON.stringify({
-            ...what.current,
-            rowKey: hovered.current ?? what.current.rowKey,
-            hover: hovered.current != null && !hiddenNow,
-            // said, not inferred: only this end knows whether the window is in
-            // front of them
-            hidden: hiddenNow,
-          }),
+          body: JSON.stringify(
+            watchOnly
+              // nothing about me, because I am not here - just the question
+              ? { watch: true }
+              : {
+                ...what.current,
+                rowKey: hovered.current ?? what.current.rowKey,
+                hover: hovered.current != null && !hiddenNow,
+                // said, not inferred: only this end knows whether the window is
+                // in front of them
+                hidden: hiddenNow,
+              },
+          ),
           cache: "no-store",
         });
         if (!res.ok) return;
@@ -221,6 +233,8 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
     // outlive the page that sent it. This is a courtesy on top of the timeout,
     // not the mechanism - a crash or a closed laptop never gets here.
     const leave = () => {
+      // a watcher left no entry, so there is nothing to clear
+      if (watchOnly) return;
       // `.catch` and not try/catch: the fetch is deliberately not awaited, so a
       // rejection arrives after this function has returned and a synchronous
       // catch never sees it. Unhandled, it surfaces as an unhandledRejection in
@@ -247,7 +261,7 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
       window.removeEventListener("pagehide", leave);
       leave();
     };
-  }, [batchId, router]);
+  }, [batchId, router, watchOnly]);
 
   return (
     <PresenceContext.Provider value={here}>

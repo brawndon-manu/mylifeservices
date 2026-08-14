@@ -130,9 +130,11 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
           them, and a mark set in that moment is set against findings that are
           being replaced. A warning rather than a block - two people working at
           once is normal, doing it unknowingly is the problem.
-          Heartbeats as `upload`, so the other end sees where we are too. */}
+          Watch only: standing on the upload screen is not being in the batch,
+          and announcing ourselves here would put a face on the very card we are
+          asking about. */}
       {latest && (
-        <PresenceProvider batchId={latest.id} page="upload">
+        <PresenceProvider batchId={latest.id} watchOnly>
           <WorkingNow period={`${latest.periodFrom} to ${latest.periodTo}`} />
         </PresenceProvider>
       )}
