@@ -5,6 +5,7 @@ import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { buildZip, safeEntryName } from "@/lib/zip";
+import { loadBreakReasons } from "@/lib/timesheet/load-break-reasons";
 
 // every completed timesheet in a batch as separate PDFs in one zip - the
 // counterpart to the merged download, for when payroll needs them filed
@@ -75,6 +76,7 @@ export async function GET(req, { params }) {
         const standing = premiumStanding(t.data?.days || [], t.corrections);
         const rendered = await renderSheet({ ...t, batch }, {
           basis: "corrected",
+          breakReasons: await loadBreakReasons({ ...t, batch }),
           confirmed: standing.confirmed,
           answers: standing.answers,
           pastDue: !!t.dueAt && t.dueAt.getTime() < Date.now(),

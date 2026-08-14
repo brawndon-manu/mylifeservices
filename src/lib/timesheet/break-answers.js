@@ -78,3 +78,49 @@ export function employeeAsk(a) {
 
 export const answersByFinding = (rows = []) =>
   new Map(rows.map((r) => [`${r.personKey}|${r.findingKey}`, r]));
+
+// THE REASONS, AS LINES FOR THE BOTTOM OF THE PRINTED SHEET.
+//
+// They go in the block QSP already calls "Comments Details:", after QSP's own
+// numbered notes and continuing their numbering, because to a reader it is one
+// list of things somebody wrote about this period.
+//
+// WHAT QSP PUTS THERE IS NOT THIS. Its notes are about clock-ins - "forgot to
+// punch in", "traffic", "accidental late clock in" - time-ranged against a
+// shift. Nothing it collects is ever about a missed break, which is why these
+// have to be gathered and why they are labelled differently.
+//
+// BOTH SIDES PRINT when they corrected us. Ours stays and theirs follows it, so
+// the document shows that the record moved rather than quietly showing only the
+// version that survived.
+//
+// PROVENANCE ON EVERY LINE. A reason taken off a phone call and a reason the
+// employee typed are different kinds of evidence, and a sheet somebody signs
+// should not blur them.
+export function formatBreakComments(answers = [], startAt = 0) {
+  const out = [];
+  let n = startAt;
+  const rows = [...answers]
+    .filter((a) => a && a.answer === "not-taken" && (a.reason || a.confirmedText))
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+
+  for (const a of rows) {
+    const kind = a.kind === "rest" ? "rest period" : "meal period";
+    const when = a.date ? `${a.date} ` : "";
+    // ours, when we took one
+    if (a.reason) {
+      const said = a.confirmedText && a.confirmedText === a.reason
+        ? "confirmed by employee"
+        : a.confirmedText
+          ? "recorded from a call"
+          : "recorded from a call, not yet confirmed by the employee";
+      out.push(`${++n}) ${when}${kind} not taken: ${a.reason}  [${said}]`);
+    }
+    // theirs, when it differs - either a correction to ours, or the only one
+    if (a.confirmedText && a.confirmedText !== a.reason) {
+      const label = a.reason ? "employee correction" : `${kind} not taken`;
+      out.push(`${++n}) ${when}${label}: ${a.confirmedText}  [in the employee's own words]`);
+    }
+  }
+  return out;
+}

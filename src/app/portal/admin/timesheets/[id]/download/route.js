@@ -5,6 +5,7 @@ import { renderSheet } from "@/lib/timesheet/render-sheet";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { loadBreakReasons } from "@/lib/timesheet/load-break-reasons";
 
 // a whole batch merged into one PDF for re-uploading to QSP. gated + streamed
 // like the single-sheet route.
@@ -80,6 +81,7 @@ export async function GET(req, { params }) {
         const standing = premiumStanding(ts.data?.days || [], ts.corrections);
         const rendered = await renderSheet({ ...ts, batch }, {
           basis: "corrected",
+          breakReasons: await loadBreakReasons({ ...ts, batch }),
           confirmed: standing.confirmed,
           answers: standing.answers,
           pastDue: !!ts.dueAt && ts.dueAt.getTime() < Date.now(),

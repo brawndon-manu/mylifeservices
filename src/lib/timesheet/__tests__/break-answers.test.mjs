@@ -67,3 +67,61 @@ test("answers are looked up by the same key marks use", () => {
   assert.notEqual(m.get("u1|breaks-08/03/26"), m.get("u2|breaks-08/03/26"));
   assert.equal(m.get("u1|breaks-08/04/26"), undefined);
 });
+
+// ------------------------------- the lines that go on the bottom of the sheet
+
+import { formatBreakComments } from "../break-answers.js";
+
+const ours = {
+  answer: "not-taken", kind: "meal", date: "08/03/26",
+  reason: "Client would not settle, could not leave them to eat.",
+};
+
+test("a reason we took, not yet checked by them, says so on the document", () => {
+  const [line] = formatBreakComments([ours]);
+  assert.match(line, /^1\) 08\/03\/26 meal period not taken: Client would not settle/);
+  assert.match(line, /not yet confirmed by the employee/);
+});
+
+test("once they agree our wording, the line says confirmed", () => {
+  const [line] = formatBreakComments([{ ...ours, confirmedText: ours.reason }]);
+  assert.match(line, /\[confirmed by employee\]/);
+  assert.equal(formatBreakComments([{ ...ours, confirmedText: ours.reason }]).length, 1);
+});
+
+// THE ONE THAT MATTERS. Ours is not replaced by theirs - the document has to
+// show that the record moved.
+test("when they correct us, BOTH print, ours first", () => {
+  const lines = formatBreakComments([
+    { ...ours, confirmedText: "The client's family turned up and I stayed." },
+  ]);
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /Client would not settle/);
+  assert.match(lines[0], /recorded from a call/);
+  assert.match(lines[1], /employee correction: The client's family turned up/);
+  assert.match(lines[1], /in the employee's own words/);
+});
+
+test("a reason only they gave is theirs alone, not a correction to anything", () => {
+  const lines = formatBreakComments([
+    { answer: "not-taken", kind: "rest", date: "08/04/26", reason: null, confirmedText: "No cover." },
+  ]);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /rest period not taken: No cover\./);
+  assert.ok(!/correction/.test(lines[0]));
+});
+
+test("numbering continues from QSP's own notes rather than restarting at one", () => {
+  const lines = formatBreakComments([ours], 2);
+  assert.match(lines[0], /^3\)/);
+});
+
+test("nothing to say prints nothing, and took-it never prints", () => {
+  assert.deepEqual(formatBreakComments([]), []);
+  assert.deepEqual(formatBreakComments([{ answer: "not-taken", reason: null }]), []);
+  assert.deepEqual(
+    formatBreakComments([{ answer: "took-it", reason: "should never appear" }]),
+    [],
+    "a punch that needs making is not a reason for anything",
+  );
+});
