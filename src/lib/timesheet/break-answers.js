@@ -228,3 +228,80 @@ export function answerSummary(a) {
   return `They took ${took} of ${n}, needs punching`;
 }
 
+
+// WHAT THE EMPLOYEE IS ACTUALLY ASKED, which is not one sentence with a noun
+// swapped into it.
+//
+// It was exactly that - `kind === "rest" ? "rest break" : "meal break"` - and it
+// got three of the five cases wrong. It told somebody who took one of their two
+// rests that they took neither, and it told somebody whose lunch merely started
+// late that they never had one. The counts were already on the row; only the
+// sentence had not learned about them.
+//
+// `told` is the statement for somebody writing their own reason. `toldUs` is the
+// same fact framed as OUR record of what they said, which is what a quote-back
+// has to be - they are checking our transcription, not being informed.
+const WORDS = ["", "one", "two", "three", "four", "five", "six"];
+const word = (n) => WORDS[n] || String(n);
+
+// "5 hours 30 minutes", because "330 minutes in" is a number somebody has to do
+// arithmetic on to feel
+function saidLate(min) {
+  const n = Number(min);
+  if (!n || n < 0) return null;
+  const h = Math.floor(n / 60), m = n % 60;
+  if (!h) return `${m} minutes`;
+  return m ? `${h} hour${h === 1 ? "" : "s"} ${m} minutes` : `${h} hour${h === 1 ? "" : "s"}`;
+}
+
+export function employeeQuestion(a, { lateMinutes = null } = {}) {
+  const missing = a?.missingCount || 1;
+  const took = a?.takenCount ?? 0;
+  const left = Math.max(0, missing - took);
+
+  // A LATE MEAL WAS TAKEN. Telling them they did not take it is the one that
+  // would put a wrong sentence on a document they sign.
+  if (a?.kind === "meal-late") {
+    const late = saidLate(lateMinutes);
+    const when = late ? `, ${late} into the day` : "";
+    return {
+      told: `Your meal break that day started later than it should have${when}.`,
+      toldUs: `You told us why your meal break started late that day${when ? ` - it began ${late} in` : ""}.`,
+      ask: "Can you tell us what held it up?",
+      placeholder: "For example: I was mid-appointment with the client and could not break away.",
+    };
+  }
+
+  if (a?.kind === "rest") {
+    if (took > 0) {
+      return {
+        told: `You took ${word(took)} of your ${word(missing)} rest breaks that day, and `
+          + `${took === 1 ? "it needs" : "they need"} logging in QuickSolve.`,
+        toldUs: `You took ${word(took)} of your ${word(missing)} rest breaks that day, and told us `
+          + `why you could not take the ${left === 1 ? "other one" : `other ${word(left)}`}.`,
+        ask: left === 1
+          ? "Why were you not able to take the other one?"
+          : `Why were you not able to take the other ${word(left)}?`,
+        placeholder: "In your own words.",
+      };
+    }
+    const none = missing === 1
+      ? "You did not take your rest break that day."
+      : missing === 2
+        ? "You did not take either of your two rest breaks that day."
+        : `You did not take any of your ${word(missing)} rest breaks that day.`;
+    return {
+      told: none,
+      toldUs: none.replace(/^You /, "You told us you "),
+      ask: "Can you tell us why?",
+      placeholder: "For example: back-to-back clients, no cover to step away.",
+    };
+  }
+
+  return {
+    told: "You did not take your meal break that day.",
+    toldUs: "You told us you did not take your meal break that day.",
+    ask: "Can you tell us why?",
+    placeholder: "For example: the client would not settle and I could not leave them.",
+  };
+}

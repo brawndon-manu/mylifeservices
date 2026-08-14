@@ -180,7 +180,16 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       },
       orderBy: { date: "asc" },
     }))
-      .map((r) => ({ ...r, mode: employeeAsk(r) }))
+      .map((r) => ({
+        ...r,
+        mode: employeeAsk(r),
+        // HOW LATE IT ACTUALLY WAS, which lives on the day rather than on the
+        // answer. "5 hours 30 minutes into the day" is a fact somebody can check
+        // against their own memory; "meal-late" is not.
+        lateMinutes: r.kind === "meal-late"
+          ? (ts.data?.days || []).find((d) => d.date === r.date)?.mealStartedAfterMin ?? null
+          : null,
+      }))
       .filter((r) => r.mode)
     : [];
   // WHAT CANNOT BE ANSWERED YET, and what changing an answer would disturb.

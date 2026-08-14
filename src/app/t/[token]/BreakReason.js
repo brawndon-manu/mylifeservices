@@ -15,6 +15,7 @@
 // NO PREMIUM LANGUAGE ANYWHERE HERE. What is owed is admin's business; this page
 // is collecting a fact.
 import { useState, useTransition } from "react";
+import { employeeQuestion } from "@/lib/timesheet/break-answers";
 import { useRouter } from "next/navigation";
 
 export default function BreakReason({ token, ask, submitAction }) {
@@ -32,7 +33,10 @@ export default function BreakReason({ token, ask, submitAction }) {
       else setErr(res?.error === "empty" ? "Please write something first." : "That did not save. Try again?");
     });
 
-  const label = ask.kind === "rest" ? "rest break" : "meal break";
+  // BUILT FROM THE COUNTS, not from a noun swapped into one sentence. That is
+  // what told somebody who took one of their two rests that they took neither,
+  // and told somebody whose lunch merely started late that they never had one.
+  const q = employeeQuestion(ask, { lateMinutes: ask.lateMinutes });
 
   return (
     <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700/70 dark:bg-amber-950/30">
@@ -41,9 +45,7 @@ export default function BreakReason({ token, ask, submitAction }) {
       {/* WE HAVE ONE, AND THEY HAVE NOT CHECKED IT YET */}
       {ask.mode === "confirm" && !changing && (
         <>
-          <p className="mt-2 font-semibold text-foreground">
-            You told us you did not take your {label} that day.
-          </p>
+          <p className="mt-2 font-semibold text-foreground">{q.toldUs}</p>
           <p className="mt-2 rounded-lg border border-amber-300 bg-surface px-3 py-2 text-sm italic text-foreground dark:border-amber-800">
             &ldquo;{ask.reason}&rdquo;
           </p>
@@ -73,9 +75,7 @@ export default function BreakReason({ token, ask, submitAction }) {
           sheet, and pretending otherwise would be the tidier lie. */}
       {ask.mode === "confirm" && changing && (
         <>
-          <p className="mt-2 font-semibold text-foreground">
-            You told us you did not take your {label} that day.
-          </p>
+          <p className="mt-2 font-semibold text-foreground">{q.toldUs}</p>
           <p className="mt-2 rounded-lg border border-border-strong bg-surface-2 px-3 py-2 text-sm italic text-faint line-through">
             &ldquo;{ask.reason}&rdquo;
           </p>
@@ -84,7 +84,7 @@ export default function BreakReason({ token, ask, submitAction }) {
             rows={3}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="In your own words."
+            placeholder={q.placeholder}
             className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
           />
           <div className="mt-2 flex flex-wrap gap-2">
@@ -111,14 +111,13 @@ export default function BreakReason({ token, ask, submitAction }) {
       {/* NOBODY GATHERED ONE */}
       {ask.mode === "write" && (
         <>
-          <p className="mt-2 font-semibold text-foreground">
-            You did not take your {label} that day. Can you tell us why?
-          </p>
+          <p className="mt-2 font-semibold text-foreground">{q.told}</p>
+          <p className="mt-1 font-semibold text-foreground">{q.ask}</p>
           <textarea
             rows={3}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="For example: the client would not settle and I could not leave them."
+            placeholder={q.placeholder}
             className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
           />
           <div className="mt-2">

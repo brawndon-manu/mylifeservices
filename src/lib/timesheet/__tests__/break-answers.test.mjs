@@ -208,3 +208,67 @@ test("a late meal asks about the time, not about whether it happened", () => {
     "The punched time is wrong, needs correcting",
   );
 });
+
+// ---------------- what the employee is asked, which got three cases wrong
+
+import { employeeQuestion } from "../break-answers.js";
+
+test("a missing meal reads the same as it always did", () => {
+  const q = employeeQuestion({ kind: "meal", answer: "not-taken", takenCount: 0, missingCount: 1 });
+  assert.equal(q.told, "You did not take your meal break that day.");
+  assert.equal(q.toldUs, "You told us you did not take your meal break that day.");
+});
+
+// WAS: "You did not take your rest break that day" - singular, never saying
+// there were two, so one reason was collected for two missed breaks.
+test("neither of two rests says there were two", () => {
+  const q = employeeQuestion({ kind: "rest", answer: "not-taken", takenCount: 0, missingCount: 2 });
+  assert.equal(q.told, "You did not take either of your two rest breaks that day.");
+  assert.equal(q.toldUs, "You told us you did not take either of your two rest breaks that day.");
+});
+
+test("three or more does not say either", () => {
+  const q = employeeQuestion({ kind: "rest", answer: "not-taken", takenCount: 0, missingCount: 3 });
+  assert.equal(q.told, "You did not take any of your three rest breaks that day.");
+});
+
+// WAS: told them they took neither, contradicting what they had just said.
+test("taking one of two says so, and asks about the other", () => {
+  const q = employeeQuestion({ kind: "rest", answer: "took-it", takenCount: 1, missingCount: 2 });
+  assert.match(q.told, /You took one of your two rest breaks that day/);
+  assert.match(q.told, /it needs logging in QuickSolve/);
+  assert.equal(q.ask, "Why were you not able to take the other one?");
+  assert.ok(!/did not take/.test(q.told), "it must not say they took none");
+});
+
+test("taking one of three asks about the other two", () => {
+  const q = employeeQuestion({ kind: "rest", answer: "took-it", takenCount: 1, missingCount: 3 });
+  assert.equal(q.ask, "Why were you not able to take the other two?");
+});
+
+// WAS THE BAD ONE: told somebody who took their lunch that they never had one,
+// and would have printed a reason for a missed meal on a sheet they sign.
+test("a late meal is never described as a missed one", () => {
+  const q = employeeQuestion(
+    { kind: "meal-late", answer: "not-taken", takenCount: 0, missingCount: 1 },
+    { lateMinutes: 330 },
+  );
+  assert.match(q.told, /started later than it should have/);
+  assert.match(q.told, /5 hours 30 minutes into the day/);
+  assert.equal(q.ask, "Can you tell us what held it up?");
+  assert.ok(!/did not take/.test(q.told));
+  assert.ok(!/did not take/.test(q.toldUs));
+});
+
+test("a late meal with no minutes recorded still reads as a sentence", () => {
+  const q = employeeQuestion({ kind: "meal-late" }, { lateMinutes: null });
+  assert.equal(q.told, "Your meal break that day started later than it should have.");
+  assert.ok(!/undefined|null|NaN/.test(q.told + q.toldUs + q.ask));
+});
+
+test("minutes under an hour do not claim an hour", () => {
+  const q = employeeQuestion({ kind: "meal-late" }, { lateMinutes: 45 });
+  assert.match(q.told, /45 minutes into the day/);
+  const exact = employeeQuestion({ kind: "meal-late" }, { lateMinutes: 300 });
+  assert.match(exact.told, /5 hours into the day/);
+});
