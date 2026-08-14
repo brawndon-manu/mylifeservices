@@ -944,10 +944,31 @@ export async function deleteBatch(batchId) {
   // THE CHECK FLAGS DO NOT CASCADE, because they carry no relation to the batch
   // - see the note on the model, which records who flagged a row at the time and
   // is deliberately not tied to a user or a batch row that can be deleted out
-  // from under it. That is right for the USER end and wrong here: nothing else
-  // would ever remove them, so a deleted batch left its red marks behind and a
-  // re-upload could inherit somebody else's flags on matching row keys.
-  await prisma.timesheetCheckFlag.deleteMany({ where: { batchId } });
+  // from under it. Nothing else would ever remove them, so this used to clear
+  // every mark on the batch, on the reasoning that a later upload could
+  // otherwise INHERIT them on matching row keys.
+  //
+  // THAT REASONING HAS INVERTED, and this is now the dangerous half of it.
+  // Marks are keyed on (period, person, finding) and inheriting across uploads
+  // of one fortnight is the whole point: 70 of them are rendering on the live
+  // 08/12 batch right now and every one was made on the 08/09 one. Clearing by
+  // batch would delete work that is currently on screen somewhere else.
+  //
+  // So they only go when this is the LAST batch of its period - at which point
+  // nothing can display them and leaving them would be the old bug again.
+  const alsoInPeriod = await prisma.timesheetBatch.count({
+    where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo, id: { not: batchId } },
+  });
+  // Left ENTIRELY ALONE when the period survives, rather than moved onto the
+  // remaining batch. Moving them looks tidier and can collide: the name-keyed
+  // rest rows carry no timesheet id, so `rest-offshift-garcia, stephanie-...`
+  // is the same string on both batches and `@@unique([batchId, rowKey])` would
+  // refuse it halfway through. A dangling `batchId` costs nothing - no relation,
+  // no cascade, and nothing reads it now that reads go by period. It is also
+  // true: that is the upload the mark was raised on, and it is gone.
+  if (alsoInPeriod === 0) {
+    await prisma.timesheetCheckFlag.deleteMany({ where: { batchId } });
+  }
 
   // the timesheets and their corrections cascade from the batch row
   await prisma.timesheetBatch.delete({ where: { id: batchId } });
