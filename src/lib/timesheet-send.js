@@ -51,6 +51,16 @@ export async function sendTimesheet({
   // and collapses the repeat behind "Show trimmed content" - so a re-sent
   // timesheet arrives with the paragraph explaining the assumed hours hidden,
   // above a signature. Mánu 2026-08-10 asked for this once it was spotted.
+  // THE TWO EMPLOYEE EMAILS, NAMED. One function sends both depending on a
+  // boolean, so "did the reminder go out" had no word to ask with. They are:
+  //
+  //   TIMESHEET TO REVIEW   the first send. Their sheet is ready and the link
+  //                         opens the timesheet review page.
+  //   SIGNING REMINDER      any send to somebody who already has a `sentAt`.
+  //
+  // Both point at the same page. The only third email in this area is the
+  // PROBLEM ALERT, which goes to us rather than to them - see
+  // timesheet-correction-email.js.
   const line = isResend
     ? `Reminder: your timesheet for ${periodLabel} still needs signing`
     : `Your timesheet for ${periodLabel} - please review and sign`;

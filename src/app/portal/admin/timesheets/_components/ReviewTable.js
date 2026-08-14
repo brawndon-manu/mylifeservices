@@ -240,7 +240,7 @@ export default function ReviewTable({
                         rel="noopener noreferrer"
                         className="text-xs font-medium text-muted transition hover:text-brand"
                       >
-                        Their corrections page →
+                        Their timesheet review page →
                       </a>
                       <a
                         href={`/t/${r.previewToken}/pdf`}

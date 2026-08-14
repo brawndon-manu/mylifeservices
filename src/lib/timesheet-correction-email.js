@@ -107,6 +107,10 @@ export async function sendCorrectionAlert({
   const { to: resolved, redirected } = resolveRecipients(to[0]);
   const finalTo = redirected ? resolved : to;
 
+  // THE PROBLEM ALERT. The one timesheet email that goes to US rather than to an
+  // employee, raised when somebody reports something wrong from their timesheet
+  // review page. The two that go to them are the TIMESHEET TO REVIEW and the
+  // SIGNING REMINDER - see timesheet-send.js.
   const subject = redirected
     ? `[TEST -> ${to.join(", ")}] ${employeeName} reported a timesheet problem`
     : `${employeeName} reported a problem with their timesheet`;

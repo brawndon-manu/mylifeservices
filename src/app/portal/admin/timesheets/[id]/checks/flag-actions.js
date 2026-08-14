@@ -296,7 +296,7 @@ export async function deleteRowComment(id) {
 // Schedule Notes are about late clock-ins - "forgot to punch in", "traffic" -
 // and the timesheet's comments block is the same field time-ranged against a
 // shift. So every reason here is gathered fresh, from a call or a text, or from
-// what the employee writes on their own page.
+// what the employee writes on their timesheet review page.
 //
 // KEYED ON (period, person, finding), never on the timesheet. Corrections are
 // timesheet-scoped and die on every re-upload, which is what stranded 70

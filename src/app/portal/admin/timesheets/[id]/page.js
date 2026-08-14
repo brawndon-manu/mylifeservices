@@ -90,7 +90,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     email: u.email,
   }));
 
-  // the five pre-signing questions, from the same classifier the employee page
+  // the five pre-signing questions, from the same classifier the timesheet review page
   // and the server action use, so payroll's count cannot drift from what the
   // person is actually being shown
   const progressFor = (t) =>

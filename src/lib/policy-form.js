@@ -1,6 +1,6 @@
 // The signed policy the timesheet's break assumption rests on.
 //
-// The timesheet email and the signing page both tell people that recording
+// The timesheet email and the timesheet review page both tell people that recording
 // their breaks is their responsibility "under the Rest & Meal Period Policy and
 // Acknowledgement you signed". Mánu 2026-08-10 wants that named document to be
 // reachable from the sentence, so somebody can read what they agreed to before

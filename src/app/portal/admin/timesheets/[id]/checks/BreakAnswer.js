@@ -129,7 +129,8 @@ export default function BreakAnswer({
         />
         <p className="mt-1.5 text-xs text-muted">
           Nothing to pre-fill. QuickSolve has no field for why a break was missed, so this
-          only ever comes from what they tell us or what they write on their own page.
+          only ever comes from what they tell us or what they write on their timesheet
+          review page.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted">Heard by</span>

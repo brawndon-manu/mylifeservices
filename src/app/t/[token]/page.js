@@ -35,7 +35,7 @@ import { restMealPolicyLink } from "@/lib/policy-form";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Your timesheet · My Life Services",
+  title: "Timesheet review · My Life Services",
   robots: { index: false, follow: false },
 };
 
@@ -390,8 +390,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         My Life Services
       </p>
+      {/* THE TIMESHEET REVIEW PAGE. One name, used here, in the tab title, in
+          the link admins follow to it, and in every comment that refers to it -
+          it had five ("their own page", "the employee page", "the corrections
+          page", "the signing page", "the sign-off page") and no way to say which
+          screen anybody meant. */}
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Your timesheet
+        Review your timesheet
       </h1>
       <p className="mt-2 text-sm text-muted">
         {who} · {period}

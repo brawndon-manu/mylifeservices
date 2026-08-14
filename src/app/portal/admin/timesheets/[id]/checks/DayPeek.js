@@ -16,7 +16,7 @@ import DayCalendar from "@/app/t/[token]/DayCalendar";
 // scale and the rules about where a break belongs are one implementation. Two
 // pictures of one day is how the two screens start disagreeing about it.
 //
-// It is safe outside the employee page: `DayCalendar` reads half-typed answers
+// It is safe outside the timesheet review page: `DayCalendar` reads half-typed answers
 // through `useStagedOn`, which returns an empty list when there is no provider
 // above it - there is nothing being typed here, and nothing on this screen can
 // write an answer.
