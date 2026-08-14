@@ -75,8 +75,38 @@ export async function POST(req, { params }) {
     });
   }
 
+  // EVERY UPLOAD OF THE FORTNIGHT, NOT JUST THIS ONE.
+  //
+  // The batch list draws one card per pay period with the older uploads folded
+  // under it, and somebody reading a superseded upload is still inside that
+  // period - the card has to say so, or the fold hides a person. Bounded and
+  // stripped because it arrives from the browser.
+  //
+  // Deduped on the person, freshest wins: one human open in two uploads of the
+  // same fortnight is one face, not two.
+  const also = Array.isArray(body.also)
+    ? body.also
+      .map((x) => String(x).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40))
+      .filter(Boolean)
+      .slice(0, 12)
+    : [];
+
+  const gather = async () => {
+    const lists = await Promise.all(
+      [id, ...also].map((b) => whoIsHere(b, { exceptUserId: user.id })),
+    );
+    const byUser = new Map();
+    for (const list of lists) {
+      for (const p of list) {
+        const prev = byUser.get(p.userId);
+        if (!prev || (p.at || 0) > (prev.at || 0)) byUser.set(p.userId, p);
+      }
+    }
+    return [...byUser.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
+  };
+
   const [here, version] = await Promise.all([
-    whoIsHere(id, { exceptUserId: user.id }),
+    gather(),
     // WHAT ELSE MOVED. The poll is already happening, so the counter rides back
     // with it: a client whose number changed re-fetches the page, which is how
     // somebody else's note or flag appears without a reload.

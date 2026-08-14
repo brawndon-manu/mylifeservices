@@ -83,7 +83,15 @@ export default async function TimesheetBatchesPage() {
                           period is still open. A finished fortnight is not one
                           anybody is chasing, and a poller per card would be a
                           request per pay period per tab, for ever. */}
-                      {state.key !== "final" && <CardPresence batchId={b.id} />}
+                      {state.key !== "final" && (
+                        <CardPresence
+                          batchId={b.id}
+                          // and the older uploads of the same fortnight: somebody
+                          // reading a superseded one is still inside this period,
+                          // and the fold must not hide them
+                          alsoBatchIds={g.earlier.map((o) => o.id)}
+                        />
+                      )}
                     </div>
                   </div>
 

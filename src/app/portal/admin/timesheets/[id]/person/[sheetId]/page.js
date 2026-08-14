@@ -20,7 +20,7 @@ import BreakAnswer from "../../checks/BreakAnswer";
 import { answersByFinding } from "@/lib/timesheet/break-answers";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
-import PresenceProvider, { PresenceBar, PresenceCard } from "../../Presence";
+import { PresenceBar, PresenceCard } from "../../Presence";
 
 export const metadata = { title: "Their schedule", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -320,7 +320,10 @@ export default async function PersonSchedulePage({ params, searchParams }) {
     // THE ONE PAGE WHERE "WHICH CARD ARE THEY ON" IS EXACT. They opened one
     // person; that is the row. On a scrolling list it would be a guess from
     // scroll position, so the list reads this rather than inventing its own.
-    <PresenceProvider batchId={id} rowKey={`person-${sheet.id}`} page="person">
+    // NO PROVIDER HERE. It is mounted once in the batch layout so every
+    // screen under a batch counts as being in it - and a second one under the
+    // same user would overwrite the first on every beat, the two fighting
+    // over which page they were on. This reads from that one through context.
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
       <BackLink href={back.href}>{back.label}</BackLink>
       <PresenceBar />
@@ -591,6 +594,5 @@ export default async function PersonSchedulePage({ params, searchParams }) {
         </p>
       </div>
     </section>
-    </PresenceProvider>
   );
 }

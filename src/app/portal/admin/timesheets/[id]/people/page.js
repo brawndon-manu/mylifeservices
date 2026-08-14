@@ -16,7 +16,7 @@ import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
-import PresenceProvider, { PresenceBar, PresenceCard } from "../Presence";
+import { PresenceBar, PresenceCard } from "../Presence";
 
 export const metadata = { title: "Everybody on this timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -287,7 +287,10 @@ export default async function AllPeoplePage({ params }) {
   return (
     // the list reports itself as on the BATCH but on no row - saying "somewhere
     // on this page" is honest, and guessing a row from scroll position is not.
-    <PresenceProvider batchId={id} page="people">
+    // NO PROVIDER HERE. It is mounted once in the batch layout so every
+    // screen under a batch counts as being in it - and a second one under the
+    // same user would overwrite the first on every beat, the two fighting
+    // over which page they were on. This reads from that one through context.
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href={`/portal/admin/timesheets/${batch.id}/checks`}>Back to Data checks</BackLink>
       <PresenceBar />
@@ -701,6 +704,5 @@ export default async function AllPeoplePage({ params }) {
         })}
       </div>
     </section>
-    </PresenceProvider>
   );
 }

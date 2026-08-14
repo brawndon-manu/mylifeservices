@@ -97,6 +97,10 @@ export default function PresenceProvider({
   // could see a card for - so the screen asking "is anybody in there" was what
   // put somebody in there. Being on a list is not being in a batch.
   watchOnly = false,
+  // the other uploads of the same pay period, for a watcher on the batch list.
+  // Somebody reading a superseded upload is still inside that fortnight, and
+  // the card must not hide them just because the fold is shut.
+  alsoBatchIds = null,
 }) {
   const router = useRouter();
   const [here, setHere] = useState([]);
@@ -114,6 +118,11 @@ export default function PresenceProvider({
   // null until the effect stamps it. Date.now() in a ref initialiser runs during
   // render, which is the impurity the note below is already about.
   const lastVisible = useRef(null);
+  // joined, because a new array literal every render would restart the poll
+  // timer on every render. The effect depends on the STRING and reads the list
+  // out of a ref, the same shape `what` already uses for rowKey and page.
+  const alsoKey = (alsoBatchIds || []).join(",");
+  const alsoRef = useRef([]);
   const beatNow = useRef(() => {});
   // held in a ref so changing what I am looking at does not restart the timer.
   // Synced in an effect rather than assigned during render: a ref written while
@@ -122,6 +131,9 @@ export default function PresenceProvider({
   useEffect(() => {
     what.current = { rowKey, page };
   }, [rowKey, page]);
+  useEffect(() => {
+    alsoRef.current = alsoKey ? alsoKey.split(",") : [];
+  }, [alsoKey]);
 
   // what a card calls when a pointer rests on it or leaves it. Reports straight
   // away rather than waiting for the next beat - the whole point is that it
@@ -162,7 +174,7 @@ export default function PresenceProvider({
           body: JSON.stringify(
             watchOnly
               // nothing about me, because I am not here - just the question
-              ? { watch: true }
+              ? { watch: true, also: alsoRef.current }
               : {
                 ...what.current,
                 rowKey: hovered.current ?? what.current.rowKey,
@@ -261,7 +273,7 @@ export default function PresenceProvider({
       window.removeEventListener("pagehide", leave);
       leave();
     };
-  }, [batchId, router, watchOnly]);
+  }, [batchId, router, watchOnly, alsoKey]);
 
   return (
     <PresenceContext.Provider value={here}>
@@ -270,23 +282,53 @@ export default function PresenceProvider({
   );
 }
 
-// WHO IS ON THIS PAGE AT ALL, for the top of a list.
+// WHO ELSE IS IN THIS BATCH, at the top of the screen.
+//
+// NOT just this page. Presence is mounted in the batch layout, so somebody on
+// the checks screen or the stats is in the batch as much as somebody on this
+// list - and the whole reason for the bar is that you should know they are here
+// without having to catch their pointer on a card. The per-card faces stay for
+// the precise answer: hovering a row, or having that person's own page open.
+//
+// It says WHICH screen, because "Gabe is here" and "Gabe is reading the checks"
+// are different amounts of use.
+const WHERE = {
+  batch: "on the batch screen",
+  people: "on this list",
+  person: "on somebody's day-by-day",
+  checks: "on the checks screen",
+  stats: "on the stats",
+  penalties: "on the penalties",
+  corrections: "on the corrections",
+  evidence: "on the evidence",
+  report: "on the report",
+  source: "on the source documents",
+};
+
 export function PresenceBar() {
   const here = usePresence();
   if (!here.length) return null;
+  const say = (p) => {
+    const where = WHERE[p.page] || "in this batch";
+    return `${p.name || "Somebody"} ${p.hidden ? `has it open in another window, ${where}` : `is ${where}`}`;
+  };
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs dark:border-sky-800/70 dark:bg-sky-950/30">
       <span className="flex items-center">
         {here.slice(0, 8).map((p) => (
-          <span key={p.userId} title={p.name || "somebody"} className="-ml-1.5 rounded-full ring-2 ring-surface first:ml-0">
+          <span
+            key={p.userId}
+            title={say(p)}
+            className={`-ml-1.5 rounded-full ring-2 ring-surface first:ml-0 ${p.hidden ? "opacity-50" : ""}`}
+          >
             <Avatar name={p.name} image={p.image} size={20} />
           </span>
         ))}
       </span>
       <span className="text-sky-800 dark:text-sky-300">
         {here.length === 1
-          ? `${here[0].name || "Somebody"} is on this batch right now`
-          : `${here.length} people are on this batch right now`}
+          ? say(here[0])
+          : `${here.length} other people are in this batch right now`}
       </span>
     </div>
   );

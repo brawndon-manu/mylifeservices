@@ -53,10 +53,10 @@ function Faces() {
 // would be one request per pay period per tab, and a period finished months ago
 // is not one anybody is chasing. The caller decides; this just refuses to mount
 // a poller it was not given a batch for.
-export default function CardPresence({ batchId }) {
+export default function CardPresence({ batchId, alsoBatchIds = [] }) {
   if (!batchId) return null;
   return (
-    <PresenceProvider batchId={batchId} watchOnly>
+    <PresenceProvider batchId={batchId} alsoBatchIds={alsoBatchIds} watchOnly>
       <Faces />
     </PresenceProvider>
   );
