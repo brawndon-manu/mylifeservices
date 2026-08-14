@@ -22,7 +22,11 @@ import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
 import { PresenceBar, PresenceCard } from "../../Presence";
 
-export const metadata = { title: "Their schedule", robots: { index: false, follow: false } };
+// THE DAY BY DAY. Two different buttons pointed here - "View their schedule"
+// from the checks screen and "View their day by day" from the all-employees
+// list - so one page had two names depending on how you arrived. Day by day is
+// the one that says what is on it.
+export const metadata = { title: "Their day by day", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
@@ -407,7 +411,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
       )}
 
       <h2 className="mt-9 text-xs font-bold uppercase tracking-wide text-faint">
-        Their schedule{" "}
+        Day by day{" "}
         <span className="text-[11px] font-semibold normal-case tracking-normal tabular-nums">
           {v.days.length}
         </span>

@@ -18,7 +18,7 @@ import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
 import { PresenceBar, PresenceCard } from "../Presence";
 
-export const metadata = { title: "Everybody on this timesheet", robots: { index: false, follow: false } };
+export const metadata = { title: "All employees", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
@@ -296,8 +296,12 @@ export default async function AllPeoplePage({ params }) {
       <PresenceBar />
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
+      {/* ALL EMPLOYEES. The link in says "View all employees" and the way back
+          says "Back to all employees", so the page says it too - it read
+          "Everybody on this timesheet" and was a third phrasing of one screen.
+          The period is on the line below, so nothing is lost by dropping it. */}
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Everybody on this timesheet
+        All employees
       </h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
         {period}
