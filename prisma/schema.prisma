@@ -665,6 +665,28 @@ model TimesheetBatch {
   // was asked for.
   partialFrom    String?
   partialThrough String?
+  // SOMEBODY HAS SAID THIS UPLOAD IS FINAL AND THE SCHEDULE IS LOCKED.
+  //
+  // Locked means the schedule can no longer be changed, and it happens around
+  // 8pm on the last day of the period. NOTHING IN ANY OF THE FOUR EXPORTS SAYS
+  // SO - not the timesheet, not the schedule PDF, not the clock export, not the
+  // rest report - so this cannot be detected and has to be attested.
+  //
+  // The portal detects the PRECONDITION on its own: when the data reaches the
+  // last day of the period there is something worth asking about. It then asks
+  // rather than assumes, because an upload at 7:45pm and one at 8:15pm look
+  // identical from here and only one of them is safe.
+  //
+  // Cleared by a later upload of the same period, since the question was about
+  // THAT export being the final one.
+  //
+  // Scalars, no relation, for the same reason the check flags are scalars: this
+  // records who said it AT THE TIME and should not follow a later rename or
+  // cascade away with a deleted account.
+  lockedAt     DateTime?
+  lockedById   String?
+  lockedByName String?
+
   uploadedById String
   uploadedBy   User     @relation("TimesheetBatchUploadedBy", fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())

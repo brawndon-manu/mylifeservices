@@ -2373,3 +2373,43 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
   return { ok: true };
 }
+
+// SOMEBODY SAYS THE SCHEDULE IS LOCKED AND THIS UPLOAD IS FINAL.
+//
+// The portal works out the precondition on its own - the export reaching the
+// last day of the period - and stops there, because the schedule locks around
+// 8pm on the final day and NOT ONE of the four exports records that it
+// happened. An upload at 7:45pm and one at 8:15pm are identical from here.
+//
+// This is the gate on Send all. Until it is set, a period cannot be emailed.
+export async function setBatchLocked(batchId, locked) {
+  const user = await requireTimesheetAccess();
+
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: { id: true, periodFrom: true, periodTo: true, lockedAt: true },
+  });
+  if (!batch) return { ok: false, error: "gone" };
+
+  await prisma.timesheetBatch.update({
+    where: { id: batchId },
+    data: locked
+      ? {
+        lockedAt: new Date(),
+        lockedById: user.id,
+        // copied rather than joined, like the check flags: this records who
+        // said it AT THE TIME and should not follow a later rename
+        lockedByName: preferredName(user) || user.name || user.email || null,
+      }
+      : { lockedAt: null, lockedById: null, lockedByName: null },
+  });
+
+  console.log(
+    `timesheet batch ${locked ? "marked final" : "reopened"} by ${user.id}: ` +
+    `${batch.periodFrom}-${batch.periodTo}`,
+  );
+
+  revalidatePath("/portal/admin/timesheets");
+  revalidatePath(`/portal/admin/timesheets/${batchId}`);
+  return { ok: true, locked: !!locked };
+}

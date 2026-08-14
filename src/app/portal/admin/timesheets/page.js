@@ -7,6 +7,7 @@ import { sendModeSummary } from "@/lib/timesheet-send";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "./_components/SendModeBanner";
 import { companyDate } from "@/lib/company-time";
+import LiveBadge from "./_components/LiveBadge";
 
 export const metadata = { title: "Timesheets", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -70,9 +71,20 @@ export default async function TimesheetBatchesPage() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-base font-semibold tracking-tight text-foreground">
-                        {b.periodFrom} to {b.periodTo}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold tracking-tight text-foreground">
+                          {b.periodFrom} to {b.periodTo}
+                        </p>
+                        {/* THE REACH HERE COMES OFF `restsByDate` ALONE, because
+                            this list does not load the day blobs and 60 of them
+                            per batch is not worth a badge. `batchReach` takes the
+                            LATER of the two sources, so a rest report lagging the
+                            timesheet can only ever understate how far the data
+                            goes - which shows LIVE and refuses to send. Wrong in
+                            the safe direction. The batch page has the full data
+                            and is the one that decides. */}
+                        <LiveBadge batch={b} size="sm" />
+                      </div>
                       <p className="mt-1 text-xs text-muted">
                         {total} employee{total === 1 ? "" : "s"} ·{" "}
                         {companyDate(b.createdAt)}

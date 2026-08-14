@@ -18,6 +18,9 @@ import ReviewTable from "../_components/ReviewTable";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { isSuper } from "@/lib/roles";
 import SendPanel from "../_components/SendPanel";
+import LiveBadge, { PeriodStrip } from "../_components/LiveBadge";
+import LockPeriod from "../_components/LockPeriod";
+import { batchState } from "@/lib/timesheet/batch-state";
 import DeleteBatchButton from "../_components/DeleteBatchButton";
 import ResetAnswersButton from "../_components/ResetAnswersButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
@@ -288,6 +291,16 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const totalPremium = rows.reduce((n, r) => n + (r.premiumHours || 0), 0);
 
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
+
+  // LIVE / NEEDS A DECISION / FINAL, worked out once and read by both the badge
+  // and the send gate, so the two can never disagree about whether a period is
+  // finished.
+  const state = batchState(batch);
+  const lockedOn = batch.lockedAt
+    ? companyDate(batch.lockedAt, {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    })
+    : null;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
 
@@ -332,9 +345,37 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           sit below the download card, so the first thing you read was a row of
           buttons and the first thing you could NAME was three inches down. */}
       <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-brand-dark">Pay period</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        {batch.periodFrom} to {batch.periodTo}
-      </h1>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          {batch.periodFrom} to {batch.periodTo}
+        </h1>
+        <LiveBadge batch={batch} />
+      </div>
+      {/* WHAT IS ACTUALLY IN, rather than a number to trust. This is the screen
+          where the answer decides whether sixty people get emailed. */}
+      <div className={`mt-4 rounded-xl border border-border bg-surface p-4 border-l-4 ${state.edge}`}>
+        <p className="text-sm text-muted">
+          {state.key === "live" ? (
+            <>
+              The export reaches <span className="font-semibold text-foreground">{state.reach}</span>, and
+              the period runs to <span className="font-semibold text-foreground">{batch.periodTo}</span>.
+              {state.daysToCome ? ` ${state.daysToCome} day${state.daysToCome === 1 ? "" : "s"} still to come.` : ""}
+            </>
+          ) : state.key === "needs-decision" ? (
+            <>The whole period is in the export, up to <span className="font-semibold text-foreground">{state.reach}</span>.</>
+          ) : (
+            <>Closed. Every day of the period is in and somebody has marked it final.</>
+          )}
+        </p>
+        <PeriodStrip batch={batch} />
+        <LockPeriod
+          batchId={batch.id}
+          locked={!!batch.lockedAt}
+          lockedByName={batch.lockedByName}
+          lockedAt={lockedOn}
+          covered={state.covered}
+        />
+      </div>
       {/* two runs of the same dates are indistinguishable without this, and
           nothing else on the page says when the export was pulled. */}
       <p className="mt-2 text-sm text-muted">
@@ -661,6 +702,15 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         alreadySent={sent}
         send={sendTimesheets}
         live={mode.live}
+        // SHUT UNTIL SOMEBODY SAYS THE PERIOD IS FINISHED. Not until the data
+        // looks finished - the schedule locks at 8pm on the last day and no
+        // export records it, so a full period is still only a precondition.
+        blocked={state.key !== "final"}
+        blockedWhy={
+          state.key === "live"
+            ? `Cannot send until the pay period comes to an end. The export reaches ${state.reach}, the period runs to ${batch.periodTo}.`
+            : "The whole period is in, but nobody has said the schedule is locked yet."
+        }
       />
 
       <ReviewTable
