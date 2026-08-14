@@ -2413,3 +2413,103 @@ export async function setBatchLocked(batchId, locked) {
   revalidatePath(`/portal/admin/timesheets/${batchId}`);
   return { ok: true, locked: !!locked };
 }
+
+// THE EMPLOYEE'S HALF OF A MISSED-BREAK REASON.
+//
+// Two shapes, and which one they get depends on whether anybody gathered a
+// reason on the phone:
+//
+//   confirm   we wrote one down, so it is quoted back and they say whether we
+//             wrote it right. We took it off a call - it is somebody's memory
+//             of what was said, and it is about to be printed on their sheet.
+//   write     nobody gathered one, so they write it themselves.
+//
+// SAYING NO DOES NOT OVERWRITE OURS. Both go on the bottom of the timesheet,
+// ours first and theirs after it as a correction. Deleting ours would hide that
+// the record moved, and the whole reason for asking is that our version might
+// be wrong.
+//
+// A correction also raises a notice, because it means a reason we wrote down
+// was not what they said - which is worth knowing about the call, not just
+// about the row.
+export async function answerBreakReason({ token, findingKey, agree, text }) {
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const tsId = verifyTimesheetToken(token);
+  if (!tsId) return { ok: false, error: "auth" };
+  if (!findingKey) return { ok: false, error: "missing" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: tsId },
+    select: {
+      id: true, userId: true, sourceName: true, signedAt: true,
+      batch: { select: { id: true, periodFrom: true, periodTo: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "notfound" };
+  // a sheet with no account behind it has no person key, so there is nothing to
+  // hang the answer off - and nobody could have been asked in the first place
+  if (!ts.userId) return { ok: false, error: "unmatched" };
+  // NOT AFTER THEY HAVE SIGNED. The signed copy quotes the comments block, so a
+  // reason arriving afterwards would put a sentence on a document somebody has
+  // already attested to.
+  if (ts.signedAt) return { ok: false, error: "signed" };
+
+  const row = await prisma.timesheetBreakAnswer.findUnique({
+    where: {
+      periodFrom_periodTo_personKey_findingKey: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+        findingKey,
+      },
+    },
+  });
+  // they can only answer something they were actually asked - see the note on
+  // `answerTimesheetQuestion` about a client answering a question nobody put
+  if (!row || row.answer !== "not-taken") return { ok: false, error: "notasked" };
+
+  const said = String(text ?? "").trim().slice(0, 1000) || null;
+
+  // NOTHING WE WROTE: they are supplying the only reason there is, so it goes in
+  // as theirs and is confirmed by definition.
+  if (!row.reason) {
+    if (!said) return { ok: false, error: "empty" };
+    await prisma.timesheetBreakAnswer.update({
+      where: { id: row.id },
+      data: { reason: said, confirmedAt: new Date(), confirmedText: said, via: null },
+    });
+  } else if (agree) {
+    // our wording, agreed. `confirmedText` records WHAT they agreed to, so a
+    // later edit to `reason` can tell that the tick is stale.
+    await prisma.timesheetBreakAnswer.update({
+      where: { id: row.id },
+      data: { confirmedAt: new Date(), confirmedText: row.reason },
+    });
+  } else {
+    if (!said) return { ok: false, error: "empty" };
+    // OURS STAYS. Theirs is added beside it and both print.
+    await prisma.timesheetBreakAnswer.update({
+      where: { id: row.id },
+      data: { confirmedAt: new Date(), confirmedText: said },
+    });
+    // and it raises a notice, because a corrected reason means somebody
+    // mis-heard something on a phone call
+    await prisma.timesheetContactLog.create({
+      data: {
+        batchId: ts.batch.id,
+        rowKey: `person-${ts.id}`,
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+        findingKey,
+        status: "reason-corrected",
+        byId: ts.userId,
+        byName: ts.sourceName,
+      },
+    });
+  }
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batch.id}/people`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batch.id}/checks`);
+  return { ok: true };
+}
