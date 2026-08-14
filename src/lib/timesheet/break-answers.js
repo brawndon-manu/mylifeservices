@@ -57,6 +57,16 @@ export const HEARD_VIA = [
 export const HEARD_VIA_KEYS = HEARD_VIA.map((v) => v.key);
 export const isHeardVia = (k) => HEARD_VIA_KEYS.includes(k);
 
+// SOME TAKEN IS STILL SOME MISSED. A day short two rests where they took one is
+// a day with one rest not taken, and that one still needs a reason like any
+// other - so the obligation is about what is left, not about which button.
+export function stillMissing(a) {
+  if (!a) return 0;
+  const n = a.missingCount || 1;
+  const took = a.takenCount ?? (a.answer === "took-it" ? n : 0);
+  return Math.max(0, n - took);
+}
+
 // A REASON WE WROTE DOWN IS NOT YET A REASON ON RECORD.
 //
 // We took it off a phone call, so they get to check we wrote it right before it
@@ -64,13 +74,16 @@ export const isHeardVia = (k) => HEARD_VIA_KEYS.includes(k);
 // them, the obligation sits with the employee and their sheet does not generate.
 export function needsEmployeeReason(a) {
   if (!a) return false;
-  if (a.answer !== "not-taken") return false;
+  // NOT "did they press the not-taken button". A day short two rests where they
+  // took one still has a rest nobody took, and that one is owed a reason exactly
+  // like a day where they took neither.
+  if (stillMissing(a) < 1) return false;
   return !a.reason;
 }
 
 // what the employee is asked, if anything: nothing, write one, or check ours.
 export function employeeAsk(a) {
-  if (!a || a.answer !== "not-taken") return null;
+  if (!a || stillMissing(a) < 1) return null;
   if (!a.reason) return "write";
   if (!a.confirmedAt) return "confirm";
   return null;
@@ -124,3 +137,94 @@ export function formatBreakComments(answers = [], startAt = 0) {
   }
   return out;
 }
+
+// EVERY ANSWER THE DAY ACTUALLY ALLOWS.
+//
+// A meal is one thing: taken or not, two buttons. A rest violation is "0 of 2
+// recorded", and two buttons cannot say what happened - they may have taken
+// neither, or one of the two. One control per day could not say it either, which
+// is why there is now one per violation.
+//
+// So the options are built from the shortfall rather than written out: 2 short
+// gives none / one / both, 1 short gives none / it, and 3 short would give none
+// / one / two / all three without anybody adding a case.
+//
+// `takenCount` is what separates them, and it is the number that ends up on the
+// timesheet - "took 1 of the 2 they were owed" is a different sentence from
+// "took neither".
+export function answerOptionsFor({ kind, missing = 1 }) {
+  const n = Math.max(1, Number(missing) || 1);
+  const thing = kind === "rest" ? "rest period" : "meal break";
+
+  // A LATE MEAL WAS TAKEN. Asking whether they took it is the wrong question -
+  // the record says they did, after the fifth hour. What is actually in doubt is
+  // whether the punched time is right, so those are the two answers.
+  if (kind === "meal-late") {
+    return [
+      {
+        key: "not-taken:0",
+        answer: "not-taken",
+        takenCount: 0,
+        label: "Confirm it really was that late",
+        tone: "green",
+        asksReason: true,
+      },
+      {
+        key: "took-it:1",
+        answer: "took-it",
+        takenCount: 1,
+        label: "The punched time is wrong, needs correcting",
+        tone: "sky",
+        asksReason: false,
+      },
+    ];
+  }
+
+  const none = {
+    key: "not-taken:0",
+    answer: "not-taken",
+    takenCount: 0,
+    label: n === 1 ? "Confirm not taken" : `Confirm none of the ${n} taken`,
+    tone: "green",
+    asksReason: true,
+  };
+  // one option per number they could actually have taken
+  const took = [];
+  for (let i = 1; i <= n; i += 1) {
+    took.push({
+      key: `took-it:${i}`,
+      answer: "took-it",
+      takenCount: i,
+      label: n === 1
+        ? `They took it, needs punching`
+        : i === n
+          ? `They took all ${n}, needs punching`
+          : `They took ${i} of ${n}, needs punching`,
+      tone: "sky",
+      // taking SOME of them still leaves the rest untaken, and that half needs a
+      // why like any other
+      asksReason: i < n,
+      thing,
+    });
+  }
+  return [none, ...took];
+}
+
+// what the card says once it is answered, with the count in it
+export function answerSummary(a) {
+  if (!a) return null;
+  const n = a.missingCount || 1;
+  const took = a.takenCount ?? (a.answer === "took-it" ? n : 0);
+  const thing = a.kind === "rest" ? "rest period"
+    : a.kind === "meal-late" ? "meal break, late"
+      : "meal break";
+  if (a.kind === "meal-late") {
+    return took ? "The punched time is wrong, needs correcting" : "Confirmed it really was that late";
+  }
+  if (a.answer === "not-taken" || took === 0) {
+    return n === 1 ? `Confirmed ${thing} not taken` : `Confirmed none of the ${n} taken`;
+  }
+  if (took >= n) return n === 1 ? "They took it, needs punching" : `They took all ${n}, needs punching`;
+  return `They took ${took} of ${n}, needs punching`;
+}
+

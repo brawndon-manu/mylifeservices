@@ -125,3 +125,86 @@ test("nothing to say prints nothing, and took-it never prints", () => {
     "a punch that needs making is not a reason for anything",
   );
 });
+
+// ------------------------------- every answer the day actually allows
+
+import { answerOptionsFor, answerSummary, stillMissing } from "../break-answers.js";
+
+test("a meal is two buttons, because it is one thing", () => {
+  const o = answerOptionsFor({ kind: "meal", missing: 1 });
+  assert.deepEqual(o.map((x) => x.label), [
+    "Confirm not taken",
+    "They took it, needs punching",
+  ]);
+  assert.deepEqual(o.map((x) => x.takenCount), [0, 1]);
+});
+
+// THE ONE THAT DROVE THIS. "0 of 2 recorded" cannot be answered by two buttons:
+// they may have taken neither, or one of the two.
+test("two rests short offers none, one, and both", () => {
+  const o = answerOptionsFor({ kind: "rest", missing: 2 });
+  assert.deepEqual(o.map((x) => x.label), [
+    "Confirm none of the 2 taken",
+    "They took 1 of 2, needs punching",
+    "They took all 2, needs punching",
+  ]);
+  assert.deepEqual(o.map((x) => x.takenCount), [0, 1, 2]);
+});
+
+test("three short needs no new code", () => {
+  assert.equal(answerOptionsFor({ kind: "rest", missing: 3 }).length, 4);
+});
+
+// TAKING SOME IS STILL MISSING SOME, and the leftover is owed a reason exactly
+// like a day where they took none.
+test("only an answer that accounts for every one skips the reason", () => {
+  const o = answerOptionsFor({ kind: "rest", missing: 2 });
+  assert.equal(o[0].asksReason, true, "none taken");
+  assert.equal(o[1].asksReason, true, "one of two still leaves one");
+  assert.equal(o[2].asksReason, false, "all of them, nothing left to explain");
+});
+
+test("what is still missing drives the obligation, not which button", () => {
+  assert.equal(stillMissing({ answer: "took-it", takenCount: 1, missingCount: 2 }), 1);
+  assert.equal(stillMissing({ answer: "took-it", takenCount: 2, missingCount: 2 }), 0);
+  assert.equal(stillMissing({ answer: "not-taken", takenCount: 0, missingCount: 2 }), 2);
+  // a reason is owed on the partial one even though they pressed "took it"
+  assert.equal(
+    needsEmployeeReason({ answer: "took-it", takenCount: 1, missingCount: 2, reason: null }),
+    true,
+  );
+  assert.equal(
+    needsEmployeeReason({ answer: "took-it", takenCount: 2, missingCount: 2, reason: null }),
+    false,
+  );
+});
+
+test("the card says the count back", () => {
+  assert.equal(
+    answerSummary({ answer: "took-it", takenCount: 1, missingCount: 2, kind: "rest" }),
+    "They took 1 of 2, needs punching",
+  );
+  assert.equal(
+    answerSummary({ answer: "not-taken", takenCount: 0, missingCount: 2, kind: "rest" }),
+    "Confirmed none of the 2 taken",
+  );
+  assert.equal(
+    answerSummary({ answer: "not-taken", takenCount: 0, missingCount: 1, kind: "meal" }),
+    "Confirmed meal break not taken",
+  );
+});
+
+// A LATE MEAL WAS TAKEN, so "did you take it" is the wrong question entirely.
+test("a late meal asks about the time, not about whether it happened", () => {
+  const o = answerOptionsFor({ kind: "meal-late", missing: 1 });
+  assert.deepEqual(o.map((x) => x.label), [
+    "Confirm it really was that late",
+    "The punched time is wrong, needs correcting",
+  ]);
+  assert.ok(!o.some((x) => /not taken/i.test(x.label)), "nothing here says not taken");
+  assert.equal(o[0].asksReason, true, "a genuinely late meal is owed a why");
+  assert.equal(
+    answerSummary({ kind: "meal-late", answer: "took-it", takenCount: 1, missingCount: 1 }),
+    "The punched time is wrong, needs correcting",
+  );
+});

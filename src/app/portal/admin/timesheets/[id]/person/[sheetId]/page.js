@@ -487,20 +487,35 @@ export default async function PersonSchedulePage({ params, searchParams }) {
               )}
             </div>
 
-            {/* WHAT DID THEY SAY? The one thing none of the four exports
-                carries. One control per day rather than per violation: the
-                conversation is "did you get your breaks on the 3rd", not one
-                call per kind. */}
-            {list.length > 0 && sheet.userId && (
-              <BreakAnswer
-                batchId={id}
-                personKey={sheet.userId}
-                findingKey={`breaks-${d.date}`}
-                date={d.date}
-                kind={list.some((x) => String(x.kind).includes("meal")) ? "meal" : "rest"}
-                answer={breakAnswers.get(markKey(sheet.userId, `breaks-${d.date}`)) || null}
-              />
-            )}
+            {/* WHAT DID THEY SAY? The one thing none of the four QSP exports
+                carries.
+                ONE CONTROL PER VIOLATION, not per day. A day can be short a meal
+                AND two rests, and those are two different conversations with two
+                different answers - a single pair of buttons could only record one
+                of them. The rest control also offers every count the day allows,
+                because "took one of the two" is a real answer. */}
+            {sheet.userId && list.map((x) => {
+              const isRest = x.kind === "rest-not-taken";
+              // three kinds, three keys - a late meal and a missing meal are
+              // different questions about the same day and must not share a row
+              const slot = isRest ? "rest" : x.kind === "meal-late" ? "meallate" : "meal";
+              const key = `break-${slot}-${d.date}`;
+              return (
+                <BreakAnswer
+                  key={x.kind}
+                  batchId={id}
+                  personKey={sheet.userId}
+                  findingKey={key}
+                  date={d.date}
+                  kind={isRest ? "rest" : x.kind === "meal-late" ? "meal-late" : "meal"}
+                  // how many the day is SHORT. `short` is the rest shortfall; a
+                  // meal is always the one.
+                  missing={isRest ? (x.short || 1) : 1}
+                  label={VIOLATION_KINDS[x.kind].label}
+                  answer={breakAnswers.get(markKey(sheet.userId, key)) || null}
+                />
+              );
+            })}
 
             {list.length > 0 && (
               <ul className="mt-2 divide-y divide-border border-y border-border">

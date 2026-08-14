@@ -304,6 +304,10 @@ export async function deleteRowComment(id) {
 export async function setBreakAnswer({
   batchId, personKey, findingKey, date = null, kind = "meal",
   answer, reason = null, via = null,
+  // HOW MANY OF THEM THEY TOOK, and how many the day was short. A meal is one
+  // thing; a rest violation is "0 of 2 recorded" and taking one of the two is a
+  // real answer that neither button could say on its own.
+  takenCount = null, missingCount = null,
 }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
@@ -349,12 +353,21 @@ export async function setBreakAnswer({
     byName: preferredName(user) || user.name || user.email || null,
     byImage: user.image || null,
   };
+  const missing = Math.max(1, Number(missingCount) || 1);
+  // clamped to what the day could possibly allow, because it arrives from the
+  // browser and decides whether a reason is still owed
+  const took = answer === "not-taken"
+    ? 0
+    : Math.min(missing, Math.max(0, Number(takenCount) || 0)) || missing;
   const fields = {
     date, kind,
     answer,
-    // "they took it" has nothing to explain - the fix is the punch, not a
-    // sentence - so a reason arriving on it is dropped rather than stored
-    reason: answer === "not-taken" ? why : null,
+    takenCount: took, missingCount: missing,
+    // A REASON BELONGS TO WHAT WAS MISSED, not to which button was pressed.
+    // Taking one of two rests still leaves one nobody took, and that one is owed
+    // a why. Only an answer that accounts for every missing one has nothing to
+    // explain, and a reason arriving on that is dropped rather than stored.
+    reason: took < missing ? why : null,
     via: heard,
     ...who,
   };
