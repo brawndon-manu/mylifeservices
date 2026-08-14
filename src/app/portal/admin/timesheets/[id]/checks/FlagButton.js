@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { setCheckFlag } from "./flag-actions";
-import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter } from "@/lib/timesheet/check-status";
+import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter, normalizeCheckStatus } from "@/lib/timesheet/check-status";
 
 // THE ACT OF MARKING. Where they currently ARE is `CheckStatusChip`, which is a
 // label and sits elsewhere on the row.
@@ -30,7 +30,10 @@ export default function FlagButton({ batchId, rowKey, flag }) {
   const [asking, setAsking] = useState(null);
   const [pending, start] = useTransition();
 
-  const current = flag?.status ?? null;
+  // through the normaliser: a row still stored as "verified" is a row somebody
+  // already marked, and without this the button offers Responded as if it were
+  // unpressed and the second press would silently clear it
+  const current = normalizeCheckStatus(flag?.status);
   const marked = !!current;
 
   const write = (status, via = null) =>

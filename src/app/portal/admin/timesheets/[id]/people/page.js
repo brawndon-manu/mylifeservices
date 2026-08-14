@@ -10,7 +10,7 @@ import CheckStatusChip from "@/components/CheckStatusChip";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { violationsFor } from "@/lib/timesheet/violations";
 import { tagsForPerson, isClean } from "@/lib/timesheet/person-tags";
-import { STANDING_STATUSES, MARK_OPTIONS, checkStatus } from "@/lib/timesheet/check-status";
+import { STANDING_STATUSES, MARK_STATUS_VALUES, checkStatus, normalizeCheckStatus } from "@/lib/timesheet/check-status";
 import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
@@ -113,7 +113,7 @@ export default async function AllPeoplePage({ params }) {
     // only the ACTIONS. Rows with a derived status exist from when "waiting"
     // was a button somebody could press, and they say nothing the line above
     // them does not already say.
-    where: { batchId: id, status: { in: MARK_OPTIONS } },
+    where: { batchId: id, status: { in: MARK_STATUS_VALUES } },
     orderBy: { createdAt: "asc" },
     select: { id: true, rowKey: true, status: true, via: true, byName: true, byImage: true, createdAt: true },
   })) {
@@ -218,7 +218,9 @@ export default async function AllPeoplePage({ params }) {
       tags,
       clean: isClean(tags),
       flag: flags.get(`person-${t.id}`) || null,
-      status: flags.get(`person-${t.id}`)?.status || null,
+      // normalised on the way in, so the summary strip below can group on the
+      // current key without every legacy row falling out of its heading
+      status: normalizeCheckStatus(flags.get(`person-${t.id}`)?.status),
       via: flags.get(`person-${t.id}`)?.via || null,
       // formatted here rather than in the client: a Date crossing the boundary
       // renders in whatever timezone the browser is in, and this is a shared

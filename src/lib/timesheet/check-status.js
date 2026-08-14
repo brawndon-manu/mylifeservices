@@ -48,14 +48,49 @@ export const CHECK_STATUSES = [
     dot: "bg-amber-500",
   },
   {
-    key: "verified",
-    label: "Verified on QSP",
-    short: "Verified",
-    chip: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300",
-    ring: "ring-emerald-400",
-    dot: "bg-emerald-500",
+    // WAS "Verified on QSP", and the rename is the point rather than the words.
+    //
+    // A mark is something a PERSON knows: did they get back to us. Whether the
+    // fix actually landed in QuickSolve is something the next export answers by
+    // itself, per finding, and better than a tick can. Leaving a manual
+    // "verified" beside a derived one gives one fact two sources that can
+    // disagree - somebody ticks it, the new export still shows the finding, and
+    // the card and the data are then both claiming to be right.
+    //
+    // "Responded" claims nothing about QuickSolve, so the two stop competing. It
+    // also survives a person carrying fifteen findings at once, which no
+    // QSP-shaped word does: they got back to us is one true thing about one
+    // person however many rows they have.
+    key: "responded",
+    label: "Responded",
+    short: "Responded",
+    // indigo, and NOT the emerald this used to wear. Same argument as the sky on
+    // "contacted" above: a reply is not a fix, and green reads as one. Emerald is
+    // kept back for the derived outcome, so a green chip always means the export
+    // confirmed it rather than a person said so.
+    chip: "border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-800/70 dark:bg-indigo-950/40 dark:text-indigo-300",
+    ring: "ring-indigo-400",
+    dot: "bg-indigo-500",
   },
 ];
+
+// WHAT THE OLD ROWS SAY, so none of them has to be rewritten.
+//
+// 22 rows across the flag and log tables were written as "verified" before the
+// rename. Migrating them would be a small update and a real hazard, because
+// production is whatever is on `main`: move the data first and every one of
+// those chips renders as UNSET on a batch somebody is working, which is the
+// failure the note about leaving `status` out of a select already describes.
+//
+// Reading through this map instead means the deploy is safe in either order and
+// the migration never has to happen at all. Somebody who verified a QSP fix had
+// certainly also responded, so the weaker label stays true for all 22.
+const LEGACY_STATUS = { verified: "responded" };
+
+export function normalizeCheckStatus(key) {
+  if (!key) return null;
+  return LEGACY_STATUS[key] || key;
+}
 
 // HOW the message went out, asked only on "contacted".
 //
@@ -102,7 +137,13 @@ export function asksHow(statusKey) {
 // So the picker offers the two ACTIONS, and `statusAfter` says what each leaves
 // the person in. The log still records "contacted", because that is the event
 // that happened and the record of it is the point.
-export const MARK_OPTIONS = ["contacted", "verified"];
+export const MARK_OPTIONS = ["contacted", "responded"];
+
+// the same two actions as they appear IN THE DATABASE, legacy spelling included.
+// `MARK_OPTIONS` drives what can be pressed; this drives what can be matched, and
+// a query written against the first would drop the twelve logged "verified"
+// events from the history it is supposed to be showing.
+export const MARK_STATUS_VALUES = [...MARK_OPTIONS, ...Object.keys(LEGACY_STATUS)];
 
 // IS THIS SOMETHING SOMEBODY DID? The log records EVENTS, and "waiting
 // response" is not one - it is the state contacting them leaves them in. Mánu
@@ -129,9 +170,12 @@ export const STANDING_STATUSES = CHECK_STATUSES.filter((s) => s.key !== "contact
 export const CHECK_STATUS_KEYS = CHECK_STATUSES.map((s) => s.key);
 
 export function checkStatus(key) {
-  return CHECK_STATUSES.find((s) => s.key === key) || null;
+  const k = normalizeCheckStatus(key);
+  return CHECK_STATUSES.find((s) => s.key === k) || null;
 }
 
+// what may be WRITTEN, which stays the current spelling only - nothing should be
+// storing "verified" from here on. Reads go through `normalizeCheckStatus`.
 export function isCheckStatus(key) {
   return CHECK_STATUS_KEYS.includes(key);
 }
