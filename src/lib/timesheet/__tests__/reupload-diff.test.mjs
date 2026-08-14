@@ -168,3 +168,98 @@ test("nothing in, nothing out, no throw", () => {
   assert.deepEqual(diffSheet().days, []);
   assert.equal(classifyAnswers().settled, 0);
 });
+
+// ------------------------------- deleting the shift is not fixing the problem
+
+// The case a real re-upload is most likely to produce: it is far easier to
+// delete an awkward shift in QSP than to correct it, and both make the question
+// disappear.
+
+test("a vanished day is GRAVE, not just listed", () => {
+  const d = diffSheet({ storedDays: [day("08/03/26"), day("08/04/26")], freshDays: [day("08/03/26")] });
+  // it was always in `days`. the count is what a summary reads, and it stayed
+  // at 0 while somebody lost a full day's pay.
+  assert.equal(d.graveChanges, 1);
+  assert.equal(d.days.find((x) => x.gone).grave, true);
+});
+
+test("a clean fix stays SETTLED - the question went and the hours did not move", () => {
+  const c = classifyAnswers(
+    [{ id: "a1", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }],
+    [],
+    { "08/03/26": { gone: false, grave: false } },
+  );
+  assert.equal(c.answers[0].outcome, "settled");
+  assert.equal(c.settled, 1);
+  assert.equal(c.settledByRemoval, 0);
+});
+
+test("the same question going because the DAY went is not the same answer", () => {
+  const c = classifyAnswers(
+    [{ id: "a1", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }],
+    [],
+    { "08/03/26": { gone: true, grave: true } },
+  );
+  assert.equal(c.answers[0].outcome, "settled-by-removal");
+  assert.equal(c.answers[0].dayGone, true);
+  assert.equal(c.settledByRemoval, 1);
+  assert.equal(c.settled, 0, "it must not be counted as settled as well as removed");
+});
+
+test("hours dropping off a day that still exists counts too", () => {
+  const c = classifyAnswers(
+    [{ id: "a1", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }],
+    [],
+    { "08/03/26": { gone: false, grave: true } },
+  );
+  assert.equal(c.answers[0].outcome, "settled-by-removal");
+  assert.equal(c.answers[0].dayGone, false);
+  assert.equal(c.answers[0].dayGrave, true);
+});
+
+test("a question still being asked is never upgraded, whatever the day did", () => {
+  const c = classifyAnswers(
+    [{ id: "a1", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }],
+    [{ kind: "mealNotRecorded", date: "08/03/26" }],
+    { "08/03/26": { gone: true, grave: true } },
+  );
+  assert.equal(c.answers[0].outcome, "still-asked", "nothing has been settled by anything");
+  assert.equal(c.settledByRemoval, 0);
+});
+
+test("given no day information it behaves exactly as it did before", () => {
+  const answers = [{ id: "a1", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }];
+  const c = classifyAnswers(answers, []);
+  assert.equal(c.answers[0].outcome, "settled");
+  assert.equal(c.settledByRemoval, 0);
+});
+
+test("the batch report joins the two halves, which nothing did before", () => {
+  const out = diffBatch([
+    {
+      // fixed it properly: the meal is punched, the hours are untouched
+      who: "Fixed, Properly",
+      storedDays: [day("08/03/26")],
+      freshDays: [day("08/03/26", { mealViolation: false })],
+      answers: [{ id: "a1", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }],
+      freshQuestions: [],
+    },
+    {
+      // deleted the shift: same question gone, four and a half hours with it
+      who: "Deleted, Theirs",
+      storedDays: [day("08/03/26")],
+      freshDays: [day("08/03/26", { mealViolation: false, paidHours: 3.5 })],
+      answers: [{ id: "a2", kind: "q_mealNotRecorded", date: "08/03/26", status: "accepted" }],
+      freshQuestions: [],
+    },
+  ]);
+  assert.equal(out.settledByRemoval, 1, "one of these two is not like the other");
+  assert.equal(out.graveChanges, 1);
+  const fixed = out.rows.find((r) => r.who === "Fixed, Properly");
+  const deleted = out.rows.find((r) => r.who === "Deleted, Theirs");
+  assert.equal(fixed.answers.answers[0].outcome, "settled");
+  assert.equal(deleted.answers.answers[0].outcome, "settled-by-removal");
+  // and the premium moved identically on both, which is why the premium column
+  // alone could never have told them apart
+  assert.equal(fixed.premiumDelta, deleted.premiumDelta);
+});
