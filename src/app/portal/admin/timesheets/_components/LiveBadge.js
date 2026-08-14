@@ -52,23 +52,38 @@ export function PeriodStrip({ batch }) {
         {days.map((d) => (
           <div
             key={d.day}
-            title={`${d.day} ${d.covered ? "- in the export" : "- not uploaded yet"}`}
+            title={
+              d.covered
+                ? `${d.day} - covered by the export${d.weekend ? " (weekend)" : ""}`
+                : `${d.day} - not in the export yet`
+            }
+            // A COVERED WEEKEND IS COVERED. This drew them in grey, which was
+            // indistinguishable from the not-yet-uploaded days, so the strip
+            // showed gaps on the 1st, 2nd, 8th and 9th that do not exist - and
+            // it read as "days you uploaded on" rather than "days the data
+            // covers". Same fill for every covered day; the weekend is said in
+            // the number's weight and in the tooltip, where it cannot be
+            // mistaken for missing.
             className={`relative h-5 flex-1 rounded-[3px] text-[9px] font-mono ${
               d.covered
-                ? d.weekend
-                  ? "bg-surface-3 text-faint"
-                  : "bg-sky-100 text-slate-700 dark:bg-sky-950/50 dark:text-sky-200"
+                ? "bg-sky-100 text-slate-700 dark:bg-sky-950/50 dark:text-sky-200"
                 : "border border-dashed border-border-strong bg-surface-2 text-faint"
             }`}
           >
-            <span className="absolute inset-0 flex items-center justify-center">{d.day}</span>
+            <span
+              className={`absolute inset-0 flex items-center justify-center ${
+                d.covered && d.weekend ? "opacity-45" : ""
+              }`}
+            >
+              {d.day}
+            </span>
           </div>
         ))}
       </div>
       <p className="mt-1.5 text-[11px] text-faint">
         {missing
-          ? `filled = in the export · dashed = not uploaded yet (${missing} to come)`
-          : "every day of the period is in the export"}
+          ? `blue = the export covers this day · dashed = not in the export yet (${missing} to come)`
+          : "the export covers every day of the period"}
       </p>
     </div>
   );
