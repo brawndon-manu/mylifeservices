@@ -51,6 +51,11 @@ export async function POST(req, { params }) {
     // have open. Only the sender can tell them apart - see the note in
     // Presence.js about why this stopped being inferred.
     hover: body.hover === true,
+    // WHETHER THE WINDOW IS IN FRONT OF THEM. Only the sender knows, same as
+    // `hover`. Left off here it arrives undefined and every hidden tab reads as
+    // somebody sitting looking at the screen - which is the difference between
+    // "he has it open" and "do not upload on top of him".
+    hidden: body.hidden === true,
     userId: user.id,
     name: preferredName(user) || user.name || user.email || null,
     image: user.image || null,

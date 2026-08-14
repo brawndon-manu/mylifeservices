@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { setCheckFlag } from "./flag-actions";
-import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter } from "@/lib/timesheet/check-status";
+import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter, normalizeCheckStatus } from "@/lib/timesheet/check-status";
 
 // THE ACT OF MARKING. Where they currently ARE is `CheckStatusChip`, which is a
 // label and sits elsewhere on the row.
@@ -25,12 +25,21 @@ import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter } from
 // OPTIMISTIC, because the server action revalidates the whole page and half a
 // second of nothing after a click reads as a dead button. The state is re-seeded
 // from the server on the next render, so a failed write corrects itself.
-export default function FlagButton({ batchId, rowKey, flag }) {
+export default function FlagButton({
+  batchId, rowKey, flag,
+  // what the mark is ABOUT, so it survives the next upload - see mark-key.js
+  personKey = null, findingKey = null,
+  // how far the data on this screen reached, stamped on the mark as its horizon
+  coveredThrough = null,
+}) {
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState(null);
   const [pending, start] = useTransition();
 
-  const current = flag?.status ?? null;
+  // through the normaliser: a row still stored as "verified" is a row somebody
+  // already marked, and without this the button offers Responded as if it were
+  // unpressed and the second press would silently clear it
+  const current = normalizeCheckStatus(flag?.status);
   const marked = !!current;
 
   const write = (status, via = null) =>
@@ -44,7 +53,7 @@ export default function FlagButton({ batchId, rowKey, flag }) {
       // It was redundant even working. The chip beside it changes to the new
       // state and a line appears in the log underneath - the row confirms the
       // write twice already, in the places somebody is actually looking.
-      await setCheckFlag({ batchId, rowKey, status, via });
+      await setCheckFlag({ batchId, rowKey, status, via, personKey, findingKey, coveredThrough });
     });
 
   const choose = (key) => {

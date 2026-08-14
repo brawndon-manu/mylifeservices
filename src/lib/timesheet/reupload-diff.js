@@ -75,8 +75,22 @@ export function diffSheet({ storedDays = [], freshDays = [] } = {}) {
     if (!after) {
       // A DAY THAT VANISHED. Never silent: it is either a QSP correction that
       // removed a day somebody was paid for, or the wrong file.
-      days.push({ date: before.date, gone: true, changes: [], premiumBefore: (before.restViolation ? 1 : 0) + (before.mealViolation ? 1 : 0), premiumAfter: 0 });
+      //
+      // AND IT COUNTS AS GRAVE. It did not, and that was the worse half of the
+      // bug: the day was listed in the detail while `graveChanges` stayed at 0,
+      // so a summary reading that number called the diff clean over somebody
+      // losing a full day's pay. A day disappearing is strictly more serious
+      // than the paid hours on it moving, and only the second one was counted.
+      days.push({
+        date: before.date,
+        gone: true,
+        grave: true,
+        changes: [],
+        premiumBefore: (before.restViolation ? 1 : 0) + (before.mealViolation ? 1 : 0),
+        premiumAfter: 0,
+      });
       premiumBefore += (before.restViolation ? 1 : 0) + (before.mealViolation ? 1 : 0);
+      grave += 1;
       continue;
     }
     const d = diffDay(before, after);
@@ -130,7 +144,23 @@ export function diffSheet({ storedDays = [], freshDays = [] } = {}) {
 // fresh export to genuinely differ from the stored one, and no QSP fix has been
 // re-exported yet, so any rule written for it now would be untested against the
 // case it exists for. It is named in REUPLOAD-SCOPE.md as an open decision.
-export function classifyAnswers(answers, freshQuestions) {
+//
+// A FIFTH, WHICH IS DECIDABLE AND NOW DECIDED:
+//
+//   settled-by-removal  the question is gone, and the DAY IT WAS ABOUT lost its
+//                       hours or vanished entirely. The problem did not get
+//                       fixed, the work it was about got taken away.
+//
+// Without it, deleting the shift and punching the missing meal are the same
+// word. Both make the question disappear, and "settled" then reads as "they did
+// their part" over somebody whose paid hours just dropped. This is the exact
+// case a re-upload is most likely to produce: it is far easier to delete an
+// awkward shift in QSP than to correct it.
+//
+// `dayMoves` is optional and keyed by date - `{ "08/03/26": { grave, gone } }`,
+// which is what `diffSheet` already produces. Given none, the outcome set is
+// exactly what it was, so every existing caller is unaffected.
+export function classifyAnswers(answers, freshQuestions, dayMoves = null) {
   const counts = new Map();
   for (const q of freshQuestions || []) {
     const k = `${q.kind}|${q.date || ""}`;
@@ -141,13 +171,25 @@ export function classifyAnswers(answers, freshQuestions) {
     const kind = String(a.kind || "").replace(/^q_/, "");
     const key = `${kind}|${a.date || ""}`;
     const n = counts.get(key) || 0;
+    let outcome = n === 0 ? "settled" : n === 1 ? "still-asked" : "ambiguous";
+    // WHY THE QUESTION WENT, not just that it went. Only ever applied to
+    // "settled": a question that is still being asked has not been settled by
+    // anything, and an ambiguous one cannot be attributed at all.
+    const moved = a.date && dayMoves ? dayMoves[a.date] : null;
+    if (outcome === "settled" && moved && (moved.gone || moved.grave)) {
+      outcome = "settled-by-removal";
+    }
     out.push({
       id: a.id,
       kind,
       date: a.date || null,
       status: a.status,
       choice: a.choice ?? null,
-      outcome: n === 0 ? "settled" : n === 1 ? "still-asked" : "ambiguous",
+      outcome,
+      // what happened to the day underneath, so a reader does not have to go
+      // and join the two reports by hand to find out
+      dayGone: !!moved?.gone,
+      dayGrave: !!moved?.grave,
     });
   }
   return {
@@ -155,6 +197,9 @@ export function classifyAnswers(answers, freshQuestions) {
     stillAsked: out.filter((x) => x.outcome === "still-asked").length,
     settled: out.filter((x) => x.outcome === "settled").length,
     ambiguous: out.filter((x) => x.outcome === "ambiguous").length,
+    // counted separately rather than folded into `settled`, because the whole
+    // point is that they are not the same thing
+    settledByRemoval: out.filter((x) => x.outcome === "settled-by-removal").length,
   };
 }
 
@@ -167,14 +212,26 @@ export function classifyAnswers(answers, freshQuestions) {
 // the graves first, then whoever moves the most.
 export function diffBatch(people = []) {
   const rows = [];
-  let premiumBefore = 0, premiumAfter = 0, grave = 0, ambiguous = 0;
+  let premiumBefore = 0, premiumAfter = 0, grave = 0, ambiguous = 0, byRemoval = 0;
   for (const p of people) {
     const d = diffSheet({ storedDays: p.storedDays, freshDays: p.freshDays });
-    const a = classifyAnswers(p.answers, p.freshQuestions);
+    // THE TWO HALVES ARE JOINED HERE, and they were not before. The day diff
+    // knew a day had lost its hours and the answer classifier knew the question
+    // had gone, and neither told the other - so deleting the shift and fixing
+    // the punch came back as the same word.
+    const moves = {};
+    for (const day of d.days) {
+      moves[day.date] = {
+        gone: !!day.gone,
+        grave: !!day.grave || day.changes.some((c) => c.grave),
+      };
+    }
+    const a = classifyAnswers(p.answers, p.freshQuestions, moves);
     premiumBefore += d.premiumBefore;
     premiumAfter += d.premiumAfter;
     grave += d.graveChanges;
     ambiguous += a.ambiguous;
+    byRemoval += a.settledByRemoval;
     if (d.changedDays || p.answers?.length) rows.push({ who: p.who, ...d, answers: a });
   }
   rows.sort(
@@ -191,5 +248,10 @@ export function diffBatch(people = []) {
     premiumDelta: premiumAfter - premiumBefore,
     graveChanges: grave,
     ambiguousAnswers: ambiguous,
+    // THE HEADLINE WORTH READING FIRST on a re-upload. Not a subset of
+    // `settled`: these are the answers whose question went away because the day
+    // did, which is the shape a QSP "fix" takes when deleting the shift was
+    // easier than correcting it.
+    settledByRemoval: byRemoval,
   };
 }

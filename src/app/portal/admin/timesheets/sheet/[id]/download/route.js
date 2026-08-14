@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { renderSheet, RENDER_SELECT, BASES } from "@/lib/timesheet/render-sheet";
 import { answersByDate, confirmedFromAnswers } from "@/lib/timesheet/premium-split";
+import { loadBreakReasons } from "@/lib/timesheet/load-break-reasons";
 
 // gated download of one timesheet - the signed copy when it exists, otherwise
 // the generated one. same stream-it-ourselves pattern as the résumé route: Blob
@@ -62,6 +63,7 @@ export async function GET(req, { params }) {
   } else {
     const rendered = await renderSheet(ts, {
       basis,
+      breakReasons: await loadBreakReasons(ts),
       confirmed: confirmedFromAnswers(ts.corrections),
       answers: answersByDate(ts.corrections),
       // silence settles it once their date to reply has gone by. No due date

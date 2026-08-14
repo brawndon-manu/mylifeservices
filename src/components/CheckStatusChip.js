@@ -1,6 +1,7 @@
 import Avatar from "@/components/Avatar";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { checkStatus } from "@/lib/timesheet/check-status";
+import { isStale } from "@/lib/timesheet/mark-key";
 
 // WHERE THIS PERSON IS, as a label rather than a button.
 //
@@ -17,9 +18,15 @@ import { checkStatus } from "@/lib/timesheet/check-status";
 //
 // Renders nothing when unmarked. An empty slot is the honest picture of "not
 // started"; the row says so in words elsewhere and does not need it twice.
-export default function CheckStatusChip({ flag, size = 18 }) {
+export default function CheckStatusChip({ flag, size = 18, reach = null }) {
   const meta = checkStatus(flag?.status);
   if (!meta) return null;
+  // A MARK CAN BE OLDER THAN THE DATA IN FRONT OF IT. Somebody went through
+  // everything this person had as of the 9th; the batch now reaches the 12th.
+  // The mark is not wrong, it just does not cover the new days, and a chip
+  // that says Contacted without saying through when is the thing that makes a
+  // reviewer skip a row they should be looking at.
+  const stale = isStale(flag?.coveredThrough, reach);
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-semibold ${meta.chip}`}
@@ -33,6 +40,11 @@ export default function CheckStatusChip({ flag, size = 18 }) {
       )}
       <ContactViaIcon via={flag.via} />
       {meta.label}
+      {stale && (
+        <span className="font-normal opacity-70">
+          &middot; through {flag.coveredThrough}
+        </span>
+      )}
     </span>
   );
 }

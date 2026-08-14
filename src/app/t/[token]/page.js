@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { preferredName } from "@/lib/contacts";
 import TimesheetSigner from "./TimesheetSigner";
+import BreakReason from "./BreakReason";
+import { employeeAsk } from "@/lib/timesheet/break-answers";
 import ReportProblem from "./ReportProblem";
 import TimesheetQuestion from "./TimesheetQuestion";
 import TimesheetViews from "./TimesheetViews";
@@ -18,6 +20,7 @@ import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { restKey, restNameFor } from "@/lib/timesheet/rests";
 import { drawnBreaksFor } from "@/lib/timesheet/recorded-breaks";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
+import { answerBreakReason } from "@/app/portal/admin/timesheets/actions";
 import { getCurrentUser } from "@/lib/current-user";
 import { isSuper } from "@/lib/roles";
 import { sendModeSummary } from "@/lib/timesheet-mode";
@@ -156,6 +159,30 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // that keeps their pay. Measured on the live batch: 54 of 59 could sign
   // straight away, 5 gated on 6 questions.
   const gate = signingGate(questions, ts.corrections);
+
+  // A REASON SOMEBODY RECORDED ON THEIR BEHALF, WAITING ON THEM.
+  //
+  // Separate from `signingGate` on purpose. That gate deliberately lets a sheet
+  // be signed at any time, because leaving a question alone is the answer that
+  // keeps their pay and blocking on silence held sheets hostage. This is not
+  // silence: a reviewer has already put words in their mouth about a break they
+  // did not take, and those words are about to be printed on the document. So
+  // it is either checked or written before the sheet can be generated.
+  //
+  // Keyed on the period, so an answer taken against one export is still the
+  // question on the next.
+  const breakAsks = ts.userId
+    ? (await prisma.timesheetBreakAnswer.findMany({
+      where: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+      },
+      orderBy: { date: "asc" },
+    }))
+      .map((r) => ({ ...r, mode: employeeAsk(r) }))
+      .filter((r) => r.mode)
+    : [];
   // WHAT CANNOT BE ANSWERED YET, and what changing an answer would disturb.
   // A question whose answer moves the hours re-derives the day, so the break
   // questions for those same dates are asking about premiums that may be about
@@ -552,8 +579,28 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               sign" panel stood here. It went with the gate on 2026-08-12 - the
               sheet is signable at any time, so there is nothing to warn about.
               See `signingGate`. */}
+          {/* WHAT WE STILL NEED FROM THEM. One card per day, and the sheet does
+              not generate until every one is answered - see `breakAsks`. */}
+          {breakAsks.length > 0 && (
+            <div className="mb-6">
+              <p className="text-sm text-muted">
+                {breakAsks.length === 1
+                  ? "One thing to check before we can put your timesheet together."
+                  : `${breakAsks.length} things to check before we can put your timesheet together.`}
+              </p>
+              {breakAsks.map((ask) => (
+                <BreakReason
+                  key={ask.findingKey}
+                  token={token}
+                  ask={ask}
+                  submitAction={preview ? refuse : answerBreakReason}
+                />
+              ))}
+            </div>
+          )}
+
           <TimesheetSigner
-            key={`sheet-${answered.length}`}
+            key={`sheet-${answered.length}-${breakAsks.length}`}
             token={token}
             fileUrl={`/t/${token}/pdf?v=${answered.length}`}
             title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
@@ -564,8 +611,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                count is this person's own. */
             unansweredOptional={gate.optionalOpen}
             premiumOnSheet={standing.charged}
-            canSign={gate.canSign}
-            blocking={gate.blocking}
+            canSign={gate.canSign && breakAsks.length === 0}
+            // a COUNT, not a list - see TimesheetSigner. `signingGate` returns 0
+            // by design since the sheet became signable at any time, so this is
+            // the only thing that can put a number in it.
+            blocking={(gate.blocking || 0) + breakAsks.length}
           />
           {/* WHERE THE SIGNATURE WOULD GO, because that is the one thing this
               tab cannot supply. Mánu 2026-08-12: "The email them their link

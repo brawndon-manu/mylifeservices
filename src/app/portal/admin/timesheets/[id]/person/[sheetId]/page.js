@@ -15,6 +15,9 @@ import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
 import FlagButton from "../../checks/FlagButton";
 import CheckStatusChip from "@/components/CheckStatusChip";
+import { batchReach, markKey } from "@/lib/timesheet/mark-key";
+import BreakAnswer from "../../checks/BreakAnswer";
+import { answersByFinding } from "@/lib/timesheet/break-answers";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
 import PresenceProvider, { PresenceBar, PresenceCard } from "../../Presence";
@@ -154,14 +157,49 @@ export default async function PersonSchedulePage({ params, searchParams }) {
   // period heading, so the pairing is checked rather than assumed
   if (!sheet || sheet.batchId !== id) notFound();
 
-  const flag = await prisma.timesheetCheckFlag.findUnique({
-    where: { batchId_rowKey: { batchId: id, rowKey: `person-${sheet.id}` } },
-    // `status` is what the chip reads. Left off the select it comes back
+  // HOW FAR THE BATCH'S DATA REACHES. The rest report spans everybody on the
+  // batch and is the freshest thing in the export, so its last date is the
+  // batch's reach even though only one sheet is loaded here.
+  const reach = batchReach({ restsByDate: sheet.batch.restsByDate, timesheets: [sheet] });
+
+  // WHAT THEY HAVE ALREADY SAID ABOUT A MISSED BREAK, for this person across
+  // the whole period. Keyed the same way the marks are, so an answer taken on
+  // Wednesday's export is still the answer on Thursday's.
+  const breakAnswers = answersByFinding(
+    sheet.userId
+      ? await prisma.timesheetBreakAnswer.findMany({
+        where: {
+          periodFrom: sheet.batch.periodFrom,
+          periodTo: sheet.batch.periodTo,
+          personKey: sheet.userId,
+        },
+      })
+      : [],
+  );
+
+  // BY PERSON AND PERIOD, not by this upload's sheet id. findFirst rather than
+  // findUnique because there is no unique index on the new key yet: two uploads
+  // of one fortnight can each carry a mark for the same person, and collapsing
+  // them would mean deleting a row somebody made. Newest wins.
+  const flag = sheet.userId
+    ? await prisma.timesheetCheckFlag.findFirst({
+      where: {
+        periodFrom: sheet.batch.periodFrom,
+        periodTo: sheet.batch.periodTo,
+        personKey: sheet.userId,
+        findingKey: "person",
+      },
+      orderBy: { updatedAt: "desc" },
+      // `status` is what the chip reads. Left off the select it comes back
       // undefined, the chip renders as unset, and every mark on the batch
       // silently looks like nobody has started - which is the same trap
       // `restsUrl` sprang three times yesterday.
-      select: { rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true },
-  });
+      select: {
+        rowKey: true, status: true, via: true, flaggedName: true, flaggedImage: true,
+        coveredThrough: true,
+      },
+    })
+    : null;
 
   // EVERYTHING THE CHECKS SCREEN WOULD SAY ABOUT THEM, tied to the day it
   // happened on. Mánu 2026-08-12: "anything that would come up in the
@@ -318,8 +356,15 @@ export default async function PersonSchedulePage({ params, searchParams }) {
         ))}
         <div className="ml-auto self-center">
           <span className="flex items-center gap-2">
-            <CheckStatusChip flag={flag} />
-            <FlagButton batchId={id} rowKey={`person-${sheet.id}`} flag={flag} />
+            <CheckStatusChip flag={flag} reach={reach} />
+            <FlagButton
+              batchId={id}
+              rowKey={`person-${sheet.id}`}
+              personKey={sheet.userId}
+              findingKey="person"
+              coveredThrough={reach}
+              flag={flag}
+            />
           </span>
         </div>
       </div>
@@ -438,6 +483,21 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                 </p>
               )}
             </div>
+
+            {/* WHAT DID THEY SAY? The one thing none of the four exports
+                carries. One control per day rather than per violation: the
+                conversation is "did you get your breaks on the 3rd", not one
+                call per kind. */}
+            {list.length > 0 && sheet.userId && (
+              <BreakAnswer
+                batchId={id}
+                personKey={sheet.userId}
+                findingKey={`breaks-${d.date}`}
+                date={d.date}
+                kind={list.some((x) => String(x.kind).includes("meal")) ? "meal" : "rest"}
+                answer={breakAnswers.get(markKey(sheet.userId, `breaks-${d.date}`)) || null}
+              />
+            )}
 
             {list.length > 0 && (
               <ul className="mt-2 divide-y divide-border border-y border-border">

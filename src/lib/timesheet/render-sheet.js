@@ -17,6 +17,7 @@ import { renderCorrected } from "./render.js";
 import { restNameFor } from "./rests.js";
 import { addedOvertimeHours } from "./parse.js";
 import { applyAssumptions, premiumsFromDays } from "./premium-split.js";
+import { formatBreakComments } from "./break-answers.js";
 
 // THE THREE DOCUMENTS, and they are one renderer over three sets of day rows.
 //
@@ -77,7 +78,13 @@ export const RENDER_SELECT = {
 // document has to add up.
 const sum = (days, k) => Math.round(days.reduce((n, d) => n + (d[k] || 0), 0) * 100) / 100;
 
-export async function renderSheet(ts, { basis: asked = "projected", confirmed, answers, pastDue } = {}) {
+export async function renderSheet(ts, {
+  basis: asked = "projected", confirmed, answers, pastDue,
+  // why a break was not taken, the one thing no QSP export carries. Passed in
+  // rather than fetched: this file is a pure function of what the database
+  // already holds and it stays that way.
+  breakReasons = [],
+} = {}) {
   const d = ts.data || {};
   const stored = d.days || [];
   if (!stored.length) return null;
@@ -98,6 +105,11 @@ export async function renderSheet(ts, { basis: asked = "projected", confirmed, a
     basis === "corrected"
       ? applyAssumptions(stored, { confirmed, answers, pastDue })
       : stored;
+
+  // QSP prints its own numbered notes under the same heading. Normalised to an
+  // array here so the block below is one concatenation rather than a
+  // conditional inside an object literal.
+  const qspComments = Array.isArray(d.comments) ? d.comments : d.comments ? [d.comments] : [];
 
   return renderCorrected(
     {
@@ -129,7 +141,15 @@ export async function renderSheet(ts, { basis: asked = "projected", confirmed, a
       // there and rebuilt everywhere else. Reusing it on an assumed render would
       // print Aranda's nine meal days above a page that charges two of them.
       premiums: basis === "projected" ? d.premiums : premiumsFromDays(days),
-      comments: d.comments || null,
+      // QSP's own numbered notes, plus why a break was not taken - which QSP
+      // has no field for at all. One list, continuing one numbering, because
+      // to a reader it is one set of things somebody wrote about this period.
+      //
+      // ONE `comments` KEY. A second one was briefly added thirty lines above
+      // this, on the belief that nothing was setting it - a later duplicate in
+      // the same object literal silently wins, so the sheets that had notes
+      // kept printing them and the ones that did not lost the break reasons.
+      comments: [...qspComments, ...formatBreakComments(breakReasons, qspComments.length)],
       punchCorrections: d.punchCorrections || null,
       // the Breaks column: what the two reports RECORDED, never derived from
       // the punches
