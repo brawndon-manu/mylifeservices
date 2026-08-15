@@ -287,7 +287,7 @@ export default async function ChecksPage({ params }) {
                     </span>
                   ))}
                   <span className="ml-auto text-xs font-semibold text-brand">
-                    View their schedule →
+                    View their day by day →
                   </span>
                 </div>
               </Link>
@@ -338,7 +338,7 @@ export default async function ChecksPage({ params }) {
                     href={`/portal/admin/timesheets/${batch.id}/person/${e.timesheetId}`}
                     className="text-xs font-semibold text-brand underline underline-offset-4"
                   >
-                    View their schedule →
+                    View their day by day →
                   </Link>
                 ) : (
                   <span className="text-xs text-faint">

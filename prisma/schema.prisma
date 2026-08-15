@@ -1260,6 +1260,15 @@ model TimesheetBreakAnswer {
   // how we heard it: "phone" | "email" | "in-person"
   via        String?
 
+  // HOW MANY OF THEM THEY TOOK, and how many the day was short.
+  //
+  // A meal is one thing. A rest violation is "0 of 2 recorded", and the honest
+  // answers span the range: neither, or one of the two. Two buttons cannot say
+  // that, so the answer carries a count and the control offers every
+  // possibility the day allows. Null on a meal, which has nothing to count.
+  takenCount   Int?
+  missingCount Int?
+
   // scalars, like the check flags: this records who took the answer AT THE TIME
   // and must not follow a later rename or cascade away with an account.
   byId       String

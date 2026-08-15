@@ -23,6 +23,10 @@ import Avatar from "@/components/Avatar";
 // after ten minutes so a laptop left open overnight stops claiming somebody is
 // at work.
 const PresenceContext = createContext([]);
+// WHO IS IN WHICH UPLOAD. Only the batch list asks for this: it draws one card
+// per fortnight with the earlier uploads folded under it, and a face has to land
+// on the upload somebody is actually reading rather than on the newest one.
+const ByBatchContext = createContext({});
 const ReportContext = createContext(() => {});
 
 // TWO SPEEDS, because hover and "has it open" want different things.
@@ -61,6 +65,20 @@ export function usePresence() {
   return useContext(PresenceContext);
 }
 
+// everybody in ONE upload, by its id. Two uploads of a fortnight are two
+// documents with two sets of timesheet rows, so somebody open in the older one
+// is not open in this one.
+export function useBatchPresence(batchId) {
+  const byBatch = useContext(ByBatchContext);
+  return useMemo(() => byBatch[batchId] || [], [byBatch, batchId]);
+}
+
+// the whole map, for a caller that needs several uploads at once. A hook cannot
+// be called once per id in a loop, so the loop reads this instead.
+export function useAllBatchPresence() {
+  return useContext(ByBatchContext);
+}
+
 // tell the provider which card I am on. Null means "on the page, no card".
 export function useReportRow() {
   return useContext(ReportContext);
@@ -90,9 +108,21 @@ export function useRowActivity(rowKey) {
   );
 }
 
-export default function PresenceProvider({ batchId, rowKey = null, page = null, children }) {
+export default function PresenceProvider({
+  batchId, rowKey = null, page = null, children,
+  // READ WITHOUT ANNOUNCING YOURSELF. The batch list shows who is inside each
+  // period, and a poller that announced itself put you inside every batch you
+  // could see a card for - so the screen asking "is anybody in there" was what
+  // put somebody in there. Being on a list is not being in a batch.
+  watchOnly = false,
+  // the other uploads of the same pay period, for a watcher on the batch list.
+  // Somebody reading a superseded upload is still inside that fortnight, and
+  // the card must not hide them just because the fold is shut.
+  alsoBatchIds = null,
+}) {
   const router = useRouter();
   const [here, setHere] = useState([]);
+  const [byBatch, setByBatch] = useState({});
   // the batch's change counter as of the last poll. Starts unknown so the first
   // answer only records it - refreshing on arrival would be a reload nobody
   // asked for.
@@ -107,6 +137,11 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
   // null until the effect stamps it. Date.now() in a ref initialiser runs during
   // render, which is the impurity the note below is already about.
   const lastVisible = useRef(null);
+  // joined, because a new array literal every render would restart the poll
+  // timer on every render. The effect depends on the STRING and reads the list
+  // out of a ref, the same shape `what` already uses for rowKey and page.
+  const alsoKey = (alsoBatchIds || []).join(",");
+  const alsoRef = useRef([]);
   const beatNow = useRef(() => {});
   // held in a ref so changing what I am looking at does not restart the timer.
   // Synced in an effect rather than assigned during render: a ref written while
@@ -115,6 +150,9 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
   useEffect(() => {
     what.current = { rowKey, page };
   }, [rowKey, page]);
+  useEffect(() => {
+    alsoRef.current = alsoKey ? alsoKey.split(",") : [];
+  }, [alsoKey]);
 
   // what a card calls when a pointer rests on it or leaves it. Reports straight
   // away rather than waiting for the next beat - the whole point is that it
@@ -152,14 +190,19 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
           // everything there reports page "person", so hovering a DAY card came
           // back as "has this open" and drew the pulsing ring instead of the
           // hover border. Only the sender knows which it is.
-          body: JSON.stringify({
-            ...what.current,
-            rowKey: hovered.current ?? what.current.rowKey,
-            hover: hovered.current != null && !hiddenNow,
-            // said, not inferred: only this end knows whether the window is in
-            // front of them
-            hidden: hiddenNow,
-          }),
+          body: JSON.stringify(
+            watchOnly
+              // nothing about me, because I am not here - just the question
+              ? { watch: true, also: alsoRef.current }
+              : {
+                ...what.current,
+                rowKey: hovered.current ?? what.current.rowKey,
+                hover: hovered.current != null && !hiddenNow,
+                // said, not inferred: only this end knows whether the window is
+                // in front of them
+                hidden: hiddenNow,
+              },
+          ),
           cache: "no-store",
         });
         if (!res.ok) return;
@@ -167,6 +210,7 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
         if (!alive) return;
         const list = Array.isArray(data.here) ? data.here : [];
         setHere(list);
+        if (data.byBatch && typeof data.byBatch === "object") setByBatch(data.byBatch);
         someoneHere.current = list.length > 0;
 
         // SOMETHING ELSE MOVED, so re-fetch. `router.refresh` re-runs the server
@@ -221,6 +265,8 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
     // outlive the page that sent it. This is a courtesy on top of the timeout,
     // not the mechanism - a crash or a closed laptop never gets here.
     const leave = () => {
+      // a watcher left no entry, so there is nothing to clear
+      if (watchOnly) return;
       // `.catch` and not try/catch: the fetch is deliberately not awaited, so a
       // rejection arrives after this function has returned and a synchronous
       // catch never sees it. Unhandled, it surfaces as an unhandledRejection in
@@ -247,32 +293,64 @@ export default function PresenceProvider({ batchId, rowKey = null, page = null, 
       window.removeEventListener("pagehide", leave);
       leave();
     };
-  }, [batchId, router]);
+  }, [batchId, router, watchOnly, alsoKey]);
 
   return (
     <PresenceContext.Provider value={here}>
-      <ReportContext.Provider value={report}>{children}</ReportContext.Provider>
+      <ByBatchContext.Provider value={byBatch}>
+        <ReportContext.Provider value={report}>{children}</ReportContext.Provider>
+      </ByBatchContext.Provider>
     </PresenceContext.Provider>
   );
 }
 
-// WHO IS ON THIS PAGE AT ALL, for the top of a list.
+// WHO ELSE IS IN THIS BATCH, at the top of the screen.
+//
+// NOT just this page. Presence is mounted in the batch layout, so somebody on
+// the checks screen or the stats is in the batch as much as somebody on this
+// list - and the whole reason for the bar is that you should know they are here
+// without having to catch their pointer on a card. The per-card faces stay for
+// the precise answer: hovering a row, or having that person's own page open.
+//
+// It says WHICH screen, because "Gabe is here" and "Gabe is reading the checks"
+// are different amounts of use.
+const WHERE = {
+  batch: "on the batch screen",
+  people: "on this list",
+  person: "on somebody's day-by-day",
+  checks: "on the checks screen",
+  stats: "on the stats",
+  penalties: "on the penalties",
+  corrections: "on the corrections",
+  evidence: "on the evidence",
+  report: "on the report",
+  source: "on the source documents",
+};
+
 export function PresenceBar() {
   const here = usePresence();
   if (!here.length) return null;
+  const say = (p) => {
+    const where = WHERE[p.page] || "in this batch";
+    return `${p.name || "Somebody"} ${p.hidden ? `has it open in another window, ${where}` : `is ${where}`}`;
+  };
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs dark:border-sky-800/70 dark:bg-sky-950/30">
       <span className="flex items-center">
         {here.slice(0, 8).map((p) => (
-          <span key={p.userId} title={p.name || "somebody"} className="-ml-1.5 rounded-full ring-2 ring-surface first:ml-0">
+          <span
+            key={p.userId}
+            title={say(p)}
+            className={`-ml-1.5 rounded-full ring-2 ring-surface first:ml-0 ${p.hidden ? "opacity-50" : ""}`}
+          >
             <Avatar name={p.name} image={p.image} size={20} />
           </span>
         ))}
       </span>
       <span className="text-sky-800 dark:text-sky-300">
         {here.length === 1
-          ? `${here[0].name || "Somebody"} is on this batch right now`
-          : `${here.length} people are on this batch right now`}
+          ? say(here[0])
+          : `${here.length} other people are in this batch right now`}
       </span>
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Avatar from "@/components/Avatar";
 import { toggleRowFlag } from "./flag-actions";
+import { useReadOnly } from "../ReadOnly";
 
 // I WANT EYES ON THIS ONE, and so might somebody else.
 //
@@ -19,6 +20,10 @@ import { toggleRowFlag } from "./flag-actions";
 // The red outline on the card is drawn by the page, not here: it belongs to the
 // card and this component does not own that box.
 export default function RowFlagButton({ batchId, rowKey, flags = [], mine = false, me = null }) {
+  // A REPLACED UPLOAD IS READ ONLY. The server refuses every write on one
+  // regardless - this only stops the click being wasted, and says why.
+  const readOnly = useReadOnly();
+
   // what the click asked for, held only while the write is in flight
   const [want, setWant] = useState(undefined);
   const [pending, start] = useTransition();
@@ -43,10 +48,14 @@ export default function RowFlagButton({ batchId, rowKey, flags = [], mine = fals
       <button
         type="button"
         onClick={click}
-        disabled={pending}
+        disabled={pending || !!readOnly}
         aria-pressed={on}
         aria-label={on ? "Remove your flag" : "Flag this for a second look"}
-        title={on ? "Remove your flag" : "Flag this for a second look"}
+        title={
+          readOnly
+            ? "This upload has been replaced. Flag it on the current one."
+            : on ? "Remove your flag" : "Flag this for a second look"
+        }
         className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
           on
             ? "border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-950/50 dark:text-rose-300"

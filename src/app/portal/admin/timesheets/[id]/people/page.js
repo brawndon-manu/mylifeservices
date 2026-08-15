@@ -16,9 +16,9 @@ import BackLink from "@/components/BackLink";
 import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
-import PresenceProvider, { PresenceBar, PresenceCard } from "../Presence";
+import { PresenceBar, PresenceCard } from "../Presence";
 
-export const metadata = { title: "Everybody on this timesheet", robots: { index: false, follow: false } };
+export const metadata = { title: "All employees", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
@@ -287,14 +287,21 @@ export default async function AllPeoplePage({ params }) {
   return (
     // the list reports itself as on the BATCH but on no row - saying "somewhere
     // on this page" is honest, and guessing a row from scroll position is not.
-    <PresenceProvider batchId={id} page="people">
+    // NO PROVIDER HERE. It is mounted once in the batch layout so every
+    // screen under a batch counts as being in it - and a second one under the
+    // same user would overwrite the first on every beat, the two fighting
+    // over which page they were on. This reads from that one through context.
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <BackLink href={`/portal/admin/timesheets/${batch.id}/checks`}>Back to Data checks</BackLink>
       <PresenceBar />
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
+      {/* ALL EMPLOYEES. The link in says "View all employees" and the way back
+          says "Back to all employees", so the page says it too - it read
+          "Everybody on this timesheet" and was a third phrasing of one screen.
+          The period is on the line below, so nothing is lost by dropping it. */}
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Everybody on this timesheet
+        All employees
       </h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
         {period}
@@ -701,6 +708,5 @@ export default async function AllPeoplePage({ params }) {
         })}
       </div>
     </section>
-    </PresenceProvider>
   );
 }

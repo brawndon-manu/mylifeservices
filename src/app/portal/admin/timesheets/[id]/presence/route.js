@@ -45,31 +45,79 @@ export async function POST(req, { params }) {
   const rowKey = String(body.rowKey || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 80) || null;
   const page = String(body.page || "").replace(/[^a-z]/g, "").slice(0, 20) || null;
 
-  await heartbeat({
-    batchId: id,
-    // a hover is a pointer resting on a card; anything else is the page they
-    // have open. Only the sender can tell them apart - see the note in
-    // Presence.js about why this stopped being inferred.
-    hover: body.hover === true,
-    // WHETHER THE WINDOW IS IN FRONT OF THEM. Only the sender knows, same as
-    // `hover`. Left off here it arrives undefined and every hidden tab reads as
-    // somebody sitting looking at the screen - which is the difference between
-    // "he has it open" and "do not upload on top of him".
-    hidden: body.hidden === true,
-    userId: user.id,
-    name: preferredName(user) || user.name || user.email || null,
-    image: user.image || null,
-    rowKey,
-    page,
-  });
+  // WATCHING IS NOT BEING THERE.
+  //
+  // The batch list shows who is inside each period, which meant mounting a
+  // poller per card - and a poller announced itself, so opening the LIST put you
+  // inside every batch you could see a card for. Being on the list is not being
+  // in the batch, and a screen whose whole job is "is anybody in there" must not
+  // be what puts somebody in there.
+  //
+  // So a watcher reads and does not write. It gets the same answer and leaves no
+  // trace of itself.
+  if (body.watch !== true) {
+    await heartbeat({
+      batchId: id,
+      // a hover is a pointer resting on a card; anything else is the page they
+      // have open. Only the sender can tell them apart - see the note in
+      // Presence.js about why this stopped being inferred.
+      hover: body.hover === true,
+      // WHETHER THE WINDOW IS IN FRONT OF THEM. Only the sender knows, same as
+      // `hover`. Left off here it arrives undefined and every hidden tab reads as
+      // somebody sitting looking at the screen - which is the difference between
+      // "he has it open" and "do not upload on top of him".
+      hidden: body.hidden === true,
+      userId: user.id,
+      name: preferredName(user) || user.name || user.email || null,
+      image: user.image || null,
+      rowKey,
+      page,
+    });
+  }
 
-  const [here, version] = await Promise.all([
-    whoIsHere(id, { exceptUserId: user.id }),
+  // EVERY UPLOAD OF THE FORTNIGHT, NOT JUST THIS ONE.
+  //
+  // The batch list draws one card per pay period with the older uploads folded
+  // under it, and somebody reading a superseded upload is still inside that
+  // period - the card has to say so, or the fold hides a person. Bounded and
+  // stripped because it arrives from the browser.
+  //
+  // Deduped on the person, freshest wins: one human open in two uploads of the
+  // same fortnight is one face, not two.
+  const also = Array.isArray(body.also)
+    ? body.also
+      .map((x) => String(x).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40))
+      .filter(Boolean)
+      .slice(0, 12)
+    : [];
+
+  // GROUPED BY UPLOAD, NOT MERGED INTO ONE LIST.
+  //
+  // This merged them at first, which put somebody reading the 12:36 AM upload on
+  // the live card. They are in that upload, not this one - two uploads of one
+  // fortnight are two different documents with two different sets of timesheet
+  // rows, and a face has to say which one somebody is actually looking at.
+  const gather = async () => {
+    const ids = [id, ...also];
+    const lists = await Promise.all(ids.map((b) => whoIsHere(b, { exceptUserId: user.id })));
+    const byBatch = {};
+    ids.forEach((b, i) => { byBatch[b] = lists[i]; });
+    return byBatch;
+  };
+
+  const [byBatch, version] = await Promise.all([
+    gather(),
     // WHAT ELSE MOVED. The poll is already happening, so the counter rides back
     // with it: a client whose number changed re-fetches the page, which is how
     // somebody else's note or flag appears without a reload.
     getBatchVersion(id),
   ]);
 
-  return NextResponse.json({ here, version }, { headers: { "Cache-Control": "no-store" } });
+  // `here` stays the answer for THIS batch, which is what every screen inside a
+  // batch asks for. `byBatch` is the extra the list needs, so it can put a face
+  // on the upload somebody is actually in rather than on the newest one.
+  return NextResponse.json(
+    { here: byBatch[id] || [], byBatch, version },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

@@ -12,7 +12,7 @@
 // deliberate - these are payroll documents, and a hours figure should never
 // move because of an unreviewed message.
 //
-// this module is deliberately free of any pdf/parse import so the signing page
+// this module is deliberately free of any pdf/parse import so the timesheet review page
 // can use the labels without dragging the engine into the browser bundle.
 // `recomputeSheet` takes applyOvertime as an argument for the same reason.
 

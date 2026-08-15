@@ -20,9 +20,13 @@ import BreakAnswer from "../../checks/BreakAnswer";
 import { answersByFinding } from "@/lib/timesheet/break-answers";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
-import PresenceProvider, { PresenceBar, PresenceCard } from "../../Presence";
+import { PresenceBar, PresenceCard } from "../../Presence";
 
-export const metadata = { title: "Their schedule", robots: { index: false, follow: false } };
+// THE DAY BY DAY. Two different buttons pointed here - "View their schedule"
+// from the checks screen and "View their day by day" from the all-employees
+// list - so one page had two names depending on how you arrived. Day by day is
+// the one that says what is on it.
+export const metadata = { title: "Their day by day", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
@@ -320,7 +324,10 @@ export default async function PersonSchedulePage({ params, searchParams }) {
     // THE ONE PAGE WHERE "WHICH CARD ARE THEY ON" IS EXACT. They opened one
     // person; that is the row. On a scrolling list it would be a guess from
     // scroll position, so the list reads this rather than inventing its own.
-    <PresenceProvider batchId={id} rowKey={`person-${sheet.id}`} page="person">
+    // NO PROVIDER HERE. It is mounted once in the batch layout so every
+    // screen under a batch counts as being in it - and a second one under the
+    // same user would overwrite the first on every beat, the two fighting
+    // over which page they were on. This reads from that one through context.
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
       <BackLink href={back.href}>{back.label}</BackLink>
       <PresenceBar />
@@ -404,7 +411,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
       )}
 
       <h2 className="mt-9 text-xs font-bold uppercase tracking-wide text-faint">
-        Their schedule{" "}
+        Day by day{" "}
         <span className="text-[11px] font-semibold normal-case tracking-normal tabular-nums">
           {v.days.length}
         </span>
@@ -484,20 +491,35 @@ export default async function PersonSchedulePage({ params, searchParams }) {
               )}
             </div>
 
-            {/* WHAT DID THEY SAY? The one thing none of the four exports
-                carries. One control per day rather than per violation: the
-                conversation is "did you get your breaks on the 3rd", not one
-                call per kind. */}
-            {list.length > 0 && sheet.userId && (
-              <BreakAnswer
-                batchId={id}
-                personKey={sheet.userId}
-                findingKey={`breaks-${d.date}`}
-                date={d.date}
-                kind={list.some((x) => String(x.kind).includes("meal")) ? "meal" : "rest"}
-                answer={breakAnswers.get(markKey(sheet.userId, `breaks-${d.date}`)) || null}
-              />
-            )}
+            {/* WHAT DID THEY SAY? The one thing none of the four QSP exports
+                carries.
+                ONE CONTROL PER VIOLATION, not per day. A day can be short a meal
+                AND two rests, and those are two different conversations with two
+                different answers - a single pair of buttons could only record one
+                of them. The rest control also offers every count the day allows,
+                because "took one of the two" is a real answer. */}
+            {sheet.userId && list.map((x) => {
+              const isRest = x.kind === "rest-not-taken";
+              // three kinds, three keys - a late meal and a missing meal are
+              // different questions about the same day and must not share a row
+              const slot = isRest ? "rest" : x.kind === "meal-late" ? "meallate" : "meal";
+              const key = `break-${slot}-${d.date}`;
+              return (
+                <BreakAnswer
+                  key={x.kind}
+                  batchId={id}
+                  personKey={sheet.userId}
+                  findingKey={key}
+                  date={d.date}
+                  kind={isRest ? "rest" : x.kind === "meal-late" ? "meal-late" : "meal"}
+                  // how many the day is SHORT. `short` is the rest shortfall; a
+                  // meal is always the one.
+                  missing={isRest ? (x.short || 1) : 1}
+                  label={VIOLATION_KINDS[x.kind].label}
+                  answer={breakAnswers.get(markKey(sheet.userId, key)) || null}
+                />
+              );
+            })}
 
             {list.length > 0 && (
               <ul className="mt-2 divide-y divide-border border-y border-border">
@@ -591,6 +613,5 @@ export default async function PersonSchedulePage({ params, searchParams }) {
         </p>
       </div>
     </section>
-    </PresenceProvider>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { setCheckFlag } from "./flag-actions";
 import { CHECK_STATUSES, CONTACT_VIAS, MARK_OPTIONS, asksHow, statusAfter, normalizeCheckStatus } from "@/lib/timesheet/check-status";
+import { useReadOnly } from "../ReadOnly";
 
 // THE ACT OF MARKING. Where they currently ARE is `CheckStatusChip`, which is a
 // label and sits elsewhere on the row.
@@ -32,6 +33,10 @@ export default function FlagButton({
   // how far the data on this screen reached, stamped on the mark as its horizon
   coveredThrough = null,
 }) {
+  // A REPLACED UPLOAD IS READ ONLY. The server refuses every write on one
+  // regardless - this only stops the click being wasted, and says why.
+  const readOnly = useReadOnly();
+
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState(null);
   const [pending, start] = useTransition();
@@ -57,6 +62,7 @@ export default function FlagButton({
     });
 
   const choose = (key) => {
+    if (readOnly) return;
     // pressing the state it is already in takes it off, which is the undo. Only
     // where there is no second step - "contacted" always means a new contact.
     if (statusAfter(key) === current && !asksHow(key)) return write(null);
@@ -67,9 +73,10 @@ export default function FlagButton({
   if (!open) {
     return (
       <button
+        title={readOnly ? "This upload has been replaced. Mark them on the current one." : undefined}
         type="button"
         onClick={() => setOpen(true)}
-        disabled={pending}
+        disabled={pending || !!readOnly}
         className="inline-flex items-center gap-1 rounded-full border border-dashed border-border-strong px-2.5 py-1 text-[11px] font-semibold text-faint transition hover:border-brand hover:text-brand disabled:opacity-50"
       >
         <span aria-hidden="true" className="text-sm leading-none">+</span>

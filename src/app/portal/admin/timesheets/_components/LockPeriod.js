@@ -24,7 +24,7 @@ export default function LockPeriod({ batchId, locked, lockedByName, lockedAt, co
       setErr(null);
       const res = await setBatchLocked(batchId, next);
       if (res?.ok) { setReopening(false); router.refresh(); }
-      else setErr(res?.error || "failed");
+      else setErr(res?.say || res?.error || "failed");
     });
 
   if (locked) {

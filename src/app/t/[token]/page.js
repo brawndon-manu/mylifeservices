@@ -35,7 +35,7 @@ import { restMealPolicyLink } from "@/lib/policy-form";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Your timesheet · My Life Services",
+  title: "Timesheet review · My Life Services",
   robots: { index: false, follow: false },
 };
 
@@ -180,7 +180,16 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       },
       orderBy: { date: "asc" },
     }))
-      .map((r) => ({ ...r, mode: employeeAsk(r) }))
+      .map((r) => ({
+        ...r,
+        mode: employeeAsk(r),
+        // HOW LATE IT ACTUALLY WAS, which lives on the day rather than on the
+        // answer. "5 hours 30 minutes into the day" is a fact somebody can check
+        // against their own memory; "meal-late" is not.
+        lateMinutes: r.kind === "meal-late"
+          ? (ts.data?.days || []).find((d) => d.date === r.date)?.mealStartedAfterMin ?? null
+          : null,
+      }))
       .filter((r) => r.mode)
     : [];
   // WHAT CANNOT BE ANSWERED YET, and what changing an answer would disturb.
@@ -381,8 +390,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
         My Life Services
       </p>
+      {/* THE TIMESHEET REVIEW PAGE. One name, used here, in the tab title, in
+          the link admins follow to it, and in every comment that refers to it -
+          it had five ("their own page", "the employee page", "the corrections
+          page", "the signing page", "the sign-off page") and no way to say which
+          screen anybody meant. */}
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Your timesheet
+        Review your timesheet
       </h1>
       <p className="mt-2 text-sm text-muted">
         {who} · {period}

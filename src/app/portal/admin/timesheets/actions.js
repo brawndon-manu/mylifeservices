@@ -34,6 +34,7 @@ import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/iden
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
 import { signTimesheetToken } from "@/lib/timesheet-token";
+import { supersededBy, supersededByForTimesheet, refusal } from "@/lib/timesheet/superseded";
 import { sendTimesheet, isLiveSend, liveSendConfigured } from "@/lib/timesheet-send";
 import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
 import { notifyOversight } from "@/lib/notify";
@@ -1024,6 +1025,13 @@ export async function clearTimesheetAssignment(timesheetId) {
 // deadline come from the review screen. test mode redirects every address.
 export async function sendTimesheets(batchId, formData) {
   await requireTimesheetAccess();
+  // A REPLACED UPLOAD IS READ ONLY, and this is the worst one to allow: an
+  // old export emails figures the current one has already moved. Redirected
+  // rather than returned, because this action redirects on every path.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) redirect(`/portal/admin/timesheets/${newer.id}?superseded=1`);
+  }
 
   const onlyId = formData.get("timesheetId");
   const message = (formData.get("message") || "").toString().trim().slice(0, 2000) || null;
@@ -1381,6 +1389,12 @@ export async function resolveCorrection(correctionId, decision, formData) {
 // in a payroll document with no explanation is worse than the error.
 export async function overrideDayHours(timesheetId, formData) {
   const user = await requireTimesheetAccess();
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
 
   const date = (formData.get("date") || "").toString().slice(0, 12);
   const raw = (formData.get("hours") || "").toString().trim();
@@ -1440,6 +1454,12 @@ export async function overrideDayHours(timesheetId, formData) {
 export async function classifyMiscTime(timesheetId, date, kind) {
   const user = await requireTimesheetAccess();
   if (!["pto", "sick", "worked"].includes(kind)) return { ok: false, error: "badkind" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
@@ -1487,6 +1507,12 @@ export async function classifyMiscTime(timesheetId, date, kind) {
 // there by a different decision and is none of this one's business.
 export async function clearMiscClassification(timesheetId, date) {
   await requireTimesheetAccess();
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     include: {
@@ -1519,6 +1545,12 @@ export async function clearMiscClassification(timesheetId, date) {
 
 export async function clearDayOverride(timesheetId, date) {
   await requireTimesheetAccess();
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     select: { id: true, batchId: true, overrides: true },
@@ -1560,6 +1592,12 @@ export async function clearDayOverride(timesheetId, date) {
 export async function resetBatchAnswers(batchId) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
 
   const sheets = await prisma.timesheet.findMany({
     where: { batchId },
@@ -1604,6 +1642,12 @@ export async function resetBatchAnswers(batchId) {
 export async function resetTimesheetAnswers(timesheetId) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
@@ -1623,6 +1667,12 @@ export async function resetTimesheetAnswers(timesheetId) {
 
 export async function recomputeTimesheet(timesheetId) {
   await requireTimesheetAccess();
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
@@ -2384,6 +2434,12 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
 // This is the gate on Send all. Until it is set, a period cannot be emailed.
 export async function setBatchLocked(batchId, locked) {
   const user = await requireTimesheetAccess();
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
 
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
