@@ -35,6 +35,10 @@ const MEAL = "#b5d9fa";
 // means the same thing the question beside it means - a rest is PAID and on the
 // clock, so it can only have happened inside a shift - said without a sentence.
 const REST_OK = "#c3e6a4";
+// and an edge dark enough to read as a border against the wash, the way every
+// work shade is darker than the block it draws. Taken down from REST rather than
+// picked, so the two cannot drift apart.
+const REST_EDGE = "#caa93a";
 
 // ONE FAMILY, SEVERAL SHADES. Mánu 2026-08-12: "Make Misc just a different shade
 // of the current blue. make admin a bit darker blue? make self determination a
@@ -71,7 +75,23 @@ const isMisc = (service) => /misc/i.test(service || "");
 // service too, so on the one entry that means "none of the above" it is three
 // characters of nothing. Everything else stays verbatim, because the whole point
 // of printing the service is that it matches the document they can open.
-const serviceLabel = (service) => (isMisc(service) ? "Misc" : service);
+// AND WHAT IT TURNED OUT TO BE, once somebody has said.
+//
+// A block reading "Misc" is the question, not the answer. The day header already
+// carries a chip once the time is classified, but the chip is about the day and
+// the block is the thing sitting on the hours, so the picture kept asking after
+// it had been answered.
+//
+// ONE FIELD, EITHER ROUTE. `miscKind` is written by `patchesFor` and both the
+// reviewer control and the employee's own card go through it, so a label read
+// off it cannot disagree with whoever answered.
+//
+// `miscWorked` is the fallback for anything stored before the kind was written
+// alongside the flag.
+const MISC_LABELS = { pto: "Misc - PTO", sick: "Misc - Sick Pay", worked: "Misc Service" };
+const miscLabel = (day) =>
+  MISC_LABELS[day?.miscKind] || (day?.miscWorked ? MISC_LABELS.worked : "Misc");
+const serviceLabel = (service, day) => (isMisc(service) ? miscLabel(day) : service);
 
 // A MISC BLOCK OF TEN MINUTES OR LESS IS A BREAK SOMEBODY TOOK.
 //
@@ -367,7 +387,10 @@ function gapsOf(day, shifts, scheduled = []) {
 function spoken(day, shifts, rests, staged, scheduled) {
   const bits = shifts.map((s) => {
     const booked = serviceFor(scheduled, s);
-    return `worked ${hhmm(s.from)} to ${hhmm(s.to)}${booked ? `, ${serviceLabel(booked)}` : ""}`;
+    // the same label the block carries. A screen reader hearing "Misc" on a day
+    // the sighted page says is PTO is the one place a second spelling would not
+    // be noticed.
+    return `worked ${hhmm(s.from)} to ${hhmm(s.to)}${booked ? `, ${serviceLabel(booked, day)}` : ""}`;
   });
   for (const g of gapsOf(day, shifts, scheduled)) {
     bits.push(
@@ -551,10 +574,19 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
     const a = rec.min;
     const z = a != null && rec.minutes != null ? a + rec.minutes : null;
     if (a == null || z == null || z <= a) {
-      // NO CHIP FOR THIS ONE ANY MORE. A span that ends before it begins used
-      // to get a line above the column saying what the record held; the block
-      // itself carries those times in a red outline now, which is one telling
-      // rather than two and puts it where the break actually is.
+      // A SPAN THAT ENDS BEFORE IT BEGINS, so there is nothing to draw.
+      //
+      // The chip was dropped outright when the red outline arrived, on the
+      // grounds that the BLOCK carries the recorded times now - one telling
+      // rather than two. That is only true where the block actually does:
+      // `attention` is set on a backwards row and NOT on a repair, because a
+      // repair has a card asking about it. So a repaired row whose raw span
+      // runs backwards - 11:30p to 11:40a, -710 minutes - lost its chip and
+      // gained no outline, and the times the record holds were then stated
+      // nowhere on the day at all.
+      if (!r.attention) {
+        said.notes.push({ from: rec.from, to: rec.to, why: rec.why, unreadable: true });
+      }
       continue;
     }
     if (a >= axis.from && z <= axis.to) { said.drawn.push({ from: a, to: z }); continue; }
@@ -720,6 +752,18 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
           // caption and in the sentence beside the picture; the service name is
           // only ever here.
           const serviceOnly = s.lanes > 1 && !twoLines && !!booked;
+          // A MISC BREAK IS A BREAK, SO IT IS DRAWN AS ONE.
+          //
+          // It was in the Misc shade of the work blues, which put a ten minute
+          // rest in the same family as the four hour shift either side of it -
+          // so the one block on the day that is NOT work read as work, and on a
+          // day with no rest row filed there was nothing in the picture saying a
+          // break happened at all except the word.
+          //
+          // Yellow, not the green a rest gets for sitting where it belongs. The
+          // green is for a rest laid on top of worked time; this block IS the
+          // scheduled time, so there is nothing under it to mix with.
+          const miscBreak = miscBreakFor(day.miscBreaks, s, booked);
 
           return (
             <div
@@ -766,8 +810,8 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
                 // width - the clash case is the only one that splits
                 left: `${(s.lane * 99) / s.lanes}%`,
                 width: `${99 / s.lanes}%`,
-                borderLeftColor: edgeFor(booked),
-                background: washFor(booked),
+                borderLeftColor: miscBreak ? REST_EDGE : edgeFor(booked),
+                background: miscBreak ? `${REST}30` : washFor(booked),
               }}
             >
               {/* a service that could not borrow its extra height from a gap is
@@ -782,7 +826,11 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
                   )}
                   {booked && (
                     <span className="max-w-full truncate text-[12px] leading-[15px] text-muted">
-                      {miscBreakFor(day.miscBreaks, s, booked) ? "Misc Break" : serviceLabel(booked)}
+                      {/* a ten minute Misc block is a break and says so, whether
+                          or not the day's Misc has been classified - see
+                          `miscBreakFor`. Only the longer blocks are the ones the
+                          PTO / sick / worked question is about. */}
+                      {miscBreak ? "Misc Break" : serviceLabel(booked, day)}
                     </span>
                   )}
                 </>

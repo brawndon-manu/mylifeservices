@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageTimesheets } from "@/lib/roles";
+import { canManageTimesheets, isSuper } from "@/lib/roles";
+import { signTimesheetToken } from "@/lib/timesheet-token";
 import { restKey, restNameFor, restRowTimes, clockMin, serviceFit } from "@/lib/timesheet/rests";
 import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
@@ -165,6 +166,30 @@ export default async function PersonSchedulePage({ params, searchParams }) {
   // batch and is the freshest thing in the export, so its last date is the
   // batch's reach even though only one sheet is loaded here.
   const reach = batchReach({ restsByDate: sheet.batch.restsByDate, timesheets: [sheet] });
+
+  // HOW TO REACH THEM, on the page where the reason to reach them is.
+  //
+  // Every one of these findings ends in a conversation - "if they took it, it
+  // needs logging in QuickSolve" is something somebody has to say to them - and
+  // the number for it was two screens away in Contacts. Read here rather than
+  // put on the sheet's own select, because it belongs to the ACCOUNT and a sheet
+  // with no account matched has nobody to show.
+  const contact = sheet.userId
+    ? await prisma.user.findUnique({
+      where: { id: sheet.userId },
+      select: {
+        name: true, preferredFirstName: true, preferredLastName: true,
+        email: true, phone: true, title: true, workingHours: true,
+      },
+    })
+    : null;
+
+  // WHAT THEY SEE, OPENED AS THEM. Same gate as the all-employees list: the
+  // token is only minted for SUPER, and `?preview=1` refuses every write on the
+  // far side - except on a rehearsal batch, where the whole point is that it
+  // behaves like the real thing.
+  const canPreview = isSuper(user?.role);
+  const previewToken = canPreview ? signTimesheetToken(sheet.id) : null;
 
   // WHAT THEY HAVE ALREADY SAID ABOUT A MISSED BREAK, for this person across
   // the whole period. Keyed the same way the marks are, so an answer taken on
@@ -340,6 +365,61 @@ export default async function PersonSchedulePage({ params, searchParams }) {
         {b.partialPeriod && " · partial period"} · {v.days.length}{" "}
         {v.days.length === 1 ? "day" : "days"} worked
       </p>
+
+      {/* THEIR DETAILS AND THEIR PAGE, together, because they are the two halves
+          of the same next step: every finding on this screen ends in somebody
+          ringing them about it, and the thing worth having open while you do is
+          what they can see. */}
+      {(contact || previewToken) && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-border bg-surface-2 px-4 py-3">
+          {contact && (
+            <>
+              {/* NO NAME HERE. It is the h1 six lines up, and the export's
+                  spelling is the one that matters on this screen anyway - it is
+                  what every rest row is matched on. The title stays: it is the
+                  one thing on this row the heading does not already say. */}
+              {contact.title && (
+                <span className="text-sm font-semibold text-foreground">{contact.title}</span>
+              )}
+              {contact.phone && (
+                <a
+                  href={`tel:${contact.phone.replace(/[^\d+]/g, "")}`}
+                  className="text-sm font-medium text-brand underline-offset-2 hover:underline"
+                >
+                  {contact.phone}
+                </a>
+              )}
+              {contact.email && (
+                <a
+                  href={`mailto:${contact.email}`}
+                  className="text-sm font-medium text-brand underline-offset-2 hover:underline"
+                >
+                  {contact.email}
+                </a>
+              )}
+              {contact.workingHours && (
+                <span className="text-sm text-muted">{contact.workingHours}</span>
+              )}
+            </>
+          )}
+          {!contact && (
+            <span className="text-sm text-muted">
+              No portal account is matched to this sheet, so there is nobody to contact and no
+              page to open.
+            </span>
+          )}
+          {previewToken && (
+            <a
+              href={`/t/${previewToken}?preview=1`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand"
+            >
+              Preview their timesheet review page →
+            </a>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 flex flex-wrap gap-x-10 gap-y-4 rounded-xl border border-border bg-surface p-5">
         {[
@@ -521,6 +601,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                   // how many the day is SHORT. `short` is the rest shortfall; a
                   // meal is always the one.
                   missing={isRest ? (x.short || 1) : 1}
+                  noRoom={!!x.noRoom}
                   label={VIOLATION_KINDS[x.kind].label}
                   answer={breakAnswers.get(markKey(sheet.userId, key)) || null}
                 />
@@ -538,7 +619,14 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                     {/* what to say to them. the only reason this screen exists,
                         and it comes from the kind table so the list and this
                         page cannot end up phrasing it differently. */}
-                    <span className="italic text-faint">{VIOLATION_KINDS[x.kind].ask}</span>
+                    {/* WHAT TO SAY TO THEM, and on a day that could not have held
+                        a meal that is a different sentence: the usual one sends
+                        somebody to QuickSolve to punch one in, and there is
+                        nothing there to punch. From the kind table either way, so
+                        the list and this page cannot phrase it differently. */}
+                    <span className="italic text-faint">
+                      {(x.noRoom && VIOLATION_KINDS[x.kind].askNoRoom) || VIOLATION_KINDS[x.kind].ask}
+                    </span>
                   </li>
                 ))}
               </ul>

@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { isCheckStatus, isContactVia, asksHow, statusAfter, isMarkAction } from "@/lib/timesheet/check-status";
-import { bumpBatchVersion } from "@/lib/timesheet-presence";
+import { bumpBatchVersion, bumpSheetVersion } from "@/lib/timesheet-presence";
 import { isBreakAnswer, isHeardVia } from "@/lib/timesheet/break-answers";
 import { supersededBy, supersededByForTimesheet, refusal } from "@/lib/timesheet/superseded";
 
@@ -301,6 +301,27 @@ export async function deleteRowComment(id) {
 // KEYED ON (period, person, finding), never on the timesheet. Corrections are
 // timesheet-scoped and die on every re-upload, which is what stranded 70
 // contact marks. A reason taken off a phone call must survive the next export.
+// THE SHEET THIS ANSWER IS ABOUT, so the employee's own page can follow it.
+//
+// A break answer is keyed on the PERIOD and the person, not on a timesheet - it
+// outlives the upload it was taken against, which is the whole point of it. The
+// page that has to move is still one sheet's, so it is looked up here.
+//
+// Best effort, like every other bump: a missed one costs somebody a manual
+// refresh and must never cost the answer itself.
+async function bumpSheetFor(batchId, personKey) {
+  if (!batchId || !personKey) return;
+  try {
+    const ts = await prisma.timesheet.findFirst({
+      where: { batchId, userId: personKey },
+      select: { id: true },
+    });
+    if (ts?.id) await bumpSheetVersion(ts.id);
+  } catch {
+    // see above
+  }
+}
+
 export async function setBreakAnswer({
   batchId, personKey, findingKey, date = null, kind = "meal",
   answer, reason = null, via = null,
@@ -337,6 +358,7 @@ export async function setBreakAnswer({
       where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey },
     });
     await bumpBatchVersion(batchId);
+    await bumpSheetFor(batchId, personKey);
     revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
     revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
     return { ok: true, answer: null };
@@ -390,6 +412,7 @@ export async function setBreakAnswer({
   });
 
   await bumpBatchVersion(batchId);
+  await bumpSheetFor(batchId, personKey);
   revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${batchId}/people`);
   return { ok: true, answer, reason: fields.reason };

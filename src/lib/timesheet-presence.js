@@ -138,6 +138,41 @@ export async function bumpBatchVersion(batchId) {
   }
 }
 
+// AND THE SAME COUNTER FOR ONE SHEET.
+//
+// The employee's own review page has to move when a reviewer changes something
+// while they are on the phone about it. The batch counter would do it, but it
+// bumps for all sixty people on the period, so every open review page would
+// re-render every time anybody else's sheet was touched.
+//
+// Keyed on the timesheet, so a page only refreshes for its own person. Same
+// counter, same best-effort rule, same reason it is not a postgres query.
+const sheetKey = (timesheetId) =>
+  timesheetId ? `mls:ts:sv:${String(timesheetId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 64)}` : null;
+
+export async function bumpSheetVersion(timesheetId) {
+  const key = sheetKey(timesheetId);
+  if (!key) return;
+  try {
+    await redis.incr(key);
+    await redis.expire(key, TTL_SECONDS);
+  } catch {
+    // a missed bump costs somebody a manual refresh, never the write itself
+  }
+}
+
+export async function getSheetVersion(timesheetId) {
+  const key = sheetKey(timesheetId);
+  if (!key) return 0;
+  try {
+    return Number(await redis.get(key)) || 0;
+  } catch {
+    // unknown reads as 0, which never differs from itself, so a redis blip
+    // means no refreshes rather than a refresh loop
+    return 0;
+  }
+}
+
 export async function getBatchVersion(batchId) {
   const key = versionKey(batchId);
   if (!key) return 0;

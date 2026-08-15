@@ -151,3 +151,74 @@ test("the example is one somebody would recognise from their own day", () => {
   assert.match(BA, /appointments with clients that did not make room for the break/);
   assert.doesNotMatch(BA, /back-to-back clients, no cover to step away/);
 });
+
+// A REPAIRED ROW WHOSE RAW SPAN RUNS BACKWARDS STILL HAS TO SAY SO.
+//
+// Two repairs fail two different ways and only one of them was covered:
+//
+//   2:50a -> 3p    +730 min, starts before the axis -> an edge chip
+//   11:30p -> 11:40a  -710 min, ends before it begins -> nothing to draw
+//
+// The chip for the second was removed when the red outline arrived, on the
+// grounds that the BLOCK carries the recorded times now. That is only true where
+// it does: `attention` is set on a backwards row and NOT on a repair, because a
+// repair has a card asking about it. So the -710 case lost its chip, gained no
+// outline, and the times the record holds were stated nowhere on the day.
+const CAL = fs.readFileSync("src/app/t/[token]/DayCalendar.js", "utf8");
+
+test("the chip is suppressed only where the block carries the times itself", () => {
+  const branch = CAL.slice(CAL.indexOf("if (a == null || z == null || z <= a)"), CAL.indexOf("if (a == null || z == null || z <= a)") + 1400);
+  assert.match(branch, /if \(!r\.attention\)/, "it must depend on whether the block shows them");
+  assert.match(branch, /said\.notes\.push/, "and still push a note when it does not");
+});
+
+test("a repair never gets the outline, so it always needs the chip", () => {
+  // pinned together because the two decisions are one decision: if `attention`
+  // ever starts covering repairs, this branch has to change with it
+  const RB = fs.readFileSync("src/lib/timesheet/recorded-breaks.js", "utf8");
+  assert.match(RB, /attention: !row\.repair && !!row\.reversed/);
+});
+
+// THE REPAIR CARD HAS TO SAY WHICH TIME IT MEANS.
+//
+// "Yes, that is when I took it" sat under a heading saying the entry looks
+// mis-entered, beside a record reading 11:30 PM, our reading of 11:30 AM and a
+// block drawn at 11:30a. Four times on screen and one word - "that" - pointing
+// at none of them. Read one way it confirms the time we are calling wrong.
+test("the repair card names the time in the answer", () => {
+  // a node rather than a string now, so the AM/PM can be marked - see
+  // `markMeridiem`. Every repair on both batches is an AM/PM slip, so those two
+  // characters are the whole of the correction.
+  assert.match(CARD_SRC, /label: <>Yes, I took it at \{markMeridiem\(q\.proposed\.from\)\}<\/>/);
+  assert.match(CARD_SRC, /function markMeridiem/);
+  assert.doesNotMatch(CARD_SRC, /"Yes, that is when I took it"/);
+});
+
+test("and its heading asks rather than states the finding", () => {
+  // a heading that names the fault reads as though the answer is already
+  // settled, which is the opposite of what a question is for
+  assert.match(CARD_SRC, /title: "Did you take a break at this time\?"/);
+});
+
+// EVERY QUESTION KIND HAS TO GET ITS OWN COPY.
+//
+// `nothingDocumented` and `nothingDocumentedMeal` were listed one case too
+// early in `copyFor` and fell through to the Misc card. So a missed LUNCH
+// rendered as "Time on your schedule marked as Misc", printing the day's paid
+// hours as hours of Misc - both kinds carry `row.hours` and it means a different
+// thing on each. Verduzco 08/12 read "6.18 hours down as Misc" on a sheet with
+// no Misc time on any day of any upload, and as the batched card's heading it
+// sat above the entire day list.
+test("the nothing-documented kinds do not fall through to the Misc card", () => {
+  const at = (k) => CARD_SRC.indexOf(`case "${k}":`);
+  const meal = at("nothingDocumentedMeal");
+  const rest = at("nothingDocumentedRest");
+  const misc = at("miscTime");
+  assert.ok(meal > 0 && rest > 0 && misc > 0, "all three cases still exist");
+  // the meal label has to sit with the rest case, not before miscTime
+  assert.ok(meal < rest, "the meal label falls into the rest case");
+  assert.ok(meal > misc, `the meal label is still above miscTime at ${misc}`);
+  // and nothing between them but the labels themselves
+  const between = CARD_SRC.slice(meal, rest);
+  assert.doesNotMatch(between, /return \{/, "something returns before it reaches the rest copy");
+});

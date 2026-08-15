@@ -102,7 +102,7 @@ export default function MiscClassify({
           type="button"
           onClick={undo}
           disabled={pending}
-          className="mt-2 rounded-md border border-border bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-muted disabled:opacity-50"
+          className="mt-2 rounded-md border border-border bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-brand hover:text-brand disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Working..." : "Change this"}
         </button>
@@ -133,10 +133,20 @@ export default function MiscClassify({
             type="button"
             onClick={() => pick(k)}
             disabled={pending}
-            className={`rounded-md border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+            /* HOVER, BECAUSE THERE WAS NONE. Three buttons that look identical
+               whether the pointer is on them or not, on a control that writes a
+               figure - so the only feedback before the click was the cursor.
+               `hover:border-brand hover:text-brand` is what small buttons use
+               across the portal, and Hours worked keeps its own colour instead:
+               it is the one answer that can put a premium ON, the fuchsia says
+               so everywhere else on this screen, and turning it blue on hover
+               would drop that exactly while somebody is deciding.
+               Pointer events off while saving, or the button lights up under a
+               press it is currently ignoring. */
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition disabled:pointer-events-none disabled:opacity-50 ${
               k === "worked"
-                ? "border-fuchsia-400 bg-surface text-fuchsia-700 dark:border-fuchsia-700 dark:text-fuchsia-300"
-                : "border-border-strong bg-surface-2 text-foreground"
+                ? "border-fuchsia-400 bg-surface text-fuchsia-700 hover:border-fuchsia-500 hover:bg-fuchsia-50 dark:border-fuchsia-700 dark:text-fuchsia-300 dark:hover:border-fuchsia-500 dark:hover:bg-fuchsia-950/40"
+                : "border-border-strong bg-surface-2 text-foreground hover:border-brand hover:bg-surface-3 hover:text-brand"
             }`}
           >
             {k === "pto" ? "PTO" : k === "sick" ? "Sick pay" : "Hours worked"}
@@ -158,9 +168,14 @@ export default function MiscClassify({
   );
 }
 
+// EVERY REFUSAL HAS WORDS. The two that did not came out as "try again", which
+// is the wrong instruction for both of them: one is a judgement about what was
+// sent and the other is about a sheet that has moved underneath the screen.
 function errorText(e) {
   if (e === "signed") return "This sheet is signed, so its figures cannot move.";
   if (e === "nomisc") return "This day has no Misc time stored. Recompute the batch first.";
   if (e === "noday") return "That day is not on this sheet.";
+  if (e === "gone") return "This sheet is no longer there. Reload the page.";
+  if (e === "badkind") return "That is not one of the three answers.";
   return "That did not save. Try again.";
 }

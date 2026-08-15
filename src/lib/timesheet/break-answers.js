@@ -117,6 +117,98 @@ export function breakFindingKey(kind, date) {
   return `break-${slot}-${date}`;
 }
 
+// WHICH ANSWERS OWE A SENTENCE, IN ONE PLACE.
+//
+// The browser and the action both enforce this, and they used to hold a copy of
+// the map each. Two copies that disagree give you a button that saves nothing,
+// or one that refuses something the server would have taken - so there is one
+// map now and both import it. This module is already what both sides share for
+// the finding key, and it imports nothing, so it can be reached from either.
+//
+// THE RULE IS: ANY ANSWER THAT RECORDS A BREAK AS NOT TAKEN OWES A WHY. The why
+// is the one half no export has a field for, and an answer without it records
+// that something was missed and cannot say what caused it.
+//
+// The exceptions are the answers where nothing was lost. `restOutsideScheduled`
+// declines with "the recorded time was wrong" and gives the real one, so the
+// break happened. `restTooLongOffClock` moves no break in any of its three
+// outcomes. Neither has anything to explain.
+//
+// A LATE LUNCH HANGS OFF THE OTHER ANSWER. The break happened; confirming it
+// really did start that late is what stands the finding up, so the sentence
+// goes on the yes. A map keyed on "no" alone asked the wrong half of that card.
+//
+// A PARTIAL OWES ONE TOO, since 2026-08-15. It was excluded on the grounds that
+// a partial is about the tens they DID get, which is true of the TIMES it
+// collects and not of the day: taking one of two leaves one nobody took, and
+// that one is owed a reason exactly like a day where they took neither. It is
+// what `stillMissing` above has always said.
+export const REASON_ON = {
+  nothingDocumentedMeal: ["no"],
+  nothingDocumentedRest: ["no", "partial"],
+  mealLate: ["yes"],
+  // the four that say a break never happened and collected nothing until now
+  repair: ["no"],
+  restNoTimes: ["no"],
+  // these two never ask "did you take it", and answering them still records a
+  // break as gone: it was a rest and not the meal, so there was no meal; it was
+  // not their rest, so the rest credit comes off.
+  restIsMealLength: ["no"],
+  shortMealRest: ["no"],
+};
+
+export function reasonOwedOn(kind, choice) {
+  if (!kind || !choice) return false;
+  return (REASON_ON[kind] || []).includes(choice);
+}
+
+// AND WHICH BREAK THE SENTENCE IS ABOUT, so it is filed under the right slot.
+//
+// More than one question can land on the same day and the same slot - a repair
+// and a day with nothing recorded are both about that day's rests - and they
+// share the row on purpose. The premium is one hour per workday a break was not
+// provided, so the day is the unit, and one reason per day per break is the
+// grain that matches it. What must not happen is the second one overwriting the
+// first: see the write path, which fills an empty reason and never replaces a
+// sentence somebody already typed.
+const REASON_SLOT = {
+  nothingDocumentedMeal: "meal",
+  restIsMealLength: "meal",
+  nothingDocumentedRest: "rest",
+  repair: "rest",
+  restNoTimes: "rest",
+  shortMealRest: "rest",
+  mealLate: "meal-late",
+};
+
+// WHAT A RESET IS ALLOWED TO TAKE OFF A BREAK ANSWER.
+//
+// Reset deletes the question answers and rebuilds the sheet. Reasons live in
+// another table, keyed on the PERIOD and the person rather than on the sheet -
+// which is what makes an answer survive a re-upload - so nothing about a reset
+// reached them and they sat there afterwards looking like they had.
+//
+// THE TWO HALVES OF A ROW HAVE DIFFERENT OWNERS. `reason` may be ours, written
+// down off a phone call; `confirmedText` is always theirs. A reset is about
+// undoing what the EMPLOYEE said, so a row they created goes, and a row a
+// reviewer recorded keeps its sentence and loses only the confirmation - which
+// puts it back to "we wrote this down, please check it".
+//
+// `byId` is the discriminator: the employee's own path stamps their user id, and
+// a reviewer's stamps the reviewer's. It stays the reviewer's when the employee
+// later confirms, which is exactly right - that row was never theirs to delete.
+export function resetAction(row, userId) {
+  if (!row) return null;
+  const mine = !!userId && row.byId === userId;
+  if (mine) return "delete";
+  if (row.confirmedAt || row.confirmedText) return "unconfirm";
+  return null;
+}
+
+export function reasonSlotFor(kind) {
+  return REASON_SLOT[kind] || null;
+}
+
 // and back again, so a stored row can say which violation it belongs to without
 // the caller parsing the string itself
 export function breakFindingKind(findingKey) {
@@ -186,9 +278,28 @@ export function formatBreakComments(answers = [], startAt = 0) {
 // `takenCount` is what separates them, and it is the number that ends up on the
 // timesheet - "took 1 of the 2 they were owed" is a different sentence from
 // "took neither".
-export function answerOptionsFor({ kind, missing = 1 }) {
+export function answerOptionsFor({ kind, missing = 1, noRoom = false }) {
   const n = Math.max(1, Number(missing) || 1);
   const thing = kind === "rest" ? "rest period" : "meal break";
+
+  // A DAY WITH NO GAP LONG ENOUGH FOR A MEAL CANNOT HAVE HAD ONE.
+  //
+  // "They took it, needs punching" is an answer nobody can act on there: there
+  // is nothing to punch, no time it could have been, and pressing it records a
+  // claim the day does not support. So the only true answer is the one left.
+  //
+  // MEAL ONLY. A ten fits almost anywhere, so a packed day is still a day
+  // somebody could have taken their rests on and failed to log them.
+  if (noRoom && kind === "meal") {
+    return [{
+      key: "not-taken:0",
+      answer: "not-taken",
+      takenCount: 0,
+      label: "Confirm not taken",
+      tone: "green",
+      asksReason: true,
+    }];
+  }
 
   // A LATE MEAL WAS TAKEN. Asking whether they took it is the wrong question -
   // the record says they did, after the fifth hour. What is actually in doubt is

@@ -18,7 +18,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { resetTimesheetAnswers } from "@/app/portal/admin/timesheets/actions";
 
-export default function PreviewReset({ timesheetId, name, answers = 0, signed }) {
+export default function PreviewReset({ timesheetId, name, answers = 0, reasons = 0, signed }) {
+  // ONE NUMBER FOR WHAT IT ACTUALLY REMOVES. Question answers and the reasons
+  // they typed live in two tables and the button only ever counted one of them.
+  const total = answers + reasons;
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState(null);
   const [pending, start] = useTransition();
@@ -32,7 +35,7 @@ export default function PreviewReset({ timesheetId, name, answers = 0, signed })
           onClick={() => setOpen(true)}
           className="rounded-lg border border-amber-400 px-3 py-1.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
         >
-          {answers > 0 ? `Reset their ${answers} answer${answers === 1 ? "" : "s"}` : "Reset this sheet"}
+          {total > 0 ? `Reset their ${total} answer${total === 1 ? "" : "s"}` : "Reset this sheet"}
         </button>
         {err && (
           <p className="mt-1.5 text-xs text-rose-700 dark:text-rose-400">
@@ -46,12 +49,22 @@ export default function PreviewReset({ timesheetId, name, answers = 0, signed })
   return (
     <div className="mt-3 border-t border-amber-300 pt-3 dark:border-amber-800">
       <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-        {answers > 0
-          ? `Delete ${name}'s ${answers} answer${answers === 1 ? "" : "s"}?`
+        {total > 0
+          ? `Delete ${name}'s ${total} answer${total === 1 ? "" : "s"}?`
           : `Rebuild ${name}'s sheet from the upload?`}
       </p>
       <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-800 dark:text-amber-300">
         <li>Their sheet goes back to the figures the upload produced.</li>
+        {reasons > 0 && (
+          /* WHOSE WORDS GO AND WHOSE STAY. A reason a reviewer took off a phone
+             call is not the employee's to delete and not this button's either,
+             so it keeps its sentence and loses only their tick - which puts it
+             back to being a question for them. */
+          <li>
+            Anything <b>they</b> wrote about a missed break goes. A reason{" "}
+            <b>we</b> recorded stays, and goes back to waiting on them to check it.
+          </li>
+        )}
         {signed && (
           <li>
             <b>Their signature goes too</b> &mdash; a rebuild un-signs, because

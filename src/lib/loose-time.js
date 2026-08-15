@@ -56,3 +56,26 @@ export function formatTimeDisplay(hhmm) {
   const h12 = h % 12 || 12;
   return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
 }
+
+// THE CLOCK SHORTHAND, SAID OUT LOUD.
+//
+// Times are drawn all over the timesheet screens in a compact form the reports
+// use - "12p", "11:50a", "3:08p" - which is right on a calendar block and in a
+// column of facts, where it is a readout and the density is the point.
+//
+// It is wrong inside a sentence. An answer button reading "I did take it at 12p"
+// asks somebody to decode a record format in the middle of a plain English
+// choice they are about to commit to.
+//
+// NOT `formatTimeDisplay`, which pads to "12:00 PM" - the padding and the
+// seconds-style zeroes are for reading a typed time back for checking, and they
+// are heavier than a sentence wants. This only ever adds the letter that was
+// already implied.
+export function spokenTime(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  // already spelled out, by us or by the source
+  if (/[ap]\.?m\.?$/i.test(s)) return s;
+  const m = /^(.*?)([ap])$/i.exec(s);
+  return m ? `${m[1]}${m[2].toLowerCase()}m` : s;
+}

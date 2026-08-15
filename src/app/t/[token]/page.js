@@ -5,7 +5,7 @@ import { preferredName } from "@/lib/contacts";
 import { sheetDisplayName } from "@/lib/timesheet/display-name";
 import TimesheetSigner from "./TimesheetSigner";
 import BreakReason from "./BreakReason";
-import { employeeAsk } from "@/lib/timesheet/break-answers";
+import { employeeAsk, breakFindingKey, resetAction } from "@/lib/timesheet/break-answers";
 import ReportProblem from "./ReportProblem";
 import TimesheetQuestion from "./TimesheetQuestion";
 import TimesheetViews from "./TimesheetViews";
@@ -15,7 +15,9 @@ import {
   submitTimesheetCorrections,
   answerTimesheetQuestion,
 } from "@/app/portal/admin/timesheets/actions";
-import { correctionLabel } from "@/lib/timesheet/corrections";
+import {
+  correctionLabel, employeeResolution, resolutionTakesReason,
+} from "@/lib/timesheet/corrections";
 import {
   buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
 } from "@/lib/timesheet/questions";
@@ -30,6 +32,7 @@ import { sendModeSummary } from "@/lib/timesheet-mode";
 import { sendTimesheets } from "@/app/portal/admin/timesheets/actions";
 import PreviewSend from "./PreviewSend";
 import PreviewReset from "./PreviewReset";
+import LiveRefresh from "./LiveRefresh";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
@@ -222,7 +225,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   //
   // Keyed on the period, so an answer taken against one export is still the
   // question on the next.
-  const breakAsks = ts.userId
+  // EVERY ANSWER, NOT ONLY THE ONES STILL WAITING. `breakAsks` below is the
+  // filtered half - a row whose reason is written and checked has no `mode` and
+  // drops out, which is right for the cards asking a question and wrong for the
+  // panel reading their answers back. That panel needs exactly the rows this one
+  // throws away.
+  const breakAnswers = ts.userId
     ? (await prisma.timesheetBreakAnswer.findMany({
       where: {
         periodFrom: ts.batch.periodFrom,
@@ -241,8 +249,51 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           ? (ts.data?.days || []).find((d) => d.date === r.date)?.mealStartedAfterMin ?? null
           : null,
       }))
-      .filter((r) => r.mode)
     : [];
+  const breakAsks = breakAnswers.filter((r) => r.mode);
+  // THEIR OWN WORDS, BY THE DAY AND THE BREAK THEY ARE ABOUT.
+  //
+  // `confirmedText` is what the employee typed. `reason` may be ours, taken off
+  // a call, and an unchecked one must not be read back to them as something
+  // they said - the card asking them to check it is still on the page. So ours
+  // only counts once they have confirmed it.
+  const saidByFinding = new Map();
+  for (const r of breakAnswers) {
+    const words = r.confirmedText || (r.confirmedAt ? r.reason : null);
+    if (words) saidByFinding.set(r.findingKey, words);
+  }
+  // and the same thing as a plain object, because a Map does not survive the
+  // trip to a client component
+  const reasonsOnRecord = Object.fromEntries(saidByFinding);
+  // THE ANSWER ROW AND THE REASON ROW ARE KEYED DIFFERENTLY, so this is the join.
+  // A correction is `q_<kind>` on a date; a reason is `breakFindingKey` on the
+  // same date. `nothingDocumented` is the pre-split kind and could be either
+  // break, so both slots are tried rather than guessing one.
+  const REASON_SLOT = {
+    nothingDocumentedMeal: ["meal"],
+    nothingDocumentedRest: ["rest"],
+    nothingDocumented: ["meal", "rest"],
+    mealLate: ["meal-late"],
+  };
+  const reasonFor = (c) => {
+    const slots = REASON_SLOT[String(c.kind || "").replace(/^q_/, "")] || [];
+    for (const slot of slots) {
+      const said = saidByFinding.get(breakFindingKey(slot, c.date));
+      if (said) return said;
+    }
+    return null;
+  };
+  // the question a correction answered, where the sentence needs something the
+  // correction row does not carry. Only the two-lunches card does: which of its
+  // three outcomes a decline was is on `choice`, but WHICH decline sentence is
+  // right depends on the day having carried two lunches, and that is on the
+  // question. Everything else ignores the second argument.
+  const questionFor = (c) => {
+    const kind = String(c.kind || "").replace(/^q_/, "");
+    return questions.find(
+      (q) => q.kind === kind && (q.dates || [q.date]).includes(c.date),
+    ) || null;
+  };
   // WHAT CANNOT BE ANSWERED YET, and what changing an answer would disturb.
   // A question whose answer moves the hours re-derives the day, so the break
   // questions for those same dates are asking about premiums that may be about
@@ -434,6 +485,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     // overlapping blocks need without stacking the answer options beside them.
     // See the note on the calendar column in DayByDay.
     <section className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
+      {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
+          reaches this page within a few seconds, without either of them saying
+          reload - which is the difference between fixing something while an
+          employee is on the phone and talking them through a refresh. Renders
+          nothing; see LiveRefresh. */}
+      <LiveRefresh token={token} />
       {/* SAYING WHOSE PAGE THIS IS. Without it a preview is indistinguishable
           from your own sheet - same layout, same questions, somebody else's
           hours - and the first thing anybody does on a page like this is click
@@ -460,6 +517,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             timesheetId={ts.id}
             name={ts.sourceName}
             answers={answered.length}
+            /* what a reset would take off a break answer as well, counted
+               through the same rule the action applies - see `resetAction`. The
+               button said "reset their N answers" with N counting corrections
+               only, so it promised less than it now does. */
+            reasons={breakAnswers.filter((r) => resetAction(r, ts.userId)).length}
             signed={!!ts.signedAt}
           />
         </div>
@@ -616,6 +678,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                    days to hang them on. */
                 breakAsks={breakAsks}
                 breakAction={act(answerBreakReason)}
+                reasonsOnRecord={reasonsOnRecord}
               />
             }
             detailed={[
@@ -661,6 +724,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 disturbs={deps.disturbs}
                 standing={standing}
                 submitAction={act(answerTimesheetQuestion)}
+                reasonsOnRecord={reasonsOnRecord}
               />
               )),
             ]}
@@ -669,25 +733,45 @@ export default async function SignTimesheetPage({ params, searchParams }) {
 
           {/* WHAT THEY TOLD US, back on the page. A confirmation that leaves no
               trace is indistinguishable from one nobody gave, and two of these
-              questions rebuilt the sheet they are about to sign. */}
+              questions rebuilt the sheet they are about to sign.
+
+              IT NO LONGER PRINTS `resolutionNote`. That field is payroll's audit
+              note - it says what the answer did to the premium and cites the
+              case the hour comes from - and this panel was putting it in front
+              of the employee, which is the one thing nothing they read may do.
+              `employeeResolution` builds the same row's sentence for them: their
+              own answer, their own times, and nothing about what it is worth.
+              The stored note is untouched and every admin screen still shows it.
+
+              AND THEIR REASON UNDER IT, where the answer was that a break was
+              missed. That is the half no export carries, they typed it, and it
+              is about to be printed on the sheet below - so it reads back here
+              rather than only appearing on the document after they sign. */}
           {Object.keys(answers).length > 0 && (
             <div className="mt-5 rounded-xl border border-border bg-surface-2 p-5">
               <p className="text-sm font-semibold text-foreground">
                 What you have told us about this timesheet
               </p>
               <ul className="mt-2.5 space-y-2">
-                {answered.map((c) => (
-                  <li key={`${c.kind}-${c.date}`} className="text-sm text-muted">
-                    <span className="font-semibold text-foreground">{c.date}</span>
-                    {" - "}
-                    <span className={c.status === "declined" ? "text-emerald-700 dark:text-emerald-400" : ""}>
-                      {c.status === "accepted" ? "confirmed" : "corrected"}
-                    </span>
-                    {c.resolutionNote && (
-                      <span className="block text-xs opacity-80">{c.resolutionNote}</span>
-                    )}
-                  </li>
-                ))}
+                {answered.map((c) => {
+                  const said = employeeResolution(c, questionFor(c));
+                  const words = resolutionTakesReason(c) ? reasonFor(c) : null;
+                  return (
+                    <li key={`${c.kind}-${c.date}`} className="text-sm text-muted">
+                      <span className="font-semibold text-foreground">{c.date}</span>
+                      {" - "}
+                      <span className={c.status === "declined" ? "text-emerald-700 dark:text-emerald-400" : ""}>
+                        {c.status === "accepted" ? "confirmed" : "corrected"}
+                      </span>
+                      {said && <span className="block text-xs opacity-80">{said}</span>}
+                      {words && (
+                        <span className="mt-1 block border-l-2 border-border-strong pl-2 text-xs italic opacity-80">
+                          &ldquo;{words}&rdquo;
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

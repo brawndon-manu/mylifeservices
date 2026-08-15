@@ -24,7 +24,9 @@ import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildQuestions, patchesFor, restTimeFits, mealTimeFits } from "@/lib/timesheet/questions";
 // the one spelling of a break answer's key, shared with the admin day-by-day so
 // a reason taken on a call and a reason they typed land on the same row
-import { breakFindingKey } from "@/lib/timesheet/break-answers";
+import {
+  breakFindingKey, reasonOwedOn, reasonSlotFor, resetAction,
+} from "@/lib/timesheet/break-answers";
 import { batchForceTo } from "@/lib/timesheet-mode";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
@@ -38,6 +40,9 @@ import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/iden
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
 import { signTimesheetToken } from "@/lib/timesheet-token";
+// so the employee's own page moves when a reviewer changes something while they
+// are on the phone about it - see LiveRefresh
+import { bumpSheetVersion, bumpBatchVersion } from "@/lib/timesheet-presence";
 import { supersededBy, supersededByForTimesheet, refusal } from "@/lib/timesheet/superseded";
 import { sendTimesheet, isLiveSend, liveSendConfigured } from "@/lib/timesheet-send";
 import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
@@ -1526,6 +1531,14 @@ export async function classifyMiscTime(timesheetId, date, kind) {
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  // and their own page, which is where the classification actually shows up as
+  // a label on the calendar and as a question that stops being asked
+  revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  // AND THE REVIEWER SCREENS, so a day view shows what is still outstanding
+  // without anybody reloading it - see the note on `bumpBatchVersion`.
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
   return { ok: true };
 }
@@ -1550,8 +1563,36 @@ export async function clearMiscClassification(timesheetId, date) {
   if (!ts) return { ok: false, error: "gone" };
   if (ts.signedAt) return { ok: false, error: "signed" };
 
+  // NOTHING TO CLEAR IS NOT A FAILURE.
+  //
+  // This refused with a code the card had no words for, so it came out as "that
+  // did not save, try again" - advice that cannot work, because the refusal is a
+  // judgement about the state and trying again sends the same thing.
+  //
+  // It is reachable: the panel shows a classification read off the DAY, and the
+  // override it was written into is a separate thing that could go missing
+  // underneath it. Pressing Change this then asked to clear something already
+  // gone and reported a save failure over a sheet that was fine.
+  //
+  // So an absent override is only an error if the day still disagrees with it.
+  // Where the day is clear too, the state is already what they asked for.
   const existing = ts.overrides?.[date];
-  if (!existing) return { ok: false, error: "gone" };
+  if (!existing) {
+    const day = (ts.data?.days || []).find((d) => d.date === date);
+    if (!day?.miscKind && !day?.miscWorked) return { ok: true, already: true };
+    // the day says classified and nothing holds the classification, so rebuild
+    // from what is actually on record and let the two agree again
+    const res = await rebuildSheetFor({ ...ts, overrides: ts.overrides || {} }, ts.overrides || {});
+    if (!res?.ok) return res;
+    revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+    revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  // AND THE REVIEWER SCREENS, so a day view shows what is still outstanding
+  // without anybody reloading it - see the note on `bumpBatchVersion`.
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+    return { ok: true, reconciled: true };
+  }
   const next = { ...ts.overrides };
   const rest = { ...existing };
   // the fields the patch writes come from the engine's own list, so a sixth one
@@ -1567,6 +1608,14 @@ export async function clearMiscClassification(timesheetId, date) {
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  // and their own page, which is where the classification actually shows up as
+  // a label on the calendar and as a question that stops being asked
+  revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  // AND THE REVIEWER SCREENS, so a day view shows what is still outstanding
+  // without anybody reloading it - see the note on `bumpBatchVersion`.
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
   return { ok: true };
 }
@@ -1686,11 +1735,54 @@ export async function resetTimesheetAnswers(timesheetId) {
   const { count } = await prisma.timesheetCorrection.deleteMany({
     where: { timesheetId: ts.id, kind: { startsWith: "q_" } },
   });
+
+  // AND WHAT THEY SAID ABOUT A BREAK, which is not a correction and lives in
+  // another table - see `resetAction`, which decides per row whether it is
+  // theirs to delete or a reviewer's to keep. A reason recorded off a phone call
+  // survives with its confirmation cleared, so it goes back to being a question.
+  let reasons = 0;
+  if (ts.userId) {
+    const rows = await prisma.timesheetBreakAnswer.findMany({
+      where: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+      },
+      select: { id: true, byId: true, confirmedAt: true, confirmedText: true },
+    });
+    const drop = rows.filter((r) => resetAction(r, ts.userId) === "delete").map((r) => r.id);
+    const unconfirm = rows.filter((r) => resetAction(r, ts.userId) === "unconfirm").map((r) => r.id);
+    if (drop.length) {
+      await prisma.timesheetBreakAnswer.deleteMany({ where: { id: { in: drop } } });
+    }
+    if (unconfirm.length) {
+      await prisma.timesheetBreakAnswer.updateMany({
+        where: { id: { in: unconfirm } },
+        data: { confirmedAt: null, confirmedText: null },
+      });
+    }
+    reasons = drop.length + unconfirm.length;
+  }
   const res = await rebuildSheetFor({ ...ts, overrides: {} }, {});
   if (!res?.ok) return res;
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
-  return { ok: true, answers: count };
+  // AND THE PAGE THE ANSWERS WERE GIVEN ON, which this did not do.
+  //
+  // Only `answerTimesheetQuestion` revalidated it, so a reset left every OTHER
+  // tab serving the sheet from before the reset - the answer still listed, the
+  // question still gone. The tab that pressed the control refreshed itself and
+  // looked right, which is what made it read as the database not having changed.
+  //
+  // The token is derived rather than passed: this action is reached by id, and
+  // signing is deterministic, so it is the same path the employee opens.
+  revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  // AND THE REVIEWER SCREENS, so a day view shows what is still outstanding
+  // without anybody reloading it - see the note on `bumpBatchVersion`.
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  return { ok: true, answers: count, reasons };
 }
 
 export async function recomputeTimesheet(timesheetId) {
@@ -2046,21 +2138,11 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // says a break was missed and cannot say why, which is the exact hole this
   // work exists to close. Mánu 2026-08-14 chose required over optional.
   //
-  // A "partial" is a decline too and is deliberately NOT in here: they took some
-  // of their tens, and the card that collects the times is not the place to
-  // demand a sentence about the ones they did not.
-  //
-  // WHICH ANSWER OWES IT IS PER KIND, not always the "no". On a missed break the
-  // "no" IS the violation. On a LATE LUNCH the break happened - confirming it
-  // really was that late is what stands the violation up - so the sentence hangs
-  // off the "yes" there, and a set keyed on "no" would have demanded it from the
-  // wrong half of that card. Same map as `REASON_ON` in TimesheetQuestion, and
-  // the two disagreeing means a button that saves nothing.
-  const REASON_ON = {
-    nothingDocumentedMeal: "no",
-    nothingDocumentedRest: "no",
-    mealLate: "yes",
-  };
+  // ONE MAP, SHARED WITH THE BROWSER. It was a copy each and the two could
+  // drift, which gives you a button that saves nothing or one that refuses what
+  // the server would have taken. `REASON_ON` in break-answers.js is the rule
+  // now, with the reasoning for every entry in it, including which answer owes
+  // the sentence on each kind and why a partial owes one.
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: tsId },
@@ -2223,7 +2305,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     // the why, checked against the question we re-derived rather than against
     // whatever the client said the question was
     const why = String(a.reason ?? "").trim().slice(0, 1000);
-    if (REASON_ON[q.kind] === a.choice && !why) {
+    if (reasonOwedOn(q.kind, a.choice) && !why) {
       // WHICH DAY, not just that one of them is short. This card commits every
       // day it holds in a single write, so a bare code points at thirteen at
       // once and the person has to hunt for the one that stopped it.
@@ -2256,16 +2338,12 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // ONLY ON A "no". Answering "yes, I took them" does NOT delete an existing
   // row: a reviewer's record of a phone call is not the employee's to erase,
   // and the two genuinely disagreeing is a thing for a person to settle.
-  const BREAK_KIND = {
-    nothingDocumentedMeal: "meal",
-    nothingDocumentedRest: "rest",
-    // a late meal is its own key - `break-meallate-DATE` - because a late meal
-    // and a missing meal are different questions about the same day and must
-    // not land on one row
-    mealLate: "meal-late",
-  };
+  // WHICH SLOT A KIND'S SENTENCE IS FILED UNDER lives in break-answers.js with
+  // the rule that decides who owes one. A late meal keeps its own key, because a
+  // late meal and a missing meal are different questions about the same day and
+  // must not land on one row.
   const writeBreakAnswer = async (q, date, why) => {
-    const kind = BREAK_KIND[q.kind];
+    const kind = reasonSlotFor(q.kind);
     const findingKey = breakFindingKey(kind, date);
     // no account behind the sheet means no person to hang it off, which is the
     // same reason `answerBreakReason` refuses one
@@ -2287,6 +2365,22 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     // too, because a comment quoting it breaks it exactly as the code would.
     const prior = await prisma.timesheetBreakAnswer.findUnique({ where });
     if (prior) {
+      // THEIR OWN WORDS, REPLACEABLE BY THEM.
+      //
+      // Two different questions can be about the same day and the same break: a
+      // rest entry we could not read and a day with nothing recorded are both
+      // that day's rests, and they share this row on purpose, because the day is
+      // the unit. 12 day/slot pairs across the two live batches are like this.
+      //
+      // This refused to touch an existing sentence at all, so a second question
+      // could not discard the first one's. That protected the right thing the
+      // wrong way: the person it made the sentence read only to was the one who
+      // wrote it, and there was no way to correct a reason once given.
+      //
+      // The card seeds the box with whatever is on record now, so nothing can be
+      // replaced without being on screen first - an untouched answer sends the
+      // same words straight back and this update is a no-op. That is a better
+      // guarantee than refusing, and it is the one that lets them fix a typo.
       await prisma.timesheetBreakAnswer.update({
         where: { id: prior.id },
         // ours stays in `reason`; theirs goes in `confirmedText` beside it. Where
@@ -2387,7 +2481,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       // `writeBreakAnswer`. Only on a "no", which is the answer that IS the
       // violation.
       // on whichever answer this kind hangs its sentence off - see `REASON_ON`
-      if (REASON_ON[q.kind] === pick) await writeBreakAnswer(q, date, reason);
+      // in break-answers.js, which both sides read
+      if (reasonOwedOn(q.kind, pick)) await writeBreakAnswer(q, date, reason);
     }
   }
 
@@ -2396,7 +2491,31 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
     select: { date: true, kind: true, status: true, resolutionNote: true, statedBreaks: true },
   });
+  // AND KEEP WHAT A REVIEWER SAID, WHICH IS NOT AN ANSWER ON THIS LIST.
+  //
+  // This started from {} and refilled itself from the corrections alone, so
+  // every override written by anything OTHER than an employee answer was thrown
+  // away the next time that employee answered anything at all.
+  //
+  // `classifyMiscTime` is the one that writes them: a reviewer saying a day's
+  // Misc was PTO, sick pay or hours worked stores it here rather than as a
+  // correction, because it is not a reply to a question. So Gabe classifying a
+  // day at noon and the employee answering any question that evening silently
+  // undid the classification, on a sheet whose admin screen went on showing it
+  // as recorded, by name and to the minute.
+  //
+  // Only the misc fields and their provenance are carried over. Everything else
+  // in here IS derived from the answers and has to be rebuilt, or a stale patch
+  // from an answer somebody has since changed would survive as well.
+  // the same list `clearMiscClassification` removes, so a sixth field added to
+  // `patchesFor` is carried here without anybody remembering to
+  const KEEP = new Set([...MISC_PATCH_FIELDS, "_was", "_by", "_at", "_source"]);
   const overrides = {};
+  for (const [date, ov] of Object.entries(ts.overrides || {})) {
+    if (ov?._source !== "misc-classify") continue;
+    const kept = Object.fromEntries(Object.entries(ov).filter(([k]) => KEEP.has(k)));
+    if (Object.keys(kept).length) overrides[date] = kept;
+  }
   // PATCH THE PRISTINE DAY, NEVER THE ALREADY-PATCHED ONE.
   //
   // `rebuildSheetFor` has recomputed from `daysOriginal` since 2f0b194 for
@@ -2462,6 +2581,15 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   if (!rebuilt.ok) return rebuilt;
 
   revalidatePath(`/t/${token}`);
+  await bumpSheetVersion(ts.id);
+  // AND THE REVIEWER SCREENS. An employee answering is the one direction that
+  // never reached them: the five flag actions bumped this counter and nothing in
+  // here did, so a day view sat on the old state until somebody reloaded it -
+  // which is the screen you watch to see what is still outstanding.
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
   return { ok: true, answered: resolved.length };
 }
 
@@ -2782,5 +2910,14 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
 
   revalidatePath(`/portal/admin/timesheets/${ts.batch.id}/people`);
   revalidatePath(`/portal/admin/timesheets/${ts.batch.id}/checks`);
+  // the same gap, and worse here: this action is CALLED FROM the employee page,
+  // so writing a reason revalidated two admin screens and not the one the person
+  // was looking at while they typed it.
+  revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  // AND THE REVIEWER SCREENS, so a day view shows what is still outstanding
+  // without anybody reloading it - see the note on `bumpBatchVersion`.
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   return { ok: true };
 }

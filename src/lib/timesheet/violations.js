@@ -31,6 +31,10 @@
 // violating outside that rule and none both waived and violating. So nothing
 // here recomputes it. A second opinion about what a violation is would be a
 // third definition of the same rule.
+// `.js` on purpose: every intra-lib import here carries it, because these
+// modules are read by `node --test`, which has no bundler to guess with.
+import { mealWindows } from "./questions.js";
+
 export const VIOLATION_KINDS = {
   "rest-not-taken": {
     label: "Rest period not taken",
@@ -42,6 +46,17 @@ export const VIOLATION_KINDS = {
   "meal-not-recorded": {
     label: "No meal period recorded",
     ask: "No meal punched on a day that requires one. If they took it, it needs punching in QuickSolve.",
+    // AND THE DAY THAT COULD NOT HAVE HELD ONE.
+    //
+    // The sentence above sends somebody to QuickSolve to punch a meal in. On a
+    // day with no gap a lawful half hour fits in there is nothing to punch and
+    // no correction to chase, so it was pointing at work that does not exist -
+    // and the control beside it offered "they took it, needs punching", which is
+    // an answer the day cannot support and a claim nobody could act on.
+    //
+    // 9 days on the live batch over 6 people, 143 in July over 42.
+    askNoRoom: "No meal punched, and no gap in the day long enough for one. "
+      + "Nothing to punch here, so this needs a reason rather than a correction.",
   },
   "meal-late": {
     label: "Meal period started too late",
@@ -86,7 +101,15 @@ export function dayViolations(d) {
     out.push(
       d.mealLate
         ? { kind: "meal-late", detail: `started ${d.mealStartedAfterMin} minutes in` }
-        : { kind: "meal-not-recorded", detail: `nothing recorded on a ${r2(d.paidHours).toFixed(2)} hour day` },
+        : {
+          kind: "meal-not-recorded",
+          detail: `nothing recorded on a ${r2(d.paidHours).toFixed(2)} hour day`,
+          // WHETHER THE DAY EVER HAD ROOM FOR ONE, read from the engine's own
+          // windows rather than worked out again here. It is the same fact the
+          // employee's card reads to stop offering "I took it": see `noRoom` on
+          // the meal slot in `slotsFor`. Two screens, one answer about the day.
+          noRoom: !mealWindows(d).length,
+        },
     );
   }
   return out;

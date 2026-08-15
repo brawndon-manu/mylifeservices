@@ -363,3 +363,126 @@ export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, re
 export function hasOpenCorrections(corrections) {
   return (corrections || []).some((c) => c.status === "open");
 }
+
+// WHAT THEY TOLD US, IN WORDS THEY CAN READ BACK.
+//
+// `resolutionNote` on the correction row is payroll's audit note. It is written
+// for the person reconciling the batch, so it names what the answer did to the
+// premium and cites the case the hour comes from, and the timesheet review page
+// was printing it straight to the employee. That breaks the standing rule for
+// anything an employee reads: what is owed is admin's business.
+//
+// So this is a second sentence for the same row, built from the row itself. The
+// stored note is NOT touched - payroll still needs every word of it, and
+// rewriting it would lose the audit trail to fix a display problem.
+//
+// IT ONLY EVER RESTATES THEIR OWN ANSWER. No figure, no consequence, no rule.
+// The question card above already said what the rule is; this is the receipt.
+function statedAt(list, { name = false } = {}) {
+  const times = (list || [])
+    .filter((b) => b && b.from && b.to)
+    .map((b) => (name ? `${b.kindOf === "meal" ? "meal" : "rest"} ` : "") + `${b.from} to ${b.to}`);
+  return times.length ? times.join(", ") : null;
+}
+
+export function employeeResolution(correction, question = null) {
+  const c = correction || {};
+  const kind = String(c.kind || "").replace(/^q_/, "");
+  // `choice` holds the answer as given, which `status` cannot: two of the three
+  // outcomes on the two-lunches card are declines, and a partial is a decline
+  // that carries times. Falling back to the status keeps rows written before
+  // the column existed readable.
+  const pick = c.choice || (c.status === "accepted" ? "yes" : c.status === "declined" ? "no" : null);
+  if (!pick) return null;
+  const yes = pick === "yes";
+  const at = statedAt(c.statedBreaks);
+
+  switch (kind) {
+    case "repair":
+    case "restNoTimes":
+      return yes
+        ? `You said you took the break${at ? `, at ${at}` : ""}.`
+        : "You said you did not take the break.";
+
+    case "restIsMealLength":
+      return yes
+        ? "You said the thirty minute break was your meal."
+        : "You said it was a rest break, not your meal.";
+
+    case "restOutsideScheduled":
+      // confirming KEEPS the recorded time on this one, so the sentence is
+      // about the time being right rather than about the break happening
+      return yes
+        ? "You said you took the break at the time recorded."
+        : `You said the recorded time was wrong${at ? `, and gave ${at} instead` : ""}.`;
+
+    case "nothingDocumented":
+      // the legacy combined kind, still on rows answered before the split. Its
+      // times can carry both a meal and a rest, so they are named.
+      return yes
+        ? `You said you took your breaks and did not write them down${
+          statedAt(c.statedBreaks, { name: true }) ? `, at ${statedAt(c.statedBreaks, { name: true })}` : ""
+        }.`
+        : "You said you did not get your breaks that day.";
+
+    case "nothingDocumentedMeal":
+      return yes
+        ? `You said you took your meal break and did not write it down${at ? `, at ${at}` : ""}.`
+        : "You said you did not get your meal break that day.";
+
+    case "nothingDocumentedRest":
+      if (pick === "partial") {
+        return `You said you got some of your rest periods${at ? `, at ${at}` : ""}, and not the others.`;
+      }
+      return yes
+        ? `You said you took your rest periods and did not write them down${at ? `, at ${at}` : ""}.`
+        : "You said you did not get your rest periods that day.";
+
+    case "mealLate":
+      return yes
+        ? "You said your lunch really did start that late."
+        : "You said your lunch was on time and the punch is what is wrong.";
+
+    case "restTooLongOffClock":
+      // THREE OUTCOMES, AND TWO OF THEM ARE DECLINES. Which sentence is right
+      // depends on whether the day carried two lunches, and the correction row
+      // does not say - that lives on the question, so it is read from there when
+      // the page has it and given a wording that holds either way when it does not.
+      if (pick === "wrongone") {
+        return "You said only one lunch happened, and the recorded one is it.";
+      }
+      if (question?.row?.twoLunches) {
+        return yes
+          ? "You said both lunches are real."
+          : "You said the second lunch was added by accident.";
+      }
+      return yes
+        ? "You said this was a real break you took."
+        : "You said the entry was a mistake.";
+
+    case "shortMealRest":
+      return yes
+        ? "You said the short meal block was your rest break."
+        : "You said it was not your rest break.";
+
+    default:
+      return null;
+  }
+}
+
+// WHICH ANSWERS A REASON BELONGS UNDER.
+//
+// A reason is why a break was missed, so it is only shown against the answer
+// that says one was. The late lunch is the exception in shape but not in kind:
+// the break happened and the reason is why it started when it did, which is the
+// same thing the employee typed and the same row it was typed into.
+export function resolutionTakesReason(correction) {
+  const c = correction || {};
+  const kind = String(c.kind || "").replace(/^q_/, "");
+  const pick = c.choice || (c.status === "accepted" ? "yes" : c.status === "declined" ? "no" : null);
+  if (kind === "mealLate") return pick === "yes";
+  if (kind === "nothingDocumented" || kind === "nothingDocumentedMeal" || kind === "nothingDocumentedRest") {
+    return pick === "no" || pick === "partial";
+  }
+  return false;
+}

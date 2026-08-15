@@ -308,6 +308,17 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
       // the gaps themselves, so they can pick one or type their own
       options: windows.map((w) => clock(w.from)),
       windows: asText,
+      // NOWHERE IT COULD HAVE HAPPENED.
+      //
+      // No lawful half hour fits anywhere in this day and the roster booked
+      // none either, so "I took it" is not an answer anybody can give: there is
+      // no time to put against it and the box below the option says so in the
+      // same breath as offering it. 9 meal slots on the live batch and 143 in
+      // July are like this.
+      //
+      // Carried as a fact about the slot rather than re-derived on the screen,
+      // because the sentence that says it is already built from these windows.
+      noRoom: !m && !asText.length,
       hint: m
         ? "from your schedule - change it if that is not when you went"
         : asText.length

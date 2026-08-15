@@ -93,6 +93,10 @@ export default function DayByDay({
   // also where the admin control sits on All employees, so the two screens read
   // the same way round.
   breakAsks = [], breakAction,
+  // the reasons already written for this period, by finding key. Two questions
+  // can be about one day's rests and they share a row, so this is what stops the
+  // second card asking for a sentence the first already collected.
+  reasonsOnRecord = null,
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -282,6 +286,7 @@ export default function DayByDay({
       disturbs={disturbs}
       standing={standing}
       submitAction={submitAction}
+      reasonsOnRecord={reasonsOnRecord}
     />
   );
 
@@ -433,6 +438,7 @@ export default function DayByDay({
           waiting={waiting}
           standing={standing}
           submitAction={submitAction}
+          reasonsOnRecord={reasonsOnRecord}
         >
           {/* the explanation once, at the top, rather than on each of the twelve
               days it covers */}

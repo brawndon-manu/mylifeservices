@@ -28,6 +28,10 @@ export default function BreakAnswer({
   // "0 of 2 recorded" and the answers have to span that - they may have taken
   // neither, or one of the two.
   missing = 1, label = null,
+  // THE DAY HAD NOWHERE TO PUT A MEAL, so "they took it" is not offered - see
+  // `answerOptionsFor`. Read off the violation, which reads the engine's own
+  // windows, so this screen and the employee's card agree about the day.
+  noRoom = false,
 }) {
   // A REPLACED UPLOAD IS READ ONLY. The server refuses every write on one
   // regardless - this only stops the click being wasted, and says why.
@@ -174,7 +178,7 @@ export default function BreakAnswer({
         What did they say{label ? ` about the ${label.toLowerCase()}` : ""}?
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {answerOptionsFor({ kind, missing }).map((opt) => (
+        {answerOptionsFor({ kind, missing, noRoom }).map((opt) => (
           <button
             key={opt.key}
             type="button"
