@@ -601,6 +601,21 @@ model FormSubmission {
 // employee for a pay period. parsing it produces one Timesheet row per person.
 model TimesheetBatch {
   id           String   @id @default(cuid())
+
+  // A BATCH THAT MAY ONLY EVER EMAIL ONE ADDRESS.
+  //
+  // Kept as a strict rehearsal: every rule holds exactly as it does on a live
+  // batch - the Send all safeguard, the final and superseded refusals, the
+  // signing gate, the whole question set - and the ONE thing that differs is
+  // where a message can go. Both the employee emails and the problem alert that
+  // comes to us are forced to `testEmail`.
+  //
+  // A COLUMN AND NOT A LIST OF IDS IN CODE, because every upload creates a new
+  // batch row and an id in a source file stops meaning anything the moment the
+  // period is re-uploaded - the same failure that stranded 70 marks and is why
+  // `markKey` exists.
+  testOnly     Boolean  @default(false)
+  testEmail    String?
   // the pay period exactly as QSP printed it, e.g. "07/16/26" / "07/31/26".
   periodFrom   String
   periodTo     String

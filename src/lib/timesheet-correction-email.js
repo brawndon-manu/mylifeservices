@@ -9,6 +9,7 @@
 import { Resend } from "resend";
 import { buildTimesheetShell } from "@/lib/announcement-email";
 import { resolveRecipients } from "@/lib/timesheet-mode";
+import { correctionAlertSubject } from "@/lib/timesheet-subjects";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
 
 function esc(s) {
@@ -21,6 +22,14 @@ function esc(s) {
 
 const BTN =
   "display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;";
+
+// THE PROBLEM ALERT'S SUBJECT. The one timesheet email that goes to US rather
+// than to an employee, raised when somebody reports something wrong from their
+// timesheet review page. The two that go to them are the TIMESHEET TO REVIEW
+// and the SIGNING REMINDER - see timesheet-send.js. It lives in its own
+// dependency-free module so it can be tested and previewed without constructing
+// a mail client - see timesheet-subjects.js.
+export { correctionAlertSubject } from "@/lib/timesheet-subjects";
 
 export function buildCorrectionAlertHtml({
   employeeName,
@@ -94,6 +103,8 @@ export async function sendCorrectionAlert({
   periodLabel,
   items,
   reviewUrl,
+  // see `batchForceTo` - a rehearsal batch redirects this one as well
+  forceTo = null,
 }) {
   if (!to?.length) return { ok: false, error: "norecipient" };
   const from =
@@ -104,16 +115,15 @@ export async function sendCorrectionAlert({
 
   // one intended address drives the guard; the rest ride along on the same
   // decision so a test run can't half-redirect.
-  const { to: resolved, redirected } = resolveRecipients(to[0]);
+  // the problem alert comes to US, and a rehearsal batch redirects it too:
+  // "everything on that july one if sent" includes the mail we send ourselves.
+  const { to: resolved, redirected } = resolveRecipients(to[0], process.env, { forceTo });
   const finalTo = redirected ? resolved : to;
 
-  // THE PROBLEM ALERT. The one timesheet email that goes to US rather than to an
-  // employee, raised when somebody reports something wrong from their timesheet
-  // review page. The two that go to them are the TIMESHEET TO REVIEW and the
-  // SIGNING REMINDER - see timesheet-send.js.
-  const subject = redirected
-    ? `[TEST -> ${to.join(", ")}] ${employeeName} reported a timesheet problem`
-    : `${employeeName} reported a problem with their timesheet`;
+  const subject = correctionAlertSubject({
+    employeeName,
+    redirectedFrom: redirected ? to.join(", ") : null,
+  });
 
   const html = buildCorrectionAlertHtml({
     employeeName,

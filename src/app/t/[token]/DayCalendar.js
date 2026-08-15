@@ -237,6 +237,17 @@ const hhmm = (m) => {
   return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${m % 1440 < 720 ? "a" : "p"}`;
 };
 
+// HOW FAR OFF THE DAY SOMETHING IS, in words somebody can feel. "660 minutes
+// before this day" is a number you have to do arithmetic on; "eleven hours
+// before this day" is the fact. Same reasoning as `saidLate` in break-answers.
+const WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight",
+  "nine", "ten", "eleven", "twelve"];
+function awayWords(min) {
+  const h = Math.round(min / 60);
+  if (h <= 0) return "less than an hour";
+  return `${WORDS[h] || h} hour${h === 1 ? "" : "s"}`;
+}
+
 // ONE SCALE, BUT EACH DAY CROPPED TO ITS OWN HOURS.
 //
 // The constant is PX_PER_HOUR, not the window: a ten hour day draws twice as
@@ -507,6 +518,79 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
   const worked = workLanes.placed;
   const between = tiles.filter((t) => t.kind !== "work");
 
+  // WHAT THE DOCUMENT SAYS, WHERE THE ENGINE HAS MOVED IT.
+  //
+  // Every block above is drawn where we think the break BELONGS. Where it was
+  // WRITTEN was on the picture nowhere: a card reading "the record has your rest
+  // break entered as 12:00 AM to 12:10 AM" sat beside a calendar showing one
+  // block at noon and nothing else, so the sentence had to be taken on trust.
+  //
+  // THE AXIS DOES NOT MOVE FOR ANY OF THIS, and that is the whole design
+  // constraint rather than a preference. `dayWindow` grows to hold what it is
+  // given, and these times are twelve hours out by construction - an AM/PM slip
+  // is what a repair IS. Feeding them in ran a 7 hour day from midnight to 3p,
+  // 15 hours and +720px, for one ten minute block. The file already decided this
+  // for the tethers: dropped outright when they fall outside the window, because
+  // "a bracket running off the bottom of the column is worse than none".
+  //
+  // So four shapes, and only the first two are blocks:
+  //
+  //   fits            drawn in its own lane beside ours, hatched
+  //   starts inside   drawn from its true start and CUT at the axis edge. A ten
+  //                   minute break you can watch run off the bottom of your own
+  //                   day is the clearest statement of "this cannot be read" on
+  //                   the page - and it is not overflowing, it is being cropped.
+  //   starts outside  a chip above the column saying where it went and how far
+  //   no span at all  a chip too. A backwards row reads out 3p, in 2p: there is
+  //                   nothing to draw, because it ends before it begins. That is
+  //                   17 of the 33 moved rows across the two batches.
+  const said = { drawn: [], notes: [] };
+  for (const r of rests) {
+    const rec = r?.recorded;
+    if (!rec) continue;
+    const a = rec.min;
+    const z = a != null && rec.minutes != null ? a + rec.minutes : null;
+    if (a == null || z == null || z <= a) {
+      // NO CHIP FOR THIS ONE ANY MORE. A span that ends before it begins used
+      // to get a line above the column saying what the record held; the block
+      // itself carries those times in a red outline now, which is one telling
+      // rather than two and puts it where the break actually is.
+      continue;
+    }
+    if (a >= axis.from && z <= axis.to) { said.drawn.push({ from: a, to: z }); continue; }
+    if (a >= axis.from && a < axis.to) {
+      // `trueTo` is what the label prints. The block STOPS at the axis, and
+      // printing that as the end time would put a time the document does not
+      // hold onto a block whose entire job is to quote the document.
+      said.drawn.push({ from: a, to: axis.to, cut: true, trueTo: z });
+      continue;
+    }
+    said.notes.push({
+      from: rec.from, to: rec.to, why: rec.why,
+      // which edge it went off, and how far, so the chip can point
+      before: z <= axis.from,
+      away: z <= axis.from ? axis.from - z : a - axis.to,
+    });
+  }
+  // a rostered meal read twelve hours over - the schedule's own slip. It is
+  // already drawn at the corrected time by the block layer; this is the note
+  // saying what the roster actually holds.
+  for (const b of scheduled || []) {
+    if (!b?.ampmFixed || !Number.isFinite(b.wasFrom)) continue;
+    said.notes.push({
+      from: hhmm(b.wasFrom), to: hhmm(b.wasTo),
+      why: "your schedule has this lunch at an hour nobody works",
+      meal: true, before: true, away: axis.from - b.wasTo,
+    });
+  }
+
+  // the rostered meal blocks that fall inside worked time, which is exactly the
+  // set the gap logic above cannot reach - see the note where they are drawn
+  const rosteredUnpunched = (scheduled || []).filter(
+    (b) => b.meal && Number.isFinite(b.from) && Number.isFinite(b.to)
+      && b.to > b.from && insideAShift(shifts, b.from, b.to - b.from),
+  );
+
   // recorded and half-typed breaks share one lane layout, so a time being
   // entered is placed against what is already there rather than over it
   const breakLanes = laneOut([
@@ -522,6 +606,13 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
       label: r.label || null,
       filed: r.filed || null,
       corrected: r.corrected, staged: !!r.provisional,
+      // counted, but the source record still needs changing - see `drawnRest`.
+      // The block PRINTS the recorded pair rather than the corrected one: the
+      // outline exists to show what QuickSolve holds, and showing the time we
+      // read it as would be a red box round something already right.
+      attention: !!r.attention,
+      recordedFrom: r.recorded?.from || null,
+      recordedTo: r.recorded?.to || null,
     })),
     ...staged.map((t) => ({
       from: t.min, to: t.min + (t.minutes || 10), kind: t.kind, staged: true,
@@ -532,11 +623,67 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
       from: t.min, to: t.min + (t.minutes || 10), kind: t.kind,
       staged: true, guess: true,
     })),
+    // WHAT THE DOCUMENT LITERALLY SAYS, where there is room to draw it. See
+    // `saidInstead` below for the three it has no room for.
+    ...said.drawn.map((s) => ({
+      from: s.from, to: s.to, kind: "rest", said: true, cut: s.cut, trueTo: s.trueTo,
+    })),
+    // A ROSTERED LUNCH NOBODY PUNCHED OUT FOR, which was drawn NOWHERE.
+    //
+    // Meals reach this picture two ways and neither of them can show this one:
+    // from a punch GAP, cut around whatever the roster says covers it, and from
+    // a meal-length REST ROW. A schedule block sitting inside worked time is
+    // neither, so it was simply absent.
+    //
+    // That is the `shortMealRest` case by construction, and it is why every one
+    // of those cards has shown an empty picture. The question exists because a
+    // rostered block is TOO SHORT TO BE A LUNCH - Bucio's is ten minutes - so it
+    // can never line up with a punched-out gap, and the card asking "we read a
+    // meal block as your rest break, is that right?" sat beside a day with no
+    // meal block and no rest on it at all.
+    //
+    // Drawn in the break lanes rather than over the work, because it IS a break
+    // and the work band underneath is the fact that they never clocked out of it.
+    ...rosteredUnpunched.map((b) => ({
+      from: b.from, to: b.to, kind: "meal", rostered: true,
+    })),
   ]);
 
   return (
     <figure className="m-0">
       <figcaption className="sr-only">{spoken(day, shifts, rests, staged, scheduled)}</figcaption>
+
+      {/* WHAT THE DOCUMENT SAYS, WHERE IT CANNOT BE DRAWN AT ALL.
+          Two shapes end up here and they are both honest failures of the axis
+          rather than of the record: a block twelve hours outside the day, and a
+          span that ends before it begins. Above the column rather than inside
+          it, because the one thing that must not happen is a mark floating in
+          the gap between this card and the next - see the tether note. */}
+      {said.notes.length > 0 && (
+        <div className="mb-2 ml-11 space-y-1">
+          {said.notes.map((n, i) => (
+            <p
+              key={`said-${i}`}
+              className="flex items-start gap-1.5 rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-[12px] leading-[15px] text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200"
+            >
+              <span aria-hidden="true" className="font-mono">
+                {n.unreadable ? "!" : n.before ? "↑" : "↓"}
+              </span>
+              <span>
+                <b>{n.meal ? "Your schedule says" : "The record says"}</b>{" "}
+                <span className="font-mono">{n.from}</span> to{" "}
+                <span className="font-mono">{n.to}</span>
+                {n.unreadable
+                  ? null
+                  : n.away >= 60
+                    ? `, ${awayWords(n.away)} ${n.before ? "before" : "after"} this day`
+                    : `, just ${n.before ? "before" : "after"} this day`}
+                {n.why ? <span className="opacity-80"> – {n.why}</span> : null}
+              </span>
+            </p>
+          ))}
+        </div>
+      )}
       <div
         aria-hidden="true"
         className="relative ml-11 border-l border-border"
@@ -699,35 +846,79 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
             landing on top of it, and it leaves again when the box is cleared. */}
         {breakLanes.placed.map((b) => {
           const ok = b.kind !== "meal" && insideAShift(shifts, b.from, b.to - b.from);
+          // AMBER FOR ONE THAT STILL NEEDS CHANGING AT SOURCE. It is counted and
+          // it is in the right place - green would be true of both of those and
+          // false of the thing that matters, which is that QuickSolve still
+          // holds it backwards.
           const hue = b.kind === "meal" ? MEAL : ok ? REST_OK : REST;
           const width = (breakRight - BREAK_LEFT_PCT) / b.lanes;
           return (
             <div
-              key={`${b.staged ? "s" : "r"}-${b.kind}-${b.from}-${b.to}-${b.lane}`}
-              className={`absolute flex items-center overflow-hidden rounded-sm px-1.5 ${
-                b.staged ? "border border-dashed text-foreground" : "text-[#2b2410]"
+              key={`${b.said ? "d" : b.staged ? "s" : "r"}-${b.kind}-${b.from}-${b.to}-${b.lane}`}
+              className={`absolute flex items-center overflow-hidden px-1.5 ${
+                b.attention
+                  // OUTLINED IN RED, OVER THE ORDINARY BLOCK. It is drawn where
+                  // the break actually is and at its real length - that part was
+                  // always right - and the outline is what says the SOURCE still
+                  // holds it the other way round.
+                  ? "rounded-sm border-2 border-rose-500 text-[#2b2410]"
+                  : b.said
+                  // NOT the dashed treatment the staged blocks wear. A half-typed
+                  // answer and a guess are both things that might yet be true;
+                  // this is the thing we are saying is WRONG, and reusing their
+                  // border would put all three in one visual class.
+                  ? `rounded-sm border border-rose-400/70 text-rose-900 dark:text-rose-200 ${b.cut ? "rounded-b-none border-b-0" : ""}`
+                  : b.staged ? "rounded-sm border border-dashed text-foreground" : "rounded-sm text-[#2b2410]"
               }`}
               style={{
                 top: `${top(drawnBreak(b).from)}%`,
                 height: `${exact(drawnBreak(b).from, drawnBreak(b).to)}%`,
                 left: `${BREAK_LEFT_PCT + b.lane * width}%`,
                 width: `${width}%`,
-                background: b.staged ? `${hue}33` : hue,
-                borderColor: b.staged ? hue : undefined,
+                background: b.attention
+                  ? hue
+                  : b.said
+                  ? "repeating-linear-gradient(45deg, transparent, transparent 5px, rgb(244 63 94 / 0.16) 5px, rgb(244 63 94 / 0.16) 10px)"
+                  : b.staged ? `${hue}33` : hue,
+                borderColor: b.staged && !b.said ? hue : undefined,
+                // it is being CROPPED, not overflowing, and the fade is what
+                // says so. Without it the block just stops at the axis and
+                // reads as a break that really did end there.
+                ...(b.cut
+                  ? {
+                    maskImage: "linear-gradient(to bottom, #000 60%, transparent)",
+                    WebkitMaskImage: "linear-gradient(to bottom, #000 60%, transparent)",
+                  }
+                  : null),
               }}
             >
               <span className="truncate text-[12px] font-semibold leading-[15px]">
-                {b.label || (b.guess ? "We think" : b.kind === "meal" ? (b.staged ? "Lunch" : "Meal") : "Rest")}{" "}
+                {b.attention
+                  ? "Rest"
+                  : b.said
+                  ? "The record says"
+                  // it is on the roster and not in the punches, and saying
+                  // "Meal" would claim they clocked out for it
+                  : b.rostered
+                    ? "On your schedule"
+                    : b.label || (b.guess ? "We think" : b.kind === "meal" ? (b.staged ? "Lunch" : "Meal") : "Rest")}{" "}
                 {/* the range while it has the column to itself; the start time
                     alone once it is sharing, where a range cannot fit and a
                     truncated one reads as a wrong time rather than a short one.
                     The caption always says both. */}
                 <span className="font-mono font-normal opacity-80">
-                  {b.lanes > 1
-                    ? hhmm(b.from)
-                    : `${hhmm(b.from)}\u2013${hhmm(b.to)}`}
+                  {/* THE RECORDED PAIR, IN THE ORDER THE RECORD HOLDS THEM.
+                      "12:10p-12p" is the thing to go and change; printing the
+                      corrected "12p-12:10p" inside a red box would be a warning
+                      about a time that is already right. */}
+                  {b.attention && b.recordedFrom
+                    ? `${b.recordedFrom}–${b.recordedTo}`
+                    : b.lanes > 1
+                      ? hhmm(b.from)
+                      : `${hhmm(b.from)}–${hhmm(b.trueTo ?? b.to)}`}
                 </span>
                 {b.corrected ? " (you corrected this)" : ""}
+                {b.cut ? " \u2013 runs off the day" : ""}
               </span>
             </div>
           );

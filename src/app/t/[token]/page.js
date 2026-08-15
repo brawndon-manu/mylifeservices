@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { preferredName } from "@/lib/contacts";
+import { sheetDisplayName } from "@/lib/timesheet/display-name";
 import TimesheetSigner from "./TimesheetSigner";
 import BreakReason from "./BreakReason";
 import { employeeAsk } from "@/lib/timesheet/break-answers";
@@ -15,10 +16,12 @@ import {
   answerTimesheetQuestion,
 } from "@/app/portal/admin/timesheets/actions";
 import { correctionLabel } from "@/lib/timesheet/corrections";
-import { buildQuestions, signingGate, dependencyGate, questionId } from "@/lib/timesheet/questions";
+import {
+  buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
+} from "@/lib/timesheet/questions";
 import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { restKey, restNameFor } from "@/lib/timesheet/rests";
-import { drawnBreaksFor } from "@/lib/timesheet/recorded-breaks";
+import { drawnBreaksFor, mealAmPmSlip } from "@/lib/timesheet/recorded-breaks";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { answerBreakReason } from "@/app/portal/admin/timesheets/actions";
 import { getCurrentUser } from "@/lib/current-user";
@@ -71,7 +74,16 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     include: {
       // `id` and the employee's email are for the preview's send button, which
       // is the only thing on this page that needs either
-      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true } },
+      // `testOnly` decides what this page CALLS them - see `sheetDisplayName`.
+      // Left out it arrives undefined, reads as an ordinary batch, and the page
+      // shows the account's name while the sheet under it shows another. Third
+      // time this select has caught me today.
+      batch: {
+        select: {
+          id: true, periodFrom: true, periodTo: true, restsByDate: true,
+          testOnly: true,
+        },
+      },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
       // every correction, not just the open ones: the open ones block signing,
       // and the resolved `q_` rows are the answers already given to the five
@@ -94,6 +106,23 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     },
   });
   if (!ts) notFound();
+
+  // WHETHER PREVIEW ACTUALLY REFUSES, which is not the same question as whether
+  // this IS a preview.
+  //
+  // The refusal exists for one reason: a stray click while looking at somebody
+  // else's page must not land on a real person's record. On a REHEARSAL BATCH
+  // that reason does not apply - `testOnly` means every rule holds exactly as it
+  // does live and the only thing that differs is that its mail goes to one
+  // address. Refusing there makes the one batch kept for rehearsing the only one
+  // that cannot be rehearsed, which is backwards.
+  //
+  // So the guard narrows to what it was actually protecting: a preview of a real
+  // person's real batch still refuses everything, and a preview of a test batch
+  // behaves exactly like the employee's own page.
+  const rehearsal = !!ts.batch?.testOnly;
+  const refuses = preview && !rehearsal;
+  const act = (real) => (refuses ? refuse : real);
 
   const openCorrections = ts.corrections.filter((c) => c.status === "open");
 
@@ -159,6 +188,28 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // that keeps their pay. Measured on the live batch: 54 of 59 could sign
   // straight away, 5 gated on 6 questions.
   const gate = signingGate(questions, ts.corrections);
+
+  // THE SHEET DOES NOT GENERATE UNTIL EVERY QUESTION ON IT HAS AN ANSWER,
+  // 2026-08-14.
+  //
+  // `signingGate.canSign` has been unconditionally true since 2026-08-12, and
+  // the reasoning was sound at the time: after the flip, leaving a question
+  // alone KEEPS the pay, so blocking on silence held somebody's timesheet
+  // hostage to a question whose safe answer they had already given by not
+  // touching it.
+  //
+  // What changed is that silence is no longer the only safe answer to give. A
+  // "no" now records WHY - the one half no QSP export carries - and that only
+  // exists if somebody actually answers. A sheet generated over fifteen
+  // untouched cards is a document with fifteen unexplained findings on it.
+  //
+  // COUNTED PER QUESTION, not per kind: `answerProgress` is the one function
+  // that gets that right, and every screen that counted `new Set(kinds).size`
+  // was wrong the moment one kind emitted two questions.
+  //
+  // Measured before building: 51 of 60 people on the live batch have at least
+  // one, median 4 and most 11; July is 57 of 59, median 13 and most 24.
+  const progress = answerProgress(questions, ts.corrections);
 
   // A REASON SOMEBODY RECORDED ON THEIR BEHALF, WAITING ON THEM.
   //
@@ -258,7 +309,25 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       if (!t || !service) continue;
       // they told us the rostered lunch is the record that is wrong
       if (sh.meal && droppedRosteredMeal.has(date)) continue;
-      blocks.push({ from: t.start, to: t.end, service, meal: !!sh.meal });
+      // A MEAL ROSTERED AT MIDNIGHT IS AN AM/PM SLIP, and this is the second
+      // place that has to know it. `recordedBreaksFor` has read it twelve hours
+      // over since 2026-08-09; this loop did not, and `dayWindow` grows the axis
+      // to hold anything drawn - so one 12a-12:10a block ran that day's column
+      // from 12a to 5p, seventeen hours and 1530px, for a day worked 9a to
+      // 4:45p. The rostered lunch sat alone at the top and the whole worked day
+      // was squashed into the bottom third.
+      //
+      // The times it WAS are carried through, because a block silently moved
+      // twelve hours is a block the employee cannot check against their own
+      // schedule.
+      const slip = sh.meal ? mealAmPmSlip(t.start, t.end) : null;
+      blocks.push({
+        from: slip ? slip.from : t.start,
+        to: slip ? slip.to : t.end,
+        service,
+        meal: !!sh.meal,
+        ...(slip ? { ampmFixed: true, wasFrom: t.start, wasTo: t.end } : null),
+      });
     }
     if (blocks.length) scheduledByDate[date] = blocks;
   }
@@ -347,7 +416,14 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     );
   }
 
-  const who = ts.user ? preferredName(ts.user) : ts.sourceName;
+  // WHAT THIS PAGE CALLS THEM, which is not what the engine matches them by -
+  // see `sheetDisplayName`. On a rehearsal batch it is the first name alone, so
+  // a recording says "Manu" without `sourceName` being rewritten and every rest
+  // row filed under the old spelling being stranded.
+  const who = sheetDisplayName({
+    user: ts.user, sourceName: ts.sourceName, batch: ts.batch,
+    fallback: ts.user ? preferredName(ts.user) : null,
+  });
   const period = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
 
   return (
@@ -373,8 +449,9 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             Preview &mdash; this is {ts.sourceName}&apos;s page, exactly as they see it.
           </p>
           <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
-            Nothing you do here is saved. Answering a question or signing will be
-            refused, so their record cannot be changed from this tab.
+            {rehearsal
+              ? "This is a TEST BATCH, so everything here works for real - answers save, the sheet rebuilds, the signature is stored. The only thing that differs is that any email it sends goes to one address."
+              : "Nothing you do here is saved. Answering a question or signing will be refused, so their record cannot be changed from this tab."}
           </p>
           {/* the one exception, and it goes the other way: this does not add an
               answer, it takes every answer off. Mánu 2026-08-12: "I meant to
@@ -529,12 +606,51 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
-                submitAction={preview ? refuse : answerTimesheetQuestion}
+                submitAction={act(answerTimesheetQuestion)}
+                /* ONE PER VIOLATION, ON ITS OWN DAY. These rendered as a single
+                   lump below everything, attached to nothing - a reason about
+                   the 4th sat under a reason about the 11th with no picture and
+                   no day between them. On All employees the admin control sits
+                   on the day it is about, so the two screens now read the same
+                   way round. `detailed` keeps the list, because that view has no
+                   days to hang them on. */
+                breakAsks={breakAsks}
+                breakAction={act(answerBreakReason)}
               />
             }
-            detailed={byKind.map((group) => (
+            detailed={[
+              // THE SAME REASONS, AS A LIST. "All questions" has no days to hang
+              // them on, so here they keep the shape they used to have on the
+              // whole page - with the count restored, which is the one thing the
+              // day-by-day version does not need to say.
+              ...(breakAsks.length > 0
+                ? [(
+                  <div key="break-asks" className="mb-6">
+                    <p className="text-sm text-muted">
+                      {breakAsks.length === 1
+                        ? "One thing to check before we can put your timesheet together."
+                        : `${breakAsks.length} things to check before we can put your timesheet together.`}
+                    </p>
+                    {breakAsks.map((ask) => (
+                      <BreakReason
+                        key={ask.findingKey}
+                        token={token}
+                        ask={ask}
+                        submitAction={act(answerBreakReason)}
+                      />
+                    ))}
+                  </div>
+                )]
+                : []),
+              ...byKind.map((group) => (
               <TimesheetQuestion
-                key={group[0].kind}
+                /* THE CARD'S OWN KEY, NOT ITS KIND. A kind is one card only
+                   while it emits one question: `repair` is one card per
+                   out-time, so a sheet with two mis-entered rows handed React
+                   two children keyed "repair" and it warned that one may be
+                   duplicated or omitted. `cardKey` is what decided the grouping
+                   in the first place, so it is what identifies the group. */
+                key={cardKey(group[0])}
                 token={token}
                 questions={group}
                 answers={answers}
@@ -544,9 +660,10 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
-                submitAction={preview ? refuse : answerTimesheetQuestion}
+                submitAction={act(answerTimesheetQuestion)}
               />
-            ))}
+              )),
+            ]}
           />
 
 
@@ -595,41 +712,28 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               See `signingGate`. */}
           {/* WHAT WE STILL NEED FROM THEM. One card per day, and the sheet does
               not generate until every one is answered - see `breakAsks`. */}
-          {breakAsks.length > 0 && (
-            <div className="mb-6">
-              <p className="text-sm text-muted">
-                {breakAsks.length === 1
-                  ? "One thing to check before we can put your timesheet together."
-                  : `${breakAsks.length} things to check before we can put your timesheet together.`}
-              </p>
-              {breakAsks.map((ask) => (
-                <BreakReason
-                  key={ask.findingKey}
-                  token={token}
-                  ask={ask}
-                  submitAction={preview ? refuse : answerBreakReason}
-                />
-              ))}
-            </div>
-          )}
+
 
           <TimesheetSigner
             key={`sheet-${answered.length}-${breakAsks.length}`}
             token={token}
             fileUrl={`/t/${token}/pdf?v=${answered.length}`}
             title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
-            submitAction={preview ? refuse : submitSignedTimesheet}
+            submitAction={act(submitSignedTimesheet)}
             /* THE POPUP IS REASSURANCE, NOT A WARNING. Ignoring these is the
                safe choice for the employee now, so the panel says the pay is
                already on the sheet rather than nagging them to finish. The
                count is this person's own. */
             unansweredOptional={gate.optionalOpen}
             premiumOnSheet={standing.charged}
-            canSign={gate.canSign && breakAsks.length === 0}
+            canSign={progress.settled && gate.canSign && breakAsks.length === 0}
             // a COUNT, not a list - see TimesheetSigner. `signingGate` returns 0
             // by design since the sheet became signable at any time, so this is
             // the only thing that can put a number in it.
-            blocking={(gate.blocking || 0) + breakAsks.length}
+            /* what is actually holding it, so the sentence can count them. Not
+               `gate.blocking`, which is 0 by design since the gate stopped
+               deciding - the open questions are the hold now. */
+            blocking={(progress.asked - progress.answered) + breakAsks.length}
           />
           {/* WHERE THE SIGNATURE WOULD GO, because that is the one thing this
               tab cannot supply. Mánu 2026-08-12: "The email them their link
@@ -665,7 +769,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <ReportProblem
             token={token}
             days={ts.data?.days || []}
-            submitAction={preview ? refuse : submitTimesheetCorrections}
+            submitAction={act(submitTimesheetCorrections)}
           />
         </>
       )}

@@ -1,6 +1,7 @@
 import { parseLooseTime } from "@/lib/loose-time";
 import { movesHours } from "@/lib/timesheet/questions";
 import DayCalendar from "./DayCalendar";
+import BreakReason from "./BreakReason";
 import { StagedTimesProvider } from "./StagedTimes";
 import TimesheetQuestion, {
   BatchProvider,
@@ -29,9 +30,69 @@ import TimesheetQuestion, {
 //     is shown ONCE, on the first day it touches, and the later days say where
 //     it went - rendering it under each of its dates would put three copies of
 //     one question on the page, each able to answer for all three.
+
+// A ROW THE SOURCE STILL HOLDS WRONG, ON THE RIGHT WHERE THE WORK IS.
+//
+// The calendar marks it amber and the chip above the column quotes what the
+// record says, and neither is where somebody looks for what to DO. The right
+// column is the list of things this day needs; a fix that only ever appears as a
+// colour is a fix nobody is being asked for.
+//
+// DELIBERATELY NOT A QUESTION. There is nothing to answer - a row reading out
+// 12:10p, in 12p is unambiguous, the engine already reads it the right way round
+// and already counts the break. What is left is an instruction, so it says what
+// the record holds, what it was read as, and what to change it to.
+//
+// AND IT SAYS NOTHING IS OWED, because the amber would otherwise read as money.
+function NeedsFixing({ items }) {
+  if (!items.length) return null;
+  const clock = (m) => {
+    const h = Math.floor(m / 60), x = h % 12 === 0 ? 12 : h % 12, mm = m % 60;
+    return `${x}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h < 12 ? "a" : "p"}`;
+  };
+  return (
+    <div className="mb-3 rounded-xl border border-amber-400/70 bg-amber-50 p-4 dark:border-amber-600/60 dark:bg-amber-950/30">
+      <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        {items.length === 1
+          ? "One thing to fix in QuickSolve"
+          : `${items.length} things to fix in QuickSolve`}
+      </p>
+      <ul className="mt-2 space-y-2.5">
+        {items.map((b, i) => (
+          <li key={`fix-${b.min}-${i}`} className="text-sm">
+            <div className="grid gap-x-3 gap-y-0.5 sm:grid-cols-[128px_minmax(0,1fr)]">
+              <span className="text-amber-800/80 dark:text-amber-300/80">QuickSolve has</span>
+              <span className="font-mono font-semibold text-amber-900 dark:text-amber-200">
+                {b.recorded?.from} to {b.recorded?.to}
+              </span>
+              <span className="text-amber-800/80 dark:text-amber-300/80">Change it to</span>
+              <span className="font-mono font-semibold text-emerald-800 dark:text-emerald-300">
+                {clock(b.min)} to {clock(b.min + (b.minutes || 10))}
+              </span>
+            </div>
+            {b.recorded?.why && (
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                {b.recorded.why} - so the entry reads as a break that ends before it starts.
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function DayByDay({
   days, groups, token, answers, partials, answerTimes, choices,
   waiting, disturbs, standing, submitAction, scheduled = {}, restsOnRecord = {},
+  // WHY A BREAK WAS NOT TAKEN - one per violation, on the day it happened.
+  //
+  // These rendered as a single lump above the signer, attached to nothing: a
+  // reason about the 4th sat under a reason about the 11th with no picture and
+  // no day between them. They belong beside the day they are about, which is
+  // also where the admin control sits on All employees, so the two screens read
+  // the same way round.
+  breakAsks = [], breakAction,
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -41,6 +102,22 @@ export default function DayByDay({
 
   const order = new Map(days.map((d, i) => [d.date, i]));
   const datesOf = (q) => q.dates || (q.date ? [q.date] : []);
+
+  // THE REASONS, BY THE DAY THEY ARE ABOUT. A `findingKey` carries its own date
+  // - see `breakFindingKey` - so the row already knows and nothing here parses
+  // one out of the string.
+  const asksByDate = new Map();
+  for (const a of breakAsks) {
+    if (!a?.date) continue;
+    if (!asksByDate.has(a.date)) asksByDate.set(a.date, []);
+    asksByDate.get(a.date).push(a);
+  }
+  // ANYTHING WHOSE DAY IS NOT ON THIS SHEET STILL HAS TO BE SEEN. A break answer
+  // is keyed on the PERIOD, so it outlives the upload it was taken against - and
+  // a re-upload that drops a day would otherwise make the question about it
+  // silently stop being asked rather than fail. These go above the list.
+  const dayDates = new Set((days || []).map((d) => d.date));
+  const orphanAsks = breakAsks.filter((a) => !a?.date || !dayDates.has(a.date));
 
   // THE REST PERIODS ACTUALLY ON RECORD, per day, so the calendar can draw those
   // and only those. The engine already worked them out - `needs[].known` is what
@@ -102,15 +179,33 @@ export default function DayByDay({
   // think 3:50p-4p" in two lanes beside each other, both truncated to make room
   // for the other, on a day that has one break. The applied correction is the
   // better block - it is what the signed sheet draws - so the guess gives way.
+  //
+  // AND IT IS NOT ONLY THE REPAIR THAT HAS ONE. `q.proposed` is set by
+  // `buildQuestions` on `repair` alone, so a ten logged off the clock - which
+  // names an in-shift time in its own card text, "inside your 10:30a-1p shift
+  // that would be 12:50p" - drew nothing at all. 27 of those across the two
+  // batches: the record is on the picture, our reading of it was not, which is
+  // the same gap as the repair's with the two halves swapped over. Every one of
+  // them lands inside a shift by construction, so none of them can widen the
+  // axis.
   const proposalsByDate = new Map();
+  const propose = (date, min, minutes) => {
+    if (min == null || !date) return;
+    if ((restsByDate.get(date) || []).some((r) => r.min === min)) return;
+    const list = proposalsByDate.get(date) || [];
+    // a day carrying two off-clock rows can propose the same minute twice
+    if (list.some((p) => p.min === min)) return;
+    list.push({ min, minutes: minutes || 10, kind: "rest" });
+    proposalsByDate.set(date, list);
+  };
   for (const group of groups) {
     for (const q of group) {
-      const at = toMinutes(q.proposed?.from);
-      if (at == null || !q.date) continue;
-      if ((restsByDate.get(q.date) || []).some((r) => r.min === at)) continue;
-      const list = proposalsByDate.get(q.date) || [];
-      list.push({ min: at, minutes: q.row?.minutes || 10, kind: "rest" });
-      proposalsByDate.set(q.date, list);
+      propose(q.date, toMinutes(q.proposed?.from), q.row?.minutes);
+      // one per recorded row, each on the day it belongs to - a card can cover
+      // more than one ten and they do not share a suggested time
+      for (const x of q.row?.detail || []) {
+        propose(x.date || q.date, toMinutes(x.from), x.minutes);
+      }
     }
   }
 
@@ -173,7 +268,10 @@ export default function DayByDay({
   const card = (group) => (
     <TimesheetQuestion
       terse
-      key={group[0].kind}
+      /* the card's own id, not its kind. A kind is one card only while it emits
+         one question - `repair` is one per out-time - and two children keyed
+         "repair" is a duplicate React warns about and may drop. */
+      key={group[0].id || group[0].kind}
       token={token}
       questions={group}
       answers={answers}
@@ -192,7 +290,10 @@ export default function DayByDay({
       {days.map((day) => {
         const mine = anchored.get(day.date) || [];
         const elsewhere = alsoAsked.get(day.date) || [];
-        const asks = batchDates.has(day.date) || mine.length > 0;
+        const asks = batchDates.has(day.date) || mine.length > 0
+          || (asksByDate.get(day.date) || []).length > 0
+          // a day whose only item is a fix still has something on it
+          || (restsByDate.get(day.date) || []).some((b) => b.attention);
         return (
           <li
             key={day.date}
@@ -257,6 +358,11 @@ export default function DayByDay({
                     whenever both land on the same day. Ordering it this way also
                     matches what has to happen: the answer that re-derives the
                     day is given before the premium question that reads it. */}
+                {/* WHAT THIS DAY NEEDS CHANGING AT SOURCE, above the questions.
+                    It is not a question and it does not wait on one, so it goes
+                    first - and the amber on the calendar beside it now has a
+                    sentence to point at. */}
+                <NeedsFixing items={(restsByDate.get(day.date) || []).filter((b) => b.attention)} />
                 {mine.map(card)}
                 {/* THE DOMINO. A day's breaks row only exists because the ten
                     above it pushed the day past six hours - which owes a lunch
@@ -273,6 +379,14 @@ export default function DayByDay({
                 {batchDates.has(day.date) && !gatedOn(day.date) && (
                   <BatchDays dates={[day.date]} />
                 )}
+                {(asksByDate.get(day.date) || []).map((ask) => (
+                  <BreakReason
+                    key={ask.findingKey}
+                    token={token}
+                    ask={ask}
+                    submitAction={breakAction}
+                  />
+                ))}
                 {!asks &&
                   (elsewhere.length > 0 ? (
                     <p className="text-sm text-muted">
@@ -298,6 +412,17 @@ export default function DayByDay({
     <StagedTimesProvider>
     <div className="mt-5">
       {undated.length > 0 && <div className="mb-6">{undated.map(card)}</div>}
+
+      {/* a reason whose day is not on this sheet - see `orphanAsks`. Above the
+          list rather than hidden, because the alternative is a question that
+          silently stops being asked. */}
+      {orphanAsks.length > 0 && (
+        <div className="mb-6">
+          {orphanAsks.map((ask) => (
+            <BreakReason key={ask.findingKey} token={token} ask={ask} submitAction={breakAction} />
+          ))}
+        </div>
+      )}
 
       {batched ? (
         <BatchProvider

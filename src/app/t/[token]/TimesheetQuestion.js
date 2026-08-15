@@ -19,6 +19,9 @@
 import { createContext, useContext, useEffect, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
+// the five sentences, already written and already counting correctly - see the
+// note on `renderReason`. Client-safe: break-answers.js imports nothing.
+import { employeeQuestion } from "@/lib/timesheet/break-answers";
 import { useStagedPublisher } from "./StagedTimes";
 
 // THE BATCH ANSWER, SHARED SO ITS ROWS CAN BE SPLIT ACROSS THE PAGE.
@@ -217,12 +220,38 @@ function copyFor(q, standing) {
           ? "A rest break is recorded outside your shifts. Was that a mistake?"
           : "Some rest breaks are recorded outside your shifts. Was that a mistake?",
         short: shapeShort,
+        // WHY IT IS A PROBLEM AT ALL, IN ONE LINE.
+        //
+        // Every card here says what the record holds and what we make of it, and
+        // none of them said what RULE the day broke - so the answer options read
+        // as a form to fill in rather than as a question about something that
+        // matters. Mánu 2026-08-14.
+        //
+        // NO PREMIUM AND NO PENALTY IN IT. That is the standing rule for
+        // anything an employee reads, and it is not a loss here: what is owed is
+        // admin's business, and what the person needs is the rule and the way
+        // out of breaking it. The second sentence is that way out.
+        rule: "A rest break has to be taken inside a shift you are scheduled for. If you cannot fit one in, tell your supervisor at the time so it can be sorted.",
         // what was logged, and the shift it was logged against - the two things
         // somebody needs to see before saying whether that is when they took it
-        facts: (q.row.detail || []).slice(0, 2).flatMap((x) => [
-          { label: "Logged at", value: `${x.wasFrom} to ${x.wasTo}` },
-          ...(x.service ? [{ label: "Your shift", value: x.service }] : []),
-        ]),
+        facts: [
+          ...(q.row.detail || []).slice(0, 2).flatMap((x) => [
+            { label: "Logged at", value: `${x.wasFrom} to ${x.wasTo}` },
+            ...(x.service ? [{ label: "Your shift", value: x.service }] : []),
+          ]),
+          // AND THAT IT LANDS IN THEIR LUNCH, which this card never said. The
+          // admin finding has carried the same fact since 2026-08-12, so
+          // leaving it off here meant telling ourselves the ten was inside the
+          // meal and telling them it was after their shift. The terse day-by-day
+          // view drops the body, so a fact is the only place it will be read.
+          ...(q.row.inLunch > 0
+            ? [{
+              label: q.row.inLunch === 1 ? "It also falls in" : "They also fall in",
+              value: "the lunch your schedule rosters",
+              ours: true,
+            }]
+            : []),
+        ],
         body: (
           <>
             On <b>{q.row.days} {q.row.days === 1 ? "day" : "days"}</b> your ten minute rest break is
@@ -358,6 +387,11 @@ function copyFor(q, standing) {
       return {
         title: null,
         body: null,
+        // THE RULE, same shape as the off-clock card - what is required, then
+        // the way out of breaking it. No premium and no penalty in it: what is
+        // owed is admin's business, and what the person needs is the rule and
+        // somewhere to go when the day will not allow it.
+        rule: "You are due a ten minute rest break for every four hours you work, and a meal break before the end of your fifth hour. If a day does not leave room for one, tell your supervisor at the time so it can be sorted.",
         yes: {
           label: "Yes, I took my breaks",
           why: "You took them and just did not write them down.",
@@ -391,8 +425,21 @@ function copyFor(q, standing) {
         return {
           title: "Two lunches are on record for this day",
           short: "Two lunches on record",
+          // BOTH SIDES ARE TIMES, or the comparison is not one. This read
+          // "Your schedule has / a lunch that day" against "And this is
+          // recorded / 3:30p to 4:30p" - a sentence fragment on one side and a
+          // time on the other, which is not a thing anybody can compare. The
+          // rostered times were on the schedule row all along and simply were
+          // not carried onto the question. Falls back to the old words when the
+          // roster has no readable range, which is the only case it could not.
           facts: [
-            { label: "Your schedule has", value: "a lunch that day" },
+            {
+              label: "Your schedule has",
+              value: q.row.rosteredFrom
+                ? `${q.row.rosteredFrom} to ${q.row.rosteredTo}`
+                : "a lunch that day",
+              aside: q.row.rosteredMinutes ? spellMinutes(q.row.rosteredMinutes) : null,
+            },
             {
               label: "And this is recorded",
               value: `${q.row.from || "(blank)"} to ${q.row.to || "(blank)"}`,
@@ -481,6 +528,58 @@ function copyFor(q, standing) {
         ),
       };
 
+    case "mealLate": {
+      // THE ONE VIOLATION AN EMPLOYEE HAS NEVER BEEN ASKED ABOUT. `mealLate` days
+      // are excluded from the "nothing documented" question by construction -
+      // "did you take your lunch?" is the wrong question when the record says
+      // they did - and nothing else covered them. 11 on the live batch.
+      //
+      // ASKING WHETHER IT WAS TAKEN WOULD PUT A FALSE SENTENCE ON A DOCUMENT
+      // SOMEBODY SIGNS. The same trap `employeeQuestion` was fixed for: it told
+      // people whose lunch merely started late that they never had one.
+      const late = q.row.lateMinutes ? spellMinutes(q.row.lateMinutes) : null;
+      return {
+        title: "Your meal break started later than it should have",
+        short: "Lunch started late",
+        // WHAT THE RULE ACTUALLY IS on this one - the timing, not the taking.
+        // The break happened; what is in question is when it started, so the
+        // sentence names the fifth hour rather than the entitlement.
+        rule: "Your meal break has to start before the end of your fifth hour. If something on the day stops you getting to it, tell your supervisor at the time so it can be sorted.",
+        facts: [
+          ...(q.row.from ? [{ label: "Your lunch", value: `${q.row.from} to ${q.row.to}` }] : []),
+          ...(late ? [{ label: "That is", value: `${late} into your day`, aside: "after the fifth hour" }] : []),
+        ],
+        body: (
+          <>
+            On <b>{q.date}</b> your punches show a meal break
+            {q.row.from ? <> from <b>{q.row.from}</b> to <b>{q.row.to}</b></> : null}
+            {late ? <>, which is <b>{late}</b> into your day</> : null}.
+            A meal is due before the end of the fifth hour.
+            <br /><br />
+            <b>We have changed nothing.</b> You took the break - the only question is whether it
+            really started then, or whether the punch is what is wrong.
+          </>
+        ),
+        yes: {
+          label: "Yes, it really was that late",
+          why: "The record is right, and we will ask you why below.",
+        },
+        no: {
+          label: "No, I went on time - the punch is wrong",
+          why: "Your lunch started inside the fifth hour and the clock-out is what is wrong.",
+        },
+        yesEffect: <>Your record keeps the late meal, with your reason on it.</>,
+        noEffect: <>Your record says the meal was on time.</>,
+        footnote: (
+          <>
+            <b>This is the only card where confirming asks for a sentence.</b> Everywhere else a
+            missed break is the thing that needs explaining; here the break happened, and what
+            nothing on any export can say is what held it up.
+          </>
+        ),
+      };
+    }
+
     case "shortMealRest":
       return {
         title: "We read a meal block as your rest break. Is that right?",
@@ -518,11 +617,82 @@ function copyFor(q, standing) {
 // telling us you missed twelve breaks turned the card green. Mánu 2026-08-09.
 // Same language the timesheet itself uses - green for a settled day, red for
 // one that owes something.
+// WHY A SAVE WAS REFUSED, IN WORDS, FOR EVERY REASON IT CAN BE.
+//
+// `answerTimesheetQuestion` can refuse eleven different ways and this had words
+// for THREE. The other eight - a missing reason, a time outside the shift, a
+// lunch with no gap to put it in - all came out as "That didn't save. Refresh
+// the page and try again", which is advice that cannot work: the refusal is a
+// judgement about what was sent, and refreshing sends it again.
+//
+// Every one of these is a thing the person can act on, which is the whole test
+// for whether it deserves its own sentence.
+const REFUSALS = {
+  already: "This timesheet is already signed, so it cannot be changed.",
+  // `?preview=1` refuses every write on a real person's batch - see `act` in
+  // page.js. On a test batch it does not refuse at all, so this never fires
+  // there.
+  preview: "Preview only - nothing is saved from this view. Open the employee's own link to answer for real.",
+  needreason: "Saying you missed a break needs a reason. Write why in the box before saving.",
+  missingtime: "Every day you answered “took them” needs the time it started.",
+  badtime: "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight.",
+  outsideshift: "A rest break has to sit inside a shift you actually worked. Pick a time inside one of the hours shown.",
+  nolunchgap: "There is no half hour gap in that day long enough to hold a lunch, so that time cannot be right.",
+  reported: "You have told us something is wrong with this timesheet, so it is with payroll and answers are on hold.",
+  // the three below mean the browser sent something the server would not
+  // recognise. They are not the person's fault and there is nothing for them to
+  // change, so they say so rather than blaming the answer.
+  auth: "That link is not valid any more. Open the timesheet from your email again.",
+  badchoice: "Something went wrong sending that answer. Reload the page and try it again.",
+  toomany: "Too many answers were sent at once. Reload the page and answer them again.",
+  unknown: "That question is not on this timesheet any more - it may have been rebuilt. Reload the page.",
+};
+// AND WHERE IT HAPPENED, which is the half that makes it actionable.
+//
+// A batch card commits every day it holds in ONE write, so "needs a reason" or
+// "outside the shift" on its own points at thirteen days at once and leaves the
+// person hunting for the one that stopped it. The action carries `at` - the day,
+// the slot and its label - plus the hours the answer had to land inside, because
+// the target is more use than the verdict.
+function Refusal({ err }) {
+  const code = typeof err === "string" ? err : err?.error;
+  const at = typeof err === "string" ? null : err?.at;
+  const given = typeof err === "string" ? null : err?.given;
+  const where = [at?.date, at?.label || at?.slot].filter(Boolean).join(" · ");
+  const inside = at?.shifts?.length ? at.shifts : at?.window?.length ? at.window : at?.windows;
+
+  return (
+    <div className="mt-3 rounded-lg border border-rose-400/70 bg-rose-500/10 p-3">
+      {where && (
+        <p className="font-mono text-xs font-bold text-rose-800 dark:text-rose-300">
+          {where}
+          {given ? <> &middot; you typed <b>{given}</b></> : null}
+        </p>
+      )}
+      <p className={`text-sm font-semibold text-rose-700 dark:text-rose-400 ${where ? "mt-1" : ""}`}>
+        {REFUSALS[code] || "That didn't save. Refresh the page and try again."}
+      </p>
+      {inside?.length ? (
+        <p className="mt-1 text-xs text-rose-700 dark:text-rose-300">
+          It has to be inside{" "}
+          <b className="font-mono">{inside.join(" or ")}</b>.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function Choice({ on, tone, label, why, onClick, busy }) {
+  // ONE COLOUR FOR EVERY OPTION, 2026-08-14. Green for yes and red for no was
+  // deliberate - the same language the timesheet itself uses, green for a
+  // settled day and red for one that owes something - and it was reversed
+  // because telling us you missed twelve breaks turned the card green.
+  //
+  // It goes because the colour is an OPINION about the answer, shown before
+  // anybody has finished giving it. `tone` is still passed and still says
+  // which is which; nothing reads it here any more.
   const ring = on
-    ? tone === "yes"
-      ? "border-2 border-emerald-500 bg-emerald-500/10"
-      : "border-2 border-rose-500 bg-rose-500/10"
+    ? "border-2 border-brand bg-brand/10"
     : "border border-border-strong bg-surface-2 hover:border-brand";
   return (
     <button
@@ -536,11 +706,7 @@ function Choice({ on, tone, label, why, onClick, busy }) {
         <span
           aria-hidden="true"
           className={`h-3.5 w-3.5 flex-none rounded-full border-2 ${
-            on
-              ? tone === "yes"
-                ? "border-emerald-500 bg-emerald-500"
-                : "border-rose-500 bg-rose-500"
-              : "border-border-strong"
+            on ? "border-brand bg-brand" : "border-border-strong"
           }`}
         />
         {label}
@@ -695,7 +861,7 @@ function OneQuestion({
           ? Object.fromEntries(slots.map((need) => [need.slot, slotMin(need)]).filter(([, m]) => m))
           : null,
       });
-      if (!res?.ok) setErr(res?.error || "failed");
+      if (!res?.ok) setErr(res || { error: "failed" });
       else { setProposed(null); setAt(""); setSlotAt({}); setEditing(false); router.refresh(); }
     });
   }
@@ -955,11 +1121,12 @@ function OneQuestion({
           they just clicked. */}
       {proposed && (
         <div className={`mt-3 rounded-lg border-2 p-4 ${
-          proposed.choice === "yes"
-            ? "border-emerald-500 bg-emerald-500/10"
-            : proposed.choice === null
-              ? "border-border-strong bg-surface-2"
-              : "border-rose-500 bg-rose-500/10"
+          // one colour whichever way they answered - see the note on `Choice`.
+          // Taking an answer OFF keeps its own grey, because that is not an
+          // answer, it is undoing one.
+          proposed.choice === null
+            ? "border-border-strong bg-surface-2"
+            : "border-brand bg-brand/10"
         }`}>
           <p className="text-base font-semibold text-foreground">
             {proposed.choice === null ? "Take your answer off?" : "Are you sure you want to confirm?"}
@@ -1006,8 +1173,7 @@ function OneQuestion({
               disabled={pending || timeBlocked}
               onClick={commit}
               className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
-                proposed.choice === "yes" ? "bg-emerald-600"
-                  : proposed.choice === null ? "bg-brand" : "bg-rose-600"
+                "bg-brand"
               }`}
             >
               {proposed.choice === null ? "Take it off" : "Yes, confirm"}
@@ -1025,22 +1191,7 @@ function OneQuestion({
       )}
 
       {pending && <p className="mt-3 text-sm text-muted">Saving your answer…</p>}
-      {err && (
-        <p className="mt-3 text-sm font-semibold text-rose-700 dark:text-rose-400">
-          {err === "already"
-            ? "This timesheet is already signed, so it cannot be changed."
-            // PREVIEW REFUSES EVERY WRITE ON PURPOSE - see `refuse` in page.js,
-            // which is what stops a test click landing on a real person's record.
-            // It came back as the generic failure, so the one person who ever
-            // sees it was told to refresh and try again, which cannot work: the
-            // block is the point, not a fault.
-            : err === "preview"
-              ? "Preview only - nothing is saved from this view. Open the employee's own link to answer for real."
-              : err === "badtime"
-                ? "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight."
-                : "That didn't save. Refresh the page and try again."}
-        </p>
-      )}
+      {err && <Refusal err={err} />}
     </div>
   );
 }
@@ -1085,6 +1236,11 @@ export function BatchProvider({
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [picked, setPicked] = useState({});
+  // WHY THEY MISSED IT, one per question. Required on a "no" - Mánu 2026-08-14 -
+  // because a "no" IS the violation and the why is the one half no QSP export
+  // has a field for. Leaving the whole question alone is still fine and still
+  // keeps the pay; this only bites once somebody says they missed something.
+  const [reasons, setReasons] = useState({});
   // { [questionId]: { [slot]: "raw text the person typed" } }
   const [times, setTimes] = useState({});
   const [confirming, setConfirming] = useState(false);
@@ -1175,6 +1331,28 @@ export function BatchProvider({
     }
     return null;
   };
+  // EVERY DAY ANSWERED "missed them" OWES A REASON, the way a day answered
+  // "took them" owes its times. Only on the kinds the server also enforces it
+  // on - see `NEEDS_REASON` in answerTimesheetQuestion - so the browser and the
+  // action cannot disagree about who may save.
+  // WHICH ANSWER OWES THE SENTENCE, and it is not the same one on every kind.
+  //
+  // On a missed break the "no" IS the violation, so that is where the why goes.
+  // On a LATE LUNCH the break happened - confirming it really was that late is
+  // what stands the violation up, so the reason hangs off the "yes". A single
+  // set keyed on "no" would have asked the wrong half of this card.
+  const REASON_ON = {
+    nothingDocumentedMeal: "no",
+    nothingDocumentedRest: "no",
+    mealLate: "yes",
+  };
+  const reasonOf = (q) => String(reasons[q.id] ?? "").trim();
+  const owesReason = (q, v) => REASON_ON[q.kind] === v;
+  const missingReasons = list.reduce(
+    (n, q) => n + (owesReason(q, valueFor(q)) && !reasonOf(q) ? 1 : 0),
+    0,
+  );
+
   // EVERY DAY ANSWERED "took them" OWES ITS TIMES. Mánu 2026-08-10: required,
   // "because we need a record of this". A day answered "missed them" owes none -
   // there is nothing to say when about.
@@ -1229,10 +1407,15 @@ export function BatchProvider({
                     .filter(([, m]) => m),
                 )
               : null,
+          // WHY, on the answer that IS the violation. Sent only on a "no": a
+          // "yes" has nothing to explain, and a partial is telling us about the
+          // tens they DID get. The server re-checks this against the question it
+          // re-derives, so a browser that skipped the box still cannot save one.
+          reason: owesReason(q, v) ? (reasons[q.id] ?? "").trim() || null : null,
         })),
       });
-      if (!res?.ok) setErr(res?.error || "failed");
-      else { setConfirming(false); setPicked({}); setTimes({}); router.refresh(); }
+      if (!res?.ok) setErr(res || { error: "failed" });
+      else { setConfirming(false); setPicked({}); setTimes({}); setReasons({}); router.refresh(); }
     });
   }
 
@@ -1316,12 +1499,9 @@ export function BatchProvider({
           className={`px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
             i > 0 ? "border-l border-border-strong" : ""
           } ${
+            // one colour, like the options above - see the note on `Choice`
             v === opt
-              ? opt === "yes"
-                ? "bg-emerald-600 text-white"
-                : opt === "partial"
-                  ? "bg-amber-500 text-white"
-                  : "bg-rose-600 text-white"
+              ? "bg-brand text-white"
               : "bg-surface-2 text-muted hover:bg-surface hover:text-foreground"
           }`}
         >
@@ -1351,6 +1531,49 @@ export function BatchProvider({
   // It uses no hooks, which is what makes calling it legal. If one is ever
   // needed here, this has to be hoisted to module scope and read the context
   // instead - do NOT put it back to <TimesFor/>.
+  // THE WHY, under the answer that IS the violation.
+  //
+  // It opens on a "no" and nowhere else. Not a second control beside the
+  // question - they are already being asked "did you take your breaks?", and a
+  // separate box would ask the same person the same thing twice on the same day,
+  // writing to two tables. Saying no IS the violation, so the reason belongs on
+  // it. Mánu 2026-08-14.
+  //
+  // The sentence comes from `employeeQuestion`, which already writes five of
+  // them with the counts right - a missed lunch, one ten, neither of two, one of
+  // two taken, a late meal - so nothing new is worded here.
+  const renderReason = ({ q, v }) => {
+    if (!owesReason(q, v)) return null;
+    const said = reasonOf(q);
+    const ask = employeeQuestion(
+      q.kind === "mealLate"
+        ? { kind: "meal-late" }
+        : {
+          kind: q.row?.part === "meal" ? "meal" : "rest",
+          missingCount: q.row?.part === "meal" ? 1 : Math.max(1, (q.needs || []).length),
+          takenCount: 0,
+        },
+      { lateMinutes: q.row?.lateMinutes ?? null },
+    );
+    return (
+      <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-700/70 dark:bg-amber-950/30">
+        <p className="text-sm font-semibold text-foreground">{ask.ask}</p>
+        <textarea
+          rows={2}
+          value={reasons[q.id] ?? ""}
+          onChange={(e) => setReasons((r) => ({ ...r, [q.id]: e.target.value }))}
+          placeholder={ask.placeholder}
+          className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+        />
+        {!said && (
+          <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+            Needed before this can be saved. It goes at the bottom of your timesheet.
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const renderTimes = ({ q, v }) => {
     if ((v !== "yes" && v !== "partial") || !(q.needs || []).length) return null;
     const partial = v === "partial";
@@ -1451,9 +1674,9 @@ export function BatchProvider({
   return (
     <BatchCtx.Provider
       value={{
-        renderToggle, renderTimes, missingLabel, byDay, list, copy,
+        renderToggle, renderTimes, renderReason, missingLabel, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
-        dirty, missingTimes, undecided, missed, took, hours, base, answeredAll,
+        dirty, missingTimes, missingReasons, undecided, missed, took, hours, base, answeredAll,
       }}
     >
       {children}
@@ -1467,7 +1690,7 @@ export function BatchProvider({
 export function BatchDays({ dates }) {
   const ctx = useContext(BatchCtx);
   if (!ctx) return null;
-  const { renderToggle, renderTimes, missingLabel } = ctx;
+  const { renderToggle, renderTimes, renderReason, missingLabel } = ctx;
   const byDay = dates ? ctx.byDay.filter((d) => dates.includes(d.date)) : ctx.byDay;
   if (!byDay.length) return null;
 
@@ -1515,7 +1738,10 @@ export function BatchDays({ dates }) {
                 `renderTimes` itself would put the JSX type back in the tree and
                 bring the remount with it */}
             {items.map(({ q, v }) => (
-              <Fragment key={`t-${q.id}`}>{renderTimes({ q, v })}</Fragment>
+              <Fragment key={`t-${q.id}`}>
+                {renderTimes({ q, v })}
+                {renderReason({ q, v })}
+              </Fragment>
             ))}
           </li>
         ))}
@@ -1532,7 +1758,7 @@ export function BatchConfirm() {
   if (!ctx) return null;
   const {
     list, copy, pending, err, confirming, setConfirming, commit,
-    dirty, missingTimes, undecided, missed, took, hours, base, answeredAll,
+    dirty, missingTimes, missingReasons, undecided, missed, took, hours, base, answeredAll,
   } = ctx;
 
   return (
@@ -1541,15 +1767,27 @@ export function BatchConfirm() {
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            // NEVER GREYED OUT. Mánu 2026-08-12. It used to disable itself with
-            // nothing changed or a time still blank, so the one control on the
-            // page looked broken while the reason sat somewhere else on screen.
-            // Only an in-flight save disables it now.
+            // EVERY DAY NEEDS AN ANSWER BEFORE ANY OF THEM SAVES, 2026-08-14.
+            //
+            // This was NEVER GREYED OUT, and that was a deliberate call on
+            // 2026-08-12: it used to disable itself with nothing changed or a
+            // time still blank, so the one control on the page looked broken
+            // while the reason sat somewhere else on screen.
+            //
+            // The reason survives the reversal, so the shape does too. It blocks
+            // - nothing is written while a day is still open - but the block
+            // SAYS SO, in the line below and in the label, rather than the
+            // button going dead with the explanation somewhere off screen. That
+            // is the same treatment the missing times and missing reasons get,
+            // which is the family this now belongs to.
             disabled={pending}
-            onClick={() => setConfirming(true)}
+            onClick={() => { if (!undecided.length) setConfirming(true); }}
+            aria-disabled={undecided.length > 0}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:opacity-40"
           >
-            {answeredAll && !dirty.length ? "Answered" : "Save my answers"}
+            {undecided.length > 0
+              ? `${undecided.length} still to answer`
+              : answeredAll && !dirty.length ? "Answered" : "Save my answers"}
           </button>
           {undecided.length > 0 && (
             <span className="text-sm text-muted">
@@ -1570,13 +1808,36 @@ export function BatchConfirm() {
         </p>
       )}
 
+      {/* NOTHING SAVES WHILE A DAY IS STILL OPEN. The card commits every one of
+          its days in a single write - that is what makes it one card and not
+          thirteen - so a half-answered set is not a partial save, it is a set
+          somebody has not finished. */}
+      {!confirming && undecided.length > 0 && (
+        <p className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+          <b>
+            {undecided.length} {undecided.length === 1 ? "day" : "days"} still to answer.
+          </b>{" "}
+          Every day here needs an answer before any of them can be saved.
+        </p>
+      )}
+
+      {/* AND SAYING YOU MISSED ONE IS ONLY HALF TOO. The why is the one half no
+          QSP export has a field for, so a day claimed as missed without it
+          records the violation and cannot say what caused it. Same shape and
+          same place as the times warning above, because it is the same rule
+          pointed at the other answer. */}
+      {!confirming && missingReasons > 0 && (
+        <p className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+          <b>
+            {missingReasons} {missingReasons === 1 ? "reason" : "reasons"} still to write.
+          </b>{" "}
+          Nothing is submitted until every day that needs one has it.
+        </p>
+      )}
+
       {confirming && (
         <div
-          className={`mt-3 rounded-lg border-2 p-4 ${
-            missed.length
-              ? "border-rose-500 bg-rose-500/10"
-              : "border-emerald-500 bg-emerald-500/10"
-          }`}
+          className="mt-3 rounded-lg border-2 border-brand bg-brand/10 p-4"
         >
           <p className="text-base font-semibold text-foreground">Are you sure you want to confirm?</p>
           <div className="mt-2 space-y-1.5 text-sm text-muted">
@@ -1595,7 +1856,8 @@ export function BatchConfirm() {
               disabled={pending}
               onClick={commit}
               className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
-                missed.length ? "bg-rose-600" : "bg-emerald-600"
+                // one colour, like the options - see the note on `Choice`
+                "bg-brand"
               }`}
             >
               Yes, confirm
@@ -1612,20 +1874,7 @@ export function BatchConfirm() {
         </div>
       )}
 
-      {err && (
-        <p className="mt-3 text-sm font-semibold text-rose-700 dark:text-rose-400">
-          {err === "already"
-            ? "This timesheet is already signed, so it cannot be changed."
-            // PREVIEW REFUSES EVERY WRITE ON PURPOSE - see `refuse` in page.js,
-            // which is what stops a test click landing on a real person's record.
-            // It came back as the generic failure, so the one person who ever
-            // sees it was told to refresh and try again, which cannot work: the
-            // block is the point, not a fault.
-            : err === "preview"
-              ? "Preview only - nothing is saved from this view. Open the employee's own link to answer for real."
-              : "That didn't save. Refresh the page and try again."}
-        </p>
-      )}
+      {err && <Refusal err={err} />}
 
       {copy.footnote && (
         <p className="mt-3 border-l-2 border-border-strong pl-3 text-sm text-muted">
@@ -1727,6 +1976,9 @@ export default function TimesheetQuestion({
             ))}
           </dl>
         )}
+        {c.rule && (
+          <p className="mt-1.5 text-xs leading-5 text-muted">{c.rule}</p>
+        )}
         <div className={perDay ? "mt-2" : ""}>
           {list.map((q) => (
             <OneQuestion
@@ -1757,6 +2009,12 @@ export default function TimesheetQuestion({
           height between them and the rest of their timesheet - and the answered
           card below carries "Change this" to bring the question back. */}
       {!perDay && !allAnswered && <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>}
+      {/* THE RULE, on the long card as well as the terse one. Same sentence in
+          both, so somebody switching views is not told two different things
+          about the same day. */}
+      {c.rule && !allAnswered && (
+        <p className="mt-2 text-sm leading-relaxed text-muted">{c.rule}</p>
+      )}
       {perDay && (
         <p className="mt-2 text-sm leading-relaxed text-muted">
           There {list.length === 2 ? "are two of these" : `are ${list.length} of these`} on your

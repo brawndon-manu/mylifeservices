@@ -13,6 +13,12 @@ function esc(s) {
 const BTN =
   "display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;";
 
+// the subject lives in its own dependency-free module so it can be tested and
+// previewed without pulling in the email shell - see timesheet-subjects.js.
+// Re-exported here because this is the file anybody looks in for "what does the
+// timesheet email say".
+export { timesheetSubject } from "@/lib/timesheet-subjects";
+
 export function buildTimesheetEmailHtml({
   employeeName,
   periodLabel,
@@ -59,6 +65,12 @@ export function buildTimesheetEmailHtml({
     ? `<p style="margin:0 0 18px;color:#b45309;font-size:14px;font-weight:600;">Please sign it by ${esc(dueAt)}.</p>`
     : "";
 
+  // A LINE OFFERING THE COMMENT BOX WAS ADDED HERE AND TAKEN STRAIGHT BACK OUT
+  // on 2026-08-14. "If you missed a lunch or a rest break, or your lunch started
+  // late, you can tell us why on the page." It carried no figure and no count,
+  // so it did not break the 2026-08-11 and 2026-08-12 rulings on paper - and it
+  // still went, on Mánu's call. The email exists to get them to the page; the
+  // page is where what the page can do gets explained.
   const body = `
     ${testBanner}
     <p style="margin:0 0 14px;">Hi ${esc(employeeName)},</p>

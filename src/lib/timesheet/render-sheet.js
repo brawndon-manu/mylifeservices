@@ -18,6 +18,7 @@ import { restNameFor } from "./rests.js";
 import { addedOvertimeHours } from "./parse.js";
 import { applyAssumptions, premiumsFromDays } from "./premium-split.js";
 import { formatBreakComments } from "./break-answers.js";
+import { sheetDisplayName } from "./display-name.js";
 
 // THE THREE DOCUMENTS, and they are one renderer over three sets of day rows.
 //
@@ -65,8 +66,13 @@ export const RENDER_SELECT = {
   id: true,
   sourceName: true,
   data: true,
+  // the display name reads the account and the batch's rehearsal flag. Left out
+  // of this select they arrive undefined and the sheet silently falls back to
+  // `sourceName` - the same class of failure as `restsUrl`, showing up as a
+  // recording with the wrong name on it rather than as an error.
+  user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
   batch: {
-    select: { periodFrom: true, periodTo: true, restsByDate: true },
+    select: { periodFrom: true, periodTo: true, restsByDate: true, testOnly: true },
   },
 };
 
@@ -113,7 +119,11 @@ export async function renderSheet(ts, {
 
   return renderCorrected(
     {
-      employee: ts.sourceName,
+      // WHAT IT PRINTS, not what it matches by - see `sheetDisplayName`. On a
+      // rehearsal batch this is the first name alone so a recording can be
+      // shown; `restName` below is untouched, because that is the key the
+      // Breaks column is matched on and rewriting it strands every rest row.
+      employee: sheetDisplayName({ user: ts.user, sourceName: ts.sourceName, batch: ts.batch }),
       // the spelling the Rest Periods Report used, which is what the Breaks
       // column is matched on. Separate from `employee`, which is what the page
       // PRINTS - the sheet has to carry the name payroll knows them by.

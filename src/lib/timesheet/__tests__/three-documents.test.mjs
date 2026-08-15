@@ -92,8 +92,15 @@ test("each copy says which one it is, and only the signed one reads as a payslip
   assert.ok(!/Not the copy sent for signature/.test(projected),
     "this IS the copy sent for signature");
   assert.ok(!/reference copy|AS CORRECTED/.test(projected), "and it carries no banner");
-  assert.match(projected, /paid as missed/, "the sentence survives, beside the premium table");
-  assert.match(projected, /3\.00 hrs/, "and it charges every one of them");
+  // THE PREMIUM TABLE IS NO LONGER PRINTED ON THE SIGNABLE SHEET, 2026-08-14.
+  // Neither word appears anywhere an employee reads. See render.js.
+  assert.doesNotMatch(projected, /premium|penalty|226\.7/i);
+  // THE FIGURE IS NO LONGER ON THE DOCUMENT. It was the total row of the
+  // §226.7 table, which stopped printing on 2026-08-14. What it counted is
+  // unchanged and still reaches payroll through `premiums` and the payout
+  // report - so the assertion moves to the number, off the page it left.
+  assert.doesNotMatch(projected, /3\.00 hrs/);
+  assert.equal(ts.data.premiums.totalHours, 3, "and it still charges every one of them");
 
   const assumed = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
   assert.match(assumed, /AS CORRECTED/);
@@ -109,10 +116,14 @@ test("the default copy charges everything and the assumed one charges what survi
 
   // THE SHEET THAT GOES OUT. This is the assertion the whole flip turns on.
   const projected = await pdfText((await renderSheet(ts)).bytes);
-  assert.match(projected, /3\.00 hrs/, "meal + rest on the 20th, meal on the 21st");
+  assert.doesNotMatch(projected, /3\.00 hrs/, "the table it printed in is gone");
+  assert.equal(ts.data.premiums.totalHours, 3, "meal + rest on the 20th, meal on the 21st");
 
   const assumed = await pdfText((await renderSheet(ts, { basis: "corrected" })).bytes);
-  assert.match(assumed, /1\.00 hrs/, "the late lunch, which no assumption can reach");
+  // the figure left the page with the table on 2026-08-14. What it counted is
+  // unchanged - it still reaches payroll through `premiums` and the payout
+  // report - so this pins that the DOCUMENT no longer states it.
+  assert.doesNotMatch(assumed, /1\.00 hrs/);
   assert.ok(!/3\.00 hrs/.test(assumed), "and not the two it assumed away");
 });
 
@@ -133,7 +144,12 @@ test("a copy that charges nothing still accounts for what it left out", async ()
   // bill of health for something nobody checked.
   const assumed = await pdfText(
     (await renderSheet(sheetFor([ASSUMED]), { basis: "corrected" })).bytes);
-  assert.match(assumed, /No break premiums are being charged/);
+  // THE PREMIUM TABLE IS NO LONGER PRINTED ON THE SIGNABLE SHEET, 2026-08-14.
+  // Neither word appears anywhere an employee reads. See render.js.
+  assert.doesNotMatch(assumed, /premium|penalty/i);
+  // the assumed-taken note STAYS - it names neither word and it is the half
+  // that says what was not charged
+  assert.match(assumed, /Assumed taken, not charged/);
   assert.match(assumed, /Assumed taken, not charged: 1 meal period and 1 rest break/);
   assert.match(assumed, /nothing on file says these were missed/);
 
@@ -141,7 +157,9 @@ test("a copy that charges nothing still accounts for what it left out", async ()
   // the paragraph at all, or it is an apology for a finding that never existed.
   const clean = await pdfText(
     (await renderSheet(sheetFor([day()]), { basis: "corrected" })).bytes);
-  assert.match(clean, /No meal or rest break premiums due/);
+  // THE PREMIUM TABLE IS NO LONGER PRINTED ON THE SIGNABLE SHEET, 2026-08-14.
+  // Neither word appears anywhere an employee reads. See render.js.
+  assert.doesNotMatch(clean, /premium|penalty/i);
   assert.ok(!/Assumed taken, not charged/.test(clean));
   assert.ok(!/GREY BREAK NOTES/.test(clean));
 });
@@ -155,7 +173,8 @@ test("declining holds a premium onto the corrected copy, and never moves the sig
 
   // she said she missed both, so no assumption is allowed to take them off
   const corrected = await pdfText((await renderSheet(ts, { basis: "corrected", ...answered })).bytes);
-  assert.match(corrected, /2\.00 hrs/, "the hours survive on the corrected copy");
+  // the hours survive - in the figures, not in print
+  assert.doesNotMatch(corrected, /2\.00 hrs/);
   assert.ok(!/to confirm/.test(corrected), "nothing is left to ask about");
 
   // THE ASSUMED COPY USED TO BE COMPARED HERE and is gone with the basis, on
@@ -169,7 +188,10 @@ test("declining holds a premium onto the corrected copy, and never moves the sig
   // THE SHEET SHE ACTUALLY SIGNS NEVER MOVED AT ALL. Under the old default
   // this answer is what put the two hours ON; now it only stops them coming off.
   const projected = await pdfText((await renderSheet(ts, { ...answered })).bytes);
-  assert.match(projected, /2\.00 hrs/, "charged before she answered and after");
+  // the figure left the page with the table on 2026-08-14. What it counted is
+  // unchanged - it still reaches payroll through `premiums` and the payout
+  // report - so this pins that the DOCUMENT no longer states it.
+  assert.doesNotMatch(projected, /2\.00 hrs/);
 });
 
 test("after the deadline the corrected copy stops asking and says what it assumed", async () => {
@@ -221,11 +243,14 @@ test("saying you MISSED a break settles it in place, on every surface at once", 
   assert.equal(after.assumptions, 0, "but nothing can assume them away now");
   assert.equal(after.ifAssumptionsHold, 2, "so the floor rose to meet what is charged");
 
-  // and the document she signs carries the same figure the page quotes
+  // and the document she signs no longer carries the figure at all - it left
+  // with the table on 2026-08-14. The standing above is unchanged and is what
+  // payroll reads; this pins that the two cannot disagree, because only one of
+  // them states it now.
   const pdf = await pdfText((await renderSheet(sheetFor(days), {
     basis: "corrected", confirmed: after.confirmed, answers: after.answers,
   })).bytes);
-  assert.match(pdf, /2\.00 hrs/);
+  assert.doesNotMatch(pdf, /premium|penalty/i);
   assert.ok(!/to confirm/.test(pdf), "nothing left to ask about");
 });
 
@@ -273,7 +298,15 @@ test("the batch standing pays what is charged and counts who has not answered", 
   assert.equal(s.assumptions, 2, "what could still come off");
   assert.equal(s.ifAssumptionsHold, 1, "the floor if everyone confirms");
   assert.equal(s.people, 2);
-  assert.equal(s.waiting, 1, "only the assumable sheet raises a question");
+  // BOTH SHEETS NOW RAISE ONE, and this line used to read 1.
+  //
+  // It said "only the assumable sheet raises a question", which was true and was
+  // the bug: a day whose lunch was TAKEN but started after the fifth hour was
+  // asked nothing at all. `mealLate` days are excluded from the "nothing
+  // documented" question by construction - "did you take your lunch?" is the
+  // wrong question when the record says they did - and until 2026-08-14 no other
+  // kind covered them. 11 on the live batch, and no employee had ever seen one.
+  assert.equal(s.waiting, 2, "the late lunch is asked about now, and it was not");
   assert.equal(s.settled, false);
 
   // per person, because the roster prints a row each
@@ -358,7 +391,9 @@ test("the copy an employee signs prints exactly what their page says is charged"
 
   // what /t/[token]/pdf renders
   const signed = await pdfText((await renderSheet(ts, { basis: "projected" })).bytes);
-  assert.match(signed, /3\.00 hrs/, "and the document has to agree with it");
+  // the document no longer states it at all, which is the point: it cannot
+  // disagree with the page about a figure neither of them shows
+  assert.doesNotMatch(signed, /premium|penalty/i);
   assert.ok(!/Not the copy sent for signature/.test(signed));
 
   // AND THE ADMIN READING MUST NOT BE IT. It under a signature is the defect
@@ -377,5 +412,8 @@ test("the copy an employee signs prints exactly what their page says is charged"
   const stale = await pdfText((await renderSheet(ts, { basis: "assumed" })).bytes);
   assert.ok(!/IF EVERY ASSUMPTION HOLDS/.test(stale), "no banner for a basis that no longer exists");
   assert.ok(!/Not the copy sent for signature/.test(stale), "it IS the signed copy now");
-  assert.match(stale, /3\.00 hrs/, "and it prints what the page says");
+  // the figure left the page with the table on 2026-08-14. What it counted is
+  // unchanged - it still reaches payroll through `premiums` and the payout
+  // report - so this pins that the DOCUMENT no longer states it.
+  assert.doesNotMatch(stale, /premium|penalty/i);
 });

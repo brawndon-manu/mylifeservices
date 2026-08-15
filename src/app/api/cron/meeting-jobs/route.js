@@ -155,7 +155,7 @@ export async function GET(request) {
   const sendSessionReminder = async (m, optionId, hasOptions, subject, eyebrow, session) => {
     const recipients = await goingRecipients(m, optionId, hasOptions);
     if (!recipients.length) return;
-    const bodyHtml = renderMarkdown(m.content);
+    const bodyHtml = renderMarkdown(m.content, { email: true });
     const meetingHtml = buildMeetingBlockHtml(m, session);
     const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${m.id}`);
     // header date = the meeting date, always shown in Pacific (emails pin one zone).

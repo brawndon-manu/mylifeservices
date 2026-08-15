@@ -17,7 +17,7 @@ import FlagButton from "../../checks/FlagButton";
 import CheckStatusChip from "@/components/CheckStatusChip";
 import { batchReach, markKey } from "@/lib/timesheet/mark-key";
 import BreakAnswer from "../../checks/BreakAnswer";
-import { answersByFinding } from "@/lib/timesheet/break-answers";
+import { answersByFinding, breakFindingKey } from "@/lib/timesheet/break-answers";
 import MiscClassify from "./MiscClassify";
 import RecomputeButton from "../../corrections/RecomputeButton";
 import { PresenceBar, PresenceCard } from "../../Presence";
@@ -500,10 +500,16 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                 because "took one of the two" is a real answer. */}
             {sheet.userId && list.map((x) => {
               const isRest = x.kind === "rest-not-taken";
-              // three kinds, three keys - a late meal and a missing meal are
-              // different questions about the same day and must not share a row
-              const slot = isRest ? "rest" : x.kind === "meal-late" ? "meallate" : "meal";
-              const key = `break-${slot}-${d.date}`;
+              const kind = isRest ? "rest" : x.kind === "meal-late" ? "meal-late" : "meal";
+              // THREE KINDS, THREE KEYS - a late meal and a missing meal are
+              // different questions about the same day and must not share a row.
+              //
+              // Built by `breakFindingKey` now rather than spelled out here. The
+              // employee's own page has to produce the IDENTICAL string, because
+              // a reason taken on a call and a reason they typed are the same
+              // fact about the same day and belong in one row. Two spellings of
+              // this would be two rows that can disagree, both printing.
+              const key = breakFindingKey(kind, d.date);
               return (
                 <BreakAnswer
                   key={x.kind}
@@ -511,7 +517,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                   personKey={sheet.userId}
                   findingKey={key}
                   date={d.date}
-                  kind={isRest ? "rest" : x.kind === "meal-late" ? "meal-late" : "meal"}
+                  kind={kind}
                   // how many the day is SHORT. `short` is the rest shortfall; a
                   // meal is always the one.
                   missing={isRest ? (x.short || 1) : 1}

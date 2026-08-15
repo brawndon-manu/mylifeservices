@@ -190,7 +190,11 @@ test("the sheet they sign says the times came from them", async () => {
   // A BREAK NOBODY RECORDED IS THE EMPLOYEE'S OWN ACCOUNT, and the document has
   // to say so rather than presenting it as something the clock witnessed.
   assert.match(text, /this is your own account of the day/);
-  assert.match(text, /no premium is charged/);
+  // THE PREMIUM TABLE IS NO LONGER PRINTED ON THE SIGNABLE SHEET, 2026-08-14.
+  // Neither word appears anywhere an employee reads. See render.js.
+  assert.doesNotMatch(text, /premium|penalty/i);
+  // the fact the sentence carried SURVIVES - it is their own account of the day
+  assert.match(text, /your own account of the day/);
   // and it distinguishes a time they typed from one they accepted off the roster
   assert.match(text.replace(/\n/g, " "), /One of those times came from your schedule/);
 

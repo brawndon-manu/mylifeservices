@@ -566,8 +566,7 @@ export async function renderCorrected(sheet, opts = {}) {
       const off = (d.statedBreaks || []).length - typed;
       footnotes.push(
         `${d.date}: you told us you took ${parts.join(" and ")}. Nothing recorded ` +
-        `${parts.length === 1 ? "it" : "them"} at the time, so this is your own account of the day ` +
-        `and no premium is charged for ${parts.length === 1 ? "it" : "them"}.` +
+        `${parts.length === 1 ? "it" : "them"} at the time, so this is your own account of the day.` +
         (off ? ` ${off === (d.statedBreaks || []).length ? "Those times came" : "One of those times came"} from your schedule and you accepted ${off === 1 ? "it" : "them"}.` : ""),
       );
     }
@@ -1028,8 +1027,8 @@ export async function renderCorrected(sheet, opts = {}) {
     y = wrap(
       page,
       "On these days two bookings overlap, so more hours are credited than the " +
-      "time between the first and last punch. Both bookings are paid in full, and break " +
-      "premiums are worked out on hours worked.",
+      "time between the first and last punch. Both bookings are paid in full, and what " +
+      "breaks the day entitles you to is worked out on hours worked.",
       L, y, R - L, { font, size: 7.5, color: MUTED, leading: 9.5 },
     );
     y -= 4;
@@ -1090,8 +1089,8 @@ export async function renderCorrected(sheet, opts = {}) {
     y = wrap(
       page,
       "A rest break's two times were recorded in reverse, so the same minutes were counted twice and the day read " +
-        "high. The schedule for each day above agrees with the corrected figure, and your break premiums are " +
-        "unchanged. When you clock a rest break, enter the time you stop first, then the time you start again.",
+        "high. The schedule for each day above agrees with the corrected figure, and your breaks are " +
+        "unaffected. When you clock a rest break, enter the time you stop first, then the time you start again.",
       L, y, R - L, { font, size: 6.5, color: MUTED, leading: 8.5 },
     );
     y -= 10;
@@ -1153,85 +1152,29 @@ export async function renderCorrected(sheet, opts = {}) {
     return cur - 12;
   };
 
-  if (p.totalHours > 0) {
-    // header + both rows + total, kept on one page
-    ensure(40 + (p.mealDays.length ? 22 : 0) + (p.restDays.length ? 30 : 0) + 40);
-    text("Break Premium Payments Due - California Labor Code \u00A7226.7", L, y, {
-      size: 10.5, f: bold, color: BRAND,
-    });
-    y -= 16;
-
-    const cw = [172, 300, R - L - 172 - 300];
-    const cx = [L, L + cw[0], L + cw[0] + cw[1]];
-    const hH = 15;
-    page.drawRectangle({ x: L, y: y - hH + 4, width: R - L, height: hH, color: HEADBG });
-    text("Premium Type", cx[0] + 6, y - hH + 8, { size: 7.5, f: bold, color: WHITE });
-    text("Workdays with Violation", cx[1] + 6, y - hH + 8, { size: 7.5, f: bold, color: WHITE });
-    text("Hours Due", cx[2] + 6, y - hH + 8, { size: 7.5, f: bold, color: WHITE });
-    y -= hH + 4;
-
-    const premRow = (label, days, hrs, note) => {
-      if (!days.length) return;
-      const startY = y;
-      text(label, cx[0] + 6, y, { size: 7.5 });
-      const listText = days.join(", ") + (note ? `  ${note}` : "");
-      const endY = wrap(page, listText, cx[1] + 6, y, cw[1] - 12, {
-        font, size: 7, color: INK, leading: 8.5,
-      });
-      text(`${f2(hrs)} hrs`, cx[2] + 6, y, { size: 7.5, f: bold, color: PREM });
-      y = Math.min(startY - 12, endY - 4);
-      line(L, y + 3, R, y + 3);
-      y -= 9;
-    };
-    premRow(
-      "Meal period premium",
-      p.mealDays,
-      p.mealHours,
-      "(no meal period taken, or not started by the end of the fifth hour)",
-    );
-    premRow("Rest break premium", p.restDays, p.restHours, "");
-
-    const totH = 15;
-    page.drawRectangle({ x: L, y: y - totH + 5, width: R - L, height: totH, color: TOTALBG });
-    text("Total premium hours due (paid at the employee's regular rate of pay)", cx[0] + 6, y - totH + 9, {
-      size: 7.5, f: bold,
-    });
-    text(`${f2(p.totalHours)} hrs`, cx[2] + 6, y - totH + 9, { size: 7.5, f: bold, color: PREM });
-    y -= totH + 10;
-
-    // "verify before payout" used to live here. it's aimed at payroll, and this
-    // table now sits above the employee's signature, so it reads as an
-    // instruction to the person signing. moved down to the admin trailer.
-    text(
-      "One additional hour of pay per workday for a missed meal period and for missed rest break(s) - max one of each per day.",
-      L, y, { size: 6.5, color: MUTED },
-    );
-    y -= 10;
-    // WHERE THE AMBER BANNER'S SENTENCE WENT. It used to be a tinted box across
-    // the top of every page - over the header on page one and over the
-    // attestation on page two. It belongs next to the figure it explains, in the
-    // same grey as the rest of the small print, and only on the copy that
-    // actually charges these.
-    if (!assumedNote) {
-      y = wrap(
-        page,
-        "A break with nothing on file recording it is paid as missed, and the penalty for each one is in the figure above. "
-        + "If you did take a break and simply did not record it, say so on your timesheet page and it comes off.",
-        L, y, R - L, { font, size: 6.5, color: MUTED, leading: 8 },
-      );
-    }
-    y -= 14;
-    if (assumedNote) y = drawAssumedNote(y);
-  } else {
-    text(
-      assumedNote
-        ? "No break premiums are being charged for this pay period."
-        : "No meal or rest break premiums due for this pay period.",
-      L, y, { size: 9, f: bold, color: rgb(0.05, 0.4, 0.25) },
-    );
-    y -= 16;
-    if (assumedNote) y = drawAssumedNote(y);
-  }
+  // THE §226.7 PREMIUM TABLE WAS DRAWN HERE, AND IT IS GONE.
+  //
+  // Keep the mention of penalty or premium fully out of the signable timesheet,
+  // 2026-08-14. This was the last place either word printed anywhere an employee
+  // reads - the review page stopped saying them on 2026-08-12 - and it was the
+  // documented exception to that rule. The exception is withdrawn.
+  //
+  // What went: the "Break Premium Payments Due - California Labor Code §226.7"
+  // heading, the Premium Type / Workdays with Violation / Hours Due table, its
+  // meal and rest rows, the "Total premium hours due (paid at the employee's
+  // regular rate of pay)" line, the "one additional hour of pay per workday"
+  // note, the sentence about a break being paid as missed with the penalty in
+  // the figure above, and both nil-case lines. The removed block is kept in
+  // docs/week10/scratch/removed-premium-block.txt and in git.
+  //
+  // THE FIGURES ARE NOT LOST. `payout-pdf.js` is where payroll reads them and it
+  // is untouched - that is an admin document. This file draws what gets signed.
+  //
+  // THE ASSUMED-TAKEN NOTE STAYS. It names neither word, and it is the half that
+  // says what was NOT charged - on 50 of the 59 people in the live batch it was
+  // the entire content of this section, and dropping it too would leave the
+  // sheet reading as a clean bill of health for days nobody verified.
+  if (assumedNote) y = drawAssumedNote(y);
 
   // ---------- attestation ----------
   // everything from here down is the signable trailer; keep it together rather
@@ -1283,15 +1226,11 @@ export async function renderCorrected(sheet, opts = {}) {
     x: L, y: y - adminBoxH, width: R - L, height: adminBoxH,
     borderColor: BLACK, borderWidth: 0.8,
   });
-  // the payout note lives in here rather than under the premium table. that
-  // table now sits above the employee's signature, and "verify before payout"
-  // is aimed at payroll, not at the person signing. the box already had the
-  // empty space, so this costs no page length.
-  if (p.totalHours > 0) {
-    text(`Verify the ${f2(p.totalHours)} premium hours above before payout.`, L + 6, adminBoxTop - 12, {
-      size: 6.5, color: MUTED,
-    });
-  }
+  // THE PAYOUT NOTE WENT WITH THE TABLE. It read "Verify the N premium hours
+  // above before payout" and it pointed at a table that is no longer drawn, so
+  // it was both the word we are removing and a reference to nothing. It was
+  // aimed at payroll anyway, and payroll reads the payout report - which still
+  // carries every figure.
   const apprY = y - adminBoxH + 12;
   text("Approval Signature:", L + 6, apprY, { size: 8.5 });
   text("Date:", L + 322, apprY, { size: 8.5 });
@@ -1348,7 +1287,7 @@ export async function renderCorrected(sheet, opts = {}) {
   const shortMealDays = (sheet.days || []).filter((d) => (d.restsFromShortMeals || 0) > 0).length;
   text(
     !moved
-      ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export. This sheet corrects break premiums only.`
+      ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export.`
       : added > 0
         ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs: ${f2(added)} hrs of rest breaks you told us you took while clocked out have been added.`
         : shortMealDays > 0

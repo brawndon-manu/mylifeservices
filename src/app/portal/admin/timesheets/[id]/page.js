@@ -21,6 +21,7 @@ import SendPanel from "../_components/SendPanel";
 import LiveBadge, { PeriodStrip } from "../_components/LiveBadge";
 import LockPeriod from "../_components/LockPeriod";
 import { batchState } from "@/lib/timesheet/batch-state";
+import TestBatchBadge from "../_components/TestBatchBadge";
 import DeleteBatchButton from "../_components/DeleteBatchButton";
 import ResetAnswersButton from "../_components/ResetAnswersButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
@@ -360,6 +361,11 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           {batch.periodFrom} to {batch.periodTo}
         </h1>
         <LiveBadge batch={batch} newerInPeriod={newerInPeriod} />
+        {/* BESIDE the state, never instead of it - a rehearsal batch is still
+            live or final or superseded, and both facts matter. The address is
+            shown in full here: this is the page somebody is on when they decide
+            to send, and "where does it go" is the question at that moment. */}
+        <TestBatchBadge batch={batch} />
       </div>
       {/* WHAT IS ACTUALLY IN, rather than a number to trust. This is the screen
           where the answer decides whether sixty people get emailed. */}

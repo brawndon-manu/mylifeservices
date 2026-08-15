@@ -329,8 +329,19 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
       const spans = restWindow(day, ordinal) || [];
       const asText = spans.map((x) => `${clock(x.from)}-${clock(x.to)}`);
       out.push({
+        // POSITION IN THE OWED LIST, which is NOT the ordinal. A day owed two
+        // and holding one asks for its SECOND ten in the FIRST owed slot, so
+        // this reads `rest1` while the break it is asking about is number two.
         slot: `rest${i + 1}`,
         kindOf: "rest",
+        // WHICH TEN THIS IS, carried rather than left to be inferred from the
+        // slot name. The server checked `restTimeFits` against a number parsed
+        // out of `rest1`, which put a second ten's answer through the FIRST
+        // ten's window - so the card offered 1:30p-5:30p, somebody typed 5p, and
+        // it came back "outside your shift" against a window of 10a-2p they had
+        // never been shown. The label and the window here were already built
+        // from this number; only the check was reading the other one.
+        ordinal,
         label: ordinalName(ordinal),
         minutes: FULL_REST_MIN,
         // NEVER pre-filled and NEVER suggested. The schedule cannot roster a
@@ -597,6 +608,13 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
     // needed no lunch at all, and a 5.92 hour day with one long entry is not two
     // lunches.
     const twoLunches = d.mealScheduled === true && isMealLengthRest(r);
+    // WHEN THE OTHER LUNCH ACTUALLY WAS.
+    //
+    // `twoLunches` was a bare boolean, so the card could only say "your schedule
+    // has a lunch that day" against "3:30p to 4:30p" - one side a time and the
+    // other a sentence fragment, asking somebody to compare them. The rostered
+    // times are already on the day's schedule row and were simply never carried.
+    const rostered = twoLunches ? rosteredMeal(data.scheduleCheck?.byDate?.[r.date]) : null;
     out.push({
       kind: "restTooLongOffClock",
       date: r.date,
@@ -609,6 +627,9 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
         minutes: r.minutes,
         onClock,
         twoLunches,
+        rosteredFrom: rostered ? clock(rostered.from) : null,
+        rosteredTo: rostered ? clock(rostered.to) : null,
+        rosteredMinutes: rostered ? rostered.to - rostered.from : null,
         hours: r2(d.paidHours),
       },
       canGiveTime: true,
@@ -749,7 +770,24 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       // hours on a batch uploaded last week and one uploaded today.
       moves: r2(Math.max(0, minutes / 60 - inPaidHours)),
       movesOnDecline: -r2(inPaidHours),
-      row: { minutes, days: 1, detail, inPaid: Math.round(inPaidHours * 60) },
+      row: {
+        minutes, days: 1, detail, inPaid: Math.round(inPaidHours * 60),
+        // A REST LOGGED INSIDE THE ROSTERED LUNCH, which the card never said.
+        //
+        // `findings.js` has folded this into the same finding for ADMINS since
+        // 2026-08-12 - "the lunch is WHY the rest was off the clock, so it
+        // belongs in this sentence rather than in another card". That merge only
+        // ever happened on our side. The employee's card says the ten was taken
+        // after their shift and never mentions that it lands in their lunch, so
+        // we tell ourselves one thing and them another about the same minutes.
+        //
+        // Day-level, like `restsInsideMeal` itself. It is read off the ROSTER
+        // while `detail` is read off the punches, so the two can disagree about
+        // how many - the wording says "one of these" rather than naming which.
+        inLunch: Math.max(0, offClockRows.reduce(
+          (n, x) => Math.max(n, x.d.restsInsideMeal || 0), 0,
+        )),
+      },
       needs,
       needsOn: "no",
       canGiveTime: true,
@@ -795,6 +833,45 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   //    and missed only the tens is paid for both - the company over-pays by an
   //    hour rather than under-pays, and they had to say "missed" to get there.
   //    Settled 2026-08-09 late; splitting it needs a second correction kind.
+  // 8. A MEAL THAT WAS TAKEN, AND STARTED TOO LATE.
+  //
+  // The one violation the employee has never been asked about. `mealLate` days
+  // are EXCLUDED from the question below - `d.mealViolation && !d.mealLate` -
+  // because "did you take your lunch?" is the wrong question when the record
+  // says they did. What is actually in doubt is whether the punched time is
+  // right, and nothing asked it. 11 of these on the live batch, 13 in July, and
+  // an employee has never seen one.
+  //
+  // The admin control has had both answers since the break answers shipped -
+  // `answerOptionsFor({kind: "meal-late"})` returns "Confirm it really was that
+  // late" and "The punched time is wrong". This is the same pair from the other
+  // end, so the two write one row.
+  //
+  // WHICH WAY THE MONEY GOES, and it is the usual way round: confirming the
+  // record moves nothing, and only a correction does. Saying it really was that
+  // late agrees with the sheet, which already carries the premium. Saying the
+  // punch is wrong says the meal was on time, and that is what takes it off.
+  for (const d of days) {
+    if (!d.mealViolation || !d.mealLate) continue;
+    const meal = (d.breaks || []).find((b) => b.kind === "meal");
+    out.push({
+      kind: "mealLate",
+      date: d.date,
+      at: meal?.start?.raw || "",
+      moves: 0,
+      movesOnDecline: -1,
+      row: {
+        // how far into the day it began. "5 hours 30 minutes in" is a fact
+        // somebody can check against their own memory; "mealLate" is not.
+        lateMinutes: d.mealStartedAfterMin ?? null,
+        from: meal?.start?.raw || null,
+        to: meal?.end?.raw || null,
+        minutes: meal?.min ?? null,
+        hours: r2(d.paidHours),
+      },
+    });
+  }
+
   const mealUndocumented = days.filter((d) => d.mealViolation && !d.mealLate);
   const restUndocumented = days.filter((d) => d.restViolation);
   if (mealUndocumented.length || restUndocumented.length) {
@@ -914,6 +991,9 @@ const OPTIONAL_KINDS = new Set([
   "restIsMealLength",
   // the two policy assumptions. Silence leaves the minutes on.
   "restOutsideScheduled",
+  // a meal that WAS taken, just late. Silence leaves the premium on, exactly
+  // like the others, so there is nothing here worth holding a signature for.
+  "mealLate",
   // a correction that moves nothing either way, and one the employee can dispute
   // afterwards without a figure hanging on it
   "restTooLongOffClock", "shortMealRest",
@@ -1179,6 +1259,17 @@ export function patchesFor(question, choice, day) {
       const taken = Math.max(0, (day?.restTaken ?? 0) - (day?.restsFromShortMeals || 0));
       return { restTaken: taken, restViolation: taken < (day?.restRequired ?? 0) };
     }
+    case "mealLate":
+      // "Yes, it really was that late" AGREES WITH THE RECORD, so nothing moves -
+      // the sheet already carries the premium for it. "No, I went on time" says
+      // the punch is what is wrong, and that is the correction: the meal was
+      // taken inside the fifth hour, so the day owes nothing for it.
+      //
+      // `mealLate` is cleared alongside `mealViolation` rather than left behind.
+      // The flag is what the SHEET prints beside the day and what the next
+      // rebuild reads to decide the violation again - clearing one without the
+      // other leaves a day charging nothing while still declaring the fault.
+      return yes ? {} : { mealViolation: false, mealLate: false };
     case "restTooLongOffClock":
       // NEITHER ANSWER MOVES A FIGURE, and this case exists to say so out loud.
       // It was falling through to the default, which is indistinguishable from a

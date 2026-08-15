@@ -58,7 +58,6 @@ export default async function AdminPage() {
           <LinkCard
             href="/portal/admin/acknowledgments"
             title="Acknowledgments"
-            isNew
             body="Read-receipts across every announcement that needs one: who has acknowledged and who still hasn't."
           />
         )}
@@ -66,14 +65,12 @@ export default async function AdminPage() {
           <LinkCard
             href="/portal/admin/meeting-attendance"
             title="Meeting attendance"
-            isNew
             body="RSVPs and roll-call across every Company Meeting: who's going, who hasn't responded, and who showed up."
           />
         )}
         <LinkCard
           href="/portal/admin/applications"
           title="Applications"
-          isNew
           body="Job applications submitted through the website: preview each one, then open the full application and resume."
         />
         {canViewFormRecords(user.role) && (
@@ -88,6 +85,13 @@ export default async function AdminPage() {
             href="/portal/admin/timesheets"
             title="Timesheets"
             body="Upload the QSP payroll export: hours are recalculated with paid rest breaks and CA overtime, then sent to staff to sign."
+          />
+        )}
+        {canManageTimesheets(user.role) && (
+          <LinkCard
+            href="/portal/admin/tests"
+            title="Tests"
+            body="Every email we send and every card we show an employee, in every state, rendered from the real code. Nothing in it writes to the database or sends anything."
           />
         )}
         {isAdminUp(user.role) && (

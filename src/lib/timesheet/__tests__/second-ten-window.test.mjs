@@ -1,0 +1,153 @@
+// THE WINDOW THE CARD OFFERS AND THE WINDOW THE SERVER CHECKS HAVE TO BE ONE.
+//
+// A day owed two rest periods and already holding one asks for its SECOND ten
+// in the FIRST offered slot. The slot is named by POSITION - `rest1` - and the
+// break it is about is number two. The label and the hint were both built from
+// the ordinal; the server parsed the number back out of the slot name.
+//
+// So the card said "has to be inside 1:30p-2p or 2:30p-5:30p", somebody typed
+// 5p, and it came back "that has to sit inside a shift you worked" - measured
+// against 10a-2p, the FIRST ten's window, which they had never been shown.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { buildQuestions, restTimeFits, restWindow } from "../questions.js";
+
+// 07/27: 10a-2p and 2:30p-5:30p, one ten already on record at 12:10p
+const day = {
+  date: "07/27/26",
+  punches: [{ min: 600 }, { min: 840 }, { min: 870 }, { min: 1050 }],
+  paidHours: 7, restRequired: 2, restTaken: 1, restViolation: true,
+  mealScheduled: true, mealViolation: false,
+};
+
+const qs = () => buildQuestions(
+  { days: [day], scheduleCheck: { byDate: {} } },
+  { sourceName: "Uribe, Mánu", restRows: [] },
+);
+
+test("the slot asking for the second ten says which ten it is", () => {
+  const q = qs().find((x) => x.kind === "nothingDocumentedRest");
+  assert.ok(q, "a day one rest short still raises the question");
+  const slot = (q.needs || []).find((n) => n.kindOf === "rest");
+  assert.equal(slot.slot, "rest1", "it is the first slot OFFERED");
+  assert.equal(slot.ordinal, 2, "and it is the SECOND ten");
+  assert.match(slot.label, /Second/);
+});
+
+test("5p is inside the window the card offers", () => {
+  const q = qs().find((x) => x.kind === "nothingDocumentedRest");
+  const slot = (q.needs || []).find((n) => n.kindOf === "rest");
+  // the hint the person reads
+  assert.ok(slot.window.some((w) => w.includes("5:30p")), `offered ${slot.window.join(", ")}`);
+  // and the check, run with the ordinal the slot carries
+  assert.equal(restTimeFits(day, slot.ordinal, 17 * 60, 10).ok, true, "5p must be accepted");
+});
+
+// THE ASSERTION THAT WOULD HAVE CAUGHT IT. Parsing the ordinal out of the slot
+// name gives 1, and the first ten's window is the first four hours - 10a-2p -
+// which 5p is nowhere near.
+test("reading the ordinal off the slot name is what refused it", () => {
+  const parsed = Number("rest1".replace(/\D/g, ""));
+  assert.equal(parsed, 1);
+  assert.equal(restTimeFits(day, parsed, 17 * 60, 10).ok, false, "this is the bug, pinned");
+  assert.deepEqual(
+    restWindow(day, 1).map((w) => [w.from, w.to]),
+    [[600, 840]],
+    "the first ten's window is 10a-2p, which is never shown on this card",
+  );
+});
+
+// AND A ROW THE SOURCE HOLDS WRONG IS ON THE RIGHT, NOT ONLY IN THE COLOUR.
+//
+// The calendar marks it amber and the chip above the column quotes the record.
+// Neither is where somebody looks for what to DO - the right column is the list
+// of things the day needs, and a fix that appears only as a colour is a fix
+// nobody is being asked for.
+import fs from "node:fs";
+const DBD = fs.readFileSync("src/app/t/[token]/DayByDay.js", "utf8");
+
+test("a backwards row gets a panel in the work column", () => {
+  assert.match(DBD, /function NeedsFixing/);
+  assert.match(DBD, /<NeedsFixing items=/);
+  // driven by the same flag the calendar colours from, so the two cannot
+  // disagree about which rows need fixing
+  assert.match(DBD, /\.filter\(\(b\) => b\.attention\)/);
+});
+
+test("it says what to change it FROM and TO, not just that it is wrong", () => {
+  // "the times are the other way round" is a verdict. The pair of times is the
+  // instruction, and it is what somebody retypes into QuickSolve.
+  assert.match(DBD, /QuickSolve has/);
+  assert.match(DBD, /Change it to/);
+  assert.match(DBD, /b\.recorded\?\.from/);
+});
+
+// THE REASSURANCE LINE CAME OUT on Mánu's instruction. It read "your timesheet
+// already counts this break at the corrected time, so nothing is missing from
+// your hours" - true, and one sentence too many on a panel whose job is to say
+// what to retype. The panel is the instruction; the pair of times is the whole
+// of it.
+test("the panel says what to change and stops there", () => {
+  assert.doesNotMatch(DBD, /already counts this break at the corrected time/);
+  assert.match(DBD, /QuickSolve has/);
+});
+
+test("a day whose only item is a fix no longer says nothing to check", () => {
+  assert.match(DBD, /some\(\(b\) => b\.attention\)/);
+});
+
+// WHY IT IS A PROBLEM, IN ONE LINE, ON BOTH VIEWS.
+//
+// The card said what the record holds and what we make of it and never said what
+// RULE the day broke - so three answer options read as a form rather than as a
+// question about something that matters.
+const CARD_SRC = fs.readFileSync("src/app/t/[token]/TimesheetQuestion.js", "utf8");
+
+test("the off-clock card says the rule and the way out of breaking it", () => {
+  assert.match(CARD_SRC, /rule: "A rest break has to be taken inside a shift/);
+  assert.match(CARD_SRC, /tell your supervisor at the time/);
+});
+
+test("it names no premium and no penalty", () => {
+  // the standing rule for anything an employee reads. What is owed is admin's
+  // business; what the person needs is the rule and the way out.
+  const i = CARD_SRC.indexOf('rule: "A rest break');
+  const line = CARD_SRC.slice(i, CARD_SRC.indexOf('",', i));
+  assert.doesNotMatch(line, /premium|penalty|hour of pay|owed/i);
+});
+
+test("both views show the same sentence", () => {
+  // somebody switching between Day by day and All questions must not be told two
+  // different things about one day
+  assert.match(CARD_SRC, /\{c\.rule && \(\s*<p className="mt-1\.5/);
+  assert.match(CARD_SRC, /\{c\.rule && !allAnswered && \(/);
+});
+
+
+// AND THE SAME TREATMENT ON THE OTHER TWO CARDS.
+//
+// The missed-break card names the entitlement; the late-lunch one names the
+// TIMING, because on that day the break happened and only its start is in
+// question. Both end with the same way out, which is the half that makes the
+// rule usable rather than just true.
+test("the missed-break and late-lunch cards state their rule too", () => {
+  assert.match(CARD_SRC, /rule: "You are due a ten minute rest break for every four hours/);
+  assert.match(CARD_SRC, /rule: "Your meal break has to start before the end of your fifth hour/);
+});
+
+test("all three rules end with somewhere to go", () => {
+  // a rule with no way out of breaking it is a finding, not guidance
+  const rules = [...CARD_SRC.matchAll(/rule: "([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(rules.length, 3, `expected three rules, found ${rules.length}`);
+  for (const r of rules) {
+    assert.match(r, /supervisor/, `no way out of breaking it: ${r.slice(0, 50)}`);
+    assert.doesNotMatch(r, /premium|penalty|hour of pay|owed/i, `premium language: ${r.slice(0, 50)}`);
+  }
+});
+
+test("the example is one somebody would recognise from their own day", () => {
+  const BA = fs.readFileSync("src/lib/timesheet/break-answers.js", "utf8");
+  assert.match(BA, /appointments with clients that did not make room for the break/);
+  assert.doesNotMatch(BA, /back-to-back clients, no cover to step away/);
+});

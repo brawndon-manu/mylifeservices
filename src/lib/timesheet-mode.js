@@ -94,9 +94,39 @@ export function sendModeSummary(env = process.env) {
 
 // resolve the real TO for one timesheet. in test mode the intended address
 // comes back alongside so it can be shown in the mail and stored on the row.
-export function resolveRecipients(intendedEmail, env = process.env) {
+export function resolveRecipients(intendedEmail, env = process.env, { forceTo = null } = {}) {
+  // A REHEARSAL BATCH OVERRIDES EVERY OTHER ANSWER, INCLUDING A LIVE ONE.
+  //
+  // `TimesheetBatch.testOnly` marks a period kept for testing: every rule holds
+  // exactly as it does on a live batch - the Send all safeguard, the final and
+  // superseded refusals, the signing gate, the whole question set - and the ONE
+  // thing that differs is where a message may go.
+  //
+  // CHECKED FIRST, ON PURPOSE. The two locks below decide whether this is the
+  // real deployment saying the real phrase; a rehearsal batch is not asking that
+  // question. Put after them, a correctly configured production send would post
+  // a test period's timesheets to sixty real people, which is the one outcome
+  // this flag exists to make impossible.
+  //
+  // AND IT IS AN OVERRIDE, NOT A THIRD MODE. `redirected` stays true so every
+  // subject keeps its `[TEST -> address]` prefix and every body keeps its
+  // banner: a message from a rehearsal batch has to be identifiable as one in
+  // the inbox it lands in, not just in the code that sent it.
+  if (forceTo) {
+    return { to: [forceTo], redirected: true, intendedEmail };
+  }
   if (isLiveSend(env)) return { to: [intendedEmail], redirected: false, intendedEmail };
   return { to: testRecipients(env), redirected: true, intendedEmail };
+}
+
+// what a batch row forces its mail to, or null for an ordinary one. Reads the
+// two columns together so a batch flagged for testing with nowhere to send
+// cannot quietly fall through to the ordinary recipient - which is the exact
+// accident the flag exists to prevent.
+export function batchForceTo(batch) {
+  if (!batch?.testOnly) return null;
+  const to = String(batch.testEmail || "").trim();
+  return to || null;
 }
 
 // EVERYTHING ELSE THAT LEAVES THIS APP BY EMAIL. Same file because this is the

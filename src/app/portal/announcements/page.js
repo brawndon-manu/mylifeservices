@@ -288,7 +288,7 @@ function PostCard({ post, currentUser }) {
           </Link>
           {/* faded rich preview of the changelog body */}
           <div
-            className="mt-2 max-h-40 overflow-hidden text-sm leading-relaxed text-muted [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [&_a]:text-brand [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-foreground [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-medium [&_h2]:text-foreground [&_h3]:mt-3 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-foreground [&_li]:marker:text-faint [&_ol]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mt-1.5 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
+            className="mt-2 max-h-40 overflow-hidden text-sm leading-relaxed text-muted [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [&_a]:text-brand [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-foreground [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-medium [&_h2]:text-foreground [&_h3]:mt-3 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-foreground [&_li]:marker:text-faint [&_ol]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mt-1.5 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_img]:hidden"
             dangerouslySetInnerHTML={{ __html: changelogHtml }}
           />
           <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
@@ -323,7 +323,7 @@ function PostCard({ post, currentUser }) {
             </div>
           )}
           <div
-            className="mt-2 max-h-28 overflow-hidden text-sm leading-relaxed text-muted [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [&_a]:text-brand [&_h1]:mt-2 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-foreground [&_h2]:mt-2 [&_h2]:text-base [&_h2]:font-medium [&_h2]:text-foreground [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-foreground [&_li]:marker:text-faint [&_ol]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mt-1.5 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
+            className="mt-2 max-h-28 overflow-hidden text-sm leading-relaxed text-muted [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [&_a]:text-brand [&_h1]:mt-2 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-foreground [&_h2]:mt-2 [&_h2]:text-base [&_h2]:font-medium [&_h2]:text-foreground [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:text-foreground [&_li]:marker:text-faint [&_ol]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mt-1.5 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_img]:hidden"
             dangerouslySetInnerHTML={{ __html: previewHtml }}
           />
           {post.imageUrl && (

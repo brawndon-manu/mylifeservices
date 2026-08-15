@@ -173,6 +173,17 @@ export const MEETING_FORMAT_LABELS = {
 
 export const ANNOUNCEMENT_TITLE_MAX = 140;
 
+// An announcement is not a Hub post and stopped fitting in a Hub post's budget.
+//
+// It inherited POST_CONTENT_MAX = 2000 from hub.js, which was the right size for
+// a few lines on a feed. A post that walks staff through something with pictures
+// in it is a different shape: a blob url is ~95 characters, so eight of them
+// spend 800 of the 2000 before a word is written. 20k leaves room for the
+// walkthrough and the pictures without going near the changelog's 100k.
+//
+// The Hub keeps its 2000. This cap is announcements only.
+export const ANNOUNCEMENT_CONTENT_MAX = 20000;
+
 // changelogs are long-form (a full week's worth of sections), so they get a much
 // bigger cap than a plain post (POST_CONTENT_MAX = 2000 in hub.js). generous on
 // purpose - the content column is postgres text (no db limit) and this stays well
@@ -252,3 +263,14 @@ export {
   attachmentsOf,
   emailAttachmentsOf,
 } from "./announcement-attachments.js";
+
+// Pictures and GIFs in the middle of a body. Split out for the same reason, and
+// because the editor in the browser and the upload route both need these rules.
+export {
+  INLINE_IMAGE_ACCEPT,
+  INLINE_IMAGE_MAX_BYTES,
+  imageFileProblem,
+  imageMarkdown,
+  insertImageMarkdown,
+  inlineImageUrlsIn,
+} from "./announcement-images.js";

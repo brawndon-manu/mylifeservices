@@ -10,6 +10,7 @@ import { companyDate } from "@/lib/company-time";
 import LiveBadge from "./_components/LiveBadge";
 import PeriodPresence, { BatchFaces, FoldedCount } from "./_components/CardPresence";
 import { groupByPeriod, batchState } from "@/lib/timesheet/batch-state";
+import TestBatchBadge from "./_components/TestBatchBadge";
 
 export const metadata = { title: "Timesheets", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -117,6 +118,7 @@ export default async function TimesheetBatchesPage() {
                               understate how far the data goes - which shows LIVE and
                               refuses to send. Wrong in the safe direction. */}
                           <LiveBadge batch={b} size="sm" />
+                          <TestBatchBadge batch={b} size="sm" showAddress={false} />
                         </div>
                         {/* WHEN THE EXPORT LANDED, TO THE MINUTE. The date alone made
                             two pulls of one fortnight on the same day

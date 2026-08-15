@@ -37,7 +37,6 @@ import {
   cleanBody,
   IMAGE_ACCEPT,
   IMAGE_MAX_BYTES,
-  POST_CONTENT_MAX,
   COMMENT_CONTENT_MAX,
 } from "@/lib/hub";
 import { resolveAnnouncementRecipients } from "@/lib/timesheet-mode";
@@ -51,6 +50,7 @@ import {
   cleanAttachment,
   attachmentsOf,
   emailAttachmentsOf,
+  inlineImageUrlsIn,
   isEvent,
   isValidEventAudience,
   isValidMeetingKind,
@@ -58,6 +58,7 @@ import {
   formatHasOnline,
   formatHasAddress,
   ANNOUNCEMENT_TITLE_MAX,
+  ANNOUNCEMENT_CONTENT_MAX,
   CHANGELOG_CONTENT_MAX,
   ackAudienceWhere,
   titleSegmentMatch,
@@ -384,6 +385,13 @@ async function tryDeleteAttachments(post) {
   }
 }
 
+// pictures the author dropped into the body. same cleanup as the hero image, and
+// deliberately narrow: only urls under our own inline prefix come back from
+// inlineImageUrlsIn, so a link to anywhere else is left alone.
+async function tryDeleteInlineImages(content) {
+  for (const url of inlineImageUrlsIn(content)) await tryDeleteBlob(url);
+}
+
 async function tryDeleteBlob(url) {
   if (!url) return;
   if (!process.env.BLOB_READ_WRITE_TOKEN) return;
@@ -419,7 +427,7 @@ export async function createPost(formData) {
 
   const content = cleanBody(
     formData.get("content"),
-    isChangelog(tag) ? CHANGELOG_CONTENT_MAX : POST_CONTENT_MAX,
+    isChangelog(tag) ? CHANGELOG_CONTENT_MAX : ANNOUNCEMENT_CONTENT_MAX,
   );
   if (!content) {
     redirect("/portal/announcements/new?error=content");
@@ -582,7 +590,7 @@ export async function discardDraft(postId) {
     where: { id: postId },
     select: {
       id: true, authorId: true, postedById: true, deletedAt: true,
-      publishedAt: true, imageUrl: true, attachments: true,
+      publishedAt: true, imageUrl: true, attachments: true, content: true,
     },
   });
   if (!post || post.deletedAt) redirect("/portal/announcements");
@@ -593,6 +601,7 @@ export async function discardDraft(postId) {
   }
   await tryDeleteBlob(post.imageUrl);
   await tryDeleteAttachments(post);
+  await tryDeleteInlineImages(post.content);
   await prisma.announcement.delete({ where: { id: postId } });
   revalidatePath("/portal/announcements");
   redirect("/portal/announcements?discarded=1");
@@ -602,7 +611,10 @@ export async function deletePost(postId) {
   const user = await requireUser();
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, imageUrl: true, attachments: true, deletedAt: true },
+    select: {
+      id: true, authorId: true, imageUrl: true, attachments: true,
+      deletedAt: true, content: true,
+    },
   });
   if (!post || post.deletedAt) {
     redirect("/portal/announcements");
@@ -619,6 +631,7 @@ export async function deletePost(postId) {
   });
   await tryDeleteBlob(post.imageUrl);
   await tryDeleteAttachments(post);
+  await tryDeleteInlineImages(post.content);
 
   revalidatePath("/portal/announcements");
   redirect("/portal/announcements?deleted=1");
@@ -684,7 +697,7 @@ export async function editPost(postId, formData) {
   }
   const content = cleanBody(
     formData.get("content"),
-    isChangelog(tag) ? CHANGELOG_CONTENT_MAX : POST_CONTENT_MAX,
+    isChangelog(tag) ? CHANGELOG_CONTENT_MAX : ANNOUNCEMENT_CONTENT_MAX,
   );
   if (!content) {
     redirect(`/portal/announcements/${postId}/edit?error=content`);
@@ -2000,7 +2013,9 @@ async function emailAnnouncement(
     : post.requireAck
       ? `Acknowledgment required: ${title}`
       : title;
-  const bodyHtml = renderMarkdown(post.content);
+  // email mode: any picture in the body gets sized inline, since there's no
+  // stylesheet on the other end to keep it inside the card.
+  const bodyHtml = renderMarkdown(post.content, { email: true });
   const dateStr = new Date(post.createdAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",

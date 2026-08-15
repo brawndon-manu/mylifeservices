@@ -17,7 +17,69 @@ const row = (over = {}) => ({
 
 test("an ordinary rest draws at the time the report holds", () => {
   const at = drawnRest(row());
-  assert.deepEqual(at, { min: 11 * 60, minutes: 10, kind: "rest", label: null, filed: null });
+  // `recorded` is null here and that is the assertion, not an oversight: this
+  // row was not moved, so there is no second time to put on the picture. It is
+  // only ever set where the engine has repaired or flipped the row.
+  assert.deepEqual(at, {
+    min: 11 * 60, minutes: 10, kind: "rest", label: null, filed: null, recorded: null,
+    // nothing to go and change at source - see the backwards row below
+    attention: false,
+  });
+});
+
+// WHAT THE DOCUMENT SAYS, CARRIED ALONGSIDE WHERE WE DRAW IT.
+//
+// Everything above draws where the break BELONGS. Where it was WRITTEN used to
+// be on the picture nowhere - named in the card text and drawn nothing - so
+// somebody reading "the record has your rest break entered as 12:00 AM to
+// 12:10 AM" had that beside a calendar showing one block at noon.
+test("a repaired row carries the times the report actually holds", () => {
+  const at = drawnRest(row({
+    out: "12:00 AM", in: "12:10 AM",
+    repair: {
+      field: "both", outTo: "12:00 PM", inTo: "12:10 PM", minutes: 10,
+      why: "both times were picked as AM", fits: true,
+    },
+  }));
+  // drawn at noon, because that is where we think it belongs
+  assert.equal(at.min, 12 * 60);
+  // and the document's own midnight is on it
+  assert.deepEqual(at.recorded, {
+    from: "12a", to: "12:10a", min: 0, minutes: 10,
+    why: "both times were picked as AM",
+  });
+});
+
+test("a backwards row has no span to draw, and says so instead", () => {
+  // the record reads out 3p, in 2p. There is nothing to draw: it ends before it
+  // begins. 17 of the 33 moved rows across the two batches are this shape, and
+  // a negative `minutes` is what tells the calendar to write a line rather than
+  // attempt a block.
+  const at = drawnRest(row({ out: "3:00 PM", in: "2:00 PM", reversed: true }));
+  assert.equal(at.min, 14 * 60, "drawn the right way round");
+  assert.equal(at.recorded.from, "3p");
+  assert.equal(at.recorded.to, "2p");
+  assert.ok(at.recorded.minutes < 0, "a span that ends before it begins is not drawable");
+
+  // AND IT IS DRAWN AS SOMETHING TO FIX, not as a settled break.
+  //
+  // The engine reads it the right way round and counts it, which is correct -
+  // the break happened. But QuickSolve still holds it backwards, and an ordinary
+  // green block said the opposite: nothing to do on this day.
+  assert.equal(at.attention, true);
+  assert.match(at.label, /needs fixing/);
+});
+
+test("a repaired row is a question, not an instruction", () => {
+  // it already has a card asking whether our reading is right, so it must not
+  // also be flagged as a thing to go and change - that would be telling somebody
+  // to fix something we have not finished asking them about
+  const at = drawnRest(row({
+    out: "12:00 AM", in: "12:10 AM",
+    repair: { field: "both", outTo: "12:00 PM", inTo: "12:10 PM", minutes: 10, why: "x", fits: true },
+  }));
+  assert.equal(at.attention, false);
+  assert.match(at.label, /fixed/);
 });
 
 test("a rest filed against a shift it does not sit in carries the tether", () => {

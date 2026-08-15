@@ -92,6 +92,40 @@ export function employeeAsk(a) {
 export const answersByFinding = (rows = []) =>
   new Map(rows.map((r) => [`${r.personKey}|${r.findingKey}`, r]));
 
+// THE KEY BOTH ENDS OF ONE CONVERSATION HAVE TO AGREE ON.
+//
+// A break answer can be written from two places: a reviewer pressing "Confirm
+// not taken" after a call, and the employee saying they missed it on their own
+// page. They are the same fact about the same day, so they have to be the same
+// ROW - otherwise a call and a reply become two records that can disagree, and
+// the sheet prints both.
+//
+// It was built inline on the admin screen as `break-${slot}-${date}` and
+// nowhere else, because nowhere else could write one yet. Lifted here the
+// moment the employee's side needed to produce the identical string.
+//
+// THREE KINDS, THREE KEYS. A late meal and a missing meal are different
+// questions about the same day - one asks why it was not taken, the other why it
+// started when it did - so they must not collide on one row. `meal-late` maps to
+// `meallate` rather than being punctuated, which is the spelling already in the
+// database on the admin path and is not worth a migration to prettify.
+const SLOT = { rest: "rest", meal: "meal", "meal-late": "meallate" };
+
+export function breakFindingKey(kind, date) {
+  const slot = SLOT[kind];
+  if (!slot || !date) return null;
+  return `break-${slot}-${date}`;
+}
+
+// and back again, so a stored row can say which violation it belongs to without
+// the caller parsing the string itself
+export function breakFindingKind(findingKey) {
+  const m = /^break-(rest|meallate|meal)-(.+)$/.exec(String(findingKey || ""));
+  if (!m) return null;
+  const kind = m[1] === "meallate" ? "meal-late" : m[1];
+  return { kind, date: m[2] };
+}
+
 // THE REASONS, AS LINES FOR THE BOTTOM OF THE PRINTED SHEET.
 //
 // They go in the block QSP already calls "Comments Details:", after QSP's own
@@ -294,7 +328,11 @@ export function employeeQuestion(a, { lateMinutes = null } = {}) {
       told: none,
       toldUs: none.replace(/^You /, "You told us you "),
       ask: "Can you tell us why?",
-      placeholder: "For example: back-to-back clients, no cover to step away.",
+      // THE EXAMPLE IS THE COMMONEST REAL REASON, not a generic one. Mánu
+      // 2026-08-14: appointments that left no room for it. Somebody reading an
+      // example that matches their own day writes a sentence; one that does not
+      // makes them invent a form of words.
+      placeholder: "For example: I had appointments with clients that did not make room for the break.",
     };
   }
 

@@ -22,6 +22,10 @@ import {
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
 import { buildQuestions, patchesFor, restTimeFits, mealTimeFits } from "@/lib/timesheet/questions";
+// the one spelling of a break answer's key, shared with the admin day-by-day so
+// a reason taken on a call and a reason they typed land on the same row
+import { breakFindingKey } from "@/lib/timesheet/break-answers";
+import { batchForceTo } from "@/lib/timesheet-mode";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
@@ -1043,7 +1047,15 @@ export async function sendTimesheets(batchId, formData) {
     where: { id: batchId },
     // restsByDate carries the 30-minute entries filed as rest breaks, which the
     // email has to ask about. They live on the batch, not the sheet.
-    select: { id: true, periodFrom: true, periodTo: true, restsByDate: true },
+    //
+    // `testOnly`/`testEmail` decide WHERE every one of these may go. Left out
+    // they arrive undefined, `batchForceTo` reads false, and a rehearsal batch
+    // sends sixty real timesheets to sixty real people. This is the one select
+    // in the file where getting it wrong is not a rendering bug.
+    select: {
+      id: true, periodFrom: true, periodTo: true, restsByDate: true,
+      testOnly: true, testEmail: true,
+    },
   });
   if (!batch) redirect("/portal/admin/timesheets");
 
@@ -1107,6 +1119,10 @@ export async function sendTimesheets(batchId, formData) {
       dueAt: dueLabel,
       signUrl: url,
       questionCount: asked,
+      // A REHEARSAL BATCH SENDS TO ONE ADDRESS AND NOWHERE ELSE, whatever the
+      // environment says - see `batchForceTo`. Null on an ordinary batch, which
+      // leaves the two ordinary locks deciding exactly as before.
+      forceTo: batchForceTo(batch),
     });
     if (res.ok) {
       sent++;
@@ -1240,7 +1256,16 @@ export async function submitTimesheetCorrections({ token, items }) {
   const ts = await prisma.timesheet.findUnique({
     where: { id },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true, uploadedById: true } },
+      // `testOnly`/`testEmail` decide where this alert may go. Left out of the
+      // select they arrive undefined, `batchForceTo` reads false, and a
+      // rehearsal batch quietly emails real payroll - the `restsUrl` failure
+      // with a send on the end of it.
+      batch: {
+        select: {
+          id: true, periodFrom: true, periodTo: true, uploadedById: true,
+          testOnly: true, testEmail: true,
+        },
+      },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
@@ -1317,6 +1342,9 @@ export async function submitTimesheetCorrections({ token, items }) {
         periodLabel,
         items: clean,
         reviewUrl,
+        // the alert comes to US and is redirected too: "everything on that july
+        // one if sent" includes the mail we send ourselves
+        forceTo: batchForceTo(ts.batch),
       });
     }
   } catch (e) {
@@ -1973,17 +2001,22 @@ function shortClock(min) {
 // EVERY ID IS STILL RE-DERIVED FROM THE CLASSIFIER, one at a time, exactly as
 // before. A batch is a batch of writes, not a relaxation of the check: a client
 // cannot answer a question nobody asked, whichever shape it arrives in.
-export async function answerTimesheetQuestion({ token, id, choice, at, times, batch }) {
+export async function answerTimesheetQuestion({ token, id, choice, at, times, batch, reason }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
 
   const asked = Array.isArray(batch) && batch.length
-    ? batch.map((b) => ({ id: b?.id, choice: b?.choice, at: b?.at ?? null, times: b?.times || null }))
+    ? batch.map((b) => ({
+      id: b?.id, choice: b?.choice, at: b?.at ?? null, times: b?.times || null,
+      // WHY THEY MISSED IT. Only ever read on a "no" to a break question - see
+      // `NEEDS_REASON` below.
+      reason: b?.reason ?? null,
+    }))
     // A SINGLE QUESTION CAN CARRY TIMES TOO. It could not until 2026-08-11, so a
     // grouped card covering three days had one box for the lot - which asked
     // somebody to pick which of their three days to be honest about.
-    : [{ id, choice, at: at ?? null, times: times || null }];
+    : [{ id, choice, at: at ?? null, times: times || null, reason: reason ?? null }];
   if (asked.length > 40) return { ok: false, error: "toomany" };
   // "partial" is a rest day where they got SOME of their tens. It settles as a
   // DECLINE - one hour per workday on which a rest period was not provided, so
@@ -2003,11 +2036,46 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       && !["yes", "no", "partial", "notaken", "wrongone"].includes(a.choice))) {
     return { ok: false, error: "badchoice" };
   }
+  // SAYING YOU MISSED A BREAK NEEDS A REASON, and it is enforced here as well as
+  // in the browser.
+  //
+  // Not because silence is suspicious - leaving the whole question alone is
+  // still fine and still keeps the pay, which is what `signingGate` settled on
+  // 2026-08-12. It is that a "no" IS the violation, and the why is the one half
+  // no QSP export has a field for. Answering without it produces a record that
+  // says a break was missed and cannot say why, which is the exact hole this
+  // work exists to close. Mánu 2026-08-14 chose required over optional.
+  //
+  // A "partial" is a decline too and is deliberately NOT in here: they took some
+  // of their tens, and the card that collects the times is not the place to
+  // demand a sentence about the ones they did not.
+  //
+  // WHICH ANSWER OWES IT IS PER KIND, not always the "no". On a missed break the
+  // "no" IS the violation. On a LATE LUNCH the break happened - confirming it
+  // really was that late is what stands the violation up - so the sentence hangs
+  // off the "yes" there, and a set keyed on "no" would have demanded it from the
+  // wrong half of that card. Same map as `REASON_ON` in TimesheetQuestion, and
+  // the two disagreeing means a button that saves nothing.
+  const REASON_ON = {
+    nothingDocumentedMeal: "no",
+    nothingDocumentedRest: "no",
+    mealLate: "yes",
+  };
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: tsId },
     include: {
-      batch: { select: { id: true, restsByDate: true, restsUrl: true } },
+      // `periodFrom`/`periodTo` are for the break answer this action can now
+      // write. A break answer is keyed on the PERIOD and not on the batch, so
+      // an answer given against one export is still the answer on the next -
+      // and left out of this select they arrive as undefined, which Prisma
+      // takes as a missing required field rather than as a bug worth naming.
+      batch: {
+        select: {
+          id: true, restsByDate: true, restsUrl: true,
+          periodFrom: true, periodTo: true,
+        },
+      },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
   });
@@ -2025,14 +2093,19 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   const resolved = [];
   for (const a of asked) {
     const q = questions.find((x) => x.id === a.id);
-    if (!q) return { ok: false, error: "unknown" };
+    if (!q) return { ok: false, error: "unknown", at: { id: a.id } };
 
     // a typed time is only meaningful where the question asks for one
     let stated = null;
     if (a.choice === "yes" && q.canGiveTime && a.at != null && a.at !== "") {
       const start = hhmmToMin(a.at);
-      if (start == null) return { ok: false, error: "badtime" };
-      if (start + FULL_REST_MIN > 1439) return { ok: false, error: "badtime" };
+      // the single-box path, which has no `need` to name - the question's own
+      // date is the location, and the typed value is quoted back either way
+      const badAt = { id: q.id, date: q.date, label: "the time you gave" };
+      if (start == null) return { ok: false, error: "badtime", given: a.at, at: badAt };
+      if (start + FULL_REST_MIN > 1439) {
+        return { ok: false, error: "badtime", given: a.at, at: badAt };
+      }
       stated = {
         from: shortClock(start),
         to: shortClock(start + FULL_REST_MIN),
@@ -2057,18 +2130,42 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         // throughout, which is checked once the loop has run.
         if (start == null) {
           if (a.choice === "partial") continue;
-          return { ok: false, error: "missingtime" };
+          return {
+            ok: false, error: "missingtime",
+            at: { id: q.id, date: need.date || q.date, slot: need.slot, label: need.label },
+          };
         }
-        if (start + need.minutes > 1439) return { ok: false, error: "badtime" };
+        if (start + need.minutes > 1439) {
+          return {
+            ok: false, error: "badtime", given: raw,
+            at: { id: q.id, date: need.date || q.date, slot: need.slot, label: need.label },
+          };
+        }
         // A REST HAS TO LAND INSIDE A SHIFT, and inside its own half of one.
         // Checked here as well as in the browser: the card above this exists
         // because a ten was logged outside a shift, and a client that skipped
         // the check could write exactly that through this route.
         if (need.kindOf === "rest") {
           const d = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
-          const ordinal = Number(String(need.slot).replace(/\D/g, "")) || 1;
+          // THE ORDINAL THE QUESTION BUILT ITS WINDOW FROM, not one parsed
+          // back out of the slot name. `rest1` is the first slot OFFERED, which
+          // on a day already holding one ten is the SECOND ten - so parsing it
+          // checked the answer against a window the person was never shown.
+          // Falls back to the old reading for a question built before this
+          // carried it.
+          const ordinal = need.ordinal
+            || Number(String(need.slot).replace(/\D/g, ""))
+            || 1;
           if (d && !restTimeFits(d, ordinal, start, need.minutes).ok) {
-            return { ok: false, error: "outsideshift" };
+            return {
+              ok: false, error: "outsideshift", given: raw,
+              at: {
+                id: q.id, date: need.date || q.date, slot: need.slot, label: need.label,
+                // the hours it HAS to be inside, which the question already
+                // worked out - the person needs the target, not the verdict
+                shifts: need.shifts || null, window: need.window || null,
+              },
+            };
           }
         }
         // A LUNCH HAS TO LAND IN A GAP LONG ENOUGH TO HOLD ONE. Mánu
@@ -2086,7 +2183,13 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         if (need.kindOf === "meal") {
           const d = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
           if (d && mealTimeFits(d, start, need.minutes).why === "window") {
-            return { ok: false, error: "nolunchgap" };
+            return {
+              ok: false, error: "nolunchgap", given: raw,
+              at: {
+                id: q.id, date: need.date || q.date, slot: need.slot, label: need.label,
+                windows: need.windows || null,
+              },
+            };
           }
         }
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
@@ -2108,15 +2211,121 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
           replaces: need.replaces ?? null,
         });
       }
-      if (a.choice === "partial" && !list.length) return { ok: false, error: "missingtime" };
+      // A PARTIAL WITH NOTHING FILLED IN. It is about the whole card rather than
+      // one slot - they are telling us they got SOME of their tens and have not
+      // said which - so the day is the location and there is no slot to name.
+      if (a.choice === "partial" && !list.length) {
+        return { ok: false, error: "missingtime", at: { id: q.id, date: q.date } };
+      }
       statedBreaks = list;
     }
 
-    resolved.push({ q, choice: a.choice ?? null, stated, statedBreaks });
+    // the why, checked against the question we re-derived rather than against
+    // whatever the client said the question was
+    const why = String(a.reason ?? "").trim().slice(0, 1000);
+    if (REASON_ON[q.kind] === a.choice && !why) {
+      // WHICH DAY, not just that one of them is short. This card commits every
+      // day it holds in a single write, so a bare code points at thirteen at
+      // once and the person has to hunt for the one that stopped it.
+      return { ok: false, error: "needreason", at: { id: q.id, date: q.date } };
+    }
+    resolved.push({ q, choice: a.choice ?? null, stated, statedBreaks, reason: why || null });
   }
 
+  // WHY THEY MISSED IT, WRITTEN AS THE SAME ROW A REVIEWER WOULD HAVE WRITTEN.
+  //
+  // A break answer can now be created from two ends: a reviewer pressing
+  // "Confirm not taken" after a call, and the employee saying they missed it
+  // here. It is the same fact about the same day, so it has to be the same ROW -
+  // `breakFindingKey` is the shared spelling, and two spellings would be two
+  // records that can disagree with both printing on the sheet.
+  //
+  // WHOEVER GETS THERE FIRST. Until now the employee could only ever CONFIRM a
+  // reason somebody had already recorded for them - `answerBreakReason` refuses
+  // anything with no row, "they can only answer something they were actually
+  // asked" - and `TimesheetBreakAnswer` sat at 0 rows, so no employee could
+  // comment on anything at all. The defence that note describes is unchanged:
+  // the question is re-derived from their own sheet above, so a client still
+  // cannot answer something nobody put to them.
+  //
+  // OURS IS NEVER OVERWRITTEN. If a reviewer already recorded a reason from a
+  // call, theirs lands in `confirmedText` beside it and both print - which is
+  // what `formatBreakComments` already does with the two, and the reason it
+  // tags provenance on every line.
+  //
+  // ONLY ON A "no". Answering "yes, I took them" does NOT delete an existing
+  // row: a reviewer's record of a phone call is not the employee's to erase,
+  // and the two genuinely disagreeing is a thing for a person to settle.
+  const BREAK_KIND = {
+    nothingDocumentedMeal: "meal",
+    nothingDocumentedRest: "rest",
+    // a late meal is its own key - `break-meallate-DATE` - because a late meal
+    // and a missing meal are different questions about the same day and must
+    // not land on one row
+    mealLate: "meal-late",
+  };
+  const writeBreakAnswer = async (q, date, why) => {
+    const kind = BREAK_KIND[q.kind];
+    const findingKey = breakFindingKey(kind, date);
+    // no account behind the sheet means no person to hang it off, which is the
+    // same reason `answerBreakReason` refuses one
+    if (!findingKey || !ts.userId || !why) return;
+    const where = {
+      periodFrom_periodTo_personKey_findingKey: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+        findingKey,
+      },
+    };
+    // NAMED `prior`, DELIBERATELY. question-coverage.test.mjs reads this file as
+    // TEXT and slices the correction record out of it between two landmarks, the
+    // second being the existence check before that write. A second check spelled
+    // the same way, anywhere above it, silently empties the slice and the test
+    // passes on nothing. Renamed here rather than loosening an assertion that
+    // exists to catch a real bug - and this note is worded to avoid the landmark
+    // too, because a comment quoting it breaks it exactly as the code would.
+    const prior = await prisma.timesheetBreakAnswer.findUnique({ where });
+    if (prior) {
+      await prisma.timesheetBreakAnswer.update({
+        where: { id: prior.id },
+        // ours stays in `reason`; theirs goes in `confirmedText` beside it. Where
+        // nobody recorded one, theirs IS the only reason there is and fills both.
+        data: prior.reason
+          ? { confirmedAt: new Date(), confirmedText: why }
+          : { reason: why, via: null, confirmedAt: new Date(), confirmedText: why },
+      });
+      return;
+    }
+    await prisma.timesheetBreakAnswer.create({
+      data: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+        findingKey,
+        date,
+        kind,
+        answer: "not-taken",
+        reason: why,
+        // `via` is how WE heard it - phone, email, in person. None of those is
+        // true of somebody typing it on their own page, so it stays null.
+        via: null,
+        confirmedAt: new Date(),
+        confirmedText: why,
+        // a meal is one thing; a rest violation carries the day's shortfall, and
+        // the question knows it because the slots were built from it
+        missingCount: kind === "rest" ? Math.max(1, (q.needs || []).length) : 1,
+        takenCount: 0,
+        // scalars, recording who said it AT THE TIME - the same rule the check
+        // flags follow, so a later rename or a closed account cannot rewrite it
+        byId: ts.userId,
+        byName: ts.sourceName || null,
+      },
+    });
+  };
+
   // record the answers first, so rebuilding the overrides below sees them
-  for (const { q, choice: pick, stated, statedBreaks } of resolved) {
+  for (const { q, choice: pick, stated, statedBreaks, reason } of resolved) {
     const kindKey = `q_${q.kind}`;
     const dates = q.dates || [q.date];
     // UNANSWERED AGAIN. Scoped to this sheet, this kind and these dates - never
@@ -2174,6 +2383,11 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
           data: { timesheetId: ts.id, date, kind: kindKey, ...record },
         });
       }
+      // and the why, as the row a reviewer would have written - see
+      // `writeBreakAnswer`. Only on a "no", which is the answer that IS the
+      // violation.
+      // on whichever answer this kind hangs its sentence off - see `REASON_ON`
+      if (REASON_ON[q.kind] === pick) await writeBreakAnswer(q, date, reason);
     }
   }
 
@@ -2262,6 +2476,7 @@ const QUESTION_NOUN = {
   nothingDocumentedMeal: "meal break with nothing recorded",
   nothingDocumentedRest: "rest periods with nothing recorded",
   shortMealRest: "ten minute meal block read as a rest period",
+  mealLate: "meal period that started after the fifth hour",
   restTooLongOffClock: "break too long to be a rest, on a day whose meal is accounted for",
 };
 

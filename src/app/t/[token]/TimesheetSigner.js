@@ -21,6 +21,11 @@ export default function TimesheetSigner({
   // something on it, so hiding it from them was backwards.
   canSign = true,
   blocking = 0,
+  // WHETHER THE DOCUMENT IS DRAWN BEFORE THEY ASK FOR IT. Default is gated - see
+  // the note below - and it is a PROP rather than a rewrite so the old
+  // always-visible behaviour is one boolean away and the Tests card can show
+  // both without a second component.
+  requireGenerate = true,
 }) {
   // THE CONFIRMATION IS REASSURANCE, NOT A WARNING, and that is the whole point
   // of it existing after the 2026-08-11 flip. Before the flip, signing with
@@ -71,6 +76,64 @@ export default function TimesheetSigner({
   // the document is drawn by the same code either way.
   const gated = !canSign;
 
+  // THE DOCUMENT IS NOT DRAWN UNTIL THEY ASK FOR IT, 2026-08-14.
+  //
+  // It was always on the page from 2026-08-11 - "let's make the current time
+  // sheet appear at the bottom and update itself as answers are inputted, so I
+  // can see it live" - and the reason it stayed was that hiding it from the
+  // people who could not sign yet was backwards: they are exactly the people
+  // being asked to check something on it.
+  //
+  // THAT REASONING DOES NOT SURVIVE THE FULL GATE. Nobody reaches the sheet with
+  // a question still open now, so there is no longer a group who can see the
+  // questions and not the document - there is one group, and they arrive here
+  // having answered everything. What is left is a rendered PDF sitting under a
+  // page somebody has not finished reading, fetched on every visit whether they
+  // wanted it or not.
+  //
+  // LOCAL STATE, NOT A PROP. Generating is not a fact about the timesheet - the
+  // sheet is a pure function of `data` and is built on request - so it is a
+  // thing this person did in this tab, and it resets when they reload. Nothing
+  // is stored by pressing it.
+  const [generated, setGenerated] = useState(false);
+
+  if (gated) {
+    return (
+      <div className="mt-6 rounded-xl border border-border bg-surface-2 p-5">
+        <p className="text-sm font-semibold text-foreground">
+          Your timesheet is not ready to put together yet.
+        </p>
+        <p className="mt-1 text-sm text-muted">
+          {blocking === 1
+            ? "One question above still needs an answer."
+            : `${blocking} questions above still need an answer.`}{" "}
+          Once they all have one you can generate your timesheet and sign it.
+        </p>
+      </div>
+    );
+  }
+
+  if (requireGenerate && !generated) {
+    return (
+      <div className="mt-6 rounded-xl border border-border bg-surface-2 p-5">
+        <p className="text-sm font-semibold text-foreground">
+          Everything is answered - your timesheet is ready.
+        </p>
+        <p className="mt-1 text-sm text-muted">
+          It is put together from your answers when you ask for it. Check it over, then sign at the
+          bottom.
+        </p>
+        <button
+          type="button"
+          onClick={() => setGenerated(true)}
+          className="mt-3 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
+        >
+          Generate my timesheet
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-6">
       <FormFiller
@@ -81,7 +144,11 @@ export default function TimesheetSigner({
         reviewTeam={gated ? null : { recipientLabel: "payroll", recipients: [], ccNames: [] }}
         signIntro={
           gated
-            ? `This is your timesheet as it stands right now, and it updates every time you answer a question above. You can sign it once the ${blocking === 1 ? "question" : `${blocking} questions`} marked as needed ${blocking === 1 ? "has" : "have"} an answer.`
+            // "marked as needed" was right while only SOME questions held it.
+            // Every one of them does since 2026-08-14, so the sentence says so
+            // rather than sending somebody hunting for a mark that is on all of
+            // them.
+            ? `This is your timesheet as it stands right now, and it updates every time you answer a question above. You can sign it once ${blocking === 1 ? "the last question has" : `all ${blocking} questions have`} an answer.`
             : "Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
         }
         signMode={!gated}

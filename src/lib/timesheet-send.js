@@ -12,6 +12,7 @@
 // dry run is realistic without anyone's hours reaching them by accident.
 import { Resend } from "resend";
 import { buildTimesheetEmailHtml } from "@/lib/timesheet-email";
+import { timesheetSubject } from "@/lib/timesheet-subjects";
 
 // the guard itself lives in its own dependency-free module so it can be tested
 // in isolation - see src/lib/timesheet-mode.js.
@@ -36,6 +37,9 @@ export async function sendTimesheet({
   questionCount = 0,
   // has this person already had this sheet? drives the subject only
   isResend = false,
+  // set from `TimesheetBatch.testOnly` - every message from a rehearsal batch
+  // goes to this one address and nowhere else
+  forceTo = null,
 }) {
   if (!intendedEmail) return { ok: false, error: "norecipient" };
   const from =
@@ -44,13 +48,10 @@ export async function sendTimesheet({
     process.env.AUTH_RESEND_FROM;
   if (!from || !process.env.RESEND_API_KEY) return { ok: false, error: "config" };
 
-  const { to, redirected } = resolveRecipients(intendedEmail);
+  // a rehearsal batch forces its own address - see `batchForceTo`
+  const { to, redirected } = resolveRecipients(intendedEmail, process.env, { forceTo });
   if (!to.length) return { ok: false, error: "norecipient" };
 
-  // A SECOND SEND NEEDS A DIFFERENT SUBJECT. Gmail threads on subject + sender
-  // and collapses the repeat behind "Show trimmed content" - so a re-sent
-  // timesheet arrives with the paragraph explaining the assumed hours hidden,
-  // above a signature. Mánu 2026-08-10 asked for this once it was spotted.
   // THE TWO EMPLOYEE EMAILS, NAMED. One function sends both depending on a
   // boolean, so "did the reminder go out" had no word to ask with. They are:
   //
@@ -58,13 +59,15 @@ export async function sendTimesheet({
   //                         opens the timesheet review page.
   //   SIGNING REMINDER      any send to somebody who already has a `sentAt`.
   //
-  // Both point at the same page. The only third email in this area is the
-  // PROBLEM ALERT, which goes to us rather than to them - see
-  // timesheet-correction-email.js.
-  const line = isResend
-    ? `Reminder: your timesheet for ${periodLabel} still needs signing`
-    : `Your timesheet for ${periodLabel} - please review and sign`;
-  const subject = redirected ? `[TEST -> ${intendedEmail}] ${line}` : line;
+  // Both point at the same page, and both carry the SAME BODY - only the
+  // subject differs, which is what stops Gmail collapsing the repeat. The only
+  // third email in this area is the PROBLEM ALERT, which goes to us rather than
+  // to them - see timesheet-correction-email.js.
+  const subject = timesheetSubject({
+    periodLabel,
+    isResend,
+    redirectedFrom: redirected ? intendedEmail : null,
+  });
 
   // NO POLICY LOOKUP ANY MORE. The paragraph it fed was cut with the rest of the
   // figures on 2026-08-11; the page still names and links the policy, beside the

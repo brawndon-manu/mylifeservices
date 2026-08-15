@@ -30,6 +30,31 @@ const toMin = (t) => {
   return (/^p$/i.test(m[3]) ? h + 12 : h) * 60 + Number(m[2] || 0);
 };
 
+// A MEAL ROSTERED AT AN HOUR NOBODY WORKS IS AN AM/PM SLIP.
+//
+// Bucio 07/25 has "12a-12:10a -Meal Break(0:10)" against shifts of 9a-12:30p and
+// 12:45p-4:45p. Mánu 2026-08-09: "no one works those hours" - so it is read
+// twelve hours over.
+//
+// Only the whole block moves, and only when BOTH ends land back inside an
+// ordinary working day. A half-corrected time is worse than the original.
+//
+// PULLED OUT OF `recordedBreaksFor` because it was needed in a second place and
+// was not there. The employee's own calendar builds its scheduled blocks from
+// `blockTimes` with no flip, and `dayWindow` grows the axis to hold everything
+// drawn - so a midnight meal ran that day's column from 12a to 5p: seventeen
+// hours and 1530px for a day worked 9a to 4:45p. Same failure the note on
+// `restRowTimes` describes, where one rule written out twice and missing from a
+// third place made the picture and the arithmetic disagree.
+//
+// Minutes in, minutes out, so a caller holding either time format can use it.
+export function mealAmPmSlip(from, to) {
+  const odd = Number.isFinite(from) && (from < 300 || from >= 1320);
+  if (!odd || from + 720 > 1439) return null;
+  if (!Number.isFinite(to) || to + 720 > 1439) return null;
+  return { from: from + 720, to: to + 720 };
+}
+
 // minutes -> the sheet's own short form, the inverse of toMin above
 const hhmmShort = (min) => {
   const h24 = Math.floor(min / 60), mm = min % 60;
@@ -497,10 +522,61 @@ export function drawnRest(row, { mealScheduled = null } = {}) {
     // somewhere the report does not read. SHORT, because the label shares its
     // lane with the times: "Rest (corrected) 3:50p-4p" clipped to "3:5..." at
     // the width the break layer gets, and the time is the half worth keeping.
-    label: row.repair ? "Rest (fixed)" : null,
+    label: row.repair ? "Rest (fixed)" : row.reversed ? "Rest - needs fixing" : null,
+    // A BACKWARDS ROW IS SOMETHING THEY HAVE TO GO AND CHANGE.
+    //
+    // The engine reads out 12:10p / in 12p as a ten at 12p-12:10p and counts it,
+    // which is right - the break happened. But QuickSolve still holds it the
+    // wrong way round, and drawing it as an ordinary settled green block said
+    // the opposite: nothing to do on this day. The chip above the column already
+    // states what the record says; this is what stops the picture contradicting
+    // it.
+    //
+    // NOT the same as a `repair`. That one has a card asking whether our reading
+    // is right, so it is a question. This one nobody is asked about at all - the
+    // swap is unambiguous - so the only place it can ever be raised is here.
+    attention: !row.repair && !!row.reversed,
     // A REPAIRED ROW IS NOT MISFILED. The repair already moved it to where the
     // service says it belongs, so a tether would point from a block to itself.
     filed: row.repair ? null : filed,
+    // WHAT THE DOCUMENT LITERALLY SAYS, when that is not where this block sits.
+    recorded: recordedSpan(row),
+  };
+}
+
+// THE TIMES THE REPORT ACTUALLY HOLDS, when the engine has moved them.
+//
+// Everything above draws where we think the break BELONGS. Where it was
+// WRITTEN was on the picture nowhere - named in the card text and drawn
+// nothing, so somebody reading "the record has your rest break entered as
+// 12:00 AM to 12:10 AM" had to take that on trust while looking at a block at
+// noon.
+//
+// `restRowTimes` is the one expression that can move a rest and it has four
+// branches: a repair on the out end, the in end, both ends, and a backwards row
+// whose ends are swapped. This returns the raw pair whenever one of them fired,
+// and null when the block is already where the document put it.
+//
+// NOT ALWAYS DRAWABLE, and that is a fact about the data rather than a gap here.
+// A backwards row reads out 3p, in 2p - there is no span to draw, because it
+// ends before it begins. 17 of the 33 moved rows on the two batches are that
+// shape. `minutes` comes back null or negative for those and the caller shows a
+// line of text instead of a second block.
+function recordedSpan(row) {
+  if (!row?.repair && !row?.reversed) return null;
+  const a = clockMin(row.out);
+  const z = clockMin(row.in);
+  if (a == null && z == null) return null;
+  return {
+    from: shortTime(row.out),
+    to: shortTime(row.in),
+    min: a,
+    minutes: a != null && z != null ? z - a : null,
+    // WHY IT MOVED, in the report's own words where it has them. `repair.why`
+    // is written by the engine that proposed the fix - "both times were picked
+    // as AM" - and it is a better sentence than anything reconstructed from the
+    // field name afterwards.
+    why: row.repair?.why || (row.reversed ? "the times are the other way round" : null),
   };
 }
 
@@ -531,6 +607,26 @@ export function drawnBreaksFor(rows, day, { mealScheduled = null, dropped = null
     stated.map((b) => b.replaces).filter((x) => x?.from && x?.to).map((x) => `${x.from}|${x.to}`),
   );
 
+  // A TEN INSIDE A TEN MINUTE MISC BLOCK IS ONE BREAK, NOT TWO.
+  //
+  // The schedule books ten minutes as Misc, the person files a rest row for the
+  // same ten minutes, and the calendar drew both - a green "Rest 12p-12:10p"
+  // sitting on top of a "12p-12:10p Misc Break" band. Two blocks, one break, and
+  // the day beside them saying nothing to check.
+  //
+  // `analyzeDay` already worked this out: `miscBreaks[].covered` is true exactly
+  // when a recorded rest overlaps the block, and it is deliberately an OVERLAP
+  // and not an exact match - a row filed 12:01-12:11 against a block of
+  // 12:00-12:10 is the same break, and demanding the minute would fail somebody
+  // for being one out. This reads that answer rather than working it out again.
+  //
+  // THE MISC BLOCK IS THE ONE THAT STAYS. It is what the SCHEDULE says, it is
+  // drawn from the roster rather than from a report row, and it is the block the
+  // day's other copy is a duplicate of.
+  const coveredMisc = (day?.miscBreaks || []).filter((b) => b.covered);
+  const insideCoveredMisc = (a, z) =>
+    coveredMisc.some((b) => a < b.end && z > b.start);
+
   const out = [];
   for (const row of rows || []) {
     // answered "that one was added by accident", so it stops being drawn
@@ -538,6 +634,8 @@ export function drawnBreaksFor(rows, day, { mealScheduled = null, dropped = null
     const t = restRowTimes(row);
     if (superseded.has(`${shortTime(t.from)}|${shortTime(t.to)}`)) continue;
     const at = drawnRest(row, { mealScheduled });
+    // the misc block already draws these minutes - see `coveredMisc`
+    if (at && at.kind === "rest" && insideCoveredMisc(at.min, at.min + at.minutes)) continue;
     if (at) out.push(at);
   }
   for (const b of stated) {
@@ -573,19 +671,11 @@ export function recordedBreaksFor(sourceName, restsByDate, scheduleByDate) {
       if (!s.meal) continue;
       const m = RANGE.exec(String(s.text || ""));
       if (!m) continue;
-      // A MEAL ROSTERED AT AN HOUR NOBODY WORKS IS AN AM/PM SLIP. Bucio 07/25
-      // has "12a-12:10a -Meal Break(0:10)" against shifts of 9a-12:30p and
-      // 12:45p-4:45p. Mánu 2026-08-09: "no one works those hours" - so it is
-      // read twelve hours over, drawn there, and the employee is asked.
-      //
-      // Only the whole block moves, and only when BOTH ends land back inside an
-      // ordinary working day. A half-corrected time is worse than the original.
-      const a = toMin(m[1]), b = toMin(m[2]);
-      const odd = a != null && (a < 300 || a >= 1320);
-      const flipped = odd && a + 720 <= 1439 && b != null && b + 720 <= 1439;
-      if (flipped) {
+      // the AM/PM slip, through the one expression for it - see `mealAmPmSlip`.
+      const slip = mealAmPmSlip(toMin(m[1]), toMin(m[2]));
+      if (slip) {
         get(date).meals.push({
-          from: hhmmShort(a + 720), to: hhmmShort(b + 720),
+          from: hhmmShort(slip.from), to: hhmmShort(slip.to),
           ampmFixed: true, wasFrom: m[1], wasTo: m[2],
         });
         continue;
