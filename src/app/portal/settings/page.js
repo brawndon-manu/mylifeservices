@@ -134,10 +134,14 @@ export default async function SettingsPage({ searchParams }) {
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Your account
       </h1>
+      {/* the phone came out of this sentence on 2026-08-16. it used to be
+          listed here as something that "shows on the Team Contacts directory",
+          which is no longer true for most of the people reading it - see the
+          note beside the field itself. */}
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
-        Update how you appear in the portal: your name, photo, and phone
-        show on the Team Contacts directory. Your email and role are
-        managed by IT and can&apos;t be edited here.
+        Update how you appear in the portal: your name and photo show on the
+        Team Contacts directory. Your email and role are managed by IT and
+        can&apos;t be edited here.
       </p>
 
       {justSaved && (

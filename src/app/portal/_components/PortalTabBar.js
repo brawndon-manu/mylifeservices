@@ -13,10 +13,20 @@ import { usePathname } from "next/navigation";
 //
 // Below lg and not below sm, because the desktop header needs about 810px to
 // lay out and would still overflow a 768px tablet. See the note in layout.js.
+// KEPT TO THE SAME WEIGHT AS EACH OTHER. These sit 21px apart on one bar, so
+// what matters is not whether each is a good drawing but whether they look like
+// a set. A cog is the usual Settings icon and it was the wrong one here: at
+// this size its teeth and inner circle are a 410-character path drawn across
+// 22x20 units, beside neighbours of 23 to 50 characters in 16x18, and it read
+// as a dense blob with three line drawings next to it.
+//
+// A PERSON INSTEAD, which is also more honest about the screen: that page is
+// headed "Your account" and holds your name, photo and phone, not application
+// settings. Two short strokes, same weight as the rest.
 const ICONS = {
   dashboard: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
   announcements: "M3 11l18-6v14l-18-6zM3 11v5a2 2 0 0 0 2 2h2",
-  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.1a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 13.6a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2 2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9 2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.3 1.3z",
+  settings: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   admin: "M12 3l8 4v5c0 4.4-3.4 8.4-8 9-4.6-.6-8-4.6-8-9V7z",
   hub: "M4 5h16M4 12h16M4 19h10",
 };
