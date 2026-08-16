@@ -12,6 +12,7 @@ import { mealBookedInside } from "@/lib/timesheet/questions";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
 import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
+import { correctionHeading } from "@/lib/timesheet/question-nouns";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
@@ -85,8 +86,13 @@ function Reported({ list }) {
             <span className="rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300">
               {c.kind.startsWith("q_") ? "They answered" : "They reported"}
             </span>
+            {/* TWO DIFFERENT VOCABULARIES MEET HERE. `CORRECTION_KINDS` covers
+                what an EMPLOYEE reports (hours wrong, worked through lunch);
+                the `q_` kinds are questions WE put to them, and nothing mapped
+                those - so this fell through to the internal name and showed a
+                reviewer `restOutsideScheduled` and `miscTime`. */}
             <span className="font-semibold text-foreground">
-              {CORRECTION_KINDS[c.kind]?.label || c.kind.replace(/^q_/, "")}
+              {correctionHeading(c.kind) || CORRECTION_KINDS[c.kind]?.label || c.kind}
             </span>
             <span className="text-faint">{c.status}</span>
           </div>

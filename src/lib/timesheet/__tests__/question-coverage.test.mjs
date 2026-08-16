@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { buildQuestions, isMandatory, signingGate } from "../questions.js";
+import { QUESTION_NOUN } from "../question-nouns.js";
 
 const root = path.resolve(import.meta.dirname, "../../../..");
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
@@ -99,13 +100,17 @@ test("every question kind the engine can raise has employee copy", () => {
 });
 
 test("every kind has an audit noun and a resolution sentence for payroll", () => {
+  // THE NOUNS ARE IMPORTED NOW, NOT GREPPED. This half used to slice
+  // actions.js as text and look for the kind inside `const QUESTION_NOUN`.
+  // Moving that map into its own module - so the admin day-by-day could read it
+  // too, which is why it was printing raw kind names - broke the slice and made
+  // this report every kind as missing. A test that reads source as text fails
+  // when the source MOVES, which is not the same thing as the code being wrong.
   const actions = read("src/app/portal/admin/timesheets/actions.js");
-  const nouns = actions.slice(actions.indexOf("const QUESTION_NOUN"));
   const resolutions = casesIn(actions, "function resolutionFor");
   for (const kind of everyKind()) {
-    assert.match(
-      nouns.slice(0, nouns.indexOf("}")),
-      new RegExp(`\\b${kind}\\b`),
+    assert.ok(
+      QUESTION_NOUN[kind],
       `${kind} is missing from QUESTION_NOUN, so its audit note reads "undefined"`,
     );
     assert.ok(

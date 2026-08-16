@@ -29,6 +29,7 @@ import {
 } from "@/lib/timesheet/break-answers";
 import { batchForceTo } from "@/lib/timesheet-mode";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
+import { questionNoun } from "@/lib/timesheet/question-nouns";
 // asked before the upload writes anything, because the database's own answer to
 // this arrives as an error code with no person attached
 import { unstorable, unstorableRows } from "@/lib/timesheet/storable";
@@ -58,6 +59,7 @@ import {
   CORRECTION_KINDS,
   patchFor,
   mergeOverride,
+  reviewerSettledDates,
   MISC_PATCH_FIELDS,
   recomputeSheet,
 } from "@/lib/timesheet/corrections";
@@ -2244,9 +2246,18 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   if (ts.signedAt) return { ok: false, error: "already" };
   if (ts.corrections.length) return { ok: false, error: "reported" };
 
+  // THE SAME QUESTION SET THE PAGE BUILT, or this refuses what it just showed.
+  //
+  // This action re-derives the questions and will not accept an answer to one
+  // it cannot find - which is the right defence, and it broke the moment the
+  // review page started keeping an answered Misc question on the page. The page
+  // knew a reviewer had not settled that day; this did not, so it rebuilt
+  // without the question and sent back "that question is not on this timesheet
+  // any more" for an answer somebody was looking at.
   const questions = buildQuestions(ts.data, {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
+    reviewerSettled: reviewerSettledDates(ts.overrides),
   });
   // RESOLVE AND VALIDATE EVERYTHING BEFORE WRITING ANYTHING. A batch where the
   // ninth day carries a time we cannot read must not leave the first eight
@@ -2534,7 +2545,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         choice: pick,
         resolvedAt: new Date(),
         resolvedById: ts.userId || null,
-        note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
+        note: `Asked about the ${date} ${questionNoun(q.kind)}.`,
         resolutionNote: resolutionFor(q, pick, stated, statedBreaks, block),
         // WHATEVER THE ANSWER ACTUALLY COLLECTED, and nothing else.
         //
@@ -2720,22 +2731,6 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   return { ok: true, answered: resolved.length };
 }
 
-const QUESTION_NOUN = {
-  repair: "rest entry we could not read",
-  restIsMealLength: "thirty minute break filed as a rest",
-  restNoTimes: "rest entry recorded with no times",
-  restOutsideScheduled: "ten logged outside scheduled working hours",
-  nothingDocumented: "day with no break recorded at all",
-  // split per part 2026-08-10, so the audit note names which break was asked
-  // about rather than "the day"
-  nothingDocumentedMeal: "meal break with nothing recorded",
-  nothingDocumentedRest: "rest periods with nothing recorded",
-  shortMealRest: "ten minute meal block read as a rest period",
-  mealLate: "meal period that started after the fifth hour",
-  mealInShift: "meal break the roster booked inside a shift they clock in and out of",
-  mealMovable: "meal break the roster booked inside unpunched time",
-  restTooLongOffClock: "break too long to be a rest, on a day whose meal is accounted for",
-};
 
 function resolutionFor(q, choice, stated, statedBreaks, block) {
   const yes = choice === "yes";
