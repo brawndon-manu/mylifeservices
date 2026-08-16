@@ -666,6 +666,81 @@ function copyFor(q, standing) {
       };
     }
 
+    // A LUNCH THE ROSTER BOOKED INSIDE A BLOCK THEY WERE WORKING.
+    //
+    // TWO KINDS, AND THEY GET OPPOSITE TREATMENT. You clock in and out of a
+    // service shift, so a lunch booked inside one cannot have happened and the
+    // schedule is what needs correcting. Admin and Misc time is typed in rather
+    // than punched, so the BLOCK can move and the lunch can stand.
+    //
+    // BOTH TIMES, THE WAY THE OFF-CLOCK CARD SHOWS THEM. Two facts carry the
+    // whole argument - what was booked and what it lands inside - so nothing
+    // here asserts that the lunch was impossible in a paragraph.
+    //
+    // "MEAL BREAK" WHATEVER THE LENGTH. Three of the July ones are booked ten
+    // minutes, which is a rest by any measure, but the roster calls them a meal
+    // and arguing with its own label mid-question helps nobody.
+    case "mealInShift":
+      return {
+        title: "Your meal break is booked inside a shift you were working",
+        short: "Meal booked inside a shift",
+        rule: "A meal break has to be taken off the clock. You clock in and out of "
+          + `${q.row?.service || "that shift"}, so a meal break booked inside one cannot have `
+          + "happened. Your schedule needs it moved outside the shift.",
+        facts: [
+          { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
+          { label: "Your shift", value: `${q.row?.blockFrom}-${q.row?.blockTo}, ${q.row?.service}` },
+        ],
+        body: (
+          <>
+            Your schedule books a meal break at <b>{q.row?.mealFrom} to {q.row?.mealTo}</b> on{" "}
+            <b>{q.date}</b>, inside your <b>{q.row?.service}</b> shift of{" "}
+            <b>{q.row?.blockFrom} to {q.row?.blockTo}</b>.
+            <br /><br />
+            You clock in and out of that shift, so a break booked inside it is not one you could
+            have taken. What needs fixing is the schedule.
+          </>
+        ),
+        // ONE OPTION, because there is no second true answer - see the note on
+        // `noRoom`, which is the same shape for the same reason.
+        no: {
+          label: "I understand, I did not get a meal break that day",
+          why: "Your record says the meal break was missed, with your reason on it.",
+        },
+        noEffect: <>Your record says the meal break was missed, with your reason on it.</>,
+      };
+
+    case "mealMovable":
+      return {
+        title: `Your meal break is booked inside your ${q.row?.service || "unpunched"} time`,
+        short: "Meal booked inside movable time",
+        rule: `A meal break has to be taken off the clock. ${q.row?.service || "That time"} is not `
+          + "punched, so it can be moved rather than the break being written off.",
+        facts: [
+          { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
+          { label: "That time", value: `${q.row?.blockFrom}-${q.row?.blockTo}, ${q.row?.service}` },
+        ],
+        body: (
+          <>
+            Your schedule books a meal break at <b>{q.row?.mealFrom} to {q.row?.mealTo}</b> on{" "}
+            <b>{q.date}</b>, inside your <b>{q.row?.service}</b> time of{" "}
+            <b>{q.row?.blockFrom} to {q.row?.blockTo}</b>.
+            <br /><br />
+            You do not clock in and out of that, so it can be moved instead.
+          </>
+        ),
+        yes: {
+          label: "Yes, that time can be moved",
+          why: "Tell us when your meal break really was and what that time becomes.",
+        },
+        no: {
+          label: "No, it has to stay where it is",
+          why: "Then the meal break could not have happened, and we will ask why.",
+        },
+        yesEffect: <>Your record says you took your meal break, and your schedule needs changing to match.</>,
+        noEffect: <>Your record says the meal break was missed, with your reason on it.</>,
+      };
+
     case "shortMealRest":
       return {
         title: "We read a meal block as your rest break. Is that right?",
@@ -720,6 +795,7 @@ const REFUSALS = {
   // there.
   preview: "Preview only - nothing is saved from this view. Open the employee's own link to answer for real.",
   needreason: "Saying you missed a break needs a reason. Write why in the box before saving.",
+  needblock: "Say what that time becomes once the meal break is moved out of it, then save.",
   missingtime: "Every day you answered “took them” needs the time it started.",
   badtime: "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight.",
   outsideshift: "A rest break has to sit inside a shift you actually worked. Pick a time inside one of the hours shown.",
@@ -862,6 +938,10 @@ function OneQuestion({
   // hangs off its YES, could not be answered at all: the browser sent no reason
   // and the action refused it. 12 of those on the live batch, 13 in July.
   const [reason, setReason] = useState(null);
+  // WHAT THE UNPUNCHED BLOCK BECOMES once the meal has been moved out of it.
+  // Free text on purpose: it is an instruction somebody types into QuickSolve,
+  // not a time this sheet computes with, and a range is what they are moving.
+  const [block, setBlock] = useState("");
   // AN ANSWERED CARD COLLAPSES. Mánu 2026-08-11: "after the answer is given i
   // dont think it should show the options like this. i think it should show the
   // times they chose and then an option to go back ... so they arent in
@@ -967,6 +1047,11 @@ function OneQuestion({
   const reasonText = reason ?? saidAlready ?? "";
   const needsReason = reasonOwedOn(q.kind, proposed?.choice);
   const reasonBlocked = needsReason && !reasonText.trim();
+  // AND WHAT THE BLOCK BECOMES, on the answer that says it can move. Saying it
+  // can be rearranged without saying what to is an instruction nobody can carry
+  // out in QuickSolve.
+  const wantsBlock = !!q.wantsBlock && proposed?.choice === "yes";
+  const blockBlocked = wantsBlock && !block.trim();
   // THE SENTENCE IS NOT WORDED HERE. `employeeQuestion` already writes one per
   // kind and per count - a missed lunch, one ten, neither of two, one of two
   // taken, a late meal - and the batched card asks through the same function.
@@ -987,7 +1072,7 @@ function OneQuestion({
   // slot but not a date, so the dates come from `q.needs` - the same list the
   // boxes were built from, which is what keeps them in step.
   const chosenLabel =
-    shown === "yes" ? c.yes.label
+    shown === "yes" ? c.yes?.label
       : shown === "no" ? c.no.label
         : shown === c.third?.value ? c.third.label
           : "Answered";
@@ -999,7 +1084,7 @@ function OneQuestion({
     .filter(Boolean);
 
   function commit() {
-    if (!proposed || timeBlocked || reasonBlocked) return;
+    if (!proposed || timeBlocked || reasonBlocked || blockBlocked) return;
     setErr(null);
     start(async () => {
       const res = await submitAction({
@@ -1013,9 +1098,12 @@ function OneQuestion({
         // same rule as the times: only ever sent on the answer that owes it, so
         // a sentence typed and then switched away from is never written
         reason: needsReason ? reasonText.trim() || null : null,
+        // only ever sent on the answer that asks for it, so a range typed and
+        // then switched away from is never written
+        block: wantsBlock ? block.trim() || null : null,
       });
       if (!res?.ok) setErr(res || { error: "failed" });
-      else { setProposed(null); setAt(""); setSlotAt({}); setReason(null); setEditing(false); router.refresh(); }
+      else { setProposed(null); setAt(""); setSlotAt({}); setReason(null); setBlock(""); setEditing(false); router.refresh(); }
     });
   }
 
@@ -1127,6 +1215,12 @@ function OneQuestion({
 
       {(!answered || editing) && !locked && (
       <div className="mt-3 flex flex-wrap gap-2.5">
+        {/* A KIND CAN HAVE ONE ANSWER. `mealInShift` is the first: a meal booked
+            inside a shift they clock in and out of cannot have been taken, so
+            there is no yes to offer and a card that showed one would be
+            inviting a claim the day cannot support. Same reasoning as the
+            no-room meal on the batched card, which returns only the decline. */}
+        {c.yes && (
         <Choice
           on={shown === "yes"}
           tone="yes"
@@ -1136,6 +1230,7 @@ function OneQuestion({
           note={!answered ? c.yes.note : null}
           onClick={() => pick("yes")}
         />
+        )}
         <Choice
           on={shown === "no"}
           tone="no"
@@ -1283,6 +1378,34 @@ function OneQuestion({
         </div>
       )}
 
+      {wantsBlock && (
+        <div className="mt-3 rounded-lg border border-border-strong bg-surface-2 p-3">
+          <p className="text-sm font-semibold text-foreground">
+            What should your {q.row?.service || "unpunched"} time be on {q.date}?
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            It is {q.row?.blockFrom} to {q.row?.blockTo} now. Tell us what it becomes with the meal
+            break moved out of it, and change it in QuickSolve to match.
+          </p>
+          <input
+            type="text"
+            autoComplete="off"
+            disabled={pending}
+            value={block}
+            onChange={(e) => setBlock(e.target.value)}
+            placeholder="e.g. 8a-12p"
+            className={`mt-2 w-48 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
+              block.trim() ? "border-emerald-500" : "border-amber-500/70"
+            }`}
+          />
+          {!block.trim() && (
+            <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+              Needed before this can be saved.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* THE WHY, UNDER THE ANSWER THAT IS THE VIOLATION.
           Same box, same wording and the same row in the database as the batched
           card's, which is where this used to exist alone. The sentence comes
@@ -1351,6 +1474,11 @@ function OneQuestion({
                   </span>
                 ))}
                 , and say the times came from you rather than from the break record.
+              </p>
+            )}
+            {blockBlocked && (
+              <p className="font-semibold text-rose-600 dark:text-rose-400">
+                Say what that time becomes above first.
               </p>
             )}
             {reasonBlocked && (

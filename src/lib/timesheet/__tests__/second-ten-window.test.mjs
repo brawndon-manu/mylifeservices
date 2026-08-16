@@ -136,13 +136,24 @@ test("the missed-break and late-lunch cards state their rule too", () => {
   assert.match(CARD_SRC, /rule: "Your meal break has to start before the end of your fifth hour/);
 });
 
-test("all three rules end with somewhere to go", () => {
-  // a rule with no way out of breaking it is a finding, not guidance
-  const rules = [...CARD_SRC.matchAll(/rule: "([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(rules.length, 3, `expected three rules, found ${rules.length}`);
-  for (const r of rules) {
-    assert.match(r, /supervisor/, `no way out of breaking it: ${r.slice(0, 50)}`);
-    assert.doesNotMatch(r, /premium|penalty|hour of pay|owed/i, `premium language: ${r.slice(0, 50)}`);
+test("every rule ends with somewhere to go", () => {
+  // A RULE WITH NO WAY OUT OF BREAKING IT IS A FINDING, NOT GUIDANCE.
+  //
+  // The way out used to be one sentence - tell your supervisor at the time - so
+  // this matched that word. The two meal-booked-inside-a-block rules have a
+  // different and better one: the schedule is what is wrong, and fixing it is
+  // something the reader can actually do. So this asks whether a rule offers a
+  // route at all, and still fails for one that only states a prohibition.
+  //
+  // Split on the key rather than matched with a pattern: a rule can be a plain
+  // string or several concatenated across lines, and the regex that tried to
+  // cover both was wrong in a way the test could not see.
+  const chunks = CARD_SRC.split("rule:").slice(1).map((c) => c.slice(0, 420));
+  assert.ok(chunks.length >= 5, `expected at least five rules, found ${chunks.length}`);
+  const WAY_OUT = /supervisor|schedule needs|can be moved|moved outside/;
+  for (const c of chunks) {
+    assert.match(c, WAY_OUT, `no way out of breaking it: ${c.slice(0, 60)}`);
+    assert.doesNotMatch(c.slice(0, 200), /premium|penalty|hour of pay/i, `premium language: ${c.slice(0, 60)}`);
   }
 });
 

@@ -106,6 +106,14 @@ export default function DayByDay({
 
   const order = new Map(days.map((d, i) => [d.date, i]));
   const datesOf = (q) => q.dates || (q.date ? [q.date] : []);
+  // the days whose rostered meal IS the question, so the calendar draws it as
+  // one. Read off the questions rather than re-derived, so the picture and the
+  // card beside it cannot disagree about which days those are.
+  const bookedMealDates = new Set(
+    groups.flat()
+      .filter((q) => q.kind === "mealInShift" || q.kind === "mealMovable")
+      .map((q) => q.date),
+  );
 
   // THE REASONS, BY THE DAY THEY ARE ABOUT. A `findingKey` carries its own date
   // - see `breakFindingKey` - so the row already knows and nothing here parses
@@ -353,6 +361,9 @@ export default function DayByDay({
                   rests={restsByDate.get(day.date) || []}
                   scheduled={scheduled[day.date] || []}
                   proposed={proposalsByDate.get(day.date) || []}
+                  /* the rostered meal is only drawn as a finding where one is
+                     actually being raised - see `bookedMeal` */
+                  bookedMeal={bookedMealDates.has(day.date)}
                 />
               </div>
               <div className="mt-4 min-w-0 flex-1 sm:mt-0">

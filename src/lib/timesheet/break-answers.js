@@ -155,6 +155,15 @@ export const REASON_ON = {
   // not their rest, so the rest credit comes off.
   restIsMealLength: ["no"],
   shortMealRest: ["no"],
+  // A MEAL BOOKED INSIDE A BLOCK THEY WERE WORKING.
+  //
+  // `mealInShift` has one answer and it is that the break was missed, so it owes
+  // a why like every other missed meal - Mánu 2026-08-15, asked directly.
+  // `mealMovable` owes one only on the branch that says the block cannot move,
+  // because that is the branch where the break did not happen. Saying it CAN be
+  // moved says they took it, and a break somebody took has nothing to explain.
+  mealInShift: ["no"],
+  mealMovable: ["no"],
 };
 
 export function reasonOwedOn(kind, choice) {
@@ -174,6 +183,10 @@ export function reasonOwedOn(kind, choice) {
 const REASON_SLOT = {
   nothingDocumentedMeal: "meal",
   restIsMealLength: "meal",
+  // the same day's meal, whichever question asked about it, so a reason given
+  // here and one given on the plain meal question are the same row
+  mealInShift: "meal",
+  mealMovable: "meal",
   nothingDocumentedRest: "rest",
   repair: "rest",
   restNoTimes: "rest",

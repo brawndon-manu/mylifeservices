@@ -39,6 +39,9 @@ import {
   restKey, restNameFor, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
+// reading the roster's own blocks, the same two functions every other screen
+// uses to say what a stretch of the day was booked as
+import { blockTimes, serviceOf } from "./schedule.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -374,6 +377,59 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
     }
   }
   return out;
+}
+
+// A LUNCH THE ROSTER BOOKED INSIDE A BLOCK SOMEBODY WAS ALREADY WORKING.
+//
+// You clock in and out of a service shift, so a meal booked inside one cannot
+// have been taken - the punches would show the hole and they do not. That makes
+// "did you take your lunch?" the wrong question on those days: we already know.
+//
+// TWO KINDS OF BLOCK, AND THEY GET OPPOSITE TREATMENT. Mánu 2026-08-15:
+//
+//   CLOCKED    ILS Service, Self Determination, ILS Training. Punched, and not
+//              ours to move. The lunch could not have happened and the schedule
+//              is what needs correcting.
+//   MOVABLE    ILS Admin, ILS Misc. Typed in rather than punched, so the BLOCK
+//              can move and the lunch can stand.
+//
+// TRAVEL IS DELIBERATELY NEITHER, for this period. It overlaps on 2 live days
+// and 4 in July, and the rule for it is not settled - so those days keep asking
+// what they ask today rather than being given an answer nobody has decided.
+// Personal Appointment is work and a lunch inside it is fine.
+//
+// ONLY ON A DAY THAT OWES A MEAL. The overlap on its own is not a finding: 281
+// live days have one and took their lunch in a real punch gap anyway. The
+// overlap decides WHICH question a day already owing a meal gets asked.
+const CLOCKED_SERVICE = /ils\s*service|self\s*determ|training/i;
+const MOVABLE_SERVICE = /admin|misc/i;
+
+export function mealBookedInside(entry) {
+  const meal = rosteredMeal(entry);
+  if (!meal) return null;
+  let clocked = null;
+  let movable = null;
+  for (const sh of entry?.shifts || []) {
+    if (sh.meal) continue;
+    const t = blockTimes(sh.text);
+    if (!t || !(meal.from < t.end && meal.to > t.start)) continue;
+    const svc = serviceOf(sh.text) || "";
+    // the clocked overlap wins outright where a lunch spans both - Cain 08/03
+    // runs across ILS Travel AND the service shift after it, and the service is
+    // what makes it impossible
+    if (CLOCKED_SERVICE.test(svc)) clocked = clocked || { service: svc, from: t.start, to: t.end };
+    else if (MOVABLE_SERVICE.test(svc)) movable = movable || { service: svc, from: t.start, to: t.end };
+  }
+  const hit = clocked || movable;
+  if (!hit) return null;
+  return {
+    kind: clocked ? "clocked" : "movable",
+    service: hit.service,
+    blockFrom: hit.from,
+    blockTo: hit.to,
+    mealFrom: meal.from,
+    mealTo: meal.to,
+  };
 }
 
 export function buildQuestions(data, { restRows, sourceName } = {}) {
@@ -911,6 +967,69 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
       if (meal) parts.push("meal");
       if (rest) parts.push("rest");
       for (const part of parts) {
+        // A MEAL BOOKED INSIDE A BLOCK GETS A DIFFERENT QUESTION, NOT A SECOND ONE.
+        //
+        // "Did you take your meal break?" is the wrong thing to ask on a day
+        // where the roster put the lunch inside a shift they clock in and out
+        // of: the punches would show the hole and they do not, so we already
+        // know. Every one of these 27 live days asks `nothingDocumentedMeal`
+        // today, which is exactly the question being replaced.
+        //
+        // It leaves the batch deliberately. The batched card is one question
+        // asked of thirteen days at once; this one has its own options, its own
+        // follow-ups on the movable branch, and belongs on its own day.
+        const inside = part === "meal" ? mealBookedInside(byDate[date]) : null;
+        if (inside) {
+          const movable = inside.kind === "movable";
+          out.push({
+            kind: movable ? "mealMovable" : "mealInShift",
+            date,
+            at: "",
+            // THE MOVABLE ONE COLLECTS TWO THINGS ON ITS YES, and only on its
+            // yes: when the meal break really was, and what the block becomes
+            // once it has been moved out of the way. Saying the block can be
+            // rearranged without saying what to is an instruction nobody can
+            // carry out in QuickSolve.
+            ...(movable
+              ? {
+                canGiveTime: true,
+                needsOn: "yes",
+                wantsBlock: true,
+                needs: [{
+                  slot: "meal",
+                  kindOf: "meal",
+                  label: "Meal break started",
+                  minutes: MEAL_MIN_MINUTES,
+                  prefill: null,
+                  source: null,
+                  // every gap a lawful half hour fits in, the same list the
+                  // undocumented meal question offers
+                  options: mealWindows(dayOf(date)).map((w) => clock(w.from)),
+                  windows: mealWindows(dayOf(date)).map((w) => `${clock(w.from)}-${clock(w.to)}`),
+                  hint: "when you actually took it",
+                }],
+              }
+              : null),
+            // same as the question it replaces: the premium is on the sheet by
+            // construction, so the answer that says the lunch happened takes the
+            // hour off and the one that says it did not leaves it alone
+            moves: -1,
+            movesOnDecline: 0,
+            row: {
+              part: "meal",
+              service: inside.service,
+              // both times, the way the off-clock card shows them - Mánu
+              // 2026-08-15. The two lines carry the argument; no paragraph has
+              // to assert that the lunch was impossible.
+              mealFrom: clock(inside.mealFrom),
+              mealTo: clock(inside.mealTo),
+              blockFrom: clock(inside.blockFrom),
+              blockTo: clock(inside.blockTo),
+              hours: r2((dayOf(date)?.paidHours) || 0),
+            },
+          });
+          continue;
+        }
         out.push({
           kind: part === "meal" ? "nothingDocumentedMeal" : "nothingDocumentedRest",
           date,
@@ -999,6 +1118,8 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
 const OPTIONAL_KINDS = new Set([
   // the break premiums. Silence leaves the pay on.
   "nothingDocumented", "nothingDocumentedMeal", "nothingDocumentedRest",
+  // a lunch the roster booked inside a block that was being worked
+  "mealInShift", "mealMovable",
   "restIsMealLength",
   // the two policy assumptions. Silence leaves the minutes on.
   "restOutsideScheduled",
@@ -1260,6 +1381,21 @@ export function patchesFor(question, choice, day) {
     // rebuild in answerTimesheetQuestion drops nulls and spreads what is left,
     // so "took my lunch" and "missed my tens" land as one day with one premium.
     case "nothingDocumentedMeal":
+      return yes ? { mealViolation: false } : { mealViolation: null };
+    // A LUNCH BOOKED INSIDE A BLOCK THEY WERE WORKING.
+    //
+    // `mealInShift` has ONE answer and it agrees with the day: the shift is
+    // clocked, so the lunch could not have happened and the premium stands. The
+    // patch clears any override rather than writing one, the same way every
+    // other decline that agrees with the record does.
+    //
+    // `mealMovable` is the only one of the pair that can move a figure. Saying
+    // the block CAN be rearranged is saying the lunch really was taken, just not
+    // where the roster put it - so the premium comes off, exactly as confirming
+    // an undocumented meal does. Saying it cannot leaves the day as it stands.
+    case "mealInShift":
+      return { mealViolation: null };
+    case "mealMovable":
       return yes ? { mealViolation: false } : { mealViolation: null };
     case "nothingDocumentedRest":
       return yes ? { restViolation: false } : { restViolation: null };

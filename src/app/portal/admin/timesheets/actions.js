@@ -2304,6 +2304,16 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
 
     // the why, checked against the question we re-derived rather than against
     // whatever the client said the question was
+    // WHAT THE UNPUNCHED BLOCK BECOMES, on the one kind that asks for it.
+    // Free text: it is an instruction for QuickSolve, not a figure this sheet
+    // computes with. Refused where the question does not ask, so a client
+    // sending one on any other kind cannot get it stored.
+    const block = q.wantsBlock && a.choice === "yes"
+      ? String(a.block ?? "").trim().slice(0, 120)
+      : "";
+    if (q.wantsBlock && a.choice === "yes" && !block) {
+      return { ok: false, error: "needblock", at: { id: q.id, date: q.date } };
+    }
     const why = String(a.reason ?? "").trim().slice(0, 1000);
     if (reasonOwedOn(q.kind, a.choice) && !why) {
       // WHICH DAY, not just that one of them is short. This card commits every
@@ -2311,7 +2321,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       // once and the person has to hunt for the one that stopped it.
       return { ok: false, error: "needreason", at: { id: q.id, date: q.date } };
     }
-    resolved.push({ q, choice: a.choice ?? null, stated, statedBreaks, reason: why || null });
+    resolved.push({ q, choice: a.choice ?? null, stated, statedBreaks, reason: why || null, block: block || null });
   }
 
   // WHY THEY MISSED IT, WRITTEN AS THE SAME ROW A REVIEWER WOULD HAVE WRITTEN.
@@ -2419,7 +2429,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   };
 
   // record the answers first, so rebuilding the overrides below sees them
-  for (const { q, choice: pick, stated, statedBreaks, reason } of resolved) {
+  for (const { q, choice: pick, stated, statedBreaks, reason, block } of resolved) {
     const kindKey = `q_${q.kind}`;
     const dates = q.dates || [q.date];
     // UNANSWERED AGAIN. Scoped to this sheet, this kind and these dates - never
@@ -2446,7 +2456,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         resolvedAt: new Date(),
         resolvedById: ts.userId || null,
         note: `Asked about the ${date} ${QUESTION_NOUN[q.kind]}.`,
-        resolutionNote: resolutionFor(q, pick, stated, statedBreaks),
+        resolutionNote: resolutionFor(q, pick, stated, statedBreaks, block),
         // WHATEVER THE ANSWER ACTUALLY COLLECTED, and nothing else.
         //
         // This used to null the times on any "no", which was right while "no"
@@ -2605,10 +2615,12 @@ const QUESTION_NOUN = {
   nothingDocumentedRest: "rest periods with nothing recorded",
   shortMealRest: "ten minute meal block read as a rest period",
   mealLate: "meal period that started after the fifth hour",
+  mealInShift: "meal break the roster booked inside a shift they clock in and out of",
+  mealMovable: "meal break the roster booked inside unpunched time",
   restTooLongOffClock: "break too long to be a rest, on a day whose meal is accounted for",
 };
 
-function resolutionFor(q, choice, stated, statedBreaks) {
+function resolutionFor(q, choice, stated, statedBreaks, block) {
   const yes = choice === "yes";
   switch (q.kind) {
     case "repair":
@@ -2707,6 +2719,23 @@ function resolutionFor(q, choice, stated, statedBreaks) {
       return yes
         ? "Employee confirmed this was a real break they took. Recorded as taken; no change to hours or premium."
         : "Employee says the entry was a mistake. Flagged for payroll as a mis-entry; no change to hours or premium.";
+    // THE ROSTER PUT THE MEAL INSIDE A BLOCK THEY WERE WORKING.
+    //
+    // The clocked one has a single answer, so the note records the fact rather
+    // than a choice: the schedule is what is wrong and the premium stands.
+    // The movable one CAN move a figure, so it says which way it went and what
+    // has to change at source either way.
+    case "mealInShift":
+      return "The meal break is rostered inside a shift they clock in and out of, so it could not "
+        + "have been taken. Premium stands. The schedule needs the meal moved outside the shift.";
+    case "mealMovable":
+      return yes
+        ? "Employee says the unpunched block can be rearranged and the meal break was taken"
+          + (statedBreaks?.[0]?.from ? ` at ${statedBreaks[0].from}` : "")
+          + ". Meal premium removed for this day. "
+          + `Change the ${q.row?.service || "block"} on this day to ${block || "the time they gave"} in QSP.`
+        : "Employee says the block cannot be rearranged, so the meal break could not have been "
+          + "taken. Premium stands.";
     case "shortMealRest":
       return yes
         ? "Employee confirmed the short meal block was their rest period. Credit stands."

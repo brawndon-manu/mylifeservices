@@ -128,8 +128,14 @@ const washFor = (service) => `${edgeFor(service)}${isMisc(service) ? "30" : "1a"
 // split evenly for as long as something does. That is how every calendar draws
 // concurrent events, and it is the only arrangement where both labels survive.
 const BREAK_LEFT_PCT = 44;
-// and stopping where the blocks underneath stop, rather than a few pixels past
-const BREAK_RIGHT_PCT = 97;
+// FLUSH WITH THE RIGHT EDGE OF THE COLUMN. It stopped at 97, on the stated
+// grounds that it matched where the blocks underneath stop - which was not true,
+// they run to 99, so a break ended two percent short of everything around it and
+// the column had a ragged right side for no reason. Mánu 2026-08-15.
+//
+// The tether still takes its own strip out of this on the days that have one,
+// which is the only thing that should ever pull a break in from the edge.
+const BREAK_RIGHT_PCT = 100;
 // WHERE THE TETHER LIVES when a rest is filed against a shift it does not fall
 // inside. It needs a column of its own down the right-hand edge - drawn over
 // the breaks it would collide with them, and drawn inside their lanes it would
@@ -427,7 +433,16 @@ function spoken(day, shifts, rests, staged, scheduled) {
   return bits.length ? `${bits.join(", ")}.` : "Nothing recorded for this day.";
 }
 
-export default function DayCalendar({ day, rests = [], scheduled = [], proposed = [] }) {
+export default function DayCalendar({
+  day, rests = [], scheduled = [], proposed = [],
+  // THE ROSTERED MEAL IS THE THING BEING ASKED ABOUT ON THIS DAY.
+  //
+  // Handed in rather than worked out here. Whether a booked meal is a finding is
+  // the ENGINE's answer - `mealBookedInside`, plus the day owing a meal at all -
+  // and a calendar re-deriving it would be a second opinion that can disagree
+  // with the question printed beside it.
+  bookedMeal = false,
+}) {
   // before the early return: a hook cannot be called conditionally
   const staged = useStagedOn(day.date);
   const shifts = shiftsOf(day);
@@ -618,9 +633,19 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
 
   // the rostered meal blocks that fall inside worked time, which is exactly the
   // set the gap logic above cannot reach - see the note where they are drawn
+  // A BOOKED MEAL WE ARE RAISING IS DRAWN WHETHER OR NOT IT FITS ONE SHIFT.
+  //
+  // `insideAShift` wants the whole span within a SINGLE punched stretch, and the
+  // ones that matter most do not qualify: Cain 08/03 books 1p-1:30p across a
+  // 1p-1:15p travel punch and the 1:15p-3:15p service after it, so the block the
+  // question is about was not drawn at all and the card had no picture.
+  //
+  // Where the engine has raised it, the roster's claim is the point and it is
+  // drawn on that alone. Everywhere else the old test stands, so nothing new
+  // appears on the days nobody is being asked about.
   const rosteredUnpunched = (scheduled || []).filter(
-    (b) => b.meal && Number.isFinite(b.from) && Number.isFinite(b.to)
-      && b.to > b.from && insideAShift(shifts, b.from, b.to - b.from),
+    (b) => b.meal && Number.isFinite(b.from) && Number.isFinite(b.to) && b.to > b.from
+      && (bookedMeal || insideAShift(shifts, b.from, b.to - b.from)),
   );
 
   // recorded and half-typed breaks share one lane layout, so a time being
@@ -677,7 +702,7 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
     // Drawn in the break lanes rather than over the work, because it IS a break
     // and the work band underneath is the fact that they never clocked out of it.
     ...rosteredUnpunched.map((b) => ({
-      from: b.from, to: b.to, kind: "meal", rostered: true,
+      from: b.from, to: b.to, kind: "meal", rostered: true, booked: bookedMeal,
     })),
   ]);
 
@@ -923,12 +948,28 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
                 height: `${exact(drawnBreak(b).from, drawnBreak(b).to)}%`,
                 left: `${BREAK_LEFT_PCT + b.lane * width}%`,
                 width: `${width}%`,
-                background: b.attention
+                background: b.booked
+                  ? "color-mix(in srgb, #f43f5e 14%, transparent)"
+                  : b.attention
                   ? hue
                   : b.said
                   ? "repeating-linear-gradient(45deg, transparent, transparent 5px, rgb(244 63 94 / 0.16) 5px, rgb(244 63 94 / 0.16) 10px)"
                   : b.staged ? `${hue}33` : hue,
                 borderColor: b.staged && !b.said ? hue : undefined,
+                // A LUNCH THE ROSTER BOOKED INSIDE A BLOCK BEING WORKED.
+                //
+                // Dashed and red, because it is the only block on the day that
+                // is not a record of anything: the schedule claims it, the
+                // punches do not, and the question beside it is about the
+                // schedule being wrong. Solid would read as a break that
+                // happened, which is exactly the claim in dispute.
+                //
+                // ONLY WHERE SOMETHING IS BEING RAISED. 281 live days have the
+                // same overlap and took their lunch in a real punch gap; a red
+                // box on those would be an alarm about nothing.
+                ...(b.booked
+                  ? { border: "1.5px dashed #f43f5e", color: "#fda4af" }
+                  : null),
                 // it is being CROPPED, not overflowing, and the fade is what
                 // says so. Without it the block just stops at the axis and
                 // reads as a break that really did end there.
@@ -947,6 +988,8 @@ export default function DayCalendar({ day, rests = [], scheduled = [], proposed 
                   ? "The record says"
                   // it is on the roster and not in the punches, and saying
                   // "Meal" would claim they clocked out for it
+                  : b.booked
+                    ? "Meal"
                   : b.rostered
                     ? "On your schedule"
                     : b.label || (b.guess ? "We think" : b.kind === "meal" ? (b.staged ? "Lunch" : "Meal") : "Rest")}{" "}

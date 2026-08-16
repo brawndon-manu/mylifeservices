@@ -33,7 +33,7 @@
 // third definition of the same rule.
 // `.js` on purpose: every intra-lib import here carries it, because these
 // modules are read by `node --test`, which has no bundler to guess with.
-import { mealWindows } from "./questions.js";
+import { mealWindows, mealBookedInside } from "./questions.js";
 
 export const VIOLATION_KINDS = {
   "rest-not-taken": {
@@ -57,6 +57,22 @@ export const VIOLATION_KINDS = {
     // 9 days on the live batch over 6 people, 143 in July over 42.
     askNoRoom: "No meal punched, and no gap in the day long enough for one. "
       + "Nothing to punch here, so this needs a reason rather than a correction.",
+  },
+  // THE ROSTER PUT THE MEAL INSIDE A BLOCK THEY WERE WORKING.
+  //
+  // Two kinds, because the way out is opposite. A clocked shift is punched and
+  // is not ours to move, so the meal could not have happened and the schedule
+  // is what needs correcting. Unpunched time can be rearranged instead, and the
+  // meal can stand.
+  "meal-in-shift": {
+    label: "Meal booked inside a shift",
+    ask: "The roster books a meal break inside a shift they clock in and out of, so it could not "
+      + "have been taken. The schedule needs it moved outside the shift. Ask why they did not get one.",
+  },
+  "meal-movable": {
+    label: "Meal booked inside unpunched time",
+    ask: "Not a clocked shift, so the block can be moved rather than the meal break being written "
+      + "off. Ask whether it can be rearranged and what the meal break and the block become.",
   },
   "meal-late": {
     label: "Meal period started too late",
@@ -85,7 +101,16 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 // WHY the rests are missing is a different sentence, and it stays a person level
 // one - `noReport` below - so it is said once on their page instead of five
 // times down it.
-export function dayViolations(d) {
+// the roster is not on the day row, so a caller that has it hands it in. Without
+// one this behaves exactly as it did, which is what keeps the person page and
+// the checks list working while only one of them can see the schedule.
+const clock = (m) => {
+  if (!Number.isFinite(m)) return "";
+  const h = Math.floor(m / 60), x = h % 12 === 0 ? 12 : h % 12, mm = m % 60;
+  return `${x}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h < 12 ? "a" : "p"}`;
+};
+
+export function dayViolations(d, entry = null) {
   if (!d) return [];
   const out = [];
   if (d.restViolation) {
@@ -97,11 +122,17 @@ export function dayViolations(d) {
       detail: `${d.restTaken ?? 0} of ${d.restRequired} recorded`,
     });
   }
+  const booked = d.mealViolation && !d.mealLate ? mealBookedInside(entry) : null;
   if (d.mealViolation) {
     out.push(
       d.mealLate
         ? { kind: "meal-late", detail: `started ${d.mealStartedAfterMin} minutes in` }
-        : {
+        : booked
+          ? {
+            kind: booked.kind === "clocked" ? "meal-in-shift" : "meal-movable",
+            detail: `${clock(booked.mealFrom)}-${clock(booked.mealTo)}, inside ${booked.service}`,
+          }
+          : {
           kind: "meal-not-recorded",
           detail: `nothing recorded on a ${r2(d.paidHours).toFixed(2)} hour day`,
           // WHETHER THE DAY EVER HAD ROOM FOR ONE, read from the engine's own
@@ -121,7 +152,8 @@ export function dayViolations(d) {
 // again, and you cannot see that the ten minute hole at 12:30 on the 1st is the
 // same hole as the one on the 2nd if only the flagged days are drawn.
 export function violationsFor(data) {
-  const days = (data?.days || []).map((d) => ({ day: d, list: dayViolations(d) }));
+  const byDate = data?.scheduleCheck?.byDate || {};
+  const days = (data?.days || []).map((d) => ({ day: d, list: dayViolations(d, byDate[d.date]) }));
   const flagged = days.filter((x) => x.list.length);
   const total = flagged.reduce((n, x) => n + x.list.length, 0);
   const kinds = [];

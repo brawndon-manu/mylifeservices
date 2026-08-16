@@ -314,7 +314,9 @@ test("a plain card collects a reason and sends it", () => {
   assert.match(one, /reason: needsReason \? reasonText\.trim\(\) \|\| null : null/);
   // and it will not commit without one, the same way it will not commit a
   // missing time
-  assert.match(one, /if \(!proposed \|\| timeBlocked \|\| reasonBlocked\) return;/);
+  // the movable meal added a third thing that can hold the commit, so this
+  // asserts the reason is still one of them rather than pinning the whole list
+  assert.match(one, /if \(!proposed \|\| timeBlocked \|\| reasonBlocked/);
   // the sentence is not worded a second time here
   assert.match(one, /employeeQuestion\(/);
 });
