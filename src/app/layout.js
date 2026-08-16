@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PublicChrome from "@/components/PublicChrome";
+import RegisterServiceWorker from "@/components/RegisterServiceWorker";
 import AccessibilityMenu from "@/components/AccessibilityMenu";
 
 const geistSans = Geist({
@@ -134,6 +135,8 @@ export default function RootLayout({ children }) {
         <div className="corner-fab fixed bottom-4 right-4 z-50 print:hidden">
           <AccessibilityMenu variant="fab" openUp align="right" />
         </div>
+        {/* the install prompt's precondition, and nothing else - see public/sw.js */}
+        <RegisterServiceWorker />
         <Analytics />
       </body>
     </html>
