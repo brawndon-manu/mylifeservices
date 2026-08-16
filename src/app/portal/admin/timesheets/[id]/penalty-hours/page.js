@@ -278,16 +278,22 @@ export default async function PenaltyHoursPage({ params }) {
         </div>
         <div className="mt-4 space-y-1">
           {reasonRows.map((r) => (
-            <div key={`${r.kind}-${r.text}`} className="grid grid-cols-[minmax(0,1fr)_2fr_2.5rem] items-center gap-3 sm:grid-cols-[18rem_1fr_2.5rem]">
-              <div className="truncate text-right text-xs text-foreground" title={r.text}>{r.text}</div>
-              <div className="flex h-3">
+            // Below sm the reason went into a 79px column with `truncate` on
+            // it, so "a meal was rostered but none was punched" arrived as
+            // three words and an ellipsis. It gets the line to itself there,
+            // with the bar under it and the figure kept alongside - the same
+            // move as the evidence rows, so the two screens read alike.
+            // Explicit placement at sm, so the desktop row is untouched.
+            <div key={`${r.kind}-${r.text}`} className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-x-3 gap-y-1 sm:grid-cols-[18rem_1fr_2.5rem] sm:gap-3">
+              <div className="col-start-1 row-start-1 text-xs text-foreground sm:truncate sm:text-right" title={r.text}>{r.text}</div>
+              <div className="col-span-2 row-start-2 flex h-3 sm:col-span-1 sm:col-start-2 sm:row-start-1">
                 <Bar
                   pct={(r.n / maxReason) * 100}
                   color={r.kind === "meal" ? "var(--pen-meal)" : "var(--pen-rest)"}
                   rounded="rounded-sm"
                 />
               </div>
-              <div className="text-right text-xs tabular-nums text-foreground">{r.n}</div>
+              <div className="col-start-2 row-start-1 text-right text-xs tabular-nums text-foreground sm:col-start-3">{r.n}</div>
             </div>
           ))}
         </div>

@@ -507,7 +507,9 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     // max-w-6xl since 2026-08-12, to buy the day-by-day calendar the width its
     // overlapping blocks need without stacking the answer options beside them.
     // See the note on the calendar column in DayByDay.
-    <section className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
+    // no-focus-zoom: every field here is text-sm, and a field under 16px makes
+    // iOS Safari magnify the page and stay there. See the rule in globals.css.
+    <section className="no-focus-zoom mx-auto max-w-6xl px-6 py-10 sm:py-14">
       {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
           reaches this page within a few seconds, without either of them saying
           reload - which is the difference between fixing something while an

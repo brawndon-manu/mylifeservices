@@ -1476,13 +1476,17 @@ function OneQuestion({
       {needsReason && (
         <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-700/70 dark:bg-amber-950/30">
           <p className="text-sm font-semibold text-foreground">{reasonAsk.ask}</p>
+          {/* min-h below sm because `rows` counts LINES, not pixels: the 16px
+              these fields get on a phone (see no-focus-zoom in globals.css)
+              makes two of them shorter than the placeholder, which then sits
+              half-clipped at the bottom of the box. */}
           <textarea
             rows={2}
             disabled={pending}
             value={reasonText}
             onChange={(e) => setReason(e.target.value)}
             placeholder={reasonAsk.placeholder}
-            className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+            className="mt-2 min-h-[5.5rem] w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground sm:min-h-0"
           />
           {!reasonText.trim() ? (
             <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
@@ -2068,7 +2072,11 @@ export function BatchProvider({
     waiting?.has?.(q.id) ? (
       <span className="text-xs text-muted">waiting on the question above</span>
     ) : noRoom(q) ? null : (
-    <span className="flex overflow-hidden rounded-lg border border-border-strong">
+    // FULL WIDTH AND 44px ON A PHONE. This pair is the whole point of the page
+    // and it was 32px tall with the two answers a few pixels apart, which is a
+    // mis-tap on a screen where the two answers mean opposite things. Unchanged
+    // above sm, where a pointer is doing the work.
+    <span className="flex w-full overflow-hidden rounded-lg border border-border-strong sm:w-auto">
       {optionsFor(q).map((opt, i) => (
         <button
           key={opt}
@@ -2079,7 +2087,7 @@ export function BatchProvider({
             setConfirming(false);
             setPicked((p) => ({ ...p, [q.id]: (q.id in p ? p[q.id] : savedValue(q)) === opt ? null : opt }));
           }}
-          className={`px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
+          className={`min-h-11 flex-1 px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 sm:min-h-0 sm:flex-none ${
             i > 0 ? "border-l border-border-strong" : ""
           } ${
             // one colour, like the options above - see the note on `Choice`
@@ -2147,7 +2155,7 @@ export function BatchProvider({
           value={reasons[q.id] ?? already ?? ""}
           onChange={(e) => setReasons((r) => ({ ...r, [q.id]: e.target.value }))}
           placeholder={ask.placeholder}
-          className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+          className="mt-2 min-h-[5.5rem] w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground sm:min-h-0"
         />
         {!said ? (
           <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">

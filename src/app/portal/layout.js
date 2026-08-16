@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isElevated, isIT, isAdminUp, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import PreviewBar from "./_components/PreviewBar";
+import PortalMenu from "./_components/PortalMenu";
+import PortalTabBar from "./_components/PortalTabBar";
 
 // the portal has its own Light / Dim / Night themes, so tell Dark Reader (and
 // similar dark-mode extensions) to leave these pages alone. Dark Reader rewrites
@@ -32,7 +34,9 @@ export default async function PortalLayout({ children }) {
       : 0;
 
   return (
-    <div className="min-h-screen bg-background">
+    // no-focus-zoom: see globals.css. Every form in the portal is text-sm, and
+    // under 16px iOS zooms in on focus and does not come back.
+    <div className="no-focus-zoom min-h-screen bg-background">
       {user && isIT(user.realRole) && (
         <PreviewBar
           realRole={user.realRole}
@@ -40,8 +44,61 @@ export default async function PortalLayout({ children }) {
           previewing={user.previewing}
         />
       )}
-      <div className="border-b border-border bg-background">
-        <div className="mx-auto flex max-w-7xl items-start justify-between gap-4 px-6 py-4">
+      {/* THE HEADER SPLITS AT lg, NOT AT sm.
+          Laid out, the desktop row needs about 810px: 426 of brand and nav, 313
+          of account, the gap and the padding. A 768px tablet would still be
+          105px short of it, so switching at md would leave the same sideways
+          scroll it is here to remove, only on fewer screens. */}
+      <div className="relative border-b border-border bg-background">
+        {/* --- phones and tablets: brand, bell, menu --- */}
+        <div className="flex items-center justify-between gap-3 px-4 py-3 lg:hidden">
+          <Link
+            href="/portal"
+            className="flex items-center gap-2.5 rounded text-foreground transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            <Image
+              src="/logo/treelogov2.png"
+              alt=""
+              width={2428}
+              height={1820}
+              priority
+              className="h-8 w-auto rounded-md"
+            />
+            <span className="font-semibold tracking-tight">Employee portal</span>
+          </Link>
+          <div className="flex items-center gap-2">
+            {/* the bell stays in the bar rather than going into the menu. a
+                count nobody can see until they open something is not a
+                notification. */}
+            {isElevated(role) && (
+              <Link
+                href="/portal/notifications"
+                aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
+                className="relative flex h-11 w-11 items-center justify-center rounded-lg text-muted transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unread > 0 && (
+                  <span className="absolute right-1 top-1 min-w-[18px] rounded-full bg-rose-600 px-1 text-center text-[11px] font-bold leading-[18px] text-white">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </Link>
+            )}
+            <PortalMenu
+              elevated={isElevated(role)}
+              email={user?.email}
+              roleLabel={isAdminUp(role) ? ROLE_LABELS[role] ?? role : null}
+              roleBadgeClass={roleBadgeClass(role)}
+              signOut={handleSignOut}
+            />
+          </div>
+        </div>
+
+        {/* --- lg and up: exactly as it was --- */}
+        <div className="mx-auto hidden max-w-7xl items-start justify-between gap-4 px-6 py-4 lg:flex">
           <div className="flex flex-col gap-2">
             {/* portal brand: logo + "Employee portal", links to the dashboard */}
             <Link
@@ -146,7 +203,11 @@ export default async function PortalLayout({ children }) {
           </div>
         </div>
       </div>
-      {children}
+      {/* the tab bar is fixed, so the last thing on every page would sit under
+          it without this. 56px of bar plus a little air, cleared again at lg
+          where there is no bar. */}
+      <div className="pb-[4.5rem] lg:pb-0">{children}</div>
+      <PortalTabBar elevated={isElevated(role)} />
     </div>
   );
 }

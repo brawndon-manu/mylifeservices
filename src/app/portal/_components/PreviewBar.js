@@ -16,7 +16,9 @@ export default function PreviewBar({ realRole, effectiveRole, previewing }) {
   const label = ROLE_LABELS[effectiveRole] ?? effectiveRole;
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 print:hidden">
+    // corner-preview: globals.css lifts this clear of the accessibility control
+    // and the tab bar below lg. See the corner stack note there.
+    <div className="corner-preview fixed bottom-20 right-4 z-50 print:hidden">
       {open ? (
         <div className="w-64 rounded-xl border border-border bg-surface p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between">

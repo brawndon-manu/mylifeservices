@@ -92,7 +92,7 @@ export default function RootLayout({ children }) {
         </PublicChrome>
         {/* always-on accessibility control, pinned to the bottom-right corner
             of the viewport on every page (public + portal). */}
-        <div className="fixed bottom-4 right-4 z-50 print:hidden">
+        <div className="corner-fab fixed bottom-4 right-4 z-50 print:hidden">
           <AccessibilityMenu variant="fab" openUp align="right" />
         </div>
         <Analytics />
