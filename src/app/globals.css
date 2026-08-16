@@ -140,18 +140,24 @@ input[type="number"]::-webkit-inner-spin-button {
    only the accessibility control is what NOT to do - it lands on the preview
    pill, which is exactly what happened the first time.
 
-     tab bar        0    -> 56
-     accessibility  72   -> 116
-     preview pill   124  -> up
+   THE BAR FLOATS NOW, clear of the iPhone's home-indicator strip, so every
+   offset here is measured from the same safe-area inset rather than from the
+   screen edge. On an iPhone that inset is the indicator; on a phone without one
+   it is 0 and the whole stack simply sits lower.
+
+     safe area      the home indicator, 0 where there isn't one
+     tab bar        safe + 8    ->  safe + 72
+     accessibility  safe + 80   ->  safe + 124
+     preview pill   safe + 132  ->  up
 
    Keyed off the bar's own presence rather than the route, so it can never drift
    out of step with which pages actually have one. */
 @media (max-width: 1023px) {
   body:has([data-portal-tabbar]) .corner-fab {
-    bottom: calc(1rem + 3.5rem);
+    bottom: calc(env(safe-area-inset-bottom) + 5rem);
   }
   body:has([data-portal-tabbar]) .corner-preview {
-    bottom: calc(1rem + 3.5rem + 3.25rem);
+    bottom: calc(env(safe-area-inset-bottom) + 8.25rem);
   }
 }
 
