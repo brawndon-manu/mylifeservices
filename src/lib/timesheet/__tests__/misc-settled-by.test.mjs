@@ -72,3 +72,30 @@ test("a caller that cannot say who settled it gets the old behaviour", () => {
 test("a day with no misc block asks nothing, whoever settled what", () => {
   assert.equal(asks(day({ miscBlocks: [], miscMin: 0 }), { reviewerSettled: new Set() }).length, 0);
 });
+
+// THE PAGE AND THE ACTION MUST BUILD THE SAME SET.
+//
+// The first version of this fix changed only the page. The action re-derives
+// the questions before it will accept an answer, did not know about the
+// reviewer distinction, and so refused the very card the page had just put on
+// screen: "That question is not on this timesheet any more."
+//
+// One helper, used by both, and this is what pins it.
+test("the settled set is read the same way wherever it is needed", async () => {
+  const { reviewerSettledDates, MISC_CLASSIFY_SOURCE } = await import("../corrections.js");
+
+  // what classifyMiscTime writes
+  const ours = { "07/31/26": { miscKind: "pto", _source: MISC_CLASSIFY_SOURCE, _by: "Mánu" } };
+  assert.deepEqual([...reviewerSettledDates(ours)], ["07/31/26"]);
+
+  // what an employee's answer writes: the same field, no source
+  const theirs = { "07/31/26": { miscKind: "pto", paidHours: 6.5 } };
+  assert.deepEqual([...reviewerSettledDates(theirs)], []);
+
+  // and the two sets drive the same decision
+  assert.equal(asks(day({ miscKind: "pto" }), { reviewerSettled: reviewerSettledDates(ours) }).length, 0);
+  assert.equal(asks(day({ miscKind: "pto" }), { reviewerSettled: reviewerSettledDates(theirs) }).length, 1);
+
+  assert.deepEqual([...reviewerSettledDates(null)], []);
+  assert.deepEqual([...reviewerSettledDates(undefined)], []);
+});

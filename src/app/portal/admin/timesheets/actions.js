@@ -59,6 +59,7 @@ import {
   CORRECTION_KINDS,
   patchFor,
   mergeOverride,
+  reviewerSettledDates,
   MISC_PATCH_FIELDS,
   recomputeSheet,
 } from "@/lib/timesheet/corrections";
@@ -2245,9 +2246,18 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   if (ts.signedAt) return { ok: false, error: "already" };
   if (ts.corrections.length) return { ok: false, error: "reported" };
 
+  // THE SAME QUESTION SET THE PAGE BUILT, or this refuses what it just showed.
+  //
+  // This action re-derives the questions and will not accept an answer to one
+  // it cannot find - which is the right defence, and it broke the moment the
+  // review page started keeping an answered Misc question on the page. The page
+  // knew a reviewer had not settled that day; this did not, so it rebuilt
+  // without the question and sent back "that question is not on this timesheet
+  // any more" for an answer somebody was looking at.
   const questions = buildQuestions(ts.data, {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
+    reviewerSettled: reviewerSettledDates(ts.overrides),
   });
   // RESOLVE AND VALIDATE EVERYTHING BEFORE WRITING ANYTHING. A batch where the
   // ninth day carries a time we cannot read must not leave the first eight

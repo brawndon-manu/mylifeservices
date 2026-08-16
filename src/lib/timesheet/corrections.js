@@ -192,6 +192,29 @@ export const MISC_PATCH_FIELDS = [
   "mealViolation",
 ];
 
+// WHAT MARKS AN OVERRIDE AS OURS RATHER THAN THEIRS.
+//
+// Both routes write the same `miscKind` onto the day - a reviewer using the
+// classify control and an employee answering the question - so the day itself
+// can never say who decided. Only the reviewer's override carries this.
+export const MISC_CLASSIFY_SOURCE = "misc-classify";
+
+// The dates a REVIEWER settled the Misc time on, which is what decides whether
+// the employee is still asked about it.
+//
+// ONE FUNCTION, TWO CALLERS, ON PURPOSE. The review page uses it to build the
+// question set and the answer action uses it to re-derive that same set before
+// it will accept anything. Those two disagreeing is not a cosmetic bug: the
+// page shows a card, the action cannot find the question behind it, and the
+// answer comes back "that question is not on this timesheet any more".
+export function reviewerSettledDates(overrides) {
+  return new Set(
+    Object.entries(overrides || {})
+      .filter(([, ov]) => ov?._source === MISC_CLASSIFY_SOURCE)
+      .map(([date]) => date),
+  );
+}
+
 export function mergeOverride(overrides, date, patch) {
   if (!date || !patch || !Object.keys(patch).length) return overrides || {};
   const next = { ...(overrides || {}) };

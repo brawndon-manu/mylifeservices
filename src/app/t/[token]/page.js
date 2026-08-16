@@ -17,7 +17,7 @@ import {
   acknowledgeSpan,
 } from "@/app/portal/admin/timesheets/actions";
 import {
-  correctionLabel, employeeResolution, resolutionTakesReason,
+  correctionLabel, employeeResolution, resolutionTakesReason, reviewerSettledDates,
 } from "@/lib/timesheet/corrections";
 import {
   buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
@@ -149,11 +149,9 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // question so they can change it. `_source` is written only by
   // `classifyMiscTime`, so this is the one thing that tells the two apart -
   // both routes write the same `miscKind` onto the day.
-  const reviewerSettled = new Set(
-    Object.entries(ts.overrides || {})
-      .filter(([, ov]) => ov?._source === "misc-classify")
-      .map(([date]) => date),
-  );
+  // the same helper the answer action uses, so the set the page renders from
+  // and the set the server validates against cannot drift
+  const reviewerSettled = reviewerSettledDates(ts.overrides);
   const questions = buildQuestions(ts.data, {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
