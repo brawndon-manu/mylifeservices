@@ -29,6 +29,9 @@ import {
 } from "@/lib/timesheet/break-answers";
 import { batchForceTo } from "@/lib/timesheet-mode";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
+// asked before the upload writes anything, because the database's own answer to
+// this arrives as an error code with no person attached
+import { unstorable, unstorableRows } from "@/lib/timesheet/storable";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
@@ -467,38 +470,55 @@ export async function uploadBatch(formData) {
     );
   }
 
-  const batch = await prisma.timesheetBatch.create({
-    data: {
-      periodFrom: period.from || "",
-      periodTo: period.to || "",
-      sourceUrl,
-      sourceName: file.name || null,
-      scheduleUrl,
-      scheduleName: scheduleUrl ? schedFile?.name || null : null,
-      clockUrl,
-      clockName: clockUrl ? clockFile?.name || null : null,
-      restsUrl,
-      restsName: restsUrl ? restFile?.name || null : null,
-      restsByDate: restsByDate.length ? restsByDate : null,
-      payrollUrl,
-      payrollName: payrollUrl ? payFile?.name || null : null,
-      // whether the live-send PHRASE was set when this batch was made. Not the
-      // send gate: that also requires being on the real deployment, and a big
-      // upload has to be run from localhost because of Vercel's 4.5MB body cap,
-      // so gating the badge on the environment would mark every real batch
-      // "test" purely because of where it was uploaded from.
-      testMode: !liveSendConfigured(),
-      // uploaded mid-period with the unworked days trimmed off. The hours here
-      // are a partial record and the last workweek is cut off mid-week, so its
-      // >40 overtime is provisional in exactly the way a period boundary makes
-      // it provisional - and six weeks from now nothing else on this row would
-      // say the file was ever incomplete.
-      partialPeriod: partialDropped.length > 0,
-      partialFrom,
-      partialThrough,
-      uploadedById: user.id,
-    },
-  });
+  // NOTHING IS WRITTEN UNTIL EVERY SHEET IS READY.
+  //
+  // This row used to be created here, before a single sheet had been generated,
+  // and the sheets were then written one at a time with nothing catching a
+  // database refusal. On 2026-08-15 one invisible character in the 25th of 60
+  // people's rows ended the action where it stood and left a 24-sheet corpse -
+  // four times over, once per attempt. Each corpse was a NEWER upload of
+  // 08/01-08/15, and `supersededBy` asks only which batch is newest, not how
+  // much of one arrived, so the real 60-sheet batch went read-only four times.
+  //
+  // So the row is built here and INSERTED AT THE BOTTOM, in one transaction
+  // with its sheets. A failure anywhere in the generating loop now leaves the
+  // database exactly as it was, which is the state the error message has
+  // claimed all along.
+  const batchData = {
+    periodFrom: period.from || "",
+    periodTo: period.to || "",
+    sourceUrl,
+    sourceName: file.name || null,
+    scheduleUrl,
+    scheduleName: scheduleUrl ? schedFile?.name || null : null,
+    clockUrl,
+    clockName: clockUrl ? clockFile?.name || null : null,
+    restsUrl,
+    restsName: restsUrl ? restFile?.name || null : null,
+    restsByDate: restsByDate.length ? restsByDate : null,
+    payrollUrl,
+    payrollName: payrollUrl ? payFile?.name || null : null,
+    // whether the live-send PHRASE was set when this batch was made. Not the
+    // send gate: that also requires being on the real deployment, and a big
+    // upload has to be run from localhost because of Vercel's 4.5MB body cap,
+    // so gating the badge on the environment would mark every real batch
+    // "test" purely because of where it was uploaded from.
+    testMode: !liveSendConfigured(),
+    // uploaded mid-period with the unworked days trimmed off. The hours here
+    // are a partial record and the last workweek is cut off mid-week, so its
+    // >40 overtime is provisional in exactly the way a period boundary makes
+    // it provisional - and six weeks from now nothing else on this row would
+    // say the file was ever incomplete.
+    partialPeriod: partialDropped.length > 0,
+    partialFrom,
+    partialThrough,
+    uploadedById: user.id,
+  };
+
+  // every sheet this upload will write, held until all of them exist. 60 of
+  // them is 1.18MB of json on the current period, which is nothing beside the
+  // four exports already in memory.
+  const sheetRows = [];
 
   P.stage = "generating";
   P.done = 0;
@@ -761,103 +781,102 @@ export async function uploadBatch(formData) {
     }
 
     const storedDays = t.days.map(storedDay);
-    await prisma.timesheet.create({
+    // gathered, not written - see the note on batchData. The batch id is the
+    // one field that cannot be filled in yet, and it is added at the insert.
+    sheetRows.push({
+      sourceName: t.employee || "(unknown)",
+      userId: m.userId,
+      matchMethod: m.method,
+      // summed from the ROUNDED days, so these columns equal what the sheet
+      // prints. Mánu 2026-08-09: the sheet wins. See totalsFromDays().
+      ...totalsFromDays(storedDays),
+      premiumHours: r2(t.premiums.totalHours),
+      partialWeek: t.partialWeekDates.length > 0,
+      renderOk,
       data: {
-        batchId: batch.id,
-        sourceName: t.employee || "(unknown)",
-        userId: m.userId,
-        matchMethod: m.method,
-        // summed from the ROUNDED days, so these columns equal what the sheet
-        // prints. Mánu 2026-08-09: the sheet wins. See totalsFromDays().
-        ...totalsFromDays(storedDays),
-        premiumHours: r2(t.premiums.totalHours),
-        partialWeek: t.partialWeekDates.length > 0,
-        renderOk,
-        data: {
-          approvalRect,
-          // frozen at upload. rendering on demand with today's date would put a
-          // different "generated on" on the same sheet every time it opened.
-          generatedOn,
-          suggestions: m.suggestions,
-          confidence: m.confidence,
-          premiums: t.premiums,
-          partialWeekDates: t.partialWeekDates,
-          payPeriod: t.payPeriod || null,
-          comments: t.comments || null,
-          // which pages of each source PDF this person is on. the parsers have
-          // always known - it just went nowhere, so the checks screen could
-          // quote a document without being able to point at it.
-          sourcePages: t.pages || [],
-          schedulePages: sched?.pages || [],
-          // premium hours split by how well the day behind them is evidenced,
-          // plus the raw clock picture for this person
-          premiumSupport: {
-            totals: support.totals,
-            byDate: support.byDate,
-            // the spelling the other reports used, when it differed. shown
-            // rather than silently substituted.
-            readAs: {
-              clock: clockHit.via
-                ? { name: clockHit.via, confidence: clockHit.confidence, exact: clockHit.exact }
-                : null,
-              rests: restHit.via
-                ? { name: restHit.via, confidence: restHit.confidence, exact: restHit.exact }
-                : null,
-              schedule: schedHit.via
-                ? { name: schedHit.via, confidence: schedHit.confidence, exact: schedHit.exact }
-                : null,
-            },
-            clock: clk
-              ? {
-                  matched: true,
-                  shifts: clk.shifts,
-                  missingIn: clk.missingIn,
-                  missingOut: clk.missingOut,
-                  byDate: clk.byDate,
-                }
-              : { matched: false },
+        approvalRect,
+        // frozen at upload. rendering on demand with today's date would put a
+        // different "generated on" on the same sheet every time it opened.
+        generatedOn,
+        suggestions: m.suggestions,
+        confidence: m.confidence,
+        premiums: t.premiums,
+        partialWeekDates: t.partialWeekDates,
+        payPeriod: t.payPeriod || null,
+        comments: t.comments || null,
+        // which pages of each source PDF this person is on. the parsers have
+        // always known - it just went nowhere, so the checks screen could
+        // quote a document without being able to point at it.
+        sourcePages: t.pages || [],
+        schedulePages: sched?.pages || [],
+        // premium hours split by how well the day behind them is evidenced,
+        // plus the raw clock picture for this person
+        premiumSupport: {
+          totals: support.totals,
+          byDate: support.byDate,
+          // the spelling the other reports used, when it differed. shown
+          // rather than silently substituted.
+          readAs: {
+            clock: clockHit.via
+              ? { name: clockHit.via, confidence: clockHit.confidence, exact: clockHit.exact }
+              : null,
+            rests: restHit.via
+              ? { name: restHit.via, confidence: restHit.confidence, exact: restHit.exact }
+              : null,
+            schedule: schedHit.via
+              ? { name: schedHit.via, confidence: schedHit.confidence, exact: schedHit.exact }
+              : null,
           },
-          // data-quality findings. stored, surfaced, never auto-applied.
-          punchIssues,
-          // the one exception: reversed breaks where the repaired figure
-          // matches the schedule the timesheet was generated from. these WERE
-          // applied, so what changed is kept beside the figures it produced
-          // and printed on the sheet the employee signs.
-          punchCorrections,
-          scheduleCheck: scheduleCheck
+          clock: clk
             ? {
                 matched: true,
-                status: "parsed",
-                timesheetTotal: scheduleCheck.timesheetTotal,
-                scheduleTotal: scheduleCheck.scheduleTotal,
-                // the flags stay lean - they're a table of figures, and the
-                // batch screen only counts them
-                flagged: scheduleCheck.flagged.map(
-                  ({ shifts, schedulePages, ...rest }) => rest,
-                ),
-                // the shifts themselves, by date, for EVERY day the schedule
-                // covered - not just the flagged ones. A day with a bad punch
-                // often agrees with the schedule on total while disagreeing on
-                // shape, and the scheduled times are what make a 5:15a that
-                // should be 5:15p obvious.
-                byDate: Object.fromEntries(
-                  scheduleCheck.rows
-                    .filter((r) => r.shifts?.length)
-                    .map((r) => [r.date, { shifts: r.shifts, pages: r.schedulePages }]),
-                ),
+                shifts: clk.shifts,
+                missingIn: clk.missingIn,
+                missingOut: clk.missingOut,
+                byDate: clk.byDate,
               }
-            : {
-                matched: false,
-                // a schedule that parsed but had no page for this person is a
-                // different problem from no schedule at all
-                status: schedules ? "name-not-found" : scheduleStatus,
-                error: scheduleError || null,
-              },
-          // punches + breaks are kept so a sheet can be recomputed and
-          // re-rendered after a correction without going back to the source
-          // export. mealMin is what a worked-through meal would add back.
-          days: storedDays,
+            : { matched: false },
         },
+        // data-quality findings. stored, surfaced, never auto-applied.
+        punchIssues,
+        // the one exception: reversed breaks where the repaired figure
+        // matches the schedule the timesheet was generated from. these WERE
+        // applied, so what changed is kept beside the figures it produced
+        // and printed on the sheet the employee signs.
+        punchCorrections,
+        scheduleCheck: scheduleCheck
+          ? {
+              matched: true,
+              status: "parsed",
+              timesheetTotal: scheduleCheck.timesheetTotal,
+              scheduleTotal: scheduleCheck.scheduleTotal,
+              // the flags stay lean - they're a table of figures, and the
+              // batch screen only counts them
+              flagged: scheduleCheck.flagged.map(
+                ({ shifts, schedulePages, ...rest }) => rest,
+              ),
+              // the shifts themselves, by date, for EVERY day the schedule
+              // covered - not just the flagged ones. A day with a bad punch
+              // often agrees with the schedule on total while disagreeing on
+              // shape, and the scheduled times are what make a 5:15a that
+              // should be 5:15p obvious.
+              byDate: Object.fromEntries(
+                scheduleCheck.rows
+                  .filter((r) => r.shifts?.length)
+                  .map((r) => [r.date, { shifts: r.shifts, pages: r.schedulePages }]),
+              ),
+            }
+          : {
+              matched: false,
+              // a schedule that parsed but had no page for this person is a
+              // different problem from no schedule at all
+              status: schedules ? "name-not-found" : scheduleStatus,
+              error: scheduleError || null,
+            },
+        // punches + breaks are kept so a sheet can be recomputed and
+        // re-rendered after a correction without going back to the source
+        // export. mealMin is what a worked-through meal would add back.
+        days: storedDays,
       },
     });
 
@@ -890,6 +909,53 @@ export async function uploadBatch(formData) {
 
   P.stage = "saving";
   await setProgress(prog, P);
+
+  // ---- the one write, asked about first and then made all at once ----
+
+  // WHO WOULD THE DATABASE REFUSE, ANSWERED BEFORE IT IS ASKED. A jsonb value
+  // may not hold a NUL or half a surrogate pair, and the exception that comes
+  // back names neither the person nor the character - it is `22P05` and a stack
+  // trace. `stripControl` takes these off the timesheet PDF at the point the
+  // text comes off the page, but the schedule PDF and the two .xls reports feed
+  // the same record and have no such pass, so this is the net under all four.
+  const refused = [...unstorableRows(sheetRows)];
+  const badBatch = unstorable(batchData.restsByDate);
+  if (badBatch) refused.push({ name: "the rest periods report", ...badBatch });
+  if (refused.length) {
+    for (const r of refused) console.error(`timesheet upload refused: ${r.name} carries ${r.what} - ${r.near}`);
+    redirect(
+      `/portal/admin/timesheets/new?error=unstorable&why=${encodeURIComponent(
+        `${refused.map((r) => r.name).join(", ")} - ${refused[0].what}`,
+      )}`,
+    );
+  }
+
+  // ONE TRANSACTION, so a failure leaves nothing rather than a part-built
+  // upload that then outranks the batch it failed to replace. The sheets go in
+  // as a single statement: 60 of them is 1.18MB, which is one round trip, and
+  // an interactive transaction held open for sixty of them would be a new way
+  // for a slow connection to cost an upload.
+  let batch;
+  try {
+    batch = await prisma.$transaction(async (tx) => {
+      const b = await tx.timesheetBatch.create({ data: batchData });
+      await tx.timesheet.createMany({
+        data: sheetRows.map((row) => ({ ...row, batchId: b.id })),
+      });
+      return b;
+    // Prisma gives an interactive transaction five seconds by default, which is
+    // a sensible figure for a request and the wrong one for a megabyte going to
+    // Neon over somebody's home connection. The upload it guards has already
+    // taken minutes by this point.
+    }, { timeout: 120_000, maxWait: 20_000 });
+  } catch (e) {
+    console.error("timesheet batch write failed:", e);
+    redirect(
+      `/portal/admin/timesheets/new?error=save&why=${encodeURIComponent(
+        (e?.message || String(e)).slice(0, 200),
+      )}`,
+    );
+  }
 
   revalidatePath("/portal/admin/timesheets");
 
