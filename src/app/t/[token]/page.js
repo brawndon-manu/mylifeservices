@@ -144,9 +144,20 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // flip, leaving a break question alone keeps the pay on, so `signingGate` is
   // what decides - only a change we made or data we could not read holds a
   // signature up.
+  // WHICH DAYS A REVIEWER ALREADY DECIDED THE MISC TIME ON. Those are settled
+  // and are never put to the employee; a day they answered THEMSELVES keeps its
+  // question so they can change it. `_source` is written only by
+  // `classifyMiscTime`, so this is the one thing that tells the two apart -
+  // both routes write the same `miscKind` onto the day.
+  const reviewerSettled = new Set(
+    Object.entries(ts.overrides || {})
+      .filter(([, ov]) => ov?._source === "misc-classify")
+      .map(([date]) => date),
+  );
   const questions = buildQuestions(ts.data, {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
+    reviewerSettled,
   });
   // answers live per date and per kind; a grouped question counts as answered
   // once any of its dates has an answer, because it is answered as one thing

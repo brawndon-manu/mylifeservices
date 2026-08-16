@@ -432,7 +432,11 @@ export function mealBookedInside(entry) {
   };
 }
 
-export function buildQuestions(data, { restRows, sourceName } = {}) {
+// `reviewerSettled` is a Set of dates a REVIEWER classified the Misc time on.
+// See the misc loop below: it decides whether a settled day is still asked
+// about. Callers that cannot tell get the old behaviour, which is why it is an
+// option and not a required argument.
+export function buildQuestions(data, { restRows, sourceName, reviewerSettled } = {}) {
   if (!data) return [];
   const days = data.days || [];
   const dates = new Set(days.map((d) => d.date));
@@ -553,12 +557,32 @@ export function buildQuestions(data, { restRows, sourceName } = {}) {
   // only route by which it comes back, and the only one of these that can ADD a
   // premium rather than clear one.
   //
-  // NOT ASKED once the answer is known. A reviewer can classify it first, on the
-  // grounds that PTO is nothing the employee has to change in QSP and asking
-  // them about their own sick day is not a question worth sending.
+  // WHO SETTLED IT DECIDES WHETHER IT IS STILL ASKED, and until 2026-08-16 one
+  // line did both jobs badly.
+  //
+  // A REVIEWER classifying it settles it: PTO is nothing the employee has to
+  // change in QSP, and asking somebody about their own sick day is not a
+  // question worth sending. They are never asked, which is the behaviour this
+  // guard was written for.
+  //
+  // THE EMPLOYEE ANSWERING IT IS NOT THE SAME THING. Their answer sets the very
+  // field this used to test, so choosing PTO deleted its own question - and
+  // "Change this" lives on the card, so the answer became unchangeable the
+  // moment it was given. Mánu: "it doesn't just vanish, it should still be
+  // there to change." The question keeps being emitted and the page renders it
+  // collapsed with what they said; `plainBlockedOn` reads the ANSWER, not the
+  // question, so an answered card still does not count as outstanding.
+  //
+  // A caller that cannot say who settled it gets the old behaviour rather than
+  // a guess - the reviewer's classification carries `_source: "misc-classify"`
+  // on the override and nothing else writes it, so only a caller holding the
+  // overrides can tell.
   for (const d of days) {
     if (!(d.miscBlocks || []).length) continue;
-    if (d.miscKind || d.miscWorked) continue;
+    if (d.miscKind || d.miscWorked) {
+      if (!reviewerSettled) continue;
+      if (reviewerSettled.has?.(d.date)) continue;
+    }
     out.push({
       kind: "miscTime",
       date: d.date,
