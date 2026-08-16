@@ -90,14 +90,21 @@ async function updateProfile(formData) {
     imageUpdate = { image: null };
   }
 
-  // opt-in/out: include phone on the public shared contact link (/c/[id]).
-  const sharePhonePublicly = formData.get("sharePhonePublicly") === "on";
   // hide the full/legal name from coworkers (oversight + self still see it).
   const hideLegalName = formData.get("hideLegalName") === "on";
 
+  // `sharePhonePublicly` IS NO LONGER WRITTEN, and leaving it out is the whole
+  // point rather than an oversight.
+  //
+  // The public card stopped showing any number on 2026-08-16, so its checkbox
+  // came off this form. An unchecked box and an absent box are the same thing
+  // to `formData.get`, so had this line stayed, the FIRST TIME each person
+  // saved anything here - a new photo, a working-hours edit - it would have
+  // quietly written `false` over the choice they had made. Whatever they set is
+  // kept untouched, ready for the day the card shows numbers again.
   await prisma.user.update({
     where: { id: user.id },
-    data: { preferredFirstName, preferredLastName, phone, workingHours, sharePhonePublicly, hideLegalName, ...imageUpdate },
+    data: { preferredFirstName, preferredLastName, phone, workingHours, hideLegalName, ...imageUpdate },
   });
 
   redirect("/portal/settings?saved=1");
@@ -281,26 +288,20 @@ export default async function SettingsPage({ searchParams }) {
               placeholder="(909) 555-0123"
               className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
+            {/* WHO ACTUALLY SEES IT, said plainly. This used to read "Shows on
+                the Team Contacts directory", which stopped being true for most
+                of the people reading it: supervisors and management see the
+                number, coworkers see the name, title and email.
+
+                The public-link checkbox that sat here is gone with it - the
+                public card shows no number at all now, so a control for it
+                would be a switch wired to nothing. The stored setting is kept
+                and no longer written; see the note in the save above. */}
             <p className="mt-1 text-xs text-muted">
-              Shows on the Team Contacts directory. Leave blank to keep it
-              private.
+              Shown to supervisors and management in the portal, and on nothing
+              public. Your coworkers see your name, title and email. Leave it
+              blank to keep it off entirely.
             </p>
-            <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-surface-2 p-3">
-              <input
-                type="checkbox"
-                name="sharePhonePublicly"
-                defaultChecked={user.sharePhonePublicly ?? true}
-                className="mt-0.5 h-4 w-4 accent-brand"
-              />
-              <span className="text-sm text-foreground">
-                Include my phone number on my public contact link
-                <span className="mt-0.5 block text-xs text-muted">
-                  When someone shares your contact via a public link, your phone
-                  is shown. Uncheck to keep it off the public link (it still
-                  shows to staff in the portal).
-                </span>
-              </span>
-            </label>
           </div>
 
           <div>

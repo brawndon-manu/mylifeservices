@@ -168,6 +168,36 @@ export function canSeeRoles(role) {
   return isAdminUp(role);
 }
 
+// WHO CAN SEE SOMEBODY ELSE'S PHONE NUMBER. Everyone above plain Staff, which
+// is what `isSupervisorUp` already means: a staff member does not get a list of
+// their coworkers' personal numbers out of the portal.
+//
+// A JOB TITLE IS NOT A REASON TO HOLD A COLLEAGUE'S MOBILE. The directory still
+// shows everybody to everybody - the name, the photo, the title and the work
+// email are unchanged - and a staff member who needs to reach somebody has the
+// email and their supervisor. It is only the number that narrows.
+//
+// THE PUBLIC CARD AT /c/<id> SHOWS NO NUMBER AT ALL as of 2026-08-16, so this
+// is now the only rule that decides who sees one. It used to share the job with
+// `sharePhonePublicly`, a per-person opt-out that defaulted to sharing - which
+// meant a staff member refused a number here could read it off the public card
+// instead, using the same id. That setting is kept on the row, unread.
+export function canSeePhones(role) {
+  return isSupervisorUp(role);
+}
+
+// The same question about one specific person, because your own number is
+// always yours to see - Settings shows it, and a directory card that hid it
+// from the person it belongs to would read as a bug rather than a rule.
+//
+// Takes the viewer and the person rather than two ids so a caller cannot get
+// the argument order the wrong way round without it being obvious.
+export function phoneVisibleTo(viewer, person) {
+  if (!person?.phone) return null;
+  if (viewer?.id && person?.id && viewer.id === person.id) return person.phone;
+  return canSeePhones(viewer?.role) ? person.phone : null;
+}
+
 // forms admin panel (stored submissions + retention/reconciliation) - Admin/IT/
 // Super plus HR specifically, since HR owns this record-keeping desk today.
 // deliberately narrower than isElevated - Manager doesn't get it.
