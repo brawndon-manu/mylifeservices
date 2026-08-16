@@ -204,9 +204,11 @@ export default async function PortalLayout({ children }) {
         </div>
       </div>
       {/* the tab bar is fixed, so the last thing on every page would sit under
-          it without this. 56px of bar plus a little air, cleared again at lg
-          where there is no bar. */}
-      <div className="pb-[4.5rem] lg:pb-0">{children}</div>
+          it without this. The bar floats: it stands 64px tall, 8px above the
+          safe-area inset, and this clears all of that plus air. Measured from
+          the same inset the bar uses, so the two cannot drift apart. Cleared
+          again at lg, where there is no bar. */}
+      <div className="pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:pb-0">{children}</div>
       <PortalTabBar elevated={isElevated(role)} />
     </div>
   );

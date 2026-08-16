@@ -49,11 +49,23 @@ export default function PortalTabBar({ elevated }) {
       // the hook globals.css uses to lift the root layout's corner control
       // clear of this bar. see the note there.
       data-portal-tabbar=""
+      // IT FLOATS, AND THAT IS NOT DECORATION.
+      //
+      // Flush to the bottom edge it sat in the iPhone's home-indicator strip,
+      // where a swipe up means "leave the app" - so the bottom row of the
+      // portal was competing with the gesture that closes it. Lifted clear by
+      // the safe-area inset plus a little air, inset from both sides, and
+      // rounded, which is the shape Mánu pointed at in Canvas.
+      //
+      // The offset is `env(safe-area-inset-bottom)` and not a guessed number:
+      // that value is the indicator on an iPhone, and 0 on a phone that has no
+      // indicator and needs no gap.
+      //
       // print:hidden for the same reason every other floating control has it -
       // a tab bar across the foot of a printed timesheet helps nobody
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden"
+      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-40 rounded-full border border-border bg-surface/95 shadow-lg backdrop-blur print:hidden lg:hidden"
     >
-      <ul className="mx-auto grid max-w-lg grid-cols-4">
+      <ul className="mx-auto grid max-w-lg grid-cols-4 p-1.5">
         {tabs.map((t) => {
           const on = t.exact ? pathname === t.href : pathname.startsWith(t.href);
           return (
@@ -61,9 +73,13 @@ export default function PortalTabBar({ elevated }) {
               <Link
                 href={t.href}
                 aria-current={on ? "page" : undefined}
-                // 56px, so the whole tab is the target rather than the label
-                className={`flex h-14 flex-col items-center justify-center gap-1 rounded text-[10.5px] font-medium leading-none transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${
-                  on ? "text-brand" : "text-muted"
+                // 52px of tap target inside a 64px bar, and the whole tab is
+                // the target rather than the label. The current one wears a
+                // filled capsule rather than only a colour, which is the part
+                // of the Canvas bar that makes where-you-are readable at a
+                // glance on a dark screen.
+                className={`flex h-13 flex-col items-center justify-center gap-1 rounded-full text-[10.5px] font-medium leading-none transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${
+                  on ? "bg-surface-3 text-brand" : "text-muted"
                 }`}
               >
                 <svg
