@@ -20,6 +20,18 @@ const SITE_URL = "https://www.mylifeservicesinc.com";
 const SITE_DESC =
   "My Life Services supports adults with intellectual and developmental disabilities through person-centered programs.";
 
+// THE STATUS BAR AROUND THE INSTALLED APP. `theme_color` in the manifest is
+// what Android reads; Safari reads this meta tag, and Next only emits it from
+// a `viewport` export rather than from metadata - which is why it was missing
+// when the manifest already had the colour.
+//
+// width and initial-scale are deliberately NOT set here: leaving them out keeps
+// Next's own defaults, and those defaults are what the whole mobile layout
+// rests on. Verified in the rendered head after adding this.
+export const viewport = {
+  themeColor: "#196e93",
+};
+
 export const metadata = {
   // metadataBase makes the og/twitter image an absolute url, which imessage,
   // facebook, and the rest all require
@@ -29,6 +41,33 @@ export const metadata = {
     template: "%s | My Life Services",
   },
   description: SITE_DESC,
+  // SAVED TO A HOME SCREEN, THIS OPENS LIKE AN APP. The manifest does the work
+  // on Android; Safari ignores most of it and reads these instead, which is why
+  // they are spelled out rather than left to the manifest alone.
+  //
+  // `title` is what sits under the icon, and it is the SHORT name on purpose -
+  // iOS truncates without asking and would cut "My Life Services Employee
+  // Portal" somewhere unhelpful.
+  //
+  // On iPhone this only ever happens by hand, via Share then Add to Home
+  // Screen: Safari offers no install prompt, so nobody gets it unless they are
+  // told. Android offers it by itself.
+  appleWebApp: {
+    capable: true,
+    title: "MLS Portal",
+    // "default" keeps the status bar legible over the light page underneath.
+    // "black-translucent" would run the page under the clock.
+    statusBarStyle: "default",
+  },
+  other: {
+    // NEXT EMITS THE MODERN `mobile-web-app-capable` AND NOT THIS ONE, which is
+    // correct for current Safari and no help to an older iPhone, where the
+    // Apple-prefixed tag is still what decides whether the saved page opens
+    // without browser chrome. Checked rather than assumed: the rendered head
+    // carried `mobile-web-app-capable` alone. Two tags cost nothing and this is
+    // a workforce, not a device fleet anybody controls.
+    "apple-mobile-web-app-capable": "yes",
+  },
   // without an explicit og:image, link previews scrape the page and grab
   // whatever photo they find (it was picking a client photo off the homepage).
   // pin it to the branded card so every shared link looks the same.
