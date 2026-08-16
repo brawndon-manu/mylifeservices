@@ -38,6 +38,10 @@ const ERRORS = {
     "File storage isn't configured (BLOB_READ_WRITE_TOKEN is missing), so the generated timesheets couldn't be saved. Nothing was created.",
   blob:
     "File storage rejected the upload - the Blob token is probably expired. Run `vercel env pull .env.local` to refresh it, then try again. Nothing was created.",
+  unstorable:
+    "One of those exports carries a character the database will not store - a NUL or half a surrogate pair, both invisible in any viewer and both untouched by a trim. The people it affects are named below. This has happened once, on 08/15/26: a single NUL beside the print date in one person's footer. The timesheet PDF is cleaned of these as it is read, so a file reaching this message means it came off the schedule or one of the two .xls reports. Nothing was created - the upload is refused whole rather than landing everybody else and quietly dropping them.",
+  save:
+    "The generated timesheets could not be saved. Nothing was created: the batch and all of its sheets go in as one write, so a failure here leaves nothing behind to clean up and nothing that could take the current upload read-only. Try again - if it fails the same way twice, the message below is the database's own.",
 };
 
 export default async function NewTimesheetBatchPage({ searchParams }) {

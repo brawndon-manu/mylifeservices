@@ -10,6 +10,7 @@ import {
   isSupervisorUp,
   isAdminUp,
   isSuper,
+  canSeePhones,
 } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { renderMarkdown } from "@/lib/markdown";
@@ -216,7 +217,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
         include: {
-          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
+          author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: canSeePhones(user.role) } },
         },
       },
     },

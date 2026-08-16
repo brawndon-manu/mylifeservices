@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isIT, canSeeRoles } from "@/lib/roles";
+import { isElevated, isIT, canSeeRoles, canSeePhones } from "@/lib/roles";
 import {
   typeLabel,
   typeChip,
@@ -33,7 +33,7 @@ export default async function FeedbackPage({ searchParams }) {
     where: it ? undefined : { status: { not: "DECLINED" } },
     orderBy: { createdAt: "desc" },
     include: {
-      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: canSeePhones(user.role) } },
       resolvedBy: { select: { name: true } },
     },
     take: 100,

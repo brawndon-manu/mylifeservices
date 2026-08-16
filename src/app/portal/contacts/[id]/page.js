@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { ROLE_LABELS, roleBadgeClass, canSeeRoles, isManagerUp } from "@/lib/roles";
+import { ROLE_LABELS, roleBadgeClass, canSeeRoles, isManagerUp, phoneVisibleTo } from "@/lib/roles";
 import { preferredName, legalName } from "@/lib/contacts";
 import { OFFICE_LABELS } from "@/lib/positions";
 import Avatar from "@/components/Avatar";
@@ -67,6 +67,12 @@ export default async function ContactDetailPage({ params, searchParams }) {
   // everyone outside Admin/IT/Super just sees the title.
   const showRole = canSeeRoles(viewer.role);
 
+  // the number, or nothing. Resolved once here rather than at the three places
+  // below that would each have to remember: the link, the text and the copy
+  // button all read this, and a copy button still holding the number after the
+  // text stopped showing it is the shape of bug this invites.
+  const phone = phoneVisibleTo(viewer, person);
+
   return (
     <section className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
       <Link
@@ -126,15 +132,15 @@ export default async function ContactDetailPage({ params, searchParams }) {
               </a>
               <CopyButton text={person.email} label="Copy email" />
             </div>
-            {person.phone && (
+            {phone && (
               <div className="flex items-center gap-2">
                 <a
-                  href={`tel:${person.phone.replace(/[^\d+]/g, "")}`}
+                  href={`tel:${phone.replace(/[^\d+]/g, "")}`}
                   className="text-muted underline-offset-2 hover:underline"
                 >
-                  {person.phone}
+                  {phone}
                 </a>
-                <CopyButton text={person.phone} label="Copy phone" />
+                <CopyButton text={phone} label="Copy phone" />
               </div>
             )}
             {person.workingHours && (

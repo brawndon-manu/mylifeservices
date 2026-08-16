@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isManagerUp, canSeeRoles } from "@/lib/roles";
+import { isElevated, isManagerUp, canSeeRoles, phoneVisibleTo } from "@/lib/roles";
 import {
   CONTACT_CATEGORIES,
   isValidCategory,
@@ -60,6 +60,10 @@ export default async function ContactsPage({ searchParams }) {
   // viewer is allowed to see it on (not hidden, or viewer is admin/management,
   // or it's their own card) - so a hidden legal name is never sent to the
   // client. role badge only when the viewer can see roles.
+  //
+  // THE PHONE GOES THE SAME WAY, and for the same reason: a rule that only
+  // hides it in the markup still ships every number to the browser, where the
+  // page source has them all. Nulled here, before the cards leave the server.
   const canSeeLegal = (p) =>
     !p.hideLegalName || isManagerUp(user.role) || p.id === user.id;
   const cards = people
@@ -69,7 +73,7 @@ export default async function ContactsPage({ searchParams }) {
       legal: canSeeLegal(p) ? legalName(p) : null,
       email: p.email,
       title: p.title,
-      phone: p.phone,
+      phone: phoneVisibleTo(user, p),
       image: p.image,
       role: showRoles ? p.role : null,
     }))

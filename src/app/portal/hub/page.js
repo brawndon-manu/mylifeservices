@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated, canSeeRoles } from "@/lib/roles";
+import { isModerator, isElevated, canSeeRoles, canSeePhones } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   POST_TAGS,
@@ -56,7 +56,7 @@ export default async function HubPage({ searchParams }) {
       { createdAt: "desc" },
     ],
     include: {
-      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: canSeePhones(user.role) } },
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       _count: { select: { comments: true, likes: true } },
       likes: {

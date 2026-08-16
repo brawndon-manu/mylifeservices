@@ -30,20 +30,30 @@ const GROUPS = [
 function Row({ b, max }) {
   const solid = b.group === "witnessed";
   return (
-    <div className="grid grid-cols-[34px_minmax(0,1fr)_120px_44px_74px] items-start gap-3 border-t border-border py-3 sm:grid-cols-[34px_minmax(0,1fr)_180px_44px_74px]">
+    // FIVE FIXED-ISH COLUMNS DO NOT FIT A PHONE, and the one that gave way was
+    // the sentence. 34 + 120 + 44 + 74 and four gaps take 272 of the 327 there
+    // is, leaving SEVEN PIXELS for the text - which then set one character per
+    // line and made rows 204, 186 and 441px tall for a single sentence each.
+    //
+    // Below sm the row stops being a table row: the code, the count and the
+    // headcount share the first line, the sentence gets the full width under
+    // it, and the bar goes under that. Every child is placed explicitly at sm
+    // so the desktop grid is exactly what it was - the DOM order here is not
+    // the column order, and auto-placement would quietly reshuffle it.
+    <div className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 border-t border-border py-3 sm:grid-cols-[34px_minmax(0,1fr)_180px_44px_74px] sm:gap-y-3">
       <div
-        className={`rounded-[5px] py-[3px] text-center text-[10.5px] font-bold leading-none ${
+        className={`col-start-1 row-start-1 rounded-[5px] py-[3px] text-center text-[10.5px] font-bold leading-none ${
           solid ? "text-black" : "border border-dashed border-border-strong text-foreground"
         }`}
         style={solid ? { background: HUE[b.kind] } : undefined}
       >
         {b.code}
       </div>
-      <div className="text-[13px] leading-snug">
+      <div className="col-span-full row-start-2 text-[13px] leading-snug sm:col-span-1 sm:col-start-2 sm:row-start-1">
         {b.label}
         {b.note && <span className="mt-1 block text-[11.5px] italic text-faint">{b.note}</span>}
       </div>
-      <div className="pt-1">
+      <div className="col-span-full row-start-3 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:pt-1">
         <div
           className="h-[11px] rounded-[3px]"
           style={{
@@ -53,10 +63,10 @@ function Row({ b, max }) {
           }}
         />
       </div>
-      <div className={`text-right text-sm font-bold tabular-nums ${b.group === "cleared" ? "line-through" : ""}`}>
+      <div className={`col-start-2 row-start-1 text-right text-sm font-bold tabular-nums sm:col-start-4 ${b.group === "cleared" ? "line-through" : ""}`}>
         {b.days}
       </div>
-      <div className="pt-[2px] text-right text-[11.5px] text-faint">
+      <div className="col-start-3 row-start-1 text-right text-[11.5px] text-faint sm:col-start-5 sm:pt-[2px]">
         {b.people} {b.people === 1 ? "person" : "people"}
       </div>
     </div>
@@ -168,12 +178,13 @@ export default async function EvidencePage({ params }) {
           {neverPunched.map((x) => (
             <div
               key={x.name}
-              className="grid grid-cols-[34px_minmax(0,1fr)_44px_74px] items-start gap-3 border-t border-border py-3"
+              // same shape as Row above, and for the same reason
+              className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 border-t border-border py-3 sm:grid-cols-[34px_minmax(0,1fr)_44px_74px] sm:gap-y-3"
             >
-              <div className="rounded-[5px] border border-dashed border-border-strong py-[3px] text-center text-[10.5px] font-bold leading-none">
+              <div className="col-start-1 row-start-1 rounded-[5px] border border-dashed border-border-strong py-[3px] text-center text-[10.5px] font-bold leading-none">
                 QS
               </div>
-              <div className="text-[13px] leading-snug">
+              <div className="col-span-full row-start-2 text-[13px] leading-snug sm:col-span-1 sm:col-start-2 sm:row-start-1">
                 {x.name}
                 <span className="mt-1 block text-[11.5px] italic text-faint">
                   {x.days} {x.days === 1 ? "day" : "days"} in the period, {x.owed} of them owing a
@@ -183,8 +194,8 @@ export default async function EvidencePage({ params }) {
                     : "Too few days to read anything into on its own."}
                 </span>
               </div>
-              <div className="text-right text-sm font-bold tabular-nums">{x.owed}</div>
-              <div className="pt-[2px] text-right text-[11.5px] text-faint">days</div>
+              <div className="col-start-2 row-start-1 text-right text-sm font-bold tabular-nums sm:col-start-3">{x.owed}</div>
+              <div className="col-start-3 row-start-1 text-right text-[11.5px] text-faint sm:col-start-4 sm:pt-[2px]">days</div>
             </div>
           ))}
         </section>

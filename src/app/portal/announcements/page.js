@@ -3,7 +3,7 @@ import Image from "next/image";
 import { renderMarkdown } from "@/lib/markdown";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isModerator, isElevated, isSupervisorUp, canSeeRoles, isSuper } from "@/lib/roles";
+import { isModerator, isElevated, isSupervisorUp, canSeeRoles, isSuper, canSeePhones } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   TIME_WINDOWS,
@@ -63,7 +63,7 @@ export default async function AnnouncementsPage({ searchParams }) {
       { createdAt: "desc" },
     ],
     include: {
-      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: true } },
+      author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, title: true, image: true, phone: canSeePhones(user.role) } },
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       _count: { select: { comments: true, likes: true } },
       likes: {

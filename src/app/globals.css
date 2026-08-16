@@ -106,6 +106,55 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
+/* A FIELD UNDER 16px MAKES iOS SAFARI ZOOM THE PAGE IN, AND IT DOES NOT ZOOM
+   BACK OUT. Every field on the review page an employee answers on their phone is
+   `text-sm`, so tapping a reason box magnifies the page and leaves it that way
+   for the rest of the visit - on the one screen we ask people to read carefully
+   before they sign it.
+
+   ONE RULE RATHER THAN A CLASS ON EACH FIELD. There are ten on the review page
+   alone, in four files, and the next one somebody adds would be wrong again. It
+   is set here and the fields keep their own `text-sm` above the breakpoint, so
+   nothing changes on a desktop.
+
+   SCOPED TO THE TWO SURFACES THIS WAS MEASURED ON, the portal and the review
+   page, rather than every form on the site. The public marketing forms have the
+   same fault and should probably get the same treatment - that is a separate
+   look, not something to change on the way past. Marked with a class, so
+   widening it later is one selector.
+
+   16px is not a preference, it is the exact threshold Safari uses. */
+@media (max-width: 640px) {
+  .no-focus-zoom :is(input, select, textarea) {
+    font-size: 16px;
+  }
+}
+
+/* THE BOTTOM-RIGHT CORNER IS A STACK, and until the tab bar arrived nothing had
+   to say so. Three things want that corner: the accessibility control (root
+   layout, every page), the IT preview pill (portal only), and now the portal tab
+   bar, which is full width and sits under both.
+
+   Each one is placed by a different file and none of them can see the others, so
+   the offsets live here in one block where they can be read together. Lifting
+   only the accessibility control is what NOT to do - it lands on the preview
+   pill, which is exactly what happened the first time.
+
+     tab bar        0    -> 56
+     accessibility  72   -> 116
+     preview pill   124  -> up
+
+   Keyed off the bar's own presence rather than the route, so it can never drift
+   out of step with which pages actually have one. */
+@media (max-width: 1023px) {
+  body:has([data-portal-tabbar]) .corner-fab {
+    bottom: calc(1rem + 3.5rem);
+  }
+  body:has([data-portal-tabbar]) .corner-preview {
+    bottom: calc(1rem + 3.5rem + 3.25rem);
+  }
+}
+
 /* accent tints in dark. the colored chips / callouts / badges across the site
    use light Tailwind tints (bg-amber-50, text-rose-700, etc.); rather than add
    dark: variants to ~150 scattered usages (many in lib constant strings), this

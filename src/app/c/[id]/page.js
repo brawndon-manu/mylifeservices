@@ -1,15 +1,31 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { formatUSPhone } from "@/lib/contacts";
 import { OFFICE_LABELS } from "@/lib/positions";
 import Avatar from "@/components/Avatar";
 import CopyButton from "@/components/CopyButton";
 
 // PUBLIC, UNLISTED share page for a team member's contact card. reachable only
 // by its direct (unguessable) link, noindex, no login required. shows the
-// public-facing contact info only - NEVER the privilege role. the phone is
-// shown only if the person opted to share it publicly (sharePhonePublicly).
-
+// public-facing contact info only - NEVER the privilege role.
+//
+// NO PHONE NUMBER HERE, AS OF 2026-08-16.
+//
+// It used to show one whenever `sharePhonePublicly` was set, which is the
+// default and which every person with a number on file had. That made the
+// portal's new rule - plain Staff do not see coworkers' numbers - worth
+// nothing: the id in this URL is the same id a staff member reads off
+// /portal/contacts/<id>, so anyone who thought of it could copy the id, change
+// the path and read the number the portal had just refused them. Unlisted is
+// not a defence against somebody who already works here.
+//
+// NOT SELECTED RATHER THAN NOT RENDERED. The number never leaves the database
+// on this route now, so it cannot come back through a payload, a metadata tag
+// or somebody adding a line to the markup below.
+//
+// `sharePhonePublicly` IS DELIBERATELY LEFT ON THE USER ROW, unread. It is a
+// choice people made and it costs nothing to keep; if this page ever shows a
+// number again it should still be the thing that decides. See the note in
+// settings where the control for it now lives.
 const PUBLIC_SELECT = {
   name: true,
   preferredFirstName: true,
@@ -18,9 +34,7 @@ const PUBLIC_SELECT = {
   title: true,
   offices: true,
   email: true,
-  phone: true,
   image: true,
-  sharePhonePublicly: true,
 };
 
 // name to show publicly: preferred first/last, falling back to legal first/last.
@@ -62,7 +76,6 @@ export default async function PublicContactPage({ params }) {
   });
   if (!p) notFound();
 
-  const phone = p.sharePhonePublicly ? formatUSPhone(p.phone) : null;
   const top = publicName(p);
 
   return (
@@ -101,17 +114,6 @@ export default async function PublicContactPage({ params }) {
               </a>
               <CopyButton text={p.email} label="Copy email" />
             </div>
-            {phone && (
-              <div className="flex items-center gap-2">
-                <a
-                  href={`tel:${phone.replace(/[^\d+]/g, "")}`}
-                  className="text-muted underline-offset-2 hover:underline"
-                >
-                  {phone}
-                </a>
-                <CopyButton text={phone} label="Copy phone" />
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -123,14 +125,6 @@ export default async function PublicContactPage({ params }) {
         >
           Email
         </a>
-        {phone && (
-          <a
-            href={`tel:${phone.replace(/[^\d+]/g, "")}`}
-            className="rounded-md border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-surface-2"
-          >
-            Call {phone}
-          </a>
-        )}
       </div>
     </section>
   );
