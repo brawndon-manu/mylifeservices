@@ -14,6 +14,7 @@ import {
   submitSignedTimesheet,
   submitTimesheetCorrections,
   answerTimesheetQuestion,
+  acknowledgeSpan,
 } from "@/app/portal/admin/timesheets/actions";
 import {
   correctionLabel, employeeResolution, resolutionTakesReason,
@@ -435,6 +436,28 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     if (blocks.length) restsByDate[date] = blocks;
   }
 
+  // THEIR OWN ANSWER, PER QUESTION, for the panel at the top of the page. Built
+  // here because `employeeResolution` needs the correction row and the question
+  // together, and only this file has both.
+  const saidById = {};
+  for (const q of questions) {
+    const hit = answered.find(
+      (c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date),
+    );
+    if (hit) {
+      const said = employeeResolution(hit, q);
+      if (said) saidById[q.id] = said;
+    }
+  }
+
+  // WHICH BACKWARDS ENTRIES HAVE BEEN TAKEN ON. Keyed to THIS sheet on purpose,
+  // so a re-upload that still holds the times the wrong way round asks again.
+  const ackOn = new Set(
+    ts.corrections
+      .filter((c) => String(c.kind || "").startsWith("fix_reversed_") && c.date)
+      .map((c) => `${c.date}|${String(c.kind).replace("fix_reversed_", "")}`),
+  );
+
   const cardKey = (q) => q.batch || questionId(q);
   const byKind = [];
   for (const q of questions) {
@@ -679,6 +702,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 breakAsks={breakAsks}
                 breakAction={act(answerBreakReason)}
                 reasonsOnRecord={reasonsOnRecord}
+                /* what they said, per question, so a settled row in the panel at
+                   the top can say it back in their own words */
+                saidById={saidById}
+                /* backwards entries somebody has taken on - see `acknowledgeSpan` */
+                ackOn={ackOn}
+                ackAction={act(acknowledgeSpan)}
               />
             }
             detailed={[

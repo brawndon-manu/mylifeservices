@@ -1733,7 +1733,9 @@ export async function resetTimesheetAnswers(timesheetId) {
   if (!ts) return { ok: false, error: "notfound" };
 
   const { count } = await prisma.timesheetCorrection.deleteMany({
-    where: { timesheetId: ts.id, kind: { startsWith: "q_" } },
+    // `fix_` rows are acknowledgements of a backwards entry - the employee's own
+    // answer like any other, so a reset takes them off with the rest
+    where: { timesheetId: ts.id, OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
   });
 
   // AND WHAT THEY SAID ABOUT A BREAK, which is not a correction and lives in
@@ -2124,8 +2126,19 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // two lunches: only one happened and the RECORDED one is it, so the lunch on
   // the schedule is the record to remove. Distinct from "no", which says the
   // recorded one is the mis-entry - opposite conclusions, same decline.
+  // "worked" is the Misc card's third answer - the time WAS worked, it just was
+  // not booked to a client. It was missing from this list, so the one answer on
+  // that card that puts the hours back into the count deciding whether a break
+  // was owed came back `badchoice` in a millisecond, and `badchoice` had no
+  // words, so it read as "that didn't save, refresh and try again". The two
+  // reachable answers both said the time was not worked. 54 of these on the
+  // current upload over 29 people, 30 in July.
+  //
+  // The engine always knew it: `patchesFor` maps "worked" to `miscWorked`, and
+  // the reviewer control passes the same string through `classifyMiscTime`
+  // without trouble. Only this guard never learned it.
   if (asked.some((a) => a.choice != null
-      && !["yes", "no", "partial", "notaken", "wrongone"].includes(a.choice))) {
+      && !["yes", "no", "partial", "notaken", "wrongone", "worked"].includes(a.choice))) {
     return { ok: false, error: "badchoice" };
   }
   // SAYING YOU MISSED A BREAK NEEDS A REASON, and it is enforced here as well as
@@ -2499,7 +2512,12 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // rebuild EVERY override from every answer on record, this one included
   const answers = await prisma.timesheetCorrection.findMany({
     where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
-    select: { date: true, kind: true, status: true, resolutionNote: true, statedBreaks: true },
+    // `choice` IS NEEDED HERE. `status` holds accepted or declined and cannot
+    // say which of three outcomes somebody picked, so a Misc answer of "I was
+    // working" rebuilt as "sick pay" - both are declines. Left out of this
+    // select it arrives undefined, which is the same failure shape as every
+    // other column this file has been caught by.
+    select: { date: true, kind: true, status: true, choice: true, resolutionNote: true, statedBreaks: true },
   });
   // AND KEEP WHAT A REVIEWER SAID, WHICH IS NOT AN ANSWER ON THIS LIST.
   //
@@ -2540,19 +2558,52 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // landed back on 6.00 and his hours stayed down. It reads as "I cannot change
   // my answer once I confirm it", which is what he reported.
   const pristine = ts.data?.daysOriginal || ts.data?.days || [];
-  for (const q2 of questions) {
-    for (const date of q2.dates || [q2.date]) {
-      const a = answers.find((x) => x.date === date && x.kind === `q_${q2.kind}`);
-      if (!a) continue;
+  // EVERY ANSWER ON RECORD, NOT EVERY QUESTION STILL BEING ASKED.
+  //
+  // This walked the live question set, and several kinds DELETE their own
+  // question by being answered - a classified Misc day raises nothing, so does a
+  // late lunch declined, so does a documented break. The next answer given on
+  // the sheet then rebuilt the overrides without them and silently undid them.
+  //
+  // Beall 07/20 is the case: "paid time off" wrote its correction, the override
+  // computed correctly, and answering a second day wiped it. The correction sat
+  // on record with `miscKind` never moving.
+  //
+  // So the answers drive the loop now. Where the question still exists it is
+  // used, because `patchesFor` reads `row` on a few kinds; where it has gone, a
+  // stub carries what those kinds actually need, which is the kind and the date.
+  // The kinds that vanish are exactly the ones whose patch depends on neither.
+  const stubFor = (a) => {
+    const kind = String(a.kind || "").replace(/^q_/, "");
+    const part = kind === "nothingDocumentedMeal" ? "meal"
+      : kind === "nothingDocumentedRest" ? "rest" : null;
+    return {
+      kind,
+      date: a.date,
+      row: part ? { part, meal: part === "meal", rest: part === "rest" } : {},
+    };
+  };
+  const seen = new Set();
+  for (const a of answers) {
+    const q2 = questions.find(
+      (x) => `q_${x.kind}` === a.kind && (x.dates || [x.date]).includes(a.date),
+    ) || stubFor(a);
+    for (const date of [a.date]) {
+      if (!date || seen.has(`${a.kind}|${date}`)) continue;
+      seen.add(`${a.kind}|${date}`);
       const day = pristine.find((d) => d.date === date);
       // WHICH OF THE THREE, rebuilt from what the row carries. A declined
       // `restOutsideScheduled` with times on it is "I took it earlier"; one
       // without is "I never took it", and only the second drops the rest count.
       // Same shape as the partial - no third status, no migration.
       const hasTimes = Array.isArray(a.statedBreaks) && a.statedBreaks.length > 0;
-      const back = a.status === "accepted"
-        ? "yes"
-        : q2.kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no";
+      // WHAT THEY ACTUALLY PICKED, where the row remembers it. `choice` is the
+      // only thing that can tell three outcomes apart; the status fallback is
+      // for rows written before that column existed.
+      const back = a.choice
+        || (a.status === "accepted"
+          ? "yes"
+          : q2.kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no");
       const patch = patchesFor(q2, back, day);
       const clean = Object.fromEntries(
         Object.entries(patch).filter(([, v]) => v != null),
@@ -2747,6 +2798,70 @@ function resolutionFor(q, choice, stated, statedBreaks, block) {
 
 // employee-side: store the signed PDF against their timesheet. called from the
 // token page, so it takes the token rather than a session.
+// SOMEBODY HAS SEEN A BACKWARDS ENTRY AND TAKEN IT ON.
+//
+// `attention` is set on exactly one thing - a rest row the report holds the
+// wrong way round, `!row.repair && !!row.reversed`. There is nothing to answer:
+// the engine already reads it the right way round and already counts the break.
+// What was missing was any way to say "seen, I will fix it in QuickSolve", so
+// the row sat there permanently and the panel at the top could never tick it off.
+//
+// KEYED TO THE SHEET, NOT THE PERIOD, and that is the point. A break answer is
+// keyed to the period so it survives a re-upload; this must NOT. Mánu 2026-08-15:
+// if the next export still has the times backwards, it should still ask. A new
+// upload is a new sheet with no acknowledgement on it, so the row comes back on
+// its own - and if they really did fix it, the reversed row is not in the export
+// at all and there is nothing to come back.
+//
+// The row is identified by its date and the minute it draws at, because the rest
+// report gives it no id of its own - it is derived on every render.
+export async function acknowledgeSpan({ token, date, min, undo = false }) {
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const id = verifyTimesheetToken(token);
+  if (!id) return { ok: false, error: "auth" };
+  if (!date || !Number.isFinite(Number(min))) return { ok: false, error: "missing" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id },
+    select: { id: true, batchId: true, signedAt: true },
+  });
+  if (!ts) return { ok: false, error: "notfound" };
+  if (ts.signedAt) return { ok: false, error: "signed" };
+  {
+    const newer = await supersededByForTimesheet(id);
+    if (newer) return refusal(newer);
+  }
+
+  const kind = `fix_reversed_${Math.round(Number(min))}`;
+  if (undo) {
+    await prisma.timesheetCorrection.deleteMany({ where: { timesheetId: ts.id, kind, date } });
+  } else {
+    const prior = await prisma.timesheetCorrection.findFirst({
+      where: { timesheetId: ts.id, kind, date },
+      select: { id: true },
+    });
+    if (!prior) {
+      await prisma.timesheetCorrection.create({
+        data: {
+          timesheetId: ts.id, date, kind,
+          status: "accepted",
+          resolvedAt: new Date(),
+          note: `Acknowledged the reversed rest entry on ${date}.`,
+          resolutionNote: "Employee has seen the backwards entry and is correcting it in QSP. "
+            + "Nothing moves: the engine already reads it the right way round and already counts the break.",
+        },
+      });
+    }
+  }
+  // NOTHING IS REBUILT. No figure moves either way - this is a record that
+  // somebody has taken it on, not a correction to the sheet.
+  revalidatePath(`/t/${token}`);
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  return { ok: true };
+}
+
 export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);

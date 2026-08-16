@@ -1,6 +1,7 @@
 import { parseLooseTime } from "@/lib/loose-time";
 import { movesHours } from "@/lib/timesheet/questions";
 import DayCalendar from "./DayCalendar";
+import AcknowledgeFix from "./AcknowledgeFix";
 import BreakReason from "./BreakReason";
 import { StagedTimesProvider } from "./StagedTimes";
 import TimesheetQuestion, {
@@ -8,6 +9,10 @@ import TimesheetQuestion, {
   BatchDays,
   BatchConfirm,
   BatchHeading,
+  IssuePanel,
+  DayShell,
+  DayDoneProvider,
+  DayDoneButton,
 } from "./TimesheetQuestion";
 
 // THE PAY PERIOD, ONE DAY AT A TIME, with each day drawn on a time axis and its
@@ -44,7 +49,7 @@ import TimesheetQuestion, {
 // the record holds, what it was read as, and what to change it to.
 //
 // AND IT SAYS NOTHING IS OWED, because the amber would otherwise read as money.
-function NeedsFixing({ items }) {
+function NeedsFixing({ items, token, ackOn, ackAction }) {
   if (!items.length) return null;
   const clock = (m) => {
     const h = Math.floor(m / 60), x = h % 12 === 0 ? 12 : h % 12, mm = m % 60;
@@ -75,6 +80,18 @@ function NeedsFixing({ items }) {
                 {b.recorded.why} - so the entry reads as a break that ends before it starts.
               </p>
             )}
+            {/* SOMETHING TO PRESS. There is nothing to answer here - the engine
+                already reads it the right way round - so this records that it
+                has been taken on, which is what lets the panel tick it off. */}
+            {ackAction && (
+              <AcknowledgeFix
+                token={token}
+                date={b.date}
+                min={b.min}
+                done={ackOn?.has?.(`${b.date}|${b.min}`)}
+                submitAction={ackAction}
+              />
+            )}
           </li>
         ))}
       </ul>
@@ -93,10 +110,19 @@ export default function DayByDay({
   // also where the admin control sits on All employees, so the two screens read
   // the same way round.
   breakAsks = [], breakAction,
+  // WHAT THEY HAVE ALREADY TOLD US, by question id, so a settled row in the
+  // panel can say it back. Built on the page from the correction rows, because
+  // the sentence for their side lives in `employeeResolution` and this component
+  // has the questions but not the answers they were given to.
+  saidById = {},
   // the reasons already written for this period, by finding key. Two questions
   // can be about one day's rests and they share a row, so this is what stops the
   // second card asking for a sentence the first already collected.
   reasonsOnRecord = null,
+  // WHICH BACKWARDS ENTRIES HAVE BEEN TAKEN ON, as "date|minute" - the rest
+  // report gives these rows no id, so the date and the minute they draw at is
+  // what identifies one. See `acknowledgeSpan`.
+  ackOn = null, ackAction = null,
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -298,22 +324,112 @@ export default function DayByDay({
     />
   );
 
+  // WHAT A DAY ACTUALLY NEEDS FROM THEM. One test, used to decide both the amber
+  // border and, since 2026-08-15, whether the day is on the page at all.
+  const asksOn = (day) => batchDates.has(day.date)
+    || (anchored.get(day.date) || []).length > 0
+    || (asksByDate.get(day.date) || []).length > 0
+    // a day whose only item is a fix still has something on it
+    // an acknowledged backwards entry stops counting, so a day whose only item
+    // was that one drops off the page like any other finished day
+    || (restsByDate.get(day.date) || [])
+      .some((b) => b.attention && !ackOn?.has?.(`${day.date}|${b.min}`));
+
+  // ONLY THE DAYS WITH SOMETHING TO DO.
+  //
+  // Mánu 2026-08-15: a day with nothing to raise should not be on the page.
+  // Measured before it went in: 375 of 554 day cards on the current upload are
+  // quiet, so this is 68% of the list, and the median sheet goes from ten day
+  // cards to two. The real work was below the fold on almost every one of them.
+  //
+  // GONE, NOT COLLAPSED. There is no "show the other eight" - his call. The
+  // signed sheet is on the same page and is the record of the whole fortnight,
+  // so a quiet day is never unreachable, just not asked about.
+  //
+  // A day carrying a question that is ANSWERED somewhere else still counts, via
+  // `anchored`, so answering does not make the card vanish out from under the
+  // person who just answered it.
+  const shown = days.filter(asksOn);
+
+  // WHAT IS STILL OPEN ON A DAY, OUTSIDE THE BATCH. A plain card writes on its
+  // own confirm, so "answered" here means on record - which is why this can be
+  // decided on the server while the batched half cannot.
+  //
+  // A backwards entry counts until it is acknowledged, and a reason still owed
+  // counts too: a day is not finished with while either is outstanding.
+  const plainBlockedOn = (date) =>
+    (anchored.get(date) || []).some((g) => !answers?.[g[0].id])
+    || (asksByDate.get(date) || []).length > 0
+    || (restsByDate.get(date) || [])
+      .some((b) => b.attention && !ackOn?.has?.(`${date}|${b.min}`));
+
+  // EVERY ISSUE, IN DAY ORDER, ONE ROW EACH. The same four sources the day cards
+  // draw from and `asksOn` tests, so the panel cannot list something the page
+  // does not show or miss something it does.
+  const panelRows = [];
+  for (const day of shown) {
+    for (const g of anchored.get(day.date) || []) {
+      panelRows.push({
+        key: `q-${g[0].id}`, date: day.date, q: g[0],
+        done: !!answers?.[g[0].id],
+        said: saidById[g[0].id] || null,
+      });
+    }
+    for (const q of (batched || []).filter((x) => x.date === day.date)) {
+      // a day short both a lunch and its tens is two rows, because it is two
+      // things to do and one row cannot be half ticked off
+      panelRows.push({
+        key: `b-${q.id}`, date: day.date, q, batched: true,
+        done: !!answers?.[q.id],
+        said: saidById[q.id] || null,
+      });
+    }
+    for (const a of asksByDate.get(day.date) || []) {
+      panelRows.push({
+        key: `r-${a.findingKey}`, date: day.date,
+        label: a.mode === "confirm" ? "Check the reason we wrote down" : "Tell us why you missed it",
+        done: false,
+      });
+    }
+    for (const b of (restsByDate.get(day.date) || []).filter((x) => x.attention)) {
+      const seen = !!ackOn?.has?.(`${day.date}|${b.min}`);
+      panelRows.push({
+        key: `f-${day.date}-${b.min}`, date: day.date, fix: true,
+        label: "Break recorded backwards",
+        said: seen
+          ? "You are correcting this in QuickSolve"
+          : b.recorded?.from ? `QuickSolve has ${b.recorded.from} to ${b.recorded.to}` : null,
+        done: seen,
+      });
+    }
+  }
+
   const list = (
     <ol className="mt-4 space-y-4">
-      {days.map((day) => {
+      {shown.map((day) => {
         const mine = anchored.get(day.date) || [];
         const elsewhere = alsoAsked.get(day.date) || [];
-        const asks = batchDates.has(day.date) || mine.length > 0
-          || (asksByDate.get(day.date) || []).length > 0
-          // a day whose only item is a fix still has something on it
-          || (restsByDate.get(day.date) || []).some((b) => b.attention);
+        const asks = asksOn(day);
         return (
           <li
             key={day.date}
-            className={`rounded-xl border bg-surface p-4 sm:p-5 ${
+            /* what the panel above links to. `scroll-mt` keeps the heading clear
+               of the sticky site header rather than landing under it. */
+            id={`day-${day.date}`}
+            className={`scroll-mt-24 rounded-xl border bg-surface p-4 sm:p-5 ${
               asks ? "border-amber-400 dark:border-amber-700" : "border-border"
             }`}
           >
+            <DayShell
+              date={day.date}
+              hours={(Math.round(onFile(day) * 100) / 100).toFixed(2)}
+              /* a day with no batched row has no staged summary to show, so the
+                 plain cards say what was settled instead */
+              summary={(anchored.get(day.date) || [])
+                .map((g) => saidById[g[0].id])
+                .filter(Boolean)
+                .join(" · ") || null}
+            >
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <h3 className="font-mono text-sm font-semibold text-foreground">{day.date}</h3>
               {/* WHAT THE MISC TIME ON THIS DAY TURNED OUT TO BE.
@@ -378,7 +494,14 @@ export default function DayByDay({
                     It is not a question and it does not wait on one, so it goes
                     first - and the amber on the calendar beside it now has a
                     sentence to point at. */}
-                <NeedsFixing items={(restsByDate.get(day.date) || []).filter((b) => b.attention)} />
+                <NeedsFixing
+                  items={(restsByDate.get(day.date) || [])
+                    .filter((b) => b.attention)
+                    .map((b) => ({ ...b, date: day.date }))}
+                  token={token}
+                  ackOn={ackOn}
+                  ackAction={ackAction}
+                />
                 {mine.map(card)}
                 {/* THE DOMINO. A day's breaks row only exists because the ten
                     above it pushed the day past six hours - which owes a lunch
@@ -403,6 +526,10 @@ export default function DayByDay({
                     submitAction={breakAction}
                   />
                 ))}
+                {/* ON EVERY DAY NOW, not only the batched ones. A day whose only
+                    item is a Misc question or an off-clock rest had no way to be
+                    closed at all. */}
+                <DayDoneButton date={day.date} plainBlocked={plainBlockedOn(day.date)} />
                 {!asks &&
                   (elsewhere.length > 0 ? (
                     <p className="text-sm text-muted">
@@ -416,6 +543,7 @@ export default function DayByDay({
                   ))}
               </div>
             </div>
+            </DayShell>
           </li>
         );
       })}
@@ -426,7 +554,11 @@ export default function DayByDay({
   // child, so the half-typed time gets to them through here
   return (
     <StagedTimesProvider>
+    <DayDoneProvider>
     <div className="mt-5">
+      {/* ABOVE EVERYTHING, INCLUDING THE BATCHED HEADING. That heading was the
+          only thing over the day list, so on a long sheet it read as the
+          important item while the real work sat below the fold. */}
       {undated.length > 0 && <div className="mb-6">{undated.map(card)}</div>}
 
       {/* a reason whose day is not on this sheet - see `orphanAsks`. Above the
@@ -440,7 +572,21 @@ export default function DayByDay({
         </div>
       )}
 
-      {batched ? (
+      {/* NOTHING TO ASK ANYBODY. 10 of the 60 people on this upload are this,
+          and without a line the middle of their page is blank where a fortnight
+          used to be - which reads as broken rather than as finished. The sheet
+          and the signer are still below it, because reading it and signing is
+          the whole of their job. */}
+      {shown.length === 0 && undated.length === 0 && orphanAsks.length === 0 ? (
+        <div className="rounded-xl border border-emerald-300/60 bg-emerald-50 p-5 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+            Nothing to check on this timesheet.
+          </p>
+          <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-200/80">
+            Read it through below and sign it.
+          </p>
+        </div>
+      ) : batched ? (
         <BatchProvider
           token={token}
           list={batched}
@@ -453,6 +599,11 @@ export default function DayByDay({
         >
           {/* the explanation once, at the top, rather than on each of the twelve
               days it covers */}
+          {/* INSIDE the provider, so it can see a day somebody has finished with.
+              Half the questions on a sheet are batched ones that stage locally,
+              and a panel reading only saved answers sat at 0 however many days
+              they worked through. */}
+          <IssuePanel rows={panelRows} standing={standing} />
           <BatchHeading
             question={batched[0]}
             standing={standing}
@@ -466,9 +617,13 @@ export default function DayByDay({
           </div>
         </BatchProvider>
       ) : (
-        list
+        <>
+          <IssuePanel rows={panelRows} standing={standing} />
+          {list}
+        </>
       )}
     </div>
+    </DayDoneProvider>
     </StagedTimesProvider>
   );
 }

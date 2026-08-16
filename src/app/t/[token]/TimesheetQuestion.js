@@ -39,6 +39,64 @@ import { useStagedPublisher } from "./StagedTimes";
 // and one commit however the rows are arranged.
 const BatchCtx = createContext(null);
 
+// DAYS SOMEBODY HAS FINISHED WITH.
+//
+// This started inside `BatchProvider`, which meant only a day carrying a batched
+// breaks question could ever be marked done - a day whose only item was a Misc
+// question, a late lunch or an off-clock rest had no way to be closed at all.
+// Mánu 2026-08-15: all cards need it. So it owns its own context, wrapping every
+// day rather than only the batched ones.
+//
+// STILL NOT A SAVE. A plain card writes on its own confirm; the batched card
+// writes once at the bottom. This is neither - it is the person saying they are
+// through with the day, which collapses it and lets the panel count it.
+const DayDoneCtx = createContext(null);
+
+export function DayDoneProvider({ children }) {
+  const [ready, setReady] = useState(() => new Set());
+  return (
+    <DayDoneCtx.Provider
+      value={{
+        ready,
+        readyOn: (date) => ready.has(date),
+        markReady: (date) => setReady((r) => new Set(r).add(date)),
+        unmarkReady: (date) => setReady((r) => { const n = new Set(r); n.delete(date); return n; }),
+      }}
+    >
+      {children}
+    </DayDoneCtx.Provider>
+  );
+}
+
+// THE BUTTON, ON EVERY DAY. What blocks it comes from two places and both have
+// to be clear: the plain cards on the day are counted on the server, because
+// they save on their own and the page knows what is on record; the batched rows
+// are staged in the browser, so only the batch provider knows.
+export function DayDoneButton({ date, plainBlocked = false }) {
+  const done = useContext(DayDoneCtx);
+  const batch = useContext(BatchCtx);
+  if (!done) return null;
+  if (done.readyOn(date)) return null;
+  const hasBatchRow = !!batch?.byDay?.some?.((d) => d.date === date);
+  const blocked = plainBlocked || (hasBatchRow && batch.blockedOn(date));
+  if (blocked) {
+    return (
+      <p className="mt-3 text-xs text-muted">Answer everything on this day to finish with it.</p>
+    );
+  }
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => done.markReady(date)}
+        className="rounded-lg border border-border-strong bg-surface-2 px-3 py-1.5 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand"
+      >
+        Done with this day
+      </button>
+    </div>
+  );
+}
+
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
 // 730 -> "12 hours 10 minutes". Spelled out rather than left as a decimal,
@@ -796,6 +854,8 @@ const REFUSALS = {
   preview: "Preview only - nothing is saved from this view. Open the employee's own link to answer for real.",
   needreason: "Saying you missed a break needs a reason. Write why in the box before saving.",
   needblock: "Say what that time becomes once the meal break is moved out of it, then save.",
+  badchoice: "That answer is not one this question offers. Reload the page and pick again.",
+  toomany: "Too many answers were sent at once. Reload the page and try again.",
   missingtime: "Every day you answered “took them” needs the time it started.",
   badtime: "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight.",
   outsideshift: "A rest break has to sit inside a shift you actually worked. Pick a time inside one of the hours shown.",
@@ -1541,6 +1601,142 @@ function OneQuestion({
 // `copyFor` lives in this "use client" module: a server component can render a
 // client component but it cannot call into one, so "Day by day" asks for the
 // heading rather than computing it.
+// WHAT A BATCHED DAY IS SHORT, IN A FEW WORDS. Lifted out of the provider so the
+// panel at the top of the page can name the same row the card names, rather than
+// spelling it a second way.
+const WORDS = ["no", "one", "two", "three", "four", "five"];
+const countWord = (n) => WORDS[n] || String(n);
+export function breakLabel(q) {
+  const owed = (q.needs || []).length;
+  const have = (q.needs?.[0]?.known || []).length;
+  const total = owed + have;
+  if (q.row?.part === "meal") return "No meal break recorded";
+  if (!owed) return "Rest break";
+  if (have > 0) return `Rest break - ${countWord(owed)} of ${countWord(total)} missing`;
+  return total > 1 ? `No rest breaks recorded - ${countWord(total)} owed` : "No rest break recorded";
+}
+
+// EVERY ISSUE ON THE SHEET, AT THE TOP, EACH LINKING TO ITS OWN DAY.
+//
+// Mánu asked for this three times before it was built, and deferred it three
+// times because it touches the page every employee opens. The reason it exists:
+// the batched card's heading was the only thing above the day list, so on a long
+// sheet the real work was below the fold and whatever sat at the top read as the
+// important thing.
+//
+// A CLIENT COMPONENT because it needs `copyFor`, and a server component can
+// render one of those but cannot call into it - the same reason `BatchHeading`
+// exists rather than the page computing its own heading.
+//
+// ONE ROW PER ISSUE, NOT PER DAY. A day carrying two is two things to do, and a
+// row per day cannot be ticked off by halves. It is also what makes the count at
+// the top mean the same thing as the count the signer quotes.
+// A DAY THEY HAVE FINISHED WITH, COLLAPSED TO ONE LINE.
+//
+// The day card and its calendar are SERVER rendered, so they cannot read the
+// staged state that says the day is done - that lives in the provider. This is
+// the client wrapper that can: it takes the whole day as children and shows the
+// summary instead once the day is marked.
+//
+// The children are still built on the server either way. Not rendering them is a
+// display decision, not a saving of work, and it keeps this to one small
+// component rather than moving the day list into the client.
+export function DayShell({ date, hours, summary = null, children }) {
+  const done = useContext(DayDoneCtx);
+  const ctx = useContext(BatchCtx);
+  if (!done?.readyOn?.(date)) return children;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <span className="min-w-0">
+        <span className="font-mono text-sm font-semibold text-foreground">{date}</span>
+        <span className="ml-3 text-sm text-emerald-700 dark:text-emerald-400">
+          {[ctx?.summaryFor?.(date), summary].filter(Boolean).join(" · ") || "Answered"}
+        </span>
+        {hours != null && (
+          <span className="ml-3 text-xs text-muted">{hours} hrs</span>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={() => done.unmarkReady(date)}
+        className="rounded-lg border border-border-strong px-3 py-1 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+      >
+        Change this
+      </button>
+    </div>
+  );
+}
+
+export function IssuePanel({ rows = [], standing }) {
+  // READY IS NOT SAVED, AND THE PANEL SAYS WHICH. Half the questions on this
+  // batch are batched ones that stage locally, so a panel counting only saved
+  // answers sat at 0 however many days somebody worked through.
+  const finished = useContext(DayDoneCtx);
+  const isReady = (r) => !r.done && !!r.date && !!finished?.readyOn?.(r.date);
+  if (!rows.length) return null;
+  const done = rows.filter((r) => r.done || isReady(r)).length;
+  const pct = Math.round((done / rows.length) * 100);
+  const label = (r) => {
+    if (r.label) return r.label;
+    if (r.batched) return breakLabel(r.q);
+    return copyFor(r.q, standing)?.short || copyFor(r.q, standing)?.title || "Something to check";
+  };
+  return (
+    <div className="mt-5 rounded-xl border-2 border-amber-400 bg-amber-50 p-5 dark:border-amber-700 dark:bg-amber-950/30">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-base font-semibold text-foreground">
+          {rows.length === 1
+            ? "One thing to check on this timesheet"
+            : `${rows.length} things to check on this timesheet`}
+        </p>
+        <span className="text-sm text-muted">{done} of {rows.length} done</span>
+      </div>
+      {done > 0 && (
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-3">
+          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <p className="mt-2 text-sm text-muted">Each one is on the day it happened. Press it to go there.</p>
+      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
+        {rows.map((r) => (
+          <li key={r.key}>
+            <a
+              href={`#day-${r.date}`}
+              className="flex items-center gap-3 px-3.5 py-2.5 transition hover:bg-surface-3"
+            >
+              <span className={`w-[74px] flex-none font-mono text-xs font-semibold ${
+                r.done || isReady(r) ? "text-faint" : "text-foreground"
+              }`}
+              >
+                {r.date}
+              </span>
+              <span className={`min-w-0 flex-1 text-sm ${r.done || isReady(r) ? "text-muted" : "text-foreground"}`}>
+                {label(r)}
+                {r.said && <span className="mt-0.5 block text-xs text-muted">{r.said}</span>}
+              </span>
+              {/* THREE STATES, AND THE MIDDLE ONE IS NOT A QUESTION. A backwards
+                  span is something to go and change in QuickSolve, not something
+                  to answer here, and a row that said "Answer" would be asking
+                  for something this page cannot take. */}
+              <span className={`flex-none rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                r.done || isReady(r)
+                  ? "border-emerald-300 text-emerald-700 dark:border-emerald-800/70 dark:text-emerald-300"
+                  : r.fix
+                    ? "border-sky-300 text-sky-700 dark:border-sky-800/70 dark:text-sky-300"
+                    : "border-amber-300 text-amber-800 dark:border-amber-700/70 dark:text-amber-300"
+              }`}
+              >
+                {r.done ? "Done" : isReady(r) ? "Ready" : r.fix ? "Fix" : "Answer"}
+              </span>
+              <span aria-hidden="true" className="flex-none text-faint">&rsaquo;</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function BatchHeading({ question, standing, className = "" }) {
   const c = copyFor(question, standing);
   if (!c) return null;
@@ -1585,6 +1781,17 @@ export function BatchProvider({
   // { [questionId]: { [slot]: "raw text the person typed" } }
   const [times, setTimes] = useState({});
   const [confirming, setConfirming] = useState(false);
+  // DAYS THEY HAVE FINISHED WITH.
+  //
+  // NOT A SAVE. The card still commits every day in one write at the end - see
+  // the note on `batch` in the engine, and Ford, who that design exists for.
+  // This is the person saying "I am done with this one", which collapses the day
+  // and lets the panel at the top count it.
+  //
+  // The distinction matters and the page says it out loud: a ready day is typed
+  // in, a saved one is on record, and the confirm at the bottom is what moves
+  // one to the other.
+  const [ready, setReady] = useState(() => new Set());
 
   const base = standing?.charged || 0;
   const answeredAll = list.every((q) => answers?.[q.id]);
@@ -1742,6 +1949,25 @@ export function BatchProvider({
   const missed = chosen.filter((x) => x.v === "no" || x.v === "partial");
   const took = chosen.filter((x) => x.v === "yes");
   const undecided = chosen.filter((x) => !x.v);
+  // WHAT A FINISHED DAY SAYS ON ITS ONE LINE. The answer in their words, plus
+  // any time they gave, so a collapsed day is still checkable at a glance.
+  const summaryFor = (date) => chosen
+    .filter(({ q }) => q.date === date && q.v !== null)
+    .map(({ q, v }) => {
+      const said = v ? label(q, v) : null;
+      if (!said) return null;
+      const times = (q.needs || []).map((need) => rawAt(q, need.slot)).filter(Boolean);
+      return times.length ? `${said}, ${times.join(", ")}` : said;
+    })
+    .filter(Boolean)
+    .join(" · ");
+  // a day can only be finished with once every question on it has an answer and
+  // whatever that answer owes - the same tests the confirm applies to the whole
+  const blockedOn = (date) => chosen
+    .filter(({ q }) => q.date === date)
+    .some(({ q, v }) => !v
+      || ((v === "yes" || v === "partial") && (q.needs || []).some((n) => !minutesAt(q, n) || badTime(q, n)))
+      || (owesReason(q, v) && !reasonOf(q)));
   const hours = missed.reduce((n, x) => n + (x.q.movesOnDecline || 0), 0);
   // only the days whose answer differs from what is already stored need writing.
   // A CLEARED ONE COUNTS AS A CHANGE - unclicking a saved answer has to be able
@@ -1792,17 +2018,7 @@ export function BatchProvider({
   // Both numbers come off the slots the engine already built: `needs` is what is
   // still owed and `known` is what is already on record, so this cannot drift
   // from what the question goes on to ask for.
-  const WORDS = ["no", "one", "two", "three", "four", "five"];
-  const count = (n) => WORDS[n] || String(n);
-  const missingLabel = (q) => {
-    const owed = (q.needs || []).length;
-    const have = (q.needs?.[0]?.known || []).length;
-    const total = owed + have;
-    if (q.row?.part === "meal") return "No meal break recorded";
-    if (!owed) return "Rest break";
-    if (have > 0) return `Rest break - ${count(owed)} of ${count(total)} missing`;
-    return total > 1 ? `No rest breaks recorded - ${count(total)} owed` : "No rest break recorded";
-  };
+  const missingLabel = breakLabel;
 
   // WHAT IF THEY ONLY TOOK ONE OF THE TWO? Mánu 2026-08-11. It was yes-or-no,
   // so somebody who got one ten and worked through the other had to claim they
@@ -2054,6 +2270,12 @@ export function BatchProvider({
         renderToggle, renderTimes, renderReason, missingLabel, noRoom, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
         dirty, missingTimes, missingReasons, undecided, missed, took, hours, base, answeredAll,
+        ready,
+        readyOn: (date) => ready.has(date),
+        blockedOn,
+        summaryFor,
+        markReady: (date) => setReady((r) => new Set(r).add(date)),
+        unmarkReady: (date) => setReady((r) => { const n = new Set(r); n.delete(date); return n; }),
       }}
     >
       {children}
@@ -2164,7 +2386,18 @@ export function BatchConfirm() {
   const {
     list, copy, pending, err, confirming, setConfirming, commit,
     dirty, missingTimes, missingReasons, undecided, missed, took, hours, base, answeredAll,
+    ready, byDay,
   } = ctx;
+  // HOW MANY DAYS THEY HAVE FINISHED WITH, and how many are left.
+  //
+  // The button was the only thing on the page that knew nothing about a day
+  // being marked done, so somebody could collapse twelve of thirteen days and
+  // still be looking at a control that said the same thing it said at the start.
+  // Counted off the days this card actually holds, so a day marked ready and
+  // then re-opened stops counting on its own.
+  const days = (byDay || []).map((d) => d.date);
+  const readyCount = days.filter((d) => ready?.has?.(d)).length;
+  const leftCount = days.length - readyCount;
 
   return (
     <>
@@ -2196,6 +2429,20 @@ export function BatchConfirm() {
                 the sentence that also says what it stops. */}
             {answeredAll && !dirty.length ? "Answered" : "Save my answers"}
           </button>
+          {/* WHAT PRESSING IT WOULD ACTUALLY PUT ON RECORD. Ready is typed in
+              and collapsed, not saved - this is the one control that turns the
+              first into the second, so it is the one that has to say how many
+              are waiting on it. */}
+          {readyCount > 0 && (
+            <span className="text-sm text-muted">
+              <b className="text-foreground">
+                {readyCount === 1 ? "1 day ready" : `${readyCount} days ready`}
+              </b>
+              {leftCount > 0
+                ? ` · ${leftCount} still open`
+                : " · nothing else on this card"}
+            </span>
+          )}
         </div>
       )}
 

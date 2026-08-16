@@ -69,7 +69,7 @@ const DBD = fs.readFileSync("src/app/t/[token]/DayByDay.js", "utf8");
 
 test("a backwards row gets a panel in the work column", () => {
   assert.match(DBD, /function NeedsFixing/);
-  assert.match(DBD, /<NeedsFixing items=/);
+  assert.match(DBD, /<NeedsFixing\s/);
   // driven by the same flag the calendar colours from, so the two cannot
   // disagree about which rows need fixing
   assert.match(DBD, /\.filter\(\(b\) => b\.attention\)/);
@@ -94,7 +94,28 @@ test("the panel says what to change and stops there", () => {
 });
 
 test("a day whose only item is a fix no longer says nothing to check", () => {
-  assert.match(DBD, /some\(\(b\) => b\.attention\)/);
+  assert.match(DBD, /b\.attention && !ackOn/);
+});
+
+test("and it stops counting once somebody has taken it on", () => {
+  // there is nothing to ANSWER on a backwards entry - the engine already reads
+  // it the right way round - so without a way to say "seen" the row sat there
+  // for ever and the panel could never tick it off
+  assert.match(DBD, /<AcknowledgeFix/);
+  assert.match(DBD, /ackOn\?\.has\?\.\(`\$\{day\.date\}\|\$\{b\.min\}`\)/);
+});
+
+test("the acknowledgement is keyed to the SHEET, not the period", () => {
+  // a break reason is keyed to the period so it survives a re-upload. This must
+  // not: if the next export still holds the times backwards it has to ask again,
+  // and a new upload is a new sheet with no acknowledgement on it.
+  const ACT = fs.readFileSync("src/app/portal/admin/timesheets/actions.js", "utf8");
+  const body = ACT.slice(ACT.indexOf("export async function acknowledgeSpan"),
+    ACT.indexOf("export async function submitSignedTimesheet"));
+  assert.match(body, /timesheetId: ts\.id/);
+  assert.doesNotMatch(body, /periodFrom/);
+  // and it moves no figure, so nothing is rebuilt
+  assert.doesNotMatch(body, /rebuildSheetFor/);
 });
 
 // WHY IT IS A PROBLEM, IN ONE LINE, ON BOTH VIEWS.

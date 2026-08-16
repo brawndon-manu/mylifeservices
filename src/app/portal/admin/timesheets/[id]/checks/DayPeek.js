@@ -25,7 +25,7 @@ import DayCalendar from "@/app/t/[token]/DayCalendar";
 // rather than <details>. A <details> renders its contents whether or not it is
 // open, and this batch draws 124 rows - a calendar apiece, each one laying out
 // a day's blocks, for pictures nobody has asked to see yet.
-export default function DayPeek({ day, rests = [], scheduled = [] }) {
+export default function DayPeek({ day, rests = [], scheduled = [], bookedMeal = false }) {
   const [open, setOpen] = useState(false);
   // a day with no punch pairs draws nothing at all - `DayCalendar` returns null
   // on it - so the control would open onto an empty box
@@ -55,7 +55,7 @@ export default function DayPeek({ day, rests = [], scheduled = [] }) {
         // where the calendar shares the row with the answer options, so it takes
         // what the card gives it up to a readable cap.
         <div className="mt-2 max-w-2xl rounded-md border border-border bg-surface-2 p-3 pr-4">
-          <DayCalendar day={day} rests={rests} scheduled={scheduled} />
+          <DayCalendar day={day} rests={rests} scheduled={scheduled} bookedMeal={bookedMeal} />
         </div>
       )}
     </div>

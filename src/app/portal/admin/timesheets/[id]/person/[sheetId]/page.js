@@ -8,6 +8,7 @@ import { restKey, restNameFor, restRowTimes, clockMin, serviceFit } from "@/lib/
 import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
 import { violationsFor, VIOLATION_KINDS, violationHead } from "@/lib/timesheet/violations";
+import { mealBookedInside } from "@/lib/timesheet/questions";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
 import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
@@ -337,6 +338,12 @@ export default async function PersonSchedulePage({ params, searchParams }) {
       day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [], miscBreaks: d.miscBreaks || [] },
       rests: drawn,
       scheduled: blocks,
+      // THE SAME CALENDAR THE EMPLOYEE SEES, INCLUDING THIS. A meal the roster
+      // booked inside a block being worked draws dashed on their page and drew
+      // as an ordinary schedule block here, so the two screens disagreed about
+      // the day the reviewer is ringing them about. Read from the engine, not
+      // re-derived, and only where the day actually owes a meal.
+      bookedMeal: !!(d.mealViolation && !d.mealLate && mealBookedInside(byDate[d.date])),
     });
   }
 

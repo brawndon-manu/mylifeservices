@@ -509,8 +509,14 @@ export default function DayCalendar({
       at: Math.min(axis.to, Math.max(axis.from, r.min + (r.minutes || 10) / 2)),
     });
   }
-  // the break lanes give up the right-hand strip only on a day that needs one
-  const breakRight = tethers.length ? BREAK_RIGHT_PCT - TETHER_PCT : BREAK_RIGHT_PCT;
+  // THE BREAKS STAY FLUSH, AND THE TETHER MOVES OVER THEM.
+  //
+  // The break lane used to give up the right-hand strip on any day carrying a
+  // tether, which is most of the days with a rest filed against the wrong shift -
+  // so "flush right" held on the quiet days and quietly did not on the ones being
+  // looked at. The tether is a hairline bracket and nothing is written under it,
+  // so it can sit over the end of a break instead of pushing it in.
+  const breakRight = BREAK_RIGHT_PCT;
 
   // ONE ORDERED TIMELINE covering the day, so a block that needs a few more
   // pixels can be given them by the block beside it. `from`/`to` stay the TRUE
@@ -968,7 +974,7 @@ export default function DayCalendar({
                 // same overlap and took their lunch in a real punch gap; a red
                 // box on those would be an alarm about nothing.
                 ...(b.booked
-                  ? { border: "1.5px dashed #f43f5e", color: "#fda4af" }
+                  ? { border: "1.5px dashed #f43f5e" }
                   : null),
                 // it is being CROPPED, not overflowing, and the fade is what
                 // says so. Without it the block just stops at the axis and
@@ -981,7 +987,16 @@ export default function DayCalendar({
                   : null),
               }}
             >
-              <span className="truncate text-[12px] font-semibold leading-[15px]">
+              <span
+                className={`truncate text-[12px] font-semibold leading-[15px] ${
+                  // A DARK-THEME PINK ON A PALE PINK WASH IS INVISIBLE IN LIGHT.
+                  // This is the only block that sets its own colour, and it was
+                  // set to one shade for both themes - readable on black, gone
+                  // on white. Every other block inherits, which is why none of
+                  // them had this. Rose 700/300 is the pair the site uses.
+                  b.booked ? "text-rose-700 dark:text-rose-300" : ""
+                }`}
+              >
                 {b.attention
                   ? "Rest"
                   : b.said
