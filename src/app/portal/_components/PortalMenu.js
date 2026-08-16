@@ -23,11 +23,16 @@ export default function PortalMenu({ elevated, email, roleLabel, roleBadgeClass,
   // menu would open, render, then close on the render after.
   const [openOn, setOpenOn] = useState(null);
   const open = openOn !== null && openOn === pathname;
-  const setOpen = (next) => setOpenOn(next ? pathname : null);
+  // NO setOpen WRAPPER, deliberately. There was one taking a boolean, and the
+  // button called it the way you call a useState setter - `setOpen(v => !v)`.
+  // A function is truthy, so every press read as "open" and the X reopened the
+  // menu it had just shut. The state is a pathname, not a flag, so it is set
+  // with a pathname at each call site and there is nothing left to misuse.
+  const close = () => setOpenOn(null);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => e.key === "Escape" && setOpenOn(null);
+    const onKey = (e) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
@@ -46,7 +51,7 @@ export default function PortalMenu({ elevated, email, roleLabel, roleBadgeClass,
     <>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpenOn(open ? null : pathname)}
         aria-expanded={open}
         aria-controls="portal-menu"
         aria-label={open ? "Close menu" : "Open menu"}
