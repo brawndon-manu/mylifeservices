@@ -137,8 +137,14 @@ test("the working answer says what counts as working", () => {
 test("and the note survives the day-by-day view, unlike `why`", () => {
   // `why` is deliberately dropped when terse - the calendar does that explaining.
   // A note is the other thing: what the option MEANS, which no picture can say.
-  assert.match(CARD, /why=\{!answered && !terse \? c\.third\.why : null\}/);
-  assert.match(CARD, /note=\{!answered \? c\.third\.note : null\}/);
+  //
+  // AND IT SURVIVES RE-EDITING, which is the case that lost it. These were drawn
+  // only while a question was unanswered, which nobody could see while an
+  // answered card did not render at all. Once an answered card came back so it
+  // could be changed, the options returned stripped of their explanations - and
+  // the one option that cannot explain itself from its label is this one.
+  assert.match(CARD, /why=\{\(!answered \|\| editing\) && !terse \? c\.third\.why : null\}/);
+  assert.match(CARD, /note=\{!answered \|\| editing \? c\.third\.note : null\}/);
   assert.match(CARD, /\{note && <span/);
 });
 
@@ -147,6 +153,6 @@ test("all three options can carry one, so this is not a one-off", () => {
   // both regex syntax and escaping them through a template literal is how the
   // first version of this test came to assert something else entirely
   for (const k of ["yes", "no", "third"]) {
-    assert.ok(CARD.includes(`note={!answered ? c.${k}.note : null}`), `${k} cannot carry a note`);
+    assert.ok(CARD.includes(`note={!answered || editing ? c.${k}.note : null}`), `${k} cannot carry a note`);
   }
 });

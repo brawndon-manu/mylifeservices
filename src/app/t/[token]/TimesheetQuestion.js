@@ -482,13 +482,21 @@ function copyFor(q, standing) {
         },
         third: {
           value: "worked",
-          label: "I was working",
+          label: "Working hours",
           why: "You worked those hours, they just were not booked to a client.",
           // WHAT COUNTS AS WORKING, because the other two options name themselves
           // and this one does not. Somebody who sat through a cancelled visit has
           // no idea whether that is "working" or something we have no button for,
           // and the honest answer for them is the one that keeps those hours in
           // the count that decides whether a break was owed.
+          //
+          // THIS NOTE WENT MISSING WITHOUT ANYBODY DELETING IT. The `note` and
+          // `why` lines were drawn only while a question was unanswered, which
+          // was invisible for as long as an answered card did not render at all.
+          // The moment an answered card came back so it could be CHANGED, the
+          // options returned without their explanations - and the one option
+          // that cannot explain itself from its label is this one. They are
+          // drawn while editing now; see the Choice props below.
           note: "Any Misc service you worked, and time held for a client who cancelled.",
         },
         yesEffect: <>Your record says that time was paid time off.</>,
@@ -1286,8 +1294,8 @@ function OneQuestion({
           tone="yes"
           busy={pending}
           label={c.yes.label}
-          why={!answered && !terse ? c.yes.why : null}
-          note={!answered ? c.yes.note : null}
+          why={(!answered || editing) && !terse ? c.yes.why : null}
+          note={!answered || editing ? c.yes.note : null}
           onClick={() => pick("yes")}
         />
         )}
@@ -1296,8 +1304,8 @@ function OneQuestion({
           tone="no"
           busy={pending}
           label={c.no.label}
-          why={!answered && !terse ? c.no.why : null}
-          note={!answered ? c.no.note : null}
+          why={(!answered || editing) && !terse ? c.no.why : null}
+          note={!answered || editing ? c.no.note : null}
           onClick={() => pick("no")}
         />
         {c.third && (
@@ -1306,8 +1314,8 @@ function OneQuestion({
             tone="no"
             busy={pending}
             label={c.third.label}
-            why={!answered && !terse ? c.third.why : null}
-            note={!answered ? c.third.note : null}
+            why={(!answered || editing) && !terse ? c.third.why : null}
+            note={!answered || editing ? c.third.note : null}
             onClick={() => pick(c.third.value)}
           />
         )}
