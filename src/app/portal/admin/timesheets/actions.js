@@ -1698,14 +1698,50 @@ export async function clearDayOverride(timesheetId, date) {
   }
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
-    select: { id: true, batchId: true, overrides: true },
+    // `data` and the batch's rest rows are what `rebuildSheetFor` recomputes
+    // from. Left out they arrive undefined and the rebuild quietly produces a
+    // sheet with no days on it.
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
   });
   if (!ts?.overrides) return { ok: false, error: "gone" };
+
+  // THE ANSWER GOES WITH THE OVERRIDE, or nothing happens at all.
+  //
+  // This used to delete the day's override and stop there. Every rebuild
+  // re-derives the overrides FROM the corrections, so the patch this removed
+  // came straight back the next time anything recomputed - a control that
+  // looked like it worked and did not. Mánu pressed it, then the reset, then
+  // rebuild, and watched the answers survive all three.
+  //
+  // Scoped to ONE DATE: `resetTimesheetAnswers` is the same two steps for a
+  // whole sheet, and this is that, for a day.
+  const { count } = await prisma.timesheetCorrection.deleteMany({
+    where: {
+      timesheetId: ts.id,
+      date,
+      OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+    },
+  });
+
   const next = { ...ts.overrides };
   delete next[date];
   await prisma.timesheet.update({ where: { id: ts.id }, data: { overrides: next } });
+
+  // AND RECOMPUTE, so the figures on screen are the ones this just produced.
+  // Without it the day keeps the patched hours until somebody else rebuilds,
+  // which is the same disagreement between a page and its own document that
+  // the answer path already refuses to leave behind.
+  const res = await rebuildSheetFor({ ...ts, overrides: next }, next);
+  if (!res?.ok) return res;
+
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
-  return { ok: true };
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  // and the page the answers were given on, plus both live-refresh counters,
+  // so an employee looking at this day sees it change rather than a stale copy
+  revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batchId);
+  return { ok: true, removed: count };
 }
 
 // re-run one employee's figures from their stored days plus whatever overrides
