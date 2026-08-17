@@ -96,10 +96,18 @@ export function confirmedFromAnswers(corrections) {
 //
 // A premium somebody answered "yes" to never reaches here at all: the override
 // clears the day's violation flag, and a day with no violation has no premium.
-export function splitPremium(days, { confirmed } = {}) {
+export function splitPremium(days, { confirmed, signed } = {}) {
   const has = (date, kind) => !!confirmed && confirmed.has(`${date}:${kind}`);
   let settled = 0;
   let assumable = 0;
+  // hours an EMPLOYEE answered off their own sheet. Their document reflects
+  // the answer the moment they give it - that is settled law here - but an
+  // employee answer alone may not settle premium (Mánu 2026-08-17), so these
+  // hours feed the two figures below: the ORIGINAL keeps them whatever
+  // happens, and the LIVE one keeps them only until the signature lands. A
+  // reviewer-recorded answer carries "admin" and is in neither - it settles
+  // outright. The reband in recomputeSheet stamps the markers this reads.
+  let dropped = 0;
   const rows = [];
 
   for (const d of days || []) {
@@ -164,7 +172,17 @@ export function splitPremium(days, { confirmed } = {}) {
           : "fewer rests are recorded than the hours require, so it is paid unless they tell us they took them",
       });
     }
+
+    // a flag an answer holds off never reaches mealOwed/restOwed above, so
+    // these are the hours the two branches could not see.
+    if (!mealOwed && d.mealDroppedBy === "employee") dropped += PER_VIOLATION;
+    if (!restOwed && d.restDroppedBy === "employee") dropped += PER_VIOLATION;
   }
+
+  // the employee-answered hours still waiting on this sheet's signature -
+  // zero the moment it is signed, because the signature is what makes their
+  // answers real.
+  const pendingSignoff = signed ? 0 : dropped;
 
   return {
     // EVERY fault the reports show, taken literally. The default, and what
@@ -175,6 +193,18 @@ export function splitPremium(days, { confirmed } = {}) {
     assumptions: assumable,
     // what would be left if they all held. The floor, not the figure.
     ifAssumptionsHold: settled,
+    // hours employees answered off sheets nobody has signed yet. Always zero
+    // on a signed sheet.
+    pendingSignoff,
+    // THE TWO CARDS, Mánu 2026-08-17. The ORIGINAL is the number that stands
+    // if nobody signs off: an employee's own answer never moves it, signature
+    // or not - only a reviewer settling an hour, or a re-upload. The LIVE one
+    // starts from the same number and moves as sign-offs land: a signature
+    // makes that person's answers real, so their waived hours come off - or
+    // an answer that ADDED a violation pushes it up. Payroll pays the live
+    // figure; the original is the reference it moved from.
+    originalProjected: settled + assumable + dropped,
+    liveProjected: settled + assumable + pendingSignoff,
     rows,
   };
 }
@@ -276,15 +306,23 @@ export function premiumsFromDays(days) {
 // of pay for each one"; the page underneath it said "we have assumed you took
 // them and have not added any penalty pay"; the PDF charged all 17. Both of the
 // first two sat above a signature. One function now, so they cannot disagree.
-export function premiumStanding(days, corrections) {
+export function premiumStanding(days, corrections, { signed } = {}) {
   const answers = answersByDate(corrections);
   const confirmed = confirmedFromAnswers(corrections);
-  const split = splitPremium(days, { confirmed });
+  const split = splitPremium(days, { confirmed, signed });
   return {
     // WHAT IS ACTUALLY BEING CHARGED, and after 2026-08-11 that is every fault
     // the reports show. It falls as people confirm they took their breaks; it
-    // cannot rise.
+    // cannot rise. This is the sheet's own figure - the document the employee
+    // reads and signs - and it reflects their answers the moment they give
+    // them. The payroll aggregation below does NOT pay this; see `live`.
     charged: split.projected,
+    // the two batch cards, per sheet - see splitPremium for what each means.
+    // `live` is what payroll pays for this person: their answers count only
+    // once their signature covers them (pass { signed } or live simply keeps
+    // every employee-answered hour, which reads high, never low).
+    original: split.originalProjected,
+    live: split.liveProjected,
     // what the policy assumptions would take off if every one were confirmed.
     // Not applied, and not deducted from `charged`.
     assumptions: split.assumptions,
@@ -308,15 +346,26 @@ export function premiumStanding(days, corrections) {
 // now over-stating payroll rather than under-paying an employee.
 export function batchPremiumStanding(sheets, { restRows } = {}) {
   let charged = 0;
+  let original = 0;
   let assumptions = 0;
   let ifAssumptionsHold = 0;
   let waiting = 0;
   const byId = {};
 
   for (const s of sheets || []) {
-    const st = premiumStanding(s.data?.days || [], s.corrections);
-    byId[s.id] = st;
-    charged += st.charged;
+    // THE PAYROLL FIGURE IS THE LIVE ONE, Mánu 2026-08-17. This aggregator
+    // feeds exactly four surfaces - the payout report page, its CSV and PDF,
+    // and the penalty roster - and every one of them pays people. So `charged`
+    // here, per person and in total, is the LIVE figure: an hour an employee
+    // answered off counts until their signature makes the answer real, and
+    // only a reviewer-recorded answer settles it unsigned. The per-sheet
+    // `premiumStanding` keeps its own `charged` as the document's figure -
+    // the employee-facing surfaces read that one and must keep reflecting
+    // answers as given.
+    const st = premiumStanding(s.data?.days || [], s.corrections, { signed: !!s.signedAt });
+    byId[s.id] = { ...st, charged: st.live };
+    charged += st.live;
+    original += st.original;
     assumptions += st.assumptions;
     ifAssumptionsHold += st.ifAssumptionsHold;
 
@@ -330,7 +379,7 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
   }
 
   return {
-    charged, assumptions, ifAssumptionsHold, byId,
+    charged, original, assumptions, ifAssumptionsHold, byId,
     people: (sheets || []).length,
     waiting,
     // everybody has answered every question put to them, so nothing else is
@@ -339,18 +388,28 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
   };
 }
 
-// the same two figures across a whole batch
+// the same figures across a whole batch - the two cards come from here.
+// `signedAt` is read straight off each sheet: the batch page includes full
+// rows, and a caller whose select drops it simply gets a live figure that
+// still holds every employee-answered hour - high, never low.
 export function splitPremiumForSheets(sheets, { confirmedBySheet } = {}) {
   let projected = 0;
   let assumptions = 0;
   let ifAssumptionsHold = 0;
+  let pendingSignoff = 0;
+  let originalProjected = 0;
+  let liveProjected = 0;
   for (const s of sheets || []) {
     const r = splitPremium(s.data?.days || [], {
       confirmed: confirmedBySheet?.[s.id],
+      signed: !!s.signedAt,
     });
     projected += r.projected;
     assumptions += r.assumptions;
     ifAssumptionsHold += r.ifAssumptionsHold;
+    pendingSignoff += r.pendingSignoff;
+    originalProjected += r.originalProjected;
+    liveProjected += r.liveProjected;
   }
-  return { projected, assumptions, ifAssumptionsHold };
+  return { projected, assumptions, ifAssumptionsHold, pendingSignoff, originalProjected, liveProjected };
 }

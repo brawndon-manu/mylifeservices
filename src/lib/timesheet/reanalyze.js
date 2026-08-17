@@ -90,6 +90,10 @@ export function reanalyzeDays(days, {
       restTimes: restTimesFor(d.date),
       restSourceAvailable,
       miscWorked: answered.miscWorked === true || d.miscWorked === true,
+      // the classification, for the same reason as `miscWorked` above: a
+      // client cancellation cuts its block out of the stretches entirely, and
+      // a re-analysis that ignored it would put the entitlement straight back
+      miscKind: answered.miscKind ?? d.miscKind ?? null,
     });
     const after = withoutInjected(analyzeDay(before));
 
@@ -123,7 +127,7 @@ export function reanalyzeDays(days, {
 // the day handed to `analyzeDay`, with the dropped inputs put back. Split out so
 // the list of what gets rebuilt is readable in one place and the test can assert
 // against it.
-function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, miscWorked }) {
+function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, miscWorked, miscKind }) {
   return {
     ...d,
     scheduleBlocks: scheduleBlocks(shifts),
@@ -134,6 +138,7 @@ function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, miscWorked
     restsAlreadyPaid: true,
     restSourceAvailable,
     miscWorked,
+    miscKind,
   };
 }
 

@@ -259,19 +259,35 @@ export function formatBreakComments(answers = [], startAt = 0) {
   for (const a of rows) {
     const kind = a.kind === "rest" ? "rest period" : "meal period";
     const when = a.date ? `${a.date} ` : "";
+    // IN QUOTES, because it is somebody's words rather than our description of
+    // them. Mánu 2026-08-17, on the sheet people sign: the comment goes in
+    // quotes and in italic. The italic is the renderer's half - see
+    // `render-sheet.js`, which marks these lines - and the quotes are here, so
+    // every surface printing this text keeps them.
+    const quoted = (s) => `"${String(s).replace(/^["']+|["']+$/g, "")}"`;
     // ours, when we took one
     if (a.reason) {
+      // NO TAG ON THE ORDINARY CASE. Mánu 2026-08-17: take "confirmed by
+      // employee" off the line. On the sheet they put their name to, saying a
+      // sentence was confirmed by the person signing under it is the one piece
+      // of provenance the document already carries by being signed - so the
+      // line is the date, what was missed, and their words.
+      //
+      // The other two still print, because they say something the signature
+      // does NOT: that these are OUR words off a phone call, and whether they
+      // have been checked. Those are a different claim from a person's own
+      // account and must not read as one.
       const said = a.confirmedText && a.confirmedText === a.reason
-        ? "confirmed by employee"
+        ? null
         : a.confirmedText
           ? "recorded from a call"
           : "recorded from a call, not yet confirmed by the employee";
-      out.push(`${++n}) ${when}${kind} not taken: ${a.reason}  [${said}]`);
+      out.push(`${++n}) ${when}${kind} not taken: ${quoted(a.reason)}${said ? `  [${said}]` : ""}`);
     }
     // theirs, when it differs - either a correction to ours, or the only one
     if (a.confirmedText && a.confirmedText !== a.reason) {
       const label = a.reason ? "employee correction" : `${kind} not taken`;
-      out.push(`${++n}) ${when}${label}: ${a.confirmedText}  [in the employee's own words]`);
+      out.push(`${++n}) ${when}${label}: ${quoted(a.confirmedText)}  [in the employee's own words]`);
     }
   }
   return out;

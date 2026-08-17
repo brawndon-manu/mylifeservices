@@ -62,13 +62,14 @@ export async function GET(_req, { params }) {
     "Premium hours",
     "Premium hours that come off if assumptions confirmed",
     "Total hours payable",
+    "Miles driven",
     "Partial week",
     "Status",
     "Corrected",
   ];
 
   const lines = [header.map(cell).join(",")];
-  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumptions: 0, payable: 0 };
+  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumptions: 0, payable: 0, miles: 0 };
 
   for (const ts of batch.timesheets) {
     const charged = standing.byId[ts.id]?.charged ?? 0;
@@ -81,6 +82,9 @@ export async function GET(_req, { params }) {
     t.prem += charged;
     t.assumptions += assumptions;
     t.payable += payable;
+    // reimbursed per mile rather than paid as hours, so it is summed on its own
+    // and never folded into payable
+    t.miles += ts.data?.qspMiles || 0;
 
     lines.push(
       [
@@ -94,6 +98,7 @@ export async function GET(_req, { params }) {
         r2(charged),
         r2(assumptions),
         r2(payable),
+        r2(ts.data?.qspMiles),
         ts.partialWeek ? "yes" : "no",
         ts.corrections.some((c) => c.status === "open")
           ? "reported a problem"
@@ -121,6 +126,7 @@ export async function GET(_req, { params }) {
       r2(t.prem),
       r2(t.assumptions),
       r2(t.payable),
+      r2(t.miles),
       "",
       "",
       "",

@@ -450,9 +450,9 @@ function copyFor(q, standing) {
     // the engine stops counting it toward the hours that decide whether a break
     // is owed. This is the only route by which it counts again.
     //
-    // THREE ANSWERS, not four. The draft had "a ten I could not fit into my
-    // service hours" as a fourth, which the card cannot show and which describes
-    // nothing here anyway: a block of ten minutes or less already counts as
+    // FOUR ANSWERS SINCE 2026-08-17, when Client cancellation joined. The
+    // draft's own fourth - "a ten I could not fit into my service hours" - was
+    // cut and stays cut: a block of ten minutes or less already counts as
     // worked without being asked about.
     //
     // NOTHING ON THIS CARD PROMISES PAY. It says what the answer does to the
@@ -485,10 +485,7 @@ function copyFor(q, standing) {
           label: "Working hours",
           why: "You worked those hours, they just were not booked to a client.",
           // WHAT COUNTS AS WORKING, because the other two options name themselves
-          // and this one does not. Somebody who sat through a cancelled visit has
-          // no idea whether that is "working" or something we have no button for,
-          // and the honest answer for them is the one that keeps those hours in
-          // the count that decides whether a break was owed.
+          // and this one does not.
           //
           // THIS NOTE WENT MISSING WITHOUT ANYBODY DELETING IT. The `note` and
           // `why` lines were drawn only while a question was unanswered, which
@@ -497,7 +494,21 @@ function copyFor(q, standing) {
           // options returned without their explanations - and the one option
           // that cannot explain itself from its label is this one. They are
           // drawn while editing now; see the Choice props below.
-          note: "Any Misc service you worked, and time held for a client who cancelled.",
+          //
+          // The cancelled-visit clause was cut from this note on 2026-08-17,
+          // when Client cancellation became its own answer below - a note
+          // steering cancellations into "working" would fight the button that
+          // now exists for them, and a test pins the absence.
+          note: "Any Misc service you worked.",
+        },
+        // CLIENT CANCELLATION, the fourth answer, Mánu 2026-08-17: paid,
+        // unworked time, counted as unscheduled - the stretches either side of
+        // it stand on their own. Same rule whichever route says it; the
+        // reviewer's control carries the same four.
+        fourth: {
+          value: "cancelled",
+          label: "Client cancellation",
+          why: "Your client cancelled. The time is paid, and it is not time worked.",
         },
         yesEffect: <>Your record says that time was paid time off.</>,
         noEffect: <>Your record says that time was sick pay.</>,
@@ -505,6 +516,13 @@ function copyFor(q, standing) {
           <>
             Your record says you worked those hours, so they count toward
             whether a rest break or meal period was required that day.
+          </>
+        ),
+        fourthEffect: (
+          <>
+            Your record says that time was a client cancellation - paid, but
+            not time worked, and the hours either side of it are counted on
+            their own.
           </>
         ),
       };
@@ -1143,7 +1161,8 @@ function OneQuestion({
     shown === "yes" ? c.yes?.label
       : shown === "no" ? c.no.label
         : shown === c.third?.value ? c.third.label
-          : "Answered";
+          : shown === c.fourth?.value ? c.fourth.label
+            : "Answered";
   const statedPairs = (answerTimes || [])
     .map((b) => {
       const need = (q.needs || []).find((n) => n.slot === b.slot);
@@ -1317,6 +1336,17 @@ function OneQuestion({
             why={(!answered || editing) && !terse ? c.third.why : null}
             note={!answered || editing ? c.third.note : null}
             onClick={() => pick(c.third.value)}
+          />
+        )}
+        {c.fourth && (
+          <Choice
+            on={shown === c.fourth.value}
+            tone="no"
+            busy={pending}
+            label={c.fourth.label}
+            why={(!answered || editing) && !terse ? c.fourth.why : null}
+            note={!answered || editing ? c.fourth.note : null}
+            onClick={() => pick(c.fourth.value)}
           />
         )}
       </div>
@@ -1528,7 +1558,8 @@ function OneQuestion({
               {proposed.choice === "yes" ? c.yesEffect
                 : proposed.choice === "no" ? c.noEffect
                   : proposed.choice === c.third?.value ? c.thirdEffect
-                    : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
+                    : proposed.choice === c.fourth?.value ? c.fourthEffect
+                      : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
             </p>
             {needsTime && !slots.length && typedHHMM && (
               <p>

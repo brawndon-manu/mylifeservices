@@ -85,6 +85,35 @@ html[data-nav="back"]::view-transition-new(root) {
 }`;
 }
 
+// ONE ATTRIBUTE, TWO TRANSITIONS THAT CAN OVERLAP.
+//
+// `data-nav` on <html> is what picks the keyframes, and every rule in
+// `navTransitionCss` is selected by it. Both navigation paths set it and both
+// clear it when their own transition finishes - which is wrong the moment two
+// overlap, and they do: tap a card, then swipe back before the first one has
+// settled. The FIRST transition finishes, its cleanup deletes the attribute,
+// and the one still running loses every keyframe rule mid-flight. The
+// pseudo-elements then draw with no animation at all: the old page and the new
+// page stacked on top of each other, both fully visible.
+//
+// Mánu hit exactly that on his phone on 2026-08-17 - two pages superimposed,
+// and a second shot with content at three different offsets where a scrub had
+// moved things before the rules vanished.
+//
+// So the attribute belongs to whoever claimed it LAST, and an older claim
+// cleans up nothing. Pure and separate from the component so the rule can be
+// tested without a browser.
+export function createNavOwner() {
+  let seq = 0;
+  return {
+    // -> a function that answers "is this claim still the current one?"
+    claim() {
+      const id = ++seq;
+      return () => seq === id;
+    },
+  };
+}
+
 // The animations a running view transition owns, and nothing else on the page.
 // Split out because the scrub has to find them, pause them, and later let them
 // go, and picking the wrong ones would freeze something unrelated mid-flight.

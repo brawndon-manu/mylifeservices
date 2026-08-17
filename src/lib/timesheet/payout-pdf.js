@@ -34,15 +34,31 @@ const OKINK = rgb(0.05, 0.35, 0.19);
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
 // widths sum to exactly R - L (532)
+//
+// MILES AND SIGNED JOINED ON 2026-08-17, Mánu: the payout PDF and CSV need
+// mileage and whether the sheet is signed. Room was made by trimming the hour
+// columns rather than widening the page - the totals row and the header both
+// walk this list, so the sum has to stay 532 or every cell after the change
+// drifts right.
+//
+// Miles is NOT a payable column and never enters `Total payable`: mileage is
+// reimbursed per mile, not paid as hours.
 const COLS = [
-  ["Employee", 142, false],
-  ["Regular", 62, true],
-  ["OT", 52, true],
-  ["Double", 58, true],
-  ["Hours worked", 74, true],
-  ["Penalty", 62, true],
-  ["Total payable", 82, true],
+  ["Employee", 118, false],
+  ["Regular", 54, true],
+  ["OT", 42, true],
+  ["Double", 48, true],
+  ["Hours worked", 64, true],
+  ["Penalty", 52, true],
+  ["Total payable", 68, true],
+  ["Miles", 50, true],
+  ["Signed", 36, false],
 ];
+// which index is which, so the row loop and the totals row cannot drift apart
+const I_PREMIUM = 5;
+const I_PAYABLE = 6;
+const I_MILES = 7;
+const I_SIGNED = 8;
 
 // greedy wrap: the notice is a sentence, and a sentence running through the
 // right rule on a payroll document reads as a broken form.
@@ -79,6 +95,8 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     paidHours: sum("paidHours"),
     premiumHours: sum("premiumHours"),
     payable: rows.reduce((n, r) => n + (r.paidHours || 0) + (r.premiumHours || 0), 0),
+    // reimbursed, not payable - deliberately absent from `payable` above
+    miles: sum("miles"),
   };
   const unmatched = rows.filter((r) => !r.matched).length;
   const partial = rows.filter((r) => r.partialWeek).length;
@@ -187,17 +205,24 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       f2(r.paidHours),
       f2(r.premiumHours),
       f2(payable),
+      f2(r.miles),
+      // APPROVED IS ALSO SIGNED. A sheet management has signed off was signed
+      // by the employee first, so reading "no" against it would be false.
+      r.approvedAt ? "Approved" : r.signedAt ? "Yes" : "No",
     ];
 
     let x = L;
     cells.forEach((c, i) => {
       const [, w, numeric] = COLS[i];
-      const isPrem = i === 5 && (r.premiumHours || 0) > 0;
-      const isTotal = i === 6;
+      const isPrem = i === I_PREMIUM && (r.premiumHours || 0) > 0;
+      const isTotal = i === I_PAYABLE;
+      const unsigned = i === I_SIGNED && !r.signedAt && !r.approvedAt;
       const f = isTotal || isPrem ? bold : font;
       const size = 8.5;
       const cx = numeric ? x + w - 5 - f.widthOfTextAtSize(c, size) : x + 5;
-      text(c, cx, y, { size, f, color: isPrem ? PREM : INK });
+      // an unsigned row is the one payroll may need to chase, so it is muted
+      // rather than shouted: the penalty column is what red means here
+      text(c, cx, y, { size, f, color: isPrem ? PREM : unsigned ? MUTED : INK });
       x += w;
     });
     // a quiet marker rather than a whole column - these are exceptions, not data
@@ -212,6 +237,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
   const boxH = 26;
   page.drawRectangle({ x: L, y: y - boxH + 10, width: R - L, height: boxH, color: TOTALBG });
   let x = L;
+  const signedCount = rows.filter((r) => r.signedAt || r.approvedAt).length;
   const totalCells = [
     `TOTAL (${rows.length})`,
     f2(totals.regularHours),
@@ -220,14 +246,18 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     f2(totals.paidHours),
     f2(totals.premiumHours),
     f2(totals.payable),
+    f2(totals.miles),
+    // how many of them are signed, which is the question this column exists to
+    // answer at a glance
+    `${signedCount}/${rows.length}`,
   ];
   totalCells.forEach((c, i) => {
     const [, w, numeric] = COLS[i];
-    const size = i === 6 ? 11 : 9;
+    const size = i === I_PAYABLE ? 11 : 9;
     const cx = numeric ? x + w - 5 - bold.widthOfTextAtSize(c, size) : x + 5;
     text(c, cx, y - 2, {
       size, f: bold,
-      color: i === 5 || i === 6 ? PREM : INK,
+      color: i === I_PREMIUM || i === I_PAYABLE ? PREM : INK,
     });
     x += w;
   });

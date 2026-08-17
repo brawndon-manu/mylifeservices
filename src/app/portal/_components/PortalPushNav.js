@@ -36,6 +36,7 @@ import {
   viewTransitionAnimations,
   NAV_MS,
   NAV_COMMIT_AT,
+  createNavOwner,
 } from "@/lib/portal-nav";
 
 export default function PortalPushNav({ children }) {
@@ -46,6 +47,15 @@ export default function PortalPushNav({ children }) {
   // the new page exists and the transition animates nothing.
   const settle = useRef(null);
   const dragging = useRef(null);
+  // WHO OWNS `data-nav` RIGHT NOW - see createNavOwner. Two transitions can be
+  // in flight at once (tap a card, then swipe back before it settles), and the
+  // older one finishing must not strip the attribute the newer one's keyframes
+  // are selected by. That is what left two pages stacked on screen.
+  //
+  // Built once at mount rather than lazily on first render: reading a ref
+  // during render is what the hooks rule forbids, and the counter has to
+  // survive every re-render or two navigations could both think they own it.
+  const navOwner = useRef(createNavOwner());
 
   useEffect(() => {
     if (settle.current) {
@@ -60,6 +70,7 @@ export default function PortalPushNav({ children }) {
       // ONE ATTRIBUTE PICKS THE KEYFRAMES. Held on <html> rather than passed
       // around, because `::view-transition-*` pseudo-elements live on the
       // document and cannot be reached from a component's own styles.
+      const mine = navOwner.current.claim();
       root.dataset.nav = direction;
       const done = document.startViewTransition(
         () =>
@@ -78,7 +89,8 @@ export default function PortalPushNav({ children }) {
           }),
       );
       done.finished.finally(() => {
-        delete root.dataset.nav;
+        // only if a later navigation has not taken the attribute over
+        if (mine()) delete root.dataset.nav;
       });
     },
     [router],
@@ -161,6 +173,7 @@ export default function PortalPushNav({ children }) {
     // forward again, which is the same pair of moves a phone makes internally.
     const commit = (d) => {
       const root = document.documentElement;
+      const mine = navOwner.current.claim();
       root.dataset.nav = "back";
       d.committed = true;
       const vt = document.startViewTransition(
@@ -191,7 +204,7 @@ export default function PortalPushNav({ children }) {
         // animate, which is exactly the unsupported-browser path
         .catch(() => {});
       vt.finished.finally(() => {
-        delete root.dataset.nav;
+        if (mine()) delete root.dataset.nav;
       });
     };
 

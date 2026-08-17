@@ -22,7 +22,11 @@ import { classifyMiscTime, clearMiscClassification } from "../../../actions";
 //
 // This is an ADMIN surface, so it says what the answer costs. No employee screen
 // names a premium or added time, and this is not one.
-const LABELS = { pto: "PTO", sick: "Sick pay", worked: "hours worked" };
+// "cancelled" is CLIENT CANCELLATION, added 2026-08-17 on Mánu's rule: paid,
+// unworked time whose block counts as unscheduled - the stretches either side
+// of it are counted on their own, so a long enough cancellation can take a
+// rest or a meal OFF the day. The engine change is in workGroupsFor.
+const LABELS = { pto: "PTO", sick: "Sick pay", worked: "hours worked", cancelled: "Client cancellation" };
 
 export default function MiscClassify({
   timesheetId,
@@ -91,6 +95,13 @@ export default function MiscClassify({
               {restRequired === 1 ? "rest period" : "rest periods"}
               {mealRequired && " and a meal"}.
             </>
+          ) : kind === "cancelled" ? (
+            <>
+              Paid, unworked time, counted as unscheduled: the stretches either
+              side of it stand on their own, and the day now owes{" "}
+              {restRequired} {restRequired === 1 ? "rest period" : "rest periods"}
+              {mealRequired ? " and a meal" : " and no meal"}.
+            </>
           ) : (
             <>
               Nothing on the day moved, which is right: {LABELS[kind]} is not time
@@ -127,7 +138,7 @@ export default function MiscClassify({
       </p>
       <p className="mt-2 text-xs font-semibold text-foreground">What was it?</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        {["pto", "sick", "worked"].map((k) => (
+        {["pto", "sick", "cancelled", "worked"].map((k) => (
           <button
             key={k}
             type="button"
@@ -149,7 +160,7 @@ export default function MiscClassify({
                 : "border-border-strong bg-surface-2 text-foreground hover:border-brand hover:bg-surface-3 hover:text-brand"
             }`}
           >
-            {k === "pto" ? "PTO" : k === "sick" ? "Sick pay" : "Hours worked"}
+            {k === "pto" ? "PTO" : k === "sick" ? "Sick pay" : k === "cancelled" ? "Client cancellation" : "Hours worked"}
           </button>
         ))}
         {/* WHAT THE EXPENSIVE ANSWER COSTS, before it is clicked. Worked is the
@@ -176,6 +187,6 @@ function errorText(e) {
   if (e === "nomisc") return "This day has no Misc time stored. Recompute the batch first.";
   if (e === "noday") return "That day is not on this sheet.";
   if (e === "gone") return "This sheet is no longer there. Reload the page.";
-  if (e === "badkind") return "That is not one of the three answers.";
+  if (e === "badkind") return "That is not one of the four answers.";
   return "That did not save. Try again.";
 }

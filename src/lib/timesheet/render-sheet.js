@@ -66,6 +66,15 @@ export const RENDER_SELECT = {
   id: true,
   sourceName: true,
   data: true,
+  // THE BREAK REASONS ARE KEYED ON IT, and leaving it out cost every one of
+  // them. `loadBreakReasons` opens `if (!ts?.userId ... ) return []`, so a
+  // select without this column returns NO reasons and no error - the sheet
+  // prints a short Comments block that is indistinguishable from a person who
+  // was never asked anything. All four render routes had it missing, so no
+  // reason has ever reached a real sheet: Mánu typed eleven through his own
+  // review page on 2026-08-17 and none of them appeared. Found by rendering
+  // the live route beside a probe that fetched the rows directly.
+  userId: true,
   // the display name reads the account and the batch's rehearsal flag. Left out
   // of this select they arrive undefined and the sheet silently falls back to
   // `sourceName` - the same class of failure as `restsUrl`, showing up as a
@@ -159,7 +168,22 @@ export async function renderSheet(ts, {
       // this, on the belief that nothing was setting it - a later duplicate in
       // the same object literal silently wins, so the sheets that had notes
       // kept printing them and the ones that did not lost the break reasons.
-      comments: [...qspComments, ...formatBreakComments(breakReasons, qspComments.length)],
+      // ITALIC, AND ONLY THESE. Mánu 2026-08-17: on the sheet people sign, a
+      // break comment goes in quotes and in italic. QSP's own notes stay
+      // upright - they are the export's words about clock-ins, not somebody
+      // explaining a missed break, and the two should not read as one voice.
+      // The quotes come from `formatBreakComments`; the flag is what tells
+      // `render.js` which font to draw the line with.
+      comments: [
+        ...qspComments,
+        ...formatBreakComments(breakReasons, qspComments.length)
+          .map((text) => ({ text, italic: true })),
+      ],
+      // MILES DRIVEN, off the payroll report and stored on the sheet at upload.
+      // Null where that report predates the mileage column, which is not zero
+      // miles - see the note where it is drawn, and the attestation that now
+      // covers it.
+      milesDriven: d.qspMiles ?? null,
       punchCorrections: d.punchCorrections || null,
       // the Breaks column: what the two reports RECORDED, never derived from
       // the punches

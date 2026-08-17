@@ -93,9 +93,12 @@ export default async function TimesheetStatsPage({ params }) {
             the raw total: every fault the reports show, with its penalty. It is
             what the company is proposing to pay. The subtitle is what the policy
             assumptions would take off it once people confirm them. */}
+        {/* the LIVE figure - what payroll actually pays, same as the pay
+            period page's live card, so the two screens cannot quote different
+            totals for one batch */}
         <Card
           label="Premium hours projected"
-          value={n2(premiumSplit.projected)}
+          value={n2(premiumSplit.liveProjected)}
           tone="warn"
         />
       </div>
@@ -115,7 +118,7 @@ export default async function TimesheetStatsPage({ params }) {
             is, and reading the pair as a range invites treating the lower number
             as real before anybody has answered. */}
         <div className="grid gap-3 sm:grid-cols-3">
-          <Mini label="Projected" value={`${n2(premiumSplit.projected)} hrs`} strong />
+          <Mini label="Projected" value={`${n2(premiumSplit.liveProjected)} hrs`} strong />
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <Mini label="Meal period premiums" value={`${n2(t.mealPremiumHours)} hrs`} />

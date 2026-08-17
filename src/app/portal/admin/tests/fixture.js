@@ -112,7 +112,7 @@ const OUTCOMES = {
   restIsMealLength: ["open", "yes", "no"],
   restOutsideScheduled: ["open", "took-then", "took-earlier", "not-taken"],
   restTooLongOffClock: ["open", "yes", "no", "wrongone"],
-  miscTime: ["open", "pto", "sick", "worked"],
+  miscTime: ["open", "pto", "sick", "cancelled", "worked"],
   shortMealRest: ["open", "yes", "no"],
   nothingDocumentedMeal: ["open", "yes", "no"],
   nothingDocumentedRest: ["open", "yes", "no"],

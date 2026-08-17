@@ -44,6 +44,27 @@ export async function GET(req, { params }) {
   const asked = query.get("basis");
   const basis = BASES.includes(asked) ? asked : "projected";
 
+  // EXACTLY THE SIGNED OR EXACTLY THE APPROVED COPY, for the signed-timesheets
+  // screen. The default below serves approved-or-signed as one idea, which is
+  // right for "give me this sheet" - but a screen listing both copies side by
+  // side has to be able to name one, and a 404 is the honest answer when the
+  // named copy does not exist rather than quietly handing back the other.
+  const copy = query.get("copy");
+  if (copy === "signed" || copy === "approved") {
+    const url = copy === "signed" ? ts.signedPdfUrl : ts.approvedPdfUrl;
+    if (!url) return new NextResponse("Not found", { status: 404 });
+    const res = await fetch(url);
+    if (!res.ok) return new NextResponse("Not found", { status: 404 });
+    const safeName = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
+    return new NextResponse(await res.arrayBuffer(), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${safeName}-${copy}.pdf"`,
+        "Cache-Control": "private, no-store",
+      },
+    });
+  }
+
   // A SIGNED or APPROVED copy is a stored artefact - it carries somebody's
   // actual signature and cannot be regenerated. The unsigned sheet is built
   // from `data` on demand, so there is no stale blob to go looking for.

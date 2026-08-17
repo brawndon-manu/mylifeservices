@@ -45,6 +45,10 @@ export async function GET(req, { params }) {
         select: {
           id: true, data: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true,
           dueAt: true,
+          // the break reasons hang off it - see the note in RENDER_SELECT.
+          // Without it `loadBreakReasons` returns [] and every sheet in the
+          // merged PDF quietly loses its Comments lines.
+          userId: true,
           // the answers, because an unsigned sheet is rendered here on the
           // SAME basis the employee signs on. Merging the ignoring-assumptions
           // copy into a batch export would hand payroll a different figure from

@@ -36,6 +36,10 @@ export async function GET(req, { params }) {
           approvedPdfUrl: true,
           signedAt: true,
           dueAt: true,
+          // the break reasons hang off it - see the note in RENDER_SELECT.
+          // Without it `loadBreakReasons` returns [] and every sheet in the
+          // zip quietly loses its Comments lines.
+          userId: true,
           // rendered on the SAME basis the employee signs on, so a batch export
           // cannot carry a different figure from the document that person
           // actually attested to.

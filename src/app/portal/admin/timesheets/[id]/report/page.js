@@ -56,6 +56,11 @@ export default async function PayoutReportPage({ params }) {
     premiumHours: standing.byId[t.id]?.charged ?? 0,
     assumptionHours: standing.byId[t.id]?.assumptions ?? 0,
     payable: (t.paidHours || 0) + (standing.byId[t.id]?.charged ?? 0),
+    // MILES DRIVEN, from the payroll report's own column, stored on the sheet
+    // at upload. Null where that report was not uploaded or predates the
+    // column - which is not zero miles, so the cell says nothing rather than
+    // 0.00. Reimbursed per mile, never hours, so it stays out of `payable`.
+    miles: t.data?.qspMiles ?? null,
     partialWeek: t.partialWeek,
     signedAt: t.signedAt,
     approvedAt: t.approvedAt,
@@ -72,7 +77,16 @@ export default async function PayoutReportPage({ params }) {
     paidHours: sum("paidHours"),
     premiumHours: sum("premiumHours"),
     payable: sum("payable"),
+    miles: Math.round(rows.reduce((n, r) => n + (r.miles || 0), 0) * 100) / 100,
   };
+  // THE COLUMN ALWAYS SHOWS. Mánu 2026-08-17: it should be there reading 0
+  // until a report carrying the mileage column is uploaded.
+  //
+  // `knownMiles` is what stops that being a lie. A batch whose payroll report
+  // predates the column has NO figure, which is not the same as nobody having
+  // driven - so when nothing is known the table says so underneath in one
+  // line, rather than leaving 0.00 to be read as a fact on a payroll document.
+  const knownMiles = rows.some((r) => r.miles != null);
 
   const disputed = rows.filter((r) => r.disputed).length;
   const unmatched = rows.filter((r) => !r.matched).length;
@@ -116,6 +130,9 @@ export default async function PayoutReportPage({ params }) {
         <Big label="Hours worked" value={fmt(totals.paidHours)} />
         <Big label="Premium hours" value={fmt(totals.premiumHours)} tone="prem" />
         <Big label="Total hours payable" value={fmt(totals.payable)} strong />
+        {/* mileage is reimbursed rather than paid as hours, so it sits beside
+            the hour figures and is never added into them */}
+        <Big label="Miles driven" value={fmt(totals.miles)} />
       </div>
 
       {/* WHETHER THE PREMIUM COLUMN IS FINISHED CHANGING, AND WHICH WAY.
@@ -196,6 +213,7 @@ export default async function PayoutReportPage({ params }) {
               <Th>Hours worked</Th>
               <Th>Premium</Th>
               <Th>Total payable</Th>
+              <Th>Miles driven</Th>
               <Th align="left">Status</Th>
             </tr>
           </thead>
@@ -221,6 +239,7 @@ export default async function PayoutReportPage({ params }) {
                   {fmt(r.premiumHours)}
                 </Td>
                 <Td strong>{fmt(r.payable)}</Td>
+                <Td>{fmt(r.miles || 0)}</Td>
                 <td className="px-3 py-2 text-xs text-muted">
                   {r.disputed
                     ? "Reported a problem"
@@ -245,11 +264,24 @@ export default async function PayoutReportPage({ params }) {
               <Td strong>{fmt(totals.paidHours)}</Td>
               <Td tone="prem">{fmt(totals.premiumHours)}</Td>
               <Td strong>{fmt(totals.payable)}</Td>
+              <Td strong>{fmt(totals.miles)}</Td>
               <td />
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {/* THE ONE LINE THAT KEEPS THE ZERO HONEST. The column reads 0.00 until a
+          payroll report carrying `Miles Driven` is uploaded, and on a payroll
+          document a zero somebody cannot account for is worse than a blank. So
+          where no figure is known at all, the table says why underneath. */}
+      {!knownMiles && (
+        <p className="mt-3 text-xs text-muted">
+          Miles driven reads 0.00 because the payroll report for this period was
+          uploaded before QuickSolve added its mileage column. Upload the current
+          report to fill it in.
+        </p>
+      )}
     </section>
   );
 }

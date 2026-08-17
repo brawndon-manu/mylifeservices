@@ -2,6 +2,7 @@
 // next export.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import {
   BREAK_ANSWERS, breakAnswer, isBreakAnswer, isHeardVia,
@@ -79,14 +80,43 @@ const ours = {
 
 test("a reason we took, not yet checked by them, says so on the document", () => {
   const [line] = formatBreakComments([ours]);
-  assert.match(line, /^1\) 08\/03\/26 meal period not taken: Client would not settle/);
+  assert.match(line, /^1\) 08\/03\/26 meal period not taken: "Client would not settle/);
   assert.match(line, /not yet confirmed by the employee/);
 });
 
-test("once they agree our wording, the line says confirmed", () => {
+// SOMEBODY'S WORDS, IN QUOTES. Mánu 2026-08-17, on the sheet people sign off:
+// the comment goes in quotes and in italic. The quotes live here so every
+// surface that prints the line keeps them; the italic is the renderer's half,
+// flagged in render-sheet.js and drawn in render.js.
+test("what a person actually said is quoted", () => {
+  const [line] = formatBreakComments([ours]);
+  assert.match(line, /: "Client would not settle, could not leave them to eat\."  \[/);
+});
+
+test("quotes are not doubled up on words somebody already quoted", () => {
+  const [line] = formatBreakComments([{ ...ours, reason: '"he would not settle"' }]);
+  assert.match(line, /: "he would not settle"  \[/);
+  assert.doesNotMatch(line, /""/);
+});
+
+// TAKEN OFF 2026-08-17, Mánu: on the sheet they sign, telling them a sentence
+// was confirmed by the person signing under it says nothing the signature does
+// not already say. The line ends at their words.
+test("a reason they stand behind carries no tag at all", () => {
   const [line] = formatBreakComments([{ ...ours, confirmedText: ours.reason }]);
-  assert.match(line, /\[confirmed by employee\]/);
+  assert.doesNotMatch(line, /confirmed by employee/);
+  assert.doesNotMatch(line, /\[/, "no bracket is left hanging off the end");
+  assert.match(line, /: "Client would not settle, could not leave them to eat\."$/);
   assert.equal(formatBreakComments([{ ...ours, confirmedText: ours.reason }]).length, 1);
+});
+
+// AND THE TWO THAT STILL PRINT, because they are not the same claim: our
+// wording off a phone call is not the employee's own account of their day.
+test("our own wording still says where it came from", () => {
+  const [unchecked] = formatBreakComments([ours]);
+  assert.match(unchecked, /\[recorded from a call, not yet confirmed by the employee\]/);
+  const [corrected] = formatBreakComments([{ ...ours, confirmedText: "different words" }]);
+  assert.match(corrected, /\[recorded from a call\]/);
 });
 
 // THE ONE THAT MATTERS. Ours is not replaced by theirs - the document has to
@@ -98,7 +128,7 @@ test("when they correct us, BOTH print, ours first", () => {
   assert.equal(lines.length, 2);
   assert.match(lines[0], /Client would not settle/);
   assert.match(lines[0], /recorded from a call/);
-  assert.match(lines[1], /employee correction: The client's family turned up/);
+  assert.match(lines[1], /employee correction: "The client's family turned up/);
   assert.match(lines[1], /in the employee's own words/);
 });
 
@@ -107,7 +137,7 @@ test("a reason only they gave is theirs alone, not a correction to anything", ()
     { answer: "not-taken", kind: "rest", date: "08/04/26", reason: null, confirmedText: "No cover." },
   ]);
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /rest period not taken: No cover\./);
+  assert.match(lines[0], /rest period not taken: "No cover\."/);
   assert.ok(!/correction/.test(lines[0]));
 });
 
@@ -271,4 +301,22 @@ test("minutes under an hour do not claim an hour", () => {
   assert.match(q.told, /45 minutes into the day/);
   const exact = employeeQuestion({ kind: "meal-late" }, { lateMinutes: 300 });
   assert.match(exact.told, /5 hours into the day/);
+});
+
+// THE ITALIC IS THE RENDERER'S HALF, and it is marked where the two lists are
+// joined: QSP's own notes are plain strings and print upright, a break comment
+// is flagged and prints in italic. Read as source, because building the whole
+// render pipeline here would test pdf-lib rather than the decision.
+test("break comments are marked italic, and QSP's notes are not", () => {
+  const src = fs.readFileSync(
+    new URL("../render-sheet.js", import.meta.url), "utf8",
+  );
+  const block = src.slice(src.indexOf("comments: ["), src.indexOf("punchCorrections"));
+  assert.match(block, /formatBreakComments\([^)]*\)\s*\.map\(\(text\) => \(\{ text, italic: true \}\)\)/);
+  assert.match(block, /\.\.\.qspComments,/);
+  assert.doesNotMatch(
+    block.slice(0, block.indexOf("formatBreakComments")),
+    /italic/,
+    "QSP's own notes go in unflagged",
+  );
 });

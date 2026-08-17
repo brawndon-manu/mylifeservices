@@ -26,6 +26,15 @@ export function timesheetSubject({ periodLabel, isResend = false, redirectedFrom
   return redirectedFrom ? `[TEST -> ${redirectedFrom}] ${line}` : line;
 }
 
+// THE THIRD ONE TO AN EMPLOYEE: their signed copy coming back. One subject
+// whether or not the body carries QuickSolve fixes - the fixes are their own
+// record, not a different kind of email, and a uniform subject is the same
+// rule the send email settled on 2026-08-12.
+export function signedCopySubject({ periodLabel, redirectedFrom = null }) {
+  const line = `Your signed timesheet for ${periodLabel}`;
+  return redirectedFrom ? `[TEST -> ${redirectedFrom}] ${line}` : line;
+}
+
 // THE ONE THAT COMES TO US, when somebody reports a problem from their
 // timesheet review page.
 //

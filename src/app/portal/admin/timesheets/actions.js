@@ -27,6 +27,9 @@ import { buildQuestions, patchesFor, restTimeFits, mealTimeFits } from "@/lib/ti
 import {
   breakFindingKey, reasonOwedOn, reasonSlotFor, resetAction,
 } from "@/lib/timesheet/break-answers";
+// who is actually holding the employee's page when an answer arrives - see the
+// note in answer-actor.js for why the default is always the employee
+import { answerActorId, actorKindFor } from "@/lib/timesheet/answer-actor";
 import { batchForceTo } from "@/lib/timesheet-mode";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 import { questionNoun } from "@/lib/timesheet/question-nouns";
@@ -39,7 +42,7 @@ import {
 import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
 import { parseRestReport, restKey, restNameFor, restRowTimes, allRestRows, clockMin, serviceFit, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
-import { parsePayrollReport, payrollTotals } from "@/lib/timesheet/payroll";
+import { parsePayrollReport, payrollTotals, payrollKey } from "@/lib/timesheet/payroll";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
@@ -50,6 +53,9 @@ import { bumpSheetVersion, bumpBatchVersion } from "@/lib/timesheet-presence";
 import { supersededBy, supersededByForTimesheet, refusal } from "@/lib/timesheet/superseded";
 import { sendTimesheet, isLiveSend, liveSendConfigured } from "@/lib/timesheet-send";
 import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
+// the signed copy going back, and the review record it carries
+import { sendSignedTimesheetCopy } from "@/lib/timesheet-signed-email";
+import { reviewChoices } from "@/lib/timesheet/qsp-changes";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
 import { pushRecent } from "@/lib/timesheet-stages";
@@ -806,6 +812,18 @@ export async function uploadBatch(formData) {
         partialWeekDates: t.partialWeekDates,
         payPeriod: t.payPeriod || null,
         comments: t.comments || null,
+        // MILES DRIVEN, from the payroll report's own column. Stored on the
+        // sheet because it is a per-person figure and the parsed report is
+        // otherwise thrown away the moment the upload finishes - the map is
+        // built, logged and dropped, so nothing could show it later.
+        //
+        // Null where the report was not uploaded or did not carry the column,
+        // which is not the same as zero miles - see `hasMiles`. Matched on the
+        // report's own spelling of the name through `payrollKey`, the same key
+        // `reconcile` joins on.
+        qspMiles: payroll?.hasMiles
+          ? (payroll.get(payrollKey(t.employee || ""))?.miles ?? null)
+          : null,
         // which pages of each source PDF this person is on. the parsers have
         // always known - it just went nowhere, so the checks screen could
         // quote a document without being able to point at it.
@@ -1461,7 +1479,14 @@ export async function resolveCorrection(correctionId, decision, formData) {
   if (decision === "accepted") {
     const day = (c.timesheet.data?.days || []).find((d) => d.date === c.date) || null;
     const patch = patchFor(c.kind, day, c.claimedHours);
-    if (c.date) overrides = mergeOverride(overrides, c.date, patch);
+    // ACCEPTING THE REPORT IS THE REVIEWER'S DECISION, and the premium
+    // markers read that: an hour a reviewer settles does not wait on a
+    // signature the way the employee's own answer does. Without these stamps
+    // the accepted patch read as the employee's and stayed pending.
+    const stamped = { ...patch, _answeredBy: "admin" };
+    if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
+    if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
+    if (c.date) overrides = mergeOverride(overrides, c.date, stamped);
   }
 
   await prisma.$transaction([
@@ -1559,7 +1584,9 @@ export async function overrideDayHours(timesheetId, formData) {
 // that can put a premium ON.
 export async function classifyMiscTime(timesheetId, date, kind) {
   const user = await requireTimesheetAccess();
-  if (!["pto", "sick", "worked"].includes(kind)) return { ok: false, error: "badkind" };
+  // "cancelled" is CLIENT CANCELLATION, added 2026-08-17: paid, unworked time
+  // whose block counts as unscheduled - see workGroupsFor.
+  if (!["pto", "sick", "worked", "cancelled"].includes(kind)) return { ok: false, error: "badkind" };
   // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
   // because hiding a control is a suggestion and this has to be a rule.
   {
@@ -2368,8 +2395,10 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // The engine always knew it: `patchesFor` maps "worked" to `miscWorked`, and
   // the reviewer control passes the same string through `classifyMiscTime`
   // without trouble. Only this guard never learned it.
+  // "cancelled" is the Misc card's fourth answer since 2026-08-17: a client
+  // cancellation, paid but not worked, whose block counts as unscheduled.
   if (asked.some((a) => a.choice != null
-      && !["yes", "no", "partial", "notaken", "wrongone", "worked"].includes(a.choice))) {
+      && !["yes", "no", "partial", "notaken", "wrongone", "worked", "cancelled"].includes(a.choice))) {
     return { ok: false, error: "badchoice" };
   }
   // SAYING YOU MISSED A BREAK NEEDS A REASON, and it is enforced here as well as
@@ -2408,6 +2437,23 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   if (!ts) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
   if (ts.corrections.length) return { ok: false, error: "reported" };
+
+  // WHO IS ACTUALLY ANSWERING. The token is the only credential this action
+  // requires, so the employee on their emailed link and a reviewer on the
+  // preview link arrive looking identical - and until now every answer was
+  // recorded as the employee's, whoever was driving. A signed-in session with
+  // timesheet access is the tell. `realRole` because a SUPER viewing-as a
+  // lower role on a call is still the one recording the answer.
+  //
+  // This is what lets the premium counters hold the line: an hour the employee
+  // waves off stays in the locked projected figure until they sign, and only
+  // an hour a reviewer recorded settles on its own.
+  const viewer = await getCurrentUser();
+  const answeredById = answerActorId(
+    viewer,
+    canManageTimesheets(viewer?.realRole || viewer?.role),
+    ts.userId,
+  );
 
   // THE SAME QUESTION SET THE PAGE BUILT, or this refuses what it just showed.
   //
@@ -2721,7 +2767,10 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         // two of `restTooLongOffClock`'s three are declines that move nothing
         choice: pick,
         resolvedAt: new Date(),
-        resolvedById: ts.userId || null,
+        // the person who actually gave the answer - the employee on their own
+        // link, or the reviewer recording it for them. Every row before
+        // 2026-08-17 carries the employee's id whoever was driving.
+        resolvedById: answeredById,
         note: `Asked about the ${date} ${questionNoun(q.kind)}.`,
         resolutionNote: resolutionFor(q, pick, stated, statedBreaks, block),
         // WHATEVER THE ANSWER ACTUALLY COLLECTED, and nothing else.
@@ -2771,8 +2820,25 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     // working" rebuilt as "sick pay" - both are declines. Left out of this
     // select it arrives undefined, which is the same failure shape as every
     // other column this file has been caught by.
-    select: { date: true, kind: true, status: true, choice: true, resolutionNote: true, statedBreaks: true },
+    // `resolvedById` is the provenance: whose answer each patch carries, which
+    // the reband markers in recomputeSheet turn into "settles on its own"
+    // versus "waits for the signature".
+    select: { date: true, kind: true, status: true, choice: true, resolutionNote: true, statedBreaks: true, resolvedById: true },
   });
+  // WHICH RESOLVERS ACTUALLY REVIEW TIMESHEETS, looked up fresh. Judging
+  // "admin" off nothing but "differs from the sheet's userId" flips every old
+  // answer to a reviewer's the day a sheet is re-matched - see actorKindFor.
+  const otherResolverIds = [...new Set(
+    answers.map((a) => a.resolvedById).filter((x) => x && x !== ts.userId),
+  )];
+  const reviewerIds = new Set(
+    otherResolverIds.length
+      ? (await prisma.user.findMany({
+          where: { id: { in: otherResolverIds } },
+          select: { id: true, role: true },
+        })).filter((u) => canManageTimesheets(u.role)).map((u) => u.id)
+      : [],
+  );
   // AND KEEP WHAT A REVIEWER SAID, WHICH IS NOT AN ANSWER ON THIS LIST.
   //
   // This started from {} and refilled itself from the corrections alone, so
@@ -2864,6 +2930,26 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       );
       if (Object.keys(clean).length) {
         overrides[date] = { ...(overrides[date] || {}), ...clean };
+        // WHOSE ANSWER is behind each violation flag this patch touches.
+        // recomputeSheet's reband reads these when an answer takes a premium
+        // off a day that owed one: "admin" settles the hour on its own,
+        // "employee" keeps it in the original figure until the signature
+        // lands. Stamped per flag because a day can carry a meal answer from
+        // a reviewer's call and a rest answer the employee gave themselves,
+        // and the two must not share a fate.
+        const by = actorKindFor(a.resolvedById, ts.userId, reviewerIds);
+        if ("mealViolation" in clean) overrides[date]._mealAnsweredBy = by;
+        if ("restViolation" in clean) overrides[date]._restAnsweredBy = by;
+        // AND THE DATE-LEVEL FALLBACK, for the drops no flag ever names. An
+        // answer that moves paid hours - "that ten was inside my shift",
+        // 6.17 to 6.00 - lets the re-derivation waive the meal and drop the
+        // second rest without any violation key in the patch, and the reband
+        // still has to know whose answer did it. Employee wins a mixed date
+        // on purpose: the conservative reading keeps the hour visible.
+        overrides[date]._answeredBy =
+          overrides[date]._answeredBy === "employee" || by === "employee"
+            ? "employee"
+            : "admin";
       }
       // THE TIMES COME BACK FROM THE ANSWER, not from the override that wrote
       // them. Overrides are rebuilt from scratch on every reply, so anything
@@ -3111,9 +3197,22 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     // never being stored - see the fallback below. Left out they arrive
     // undefined and the column keeps taking null, which is exactly the failure
     // this is fixing.
+    //
+    // The rest is for the signed copy going back out: the address the sheet
+    // was sent to, the batch's period and rehearsal flags, and the answer
+    // rows the QuickSolve changes list derives from.
     select: {
       id: true, batchId: true, signedAt: true, disputedAt: true, sourceName: true,
-      user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      intendedEmail: true,
+      user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
+      batch: { select: { periodFrom: true, periodTo: true, testOnly: true, testEmail: true } },
+      corrections: {
+        where: { status: { not: "open" } },
+        // `question` is the frozen card, which employeeResolution reads for
+        // the two-lunches wording - left out it arrives undefined and the
+        // sentence quietly loses its shape
+        select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true },
+      },
     },
   });
   if (!ts) return { ok: false, error: "auth" };
@@ -3188,7 +3287,35 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // frozen number.
   await bumpBatchVersion(ts.batchId);
   await bumpSheetVersion(ts.id);
-  return { ok: true };
+
+  // THE SIGNED COPY GOES STRAIGHT BACK TO THEM, with whatever their answers
+  // mean for the QuickSolve record. The attachment is the very bytes this
+  // action just stored, so inbox and portal can never hold two documents.
+  //
+  // AFTER THE SIGNATURE IS SAFE, AND NEVER FATAL. The signature is recorded
+  // above whatever happens here - a mail outage must not read as "signing is
+  // broken" to the person holding the pen. Failure is logged and the action
+  // still succeeds; their copy stays one click away on the page.
+  let emailed = false;
+  try {
+    const r = await sendSignedTimesheetCopy({
+      intendedEmail: ts.intendedEmail || ts.user?.email || null,
+      employeeName: (ts.user ? preferredName(ts.user) : null) || ts.sourceName,
+      periodLabel: `${ts.batch.periodFrom} to ${ts.batch.periodTo}`,
+      // the choices they made on their review, each with the QuickSolve
+      // edits it produced - so every instruction carries the answer behind it
+      items: reviewChoices(ts.corrections),
+      pdfBytes: Buffer.from(pdfBase64, "base64"),
+      forceTo: batchForceTo(ts.batch),
+    });
+    emailed = !!r?.ok;
+    if (!r?.ok && r?.error !== "norecipient") {
+      console.error(`signed copy email failed for ${ts.sourceName}:`, r?.error);
+    }
+  } catch (e) {
+    console.error(`signed copy email threw for ${ts.sourceName}:`, e);
+  }
+  return { ok: true, emailed };
 }
 
 // SOMEBODY SAYS THE SCHEDULE IS LOCKED AND THIS UPLOAD IS FINAL.

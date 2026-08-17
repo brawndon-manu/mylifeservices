@@ -317,6 +317,15 @@ export function applyOverrides(days, overrides) {
 // the week. `applyOvertime` is injected so this file stays client-safe.
 export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, reentitle) {
   const patched = applyOverrides(days || [], overrides);
+  // WHAT EACH DAY OWED BEFORE ANY OVERRIDE TOUCHED IT, so the reband below can
+  // tell "an answer took this premium off" from "the day never owed one".
+  // Read from the input days, which every server rebuild feeds from the
+  // pristine set - applyOverrides has already written the answer over the
+  // flags by the time the reband runs.
+  const owedBefore = new Map((days || []).map((d) => [d.date, {
+    meal: d.mealViolation === true || d.mealLate === true,
+    rest: d.restViolation === true,
+  }]));
   // WHAT HANGS OFF THE HOURS HAS TO FOLLOW THE HOURS.
   //
   // An override that moves `paidHours` used to stop there, leaving the day with
@@ -343,6 +352,34 @@ export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, re
         const p = (overrides || {})[d.date] || {};
         if (p.restViolation != null) banded.restViolation = p.restViolation;
         if (p.mealViolation != null) banded.mealViolation = p.mealViolation;
+        // WHOSE ANSWER TOOK A PREMIUM OFF THIS DAY, stamped where it happens.
+        //
+        // The batch counters read these markers: an hour the employee waved
+        // off stays in the original figure until their signature lands, and
+        // only an hour a reviewer recorded settles on its own.
+        //
+        // A day that OWED the hour coming in and does not owe it going out,
+        // on a date an override touched, was dropped by that override - and
+        // not only through a violation key in the patch. An answer that moves
+        // paid hours lets the re-derivation waive the meal and drop the
+        // second rest with no flag set anywhere, which was the leak: those
+        // hours settled themselves on an employee's own answer. So the flag
+        // stamp is read where there is one, and the date-level attribution
+        // covers every cascade. A misc classification carries its _source and
+        // is a reviewer's act; anything unattributed reads as the employee on
+        // purpose - the failure mode is an hour that stays visible until
+        // somebody signs, never one that settles itself. See answer-actor.js.
+        const fallbackBy =
+          p._source === "misc-classify" ? "admin" : (p._answeredBy || "employee");
+        const was = owedBefore.get(d.date);
+        banded.mealDroppedBy =
+          was?.meal && banded.mealViolation !== true && banded.mealLate !== true
+            ? (p.mealViolation === false ? (p._mealAnsweredBy || fallbackBy) : fallbackBy)
+            : null;
+        banded.restDroppedBy =
+          was?.rest && banded.restViolation !== true
+            ? (p.restViolation === false ? (p._restAnsweredBy || fallbackBy) : fallbackBy)
+            : null;
         return banded;
       })
     : patched;

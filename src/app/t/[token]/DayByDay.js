@@ -441,9 +441,9 @@ export default function DayByDay({
                   ordinary state of the sheet.
                   NO PAY LANGUAGE. This is the employee's own page, so it names
                   the kind of time and stops. */}
-              {(day.miscKind === "pto" || day.miscKind === "sick") && (
+              {(day.miscKind === "pto" || day.miscKind === "sick" || day.miscKind === "cancelled") && (
                 <p className="rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300">
-                  {day.miscKind === "pto" ? "Misc PTO" : "Misc Sick Pay"}
+                  {day.miscKind === "pto" ? "Misc PTO" : day.miscKind === "sick" ? "Misc Sick Pay" : "Misc Client Cancellation"}
                 </p>
               )}
               <p className="text-sm text-muted">

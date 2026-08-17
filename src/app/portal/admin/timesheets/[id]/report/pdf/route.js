@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { preferredName } from "@/lib/contacts";
+// LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
+import { payrollName } from "@/lib/contacts";
 import { renderPayoutReport } from "@/lib/timesheet/payout-pdf";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 
@@ -51,13 +52,19 @@ export async function GET(_req, { params }) {
         periodFrom: batch.periodFrom,
         periodTo: batch.periodTo,
         rows: batch.timesheets.map((t) => ({
-          who: t.user ? preferredName(t.user) : t.sourceName,
+          who: payrollName(t.user, t.sourceName),
           matched: !!t.userId,
           regularHours: t.regularHours,
           otHours: t.otHours,
           doubleHours: t.doubleHours,
           paidHours: t.paidHours,
           premiumHours: standing.byId[t.id]?.charged ?? 0,
+          // mileage off the payroll report, and whether the sheet has been
+          // signed - Mánu 2026-08-17. Both read at request time, so a download
+          // taken after somebody signs shows it.
+          miles: t.data?.qspMiles ?? 0,
+          signedAt: t.signedAt,
+          approvedAt: t.approvedAt,
           partialWeek: t.partialWeek,
           // ONLY the open ones. The query now also returns the `q_` answers, and
           // counting those would mark everybody as having reported a problem.

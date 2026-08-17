@@ -859,6 +859,27 @@ export async function renderCorrected(sheet, opts = {}) {
   y = tBot;
   y -= 14;
 
+  // ---------- miles driven ----------
+  //
+  // Mánu 2026-08-17: the mileage goes on the sheet they sign, and the
+  // attestation covers it. A LINE UNDER THE TOTALS rather than a column,
+  // because the payroll report states one figure per person for the whole
+  // period - there is no per-day mileage to put in a row, and inventing a
+  // column that is blank on every line but one would say the opposite.
+  //
+  // Drawn only when a figure exists. A batch whose payroll report predates the
+  // mileage column has nothing to state, and printing "0.00" above a sentence
+  // swearing it is accurate would ask somebody to attest to a number we never
+  // received.
+  if (sheet.milesDriven != null) {
+    const milesLabel = "Miles driven this pay period:";
+    text(milesLabel, L, y, { size: 8, f: bold });
+    text(f2(sheet.milesDriven), L + bold.widthOfTextAtSize(milesLabel, 8) + 6, y, {
+      size: 8, f: bold,
+    });
+    y -= 14;
+  }
+
   // ---------- color key ----------
   // sits right under the table it explains - those highlights are in the punch
   // cells and nowhere else, so the legend belongs next to them rather than
@@ -1188,13 +1209,38 @@ export async function renderCorrected(sheet, opts = {}) {
   // draws, and a sheet landing exactly on the boundary would have started the
   // trailer with too little room and tripped the footer guard below.
   y -= 12;
-  const TRAILER_H = 140;
+  // RAISED FROM 140 ON 2026-08-17, when the attestation grew two sentences and
+  // the miles line joined the block. The old figure counted three attestation
+  // lines; four fit in 34 rather than 25, and a sheet landing exactly on the
+  // boundary would start the trailer with too little room and trip the footer
+  // guard below - which is how a signature block ends up half off the page.
+  const TRAILER_H = 158;
   ensure(TRAILER_H);
 
+  // WHAT THEY ARE PUTTING THEIR NAME TO. Changed 2026-08-17 on Mánu's wording,
+  // quoted and approved before it went in - this is the one paragraph on the
+  // document that carries legal weight, so it is never reworded in passing.
+  //
+  // Two additions. The breaks sentence now says the missed ones are reported
+  // accurately, which is the half the old wording left out: it attested only
+  // that periods WERE received, so a person who missed one had nothing to
+  // affirm about it. And mileage gets its own sentence, because the sheet now
+  // carries the figure - see the line under the totals.
+  //
+  // THE MILEAGE SENTENCE ONLY APPEARS WHEN THE MILEAGE DOES. Caught by reading
+  // a rendered July sheet: that batch's payroll report predates the mileage
+  // column, so no figure is printed - and the paragraph still asked the person
+  // to swear that "the miles recorded above" were accurate. Attesting to a
+  // number that is not on the page is exactly the kind of sentence that makes
+  // a signed document worthless, so it is gated on the same value the line is.
   const attest =
     "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
-    "I attest that I have received all my meal, rest and recovery periods consistent with My Life Services's policy and applicable law. I also attest that I reported every injury sustained on " +
-    "the job during the pay period, if there were any.";
+    "I attest that I have received all my meal, rest and recovery periods consistent with My Life Services's policy and applicable law, and that every meal and rest period I did not take is " +
+    "accurately reported above. " +
+    (sheet.milesDriven != null
+      ? "I attest that the miles recorded above are the actual miles I drove for work during this pay period. "
+      : "") +
+    "I also attest that I reported every injury sustained on the job during the pay period, if there were any.";
   y = wrapCentered(page, attest, L, y, R - L, { font, size: 6.5, color: INK, leading: 8.5 });
   y -= 14;
 
@@ -1251,9 +1297,20 @@ export async function renderCorrected(sheet, opts = {}) {
   text("Comments Details:", L, y, { size: 8.5, f: bold });
   y -= 12;
 
+  // A LINE IS EITHER QSP'S OR SOMEBODY'S WORDS. QSP's notes arrive as plain
+  // strings and print upright; a break comment arrives as `{ text, italic }`
+  // from `render-sheet.js` and prints in italic, already quoted. Mánu
+  // 2026-08-17, on the sheet people sign off. Strings still work untouched, so
+  // every other caller of `renderCorrected` - the rebuild's check render among
+  // them - is unaffected.
   for (const c of comments) {
     ensure(11);
-    y = wrap(page, c, L, y, R - L, { font, size: 6.5, color: INK, leading: 8 });
+    const body = typeof c === "string" ? c : c?.text;
+    if (!body) continue;
+    y = wrap(page, body, L, y, R - L, {
+      font: typeof c === "string" || !c?.italic ? font : italic,
+      size: 6.5, color: INK, leading: 8,
+    });
     y -= 1;
   }
   y -= 8;

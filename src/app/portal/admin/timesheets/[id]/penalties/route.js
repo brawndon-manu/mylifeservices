@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { preferredName } from "@/lib/contacts";
+// LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
+import { payrollName } from "@/lib/contacts";
 import { renderPenaltyRoster } from "@/lib/timesheet/penalty-roster";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 
@@ -53,7 +54,7 @@ export async function GET(_req, { params }) {
         periodFrom: batch.periodFrom,
         periodTo: batch.periodTo,
         rows: batch.timesheets.map((t) => ({
-          who: t.user ? preferredName(t.user) : t.sourceName,
+          who: payrollName(t.user, t.sourceName),
           // carried so the sheet can show QSP's spelling beside it where the
           // two differ, because this is the document payroll reconciles.
           sourceName: t.sourceName,

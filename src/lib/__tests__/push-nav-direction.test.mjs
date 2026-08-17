@@ -19,7 +19,51 @@ import assert from "node:assert/strict";
 import {
   directionFor, depthOf, TAB_ROOTS,
   dragProgress, viewTransitionAnimations, navTransitionCss, NAV_MS, NAV_COMMIT_AT,
+  createNavOwner,
 } from "../portal-nav.js";
+
+// TWO TRANSITIONS, ONE ATTRIBUTE. `data-nav` on <html> is what every keyframe
+// rule in `navTransitionCss` is selected by, and both navigation paths clear it
+// when their own transition finishes. Overlap them - tap a card, then swipe
+// back before it settles - and the FIRST to finish strips the rules from the
+// one still RUNNING, which then draws the old page and the new page stacked on
+// top of each other with no animation at all. Mánu hit exactly that on his
+// phone on 2026-08-17.
+test("only the newest claim may clear the nav attribute", () => {
+  const owner = createNavOwner();
+  const first = owner.claim();
+  assert.equal(first(), true, "with nothing after it, the first claim owns it");
+
+  const second = owner.claim();
+  assert.equal(first(), false, "the older transition must clean up nothing");
+  assert.equal(second(), true, "the newer one owns the attribute");
+});
+
+test("a claim stays valid however many times it is asked", () => {
+  const owner = createNavOwner();
+  const only = owner.claim();
+  assert.equal(only(), true);
+  assert.equal(only(), true, "a finally handler can fire more than once");
+});
+
+test("each owner counts on its own", () => {
+  const a = createNavOwner();
+  const b = createNavOwner();
+  const ca = a.claim();
+  b.claim();
+  assert.equal(ca(), true, "another component's navigation cannot revoke this one");
+});
+
+// the rules the attribute carries, so the link between the two is not just a
+// comment: lose `data-nav` and every one of these stops matching.
+test("every transition rule hangs off the attribute", () => {
+  const css = navTransitionCss();
+  const rules = css.split("\n").filter((l) => l.includes("::view-transition"));
+  assert.ok(rules.length >= 4, "there are transition rules to protect");
+  for (const r of rules) {
+    assert.match(r, /html\[data-nav/, `rule not gated on the attribute: ${r.trim()}`);
+  }
+});
 
 test("tapping from the dashboard into a pay period goes deeper", () => {
   assert.equal(

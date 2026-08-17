@@ -88,7 +88,7 @@ const isMisc = (service) => /misc/i.test(service || "");
 //
 // `miscWorked` is the fallback for anything stored before the kind was written
 // alongside the flag.
-const MISC_LABELS = { pto: "Misc - PTO", sick: "Misc - Sick Pay", worked: "Misc Service" };
+const MISC_LABELS = { pto: "Misc - PTO", sick: "Misc - Sick Pay", worked: "Misc Service", cancelled: "Misc Client Cancellation" };
 const miscLabel = (day) =>
   MISC_LABELS[day?.miscKind] || (day?.miscWorked ? MISC_LABELS.worked : "Misc");
 const serviceLabel = (service, day) => (isMisc(service) ? miscLabel(day) : service);

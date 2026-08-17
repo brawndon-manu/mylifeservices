@@ -123,15 +123,25 @@ test("and only on the answer that owes it", () => {
 
 // WHAT "I WAS WORKING" ACTUALLY COVERS.
 //
-// The other two Misc answers name themselves - paid time off, sick pay. The
-// third does not, and somebody who sat through a cancelled visit cannot tell
-// whether that is this button or something we have no button for. Getting it
-// wrong matters: only this answer puts the hours back into the count that
-// decides whether a break was owed.
+// The other Misc answers name themselves - paid time off, sick pay, a client
+// cancellation. The working one does not, and getting it wrong matters: only
+// that answer puts the hours back into the count that decides whether a break
+// was owed.
+//
+// UNTIL 2026-08-17 this note also steered cancelled visits into "working" -
+// "and time held for a client who cancelled" - because there was no button
+// for them. There is now, so the note must NOT say that any more: a note
+// fighting the button beside it is worse than no note.
 const MISC = CARD.slice(CARD.indexOf('case "miscTime"'), CARD.indexOf('case "nothingDocumented"'));
 
 test("the working answer says what counts as working", () => {
-  assert.match(MISC, /note: "Any Misc service you worked, and time held for a client who cancelled\."/);
+  assert.match(MISC, /note: "Any Misc service you worked\."/);
+  assert.doesNotMatch(MISC, /time held for a client who cancelled/);
+});
+
+test("the client cancellation answer is on the card and sends its own value", () => {
+  assert.match(MISC, /value: "cancelled"/);
+  assert.match(MISC, /label: "Client cancellation"/);
 });
 
 test("and the note survives the day-by-day view, unlike `why`", () => {

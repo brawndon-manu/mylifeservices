@@ -31,6 +31,9 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// the mileage column, exactly as QSP spells it on the report
+export const MILES_COLUMN = "Miles Driven";
+
 export function parsePayrollReport(bytes) {
   const { headers, rows } = readXlsTable(bytes);
   const missing = REQUIRED.filter((h) => !headers.includes(h));
@@ -62,11 +65,29 @@ export function parsePayrollReport(bytes) {
       holiday: num(r.HolHr) + num(prev?.holiday),
       sick: num(r.SickHr) + num(prev?.sick),
       pto: num(r.PTO) + num(prev?.pto),
+      // MILES DRIVEN, added by QSP to this report and first seen on the
+      // 08/01-08/15 pull. Mileage is reimbursed rather than paid as hours, so
+      // it sits beside the hour columns and never inside `paid`.
+      //
+      // DELIBERATELY NOT IN `REQUIRED`. Every report pulled before this column
+      // existed is still a valid report, and demanding it would refuse the
+      // uploads already in the database. Absent, `num()` gives 0 and nothing
+      // downstream can tell a missing column from a person who drove nowhere -
+      // which is why `hasMiles` below says which it was.
+      miles: num(r["Miles Driven"]) + num(prev?.miles),
       rows: (prev?.rows ?? 0) + 1,
     };
+    // MILES ARE NOT HOURS. Reimbursed per mile, not paid at a rate, so they
+    // stay out of `paid` - folding them in would inflate every hours figure
+    // this report exists to settle.
     row.paid = row.regular + row.overtime + row.regular2 + row.overtime2 + row.double;
     people.set(key, row);
   }
+  // WHETHER THE REPORT CARRIED THE COLUMN AT ALL, said once for the file
+  // rather than guessed from a zero. A period where nobody drove and a period
+  // pulled before the column existed both total 0.00, and only one of them
+  // means "we do not know".
+  people.hasMiles = headers.includes(MILES_COLUMN);
   return people;
 }
 
@@ -77,6 +98,9 @@ export function payrollTotals(people) {
   const t = {
     employees: 0, regular: 0, overtime: 0, double: 0,
     holiday: 0, sick: 0, pto: 0, paid: 0,
+    // total miles driven across the period, and whether the report said so at
+    // all - see `hasMiles` on the map
+    miles: 0, hasMiles: !!people?.hasMiles,
   };
   for (const [, p] of people) {
     t.employees++;
@@ -87,7 +111,9 @@ export function payrollTotals(people) {
     t.sick += p.sick;
     t.pto += p.pto;
     t.paid += p.paid;
+    t.miles += p.miles || 0;
   }
+  t.miles = Math.round(t.miles * 100) / 100;
   return t;
 }
 

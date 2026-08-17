@@ -50,6 +50,26 @@ export function firstNameOf(user) {
   );
 }
 
+// THE NAME A PAYROLL DOCUMENT CARRIES, AND IT IS NEVER THE PREFERRED ONE.
+//
+// Mánu 2026-08-17: every downloadable PDF uses legal names. A payout report, a
+// penalty roster and the CSV payroll keys from are records about wages - they
+// have to name the person the way their pay and their tax records do, not the
+// way colleagues address them. Ruth goes by Angel and Francisco by Frank;
+// either name on a wage document is the wrong one.
+//
+// DIFFERENT FROM `legalName` BELOW, which answers "is there anything extra
+// worth showing beside the display name" and returns null when the two match.
+// This one always answers with a name, because a document cannot print null.
+//
+// Falls back to what QSP exported before it falls back to the preferred name:
+// `sourceName` is itself a legal-style name off the payroll system, so it is
+// the better guess when an account carries no legal name at all.
+export function payrollName(user, sourceName = null) {
+  const legal = String(user?.name || "").trim();
+  return legal || String(sourceName || "").trim() || preferredName(user) || "";
+}
+
 // the full/legal name for records. only shown on the contact detail card +
 // admin panel (and gated to admin/management when hidden). returns null when
 // there's nothing extra to show beyond the displayed name.

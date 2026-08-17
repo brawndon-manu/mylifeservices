@@ -299,7 +299,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   //
   // `premiumSupport` is still WRITTEN on upload and still read by the checks
   // screen, so nothing is deleted from the data - only this second opinion.
-  const totalPremium = rows.reduce((n, r) => n + (r.premiumHours || 0), 0);
+  //
+  // And since 2026-08-17 the stored premiumHours column is not summed here at
+  // all: it falls as people answer, and every figure the premium card quotes
+  // now comes from premiumSplit, whose original does not.
 
   const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
 
@@ -346,6 +349,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
             Payout report →
+          </Link>
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/signed`}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Signed timesheets →
           </Link>
           <Link
             href={`/portal/admin/timesheets/${batch.id}/stats`}
@@ -620,65 +629,61 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       )}
 
       {/* the thing management actually has to sign. this card no longer grades
-          the total itself - see the note above the totalPremium calculation.
-          it points at the one screen that does. */}
-      {totalPremium > 0 && (
+          the total itself - see the RETIRED note above readyToSend. it points
+          at the one screen that does. */}
+      {/* gated on the ORIGINAL figure, not the stored premiumHours column -
+          the stored column falls as people answer, and a card that vanishes
+          while the original says hours stand would be the old leak wearing a
+          different face. */}
+      {premiumSplit.originalProjected > 0 && (
         <div className="mt-4 rounded-xl border border-border bg-surface p-5">
           <p className="text-sm font-semibold text-foreground">
             Premium hours, by what stands behind them
           </p>
           <p className="mt-1 text-xs text-muted">
-            {totalPremium.toFixed(2)} hours across this pay period. Nobody should
+            {premiumSplit.originalProjected.toFixed(2)} hours across this pay period. Nobody should
             sign off on that figure without reading one of these.
           </p>
 
-          {/* TWO FIGURES, AND AFTER 2026-08-11 THE FIRST ONE IS THE ANSWER.
-              The projected figure is every fault the reports show, and it is
-              what payroll pays. The second is what the policy assumptions would
-              take off it - each one needs an employee to confirm it before it
-              does anything, so the gap is work outstanding rather than exposure,
-              and the total can only come down. */}
+          {/* TWO FIGURES, SIMPLIFIED BY MÁNU 2026-08-17, replacing the
+              projected/settled pair and a short-lived third tile. The FIRST
+              is the original: every fault the reports show, unmoved by an
+              employee's own answers, signed or not - the number that stands
+              if nobody signs off. Only a reviewer settling an hour, or a
+              re-upload, moves it. The SECOND is the live one: same number,
+              moving up or down as sign-offs land, and it is what the payout
+              report and the penalty roster pay. */}
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-border bg-surface-2 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Projected premium
               </p>
               <p className="mt-1 text-2xl font-semibold text-foreground">
-                {premiumSplit.projected.toFixed(2)}
+                {premiumSplit.originalProjected.toFixed(2)}
               </p>
               <p className="mt-1 text-xs text-muted">
                 Every fault the reports show, taken literally, with its penalty.
-                This is what payroll pays, and it can only fall from here.
+                This is the number that stands if nobody signs off.
               </p>
             </div>
 
-            {/* THE OTHER HALF OF THE SAME SUM, and the grid was already two
-                columns waiting for it.
-                NOT "confirmed" and not "verified", both of which say a PERSON
-                did the confirming - and most of this is settled by the
-                documents alone, with nobody asked. `settled` is the word the
-                evidence screen already uses for "cannot move", so it is one
-                word meaning one thing in two places.
-                It does NOT start at zero, which was the whole point: a full day
-                with no meal and no gap to have taken one is beyond answering
-                from the moment it is uploaded. See `mealNoRoom`. */}
             <div className="rounded-lg border border-border bg-surface-2 p-3">
-              {/* THE LIVE PILL SITS HERE, not by the date. Settled is the
-                  figure that MOVES as people answer and sign, so the light
-                  belongs beside the number it describes. */}
+              {/* THE LIVE PILL SITS HERE: this is the figure that moves as
+                  people sign, so the light belongs beside the number it
+                  describes. */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                  Settled premium
+                  Live premium
                 </p>
                 <SignatureBadge sent={sent} signed={signed} size="sm" />
               </div>
               <p className="mt-1 text-2xl font-semibold text-foreground">
-                {premiumSplit.ifAssumptionsHold.toFixed(2)}
+                {premiumSplit.liveProjected.toFixed(2)}
               </p>
               <p className="mt-1 text-xs text-muted">
-                What no answer can change: the documents settle it, or somebody
-                already has. The {premiumSplit.assumptions.toFixed(2)} hours
-                between this and the projected figure are what is still open.
+                The projected figure with every sign-off applied, moving as
+                they land. This is what the payout report and the penalty
+                hours PDF pay.
               </p>
             </div>
           </div>
@@ -703,7 +708,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               hours fall, who carries them, and what caused each one. */}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
             <p className="text-xs text-muted">
-              Where the {totalPremium.toFixed(2)} hours fall, who carries them,
+              Where the {premiumSplit.liveProjected.toFixed(2)} hours fall, who carries them,
               and the reason behind every one.
             </p>
             <Link
