@@ -654,6 +654,36 @@ export default function DayCalendar({
       && (bookedMeal || insideAShift(shifts, b.from, b.to - b.from)),
   );
 
+  // A REST INSIDE A MISC BREAK WAS DRAWN TWICE.
+  //
+  // Mánu 2026-08-17: if a rest sits inside Misc time and has its own in and out,
+  // only the Misc break should show. A Misc block of ten minutes or less is
+  // already drawn as a rest in the work layer - rest-coloured, labelled "Misc
+  // Break" - and a rest row filed against it then drew a second box in the break
+  // lanes over the top of the first. One ten minutes, two rectangles, and the
+  // lane packer split the column to fit the collision it had invented.
+  //
+  // `covered` is the engine's own word for "the Rest Periods Report has a row
+  // for this block", so it is the same fact from the other end. One in the whole
+  // database - Uribe 07/30/26, 12p-12:10p, which is the day the note on
+  // `miscBreakFor` cites as the shape where everything is right.
+  //
+  // KEYED ON WHAT IS ACTUALLY DRAWN, NOT ON `miscBreaks`. The work-layer block
+  // appears only where a scheduled Misc segment lines up with the block to the
+  // minute; suppressing from the flag alone would delete the rest on any day
+  // where it does not, leaving the break nowhere at all. That is the
+  // `shortMealRest` empty-picture bug run backwards, and it is worth more than
+  // the two lines it costs to avoid.
+  const drawnMiscBreaks = worked
+    .map((s) => miscBreakFor(day.miscBreaks, s, serviceFor(scheduled, s)))
+    .filter(Boolean);
+  const insideADrawnMiscBreak = (r) => {
+    const from = r.min;
+    const to = from + (r.minutes || 10);
+    if (from == null) return false;
+    return drawnMiscBreaks.some((m) => from >= m.start && to <= m.end);
+  };
+
   // recorded and half-typed breaks share one lane layout, so a time being
   // entered is placed against what is already there rather than over it
   const breakLanes = laneOut([
@@ -663,7 +693,7 @@ export default function DayCalendar({
     // that is what the signed sheet does with it, and a repaired one says it was
     // moved. Defaulted, so a caller passing bare {min, minutes} still gets the
     // plain confirmed rest this only ever drew.
-    ...rests.map((r) => ({
+    ...rests.filter((r) => !insideADrawnMiscBreak(r)).map((r) => ({
       from: r.min, to: r.min + (r.minutes || 10),
       kind: r.kind || "rest",
       label: r.label || null,
