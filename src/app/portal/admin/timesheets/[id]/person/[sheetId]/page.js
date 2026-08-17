@@ -480,9 +480,9 @@ export default async function PersonSchedulePage({ params, searchParams }) {
         <div className="mt-4 rounded-lg border border-border bg-surface-2 p-4">
           <RecomputeButton timesheetId={sheet.id} accepted={0} />
           <p className="mt-2 text-xs leading-relaxed text-faint">
-            Rebuilding re-runs the engine over their stored days, so any rule that
+            Recalculating re-runs the engine over their stored days, so any rule that
             landed after this batch was uploaded reaches them. It changes nobody
-            else. What they are PAID cannot move: if it does, the rebuild refuses
+            else. What they are PAID cannot move: if it does, it refuses
             the re-analysis and keeps the figures the sheet already had.
           </p>
         </div>

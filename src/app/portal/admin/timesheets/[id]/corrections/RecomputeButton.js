@@ -17,8 +17,8 @@ export default function RecomputeButton({ timesheetId, accepted }) {
     // one moment somebody is deciding whether to press it.
     const ok = window.confirm(
       accepted > 0
-        ? "Rebuild this timesheet with the accepted corrections applied?\n\nThe figures are recalculated, a new PDF is generated, and it goes back to unsent so you can send it for signature again. Any signature already on it is cleared."
-        : "Rebuild this timesheet?\n\nNo correction is waiting, but rebuilding re-runs the engine over their stored days, so any rule that landed after this batch was uploaded reaches them now. Their premium hours can change. It goes back to unsent, and any signature on it is cleared.",
+        ? "Recalculate this timesheet with the accepted corrections applied?\n\nEvery answer is kept and re-applied. The figures are recalculated, a new PDF is generated, and it goes back to unsent so you can send it for signature again. Any signature already on it is cleared."
+        : "Recalculate this timesheet?\n\nEvery answer is kept and re-applied. The engine re-runs over their stored days, so any rule added since this batch was uploaded reaches them now. Their premium hours can change. The sheet goes back to unsent and any signature on it is cleared.",
     );
     if (!ok) return;
     setBusy(true);
@@ -42,7 +42,7 @@ export default function RecomputeButton({ timesheetId, accepted }) {
           disabled={busy}
           className="rounded-lg bg-brand-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {busy ? "Rebuilding..." : "Rebuild this timesheet"}
+          {busy ? "Recalculating..." : "Recalculate this timesheet"}
         </button>
         <span className="text-sm text-muted">
           {accepted > 0

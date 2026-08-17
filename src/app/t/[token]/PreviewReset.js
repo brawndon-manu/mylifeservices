@@ -35,7 +35,7 @@ export default function PreviewReset({ timesheetId, name, answers = 0, reasons =
           onClick={() => setOpen(true)}
           className="rounded-lg border border-amber-400 px-3 py-1.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
         >
-          {total > 0 ? `Reset their ${total} answer${total === 1 ? "" : "s"}` : "Reset this sheet"}
+          {total > 0 ? `Undo their ${total} answer${total === 1 ? "" : "s"}` : "Put this sheet back"}
         </button>
         {err && (
           <p className="mt-1.5 text-xs text-rose-700 dark:text-rose-400">

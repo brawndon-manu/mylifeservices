@@ -48,7 +48,7 @@ export default function ResetAnswersButton({ batchId, answers = 0, signed = 0 })
         onClick={() => setOpen(true)}
         className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/30"
       >
-        {answers > 0 ? "Reset all answers" : "Reset to as-uploaded"}
+        {answers > 0 ? "Undo every answer" : "Put back to as uploaded"}
       </button>
     );
   }
