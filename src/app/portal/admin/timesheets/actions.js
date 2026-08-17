@@ -2537,6 +2537,20 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         select: { id: true },
       });
       const record = {
+        // THE QUESTION AS IT WAS ASKED, so the card survives being answered.
+        //
+        // An answer that resolves its finding deletes its own question, and the
+        // card is what carries "Change this" - so answering used to be the end
+        // of any chance to correct a mis-click. Every premium-bearing issue has
+        // to stay on their page and stay changeable until they sign, because
+        // the correction happens on a phone call and they need to watch it land.
+        //
+        // Frozen HERE rather than rebuilt later: `data.daysOriginal` was
+        // measured and cannot produce it - the answered miscTime question is
+        // absent from the pristine days too. `q` is the object this action
+        // already validated the answer against, so the snapshot is exactly what
+        // was put to them and not a reconstruction of it.
+        question: q,
         // a partial and a "never took it" both settle as declines: the premium
         // stands either way, and what differs is the record
         status: pick === "yes" ? "accepted" : "declined",

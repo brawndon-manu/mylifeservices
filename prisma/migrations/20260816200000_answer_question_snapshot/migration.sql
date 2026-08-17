@@ -1,0 +1,14 @@
+-- THE QUESTION AS IT WAS ASKED, KEPT ON THE ANSWER.
+--
+-- The review page can only draw a card for a question `buildQuestions` still
+-- emits, and an answer that resolves its finding deletes its own question - so
+-- the moment somebody answered, the card vanished and with it any way to
+-- correct a mis-click. Rebuilding the question from `data.daysOriginal` was
+-- measured and does not work: on the July sheet the answered miscTime question
+-- is absent from the pristine days as well as the live ones, because
+-- `miscBlocks` postdates that snapshot.
+--
+-- So the answer carries what it was answering. Nullable and additive: every
+-- existing row keeps working, production runs against this column before any
+-- code reads it, and the four rows already on record simply have none.
+ALTER TABLE "TimesheetCorrection" ADD COLUMN "question" JSONB;
