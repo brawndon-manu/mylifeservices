@@ -56,8 +56,15 @@ export default function PortalPushNav({ children }) {
   // during render is what the hooks rule forbids, and the counter has to
   // survive every re-render or two navigations could both think they own it.
   const navOwner = useRef(createNavOwner());
+  // THE PATH, READABLE MID-GESTURE. The back gesture commits its navigation on
+  // the first real sideways movement, so `pathname` changes while the finger is
+  // still down. The touch handlers live for the life of the component - see the
+  // note on the back effect - and read the current path from here rather than
+  // closing over the one they were registered under.
+  const pathRef = useRef(pathname);
 
   useEffect(() => {
+    pathRef.current = pathname;
     if (settle.current) {
       settle.current();
       settle.current = null;
@@ -132,12 +139,23 @@ export default function PortalPushNav({ children }) {
   }, [pathname, go]);
 
   // BACK: a drag that starts in the left edge strip.
+  //
+  // REGISTERED ONCE, NOT PER PATH - and that is the fix for the stacked pages
+  // that survived the ownership counter. `commit` runs `router.back()` while
+  // the finger is still down, so with `pathname` in the deps this effect tore
+  // itself down MID-GESTURE: the cleanup removed the touch listeners, and when
+  // the destination was a tab root - which it is for the exact swipe in the
+  // screenshots, Applications back to the Admin index - the early return put
+  // nothing back. `end` then never fired, the animations `ready` had paused
+  // stayed paused forever, and a transition whose animations never finish
+  // never tears down its snapshots: both pages left standing, frozen wherever
+  // the scrub got to. The counter was never the problem here - nothing stripped
+  // the attribute, the transition was simply never told to play. So the
+  // listeners live as long as the component, and the tab-root rule moved into
+  // `start`, reading the path the gesture actually begins on.
   useEffect(() => {
     if (typeof document === "undefined" || !document.startViewTransition) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    // nothing to go back to from a tab root, and the gesture would fight the
-    // browser's own on the first page of a session
-    if (TAB_ROOTS.has(pathname)) return;
 
     const EDGE = 32;
     // how far sideways before the drag counts as a back rather than a stray
@@ -194,6 +212,13 @@ export default function PortalPushNav({ children }) {
       d.vt = vt;
       vt.ready
         .then(() => {
+          // THE FINGER CAN BE GONE BEFORE THE TRANSITION IS READY. A quick
+          // twitch past WAKE_PX commits and lets go inside the time `ready`
+          // takes, and `end` has already decided what happens. Pausing the
+          // animations now would leave nobody to ever play them - the other
+          // way a swipe froze two pages on screen. Not this drag's transition
+          // any more: let it run, or `end` already skipped it.
+          if (dragging.current !== d) return;
           d.anims = viewTransitionAnimations(document);
           for (const a of d.anims) a.pause();
           // catch up to wherever the thumb got to while `ready` was pending
@@ -217,6 +242,10 @@ export default function PortalPushNav({ children }) {
     };
 
     const start = (e) => {
+      // nothing to go back to from a tab root, and the gesture would fight the
+      // browser's own on the first page of a session. Judged per touch rather
+      // than by which paths register listeners - see the note on this effect.
+      if (TAB_ROOTS.has(pathRef.current)) return;
       const t = e.touches[0];
       if (t.clientX > EDGE) return;
       if (inScroller(e.target)) return;
@@ -254,7 +283,13 @@ export default function PortalPushNav({ children }) {
       // put back by hand or a 10px twitch at the edge silently navigates. There
       // is no animation to run backwards first, so it just goes.
       if (!anims.length) {
-        if (d.p < NAV_COMMIT_AT) router.forward();
+        if (d.p < NAV_COMMIT_AT) {
+          // the transition may only be warming up rather than refused - see
+          // the guard on `ready`. Skip it so a back animation cannot play
+          // after the history has been put back.
+          d.vt?.skipTransition?.();
+          router.forward();
+        }
         return;
       }
 
@@ -293,7 +328,7 @@ export default function PortalPushNav({ children }) {
       document.removeEventListener("touchend", end);
       document.removeEventListener("touchcancel", end);
     };
-  }, [pathname, router]);
+  }, [router]);
 
   return children;
 }
