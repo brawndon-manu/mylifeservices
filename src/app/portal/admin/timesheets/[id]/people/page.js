@@ -583,7 +583,12 @@ export default async function AllPeoplePage({ params }) {
                   Their page draws every day of the period with the real calendar
                   under it, clean days included, which is the thing you read
                   before picking up the phone. */}
-              <div className="ml-auto flex shrink-0 flex-col items-stretch gap-1.5">
+              {/* right-aligned at every width, same as the pay period cards -
+                  Mánu 2026-08-16 wants this block sitting the same way on both
+                  screens. `items-stretch` made each control the width of the
+                  column rather than its own, so the two screens lined up
+                  differently once the row wrapped on a phone. */}
+              <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
                 {/* `from=people` so their page knows to send Back here rather
                     than to Data checks, which is where it always went and is
                     not where you were. */}
