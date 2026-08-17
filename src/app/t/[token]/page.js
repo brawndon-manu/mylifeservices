@@ -104,6 +104,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           // below. Left out, it comes back undefined and every partial reloads
           // as "Missed them", which is a different thing to have told payroll.
           statedBreaks: true,
+          // the question as it was asked, which is what brings an answered card
+          // back once its finding is resolved. Left out it arrives undefined,
+          // every restore silently does nothing, and the page looks exactly as
+          // it did before the fix - the `restsUrl` failure again.
+          question: true,
         },
         orderBy: { createdAt: "asc" },
       },
@@ -162,6 +167,36 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const answered = ts.corrections.filter(
     (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
   );
+
+  // NOTHING THEY ANSWERED DROPS OFF THE PAGE.
+  //
+  // An answer that resolves its finding deletes its own question, so the card
+  // carrying "Change this" went with it and a mis-click could not be corrected.
+  // Every premium-bearing issue has to stay here and stay changeable until the
+  // signature: the correction usually happens while they are on the phone, and
+  // they need to see it land before they sign.
+  //
+  // Restored from the snapshot frozen on the answer, not rebuilt - rebuilding
+  // from `data.daysOriginal` was measured and cannot do it. Rows written before
+  // 2026-08-16 carry no snapshot and behave as they did.
+  //
+  // Only where the question is genuinely gone. A live question always wins, so
+  // a day whose figures have since moved shows what it asks NOW rather than
+  // what it asked then.
+  const liveKeys = new Set(
+    questions.flatMap((q) => (q.dates || [q.date]).map((d) => `${q.kind}|${d}`)),
+  );
+  const restored = [];
+  const seenRestored = new Set();
+  for (const c of answered) {
+    const kind = String(c.kind).slice(2);
+    if (!c.question || liveKeys.has(`${kind}|${c.date}`)) continue;
+    const q = c.question;
+    if (!q.id || seenRestored.has(q.id)) continue;
+    seenRestored.add(q.id);
+    restored.push(q);
+  }
+  if (restored.length) questions.push(...restored);
   const answers = {};
   // A DECLINED ANSWER THAT STILL CARRIES TIMES IS A PARTIAL - "I got one of my
   // two tens". A plain decline clears `statedBreaks`, so nothing else can leave
@@ -550,7 +585,17 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <PreviewReset
             timesheetId={ts.id}
             name={ts.sourceName}
-            answers={answered.length}
+            /* NOT `answered`, WHICH IS A DIFFERENT QUESTION. That set is the
+               `q_` rows the page restores cards for; a reset also takes the
+               `fix_` acknowledgements off a backwards rest entry, and they are
+               their answer like any other. Brandon's July sheet had one, so the
+               button read 6 beside a confirm that correctly said 7. */
+            answers={
+              ts.corrections.filter((c) => {
+                const k = String(c.kind || "");
+                return k.startsWith("q_") || k.startsWith("fix_");
+              }).length
+            }
             /* what a reset would take off a break answer as well, counted
                through the same rule the action applies - see `resetAction`. The
                button said "reset their N answers" with N counting corrections

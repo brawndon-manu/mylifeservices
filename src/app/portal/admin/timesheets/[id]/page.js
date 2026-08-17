@@ -62,6 +62,13 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             select: {
               id: true, email: true, name: true,
               preferredFirstName: true, preferredLastName: true, title: true, image: true,
+              // ON THE ROW BECAUSE THE ROW IS WHERE YOU DECIDE TO RING SOMEBODY.
+              // This screen is behind `canManageTimesheets`, and All employees -
+              // one click away, same batch, same people - has shown the number
+              // since it was built. Selecting it here does not widen who can
+              // read one; the 2026-08-16 rule puts every timesheets screen on
+              // the same side of the line already.
+              phone: true,
             },
           },
           // open ones block signing. The `q_` ones are the five questions the
@@ -152,7 +159,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       confidence: s.confidence,
     })).filter((s) => s.id),
     user: t.user
-      ? { id: t.user.id, displayName: preferredName(t.user), email: t.user.email, image: t.user.image }
+      ? {
+        id: t.user.id, displayName: preferredName(t.user),
+        email: t.user.email, phone: t.user.phone || null, image: t.user.image,
+      }
       : null,
     rawHours: t.rawHours,
     paidHours: t.paidHours,

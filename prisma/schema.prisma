@@ -1036,6 +1036,25 @@ model TimesheetCorrection {
   // 2026-08-10.
   statedBreaks Json?
 
+  // THE QUESTION AS IT WAS ASKED, frozen at the moment it was answered.
+  //
+  // The review page can only draw a card for a question `buildQuestions` still
+  // emits, and an answer that resolves its finding DELETES ITS OWN QUESTION -
+  // so answering made the card vanish, and with it any way to correct a
+  // mis-click. Every premium-bearing issue has to stay on that page and stay
+  // changeable until the signature, because the correction usually happens on
+  // a phone call and the employee has to watch it land before signing.
+  //
+  // Rebuilding the question from `data.daysOriginal` was measured and does not
+  // work: on the July sheet the answered miscTime question is absent from the
+  // pristine days too, because `miscBlocks` postdates that snapshot. So the
+  // answer carries what it was answering rather than anything trying to infer
+  // it afterwards.
+  //
+  // Null on every row written before 2026-08-16 - four of them, all on the
+  // July test batch.
+  question       Json?
+
   // open | accepted | declined
   status         String    @default("open")
   // THE ANSWER THEY ACTUALLY PICKED, where a kind offers more than two.

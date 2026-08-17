@@ -65,7 +65,7 @@ test("the action applies exactly that rule, and only to this person and period",
 test("the button counts what it will actually remove", () => {
   const panel = fs.readFileSync("src/app/t/[token]/PreviewReset.js", "utf8");
   assert.match(panel, /const total = answers \+ reasons;/);
-  assert.match(panel, /Reset their \$\{total\}/);
+  assert.match(panel, /Undo their \$\{total\}/);
   const page = fs.readFileSync("src/app/t/[token]/page.js", "utf8");
   // counted through the same rule the action applies, not a second guess at it
   assert.match(page, /reasons=\{breakAnswers\.filter\(\(r\) => resetAction\(r, ts\.userId\)\)\.length\}/);

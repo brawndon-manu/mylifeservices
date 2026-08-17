@@ -60,7 +60,22 @@ function PersonRow({ u, showRoles, onEdit }) {
           <Avatar name={u.displayName} email={u.email} image={u.image} size={34} />
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-foreground">{u.displayName}</div>
-            <div className="truncate text-xs text-faint">{u.email}</div>
+            {/* THE NUMBER WAS FETCHED, PASSED IN, AND DRAWN NOWHERE. `page.js`
+                selects `phone` and puts it on the row, and the only thing that
+                rendered it was the edit form - so the one screen called People
+                was the one person-screen in the portal where you could not read
+                somebody's number without opening a form to change them. Every
+                sibling shows it: both contacts screens, All employees, the day
+                by day. 7 of 72 accounts carry one.
+
+                BESIDE THE EMAIL RATHER THAN IN A COLUMN OF ITS OWN. The desktop
+                row is a fixed seven-column grid and an eighth would take its
+                width off the name; on the same line the row height does not
+                move for the 65 people who have no number. */}
+            <div className="truncate text-xs text-faint">
+              {u.email}
+              {u.phone && <span> &middot; {u.phone}</span>}
+            </div>
           </div>
         </div>
         <div className="truncate text-[13px] text-muted">{u.title || <span className="text-faint">—</span>}</div>
@@ -112,6 +127,9 @@ function PersonRow({ u, showRoles, onEdit }) {
           <span><span className="mr-1.5 text-[11px] uppercase tracking-wide text-faint">Title</span>{u.title || "—"}</span>
           <span className="inline-flex items-center gap-1.5"><span className="text-[11px] uppercase tracking-wide text-faint">Office</span><OfficePills offices={u.offices} /></span>
           {showRoles && <span className="inline-flex items-center gap-1.5"><span className="text-[11px] uppercase tracking-wide text-faint">Role</span><RoleBadge role={u.role} /></span>}
+          {/* its own entry on the phone card, where there is room for a label
+              and the wrap list is already how every other field is shown */}
+          {u.phone && <span><span className="mr-1.5 text-[11px] uppercase tracking-wide text-faint">Phone</span>{u.phone}</span>}
           {u.hired && <span><span className="mr-1.5 text-[11px] uppercase tracking-wide text-faint">Hired</span>{u.hired}</span>}
           <span className="inline-flex items-center gap-1.5"><span className="text-[11px] uppercase tracking-wide text-faint">Status</span><StatusPill active={u.active} /></span>
         </div>

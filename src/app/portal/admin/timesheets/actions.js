@@ -1688,6 +1688,24 @@ export async function clearMiscClassification(timesheetId, date) {
   return { ok: true };
 }
 
+// WHAT UNDOING ONE DAY WOULD TAKE, read when the confirm opens.
+//
+// The fourth of these, and the one that needed it most: until 2026-08-16 the
+// undo dropped the day's patch and nothing else, so there was nothing to count.
+// It deletes that date's answers now, and a control that deletes an answer
+// without saying how many is the thing the other three were just fixed for.
+export async function dayUndoImpact(timesheetId, date) {
+  await requireTimesheetAccess();
+  const answers = await prisma.timesheetCorrection.count({
+    where: {
+      timesheetId,
+      date,
+      OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+    },
+  });
+  return { answers };
+}
+
 export async function clearDayOverride(timesheetId, date) {
   await requireTimesheetAccess();
   // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
@@ -1698,14 +1716,50 @@ export async function clearDayOverride(timesheetId, date) {
   }
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
-    select: { id: true, batchId: true, overrides: true },
+    // `data` and the batch's rest rows are what `rebuildSheetFor` recomputes
+    // from. Left out they arrive undefined and the rebuild quietly produces a
+    // sheet with no days on it.
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
   });
   if (!ts?.overrides) return { ok: false, error: "gone" };
+
+  // THE ANSWER GOES WITH THE OVERRIDE, or nothing happens at all.
+  //
+  // This used to delete the day's override and stop there. Every rebuild
+  // re-derives the overrides FROM the corrections, so the patch this removed
+  // came straight back the next time anything recomputed - a control that
+  // looked like it worked and did not. Mánu pressed it, then the reset, then
+  // rebuild, and watched the answers survive all three.
+  //
+  // Scoped to ONE DATE: `resetTimesheetAnswers` is the same two steps for a
+  // whole sheet, and this is that, for a day.
+  const { count } = await prisma.timesheetCorrection.deleteMany({
+    where: {
+      timesheetId: ts.id,
+      date,
+      OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+    },
+  });
+
   const next = { ...ts.overrides };
   delete next[date];
   await prisma.timesheet.update({ where: { id: ts.id }, data: { overrides: next } });
+
+  // AND RECOMPUTE, so the figures on screen are the ones this just produced.
+  // Without it the day keeps the patched hours until somebody else rebuilds,
+  // which is the same disagreement between a page and its own document that
+  // the answer path already refuses to leave behind.
+  const res = await rebuildSheetFor({ ...ts, overrides: next }, next);
+  if (!res?.ok) return res;
+
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/checks`);
-  return { ok: true };
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  // and the page the answers were given on, plus both live-refresh counters,
+  // so an employee looking at this day sees it change rather than a stale copy
+  revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batchId);
+  return { ok: true, removed: count };
 }
 
 // re-run one employee's figures from their stored days plus whatever overrides
@@ -1734,6 +1788,29 @@ export async function clearDayOverride(timesheetId, date) {
 //
 // It does NOT touch the uploaded documents, the name matches, or the batch
 // itself. Re-answering from scratch is the whole point; re-uploading is not.
+//
+// WHAT IT WOULD TAKE, READ WHEN THE CONFIRM OPENS. The count under the button
+// came off the page render, so a confirm opened at 9pm on a page loaded at 4pm
+// promised to delete the answers that existed at 4pm. Two reviewers on the same
+// batch, or the employee answering in their own tab, and the number is simply
+// wrong at the one moment somebody is deciding. Same shape as
+// `batchDeletionImpact` - read at click time, never after.
+//
+// EVERY CLAUSE BELOW IS THE ACTION'S OWN. `q_` and the batch for the answers,
+// `signedAt` for the signatures, because a rebuild un-signs. A second guess at
+// what a reset removes is how a confirm starts lying.
+export async function batchResetImpact(batchId) {
+  await requireTimesheetAccess();
+  const [answers, signed, sheets] = await Promise.all([
+    prisma.timesheetCorrection.count({
+      where: { timesheet: { batchId }, kind: { startsWith: "q_" } },
+    }),
+    prisma.timesheet.count({ where: { batchId, signedAt: { not: null } } }),
+    prisma.timesheet.count({ where: { batchId } }),
+  ]);
+  return { answers, signed, sheets };
+}
+
 export async function resetBatchAnswers(batchId) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
@@ -1784,6 +1861,53 @@ export async function resetBatchAnswers(batchId) {
 //
 // Same two steps as the batch version, and the same honesty about what goes:
 // every answer on THIS sheet, and its signature if it has one.
+//
+// AND THE COUNT IS READ WHEN THE CONFIRM OPENS, not when the page rendered -
+// see the note on `batchResetImpact`. This one matters more, because the page
+// it sits on is the page the employee is answering questions ON: a reviewer
+// with the preview tab open while somebody works through their sheet had a
+// number that went out of date as they watched.
+//
+// THE REASONS ARE COUNTED THROUGH `resetAction`, THE SAME CALL THE ACTION
+// MAKES, not through a filter that means to say the same thing. A reason a
+// reviewer took off a phone call is not deleted, it is un-confirmed, and both
+// count as a row this control changes - so the two have to agree by
+// construction rather than by anybody keeping them in step.
+export async function timesheetResetImpact(timesheetId) {
+  await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true,
+      userId: true,
+      signedAt: true,
+      batch: { select: { periodFrom: true, periodTo: true } },
+    },
+  });
+  if (!ts) return { answers: 0, reasons: 0, signed: false };
+
+  const answers = await prisma.timesheetCorrection.count({
+    where: {
+      timesheetId: ts.id,
+      OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+    },
+  });
+
+  let reasons = 0;
+  if (ts.userId) {
+    const rows = await prisma.timesheetBreakAnswer.findMany({
+      where: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+      },
+      select: { id: true, byId: true, confirmedAt: true, confirmedText: true },
+    });
+    reasons = rows.filter((r) => resetAction(r, ts.userId)).length;
+  }
+  return { answers, reasons, signed: !!ts.signedAt };
+}
+
 export async function resetTimesheetAnswers(timesheetId) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
@@ -1853,6 +1977,40 @@ export async function resetTimesheetAnswers(timesheetId) {
   await bumpBatchVersion(ts.batchId);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   return { ok: true, answers: count, reasons };
+}
+
+// WHAT A RECALCULATION IS ABOUT TO DO, read when the confirm opens.
+//
+// Recalculate KEEPS every answer, so unlike the two resets above it is not
+// counting a deletion. It carries three facts the confirm has to be right
+// about:
+//
+// - `accepted` picks which of the two sentences is shown, and it was a PROP.
+//   The day-by-day page passed `accepted={0}` unconditionally, so a sheet with
+//   three accepted corrections was told nothing would come with them.
+// - `open` is the reason the action REFUSES (`openitems`). Worth saying before
+//   somebody presses it rather than as an error afterwards.
+// - `signed` is the destructive half: a rebuild clears the signature. The
+//   corrections screen shows this control on signed sheets, so the warning has
+//   to be conditional on the sheet in front of them and not on a general note.
+export async function timesheetRecomputeImpact(timesheetId) {
+  await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, signedAt: true, approvedAt: true },
+  });
+  if (!ts) return { accepted: 0, open: 0, answers: 0, signed: false, approved: false };
+  const [accepted, open, answers] = await Promise.all([
+    prisma.timesheetCorrection.count({ where: { timesheetId: ts.id, status: "accepted" } }),
+    prisma.timesheetCorrection.count({ where: { timesheetId: ts.id, status: "open" } }),
+    prisma.timesheetCorrection.count({
+      where: {
+        timesheetId: ts.id,
+        OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+      },
+    }),
+  ]);
+  return { accepted, open, answers, signed: !!ts.signedAt, approved: !!ts.approvedAt };
 }
 
 export async function recomputeTimesheet(timesheetId) {
@@ -2537,6 +2695,20 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         select: { id: true },
       });
       const record = {
+        // THE QUESTION AS IT WAS ASKED, so the card survives being answered.
+        //
+        // An answer that resolves its finding deletes its own question, and the
+        // card is what carries "Change this" - so answering used to be the end
+        // of any chance to correct a mis-click. Every premium-bearing issue has
+        // to stay on their page and stay changeable until they sign, because
+        // the correction happens on a phone call and they need to watch it land.
+        //
+        // Frozen HERE rather than rebuilt later: `data.daysOriginal` was
+        // measured and cannot produce it - the answered miscTime question is
+        // absent from the pristine days too. `q` is the object this action
+        // already validated the answer against, so the snapshot is exactly what
+        // was put to them and not a reconstruction of it.
+        question: q,
         // a partial and a "never took it" both settle as declines: the premium
         // stands either way, and what differs is the record
         status: pick === "yes" ? "accepted" : "declined",
