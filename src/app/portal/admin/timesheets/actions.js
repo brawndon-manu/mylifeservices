@@ -1307,6 +1307,11 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   });
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  // the same gap signing had, and the same fix. Two people working a batch
+  // through approvals is the normal case, and the second one should not have to
+  // reload to see the first one's work land.
+  await bumpBatchVersion(ts.batchId);
+  await bumpSheetVersion(ts.id);
   return { ok: true };
 }
 
@@ -3102,7 +3107,14 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },
-    select: { id: true, batchId: true, signedAt: true, disputedAt: true },
+    // `user` and `sourceName` are here for the name on the signature, which was
+    // never being stored - see the fallback below. Left out they arrive
+    // undefined and the column keeps taking null, which is exactly the failure
+    // this is fixing.
+    select: {
+      id: true, batchId: true, signedAt: true, disputedAt: true, sourceName: true,
+      user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+    },
   });
   if (!ts) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
@@ -3135,12 +3147,47 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     data: {
       signedAt: new Date(),
       signedPdfUrl,
-      signedName: (signedName || "").toString().slice(0, 120) || null,
+      // WHO SIGNED, WHICH WAS NEVER BEING RECORDED.
+      //
+      // `signedName` had been null on every signature ever taken. The signer
+      // passes `payload.employeeName` through from `FormFiller`, and FormFiller
+      // only sets that field in PUBLIC mode - the share-link flow where a
+      // stranger types their name because nothing else knows it. A timesheet is
+      // a token flow with a known person, so it is never public mode, so the
+      // field never arrived and the column took null 100% of the time. Found
+      // 2026-08-17 on the first signature this system has ever taken.
+      //
+      // WHAT IT NOW HOLDS, AND THE WORDING MATTERS. Nothing in this flow asks
+      // anybody to TYPE a name - they draw a signature, and that image is in
+      // the stored PDF. So this is not "what they typed": it is the person the
+      // token was issued to, resolved at the moment of signing. Their preferred
+      // name if the account carries one, then the account name, then the
+      // spelling QSP printed. A typed value still wins if one is ever
+      // collected, so adding that field later needs no change here.
+      signedName:
+        (signedName || "").toString().slice(0, 120)
+        || (ts.user ? preferredName(ts.user) : null)
+        || ts.sourceName
+        || null,
       signedIp: ip,
     },
   });
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  // A SIGNATURE IS THE ONE EVENT THE REVIEWER SCREENS CARE MOST ABOUT AND THE
+  // ONLY ONE THAT WAS NOT ANNOUNCED.
+  //
+  // Every other action that moves a figure bumps this - answering, resetting,
+  // classifying, flagging, undoing a day, fourteen call sites - and signing did
+  // not. `BatchPresence` polls the version and only re-renders when it MOVES,
+  // so a reviewer watching the batch saw the signed count sit still while
+  // people signed, and would have had to reload to find out. Which is the
+  // opposite of what the live badge above it promises.
+  //
+  // Found 2026-08-17 while wiring that badge: it would have blinked over a
+  // frozen number.
+  await bumpBatchVersion(ts.batchId);
+  await bumpSheetVersion(ts.id);
   return { ok: true };
 }
 

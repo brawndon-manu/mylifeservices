@@ -1,0 +1,20 @@
+-- AN ACCOUNT THAT IS NEVER A PERSON ON A TIMESHEET.
+--
+-- Every spelling in every QSP export is resolved against the active staff list,
+-- so two accounts able to answer to the same name is how one person's evidence
+-- gets attributed to the other.
+--
+-- 2026-08-17: a preferred name was set in QSP. The Rest Periods Report began
+-- printing "Uribe, Mánu", which resolved to a TESTER account literally named
+-- "Mánu", while the Simple Timesheet still resolved to "Uribe, Brandon". The
+-- bridge in identity.js links two spellings only when both land on the SAME
+-- account, so it did not form: twelve worked days came back with no rest
+-- recorded and the premium went from 1 hour to 12, with paid hours unchanged.
+--
+-- Deactivating the tester account would have fixed it and taken away the login.
+-- This states the actual fact instead.
+--
+-- Nullable in effect and additive: NOT NULL with a default, so every existing
+-- row is written false and no code that predates this column can be surprised
+-- by it. Nothing to backfill.
+ALTER TABLE "User" ADD COLUMN "excludeFromTimesheets" BOOLEAN NOT NULL DEFAULT false;

@@ -1,0 +1,18 @@
+-- REVERSING 20260817140000_exclude_from_timesheets, THE SAME DAY.
+--
+-- It was added to keep a tester account out of the staff list every QSP name is
+-- resolved against, after a preferred-name change sent one person's two exports
+-- to two different accounts. It worked, and then the next upload showed the
+-- real problem was elsewhere: the Rest Periods Report itself had come out with
+-- 2 rows for that person where the previous one had about 20, so a perfect
+-- match still produced no rests. The fix belongs in QSP, and Mánu is
+-- regenerating the reports without the display name instead.
+--
+-- Dropped rather than left dormant, on his call. Safe to drop: nothing in the
+-- codebase ever read it outside the change now reverted, every row was written
+-- false by the default, and the flag was cleared before this ran - so no
+-- decision anybody made is being discarded with the column.
+--
+-- If the two-account collision is ever worth guarding again, the add migration
+-- is still in history and says why.
+ALTER TABLE "User" DROP COLUMN "excludeFromTimesheets";

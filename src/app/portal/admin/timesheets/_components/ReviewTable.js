@@ -107,18 +107,23 @@ export default function ReviewTable({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">{r.sourceName}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${method.cls}`}>
-                      {method.label}
-                      {r.matchMethod === "fuzzy" && r.confidence ? ` ${r.confidence}%` : ""}
-                    </span>
-                    {r.partialWeek && (
-                      <span
-                        title="A workweek in this period is cut off by the pay-period boundary, so its over-40 overtime is provisional."
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        partial week
+                    {/* ONLY WHEN THE MATCH IS NOT CLEAN. Mánu 2026-08-17: 99% of
+                        people are an exact match, so an "Exact" pill on 58 of 59
+                        rows is a badge that says nothing and hides the two that
+                        do. Best guess, Set by hand and No match still show,
+                        because those are the rows somebody has to look at. */}
+                    {r.matchMethod !== "exact" && (
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${method.cls}`}>
+                        {method.label}
+                        {r.matchMethod === "fuzzy" && r.confidence ? ` ${r.confidence}%` : ""}
                       </span>
                     )}
+                    {/* THE "partial week" PILL IS GONE. Mánu 2026-08-17: more or
+                        less every period cuts a workweek at its boundary, so it
+                        was on almost every row - a tag that is always true is
+                        not a tag, it is noise on the line that carries the
+                        name. `partialWeek` is still on the row and still means
+                        the same thing; nothing computes differently. */}
                     {/* THE FIVE PRE-SIGNING QUESTIONS. Every one blocks signing,
                         so an unanswered question is the reason a sheet never
                         comes back - it belongs on the row, not two pages in. */}

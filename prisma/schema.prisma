@@ -765,7 +765,11 @@ model Timesheet {
   // signing
   signedAt     DateTime?
   signedPdfUrl String?
-  // what the signer typed/drew, for the audit trail
+  // WHO SIGNED, for the audit trail. A typed name where one is ever collected,
+  // otherwise the person the token was issued to, resolved when they sign. The
+  // signature they DREW lives in `signedPdfUrl`; this is the readable half, and
+  // it was null on every signature until 2026-08-17 because the only path that
+  // set it was the public share-link flow.
   signedName   String?
   signedIp     String?
 
