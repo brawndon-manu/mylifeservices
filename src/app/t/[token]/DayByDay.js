@@ -587,10 +587,16 @@ export default function DayByDay({
           </p>
         </div>
       ) : batched ? (
+        /* `answerTimes` is as important as `answers` here. Without it a day
+           answered and SAVED comes back with an empty time box and the card
+           asks for the time again - see `savedAt` in BatchProvider. This is
+           the Day by day view, which is the one people actually use, and it
+           was the call site that was missed. */
         <BatchProvider
           token={token}
           list={batched}
           answers={answers}
+          answerTimes={answerTimes}
           partials={partials}
           waiting={waiting}
           standing={standing}

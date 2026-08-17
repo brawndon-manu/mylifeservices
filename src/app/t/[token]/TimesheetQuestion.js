@@ -1764,6 +1764,8 @@ export function BatchHeading({ question, standing, className = "" }) {
 
 export function BatchProvider({
   token, list, answers, partials, waiting, standing, submitAction, copy: copyProp, children,
+  // THE TIMES ALREADY SAVED, by question id. See `savedAt`.
+  answerTimes = null,
   // WHAT IS ALREADY WRITTEN, by finding key. Handed down from the page rather
   // than fetched here: the card is a client component and the rows are the same
   // ones the page already read to build the reason cards further up.
@@ -1840,7 +1842,28 @@ export function BatchProvider({
     return q.id in picked ? picked[q.id] : savedValue(q);
   };
 
-  const rawAt = (q, slot) => times[q.id]?.[slot] ?? "";
+  // WHAT IS ALREADY ON RECORD FOR THIS SLOT.
+  //
+  // THE BUG THIS FIXES, and it was every returning employee. A day answered
+  // "took it" stores the time on the correction as `statedBreaks`, and the card
+  // read the boxes ONLY from local state and `need.prefill` - which is null for
+  // every kind that asks for a time. So on the next page load the answer came
+  // back and the time did not: the boxes were empty, `missingTimes` counted
+  // them, and the card refused to save until all of them were typed again.
+  //
+  // Mánu 2026-08-17, with sixteen answers and ten stored times on his own
+  // sheet: "I answered everything, and then I put save. Why is it still saying
+  // this?" It was asking him to retype what he had already sent us.
+  //
+  // Matched on the SLOT, which is what `statedBreaks` carries and what the
+  // boxes are keyed by. `??` and not `||`, so clearing a box shows it empty
+  // rather than springing back to the saved value.
+  const savedAt = (q, slot) => {
+    const rows = answerTimes?.[q.id];
+    if (!Array.isArray(rows)) return "";
+    return rows.find((b) => b?.slot === slot)?.from || "";
+  };
+  const rawAt = (q, slot) => times[q.id]?.[slot] ?? savedAt(q, slot);
   const setAt = (q, slot, v) =>
     setTimes((t) => ({ ...t, [q.id]: { ...(t[q.id] || {}), [slot]: v } }));
   // a slot is satisfied by anything the loose parser can read - "115", "1:15p",
@@ -1939,19 +1962,38 @@ export function BatchProvider({
   // EVERY DAY ANSWERED "took them" OWES ITS TIMES. Mánu 2026-08-10: required,
   // "because we need a record of this". A day answered "missed them" owes none -
   // there is nothing to say when about.
-  const missingTimes = list.reduce((n, q) => {
+  // AND WHICH DAYS THEY ARE ON, which is the whole difference between a warning
+  // and an instruction.
+  //
+  // This counted and stopped. Mánu 2026-08-17 answered every day on his own
+  // sheet, pressed save, and got "12 times still to fill in" with no way to
+  // find one of them - on a card that can run to thirteen days. The single-card
+  // version of this warning has named its dates all along ("Put a time in for
+  // 07/20 above first"); the BATCHED one, the only one where hunting is
+  // actually hard, was the one that did not.
+  //
+  // A Map keyed on the date, so two missing tens on one day are one place to go
+  // rather than two identical chips.
+  const missingByDate = new Map();
+  const noteMissing = (date) => {
+    if (!date) return;
+    missingByDate.set(date, (missingByDate.get(date) || 0) + 1);
+  };
+  for (const q of list) {
     const v = valueFor(q);
     if (v === "yes") {
-      return n + (q.needs || []).filter((need) => !minutesAt(q, need) || badTime(q, need)).length;
+      for (const need of q.needs || []) {
+        if (!minutesAt(q, need) || badTime(q, need)) noteMissing(need.date || q.date);
+      }
+    } else if (v === "partial") {
+      // A PARTIAL OWES AT LEAST ONE TIME, not all of them. They are telling us
+      // they got some of their tens and not the others, so the blanks are the
+      // point - what we cannot accept is a partial with nothing filled in at all.
+      if (!(q.needs || []).some((need) => minutesAt(q, need))) noteMissing(q.date);
     }
-    // A PARTIAL OWES AT LEAST ONE TIME, not all of them. They are telling us
-    // they got some of their tens and not the others, so the blanks are the
-    // point - what we cannot accept is a partial with nothing filled in at all.
-    if (v === "partial") {
-      return n + ((q.needs || []).some((need) => minutesAt(q, need)) ? 0 : 1);
-    }
-    return n;
-  }, 0);
+  }
+  const missingTimes = [...missingByDate.values()].reduce((n, x) => n + x, 0);
+  const missingTimeDates = [...missingByDate.keys()];
 
   const chosen = list.map((q) => ({ q, v: waiting?.has?.(q.id) ? null : valueFor(q) }));
   // A PARTIAL COUNTS AS MISSED FOR THE MONEY. One hour per workday on which a
@@ -2285,7 +2327,7 @@ export function BatchProvider({
       value={{
         renderToggle, renderTimes, renderReason, missingLabel, noRoom, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
-        dirty, missingTimes, missingReasons, undecided, missed, took, hours, base, answeredAll,
+        dirty, missingTimes, missingTimeDates, missingReasons, undecided, missed, took, hours, base, answeredAll,
         ready,
         readyOn: (date) => ready.has(date),
         blockedOn,
@@ -2323,7 +2365,10 @@ export function BatchDays({ dates }) {
           /* NO ROW TINT. A red wash across the whole line was louder than the
              answer it was reporting and ran past the words it belonged to. The
              segment itself carries the colour. */
-          <li key={date} className="py-2.5">
+          /* ANCHORED, so the missing-times warning can send somebody here.
+             Digits only: "07/16/26" carries slashes, not valid in an id.
+             scroll-mt-24 keeps the row clear of the header when jumped to. */
+          <li key={date} id={dayAnchorId(date)} className="scroll-mt-24 py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <span className="min-w-0">
                 <span className="font-mono text-sm text-foreground">{date}</span>
@@ -2401,7 +2446,7 @@ export function BatchConfirm() {
   if (!ctx) return null;
   const {
     list, copy, pending, err, confirming, setConfirming, commit,
-    dirty, missingTimes, missingReasons, undecided, missed, took, hours, base, answeredAll,
+    dirty, missingTimes, missingTimeDates, missingReasons, undecided, missed, took, hours, base, answeredAll,
     ready, byDay,
   } = ctx;
   // HOW MANY DAYS THEY HAVE FINISHED WITH, and how many are left.
@@ -2466,10 +2511,37 @@ export function BatchConfirm() {
           thing that was missing, so a day claimed without a time is not a day
           that has been answered. */}
       {!confirming && missingTimes > 0 && (
-        <p className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
-          <b>{missingTimes} {missingTimes === 1 ? "time" : "times"} still to fill in.</b>{" "}
-          Nothing is submitted until every day you answered &ldquo;took them&rdquo; says when.
-        </p>
+        <div className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+          {/* THE SENTENCE IS UNCHANGED, word for word. What was missing was not
+              wording, it was WHERE - so the days are added under it rather than
+              the text being rewritten. */}
+          <p>
+            <b>{missingTimes} {missingTimes === 1 ? "time" : "times"} still to fill in.</b>{" "}
+            Nothing is submitted until every day you answered &ldquo;took them&rdquo; says when.
+          </p>
+          {/* ONE CHIP PER DAY, not per missing time: two blank tens on one day
+              are one place to go, and two identical chips would just be a
+              second thing to try. Scrolls rather than jumps, and centres the
+              row, because a day landed under the sticky header reads as the
+              link having done nothing. */}
+          {missingTimeDates.length > 0 && (
+            <p className="mt-2 flex flex-wrap gap-1.5">
+              {missingTimeDates.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById(dayAnchorId(d));
+                    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                  className="rounded-full border border-amber-500/60 px-2.5 py-1 font-mono text-xs font-semibold text-amber-900 transition hover:bg-amber-500/20 dark:text-amber-200"
+                >
+                  {d}
+                </button>
+              ))}
+            </p>
+          )}
+        </div>
       )}
 
       {/* NOTHING SAVES WHILE A DAY IS STILL OPEN. The card commits every one of
@@ -2561,6 +2633,11 @@ export function BatchConfirm() {
   );
 }
 
+// WHERE A DAY ROW LIVES IN THE BATCHED CARD, so the missing-times warning can
+// send somebody to it. Digits only - "07/16/26" carries slashes, which are not
+// valid in an id.
+const dayAnchorId = (date) => `break-day-${String(date || "").replace(/[^0-9]/g, "")}`;
+
 export default function TimesheetQuestion({
   token, questions, answers, partials, answerTimes, choices, waiting, disturbs, standing, submitAction,
   terse,
@@ -2596,12 +2673,16 @@ export default function TimesheetQuestion({
       <div className={`mt-5 rounded-xl p-5 ${tone}`}>
         {c.title && <p className="text-base font-semibold text-foreground">{c.title}</p>}
         {c.body && <p className="mt-2 text-sm leading-relaxed text-muted">{c.body}</p>}
+        {/* `answerTimes` matters as much as `answers` here. Without it the
+            card cannot tell a day that was answered and SAVED from one that
+            was never filled in, and asks for the times again - see `savedAt`. */}
         <BatchProvider
           partials={partials}
           waiting={waiting}
           token={token}
           list={list}
           answers={answers}
+          answerTimes={answerTimes}
           standing={standing}
           submitAction={submitAction}
           reasonsOnRecord={reasonsOnRecord}
