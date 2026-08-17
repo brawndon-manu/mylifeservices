@@ -1688,6 +1688,24 @@ export async function clearMiscClassification(timesheetId, date) {
   return { ok: true };
 }
 
+// WHAT UNDOING ONE DAY WOULD TAKE, read when the confirm opens.
+//
+// The fourth of these, and the one that needed it most: until 2026-08-16 the
+// undo dropped the day's patch and nothing else, so there was nothing to count.
+// It deletes that date's answers now, and a control that deletes an answer
+// without saying how many is the thing the other three were just fixed for.
+export async function dayUndoImpact(timesheetId, date) {
+  await requireTimesheetAccess();
+  const answers = await prisma.timesheetCorrection.count({
+    where: {
+      timesheetId,
+      date,
+      OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+    },
+  });
+  return { answers };
+}
+
 export async function clearDayOverride(timesheetId, date) {
   await requireTimesheetAccess();
   // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
@@ -1770,6 +1788,29 @@ export async function clearDayOverride(timesheetId, date) {
 //
 // It does NOT touch the uploaded documents, the name matches, or the batch
 // itself. Re-answering from scratch is the whole point; re-uploading is not.
+//
+// WHAT IT WOULD TAKE, READ WHEN THE CONFIRM OPENS. The count under the button
+// came off the page render, so a confirm opened at 9pm on a page loaded at 4pm
+// promised to delete the answers that existed at 4pm. Two reviewers on the same
+// batch, or the employee answering in their own tab, and the number is simply
+// wrong at the one moment somebody is deciding. Same shape as
+// `batchDeletionImpact` - read at click time, never after.
+//
+// EVERY CLAUSE BELOW IS THE ACTION'S OWN. `q_` and the batch for the answers,
+// `signedAt` for the signatures, because a rebuild un-signs. A second guess at
+// what a reset removes is how a confirm starts lying.
+export async function batchResetImpact(batchId) {
+  await requireTimesheetAccess();
+  const [answers, signed, sheets] = await Promise.all([
+    prisma.timesheetCorrection.count({
+      where: { timesheet: { batchId }, kind: { startsWith: "q_" } },
+    }),
+    prisma.timesheet.count({ where: { batchId, signedAt: { not: null } } }),
+    prisma.timesheet.count({ where: { batchId } }),
+  ]);
+  return { answers, signed, sheets };
+}
+
 export async function resetBatchAnswers(batchId) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
@@ -1820,6 +1861,53 @@ export async function resetBatchAnswers(batchId) {
 //
 // Same two steps as the batch version, and the same honesty about what goes:
 // every answer on THIS sheet, and its signature if it has one.
+//
+// AND THE COUNT IS READ WHEN THE CONFIRM OPENS, not when the page rendered -
+// see the note on `batchResetImpact`. This one matters more, because the page
+// it sits on is the page the employee is answering questions ON: a reviewer
+// with the preview tab open while somebody works through their sheet had a
+// number that went out of date as they watched.
+//
+// THE REASONS ARE COUNTED THROUGH `resetAction`, THE SAME CALL THE ACTION
+// MAKES, not through a filter that means to say the same thing. A reason a
+// reviewer took off a phone call is not deleted, it is un-confirmed, and both
+// count as a row this control changes - so the two have to agree by
+// construction rather than by anybody keeping them in step.
+export async function timesheetResetImpact(timesheetId) {
+  await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true,
+      userId: true,
+      signedAt: true,
+      batch: { select: { periodFrom: true, periodTo: true } },
+    },
+  });
+  if (!ts) return { answers: 0, reasons: 0, signed: false };
+
+  const answers = await prisma.timesheetCorrection.count({
+    where: {
+      timesheetId: ts.id,
+      OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+    },
+  });
+
+  let reasons = 0;
+  if (ts.userId) {
+    const rows = await prisma.timesheetBreakAnswer.findMany({
+      where: {
+        periodFrom: ts.batch.periodFrom,
+        periodTo: ts.batch.periodTo,
+        personKey: ts.userId,
+      },
+      select: { id: true, byId: true, confirmedAt: true, confirmedText: true },
+    });
+    reasons = rows.filter((r) => resetAction(r, ts.userId)).length;
+  }
+  return { answers, reasons, signed: !!ts.signedAt };
+}
+
 export async function resetTimesheetAnswers(timesheetId) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
@@ -1889,6 +1977,40 @@ export async function resetTimesheetAnswers(timesheetId) {
   await bumpBatchVersion(ts.batchId);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   return { ok: true, answers: count, reasons };
+}
+
+// WHAT A RECALCULATION IS ABOUT TO DO, read when the confirm opens.
+//
+// Recalculate KEEPS every answer, so unlike the two resets above it is not
+// counting a deletion. It carries three facts the confirm has to be right
+// about:
+//
+// - `accepted` picks which of the two sentences is shown, and it was a PROP.
+//   The day-by-day page passed `accepted={0}` unconditionally, so a sheet with
+//   three accepted corrections was told nothing would come with them.
+// - `open` is the reason the action REFUSES (`openitems`). Worth saying before
+//   somebody presses it rather than as an error afterwards.
+// - `signed` is the destructive half: a rebuild clears the signature. The
+//   corrections screen shows this control on signed sheets, so the warning has
+//   to be conditional on the sheet in front of them and not on a general note.
+export async function timesheetRecomputeImpact(timesheetId) {
+  await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, signedAt: true, approvedAt: true },
+  });
+  if (!ts) return { accepted: 0, open: 0, answers: 0, signed: false, approved: false };
+  const [accepted, open, answers] = await Promise.all([
+    prisma.timesheetCorrection.count({ where: { timesheetId: ts.id, status: "accepted" } }),
+    prisma.timesheetCorrection.count({ where: { timesheetId: ts.id, status: "open" } }),
+    prisma.timesheetCorrection.count({
+      where: {
+        timesheetId: ts.id,
+        OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+      },
+    }),
+  ]);
+  return { accepted, open, answers, signed: !!ts.signedAt, approved: !!ts.approvedAt };
 }
 
 export async function recomputeTimesheet(timesheetId) {

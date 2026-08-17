@@ -585,7 +585,17 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <PreviewReset
             timesheetId={ts.id}
             name={ts.sourceName}
-            answers={answered.length}
+            /* NOT `answered`, WHICH IS A DIFFERENT QUESTION. That set is the
+               `q_` rows the page restores cards for; a reset also takes the
+               `fix_` acknowledgements off a backwards rest entry, and they are
+               their answer like any other. Brandon's July sheet had one, so the
+               button read 6 beside a confirm that correctly said 7. */
+            answers={
+              ts.corrections.filter((c) => {
+                const k = String(c.kind || "");
+                return k.startsWith("q_") || k.startsWith("fix_");
+              }).length
+            }
             /* what a reset would take off a break answer as well, counted
                through the same rule the action applies - see `resetAction`. The
                button said "reset their N answers" with N counting corrections
