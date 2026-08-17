@@ -7,7 +7,7 @@ import { sendModeSummary } from "@/lib/timesheet-send";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "./_components/SendModeBanner";
 import { companyDate } from "@/lib/company-time";
-import LiveBadge from "./_components/LiveBadge";
+import LiveBadge, { VersionBadge, SignatureBadge } from "./_components/LiveBadge";
 import PeriodPresence, { BatchFaces, FoldedCount } from "./_components/CardPresence";
 import { groupByPeriod, batchState } from "@/lib/timesheet/batch-state";
 import TestBatchBadge from "./_components/TestBatchBadge";
@@ -118,6 +118,15 @@ export default async function TimesheetBatchesPage() {
                               understate how far the data goes - which shows LIVE and
                               refuses to send. Wrong in the safe direction. */}
                           <LiveBadge batch={b} size="sm" />
+                          {/* which upload, said separately from where the
+                              period has got to - see VersionBadge */}
+                          <VersionBadge size="sm" />
+                          {/* out for signature, on the card as well as
+                              inside the batch. `sent` and `signed` are
+                              already counted above for the stat row, so
+                              this costs no extra query. Renders nothing
+                              until something has actually gone out. */}
+                          <SignatureBadge sent={sent} signed={signed} size="sm" />
                           <TestBatchBadge batch={b} size="sm" showAddress={false} />
                         </div>
                         {/* WHEN THE EXPORT LANDED, TO THE MINUTE. The date alone made
@@ -204,7 +213,8 @@ export default async function TimesheetBatchesPage() {
                             <span className="min-w-[4.5rem] font-semibold text-foreground">
                               {o.timesheets.length} sheets
                             </span>
-                            <LiveBadge batch={o} size="sm" newerInPeriod />
+                            <LiveBadge batch={o} size="sm" />
+                            <VersionBadge size="sm" newerInPeriod />
                             <BatchFaces batchId={o.id} compact />
                             <span className="ml-auto font-semibold text-brand">Open &rarr;</span>
                           </Link>

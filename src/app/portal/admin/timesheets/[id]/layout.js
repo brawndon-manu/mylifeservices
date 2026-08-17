@@ -16,12 +16,44 @@ import BatchPresence from "./BatchPresence";
 import ReadOnlyProvider from "./ReadOnly";
 import { supersededBy } from "@/lib/timesheet/superseded";
 import { companyDate } from "@/lib/company-time";
+import { prisma } from "@/lib/prisma";
+import { SignatureBadge } from "../_components/LiveBadge";
 
 export default async function TimesheetBatchLayout({ children, params }) {
   const { id } = await params;
   const newer = await supersededBy(id);
+  // OUT FOR SIGNATURE, ON EVERY SCREEN OF THE BATCH.
+  //
+  // Here rather than on the pages for the reason this file already gives about
+  // the presence bar and the read-only banner: it is true of the batch, not of
+  // one screen, and a fifteenth screen added later is covered by default rather
+  // than being the one that quietly lacks it.
+  //
+  // Two counts, not sixty rows. `_count` with a filter is one query and no
+  // sheet payloads - these pages already load what they need and this must not
+  // become a second copy of it.
+  const [sent, signed] = await Promise.all([
+    prisma.timesheet.count({ where: { batchId: id, sentAt: { not: null } } }),
+    prisma.timesheet.count({ where: { batchId: id, signedAt: { not: null } } }),
+  ]);
   return (
     <BatchPresence batchId={id}>
+      {/* THE LIGHT IS ONLY HONEST IF THE PAGE UNDER IT IS FRESH, and it is:
+          `BatchPresence` above already polls the batch version every few
+          seconds and calls `router.refresh()` the moment it moves. No second
+          poller here - one per screen per tab is how a fourteen-screen batch
+          starts making fourteen requests a beat.
+
+          What that poller did NOT see until today is a SIGNATURE. `signTimesheet`
+          revalidated the batch page and never bumped the version, so the number
+          beside this badge would have sat still while people signed. Fixed in
+          `actions.js`; without it this badge would blink over a stale count,
+          which is worse than not having one. */}
+      {sent > 0 && (
+        <div className="mx-auto max-w-7xl px-6 pt-6">
+          <SignatureBadge sent={sent} signed={signed} />
+        </div>
+      )}
       {/* every control below reads this rather than each screen asking. The
           server refuses regardless - this only stops a wasted click. */}
       <ReadOnlyProvider readOnly={!!newer}>

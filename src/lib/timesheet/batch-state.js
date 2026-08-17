@@ -29,13 +29,25 @@ const DAY = 86400000;
 export const BATCH_STATES = {
   live: {
     key: "live",
-    label: "LIVE",
-    // rose, and the dot pulses. The only state that blinks - a light that never
-    // stops meaning something stops being read.
+    // THE WORD LIVE MOVED, THE KEY DID NOT. Mánu 2026-08-17: this state means
+    // the export has not reached the end of the fortnight, which is nothing to
+    // do with anything being live - and LIVE is wanted for the state that
+    // matters to him, which is timesheets out for signature. So the label says
+    // what it always meant and the word went to `signatureState` below.
+    //
+    // The KEY stays `live` deliberately. `canSendAll` is
+    // `batchState(...).key === "final"`, and five other places branch on this
+    // key including the panel that explains why Send all is blocked. Renaming
+    // it to match a label is how a guard on sixty outgoing timesheets gets
+    // broken by a cosmetic change.
+    label: "STILL COMING IN",
     pill: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300",
     edge: "border-l-rose-500",
     dot: "bg-rose-600",
-    pulses: true,
+    // AND IT STOPPED BLINKING. The pulse is now the signature badge's alone -
+    // that is the whole point of a blinking light, and two of them meaning
+    // different things is how both stop being read.
+    pulses: false,
   },
   "needs-decision": {
     key: "needs-decision",
@@ -93,6 +105,61 @@ export function batchState(batch, { newerInPeriod = false } = {}) {
     lockedAt: batch?.lockedAt ?? null,
     lockedByName: batch?.lockedByName ?? null,
   };
+}
+
+// IS THIS PERIOD OUT FOR SIGNATURE RIGHT NOW?
+//
+// A SECOND AXIS, AND THAT IS THE WHOLE FIX. `batchState` answers "how far has
+// the data got and may it be sent". This answers "has it gone, and is it coming
+// back". They are independent - a superseded upload can be locked, a locked one
+// may not have been sent - and squeezing both into one pill is why the badge
+// read wrong. Mánu 2026-08-17.
+//
+// COUNTED AGAINST SENT, NOT AGAINST THE BATCH, his call. "0 of 3 signed"
+// describes the people actually asked; on a batch where 3 of 59 have gone out,
+// "0 of 59" would describe a question nobody has been asked yet. Once the whole
+// period goes out the two are the same number anyway.
+export function signatureState(sent = 0, signed = 0) {
+  const out = Math.max(0, Number(sent) || 0);
+  // a signature on a sheet that is somehow not marked sent still counts as
+  // returned, but it can never make the fraction read more than all of them
+  const back = Math.min(out, Math.max(0, Number(signed) || 0));
+  // NOT SENT IS NOT A STATE, IT IS THE ABSENCE OF ONE. Nothing has been asked,
+  // so there is nothing to report and no badge at all - which is also what
+  // every screen looked like before today, when 0 of 12 batches had ever sent.
+  if (out === 0) return null;
+  const all = back === out;
+  return {
+    key: all ? "all-signed" : "awaiting",
+    label: all ? "ALL SIGNED" : "LIVE",
+    detail: `${back} of ${out} signed`,
+    sent: out,
+    signed: back,
+    // ONLY THIS BLINKS, ANYWHERE. And only while something is still owed - a
+    // period everybody has signed is finished, and a light still flashing over
+    // it would be the exact fault the old comment warned about.
+    pulses: !all,
+    pill: all
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300"
+      : "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300",
+    dot: all ? "bg-emerald-600" : "bg-rose-600",
+  };
+}
+
+// WHICH UPLOAD OF THE FORTNIGHT THIS IS. The other half of the split: purely
+// about supersession, with no opinion on where the period has got to.
+export function versionState(newerInPeriod = false) {
+  return newerInPeriod
+    ? {
+      key: "superseded",
+      label: "SUPERSEDED",
+      pill: "border-border-strong bg-surface-2 text-faint",
+    }
+    : {
+      key: "current",
+      label: "MOST RECENT VERSION",
+      pill: "border-border-strong bg-surface-2 text-muted",
+    };
 }
 
 // Only a period somebody has attested may be sent. The precondition is not

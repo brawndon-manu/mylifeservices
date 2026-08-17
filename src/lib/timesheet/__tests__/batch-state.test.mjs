@@ -18,7 +18,14 @@ test("still coming in while the data stops short of the period end", () => {
   assert.equal(s.reach, "08/12/26");
   assert.equal(s.daysToCome, 3);
   assert.equal(s.covered, false);
-  assert.equal(s.pulses, true);
+  // THIS USED TO ASSERT `pulses === true` AND THE CHANGE IS DELIBERATE.
+  // 2026-08-17: the blink moved to `signatureState`, which answers "timesheets
+  // are out and coming back" - the thing a reviewer actually watches. Two
+  // pulsing lights meaning different things is how both stop being read, so
+  // this one went out. The KEY is untouched: `canSendAll` and five branches
+  // still read it.
+  assert.equal(s.pulses, false);
+  assert.equal(s.label, "STILL COMING IN");
 });
 
 test("the data reaching the last day asks a question, it does not answer one", () => {

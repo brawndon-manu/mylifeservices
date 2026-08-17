@@ -7,10 +7,68 @@
 // Tailwind v4 compiles what it can SEE, so every class here is a full literal
 // string off `BATCH_STATES` rather than built from the state key. The violations
 // group once shipped with a plain white border for exactly that reason.
-import { batchState, periodDays } from "@/lib/timesheet/batch-state";
+import {
+  batchState, periodDays, signatureState, versionState,
+} from "@/lib/timesheet/batch-state";
 
-export default function LiveBadge({ batch, size = "md", newerInPeriod = false }) {
-  const s = batchState(batch, { newerInPeriod });
+// WHICH UPLOAD THIS IS, and nothing else. Split off the state pill 2026-08-17:
+// supersession and where-the-period-has-got-to are two facts, and one pill could
+// only ever say whichever won, so a replaced upload lost its lifecycle entirely.
+export function VersionBadge({ newerInPeriod = false, size = "md" }) {
+  const v = versionState(newerInPeriod);
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 font-bold tracking-wide ${v.pill} ${
+        size === "sm" ? "text-[10px]" : "text-[11px]"
+      }`}
+      title={
+        v.key === "superseded"
+          ? "A later upload of this same pay period exists. That one is the live copy."
+          : "This is the newest upload of this pay period, and the one being worked."
+      }
+    >
+      {v.label}
+    </span>
+  );
+}
+
+// OUT FOR SIGNATURE, AND HOW MUCH OF IT IS BACK.
+//
+// The only thing on any of these screens that blinks. Renders nothing at all
+// until something has actually been sent, so it cannot sit there claiming a
+// period is live before anybody has been asked.
+export function SignatureBadge({ sent = 0, signed = 0, size = "md" }) {
+  const s = signatureState(sent, signed);
+  if (!s) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-bold tracking-wide ${s.pill} ${
+        size === "sm" ? "text-[10px]" : "text-[11px]"
+      }`}
+      title={
+        s.key === "all-signed"
+          ? `All ${s.sent} of the timesheets sent have been signed.`
+          : `${s.sent} timesheet${s.sent === 1 ? "" : "s"} out for signature, ${s.signed} back. This page updates as they come in.`
+      }
+    >
+      <span className="relative flex h-2 w-2">
+        {s.pulses && (
+          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${s.dot}`} />
+        )}
+        <span className={`relative inline-flex h-2 w-2 rounded-full ${s.dot}`} />
+      </span>
+      {s.label}
+      <span className="font-medium opacity-80">{s.detail}</span>
+    </span>
+  );
+}
+
+// NOT GIVEN `newerInPeriod` ANY MORE, on purpose. This pill is the lifecycle
+// alone now; VersionBadge above carries supersession. Callers still pass the
+// flag to `batchState` for the LOGIC - Send all, the read-only banner, the
+// explanation panel - and none of that changed.
+export default function LiveBadge({ batch, size = "md" }) {
+  const s = batchState(batch);
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-bold tracking-wide ${s.pill} ${
@@ -19,19 +77,15 @@ export default function LiveBadge({ batch, size = "md", newerInPeriod = false })
       title={
         s.key === "live"
           ? `The export reaches ${s.reach}. The period runs to ${batch.periodTo}.`
-          : s.key === "superseded"
-            ? "A later upload of this same pay period exists. That one is the live copy."
-            : s.key === "final"
-              ? `Marked final${s.lockedByName ? ` by ${s.lockedByName}` : ""}.`
-              : "The whole period is in. Nobody has said the schedule is locked."
+          : s.key === "final"
+            ? `Marked final${s.lockedByName ? ` by ${s.lockedByName}` : ""}.`
+            : "The whole period is in. Nobody has said the schedule is locked."
       }
     >
+      {/* the dot stays, the blink does not - see the note on `pulses` in
+          BATCH_STATES. Nothing on this pill animates any more; the signature
+          badge is the only light on the page. */}
       <span className="relative flex h-2 w-2">
-        {/* the ring, not the dot, is what animates - a dot that fades looks
-            broken and a ring reads as a broadcast light */}
-        {s.pulses && (
-          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${s.dot}`} />
-        )}
         <span className={`relative inline-flex h-2 w-2 rounded-full ${s.dot}`} />
       </span>
       {s.label}
