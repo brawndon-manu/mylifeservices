@@ -195,8 +195,18 @@ export default function ReviewTable({
                     the grounds that they then start in a different place from
                     the name above them. He looked at it and wants them right:
                     the four links are one block that reads as a block, and it
-                    should sit the same way on every screen. */}
-                <div className="flex flex-none flex-col items-end gap-1.5">
+                    should sit the same way on every screen.
+
+                    `items-end` ALONE DOES NOT DO THAT once the row wraps.
+                    `justify-between` puts the only item on the second line at
+                    flex-start, so the block sat at the card's LEFT edge and
+                    `items-end` right-aligned the links inside its own 166px
+                    box - 127px shy of the card edge on 59 of 59 July rows at
+                    375. `ml-auto` eats the free space before justify-content
+                    is consulted, so the block lands on the right edge on a
+                    wrapped line and nothing moves on an unwrapped one. This is
+                    what All employees has been doing all along. */}
+                <div className="ml-auto flex flex-none flex-col items-end gap-1.5">
                   {r.disputed ? (
                     <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                       Reported a problem
@@ -280,6 +290,19 @@ export default function ReviewTable({
                           {r.user.displayName}
                         </p>
                         <p className="truncate text-xs text-muted">{r.user.email}</p>
+                        {/* UNDER THE EMAIL, ON ITS OWN LINE, AND IT NEVER
+                            TRUNCATES. Both are the same lesson All employees
+                            already learned: sharing a line with a work email
+                            ellipsised the number away in a narrow column, and a
+                            phone number is short and is the thing you are most
+                            likely to want to read off this row.
+                            Plain and muted rather than the brand-coloured tel:
+                            link All employees uses - the email beside it here is
+                            plain text, and one of the pair turning into a link
+                            would read as the other one being broken. */}
+                        {r.user.phone && (
+                          <p className="whitespace-nowrap text-xs text-muted">{r.user.phone}</p>
+                        )}
                       </div>
                     </>
                   ) : (
@@ -289,7 +312,11 @@ export default function ReviewTable({
                   )}
                 </div>
 
-                <div className="flex flex-none items-center gap-2">
+                {/* same wrapped-line rule as the link block above: the
+                    controls are the second item in a wrapping justify-between
+                    row, so without `ml-auto` they sat 107px shy of the card
+                    edge on every row at 375. */}
+                <div className="ml-auto flex flex-none items-center gap-2">
                   <EmployeePicker
                     timesheetId={r.id}
                     candidates={candidates}
