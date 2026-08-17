@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import PreviewBar from "./_components/PreviewBar";
 import PortalMenu from "./_components/PortalMenu";
 import PortalTabBar from "./_components/PortalTabBar";
+import PortalPushNav from "./_components/PortalPushNav";
 
 // the portal has its own Light / Dim / Night themes, so tell Dark Reader (and
 // similar dark-mode extensions) to leave these pages alone. Dark Reader rewrites
@@ -208,7 +209,12 @@ export default async function PortalLayout({ children }) {
           safe-area inset, and this clears all of that plus air. Measured from
           the same inset the bar uses, so the two cannot drift apart. Cleared
           again at lg, where there is no bar. */}
-      <div className="pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:pb-0">{children}</div>
+      {/* WRAPS THE CONTENT, NOT THE CHROME. `PortalPushNav` renders its children
+          untouched and only listens - the header above and the tab bar below
+          stay where they are through a navigation, which is the whole look. */}
+      <div className="pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:pb-0">
+        <PortalPushNav>{children}</PortalPushNav>
+      </div>
       <PortalTabBar elevated={isElevated(role)} />
     </div>
   );

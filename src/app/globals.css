@@ -161,6 +161,15 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 }
 
+/* THE PUSH TRANSITION'S CSS IS NOT HERE, AND IT CANNOT BE.
+   `::view-transition-old(root)` and friends are dropped by this project's CSS
+   pipeline - measured 2026-08-17: the rules directly above and below this
+   comment both survive into the bundle, nine other @keyframes survive, and
+   every rule and keyframe of that block was gone. The selector is not
+   understood, the rules go, and the keyframes then look unused and go with
+   them. It lives in a <style> block in `src/app/layout.js` instead, beside the
+   theme script, which is the other thing that has to reach <html> untouched. */
+
 /* accent tints in dark. the colored chips / callouts / badges across the site
    use light Tailwind tints (bg-amber-50, text-rose-700, etc.); rather than add
    dark: variants to ~150 scattered usages (many in lib constant strings), this

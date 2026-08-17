@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PublicChrome from "@/components/PublicChrome";
 import AccessibilityMenu from "@/components/AccessibilityMenu";
+import { navTransitionCss } from "@/lib/portal-nav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -106,6 +107,27 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        {/* THE PORTAL'S PUSH TRANSITION, AND IT HAS TO BE INLINE.
+            See `PortalPushNav`, which sets `data-nav` on <html> for the length
+            of one navigation. The rules are BUILT from `NAV_MS` rather than
+            written out, because the swipe scrubs these same animations by
+            setting `currentTime` and needs the exact duration the CSS used.
+
+            NOT IN globals.css, AND THAT IS MEASURED RATHER THAN ASSUMED. Put
+            there on 2026-08-17 it vanished from the bundle: the rules directly
+            above and below it both survived, nine other @keyframes survived,
+            and every rule and keyframe of this block was gone. The CSS pipeline
+            does not understand `::view-transition-old(root)`, drops those rules,
+            and then prunes the keyframes nothing references any more. Inline is
+            the same escape hatch the theme script below uses for the same
+            reason: it has to reach <html> untouched.
+
+            The outgoing page moves 30% and the incoming one 100%, which is the
+            parallax picked off the mock - the page underneath follows rather
+            than sitting still, so it reads as pushed aside rather than thrown
+            away. Somebody who has asked for less motion gets no animation at
+            all, and `PortalPushNav` does not even bind its listeners. */}
+        <style dangerouslySetInnerHTML={{ __html: navTransitionCss() }} />
         {/* set the theme before paint so there's no flash of the wrong one.
             reads the saved choice, falling back to the OS preference. */}
         <script
