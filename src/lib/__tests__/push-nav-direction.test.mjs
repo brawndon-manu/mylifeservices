@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import {
   directionFor, depthOf, TAB_ROOTS,
   dragProgress, viewTransitionAnimations, navTransitionCss, NAV_MS, NAV_COMMIT_AT,
-  createNavOwner,
+  createNavOwner, mayDropSnapshots, SPRING_HOLD_MS,
 } from "../portal-nav.js";
 
 // TWO TRANSITIONS, ONE ATTRIBUTE. `data-nav` on <html> is what every keyframe
@@ -223,4 +223,25 @@ test("only the transition's own animations are picked up", () => {
 test("a document that cannot list animations answers empty, not undefined", () => {
   assert.deepEqual(viewTransitionAnimations(null), []);
   assert.deepEqual(viewTransitionAnimations({}), []);
+});
+
+// THE SPRING-BACK MAY NOT DROP ITS SNAPSHOTS OVER THE WRONG PAGE. Letting go
+// short of the line springs the picture back and re-navigates forward, and
+// until that navigation lands, the snapshots are the only thing covering the
+// page the history is still standing on. Dropping them early is a full-screen
+// blink of that page - which is what every slow peek-and-return showed.
+test("the snapshots hold until the page under them is the one they draw", () => {
+  const home = "/portal/admin/applications";
+  assert.equal(mayDropSnapshots("/portal/admin", home, 0), false,
+    "the router has not brought the page back yet");
+  assert.equal(mayDropSnapshots(home, home, 0), true,
+    "the page is back, the drop is invisible");
+});
+
+test("a route that never comes back releases the page after the grace", () => {
+  const home = "/portal/admin/applications";
+  assert.equal(mayDropSnapshots("/portal/admin", home, SPRING_HOLD_MS + 1), true,
+    "held past the grace, the page must be let go frozen or not");
+  assert.equal(mayDropSnapshots("/portal/admin", home, SPRING_HOLD_MS - 1), false,
+    "inside the grace it keeps waiting");
 });

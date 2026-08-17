@@ -130,3 +130,16 @@ export function dragProgress(dx, width) {
   if (!width || width <= 0) return 0;
   return Math.max(0, Math.min(1, dx / width));
 }
+
+// LETTING GO SHORT OF THE LINE springs the picture back and re-navigates
+// forward - and the transition's snapshots are the only thing covering the
+// page the history is still standing on. Drop them before the router has
+// brought the page back and the screen blinks the wrong page at full size,
+// which is what a slow peek-and-return showed on every release. So they hold
+// until the path under them is the one they are drawing - or until the grace
+// runs out, because a route that never comes back must not hold the page
+// forever.
+export const SPRING_HOLD_MS = 400;
+export function mayDropSnapshots(pathNow, home, heldMs) {
+  return pathNow === home || heldMs > SPRING_HOLD_MS;
+}

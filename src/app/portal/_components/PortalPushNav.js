@@ -37,6 +37,7 @@ import {
   NAV_MS,
   NAV_COMMIT_AT,
   createNavOwner,
+  mayDropSnapshots,
 } from "@/lib/portal-nav";
 
 export default function PortalPushNav({ children }) {
@@ -249,7 +250,13 @@ export default function PortalPushNav({ children }) {
       const t = e.touches[0];
       if (t.clientX > EDGE) return;
       if (inScroller(e.target)) return;
-      dragging.current = { x: t.clientX, y: t.clientY, p: 0, committed: false };
+      dragging.current = {
+        x: t.clientX, y: t.clientY, p: 0, committed: false,
+        // where the spring-back has to get the address back to - read at
+        // touch time, because `commit` moves the history while the finger is
+        // still down
+        fromPath: pathRef.current,
+      };
     };
     const move = (e) => {
       const d = dragging.current;
@@ -302,20 +309,39 @@ export default function PortalPushNav({ children }) {
         return;
       }
 
-      // UNDER THE LINE: RUN IT BACKWARDS AND PUT THE HISTORY BACK.
+      // UNDER THE LINE: SPRING BACK, AND PUT THE HISTORY BACK - IN THAT
+      // ORDER, REVERSED FROM WHAT IT WAS. This used to play the animation
+      // backwards, let the transition FINISH, and only then call
+      // `router.forward()` - and a finished transition tears its snapshots
+      // down. For however long the router took to bring the page back, the
+      // screen showed where the history was actually standing: the page
+      // BELOW. A fast swipe never lets go under the line, so it never saw
+      // this; a slow peek-and-return hit it on every release, as a
+      // full-screen blink of the wrong page.
       //
-      // The page they were reading is the one we already navigated away from,
-      // so springing back visually is only half of it - the address has to
-      // return too, or the next Back press goes somewhere they never chose.
-      for (const a of anims) {
-        a.playbackRate = -1;
-        a.play();
-      }
-      Promise.all(anims.map((a) => a.finished.catch(() => {})))
-        .then(() => router.forward())
-        // even if the animation bookkeeping fails, the history must go back to
-        // where the person actually was
-        .catch(() => router.forward());
+      // So the navigation starts NOW, and the snapshots are walked back by
+      // hand - still paused, so the transition cannot finish under us - and
+      // dropped only once the address has come back. At that moment the
+      // pixels on both sides of the drop are the same page, which is what
+      // makes it invisible. `mayDropSnapshots` holds the door, and gives up
+      // after a grace so a refused route cannot hold the page frozen.
+      router.forward();
+      const from = d.p * NAV_MS;
+      const t0 = performance.now();
+      const spring = (now) => {
+        const left = Math.max(0, from - (now - t0));
+        for (const a of anims) {
+          try { a.currentTime = left; } catch { /* skipped under us */ }
+        }
+        if (left > 0 || !mayDropSnapshots(pathRef.current, d.fromPath, now - t0 - from)) {
+          requestAnimationFrame(spring);
+          return;
+        }
+        if (d.vt && typeof d.vt.skipTransition === "function") d.vt.skipTransition();
+        // a browser without skip still must not hold paused snapshots forever
+        else for (const a of anims) { try { a.finish(); } catch { /* gone */ } }
+      };
+      requestAnimationFrame(spring);
     };
 
     document.addEventListener("touchstart", start, { passive: true });
