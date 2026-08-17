@@ -190,7 +190,15 @@ export default function ReviewTable({
                   </div>
                 </div>
 
-                <div className="flex flex-none flex-col items-end gap-1.5">
+                {/* RIGHT-ALIGNED ONLY WHILE IT IS ACTUALLY ON THE RIGHT.
+                    The row is `flex-wrap justify-between`, so on a narrow card
+                    this column wraps onto its own line and takes the full
+                    width - and `items-end` then held every link against the
+                    right edge while the name and hours above them sat left,
+                    giving each one a different starting point. Left-aligned
+                    once it has wrapped, unchanged from sm up where it really
+                    is the right-hand column. */}
+                <div className="flex flex-none flex-col items-start gap-1.5 sm:items-end">
                   {r.disputed ? (
                     <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                       Reported a problem
