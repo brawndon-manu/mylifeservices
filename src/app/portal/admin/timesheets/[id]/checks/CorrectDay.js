@@ -6,8 +6,8 @@
 // human deciding which record is right, and a button that agrees for you defeats
 // it.
 import { useState } from "react";
-import { overrideDayHours, clearDayOverride } from "@/app/portal/admin/timesheets/actions";
-import { companyDate } from "@/lib/company-time";
+import { overrideDayHours } from "@/app/portal/admin/timesheets/actions";
+import UndoDay from "@/app/portal/admin/timesheets/_components/UndoDay";
 
 const f2 = (n) => (n == null ? "-" : (Math.round(n * 100) / 100).toFixed(2));
 
@@ -48,41 +48,23 @@ export default function CorrectDay({ timesheetId, date, timesheet, schedule, exi
     }
   }
 
-  async function clear() {
-    setBusy(true);
-    try {
-      await clearDayOverride(timesheetId, date);
-      setDone(false);
-      setOpen(false);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  // THE GREEN BOX MOVED OUT TO `UndoDay`, unchanged in what it says and with
+  // a confirm step added. It lives in `_components` because the day-by-day page
+  // needs the same control: this row only ever appears on a schedule-versus-
+  // timesheet mismatch, and there were 0 of those in July and 1 in August, so
+  // the undo had never rendered anywhere. Most overrides come from an answer,
+  // on days this row never covers.
   if (existing) {
     return (
-      <div className="mt-2 rounded-md border border-emerald-300/60 bg-emerald-50 p-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/30">
-        <p className="font-semibold text-emerald-900 dark:text-emerald-200">
-          Corrected to {f2(existing.paidHours)} hrs
-          {existing._was != null && ` (was ${f2(existing._was)})`}
-        </p>
-        <p className="text-emerald-800 dark:text-emerald-200/80">
-          by {existing._by}
-          {existing._at && ` on ${companyDate(existing._at, { month: "numeric", day: "numeric", year: "numeric" })}`}
-          {existing._note && ` - "${existing._note}"`}
-        </p>
-        <p className="mt-1 text-emerald-800 dark:text-emerald-200/80">
-          Takes effect when you rebuild this sheet.
-        </p>
-        <button
-          type="button"
-          onClick={clear}
-          disabled={busy}
-          className="mt-1 font-semibold text-emerald-900 underline disabled:opacity-50 dark:text-emerald-200"
-        >
-          Undo this correction
-        </button>
-      </div>
+      <UndoDay
+        timesheetId={timesheetId}
+        date={date}
+        ov={existing}
+        onDone={() => {
+          setDone(false);
+          setOpen(false);
+        }}
+      />
     );
   }
 

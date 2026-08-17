@@ -22,6 +22,7 @@ import { batchReach, markKey } from "@/lib/timesheet/mark-key";
 import BreakAnswer from "../../checks/BreakAnswer";
 import { answersByFinding, breakFindingKey } from "@/lib/timesheet/break-answers";
 import MiscClassify from "./MiscClassify";
+import UndoDay from "../../../_components/UndoDay";
 import RecomputeButton from "../../corrections/RecomputeButton";
 import { PresenceBar, PresenceCard } from "../../Presence";
 
@@ -478,7 +479,14 @@ export default async function PersonSchedulePage({ params, searchParams }) {
           rebuilds it, and one person at a time is the safe way to start. */}
       {!sheet.signedAt && (
         <div className="mt-4 rounded-lg border border-border bg-surface-2 p-4">
-          <RecomputeButton timesheetId={sheet.id} accepted={0} />
+          {/* COUNTED, NOT ASSUMED. This was `accepted={0}` unconditionally, so
+              the line beside the button told anybody reading a sheet with
+              accepted corrections on it that nothing had been accepted and the
+              figures would stay put. The rows are already loaded above. */}
+          <RecomputeButton
+            timesheetId={sheet.id}
+            accepted={corrections.filter((c) => c.status === "accepted").length}
+          />
           <p className="mt-2 text-xs leading-relaxed text-faint">
             Recalculating re-runs the engine over their stored days, so any rule that
             landed after this batch was uploaded reaches them. It changes nobody
@@ -668,6 +676,34 @@ export default async function PersonSchedulePage({ params, searchParams }) {
                 mealRequired={!!d.mealRequired}
               />
             )}
+
+            {/* PUTTING A DAY BACK, FROM THE PAGE THE DAYS ARE ON.
+                Added 2026-08-17. `clearDayOverride` had exactly one caller, the
+                green box on a Data checks row of kind `flag` - a day where the
+                schedule and the timesheet disagree about the hours. Measured:
+                0 of those in July across 59 sheets, 1 in August on somebody
+                carrying no override. So the control had never rendered
+                anywhere, and the 2026-08-16 fix that makes it delete the day's
+                ANSWERS had never been seen.
+
+                Most overrides come from an answer, which is the case that fix
+                is about, and an answer lands on whatever day it is about rather
+                than on a mismatch day.
+
+                NOT ON A MISC-CLASSIFY DAY: `MiscClassify` above has its own
+                undo for exactly those, sitting with the classification it
+                undoes. Two undo buttons on one day is worse than the one that
+                was missing.
+
+                NOT ON A SIGNED SHEET, matching the Data checks row, which is
+                gated on `!e.signed`. Changing the figures under a signature
+                leaves somebody attesting to a document that no longer says
+                what they signed. */}
+            {!sheet.signedAt &&
+              ov._source !== "misc-classify" &&
+              Object.keys(ov).length > 0 && (
+                <UndoDay timesheetId={sheet.id} date={d.date} ov={ov} />
+              )}
 
             <DayPeek {...(dayViews.get(d.date) || {})} />
           </PresenceCard>
