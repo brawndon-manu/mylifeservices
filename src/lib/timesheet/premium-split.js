@@ -31,7 +31,7 @@
 // never mentioning somebody, or a day over six hours with no meal rostered. All
 // of those are now PAID unless somebody tells us otherwise.
 
-import { buildQuestions, answerProgress } from "./questions.js";
+import { buildQuestions, answerProgress, mealNoRoom } from "./questions.js";
 
 const PER_VIOLATION = 1;
 
@@ -111,9 +111,31 @@ export function splitPremium(days, { confirmed } = {}) {
     const restOwed = d.restViolation === true;
 
     if (mealOwed) {
+      // NO GAP LONG ENOUGH MEANS THERE IS NOTHING TO ASSUME.
+      //
+      // "Assumable" means the employee could still tell us they took it and the
+      // hour would come off. On a day with no lawful gap anywhere they could
+      // not have taken it, and their own card knows: `answerOptionsFor` drops
+      // "I took it" entirely when `noRoom`, so the option that would move this
+      // hour is not on the page. Counting it as assumable said an hour might
+      // come off through an answer nobody can give.
+      //
+      // Measured 2026-08-17 before changing it: 26 of the 47 meal premiums on
+      // the current August upload, and 159 of 242 in July. Settled read 11 of
+      // 124 - a figure that made the counter look broken - and reads 37 with
+      // these where they belong. Mánu: "it shouldn't start at 0 cause there are
+      // premiums in there for certain like full day with no meal break and no
+      // room to take one."
+      //
+      // `mealNoRoom` is one rule in one place, and it is GUARDED: a day with
+      // no shifts to reason about answers false, because "we cannot tell" and
+      // "there was nowhere to put one" are different facts and only one of
+      // them settles an hour. Reading the unguarded expression here declared
+      // every dayless fixture settled and failed seven tests.
+      const noRoomForOne = mealNoRoom(d);
       // M1 and only M1 is beyond assuming: rostered, punched, started too late.
       // A confirmed "no" is the other way a premium stops being assumable.
-      const isSettled = d.mealLate === true || has(date, "meal");
+      const isSettled = d.mealLate === true || has(date, "meal") || noRoomForOne;
       if (isSettled) settled += PER_VIOLATION;
       else assumable += PER_VIOLATION;
       rows.push({
@@ -124,7 +146,9 @@ export function splitPremium(days, { confirmed } = {}) {
           ? "a meal was rostered and began after the fifth hour"
           : has(date, "meal")
             ? "the employee confirmed they did not get their meal"
-            : "no meal is recorded, so it is paid unless they tell us they took it",
+            : noRoomForOne
+              ? "no meal is recorded and there is no gap in the day long enough for one, so nothing they can tell us moves it"
+              : "no meal is recorded, so it is paid unless they tell us they took it",
       });
     }
 

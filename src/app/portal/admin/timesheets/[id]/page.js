@@ -18,7 +18,7 @@ import ReviewTable from "../_components/ReviewTable";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { isSuper } from "@/lib/roles";
 import SendPanel from "../_components/SendPanel";
-import LiveBadge, { PeriodStrip } from "../_components/LiveBadge";
+import LiveBadge, { PeriodStrip, VersionBadge, SignatureBadge } from "../_components/LiveBadge";
 import LockPeriod from "../_components/LockPeriod";
 import { batchState } from "@/lib/timesheet/batch-state";
 import TestBatchBadge from "../_components/TestBatchBadge";
@@ -370,7 +370,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           {batch.periodFrom} to {batch.periodTo}
         </h1>
-        <LiveBadge batch={batch} newerInPeriod={newerInPeriod} />
+        <LiveBadge batch={batch} />
+        <VersionBadge newerInPeriod={newerInPeriod} />
         {/* BESIDE the state, never instead of it - a rehearsal batch is still
             live or final or superseded, and both facts matter. The address is
             shown in full here: this is the page somebody is on when they decide
@@ -648,6 +649,36 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
               <p className="mt-1 text-xs text-muted">
                 Every fault the reports show, taken literally, with its penalty.
                 This is what payroll pays, and it can only fall from here.
+              </p>
+            </div>
+
+            {/* THE OTHER HALF OF THE SAME SUM, and the grid was already two
+                columns waiting for it.
+                NOT "confirmed" and not "verified", both of which say a PERSON
+                did the confirming - and most of this is settled by the
+                documents alone, with nobody asked. `settled` is the word the
+                evidence screen already uses for "cannot move", so it is one
+                word meaning one thing in two places.
+                It does NOT start at zero, which was the whole point: a full day
+                with no meal and no gap to have taken one is beyond answering
+                from the moment it is uploaded. See `mealNoRoom`. */}
+            <div className="rounded-lg border border-border bg-surface-2 p-3">
+              {/* THE LIVE PILL SITS HERE, not by the date. Settled is the
+                  figure that MOVES as people answer and sign, so the light
+                  belongs beside the number it describes. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Settled premium
+                </p>
+                <SignatureBadge sent={sent} signed={signed} size="sm" />
+              </div>
+              <p className="mt-1 text-2xl font-semibold text-foreground">
+                {premiumSplit.ifAssumptionsHold.toFixed(2)}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                What no answer can change: the documents settle it, or somebody
+                already has. The {premiumSplit.assumptions.toFixed(2)} hours
+                between this and the projected figure are what is still open.
               </p>
             </div>
           </div>

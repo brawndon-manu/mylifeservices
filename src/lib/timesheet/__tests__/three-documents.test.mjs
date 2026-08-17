@@ -74,6 +74,19 @@ const day = (over = {}) => ({
   ...over,
 });
 
+// ASSUMED IS A STRAIGHT-THROUGH SHIFT, AND THAT NOW MATTERS. `day` punches in
+// at 8 and out at 16:30 with nothing between, so there is no gap anywhere long
+// enough for a meal.
+//
+// Until 2026-08-17 its meal premium counted as ASSUMABLE - an hour the employee
+// could still talk us out of by saying they took it. Their own card never
+// offered them that: `answerOptionsFor` drops "I took it" when there is no room,
+// so the split was holding open an answer the page refuses to collect. It is
+// SETTLED now, and every count below moved by one because of it.
+//
+// The rest premium is untouched and still assumable, which is what keeps these
+// tests honest - if the change had swept both, the numbers would agree for the
+// wrong reason.
 const ASSUMED = day({ mealViolation: true, restViolation: true, restTaken: 1 });
 const DOCUMENTED = day({ date: "07/21/26", mealViolation: true, mealLate: true });
 
@@ -220,8 +233,8 @@ test("what is charged and what could come off are different numbers, and both ar
   const days = [ASSUMED, DOCUMENTED];
   const s = premiumStanding(days, []);
   assert.equal(s.charged, 3, "everything: both undocumented breaks and the late lunch");
-  assert.equal(s.assumptions, 2, "the meal and the rest nobody wrote down could come off");
-  assert.equal(s.ifAssumptionsHold, 1, "leaving the late lunch, which no answer can reach");
+  assert.equal(s.assumptions, 1, "only the rest can come off - the meal had nowhere to happen");
+  assert.equal(s.ifAssumptionsHold, 2, "the late lunch AND the meal with no room for it");
 
   // the two are still different numbers and the surfaces still have to print
   // both - what changed is which one payroll pays.
@@ -236,7 +249,7 @@ test("saying you MISSED a break settles it in place, on every surface at once", 
 
   const before = premiumStanding(days, []);
   assert.equal(before.charged, 2, "paid before she says anything");
-  assert.equal(before.assumptions, 2, "and both are still assumable");
+  assert.equal(before.assumptions, 1, "only the rest - see the note on ASSUMED");
 
   const after = premiumStanding(days, answers);
   assert.equal(after.charged, 2, "the same two hours - her answer agreed with the sheet");
@@ -264,7 +277,7 @@ test("confirming is the only thing that takes an hour off, which is the point of
     { kind: "q_nothingDocumented", date: "07/20/26", status: "accepted" },
   ]);
   assert.equal(accepted.confirmed.size, 0, "an accept settles nothing in place");
-  assert.equal(accepted.assumptions, 2, "so both hours are still reachable");
+  assert.equal(accepted.assumptions, 1, "the rest is still reachable; the meal never was");
 
   // and once the rebuild HAS cleared the flags, both figures fall together
   const rebuilt = premiumStanding(
@@ -295,8 +308,8 @@ test("the batch standing pays what is charged and counts who has not answered", 
     sheetRow("b", [DOCUMENTED]),
   ]);
   assert.equal(s.charged, 3, "every fault across both sheets - what payroll pays");
-  assert.equal(s.assumptions, 2, "what could still come off");
-  assert.equal(s.ifAssumptionsHold, 1, "the floor if everyone confirms");
+  assert.equal(s.assumptions, 1, "only a's rest - see the note on ASSUMED");
+  assert.equal(s.ifAssumptionsHold, 2, "the late lunch and the meal with no room for it");
   assert.equal(s.people, 2);
   // BOTH SHEETS NOW RAISE ONE, and this line used to read 1.
   //
@@ -335,7 +348,7 @@ test("it goes final only when every question has an answer", () => {
   assert.equal(s.settled, true, "she answered, so nothing else can move it");
   // the override that clears the flags has not run in this fixture, so the
   // figure is still 2.00. What matters is that the batch stopped waiting.
-  assert.equal(s.assumptions, 2, "nothing was settled in place by accepting");
+  assert.equal(s.assumptions, 1, "nothing was settled in place by accepting - the meal was already");
 
   // a sheet nobody was ever asked about is settled from the start, or the
   // notice would read "provisional" on a batch with nothing to wait for

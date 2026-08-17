@@ -248,6 +248,26 @@ export function mealWindows(day, minMinutes = MEAL_MIN_MINUTES) {
   return out;
 }
 
+// COULD A MEAL HAVE HAPPENED ON THIS DAY AT ALL?
+//
+// `!mealWindows(day).length` on its own is NOT this question, and the difference
+// bit on 2026-08-17: a day with no shifts to reason about produces no windows
+// for the same reason a day with no gaps does, so "we cannot tell" comes back
+// looking exactly like "there was nowhere to put one". Feeding that straight
+// into the premium split declared every synthetic day settled and broke seven
+// tests, which is the good outcome - on a real batch it would have moved hours
+// into "cannot change" on the strength of missing data.
+//
+// So the shifts have to exist before their gaps mean anything. One shift and no
+// gap IS a real no-room day - clocked in throughout, nowhere to take an unpaid
+// meal - and no shifts at all is silence. Same guard `mealTimeFits` uses
+// directly below: "nothing to judge it by".
+export function mealNoRoom(day, minMinutes = MEAL_MIN_MINUTES) {
+  const shifts = shiftsOf(day);
+  if (!shifts.length) return false;
+  return !mealWindows(day, minMinutes).length;
+}
+
 // A typed time is accepted only where a full half hour actually fits. Uribe
 // 08/02 has gaps of 30 and 225 minutes: the 30 holds a lunch exactly, the 225 is
 // unscheduled unpaid time and holds one with room to spare. A day with no gap at
