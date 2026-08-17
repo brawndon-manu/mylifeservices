@@ -38,6 +38,7 @@ import {
   NAV_COMMIT_AT,
   createNavOwner,
   mayDropSnapshots,
+  originForProgress,
 } from "@/lib/portal-nav";
 
 export default function PortalPushNav({ children }) {
@@ -162,6 +163,11 @@ export default function PortalPushNav({ children }) {
     // how far sideways before the drag counts as a back rather than a stray
     // touch. Small, because past this the transition is committed.
     const WAKE_PX = 10;
+    // how long a committed drag waits for a dropped touch to come back before
+    // treating the cancel as a release - see the touchcancel note in `end`.
+    // Digitizer blips are shorter than this; a system gesture that takes the
+    // touch for real just springs back a beat later than it used to.
+    const TOUCH_LOST_GRACE = 200;
 
     // A DRAG THAT STARTS INSIDE SIDEWAYS-SCROLLING CONTENT BELONGS TO THAT
     // CONTENT. The review page has eight such regions and the day calendar is
@@ -243,6 +249,27 @@ export default function PortalPushNav({ children }) {
     };
 
     const start = (e) => {
+      const held = dragging.current;
+      if (held) {
+        // THE FINGER CAME BACK. At the very edge of the glass the digitizer
+        // can drop a resting touch - half the finger is off the screen - and
+        // re-acquire it a beat later as a brand new one. That used to read as
+        // release-then-new-gesture: the peek sprang shut, the wobble of the
+        // re-found contact re-committed, and holding a peek at the edge became
+        // a loop of transitions fighting each other. The drag adopts the new
+        // touch instead: same gesture, same transition, origin remapped so the
+        // page does not jump when the finger is re-found.
+        if (held.committed && held.lost) {
+          clearTimeout(held.lostTimer);
+          held.lost = false;
+          const t = e.changedTouches[0];
+          held.x = originForProgress(t.clientX, held.p, window.innerWidth);
+          held.y = t.clientY;
+        }
+        // and a second finger landing while one is dragging is not a new
+        // gesture - it used to overwrite the drag mid-flight
+        return;
+      }
       // nothing to go back to from a tab root, and the gesture would fight the
       // browser's own on the first page of a session. Judged per touch rather
       // than by which paths register listeners - see the note on this effect.
@@ -251,7 +278,7 @@ export default function PortalPushNav({ children }) {
       if (t.clientX > EDGE) return;
       if (inScroller(e.target)) return;
       dragging.current = {
-        x: t.clientX, y: t.clientY, p: 0, committed: false,
+        x: t.clientX, y: t.clientY, p: 0, committed: false, lost: false,
         // where the spring-back has to get the address back to - read at
         // touch time, because `commit` moves the history while the finger is
         // still down
@@ -261,6 +288,9 @@ export default function PortalPushNav({ children }) {
     const move = (e) => {
       const d = dragging.current;
       if (!d) return;
+      // while our touch is lost, whatever is moving is not the finger this
+      // drag belongs to
+      if (d.lost) return;
       const t = e.touches[0];
       const dx = t.clientX - d.x;
       const dy = t.clientY - d.y;
@@ -276,10 +306,9 @@ export default function PortalPushNav({ children }) {
       if (!d.committed && dx > WAKE_PX) commit(d);
       else scrub(d.p);
     };
-    const end = () => {
-      const d = dragging.current;
-      dragging.current = null;
-      if (!d || !d.committed) return;
+    // what letting go does, shared by a lifted finger and a touch that was
+    // lost and never came back
+    const release = (d) => {
       const anims = d.anims || [];
       // THE BROWSER SKIPPED THE TRANSITION, AND THE NAVIGATION STILL HAPPENED.
       //
@@ -344,6 +373,33 @@ export default function PortalPushNav({ children }) {
       requestAnimationFrame(spring);
     };
 
+    const end = (e) => {
+      const d = dragging.current;
+      if (!d) return;
+      // A CANCEL IS NOT A LIFT. `touchcancel` is the browser saying it lost
+      // track of the touch, and at the very edge of the screen that happens to
+      // a finger that is still there - see the adoption note in `start`. So a
+      // committed drag holds its ground for a grace period instead of
+      // springing shut: if the finger is re-found, `start` adopts it and
+      // nothing on screen so much as flickers; if nobody comes back, this was
+      // a real cancel and it releases where it stood.
+      if (e.type === "touchcancel" && d.committed && !d.lost) {
+        d.lost = true;
+        d.lostTimer = setTimeout(() => {
+          if (dragging.current !== d) return;
+          dragging.current = null;
+          release(d);
+        }, TOUCH_LOST_GRACE);
+        return;
+      }
+      // a lost drag belongs to its timer now - a different finger lifting
+      // must not release it
+      if (d.lost) return;
+      dragging.current = null;
+      if (!d.committed) return;
+      release(d);
+    };
+
     document.addEventListener("touchstart", start, { passive: true });
     document.addEventListener("touchmove", move, { passive: false });
     document.addEventListener("touchend", end);
@@ -353,6 +409,7 @@ export default function PortalPushNav({ children }) {
       document.removeEventListener("touchmove", move);
       document.removeEventListener("touchend", end);
       document.removeEventListener("touchcancel", end);
+      if (dragging.current?.lostTimer) clearTimeout(dragging.current.lostTimer);
     };
   }, [router]);
 

@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import {
   directionFor, depthOf, TAB_ROOTS,
   dragProgress, viewTransitionAnimations, navTransitionCss, NAV_MS, NAV_COMMIT_AT,
-  createNavOwner, mayDropSnapshots, SPRING_HOLD_MS,
+  createNavOwner, mayDropSnapshots, SPRING_HOLD_MS, originForProgress,
 } from "../portal-nav.js";
 
 // TWO TRANSITIONS, ONE ATTRIBUTE. `data-nav` on <html> is what every keyframe
@@ -244,4 +244,23 @@ test("a route that never comes back releases the page after the grace", () => {
     "held past the grace, the page must be let go frozen or not");
   assert.equal(mayDropSnapshots("/portal/admin", home, SPRING_HOLD_MS - 1), false,
     "inside the grace it keeps waiting");
+});
+
+// A TOUCH THE GLASS DROPPED AND GAVE BACK. At the very edge the digitizer can
+// lose a resting finger and re-acquire it as a brand new touch; the drag
+// adopts it rather than reading it as release-then-new-gesture. The one thing
+// the adopted origin has to guarantee is that progress carries on unbroken -
+// the page must not jump the moment the finger is re-found.
+test("an adopted touch carries the peek on from where it stands", () => {
+  const width = 390;
+  const p = 0.2;
+  // the re-found finger lands at 200px with the peek at 20% - the remapped
+  // origin must make the very same touch position read as the very same 20%
+  const origin = originForProgress(200, p, width);
+  assert.equal(dragProgress(200 - origin, width), p);
+});
+
+test("a missing width cannot poison the adopted origin with NaN", () => {
+  assert.equal(originForProgress(50, 0.5, 0), 50);
+  assert.equal(originForProgress(50, undefined, 390), 50);
 });

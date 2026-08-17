@@ -143,3 +143,13 @@ export const SPRING_HOLD_MS = 400;
 export function mayDropSnapshots(pathNow, home, heldMs) {
   return pathNow === home || heldMs > SPRING_HOLD_MS;
 }
+
+// A TOUCH THE GLASS DROPPED AND GAVE BACK. At the very edge of the screen the
+// digitizer can lose a resting finger - half of it is off the glass - and
+// re-acquire it a beat later as a brand new touch. A drag that survives that
+// adopts the new touch, and this answers where the adopted touch's origin has
+// to sit so the progress already on screen carries on unbroken: the page must
+// not jump the moment the finger is re-found.
+export function originForProgress(clientX, p, width) {
+  return clientX - (p || 0) * (width || 0);
+}
