@@ -553,10 +553,16 @@ export function reentitle(day, paidHours) {
   // charging a break on a day the new rules say earns none, only on the paths
   // that pass through here. `entitlementFor` falls back to paid hours by itself
   // when a stored day has no groups, which is every batch uploaded before today.
-  const { restRequired, mealRequired } = entitlementFor({
+  const entitlement = entitlementFor({
     workGroups: day.workGroups,
     paidHours: paid,
   });
+  const restRequired = entitlement.restRequired;
+  // the on-duty meal agreement, same gate as analyzeDay: a stored day program
+  // day carries the flag, and a recompute must not start charging the meal the
+  // upload exempted. See the block in analyzeDay for the full reasoning.
+  const onDutyMeal = day.onDutyMeal === true;
+  const mealRequired = !onDutyMeal && entitlement.mealRequired;
 
   // stored facts about the day that the hours cannot change
   const mealScheduled = day.mealScheduled ?? null;
@@ -569,7 +575,7 @@ export function reentitle(day, paidHours) {
     && paid <= RULES.mealWaiverMaxHours;
 
   const mealsRostered = day.mealsRostered ?? null;
-  const secondMealRequired = paid > RULES.secondMealRequiredAfterHours;
+  const secondMealRequired = !onDutyMeal && paid > RULES.secondMealRequiredAfterHours;
   const secondMealUnknown = secondMealRequired && (mealUnknown || mealsRostered === null);
   const secondMealTaken = mealsRostered !== null && mealsRostered >= 2;
   const secondMealViolation =
@@ -928,7 +934,22 @@ export function analyzeDay(day) {
     miscWorked: day.miscWorked === true,
     miscCancelled: day.miscKind === "cancelled",
   });
-  const { restRequired, mealRequired } = entitlementFor({ workGroups, paidHours });
+  const entitlement = entitlementFor({ workGroups, paidHours });
+  const restRequired = entitlement.restRequired;
+  // AN ON-DUTY PAID MEAL, BY SIGNED AGREEMENT. Day program staff eat on the
+  // clock under a §512 on-duty meal agreement - the nature of the program
+  // means nobody can be relieved of duty - so there is no punch-out to find,
+  // nothing late to measure, and no unpaid meal owed at any shift length. The
+  // flag lives ON the day, set by the day program upload, so it survives
+  // storage and every recompute exactly like miscWorked does. Absent on every
+  // MLS day, where nothing changes.
+  //
+  // Gating mealRequired is the single point that clears mealViolation,
+  // mealMissing and mealUnknown together; the second-meal rule is gated below
+  // for the same reason. The classification fields (mealGapKind and friends)
+  // still report, because they describe evidence rather than deciding money.
+  const onDutyMeal = day.onDutyMeal === true;
+  const mealRequired = !onDutyMeal && entitlement.mealRequired;
 
   // the Misc blocks this day was discounted for, kept so the question can quote
   // the actual times back and the reviewer can classify the right one. Only the
@@ -1194,7 +1215,9 @@ export function analyzeDay(day) {
   //
   // Same evidence rule as the first meal: only the schedule can say a meal was
   // provided, and here it has to say so TWICE.
-  const secondMealRequired = paidHours > RULES.secondMealRequiredAfterHours;
+  // an on-duty meal agreement covers every meal of the day - the second is
+  // eaten on the clock the same as the first - so it gates here too.
+  const secondMealRequired = !onDutyMeal && paidHours > RULES.secondMealRequiredAfterHours;
   const secondMealUnknown = secondMealRequired && (mealUnknown || mealsRostered === null);
   const secondMealTaken = mealsRostered !== null && mealsRostered >= 2;
   const secondMeal = breaks.filter((b) => b.kind === "meal")[1] || null;
@@ -1366,6 +1389,9 @@ export function analyzeDay(day) {
     // answering, or by a reviewer classifying it first so they are never asked.
     // Read at the top of `analyzeDay`, so it only takes effect on a re-analyse.
     miscWorked: day.miscWorked === true,
+    // the on-duty meal agreement, carried on the day so storage and recompute
+    // keep saying what the upload decided. false everywhere but the day program.
+    onDutyMeal,
     mealRequired,
     mealScheduled,
     // no schedule for the day, so whether a meal was provided is unanswerable

@@ -85,7 +85,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       batch: {
         select: {
           id: true, periodFrom: true, periodTo: true, restsByDate: true,
-          testOnly: true,
+          testOnly: true, program: true,
         },
       },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
@@ -278,6 +278,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const breakAnswers = ts.userId
     ? (await prisma.timesheetBreakAnswer.findMany({
       where: {
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,

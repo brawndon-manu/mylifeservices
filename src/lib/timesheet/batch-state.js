@@ -84,7 +84,16 @@ export const BATCH_STATES = {
 // is the one that refuses to send.
 export function batchState(batch, { newerInPeriod = false } = {}) {
   const reach = batchReach(batch);
-  const end = asDate(batch?.periodTo);
+  let end = asDate(batch?.periodTo);
+  // THE DAY PROGRAM'S TARGET IS THE LAST WEEKDAY OF THE PERIOD. Their export
+  // ends when their week does - 08/15/26 is a Saturday nobody works - so the
+  // MLS rule would read STILL COMING IN forever and hold Send all hostage for
+  // a day that cannot arrive. Weekday means Mon-Fri here; a batch whose
+  // program column was not selected reads undefined, stays on the MLS rule,
+  // and errs toward refusing to send - the safe direction.
+  if (batch?.program === "DP" && end) {
+    while (end.getDay() === 0 || end.getDay() === 6) end = new Date(end - DAY);
+  }
   const at = asDate(reach);
   const covered = !!(end && at && at >= end);
   // SUPERSEDED BEATS EVERYTHING. Only one upload of a fortnight is the one being
@@ -216,7 +225,12 @@ export function periodDays(batch) {
 export function groupByPeriod(batches = []) {
   const groups = new Map();
   for (const b of batches) {
-    const k = `${b.periodFrom}..${b.periodTo}`;
+    // THE PROGRAM IS PART OF THE KEY. Both payrolls run the same fortnights,
+    // and without this the day program's 08/01-08/15 would fold under the MLS
+    // card and flip the live 60-sheet batch to SUPERSEDED. A batch selected
+    // without `program` keys as MLS, which is what every batch was before the
+    // column existed.
+    const k = `${b.periodFrom}..${b.periodTo}..${b.program || "MLS"}`;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(b);
   }

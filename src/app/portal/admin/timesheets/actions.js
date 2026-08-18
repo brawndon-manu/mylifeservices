@@ -1028,6 +1028,7 @@ export async function deleteBatch(batchId) {
       id: true,
       periodFrom: true,
       periodTo: true,
+      program: true,
       _count: { select: { timesheets: true } },
     },
   });
@@ -1053,7 +1054,10 @@ export async function deleteBatch(batchId) {
   // So they only go when this is the LAST batch of its period - at which point
   // nothing can display them and leaving them would be the old bug again.
   const alsoInPeriod = await prisma.timesheetBatch.count({
-    where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo, id: { not: batchId } },
+    // SAME PROGRAM ONLY: the day program's batch of this fortnight must not
+    // keep the agency's marks alive after the last agency upload goes, nor
+    // the other way round.
+    where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo, program: batch.program, id: { not: batchId } },
   });
   // Left ENTIRELY ALONE when the period survives, rather than moved onto the
   // remaining batch. Moving them looks tidier and can collide: the name-keyed
@@ -1597,7 +1601,7 @@ export async function classifyMiscTime(timesheetId, date, kind) {
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } },
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } },
     },
   });
   if (!ts) return { ok: false, error: "gone" };
@@ -1657,7 +1661,7 @@ export async function clearMiscClassification(timesheetId, date) {
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } },
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } },
     },
   });
   if (!ts) return { ok: false, error: "gone" };
@@ -1751,7 +1755,7 @@ export async function clearDayOverride(timesheetId, date) {
     // `data` and the batch's rest rows are what `rebuildSheetFor` recomputes
     // from. Left out they arrive undefined and the rebuild quietly produces a
     // sheet with no days on it.
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } } },
   });
   if (!ts?.overrides) return { ok: false, error: "gone" };
 
@@ -1859,7 +1863,7 @@ export async function resetBatchAnswers(batchId) {
     // select comes back undefined, which is indistinguishable from "this batch
     // has no rest report" - and that reads as restUnknown, which is the
     // difference between charging somebody and not.
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } } },
   });
   if (!sheets.length) return { ok: false, error: "notfound" };
 
@@ -1929,6 +1933,7 @@ export async function timesheetResetImpact(timesheetId) {
   if (ts.userId) {
     const rows = await prisma.timesheetBreakAnswer.findMany({
       where: {
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,
@@ -1952,7 +1957,7 @@ export async function resetTimesheetAnswers(timesheetId) {
 
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } } },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } } },
   });
   if (!ts) return { ok: false, error: "notfound" };
 
@@ -1970,6 +1975,7 @@ export async function resetTimesheetAnswers(timesheetId) {
   if (ts.userId) {
     const rows = await prisma.timesheetBreakAnswer.findMany({
       where: {
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,
@@ -2057,7 +2063,7 @@ export async function recomputeTimesheet(timesheetId) {
   const ts = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true } },
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } },
       corrections: { where: { status: "open" }, select: { id: true } },
     },
   });
@@ -2428,7 +2434,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       batch: {
         select: {
           id: true, restsByDate: true, restsUrl: true,
-          periodFrom: true, periodTo: true,
+          periodFrom: true, periodTo: true, program: true,
         },
       },
       corrections: { where: { status: "open" }, select: { id: true } },
@@ -2658,7 +2664,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     // same reason `answerBreakReason` refuses one
     if (!findingKey || !ts.userId || !why) return;
     const where = {
-      periodFrom_periodTo_personKey_findingKey: {
+      program_periodFrom_periodTo_personKey_findingKey: {
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,
@@ -2702,6 +2709,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     }
     await prisma.timesheetBreakAnswer.create({
       data: {
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,
@@ -3392,7 +3400,7 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
     where: { id: tsId },
     select: {
       id: true, userId: true, sourceName: true, signedAt: true,
-      batch: { select: { id: true, periodFrom: true, periodTo: true } },
+      batch: { select: { id: true, periodFrom: true, periodTo: true, program: true } },
     },
   });
   if (!ts) return { ok: false, error: "notfound" };
@@ -3406,7 +3414,8 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
 
   const row = await prisma.timesheetBreakAnswer.findUnique({
     where: {
-      periodFrom_periodTo_personKey_findingKey: {
+      program_periodFrom_periodTo_personKey_findingKey: {
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,

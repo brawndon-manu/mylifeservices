@@ -22,6 +22,7 @@ import LiveBadge, { PeriodStrip, VersionBadge, SignatureBadge } from "../_compon
 import LockPeriod from "../_components/LockPeriod";
 import { batchState } from "@/lib/timesheet/batch-state";
 import TestBatchBadge from "../_components/TestBatchBadge";
+import ProgramBadge from "../_components/ProgramBadge";
 import DeleteBatchButton from "../_components/DeleteBatchButton";
 import ResetAnswersButton from "../_components/ResetAnswersButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
@@ -334,7 +335,11 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <BackLink href="/portal/admin/timesheets">Back to Timesheets</BackLink>
+        {/* back to whichever world this batch belongs to - the deep pages are
+            shared, the lists never mix */}
+        <BackLink href={batch.program === "DP" ? "/portal/admin/day-program" : "/portal/admin/timesheets"}>
+          {batch.program === "DP" ? "Back to Day program" : "Back to Timesheets"}
+        </BackLink>
         <span className="flex flex-wrap items-center gap-2">
           <a
             href={`/portal/admin/timesheets/${batch.id}/penalties`}
@@ -379,6 +384,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           {batch.periodFrom} to {batch.periodTo}
         </h1>
+        <ProgramBadge batch={batch} />
         <LiveBadge batch={batch} />
         <VersionBadge newerInPeriod={newerInPeriod} />
         {/* BESIDE the state, never instead of it - a rehearsal batch is still
@@ -520,7 +526,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
       </div>
 
-      {punchDays > 0 && (
+      {(punchDays > 0 || batch.program === "DP") && (
         <div
           className={
             punchOpenDays > 0
@@ -552,14 +558,24 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
                 <strong>{punchOpenDays}</strong>
                 {` ${punchOpenDays === 1 ? "day needs" : "days need"} somebody to decide, across ${punchOpenRows} ${punchOpenRows === 1 ? "person" : "people"}. Nothing else can be settled from the records we hold.`}
               </span>
-            ) : (
+            ) : punchDays > 0 ? (
               <span className="block">
                 {`Every one of the ${punchDays} flagged ${punchDays === 1 ? "day" : "days"} either has a repair the schedule confirms, or pays the same whichever way it is read.`}
               </span>
+            ) : (
+              <span className="block">
+                No punch problems were found. The rest-break findings
+                {batch.dpAudit?.faults?.length
+                  ? ` and the ${batch.dpAudit.faults.length} rows the rest break audit flagged`
+                  : ""}
+                {" "}are on the checks screen.
+              </span>
             )}
-            <span className="mt-1 block">
-              {`${punchDays} ${punchDays === 1 ? "day is" : "days are"} flagged in total, across ${punchIssueRows} ${punchIssueRows === 1 ? "person" : "people"} - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it. Most are repairable or already corroborated.`}
-            </span>
+            {punchDays > 0 && (
+              <span className="mt-1 block">
+                {`${punchDays} ${punchDays === 1 ? "day is" : "days are"} flagged in total, across ${punchIssueRows} ${punchIssueRows === 1 ? "person" : "people"} - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it. Most are repairable or already corroborated.`}
+              </span>
+            )}
           </p>
           <Link
             href={`/portal/admin/timesheets/${batch.id}/checks`}

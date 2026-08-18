@@ -103,6 +103,8 @@ model User {
   timesheets       Timesheet[]      @relation("TimesheetEmployee")
   timesheetsApproved Timesheet[]    @relation("TimesheetApprovedBy")
   timesheetCorrectionsResolved TimesheetCorrection[] @relation("TimesheetCorrectionResolvedBy")
+  dayProgramBatches DayProgramBatch[] @relation("DayProgramBatchUploadedBy")
+  dayProgramSheets  DayProgramSheet[] @relation("DayProgramEmployee")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -616,6 +618,16 @@ model TimesheetBatch {
   // `markKey` exists.
   testOnly     Boolean  @default(false)
   testEmail    String?
+  // WHICH PROGRAM'S PAYROLL THIS IS. "MLS" for the agency, "DP" for the day
+  // program, and the default makes every batch that predates the column an
+  // explicit MLS one. The group key on the timesheets screen and supersededBy
+  // both include it, so the two programs' batches of the same fortnight are
+  // two cards and neither can supersede the other.
+  program      String   @default("MLS")
+  // day program only, null on MLS forever: the hand-maintained rest break
+  // audit xlsx that confirms the 2nd breaks typed into DSN summaries - its
+  // blob url plus everything its reader flagged for a person to look at.
+  dpAudit      Json?
   // the pay period exactly as QSP printed it, e.g. "07/16/26" / "07/31/26".
   periodFrom   String
   periodTo     String
@@ -886,6 +898,10 @@ model TimesheetCheckFlag {
   // production is whatever is on `main`: a column the deployed code does not
   // know about must not be the only place the answer lives. They are backfilled
   // by a script rather than by the migration, so the write can be read first.
+  // same program scoping as TimesheetBreakAnswer, same reason: marks are
+  // read by (period, person, finding) and two payrolls share both the
+  // periods and, occasionally, the people.
+  program      String  @default("MLS")
   periodFrom   String?
   periodTo     String?
   personKey    String?
@@ -1280,6 +1296,13 @@ model VerificationToken {
 //              and the next export either shows it or does not.
 model TimesheetBreakAnswer {
   id         String   @id @default(cuid())
+  // WHICH PAYROLL. Both programs run the same fortnights with, sometimes, the
+  // SAME person - Velasquez works both - and his 08/13 rest finding carries
+  // the same findingKey on both sides. Without this in the key, an answer
+  // taken on the day program side would overwrite what his live MLS sheet
+  // displays above a pending signature. Default MLS: every row that predates
+  // the column was an MLS answer.
+  program    String   @default("MLS")
   periodFrom String
   periodTo   String
   personKey  String
@@ -1322,6 +1345,133 @@ model TimesheetBreakAnswer {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([periodFrom, periodTo, personKey, findingKey])
+  @@unique([program, periodFrom, periodTo, personKey, findingKey])
   @@index([periodFrom, periodTo, personKey])
+}
+
+// ---------------------------------------------------------------- day program
+//
+// THROWAWAY, AND MEANT TO BE. The day program has no QSP export set: no Simple
+// Timesheet, no schedule PDF, no payroll report, no clock export. What it has
+// is one hand-maintained spreadsheet, the Rest Break Period Report, and these
+// two tables exist to get signable sheets out of it while a real system is
+// built. Dropping the feature is one migration and deleting
+// src/lib/day-program plus the route folder.
+//
+// DELIBERATELY NOT TimesheetBatch, and that is the whole reason these exist.
+// The timesheets screen groups its cards by `periodFrom..periodTo`, so a day
+// program upload of 08/01/26-08/15/26 would become the newest batch of that
+// period, take the card, and flip the live 60-sheet MLS batch to SUPERSEDED. A
+// separate table cannot do that to it.
+model DayProgramBatch {
+  id         String @id @default(cuid())
+  // the window the report actually covers, taken from its date cells rather
+  // than from its title. The 08/01-08/15 file is titled for the whole
+  // fortnight and its last day is the 14th.
+  periodFrom String
+  periodTo   String
+
+  // the uploaded spreadsheet, kept for audit and streamed back through a gated
+  // route like every other stored document here.
+  sourceUrl  String?
+  sourceName String?
+
+  // the QSP pair, since the pipeline went QSP-first on 2026-08-17: the Simple
+  // Timesheet PDF that hours and punches come from, and the Rest Periods
+  // Report the rest evidence comes from. David's spreadsheet (sourceUrl above)
+  // stays as the record of the 2nd breaks typed into DSN summaries.
+  timesheetUrl  String?
+  timesheetName String?
+  restsUrl      String?
+  restsName     String?
+  // every row of the rest report, from rests.allRestRows() - same shape and
+  // same reasoning as TimesheetBatch.restsByDate.
+  restsByDate   Json?
+
+  // everything the reader could not make sense of, whole: the breaks marked not
+  // documented, the lengths that are not ten minutes, the times that land at
+  // half past ten at night, the note somebody typed one column too far right.
+  // Stored on the batch because it is a fact about the FILE, and because the
+  // review screen is the point of this feature - nothing generates until a
+  // person has been through it.
+  faults     Json?
+
+  // whether sends from this batch were redirected to the test inbox - recorded
+  // per batch so a test run can never be mistaken for a real one later, same
+  // as TimesheetBatch.testMode.
+  testMode     Boolean @default(true)
+
+  // SOMEBODY HAS SAID THIS EXPORT IS FINAL. Same attestation as the MLS batch,
+  // and here it is the WHOLE send gate: the day program's last workday is
+  // usually short of the printed period end (nobody works the Saturday the
+  // 15th), so the reach-the-end derivation the MLS card uses would hold Send
+  // all hostage forever. A person says it is final, and that is recorded.
+  lockedAt     DateTime?
+  lockedById   String?
+  lockedByName String?
+
+  uploadedById String
+  uploadedBy   User   @relation("DayProgramBatchUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sheets       DayProgramSheet[]
+
+  @@index([createdAt])
+}
+
+// one person's day program sheet for a period.
+model DayProgramSheet {
+  id      String          @id @default(cuid())
+  batchId String
+  batch   DayProgramBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // the name exactly as the spreadsheet spells it, kept even after matching so
+  // the operator can always see what the source said.
+  sourceName  String
+  userId      String?
+  user        User?   @relation("DayProgramEmployee", fields: [userId], references: [id], onDelete: SetNull)
+  matchMethod String  @default("unmatched")
+
+  // the period total, duplicated out of `days` for lists and sorting the same
+  // way the timesheet figures are.
+  totalHours Float @default(0)
+  // how many days in here carry something a person should look at
+  faultCount Int   @default(0)
+
+  // every day for this person as the reader read it: the date, the shift
+  // length, the two break cells with whatever times survived parsing, the
+  // sources, and the correction note.
+  //
+  // NO PUNCHES, because the report has none. Every "Actual Work Shift" cell in
+  // the file reads "6.5 hrs (exact start/end not shown)", so there is no clock
+  // record here to store and the sheet cannot print one.
+  days Json
+
+  // delivery and signing, the same shape the timesheets use. Day program staff
+  // take no unpaid meal period, so nothing here records one.
+  sentAt        DateTime?
+  sentToEmail   String?
+  intendedEmail String?
+  dueAt         DateTime?
+  message       String?
+  signedAt      DateTime?
+  signedPdfUrl  String?
+  signedName    String?
+  signedIp      String?
+
+  // set when the employee reports something wrong; a disputed sheet can't be
+  // signed until management clears it, same rule as the timesheets.
+  disputedAt DateTime?
+
+  // management sign-off after the employee has signed - the approved copy is
+  // the final record, stamped at the approval line server-side.
+  approvedAt     DateTime?
+  approvedById   String?
+  approvedPdfUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([userId])
 }

@@ -81,7 +81,9 @@ export const RENDER_SELECT = {
   // recording with the wrong name on it rather than as an error.
   user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
   batch: {
-    select: { periodFrom: true, periodTo: true, restsByDate: true, testOnly: true },
+    // `program` rides along for loadBreakReasons, which scopes the reasons to
+    // the payroll the sheet belongs to.
+    select: { periodFrom: true, periodTo: true, restsByDate: true, testOnly: true, program: true },
   },
 };
 
@@ -189,6 +191,11 @@ export async function renderSheet(ts, {
       // the punches
       restsByDate: ts.batch?.restsByDate || [],
       scheduleByDate: d.scheduleCheck?.byDate || null,
+      // day program sheets carry this in `data` and it picks the on-duty meal
+      // attestation, the Day Program header line, and drops the meal swatch
+      // from the colour key. Undefined on every MLS sheet, where nothing
+      // changes - see the gates in render.js.
+      onDutyMeal: d.onDutyMeal === true,
     },
     {
       printedBy: ts.sourceName,

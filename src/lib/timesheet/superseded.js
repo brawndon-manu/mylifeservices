@@ -26,13 +26,18 @@ export async function supersededBy(batchId) {
   if (!batchId) return null;
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
-    select: { id: true, periodFrom: true, periodTo: true, createdAt: true },
+    select: { id: true, periodFrom: true, periodTo: true, createdAt: true, program: true },
   });
   if (!batch) return null;
   return prisma.timesheetBatch.findFirst({
     where: {
       periodFrom: batch.periodFrom,
       periodTo: batch.periodTo,
+      // SAME PROGRAM ONLY. The day program and the agency run the same
+      // fortnights, so without this a DP upload would mark the live MLS batch
+      // replaced - sixty sheets out for signature going read-only because a
+      // different payroll arrived.
+      program: batch.program,
       createdAt: { gt: batch.createdAt },
     },
     orderBy: { createdAt: "desc" },

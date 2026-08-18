@@ -164,7 +164,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
     // collected at all. Left off the select it comes back undefined, which
     // is indistinguishable from "no report", which reads as restUnknown -
     // the difference between charging somebody and not.
-    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, partialPeriod: true, partialFrom: true, partialThrough: true, restsByDate: true, restsUrl: true } } },
+    include: { batch: { select: { id: true, periodFrom: true, periodTo: true, partialPeriod: true, partialFrom: true, partialThrough: true, restsByDate: true, restsUrl: true, program: true } } },
   });
   // a sheet id from another batch would render somebody's days under the wrong
   // period heading, so the pairing is checked rather than assumed
@@ -206,6 +206,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
     sheet.userId
       ? await prisma.timesheetBreakAnswer.findMany({
         where: {
+          program: sheet.batch.program || "MLS",
           periodFrom: sheet.batch.periodFrom,
           periodTo: sheet.batch.periodTo,
           personKey: sheet.userId,
@@ -221,6 +222,7 @@ export default async function PersonSchedulePage({ params, searchParams }) {
   const flag = sheet.userId
     ? await prisma.timesheetCheckFlag.findFirst({
       where: {
+        program: sheet.batch.program || "MLS",
         periodFrom: sheet.batch.periodFrom,
         periodTo: sheet.batch.periodTo,
         personKey: sheet.userId,

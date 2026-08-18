@@ -8,7 +8,14 @@ const globalForPrisma = globalThis;
 
 function makeClient() {
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+    // DATABASE_SCHEMA points the app at another postgres schema on the same
+    // instance - unset everywhere normal, which means public. it exists so a
+    // local review can run against a copied schema without production seeing
+    // a single row of it.
+    adapter: new PrismaPg(
+      { connectionString: process.env.DATABASE_URL },
+      process.env.DATABASE_SCHEMA ? { schema: process.env.DATABASE_SCHEMA } : undefined,
+    ),
   });
 }
 

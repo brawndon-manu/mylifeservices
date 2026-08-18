@@ -25,7 +25,7 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 export const REQUIRED_DAY_FIELDS = [
   "date", "paidHours", "rawHours", "regularHours", "otHours", "doubleHours",
   "mealRequired", "mealViolation", "mealMissing", "mealLate", "mealStartedAfterMin",
-  "mealCount", "mealScheduled", "mealUnknown", "mealWaived",
+  "mealCount", "mealScheduled", "mealUnknown", "mealWaived", "onDutyMeal",
   "mealGapKind", "mealGapMin",
   "mealsRostered", "secondMealRequired", "secondMealViolation", "secondMealUnknown",
   "restTackedOn", "restsInsideMeal", "restsOutsideShift", "restsUnpaid",
@@ -93,6 +93,10 @@ export function storedDay(d) {
     doubleHours: r2(d.doubleHours),
     mealViolation: d.mealViolation,
     restViolation: d.restViolation,
+    // the on-duty meal agreement (day program only). stored for the same
+    // reason miscWorked is: reentitle reads it off the day, and a recompute
+    // that lost it would start charging meals the upload exempted.
+    onDutyMeal: d.onDutyMeal === true,
     // a signed waiver cleared the day. stored rather than recomputed because a
     // waiver is a fact about paperwork at the time the sheet was produced, and
     // the sheet has to keep saying what it said when it was signed.

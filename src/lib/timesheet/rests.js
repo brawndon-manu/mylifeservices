@@ -625,6 +625,13 @@ export function parseRestReport(bytes) {
 // because a properly taken rest is paid and stays on the clock.
 export function allRestRows(bytes) {
   const { rows } = readXlsTable(bytes);
+  return restRowsFromTable(rows);
+}
+
+// the normalization and classification, split from the file read so a caller
+// holding rows from another layout - the day program's hand-edited two-pair
+// report - runs the exact same rules. Rows use the QSP header names.
+export function restRowsFromTable(rows) {
   const out = [];
   for (const r of rows) {
     // same guard parseRestReport uses. a row that is not a rest row must not
