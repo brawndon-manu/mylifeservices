@@ -254,6 +254,48 @@ input[type="number"]::-webkit-inner-spin-button {
   transform-origin: top;
 }
 
+/* THE TIMESHEET CONTACT SENTENCE, GETTING OUT OF THE WAY ON ITS OWN.
+   It hangs under the header's phone button on anything narrower than xl, where
+   the sentence cannot fit in the bar's fixed-height row - so it covers the top
+   of the page and has to leave. Read the hold off `animation-delay`, which the
+   header sets from CONTACT_HOLD_MS: one constant, in JS, driving both the
+   number the test pins and the wait the eye sees.
+
+   DONE IN CSS RATHER THAN REACT STATE on purpose - a timer flipping state is a
+   render the page does not otherwise need, and `react-hooks/set-state-in-effect`
+   is right that it is the wrong tool. The element also restarts this animation
+   for free every time it mounts, which is exactly the wanted behaviour when
+   somebody comes back to their timesheet. */
+@keyframes contact-fold {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+  }
+}
+.contact-fold {
+  animation: contact-fold 0.4s ease-in forwards;
+}
+/* reduced motion still HIDES it - that is the point of it, not decoration -
+   it just does not slide while doing so. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes contact-fold {
+    from {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    to {
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+}
+
 /* homepage intro reveal. a branded curtain (logo gradient + tree mark + wordmark
    + tagline) that plays once per session, then lifts away to show the site. the
    inline script in IntroReveal adds .intro-done to <html> to hide it for

@@ -6,6 +6,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { PhoneIcon } from "@/components/Icons";
 import NavDropdown from "@/components/NavDropdown";
+// WHICH NUMBER THIS PAGE OFFERS - the rule lives in `src/lib` so the test can
+// call the same function this does. See the note there.
+import { contactForPath, isTimesheetPath, CONTACT_HOLD_MS } from "@/lib/timesheet-contact";
 
 // floating "pill" header. on the homepage it starts translucent, sitting on top
 // of the dark gradient hero, then swaps to the solid surface pill once you
@@ -49,8 +52,9 @@ const navLinks = [
   { href: "/careers/apply", label: "Apply" },
 ];
 
-const PHONE_DISPLAY = "(562) 686-2548";
-const PHONE_HREF = "tel:+15626862548";
+// THE NUMBER IS NO LONGER A CONSTANT HERE. The timesheet review page offers a
+// different one, watched by a person rather than the office - see
+// `contactForPath` in `@/lib/timesheet-contact`.
 
 // pt-3 (12px) + h-14 (56px). the homepage pulls the hero up by this much.
 const HEADER_PULL = "-mb-[68px]";
@@ -64,6 +68,8 @@ export default function Header() {
   // closed when not. fetched client-side (like the old badge was) but it's only
   // an icon swap - same size - so it never shifts the layout.
   const [signedIn, setSignedIn] = useState(false);
+  // WHAT THE PHONE BUTTON SAYS HERE, and whether it carries a sentence.
+  const contact = contactForPath(pathname);
 
   useEffect(() => {
     let active = true;
@@ -116,8 +122,16 @@ export default function Header() {
   const PortalIcon = signedIn ? UnlockIcon : LockIcon;
   const portalAria = signedIn ? "Employee portal (you're signed in)" : "Employee portal";
 
+  // ON THE REVIEW PAGE THE HEADER SCROLLS AWAY WITH THE PAGE. The main thing
+  // there is a document somebody is checking line by line on a phone, and a
+  // bar pinned over it spends a stripe of a small screen saying nothing new.
+  // The number is for the top of the visit, not for every scroll position -
+  // anyone who wants it back scrolls up. `relative` rather than `static` so
+  // the z-index keeps doing its job for the dropdown and the hanging message.
+  const sticky = isTimesheetPath(pathname) ? "relative" : "sticky top-0";
+
   return (
-    <header className={`sticky top-0 z-40 pt-3 ${isHome ? HEADER_PULL : "mb-2"}`}>
+    <header className={`${sticky} z-40 pt-3 ${isHome ? HEADER_PULL : "mb-2"}`}>
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
         <div
           className={`flex h-14 items-center gap-4 rounded-full border pl-4 pr-4 backdrop-blur-md transition-colors duration-300 sm:gap-5 sm:pl-5 sm:pr-6 ${pill}`}
@@ -195,13 +209,35 @@ export default function Header() {
               <PortalIcon className="h-3.5 w-3.5 flex-none" />
               <span>Employee portal</span>
             </Link>
+            {/* THE PHONE BUTTON, AND ON A TIMESHEET THE SENTENCE THAT COMES
+                WITH IT. Two variants, because the bar is a FIXED-HEIGHT SINGLE
+                ROW that must never wrap (see the note at the top of this file)
+                and the sentence is about 300px of text:
+
+                INLINE, on xl and up, where the row has room left after the nav
+                and the portal button. It is part of the pill and it stays -
+                nothing is covered, so there is nothing to get out of the way
+                of.
+
+                HANGING, below that, where it cannot fit in the row at all.
+                That one is not in here - it hangs off the BAR, further down,
+                so its edge lines up with something a reader can see. */}
             <a
-              href={PHONE_HREF}
-              aria-label={`Call My Life Services at ${PHONE_DISPLAY}`}
+              href={contact.href}
+              aria-label={
+                contact.message
+                  ? `Call or text ${contact.display}. ${contact.message}`
+                  : `Call My Life Services at ${contact.display}`
+              }
               className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${phoneBtn}`}
             >
               <PhoneIcon className="h-3.5 w-3.5" />
-              <span>{PHONE_DISPLAY}</span>
+              <span>{contact.display}</span>
+              {contact.message && (
+                <span className="ml-1 hidden border-l border-white/40 pl-2.5 font-normal xl:inline">
+                  {contact.message}
+                </span>
+              )}
             </a>
             <button
               type="button"
@@ -216,6 +252,28 @@ export default function Header() {
             </button>
           </div>
         </div>
+
+        {/* THE HANGING SENTENCE, on anything narrower than xl. Anchored to the
+            BAR rather than to the phone button, because the button's right
+            edge is a place nothing else on the page ends at - the chip sat at
+            an in-between x that read as misplaced. Here it shares the bar's
+            own right rounding, the same way the mobile menu panel hangs off
+            it. A real link so a tap dials, but out of the tab order and
+            hidden from readers - the button above already says all of this
+            in its label, and two stops for one number is one too many.
+            It folds away after CONTACT_HOLD_MS - see `.contact-fold` in
+            globals.css, which reads the delay set here. */}
+        {contact.message && (
+          <a
+            href={contact.href}
+            tabIndex={-1}
+            aria-hidden="true"
+            style={{ animationDelay: `${CONTACT_HOLD_MS}ms` }}
+            className={`contact-fold absolute right-4 top-full z-50 mt-2 w-max max-w-[calc(100%-2rem)] rounded-xl px-3.5 py-2 text-xs font-medium leading-snug shadow-lg sm:right-6 xl:hidden ${phoneBtn}`}
+          >
+            {contact.message}
+          </a>
+        )}
 
         {/* mobile menu - always a solid panel so it stays readable over the hero */}
         {menuOpen && (
