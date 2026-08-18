@@ -17,6 +17,11 @@ export async function loadBreakReasons(ts) {
   if (!ts?.userId || !ts?.batch?.periodFrom) return [];
   return prisma.timesheetBreakAnswer.findMany({
     where: {
+      // the batch's program, defaulted for callers whose select predates the
+      // column. Velasquez works BOTH payrolls in one fortnight, so without
+      // this his day program sheet would print the reasons gathered for his
+      // MLS one.
+      program: ts.batch.program || "MLS",
       periodFrom: ts.batch.periodFrom,
       periodTo: ts.batch.periodTo,
       personKey: ts.userId,

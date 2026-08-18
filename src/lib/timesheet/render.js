@@ -389,7 +389,9 @@ export async function renderCorrected(sheet, opts = {}) {
       size: 19, f: bold, color: BRAND,
     });
     y -= 56;
-    text("My Life Services", L, y, { size: 8.5, f: bold });
+    text(sheet.onDutyMeal ? "My Life Services - Day Program" : "My Life Services", L, y, {
+      size: 8.5, f: bold,
+    });
     const pp = `Pay Period:  ${sheet.payPeriod?.from ?? ""} to ${sheet.payPeriod?.to ?? ""}`;
     text(pp, R - bold.widthOfTextAtSize(pp, 8.5), y, { size: 8.5, f: bold });
     y -= 18;
@@ -893,7 +895,10 @@ export async function renderCorrected(sheet, opts = {}) {
   // the page is a question nobody can answer by looking.
   const keyItems = [
     { fill: REST, label: "10-Minute Paid Rest Break" },
-    { fill: MEAL, label: "30-Minute Unpaid Meal Break" },
+    // a day program sheet can never colour a meal cell - the meal is on-duty
+    // and on the clock - so its key does not offer one. "a swatch for
+    // something not on the page is a question nobody can answer by looking."
+    ...(sheet.onDutyMeal ? [] : [{ fill: MEAL, label: "30-Minute Unpaid Meal Break" }]),
   ];
   // THE KEY MAY NOT PROMISE MINUTES THE SHEET DID NOT PAY.
   //
@@ -1233,8 +1238,18 @@ export async function renderCorrected(sheet, opts = {}) {
   // to swear that "the miles recorded above" were accurate. Attesting to a
   // number that is not on the page is exactly the kind of sentence that makes
   // a signed document worthless, so it is gated on the same value the line is.
-  const attest =
-    "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
+  // THE DAY PROGRAM VARIANT differs in exactly one clause: there is no unpaid
+  // meal period to attest to, because day program staff work an on-duty paid
+  // meal under the signed agreement, so the meal half of the sentence says
+  // that instead. Chosen by the flag the day program pipeline sets on its
+  // sheets; an MLS sheet can never carry it, and the MLS paragraph below is
+  // untouched.
+  const attest = sheet.onDutyMeal
+    ? "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
+      "I attest that I have received all my rest and recovery periods consistent with My Life Services's policy and applicable law, and that every rest period I did not take is " +
+      "accurately reported above. I understand that my meal period is an on-duty paid meal period consistent with the meal period agreement I have signed. " +
+      "I also attest that I reported every injury sustained on the job during the pay period, if there were any."
+    : "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
     "I attest that I have received all my meal, rest and recovery periods consistent with My Life Services's policy and applicable law, and that every meal and rest period I did not take is " +
     "accurately reported above. " +
     (sheet.milesDriven != null

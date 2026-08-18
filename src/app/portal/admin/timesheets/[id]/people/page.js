@@ -193,7 +193,7 @@ export default async function AllPeoplePage({ params }) {
 
   const flags = (
     marksByKey(await prisma.timesheetCheckFlag.findMany({
-      where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo },
+      where: { program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo },
       // `status` is what the chip reads. Left off the select it comes back
       // undefined, the chip renders as unset, and every mark on the batch
       // silently looks like nobody has started - which is the same trap

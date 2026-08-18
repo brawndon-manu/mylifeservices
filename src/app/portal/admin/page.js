@@ -89,6 +89,13 @@ export default async function AdminPage() {
         )}
         {canManageTimesheets(user.role) && (
           <LinkCard
+            href="/portal/admin/day-program"
+            title="Day program"
+            body="The day program's own timesheets, separate from the agency's: upload their QSP exports, review, and send for signature under their rules."
+          />
+        )}
+        {canManageTimesheets(user.role) && (
+          <LinkCard
             href="/portal/admin/tests"
             title="Tests"
             body="Every email we send and every card we show an employee, in every state, rendered from the real code. Nothing in it writes to the database or sends anything."

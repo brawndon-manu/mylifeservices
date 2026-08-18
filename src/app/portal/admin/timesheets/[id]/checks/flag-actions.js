@@ -74,12 +74,15 @@ export async function setCheckFlag({
   // will find and it is printed on the document either way.
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
-    select: { periodFrom: true, periodTo: true },
+    select: { periodFrom: true, periodTo: true, program: true },
   });
   if (!batch) return { ok: false, error: "nobatch" };
   const keyed = !!(personKey && findingKey);
   const where = {
-    periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
+    // the program scopes every read and write below: two payrolls share the
+    // fortnights and sometimes the people, and a mark made working the day
+    // program must not move a card on the agency's checks screen.
+    program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
   };
 
   if (status == null) {
@@ -134,7 +137,7 @@ export async function setCheckFlag({
         : prisma.timesheetCheckFlag.upsert({
           where: { batchId_rowKey: { batchId, rowKey } },
           update: fields,
-          create: { batchId, rowKey, ...fields },
+          create: { batchId, rowKey, program: batch.program, ...fields },
         }),
     ];
     if (isMarkAction(status)) {
@@ -342,12 +345,12 @@ export async function setBreakAnswer({
 
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
-    select: { periodFrom: true, periodTo: true },
+    select: { periodFrom: true, periodTo: true, program: true },
   });
   if (!batch) return { ok: false, error: "nobatch" };
   const where = {
-    periodFrom_periodTo_personKey_findingKey: {
-      periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
+    program_periodFrom_periodTo_personKey_findingKey: {
+      program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
     },
   };
 
@@ -355,7 +358,7 @@ export async function setBreakAnswer({
   // already holds takes it back off rather than writing it twice.
   if (answer == null) {
     await prisma.timesheetBreakAnswer.deleteMany({
-      where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey },
+      where: { program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey },
     });
     await bumpBatchVersion(batchId);
     await bumpSheetFor(batchId, personKey);
@@ -406,7 +409,7 @@ export async function setBreakAnswer({
       confirmedText: null,
     },
     create: {
-      periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
+      program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo, personKey, findingKey,
       ...fields,
     },
   });

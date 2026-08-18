@@ -141,7 +141,7 @@ export default async function ChecksPage({ params }) {
     // Thursday's. Scoped to the batch, 70 marks went invisible the morning the
     // 08/12 export landed.
     marksByKey(await prisma.timesheetCheckFlag.findMany({
-      where: { periodFrom: batch.periodFrom, periodTo: batch.periodTo },
+      where: { program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo },
       // `status` is what the chip reads. Left off the select it comes back
       // undefined, the chip renders as unset, and every mark on the batch
       // silently looks like nobody has started - which is the same trap
@@ -234,6 +234,37 @@ export default async function ChecksPage({ params }) {
       >
         View all employees
       </Link>
+
+      {/* WHAT THE REST BREAK AUDIT FLAGGED - day program batches only. The
+          audit xlsx is hand-maintained and it shows; these are its rows read
+          back with everything the reader could not make sense of. Fixes
+          happen in the spreadsheet, then the period is uploaded again. */}
+      {(batch.dpAudit?.faults?.length || 0) > 0 && (
+        <details className="mt-6 rounded-xl border border-border bg-surface p-5">
+          <summary className="cursor-pointer list-none text-base font-semibold tracking-tight text-foreground">
+            <span className="mr-1.5 inline-block text-[10px] text-faint">&#9656;</span>
+            What the rest break audit flagged
+            <span className="ml-2 rounded-full border border-border-strong bg-surface-2 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-muted">
+              {batch.dpAudit.faults.length}
+            </span>
+          </summary>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Rows the audit spreadsheet marked or the reader could not make sense
+            of. They print on the sheets exactly as the file shows them; the fix
+            is in the spreadsheet itself, then upload the period again.
+          </p>
+          <ul className="mt-4 space-y-1.5">
+            {batch.dpAudit.faults.map((f, i) => (
+              <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border/60 pt-1.5 text-sm first:border-0 first:pt-0">
+                <span className="min-w-[13rem] font-medium text-foreground">{f.person}</span>
+                <span className="font-mono text-xs text-muted">{f.date}</span>
+                <span className="text-muted">{f.detail}</span>
+                {f.text && <span className="font-mono text-xs text-faint">[{f.text}]</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {!anySchedule && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
