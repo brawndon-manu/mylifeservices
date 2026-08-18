@@ -378,15 +378,28 @@ function copyFor(q, standing) {
         ),
         // THE POLARITY TURNED OVER ON 2026-08-12 with the default. "Yes" used to
         // mean "yes, keep the minutes you already paid me"; it now means "no, it
-        // was not a mistake" and it is the answer that ADDS them. The labels say
-        // what happened rather than yes/no, because the question above them is
-        // "was that a mistake?" and a bare "Yes" would answer it backwards.
+        // was not a mistake" and it is the answer that ADDS them.
+        //
+        // AND ON 2026-08-17 THE YES AND THE NO CAME OFF THE LABELS ENTIRELY.
+        // Somebody reading this card told Mánu it sounds like a double negative,
+        // and they were reading the day-by-day view - which drops the body, so
+        // "Was that a mistake?" is not on the screen at all. Two options then
+        // opened with words answering a question nobody could see, and their
+        // polarity ran BACKWARDS against reading order: the "No" one meant the
+        // record is right, the "Yes" one meant it is wrong. "No - I did take it
+        // at 3pm" put the negative and the affirmative in one breath.
+        //
+        // The card is telling three FACTS apart, and not one of them is a yes or
+        // a no. So all three now take the same shape - "I took it ..." - and the
+        // only part that differs is the part being chosen between: as logged, at
+        // another time, or not at all. The stored values are untouched, so every
+        // answer already on record still reads back the same.
         yes: {
-          label: loggedAt ? `No - I did take it at ${loggedAt}` : "No - I did take it then",
+          label: loggedAt ? `I took it at ${loggedAt}, as logged` : "I took it as logged",
           why: "That was a real break, recorded at the time it happened.",
         },
         no: {
-          label: "Yes, the time was entered wrong",
+          label: "I took it, but at a different time",
           why: "Tell us when you really took it. You were on the clock then, so it is already in your hours.",
         },
         // THE THIRD OUTCOME. Mánu 2026-08-11: "or if she didnt take it at all."

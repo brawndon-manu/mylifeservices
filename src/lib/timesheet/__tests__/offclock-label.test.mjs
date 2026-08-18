@@ -18,7 +18,7 @@ const BLOCK = CARD.slice(
 );
 
 test("the answer names the time the record holds", () => {
-  assert.match(BLOCK, /No - I did take it at \$\{loggedAt\}/);
+  assert.match(BLOCK, /I took it at \$\{loggedAt\}, as logged/);
   // and the confirm panel says the same time back, so the last thing read
   // before committing is not vaguer than the button that got them there
   assert.match(BLOCK, /took your break at <b>\{loggedAt\}<\/b>/);
@@ -32,17 +32,36 @@ test("it comes off the logged row, not off our own proposal", () => {
   assert.doesNotMatch(BLOCK.slice(0, BLOCK.indexOf("shapeShort")), /proposed/);
 });
 
-test("a card covering two logged breaks keeps the old wording", () => {
+test("a card covering two logged breaks names no single time", () => {
   // naming one time on a card about two would be wrong in a way nobody could
   // see. None exist on either live batch; the guard is for the ones that could.
-  assert.match(BLOCK, /: "No - I did take it then"/);
-  assert.match(BLOCK, /loggedAt \? `No - I did take it at/);
+  // It keeps the same shape as the others, just without the clock.
+  assert.match(BLOCK, /: "I took it as logged"/);
 });
 
-test("the other two options already stand on their own", () => {
-  // they name what happened rather than yes or no, which is what the first one
-  // now does too
-  assert.match(BLOCK, /label: "Yes, the time was entered wrong"/);
+// NOT ONE OF THEM IS A YES OR A NO.
+//
+// The day-by-day view drops the body, so "Was that a mistake?" is not on the
+// screen - and two options used to open by answering it, with their polarity
+// running backwards against reading order: the "No" one meant the record is
+// RIGHT. A reader told Mánu it sounded like a double negative, which is
+// exactly what "No - I did take it at 3pm" is.
+//
+// Three facts, one shape, and the only difference is the part being chosen
+// between. Asserted as an absence too: a yes or a no creeping back into any
+// of these labels is the whole defect returning.
+test("no option answers a question the reader cannot see", () => {
+  const labels = [...BLOCK.matchAll(/label: (`[^`]*`|"[^"]*")/g)].map((m) => m[1]);
+  assert.ok(labels.length >= 3, "expected all three options to carry a label");
+  for (const l of labels) {
+    assert.doesNotMatch(l, /^["`](Yes|No)\b/i, `option still opens with a yes or a no: ${l}`);
+  }
+});
+
+test("all three read as the same kind of statement", () => {
+  // "I took it ..." on every one, so the eye compares only what differs
+  assert.match(BLOCK, /label: loggedAt \? `I took it at/);
+  assert.match(BLOCK, /label: "I took it, but at a different time"/);
   assert.match(BLOCK, /label: "I did not take it at all"/);
 });
 
