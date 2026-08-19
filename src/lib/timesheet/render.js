@@ -655,6 +655,17 @@ export async function renderCorrected(sheet, opts = {}) {
         const notes = [];
         const bad = (t) => notes.push({ t, tone: "bad" });
         const good = (t) => notes.push({ t, tone: "good" });
+        // A DAY OFF SAYS SO ON THE DOCUMENT.
+        //
+        // The day program has no Misc classification, so time off is recorded
+        // as a day with nominal punches and its hours held on `ptoHours`. Left
+        // unlabelled it prints as an ordinary worked day and the person signs an
+        // attestation that they worked hours they did not - which is the one
+        // thing this column exists to prevent. It also owes no break, so
+        // "compliant" would be true and completely misleading.
+        if (d.isPto) {
+          good(`Misc PTO${d.ptoHours ? ` ${f2(d.ptoHours)} hrs` : ""}`);
+        }
         // NOTED, NOT CHARGED - the tone this sheet already uses for "+0.17
         // added" and "overlap *". A premium an assumption took away keeps its
         // words and loses its colour, which is the whole difference between the
