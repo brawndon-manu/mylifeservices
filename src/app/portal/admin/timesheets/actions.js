@@ -84,12 +84,22 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 export async function uploadBatch(formData) {
   const user = await requireTimesheetAccess();
 
+  // WHICH BATCH THIS IS A CORRECTION TO, when it is one. Empty for an ordinary
+  // upload, which is every path below until the write itself.
+  const intoBatchId = (formData.get("into") || "").toString().trim() || null;
+  // EVERY REFUSAL COMES BACK TO THE FORM IT WAS SENT FROM. Eighteen of these
+  // named the plain upload page, so a correction that tripped any early check -
+  // wrong file, unreadable export - came back as a fresh full upload with the
+  // batch it was meant to land on silently dropped. Identical for an ordinary
+  // upload, which carries no `into`.
+  const NEW = `/portal/admin/timesheets/new?${intoBatchId ? `into=${intoBatchId}&` : ""}`;
+
   const file = formData.get("file");
   if (!file || typeof file !== "object" || !("size" in file) || file.size === 0) {
-    redirect("/portal/admin/timesheets/new?error=nofile");
+    redirect(`${NEW}error=nofile`);
   }
   if (file.type && file.type !== "application/pdf") {
-    redirect("/portal/admin/timesheets/new?error=notpdf");
+    redirect(`${NEW}error=notpdf`);
   }
 
   // All three exports are required now, and that is a deliberate change.
@@ -101,7 +111,7 @@ export async function uploadBatch(formData) {
   // to generate, so it's refused rather than half-done.
   const schedFile = formData.get("schedule");
   const hasSched = schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0;
-  if (!hasSched) redirect("/portal/admin/timesheets/new?error=noschedule");
+  if (!hasSched) redirect(`${NEW}error=noschedule`);
 
   // The Simple Payroll Processing Report: QSP's OWN regular, overtime and
   // double-time totals per employee. It is what settles a disagreement about
@@ -110,7 +120,7 @@ export async function uploadBatch(formData) {
   // different pull, which is worth knowing before 59 sheets go out.
   const payFile = formData.get("payroll");
   const hasPay = payFile && typeof payFile === "object" && "size" in payFile && payFile.size > 0;
-  if (!hasPay) redirect("/portal/admin/timesheets/new?error=nopayroll");
+  if (!hasPay) redirect(`${NEW}error=nopayroll`);
 
   // The Rest Periods Report is back. It was briefly dropped with the move to
   // three reports, and that took every rest premium with it: nothing else
@@ -118,7 +128,7 @@ export async function uploadBatch(formData) {
   // It is the only definitive source for the bigger half of the premium total.
   const restFile = formData.get("rests");
   const hasRests = restFile && typeof restFile === "object" && "size" in restFile && restFile.size > 0;
-  if (!hasRests) redirect("/portal/admin/timesheets/new?error=norests");
+  if (!hasRests) redirect(`${NEW}error=norests`);
 
   // QSClock stays out for now - the decision was "hold, we may add it later".
   // null means no punch is graded clocked-vs-typed, which every reader below
@@ -142,7 +152,7 @@ export async function uploadBatch(formData) {
   const partialToInput = isoDate((formData.get("partialTo") || "").toString());
   if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {
     redirect(
-      `/portal/admin/timesheets/new?error=range&why=${encodeURIComponent(
+      `${NEW}error=range&why=${encodeURIComponent(
         "the start of the range is after its end",
       )}`,
     );
@@ -168,7 +178,7 @@ export async function uploadBatch(formData) {
   }
   if (parseError) {
     redirect(
-      `/portal/admin/timesheets/new?error=parse&why=${encodeURIComponent(parseError)}`,
+      `${NEW}error=parse&why=${encodeURIComponent(parseError)}`,
     );
   }
   const withHours = sheets.filter((s) => !s.empty);
@@ -176,7 +186,7 @@ export async function uploadBatch(formData) {
     // it read fine but held no timesheet rows - usually the wrong export, or a
     // corrected sheet uploaded back into the tool by mistake.
     redirect(
-      `/portal/admin/timesheets/new?error=empty&why=${encodeURIComponent(
+      `${NEW}error=empty&why=${encodeURIComponent(
         `read ${sheets.length} page group(s), none with hours`,
       )}`,
     );
@@ -207,7 +217,7 @@ export async function uploadBatch(formData) {
   if (future.size && !wantPartial) {
     const sample = [...future].sort().slice(0, 3).join(", ");
     redirect(
-      `/portal/admin/timesheets/new?error=future&why=${encodeURIComponent(
+      `${NEW}error=future&why=${encodeURIComponent(
         `${future.size} dated after today (${sample}). Wait until the pay period has ended, ` +
           `or tick "partial pay period" to drop them and keep what has been worked.`,
       )}`,
@@ -232,7 +242,7 @@ export async function uploadBatch(formData) {
     );
     if (!withHours.length) {
       redirect(
-        `/portal/admin/timesheets/new?error=empty&why=${encodeURIComponent(
+        `${NEW}error=empty&why=${encodeURIComponent(
           "no day in that export falls inside the range you picked, so there is nothing to generate from",
         )}`,
       );
@@ -251,7 +261,7 @@ export async function uploadBatch(formData) {
   const dupes = [...nameCounts].filter(([, n]) => n > 1);
   if (dupes.length) {
     redirect(
-      `/portal/admin/timesheets/new?error=twoperiods&why=${encodeURIComponent(
+      `${NEW}error=twoperiods&why=${encodeURIComponent(
         `${dupes.length} employees appear more than once. QSP returns whole pay periods, so a range spanning two gives you both. Ask for one period only.`,
       )}`,
     );
@@ -265,7 +275,7 @@ export async function uploadBatch(formData) {
   const cover = punchCoverage(withHours);
   if (!cover.ok) {
     redirect(
-      `/portal/admin/timesheets/new?error=punches&why=${encodeURIComponent(
+      `${NEW}error=punches&why=${encodeURIComponent(
         `the punches account for ${cover.punchHours.toFixed(2)} hours against QSP's own printed ` +
           `${cover.printedHours.toFixed(2)}, and ${cover.driftDays} of ${cover.comparedDays} days disagree with the total QSP printed beside them`,
       )}`,
@@ -282,7 +292,7 @@ export async function uploadBatch(formData) {
   // upload fails loudly here instead of silently half-succeeding.
   let sourceUrl = null;
   if (!hasBlobStorage()) {
-    redirect("/portal/admin/timesheets/new?error=noblob");
+    redirect(`${NEW}error=noblob`);
   }
   try {
     const key = `timesheets/source/${randomBytes(10).toString("hex")}.pdf`;
@@ -293,7 +303,7 @@ export async function uploadBatch(formData) {
     sourceUrl = blob.url;
   } catch (e) {
     console.error("timesheet source upload failed:", e);
-    redirect("/portal/admin/timesheets/new?error=blob");
+    redirect(`${NEW}error=blob`);
   }
 
   // the schedule export, if one was given. it's the second record of the same
@@ -390,7 +400,7 @@ export async function uploadBatch(formData) {
     } catch (e) {
       console.error("rest report parse failed:", e);
       redirect(
-        `/portal/admin/timesheets/new?error=restparse&why=${encodeURIComponent(
+        `${NEW}error=restparse&why=${encodeURIComponent(
           (e?.message || String(e)).slice(0, 160),
         )}`,
       );
@@ -429,7 +439,7 @@ export async function uploadBatch(formData) {
     } catch (e) {
       console.error("payroll parse failed:", e);
       redirect(
-        `/portal/admin/timesheets/new?error=payrollparse&why=${encodeURIComponent(
+        `${NEW}error=payrollparse&why=${encodeURIComponent(
           (e?.message || String(e)).slice(0, 160),
         )}`,
       );
@@ -471,7 +481,7 @@ export async function uploadBatch(formData) {
   }).length;
   if (scheduleCovers * 2 < withHours.length) {
     redirect(
-      `/portal/admin/timesheets/new?error=schedule&why=${encodeURIComponent(
+      `${NEW}error=schedule&why=${encodeURIComponent(
         `the schedule covers ${scheduleCovers} of the ${withHours.length} people on the timesheet` +
           ` - meal periods cannot be evidenced for the rest, so the premium total would be far too low`,
       )}`,
@@ -944,10 +954,133 @@ export async function uploadBatch(formData) {
   if (refused.length) {
     for (const r of refused) console.error(`timesheet upload refused: ${r.name} carries ${r.what} - ${r.near}`);
     redirect(
-      `/portal/admin/timesheets/new?error=unstorable&why=${encodeURIComponent(
+      `${NEW}error=unstorable&why=${encodeURIComponent(
         `${refused.map((r) => r.name).join(", ")} - ${refused[0].what}`,
       )}`,
     );
+  }
+
+  // ---- A RE-UPLOAD OF SOME PEOPLE, INTO THE BATCH THAT IS ALREADY OUT ----
+  //
+  // A handful of sheets are wrong and the rest are signed. Uploading a whole
+  // new export to fix four of them replaces a batch fifty people have already
+  // signed, and every one of those signatures is against a document that no
+  // longer exists. This lands the correction on the batch already in flight
+  // and touches nobody else.
+  //
+  // THE FILES DECIDE WHO. A QSP export pulled for four people contains four
+  // people, so there is no list to tick and no name to mistype. Everything
+  // above this point ran exactly as it does for a full upload - same parsers,
+  // same matching, same analysis - and only the write is different.
+  if (intoBatchId) {
+    const target = await prisma.timesheetBatch.findUnique({
+      where: { id: intoBatchId },
+      select: {
+        id: true, periodFrom: true, periodTo: true, program: true,
+        restsByDate: true, createdAt: true,
+      },
+    });
+    const back = (why) => redirect(
+      `/portal/admin/timesheets/new?into=${intoBatchId}&error=partial&why=${encodeURIComponent(why)}`,
+    );
+    if (!target) back("that batch is gone");
+    // THE SAME FORTNIGHT OR NOTHING. A file pulled for a different period would
+    // otherwise overwrite four people's hours with somebody else's dates.
+    if (target.periodFrom !== batchData.periodFrom || target.periodTo !== batchData.periodTo) {
+      back(`this export is ${batchData.periodFrom} to ${batchData.periodTo}, that batch is ${target.periodFrom} to ${target.periodTo}`);
+    }
+    // A REPLACED UPLOAD IS READ ONLY, the same rule every other write here holds.
+    const newer = await supersededBy(intoBatchId);
+    if (newer) back("that upload has been replaced - re-upload into the current one");
+
+    const existing = await prisma.timesheet.findMany({
+      where: { batchId: intoBatchId },
+      select: { id: true, sourceName: true, signedAt: true },
+    });
+    const byName = new Map(existing.map((r) => [restKey(r.sourceName || ""), r]));
+    // ONLY PEOPLE ALREADY ON IT. Someone in the file who is not on the batch is
+    // an ADDITION, not a correction, and the two want different confirmations -
+    // so it is refused by name rather than quietly appended.
+    const strangers = sheetRows
+      .filter((r) => !byName.has(restKey(r.sourceName || "")))
+      .map((r) => r.sourceName);
+    if (strangers.length) back(`not on that batch: ${strangers.join(", ")}`);
+
+    // THE REST ROWS MERGE BY NAME, THEY DO NOT REPLACE.
+    //
+    // `restsByDate` is one array for the whole batch and `rebuildSheetFor`
+    // filters it per sheet, so writing this upload's rows over it would change
+    // what all fifty-six untouched people rebuild from. Rows are dropped only
+    // where the incoming file covers that name, and both spellings come from
+    // the same report so they line up without any matching.
+    const incoming = batchData.restsByDate || [];
+    const covered = new Set(incoming.map((r) => restKey(r?.name || "")));
+    const mergedRests = [
+      ...(target.restsByDate || []).filter((r) => !covered.has(restKey(r?.name || ""))),
+      ...incoming,
+    ];
+
+    const ids = sheetRows.map((r) => byName.get(restKey(r.sourceName || "")).id);
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.timesheetBatch.update({
+          where: { id: intoBatchId },
+          // ONLY the rest rows. The batch's file pointers are the provenance of
+          // the upload the other people came from and stay pointing at it.
+          data: { restsByDate: mergedRests.length ? mergedRests : null },
+        });
+        // THEIR ANSWERS GO WITH THEIR FIGURES. An answer explains a finding on
+        // the document that raised it, and that document has just been
+        // replaced. Break reasons are keyed on (program, period, person,
+        // finding) rather than on the sheet, so those carry across untouched -
+        // which is the half that cannot be reconstructed.
+        await tx.timesheetCorrection.deleteMany({
+          where: {
+            timesheetId: { in: ids },
+            OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+          },
+        });
+        for (const row of sheetRows) {
+          const hit = byName.get(restKey(row.sourceName || ""));
+          await tx.timesheet.update({
+            where: { id: hit.id },
+            // UPDATED IN PLACE, NEVER REPLACED. The signing link is derived from
+            // the row id, so keeping the row keeps the link they already have in
+            // their inbox working - which is the whole point of correcting four
+            // sheets instead of reissuing sixty.
+            data: {
+              ...row,
+              overrides: {},
+              // the corrected sheet is a different document, so the signature
+              // and the sign-off cannot carry over to it
+              signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null,
+              approvedAt: null, approvedById: null, approvedPdfUrl: null,
+              disputedAt: null, pdfUrl: null,
+              // back onto the chase list: it has to go out again
+              sentAt: null,
+              recomputedAt: new Date(),
+            },
+          });
+        }
+      }, { timeout: 120_000, maxWait: 20_000 });
+    } catch (e) {
+      console.error("partial re-upload failed:", e);
+      back((e?.message || String(e)).slice(0, 200));
+    }
+
+    for (const id of ids) await bumpSheetVersion(id);
+    await bumpBatchVersion(intoBatchId);
+    revalidatePath(`/portal/admin/timesheets/${intoBatchId}`);
+    revalidatePath("/portal/admin/timesheets");
+    console.log(
+      `partial re-upload by ${user.id} into ${intoBatchId}: `
+      + `${sheetRows.map((r) => r.sourceName).join(", ")}`,
+    );
+    return {
+      ok: true,
+      href: `/portal/admin/timesheets/${intoBatchId}?replaced=${ids.length}`,
+      summary: { ...sum, partialInto: intoBatchId, replaced: sheetRows.map((r) => r.sourceName) },
+    };
   }
 
   // ONE TRANSACTION, so a failure leaves nothing rather than a part-built
@@ -971,7 +1104,7 @@ export async function uploadBatch(formData) {
   } catch (e) {
     console.error("timesheet batch write failed:", e);
     redirect(
-      `/portal/admin/timesheets/new?error=save&why=${encodeURIComponent(
+      `${NEW}error=save&why=${encodeURIComponent(
         (e?.message || String(e)).slice(0, 200),
       )}`,
     );

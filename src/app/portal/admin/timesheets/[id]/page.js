@@ -369,6 +369,17 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           >
             Signed timesheets →
           </Link>
+          {/* CORRECT A FEW PEOPLE WITHOUT REPLACING THE PERIOD. Only on a batch
+              that is still the current one: a superseded upload refuses the
+              write anyway, and offering the door is worse than not having it. */}
+          {state.key !== "superseded" && (
+            <Link
+              href={`/portal/admin/timesheets/new?into=${batch.id}`}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+            >
+              Re-upload some people →
+            </Link>
+          )}
           <Link
             href={`/portal/admin/timesheets/${batch.id}/stats`}
             className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
