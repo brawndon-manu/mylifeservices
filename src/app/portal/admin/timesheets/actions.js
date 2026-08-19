@@ -2362,7 +2362,7 @@ function shortClock(min) {
 // EVERY ID IS STILL RE-DERIVED FROM THE CLASSIFIER, one at a time, exactly as
 // before. A batch is a batch of writes, not a relaxation of the check: a client
 // cannot answer a question nobody asked, whichever shape it arrives in.
-export async function answerTimesheetQuestion({ token, id, choice, at, times, batch, reason }) {
+export async function answerTimesheetQuestion({ token, id, choice, at, times, batch, reason, actor }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
@@ -2457,12 +2457,27 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // This is what lets the premium counters hold the line: an hour the employee
   // waves off stays in the locked projected figure until they sign, and only
   // an hour a reviewer recorded settles on its own.
+  //
+  // EXCEPT WHEN THE ANSWER IS THEIRS AND THE REVIEWER IS ONLY TYPING IT. Live
+  // mode exists for the call where they cannot get the page up on their phone:
+  // they are giving the answer, it is read back to them, and their signature is
+  // still required before any of it counts. Filing that under the reviewer would
+  // claim they said nothing.
+  //
+  // Only the server sets this. It is bound on the page in live mode and never
+  // travels from the browser, so nothing a client sends can pick who an answer
+  // belongs to. It also only ever moves attribution the CONSERVATIVE way: an
+  // employee-owned answer leaves its hour on the projected figure until the
+  // signature lands, where a reviewer-owned one would settle it immediately.
+  // Getting it wrong reads high, never short.
   const viewer = await getCurrentUser();
-  const answeredById = answerActorId(
-    viewer,
-    canManageTimesheets(viewer?.realRole || viewer?.role),
-    ts.userId,
-  );
+  const answeredById = actor === "employee"
+    ? (ts.userId || null)
+    : answerActorId(
+      viewer,
+      canManageTimesheets(viewer?.realRole || viewer?.role),
+      ts.userId,
+    );
 
   // THE SAME QUESTION SET THE PAGE BUILT, or this refuses what it just showed.
   //

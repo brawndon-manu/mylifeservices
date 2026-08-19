@@ -34,6 +34,7 @@ import { sendTimesheets } from "@/app/portal/admin/timesheets/actions";
 import PreviewSend from "./PreviewSend";
 import PreviewReset from "./PreviewReset";
 import LiveRefresh from "./LiveRefresh";
+import ModeBar from "./ModeBar";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
@@ -51,26 +52,35 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const id = verifyTimesheetToken(token);
   if (!id) notFound();
 
-  // PREVIEW: A SUPER LOOKING AT SOMEBODY ELSE'S PAGE.
+  // WHICH OF THE TWO MODES A REVIEWER IS IN, and the safe one is the default.
   //
-  // The token alone is enough to open this page - it is the credential, and it
-  // has to be, because the person it belongs to has no login. So `?preview=1` is
-  // NOT what grants access; it only ever takes things away, and only for someone
-  // who is signed in as SUPER. A stranger appending it to a leaked link gets the
-  // ordinary page, and the employee's own link is unaffected either way.
+  // The token alone opens this page - it is the credential, and it has to be,
+  // because the person it belongs to has no login. So neither parameter GRANTS
+  // anything; they only pick which mode a signed-in SUPER gets, and a stranger
+  // appending either to a leaked link still gets the ordinary page.
   //
-  // What it takes away is every write. Mánu asked to "test run" these, and the
-  // thing that must not happen while testing is an answer or a signature landing
-  // on a real person's record - this batch has already lost one answer to a
-  // stray click. So the actions are replaced with a refusal rather than hidden:
-  // a hidden button cannot be tested, and a refused one proves the block works.
+  // PREVIEW IS WHAT YOU LAND IN. It used to be the other way round: a reviewer
+  // opening somebody's link without `?preview=1` had every write live, on a real
+  // payroll record, with nothing on screen saying so - and the first thing
+  // anybody does on a page like this is click something. This batch has already
+  // lost one answer to a stray click. So the live half is now a deliberate press
+  // rather than the state you arrive in by forgetting a parameter.
   const sp = await searchParams;
-  const viewer = sp?.preview ? await getCurrentUser() : null;
-  const preview = !!sp?.preview && isSuper(viewer?.role);
+  const viewer = await getCurrentUser();
 
   const refuse = async () => {
     "use server";
     return { ok: false, error: "preview" };
+  };
+
+  // AN ANSWER GIVEN IN LIVE IS THEIRS, not the reviewer's. The mode is for the
+  // call where they cannot get this page up on their phone: the words are
+  // theirs, the reviewer is the one holding the mouse, and their signature is
+  // still what makes any of it count. Bound here so the choice is the server's
+  // and never something the browser can send.
+  const answerAsThem = async (args) => {
+    "use server";
+    return answerTimesheetQuestion({ ...args, actor: "employee" });
   };
 
   const ts = await prisma.timesheet.findUnique({
@@ -129,6 +139,19 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // So the guard narrows to what it was actually protecting: a preview of a real
   // person's real batch still refuses everything, and a preview of a test batch
   // behaves exactly like the employee's own page.
+  // A SUPER READING THEIR OWN SHEET IS NOT A REVIEWER. They arrive here to sign
+  // it like anybody else, and putting them in a mode they have to click out of
+  // would stop them signing their own timesheet.
+  const ownSheet = !!viewer?.id && viewer.id === ts.userId;
+  // `realRole`, because "view as" must not hand somebody the employee's page.
+  // `getCurrentUser` swaps `role` for the previewed one, so a SUPER viewing as
+  // STAFF reads as an ordinary visitor here - which would put them back on the
+  // unlabelled page where every click is live, the one thing this replaces.
+  // The answer action already resolves the actor the same way.
+  const reviewing = isSuper(viewer?.realRole || viewer?.role) && !ownSheet;
+  const live = reviewing && !!sp?.live;
+  const preview = reviewing && !live;
+
   const rehearsal = !!ts.batch?.testOnly;
   const refuses = preview && !rehearsal;
   const act = (real) => (refuses ? refuse : real);
@@ -567,6 +590,32 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           something. Named, not just flagged: "you are previewing" is a state,
           "previewing Uribe, Brandon" is a fact you can check against the row you
           came from. */}
+      {reviewing && (
+        <ModeBar
+          token={token}
+          live={live}
+          name={ts.sourceName}
+          period={`${ts.batch.periodFrom} to ${ts.batch.periodTo}`}
+        />
+      )}
+      {live && (
+        <div
+          role="status"
+          className="mb-6 rounded-xl border border-rose-300 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/30"
+        >
+          <p className="text-sm font-bold text-rose-900 dark:text-rose-200">
+            Live &mdash; this is {ts.sourceName}&apos;s real page. Everything you do here is saved.
+          </p>
+          {/* WHOSE ANSWER IT BECOMES IS NOT COSMETIC, so the banner says it.
+              These are recorded as theirs: the words are theirs, and their
+              signature is still what makes any of it count. See `answerAsThem`
+              above and the note on `answeredById`. */}
+          <p className="mt-1 text-sm text-rose-800 dark:text-rose-300">
+            Anything you answer here is recorded as their own answer, and they see it on
+            their phone within about five seconds. It still waits on their signature.
+          </p>
+        </div>
+      )}
       {preview && (
         <div
           role="status"
@@ -578,7 +627,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
             {rehearsal
               ? "This is a TEST BATCH, so everything here works for real - answers save, the sheet rebuilds, the signature is stored. The only thing that differs is that any email it sends goes to one address."
-              : "Nothing you do here is saved. Answering a question or signing will be refused, so their record cannot be changed from this tab."}
+              : "Nothing you do here is saved. Answering a question or signing will be refused, so their record cannot be changed from this tab. Press Live to answer with them on the phone."}
           </p>
           {/* the one exception, and it goes the other way: this does not add an
               answer, it takes every answer off. Mánu 2026-08-12: "I meant to
@@ -748,7 +797,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
-                submitAction={act(answerTimesheetQuestion)}
+                submitAction={act(live ? answerAsThem : answerTimesheetQuestion)}
                 /* ONE PER VIOLATION, ON ITS OWN DAY. These rendered as a single
                    lump below everything, attached to nothing - a reason about
                    the 4th sat under a reason about the 11th with no picture and
@@ -809,7 +858,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
-                submitAction={act(answerTimesheetQuestion)}
+                submitAction={act(live ? answerAsThem : answerTimesheetQuestion)}
                 reasonsOnRecord={reasonsOnRecord}
               />
               )),
@@ -916,7 +965,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               What the page cannot do is press it for them - so the way out is
               here, at the point where the conversation runs out of things an
               admin is allowed to do. */}
-          {preview && (
+          {/* IN BOTH MODES. This block used to be preview-only, which left the
+              live half with no way out at the point where it is needed most:
+              you have just answered the last question with them on the phone,
+              the sheet will now generate, and the one thing you cannot do is
+              press sign. Sending them the link is that way out, and it is not
+              a preview-shaped act. */}
+          {reviewing && (
             <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
               <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
                 You cannot sign this for them.
