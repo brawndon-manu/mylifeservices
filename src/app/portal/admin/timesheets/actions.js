@@ -2477,12 +2477,37 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     sourceName: ts.sourceName,
     reviewerSettled: reviewerSettledDates(ts.overrides),
   });
+  // AND THE ONES THE PAGE PUT BACK, which a rebuild here can never produce.
+  //
+  // An answer that resolves its finding deletes its own question, so the page
+  // restores it from the snapshot frozen on the correction row to keep "Change
+  // this" reachable. This action rebuilt from the sheet and found only the
+  // questions still open, so every restored card it was sent came back
+  // "unknown" - and because that refusal drops the WHOLE batch, one resolved
+  // day sitting in a batched card meant no answer on any day in it could ever
+  // save. A card holding a settled day and an open one was a dead end: the open
+  // day could not be answered, and an unanswered question blocks signing.
+  //
+  // Read from the same snapshots the page reads, so the two sides agree on what
+  // was asked. The defence is unchanged: a snapshot has to already exist on a
+  // correction row belonging to THIS timesheet, so a client still cannot answer
+  // something nobody put to them.
+  const restoredQuestions = new Map();
+  for (const row of await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
+    select: { question: true },
+  })) {
+    const q = row.question;
+    if (q?.id && !questions.some((x) => x.id === q.id)) restoredQuestions.set(q.id, q);
+  }
   // RESOLVE AND VALIDATE EVERYTHING BEFORE WRITING ANYTHING. A batch where the
   // ninth day carries a time we cannot read must not leave the first eight
   // written and the sheet half rebuilt.
   const resolved = [];
   for (const a of asked) {
-    const q = questions.find((x) => x.id === a.id);
+    // the live question wins, so a day whose figures have since moved is
+    // validated against what it asks NOW rather than what it asked then
+    const q = questions.find((x) => x.id === a.id) || restoredQuestions.get(a.id);
     if (!q) return { ok: false, error: "unknown", at: { id: a.id } };
 
     // a typed time is only meaningful where the question asks for one
