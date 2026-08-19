@@ -14,6 +14,8 @@ import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
 import { correctionHeading } from "@/lib/timesheet/question-nouns";
 import { preferredName } from "@/lib/contacts";
+import OfflineSign from "./OfflineSign";
+import { recordOfflineSignature } from "@/app/portal/admin/timesheets/actions";
 import BackLink from "@/components/BackLink";
 import DayPeek from "../../checks/DayPeek";
 import FlagButton from "../../checks/FlagButton";
@@ -471,6 +473,21 @@ export default async function PersonSchedulePage({ params, searchParams }) {
           </span>
         </div>
       </div>
+
+      {/* A SIGNATURE THAT CAME BACK OUTSIDE THE PORTAL. People sign the PDF and
+          email it, and their answers only leave the payroll figure once a
+          signature covers them - so without this a sheet signed on paper reads
+          as though they never answered. Hidden once signed, and on a sheet that
+          cannot generate there is nothing to have signed. */}
+      {!sheet.signedAt && sheet.renderOk && (
+        <div className="mt-6">
+          <OfflineSign
+            action={recordOfflineSignature}
+            timesheetId={sheet.id}
+            sourceName={sheet.sourceName}
+          />
+        </div>
+      )}
 
       {/* REBUILD THIS ONE SHEET.
           Until now the only way to reach `recomputeTimesheet` was a button that
