@@ -317,6 +317,14 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     where: {
       periodFrom: batch.periodFrom,
       periodTo: batch.periodTo,
+      // SAME PROGRAM ONLY, the same rule `supersededBy` and `groupByPeriod`
+      // already hold. Both payrolls run the same fortnights, so counting across
+      // them made a day program upload read as a newer version of the agency's
+      // export: SUPERSEDED beats every other state, which took the live batch
+      // read-only and hid the lock control on sixty sheets that were out for
+      // signature. This count is the page's own - it loads one batch and cannot
+      // use the list's helper - which is why the filter had to be added twice.
+      program: batch.program,
       createdAt: { gt: batch.createdAt },
     },
   })) > 0;
