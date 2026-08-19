@@ -936,6 +936,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <TimesheetSigner
             key={`sheet-${answered.length}-${breakAsks.length}`}
             token={token}
+            /* LOOKING AT THE UNDRAWABLE PATH ON A BROWSER THAT DRAWS FINE.
+               It only appears when a render genuinely fails, which never
+               happens on the machine of the person who has to be sure the
+               wording on it is right. Reviewer only - `reviewing` already
+               means a signed-in SUPER on somebody else's sheet - so an
+               employee appending it gets the ordinary page. */
+            forceNoDraw={reviewing && !!sp?.nodraw}
             fileUrl={`/t/${token}/pdf?v=${answered.length}`}
             title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
             submitAction={act(submitSignedTimesheet)}

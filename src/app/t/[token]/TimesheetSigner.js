@@ -26,6 +26,8 @@ export default function TimesheetSigner({
   // always-visible behaviour is one boolean away and the Tests card can show
   // both without a second component.
   requireGenerate = true,
+  // see FormFiller: forces the cannot-draw path so a reviewer can look at it
+  forceNoDraw = false,
 }) {
   // THE CONFIRMATION IS REASSURANCE, NOT A WARNING, and that is the whole point
   // of it existing after the 2026-08-11 flip. Before the flip, signing with
@@ -137,6 +139,7 @@ export default function TimesheetSigner({
   return (
     <div className="mt-6">
       <FormFiller
+        forceNoDraw={forceNoDraw}
         fileUrl={fileUrl}
         title={title}
         formId={token}

@@ -13,6 +13,7 @@ import {
   PDFTextField,
   PDFCheckBox,
   PDFSignature,
+  StandardFonts,
 } from "pdf-lib";
 import SignaturePad from "./SignaturePad";
 
@@ -101,9 +102,17 @@ export default function FormFiller({
   signLabel = null,
   // one line above the document, for a caller that knows what it is
   signIntro = null,
+  // FORCE THE UNDRAWABLE PATH, so it can be looked at on a browser where it
+  // would never happen. Gated to a reviewer by the page that passes it - an
+  // employee appending the parameter gets the ordinary page.
+  forceNoDraw = false,
 }) {
   const [status, setStatus] = useState("loading");
   const [pages, setPages] = useState([]); // { url, w, h }
+  // the pages could not be painted in this browser. Not an error state: the
+  // document is still readable through its own link and still signable, so this
+  // only changes HOW it is put in front of somebody.
+  const [cantDraw, setCantDraw] = useState(false);
   const [placements, setPlacements] = useState([]); // { name, kind, page, left, top, width, height, multiline }
   const [values, setValues] = useState({});
   const [busy, setBusy] = useState(false);
@@ -124,6 +133,21 @@ export default function FormFiller({
   const recipients = reviewTeam?.recipients || [];
   const recipientLabel = reviewTeam?.recipientLabel || "reviewer";
   const chosenRecipient = recipients.find((r) => r.id === recipientId) || null;
+
+  // THE TYPED SIGNATURE IS NOT A SECOND KIND OF ANSWER. It is written into the
+  // SAME `values` slot a drawn one goes in, so everything downstream is
+  // untouched: the submit gate that refuses an unsigned sheet already reads
+  // this, `buildPdfBytes` stamps it, and the action, the stored PDF and the
+  // confirmation email never learn there were two ways to produce it. All that
+  // differs is that the value is a name rather than a data URL, which is what
+  // `typedStamps` keys off.
+  const sigFields = placements.filter((p) => p.kind === "signature");
+  const typedSig = sigFields.length ? String(values[sigFields[0].name] || "") : "";
+  const setTypedSig = (v) => setValues((prev) => {
+    const next = { ...prev };
+    for (const p of sigFields) next[p.name] = v;
+    return next;
+  });
 
   useEffect(() => {
     let active = true;
@@ -182,7 +206,31 @@ export default function FormFiller({
           }
         }
 
-        // render the page images with PDF.js
+        // DRAWING THE DOCUMENT AND SIGNING IT ARE TWO DIFFERENT JOBS, and only
+        // one of them is allowed to fail the page.
+        //
+        // Everything above is pdf-lib reading field positions off the bytes.
+        // Everything below is pdf.js painting those pages onto canvases. They
+        // share nothing: `buildPdfBytes` fills and signs from `placements` and
+        // `values` and never reads a page image. They were in ONE try, so a
+        // canvas that would not paint threw away a working set of placements
+        // with it, and the reader landed on "Couldn't load this form" with no
+        // signature pad and no download button - both of those live behind
+        // `status === "ready"` - and therefore no way to finish at all.
+        //
+        // An in-app browser is where this bites. Module workers are unsupported
+        // in older Android WebViews, and WKWebView has a canvas memory ceiling
+        // past which it returns a BLANK canvas rather than throwing. A fortnight
+        // sheet is several pages, each held as a full-size base64 PNG at 2x, so
+        // the more days somebody worked the likelier it is to go.
+        //
+        // Now the render is allowed to fail alone. Somebody who cannot be shown
+        // the pages is handed the file to open in whatever their phone uses for
+        // PDFs, and can still sign.
+        let cantDraw = false;
+        let imgs = [];
+        try {
+        if (forceNoDraw) throw new Error("forced");
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = WORKER_SRC;
         const pdf = await pdfjs.getDocument({ data: buf.slice(0) }).promise;
@@ -191,7 +239,6 @@ export default function FormFiller({
         // to anti-alias against and dense documents come out muddy. capped so a
         // 3x phone doesn't build a canvas we then have to base64 into a data url.
         const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
-        const imgs = [];
         for (let i = 0; i < pdf.numPages; i++) {
           const page = await pdf.getPage(i + 1);
           const base = page.getViewport({ scale: 1 });
@@ -203,10 +250,18 @@ export default function FormFiller({
           await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
           imgs.push({ url: canvas.toDataURL("image/png"), w: base.width * scale, h: base.height * scale });
         }
+        } catch {
+          // the pages could not be drawn here. The document is still readable -
+          // it is a PDF and the phone has something that opens one - and it is
+          // still signable, because signing never needed the pictures.
+          cantDraw = true;
+          imgs = [];
+        }
 
         if (active) {
           setPlacements(pls);
           setPages(imgs);
+          setCantDraw(cantDraw);
           // sign-only documents (timesheets) date themselves - the only date on
           // them is the one beside the signature, and making someone type
           // today's date is just a step to get wrong. still editable if they
@@ -235,7 +290,7 @@ export default function FormFiller({
       active = false;
       clearTimeout(watchdog);
     };
-  }, [fileUrl, signMode]);
+  }, [fileUrl, signMode, forceNoDraw]);
 
   function setVal(name, v) {
     setValues((prev) => ({ ...prev, [name]: v }));
@@ -284,6 +339,7 @@ export default function FormFiller({
             pg.ref.generationNumber === ref.generationNumber,
         );
       const sigStamps = [];
+      const typedStamps = [];
       const sigFieldsToRemove = [];
       for (const f of form.getFields()) {
         const isTextSig = f instanceof PDFTextField && isSignatureName(f.getName());
@@ -295,6 +351,18 @@ export default function FormFiller({
             const pref = w.dict.get(PDFName.of("P"));
             const pi = pref ? sigPageIndex(pref) : -1;
             if (pi >= 0) sigStamps.push({ pi, rect: normRect(w.getRectangle()), val });
+          }
+        } else if (typeof val === "string" && val.trim()) {
+          // A TYPED SIGNATURE, for a browser that cannot draw one.
+          //
+          // The drawn mark is an image built on a canvas, which is exactly the
+          // thing that has already failed by the time anybody needs this. So it
+          // is drawn as TEXT by pdf-lib instead, which touches no canvas at all
+          // and works wherever the fill does.
+          for (const w of f.acroField.getWidgets()) {
+            const pref = w.dict.get(PDFName.of("P"));
+            const pi = pref ? sigPageIndex(pref) : -1;
+            if (pi >= 0) typedStamps.push({ pi, rect: normRect(w.getRectangle()), val: val.trim() });
           }
         }
         // text-sig fields flatten fine once blanked; a real signature field can't
@@ -337,6 +405,31 @@ export default function FormFiller({
           width: dw,
           height: dh,
         });
+      }
+
+      // THE TYPED ONES, drawn after flatten for the same reason the images are:
+      // the blanked field's own appearance would otherwise paint over them.
+      //
+      // Sized to fit the box rather than fixed, because the signature rect
+      // differs between documents and a name that overflows it would run into
+      // whatever is printed beside it. Italic so it reads as a signature rather
+      // than as another filled field, and never larger than the box is tall.
+      if (typedStamps.length) {
+        const font = await doc.embedFont(StandardFonts.HelveticaOblique);
+        for (const s of typedStamps) {
+          const pg = sigPages[s.pi];
+          if (!pg) continue;
+          const r = s.rect;
+          let size = Math.min(r.height * 0.6, 18);
+          while (size > 5 && font.widthOfTextAtSize(s.val, size) > r.width * 0.94) size -= 0.5;
+          const tw = font.widthOfTextAtSize(s.val, size);
+          pg.drawText(s.val, {
+            x: r.x + (r.width - tw) / 2,
+            y: r.y + (r.height - font.heightAtSize(size)) / 2 + size * 0.18,
+            size,
+            font,
+          });
+        }
       }
       const out = await doc.save();
       return out;
@@ -511,6 +604,55 @@ export default function FormFiller({
         </p>
       )}
 
+      {status === "ready" && cantDraw && (
+        <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
+          {/* WHY THEY ARE SEEING THIS, or it reads as something being wrong with
+              their timesheet rather than with the preview. Nothing is wrong with
+              the document: it is the same file either way. */}
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            This browser could not draw the document here.
+          </p>
+          <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+            Nothing is wrong with your timesheet. Open it below to read it, then come back
+            and sign. Opening it in your phone&apos;s own PDF viewer usually works when this
+            does not, and it is the same document either way.
+          </p>
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-block rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
+          >
+            Open my timesheet →
+          </a>
+          {signMode && (
+            <div className="mt-5 border-t border-amber-300/70 pt-4 dark:border-amber-800/70">
+              {/* TYPING THE NAME IS THE SIGNATURE HERE. The drawn mark is built
+                  on a canvas, which is the thing that has already failed by the
+                  time anybody reads this, so asking for one again would be the
+                  same dead end with an extra step. `buildPdfBytes` draws this as
+                  text with pdf-lib and the sheet records that it was typed. */}
+              <label htmlFor="typedsig" className="block text-sm font-semibold text-foreground">
+                Type your full name to sign
+              </label>
+              <p className="mt-1 text-xs text-muted">
+                Typing your name here counts as your signature on this timesheet, the same as
+                drawing it. Read it first using the button above.
+              </p>
+              <input
+                id="typedsig"
+                type="text"
+                autoComplete="name"
+                maxLength={80}
+                value={typedSig}
+                onChange={(e) => setTypedSig(e.target.value)}
+                placeholder="Your full name"
+                className="mt-2 w-full max-w-sm rounded-lg border border-border-strong bg-background px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none"
+              />
+            </div>
+          )}
+        </div>
+      )}
       {status === "ready" && (
         <>
           <div className="mt-5 space-y-4">
