@@ -21,11 +21,19 @@ function owedOn(day) {
   return meal + rest;
 }
 
-export default async function PatternsPage() {
+export default async function PatternsPage({ searchParams }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) redirect("/portal");
 
+  // ONE PAYROLL AT A TIME. This page reads across every period, so without a
+  // program filter the day program's fortnights would land in the agency's
+  // repeat-pattern counts and change what a reviewer sees about their own
+  // people. The link from each list carries its program.
+  const sp = await searchParams;
+  const program = sp?.program === "DP" ? "DP" : "MLS";
+
   const batches = await prisma.timesheetBatch.findMany({
+    where: { program },
     orderBy: { createdAt: "asc" },
     include: {
       timesheets: {

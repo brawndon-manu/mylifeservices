@@ -1917,7 +1917,10 @@ export async function timesheetResetImpact(timesheetId) {
       id: true,
       userId: true,
       signedAt: true,
-      batch: { select: { periodFrom: true, periodTo: true } },
+      // `program` is what the break-answer filter below reads. Left out, that
+      // filter falls back to MLS and this dialog counts the OTHER payroll's
+      // rows while the reset itself touches none of them.
+      batch: { select: { periodFrom: true, periodTo: true, program: true } },
     },
   });
   if (!ts) return { answers: 0, reasons: 0, signed: false };
@@ -3457,6 +3460,7 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
       data: {
         batchId: ts.batch.id,
         rowKey: `person-${ts.id}`,
+        program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
         periodTo: ts.batch.periodTo,
         personKey: ts.userId,

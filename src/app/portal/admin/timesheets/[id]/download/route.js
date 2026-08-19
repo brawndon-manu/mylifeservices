@@ -29,6 +29,10 @@ export async function GET(req, { params }) {
       periodFrom: true,
       periodTo: true,
       restsByDate: true,
+      // loadBreakReasons scopes by it. Left out it falls back to MLS, and a
+      // day program sheet in this bundle prints the OTHER payroll's reasons
+      // for anybody who works both.
+      program: true,
       timesheets: {
         // an unsigned sheet is rendered from `data`, so it needs no stored
         // file to be includable - renderOk is the signal that it can be built.

@@ -1022,6 +1022,9 @@ model TimesheetContactLog {
   // the half that must NOT be lost on a re-upload: a mark can be re-made, but
   // "we rang them on the 12th and again on the 13th" cannot be reconstructed
   // from anything. 12 of these events were already stranded.
+  // scoped like the mark it records: the contact history is read by period,
+  // and two payrolls share both the fortnights and, sometimes, the people.
+  program    String  @default("MLS")
   periodFrom String?
   periodTo   String?
   personKey  String?
