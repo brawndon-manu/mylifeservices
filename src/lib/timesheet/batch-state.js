@@ -184,7 +184,13 @@ export function canSendAll(batch, opts) {
 export function supersededIds(batches = []) {
   const newest = new Map();
   for (const b of batches) {
-    const k = `${b.periodFrom}..${b.periodTo}`;
+    // THE PROGRAM IS PART OF THE KEY, for the same reason it is in
+    // `groupByPeriod` below. Keyed on the period alone, the newest batch of a
+    // fortnight is whichever payroll uploaded last, so a day program export
+    // marks the agency's live batch superseded and vice versa. A batch selected
+    // without `program` keys as MLS, which is what every batch was before the
+    // column existed.
+    const k = `${b.periodFrom}..${b.periodTo}..${b.program || "MLS"}`;
     const prev = newest.get(k);
     if (!prev || new Date(b.createdAt) > new Date(prev.createdAt)) newest.set(k, b);
   }
