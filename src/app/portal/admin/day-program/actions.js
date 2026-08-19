@@ -164,3 +164,68 @@ export async function uploadDayProgramBatch(formData) {
   revalidatePath("/portal/admin/day-program");
   redirect(`/portal/admin/timesheets/${batch.id}`);
 }
+
+// ---------------------------------------------------------------- PTO
+
+// PAID TIME OFF, RECORDED AGAINST THE PERSON AND THE PERIOD, not the upload.
+//
+// The day program has no Misc classification to park a non-working day under,
+// so time off had nowhere to live and simply read as a gap in the schedule.
+// These rows fill that gap explicitly.
+//
+// KEYED (program, period, person, date) like the break answers, so a re-upload
+// does not wipe them. That is the whole point: PTO is agreed before any export
+// is pulled, and re-entering nine people's time off after every upload is how
+// it gets lost.
+//
+// HOURS RECORDED HERE ARE NOT WORKED HOURS. Nothing in this file adds them to a
+// paid total or an overtime test - a PTO day is not a shift, owes no rest
+// break, and must never push somebody over forty on time they did not work.
+export async function setPto(formData) {
+  const user = await requireAccess();
+
+  const program = (formData.get("program") || "DP").toString();
+  const periodFrom = (formData.get("periodFrom") || "").toString();
+  const periodTo = (formData.get("periodTo") || "").toString();
+  const personKey = (formData.get("personKey") || "").toString();
+  const date = (formData.get("date") || "").toString();
+  const raw = (formData.get("hours") || "").toString().trim();
+  const note = (formData.get("note") || "").toString().trim().slice(0, 200) || null;
+  const back = (formData.get("back") || "").toString();
+
+  if (!periodFrom || !periodTo || !personKey || !date) return;
+
+  const hours = Number(raw);
+  // ZERO REMOVES IT. A cleared box is how somebody takes a day back off the
+  // record, and storing a 0-hour PTO day would print as time off that is not.
+  if (!raw || !Number.isFinite(hours) || hours <= 0) {
+    await prisma.ptoEntry.deleteMany({
+      where: { program, periodFrom, periodTo, personKey, date },
+    });
+  } else {
+    // a day cannot hold more hours than it has, and a typo of 80 for 8 would
+    // otherwise print on a payroll document
+    const capped = Math.min(Math.round(hours * 100) / 100, 24);
+    await prisma.ptoEntry.upsert({
+      where: {
+        program_periodFrom_periodTo_personKey_date: { program, periodFrom, periodTo, personKey, date },
+      },
+      update: { hours: capped, note, byId: user.id, byName: preferredNameOf(user) },
+      create: {
+        program, periodFrom, periodTo, personKey, date,
+        hours: capped, note, byId: user.id, byName: preferredNameOf(user),
+      },
+    });
+  }
+
+  if (back) revalidatePath(back);
+  return { ok: true };
+}
+
+// the reviewer's own name, stored flat beside the row - see the note on the
+// model about why this is not a relation
+function preferredNameOf(u) {
+  const first = u?.preferredFirstName || (u?.name || "").split(" ")[0] || "";
+  const last = u?.preferredLastName || (u?.name || "").split(" ").slice(1).join(" ") || "";
+  return `${first} ${last}`.trim() || u?.email || null;
+}

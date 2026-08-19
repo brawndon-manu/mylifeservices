@@ -28,83 +28,83 @@ enum Role {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id                           String                        @id @default(cuid())
   // full / legal name (records). managed by admin/HR. shown only on the contact
   // detail card + admin panel (gated to admin/management when hideLegalName).
-  name          String?
+  name                         String?
   // optional preferred first / last name. self-editable in settings. the name
   // shown everywhere = (preferredFirstName or legal first) + (preferredLastName
   // or legal last), e.g. "Manu" + legal last "Uribe" -> "Manu Uribe".
-  preferredFirstName String?
-  preferredLastName  String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  role          Role      @default(STAFF)
+  preferredFirstName           String?
+  preferredLastName            String?
+  email                        String                        @unique
+  emailVerified                DateTime?
+  image                        String?
+  role                         Role                          @default(STAFF)
   // job title separate from privilege role. free-form string so we can
   // add new ones without a schema migration. examples: "Owner/Director",
   // "Program Manager", "Field Supervisor", "HR Administrator", "ILS",
   // "Day Program", "Supported Living", etc.
-  title         String?
+  title                        String?
   // which office(s) they work out of, from HR's roster. "ILS" (My Life Services)
   // and/or "DP" (Day Program) - a list so someone who splits both keeps one row.
-  offices       String[]  @default([])
+  offices                      String[]                      @default([])
   // soft delete - when set, this user cant sign in anymore. preserves
   // history (audit trails, role at time of action, etc.) rather than
   // hard deleting the row. set back to null to reactivate.
-  deactivatedAt DateTime?
+  deactivatedAt                DateTime?
   // their actual employment start date with MLS (per HR records).
   // separate from createdAt which is just when their row was added to
   // our portal db. used for tenure displays + sorting in the admin list.
-  hireDate      DateTime?
+  hireDate                     DateTime?
   // contact phone for the team directory. self-editable in Settings,
   // admins can also set it. stored as the raw string the user typed.
-  phone         String?
+  phone                        String?
   // free-text working hours shown on their contact detail page, e.g.
   // "Mon-Fri 9am-5pm". self-editable in Settings, admins too.
-  workingHours  String?
+  workingHours                 String?
   // when false, the phone is hidden on the PUBLIC shared contact link
   // (/c/[id]). still shown to signed-in staff in the portal. opt-out in
   // Settings; defaults to sharing.
-  sharePhonePublicly Boolean @default(true)
+  sharePhonePublicly           Boolean                       @default(true)
   // when true, the full/legal name is hidden from coworkers + the public link -
   // only the oversight tier (HR/management) + the person themselves see it.
   // self-set in settings. they should have a display name set so something
   // still shows.
-  hideLegalName Boolean @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  accounts      Account[]
-  sessions      Session[]
-  posts         Post[]     @relation("PostAuthor")
-  postedPosts   Post[]     @relation("PostPostedBy")
-  comments      Comment[]
-  likes         PostLike[]
-  announcements        Announcement[]        @relation("AnnouncementAuthor")
-  announcementsPosted  Announcement[]        @relation("AnnouncementPostedBy")
-  announcementComments AnnouncementComment[]
-  announcementLikes    AnnouncementLike[]
-  announcementAcks     AnnouncementAck[]
-  formSubmissions      FormSubmission[]
-  announcementMeetingChoices AnnouncementMeetingChoice[]
+  hideLegalName                Boolean                       @default(false)
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  accounts                     Account[]
+  sessions                     Session[]
+  posts                        Post[]                        @relation("PostAuthor")
+  postedPosts                  Post[]                        @relation("PostPostedBy")
+  comments                     Comment[]
+  likes                        PostLike[]
+  announcements                Announcement[]                @relation("AnnouncementAuthor")
+  announcementsPosted          Announcement[]                @relation("AnnouncementPostedBy")
+  announcementComments         AnnouncementComment[]
+  announcementLikes            AnnouncementLike[]
+  announcementAcks             AnnouncementAck[]
+  formSubmissions              FormSubmission[]
+  announcementMeetingChoices   AnnouncementMeetingChoice[]
   announcementMeetingResponses AnnouncementMeetingResponse[]
-  announcementEventRsvps AnnouncementEventRsvp[]
-  nlSubmitted   NewsletterItem[] @relation("NLSubmittedBy")
-  nlApproved    NewsletterItem[] @relation("NLApprovedBy")
-  nlPublished   NewsletterItem[] @relation("NLPublishedBy")
-  feedbackAuthored FeedbackItem[] @relation("FeedbackAuthor")
-  feedbackResolved FeedbackItem[] @relation("FeedbackResolvedBy")
-  resourcesSubmitted Resource[]   @relation("ResourceSubmittedBy")
-  resourcesApproved  Resource[]   @relation("ResourceApprovedBy")
-  resourcesVerified  Resource[]   @relation("ResourceVerifiedBy")
-  sitePhotos    SitePhoto[]   @relation("SitePhotoUploadedBy")
-  notifications Notification[]
-  timesheetBatches TimesheetBatch[] @relation("TimesheetBatchUploadedBy")
-  timesheets       Timesheet[]      @relation("TimesheetEmployee")
-  timesheetsApproved Timesheet[]    @relation("TimesheetApprovedBy")
-  timesheetCorrectionsResolved TimesheetCorrection[] @relation("TimesheetCorrectionResolvedBy")
-  dayProgramBatches DayProgramBatch[] @relation("DayProgramBatchUploadedBy")
-  dayProgramSheets  DayProgramSheet[] @relation("DayProgramEmployee")
+  announcementEventRsvps       AnnouncementEventRsvp[]
+  nlSubmitted                  NewsletterItem[]              @relation("NLSubmittedBy")
+  nlApproved                   NewsletterItem[]              @relation("NLApprovedBy")
+  nlPublished                  NewsletterItem[]              @relation("NLPublishedBy")
+  feedbackAuthored             FeedbackItem[]                @relation("FeedbackAuthor")
+  feedbackResolved             FeedbackItem[]                @relation("FeedbackResolvedBy")
+  resourcesSubmitted           Resource[]                    @relation("ResourceSubmittedBy")
+  resourcesApproved            Resource[]                    @relation("ResourceApprovedBy")
+  resourcesVerified            Resource[]                    @relation("ResourceVerifiedBy")
+  sitePhotos                   SitePhoto[]                   @relation("SitePhotoUploadedBy")
+  notifications                Notification[]
+  timesheetBatches             TimesheetBatch[]              @relation("TimesheetBatchUploadedBy")
+  timesheets                   Timesheet[]                   @relation("TimesheetEmployee")
+  timesheetsApproved           Timesheet[]                   @relation("TimesheetApprovedBy")
+  timesheetCorrectionsResolved TimesheetCorrection[]         @relation("TimesheetCorrectionResolvedBy")
+  dayProgramBatches            DayProgramBatch[]             @relation("DayProgramBatchUploadedBy")
+  dayProgramSheets             DayProgramSheet[]             @relation("DayProgramEmployee")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -127,7 +127,7 @@ enum DeviceStatus {
 
 model Device {
   id           String       @id @default(cuid())
-  name         String       // e.g. "David's MacBook Pro 16"
+  name         String // e.g. "David's MacBook Pro 16"
   type         DeviceType   @default(LAPTOP)
   serialNumber String?
   // purchase price stored in whole cents to avoid float rounding.
@@ -163,63 +163,63 @@ enum ResourceOpStatus {
 }
 
 model Resource {
-  id          String         @id @default(cuid())
-  name        String
+  id                  String           @id @default(cuid())
+  name                String
   // top-level bucket shown as a chip, e.g. "Housing", "Food banks".
-  category    String?
+  category            String?
   // finer type within the category, e.g. "Food pantry", "Mobile food
   // distribution". options are per-category (see src/lib/contacts.js).
-  subtype     String?
+  subtype             String?
   // organization behind the location, if different from the resource name.
-  orgName     String?
-  phone       String?
-  email       String?
-  website     String?
+  orgName             String?
+  phone               String?
+  email               String?
+  website             String?
   // direct link to book/schedule, if they take appointments online.
-  appointmentLink String?
+  appointmentLink     String?
   // free text, e.g. "Call before visiting" or "Text to schedule".
   contactInstructions String?
-  address     String?
-  city        String?
-  state       String?
-  zip         String?
+  address             String?
+  city                String?
+  state               String?
+  zip                 String?
   // who the service covers, e.g. "Anaheim residents only". free text.
-  serviceArea String?
-  lat         Float?
-  lng         Float?
+  serviceArea         String?
+  lat                 Float?
+  lng                 Float?
   // legacy free-text hours. superseded by `schedule` for new entries but
   // kept so the imported food-bank hours still show.
-  hours       String?
+  hours               String?
   // structured recurring schedule rows: [{ day, frequency, start, end }]
-  schedule    Json?
+  schedule            Json?
   // populations served (multi). filterable. see WHO_IT_SERVES_OPTIONS.
-  whoItServes String[]       @default([])
-  appointmentRequired Boolean @default(false)
+  whoItServes         String[]         @default([])
+  appointmentRequired Boolean          @default(false)
   // category-specific answers (eligibility + food details). see
   // buildDetails in src/lib/contacts.js for the shape.
-  details     Json?
+  details             Json?
   // short public-facing description / what they do.
-  notes       String?
+  notes               String?
   // staff-only notes, never shown to clients.
-  internalNotes String?
+  internalNotes       String?
   // where this info came from (url, person, flyer).
-  source      String?
-  operationalStatus ResourceOpStatus @default(ACTIVE)
+  source              String?
+  operationalStatus   ResourceOpStatus @default(ACTIVE)
   // featured by management - surfaces in a "Staff picks" row up top.
-  staffPick   Boolean        @default(false)
+  staffPick           Boolean          @default(false)
   // verification trail so the directory doesn't go stale.
-  lastVerifiedAt DateTime?
-  verifiedById   String?
-  verifiedBy     User?        @relation("ResourceVerifiedBy", fields: [verifiedById], references: [id])
-  status      ResourceStatus @default(PENDING)
-  submittedById String
-  submittedBy   User         @relation("ResourceSubmittedBy", fields: [submittedById], references: [id])
-  approvedById  String?
-  approvedBy    User?        @relation("ResourceApprovedBy", fields: [approvedById], references: [id])
-  approvedAt    DateTime?
-  reviewNote    String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  lastVerifiedAt      DateTime?
+  verifiedById        String?
+  verifiedBy          User?            @relation("ResourceVerifiedBy", fields: [verifiedById], references: [id])
+  status              ResourceStatus   @default(PENDING)
+  submittedById       String
+  submittedBy         User             @relation("ResourceSubmittedBy", fields: [submittedById], references: [id])
+  approvedById        String?
+  approvedBy          User?            @relation("ResourceApprovedBy", fields: [approvedById], references: [id])
+  approvedAt          DateTime?
+  reviewNote          String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   @@index([status])
 }
@@ -318,44 +318,44 @@ model PostLike {
 // only Supervisor+ can create announcements (see src/lib/roles.js
 // isSupervisorUp); everyone reads, comments, and reacts.
 model Announcement {
-  id         String     @id @default(cuid())
-  authorId   String
-  author     User       @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  id                          String                        @id @default(cuid())
+  authorId                    String
+  author                      User                          @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   // optional title - used by the Changelog type (Discord-style heading). plain
   // announcements leave it null and just use content.
-  title      String?
-  content    String
-  imageUrl   String?
+  title                       String?
+  content                     String
+  imageUrl                    String?
   // proxy posting: authorId is the credited person, postedById is who hit
   // submit (null when posted by themselves). kept for the audit trail.
-  postedById String?
-  postedBy   User?      @relation("AnnouncementPostedBy", fields: [postedById], references: [id])
-  tag        String
-  expiresAt  DateTime?
-  pinnedAt   DateTime?
-  pinnedById String?
-  editedAt   DateTime?
-  deletedAt  DateTime?
+  postedById                  String?
+  postedBy                    User?                         @relation("AnnouncementPostedBy", fields: [postedById], references: [id])
+  tag                         String
+  expiresAt                   DateTime?
+  pinnedAt                    DateTime?
+  pinnedById                  String?
+  editedAt                    DateTime?
+  deletedAt                   DateTime?
   // null = draft: created via "Preview", not shown in the feed, no emails sent.
   // set to now() on Publish. existing rows are backfilled to createdAt so nothing
   // already posted disappears.
-  publishedAt DateTime?
+  publishedAt                 DateTime?
   // when true, staff get an "I read this" box and management gets a
   // who-has/who-hasnt roster. opt-in per announcement (see requireAck box
   // on the form). plain posts leave it false.
-  requireAck Boolean    @default(false)
+  requireAck                  Boolean                       @default(false)
   // the acknowledgment audience - who is expected to acknowledge (drives the
   // roster denominator + the email send default). ackEveryone = the whole
   // expected-ack staff set; otherwise ackTitles lists the job titles targeted.
-  ackEveryone Boolean   @default(true)
-  ackTitles   String[]  @default([])
+  ackEveryone                 Boolean                       @default(true)
+  ackTitles                   String[]                      @default([])
   // specific individuals to target (in addition to ackTitles), used when the
   // poster narrows a title role to certain people. unioned with ackTitles.
-  ackUserIds  String[]  @default([])
+  ackUserIds                  String[]                      @default([])
   // an optional fillable form attached to this announcement: acknowledging it
   // means filling + submitting the form, which writes the ack (see FormSubmission).
-  formId      String?
-  form        Form?     @relation(fields: [formId], references: [id])
+  formId                      String?
+  form                        Form?                         @relation(fields: [formId], references: [id])
   // DOCUMENTS THAT RIDE ALONG WITH THE POST. [{ name, url, formId?, bytes? }]
   //
   // Two sources on purpose. A `formId` entry points at something already in the
@@ -367,61 +367,61 @@ model Announcement {
   //
   // Json rather than a table because it is a short ordered list read only with
   // its parent, and nothing ever queries across posts by attachment.
-  attachments Json?
+  attachments                 Json?
   // Company Meeting fields (used when tag = "Company Meeting").
-  meetingKind      String?  // Training | Team meeting | All-hands | Orientation | Other
-  meetingFormat    String?  // zoom | in_person | hybrid
-  meetingMandatory Boolean  @default(false)
-  zoomLink         String?
-  zoomCode         String?
-  meetingAddress   String?
+  meetingKind                 String? // Training | Team meeting | All-hands | Orientation | Other
+  meetingFormat               String? // zoom | in_person | hybrid
+  meetingMandatory            Boolean                       @default(false)
+  zoomLink                    String?
+  zoomCode                    String?
+  meetingAddress              String?
   // optional sessions to pick from: [{ id, label }]. empty = single meeting.
-  meetingOptions   Json?
+  meetingOptions              Json?
   // when true, attendees may pick more than one session.
-  meetingMultiPick Boolean  @default(false)
+  meetingMultiPick            Boolean                       @default(false)
   // the meeting's start as an absolute instant (UTC). each viewer sees it in
   // their own device timezone. meetingTimezone is the zone the author set it in
   // (IANA, e.g. America/New_York) - kept for editing + a "set in" label.
-  meetingAt        DateTime?
-  meetingTimezone  String?
+  meetingAt                   DateTime?
+  meetingTimezone             String?
   // duration estimate in minutes (from -> optional to for a range).
-  meetingDurationFromMin Int?
-  meetingDurationToMin   Int?
+  meetingDurationFromMin      Int?
+  meetingDurationToMin        Int?
   // optional "response needed by" deadline for a meeting RSVP. the auto second-
   // notice email (Phase C) fires at this instant; tz kept for the editor label.
-  meetingResponseDueAt   DateTime?
-  meetingResponseDueTz   String?
+  meetingResponseDueAt        DateTime?
+  meetingResponseDueTz        String?
   // Phase C (auto-reminders): settable lead time for the "starting soon" email;
   // zoomLinkTbd = "link provided closer to the date" (attendees see a note, the
   // author gets a nudge). the *SentAt stamps keep the cron from double-firing.
-  meetingReminderLeadMin      Int       @default(10)
-  zoomLinkTbd                 Boolean   @default(false)
+  meetingReminderLeadMin      Int                           @default(10)
+  zoomLinkTbd                 Boolean                       @default(false)
   // also send a "meeting tomorrow" reminder at 8pm the day before each session.
-  meetingNightBefore          Boolean   @default(true)
+  meetingNightBefore          Boolean                       @default(true)
   meetingAuthorNudgeSentAt    DateTime?
   meetingResponseNoticeSentAt DateTime?
-  meetingChoices   AnnouncementMeetingChoice[]
-  meetingResponses AnnouncementMeetingResponse[]
-  meetingReminders AnnouncementMeetingReminder[]
+  meetingChoices              AnnouncementMeetingChoice[]
+  meetingResponses            AnnouncementMeetingResponse[]
+  meetingReminders            AnnouncementMeetingReminder[]
   // last time the "Send to staff by email" blast went out, so the roster
   // can show "last emailed ..." and re-sends only hit the un-acked.
-  ackEmailSentAt DateTime?
+  ackEmailSentAt              DateTime?
   // Event fields (used when tag = "Event"). audience = "employee" (staff
   // get-together) or "client" (staff + clients, e.g. a BBQ). one date + optional
   // end, a venue name + address for the map embed. staff RSVP for a headcount;
   // on client events they also say how many clients they're bringing.
-  eventAudience     String?
-  eventAt           DateTime?
-  eventTimezone     String?
-  eventEndAt        DateTime?
-  eventLocationName String?
-  eventAddress      String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  comments   AnnouncementComment[]
-  likes      AnnouncementLike[]
-  acks       AnnouncementAck[]
-  eventRsvps AnnouncementEventRsvp[]
+  eventAudience               String?
+  eventAt                     DateTime?
+  eventTimezone               String?
+  eventEndAt                  DateTime?
+  eventLocationName           String?
+  eventAddress                String?
+  createdAt                   DateTime                      @default(now())
+  updatedAt                   DateTime                      @updatedAt
+  comments                    AnnouncementComment[]
+  likes                       AnnouncementLike[]
+  acks                        AnnouncementAck[]
+  eventRsvps                  AnnouncementEventRsvp[]
 
   @@index([createdAt])
   @@index([pinnedAt])
@@ -602,7 +602,7 @@ model FormSubmission {
 // one upload of the QSP "Simple Timesheet" export - a single PDF holding every
 // employee for a pay period. parsing it produces one Timesheet row per person.
 model TimesheetBatch {
-  id           String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // A BATCH THAT MAY ONLY EVER EMAIL ONE ADDRESS.
   //
@@ -616,36 +616,36 @@ model TimesheetBatch {
   // batch row and an id in a source file stops meaning anything the moment the
   // period is re-uploaded - the same failure that stranded 70 marks and is why
   // `markKey` exists.
-  testOnly     Boolean  @default(false)
-  testEmail    String?
+  testOnly       Boolean   @default(false)
+  testEmail      String?
   // WHICH PROGRAM'S PAYROLL THIS IS. "MLS" for the agency, "DP" for the day
   // program, and the default makes every batch that predates the column an
   // explicit MLS one. The group key on the timesheets screen and supersededBy
   // both include it, so the two programs' batches of the same fortnight are
   // two cards and neither can supersede the other.
-  program      String   @default("MLS")
+  program        String    @default("MLS")
   // day program only, null on MLS forever: the hand-maintained rest break
   // audit xlsx that confirms the 2nd breaks typed into DSN summaries - its
   // blob url plus everything its reader flagged for a person to look at.
-  dpAudit      Json?
+  dpAudit        Json?
   // the pay period exactly as QSP printed it, e.g. "07/16/26" / "07/31/26".
-  periodFrom   String
-  periodTo     String
+  periodFrom     String
+  periodTo       String
   // the uploaded source PDF, kept for audit (Blob, streamed back through a
   // gated route like every other stored document here).
-  sourceUrl    String?
-  sourceName   String?
+  sourceUrl      String?
+  sourceName     String?
   // the Employee Schedules calendar PDF, when one was uploaded alongside. it's
   // the second opinion the checks screen leans on, and until now it was parsed
   // in memory and thrown away - so the screen could say "schedule has 74.30"
   // with no way for anyone to check that reading against the document.
-  scheduleUrl  String?
-  scheduleName String?
+  scheduleUrl    String?
+  scheduleName   String?
   // the QSClock Time and Attendance export. the only source that separates a
   // punch someone clocked from one typed in afterwards, which is what decides
   // whether a premium can be signed off or needs a person to look at it.
-  clockUrl     String?
-  clockName    String?
+  clockUrl       String?
+  clockName      String?
   // the Rest Periods Report. decides whether a rest break was actually taken,
   // which is what the bigger half of the premium total turns on.
   //
@@ -653,8 +653,8 @@ model TimesheetBatch {
   // reports. Kept, along with the clock columns above, because the decision was
   // "hold for now, we may add it back" - and dropping the columns would mean a
   // second migration to undo. Existing batches still hold theirs.
-  restsUrl     String?
-  restsName    String?
+  restsUrl       String?
+  restsName      String?
   // SUPERSEDED by restsByDate, which holds these rows and every other one.
   // Left in place rather than dropped in a second migration; nothing writes it
   // any more and it can go whenever the schema is next touched.
@@ -675,16 +675,16 @@ model TimesheetBatch {
   // QSP's OWN regular, overtime and double-time figures - the numbers payroll
   // actually runs on. This is what settles an overtime disagreement without
   // anybody re-reading a PDF, and it reconciles with the timesheet exactly.
-  payrollUrl   String?
-  payrollName  String?
+  payrollUrl     String?
+  payrollName    String?
   // whether sends from this batch were redirected to the test inbox. recorded
   // per batch so a test run can never be mistaken for a real one later.
-  testMode     Boolean  @default(true)
+  testMode       Boolean   @default(true)
   // uploaded before the pay period ended, with the days that had not happened
   // yet dropped. Recorded for the same reason testMode is: this batch's hours
   // are a partial record, its last workweek is cut off mid-week, and nothing
   // else on the batch would say so afterwards.
-  partialPeriod Boolean @default(false)
+  partialPeriod  Boolean   @default(false)
   // the first and last day that actually survived the trim, e.g. "08/01/26" and
   // "08/09/26". periodFrom/periodTo still say what QSP printed on the export,
   // because that is what the document says - and on a partial upload the two
@@ -710,14 +710,14 @@ model TimesheetBatch {
   // Scalars, no relation, for the same reason the check flags are scalars: this
   // records who said it AT THE TIME and should not follow a later rename or
   // cascade away with a deleted account.
-  lockedAt     DateTime?
-  lockedById   String?
-  lockedByName String?
+  lockedAt       DateTime?
+  lockedById     String?
+  lockedByName   String?
 
   uploadedById String
-  uploadedBy   User     @relation("TimesheetBatchUploadedBy", fields: [uploadedById], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  uploadedBy   User        @relation("TimesheetBatchUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   timesheets   Timesheet[]
 
   @@index([createdAt])
@@ -740,12 +740,12 @@ model Timesheet {
   matchMethod String         @default("unmatched")
 
   // computed figures (also in `data`, duplicated here for lists + sorting)
-  rawHours     Float @default(0)  // as exported by QSP
-  paidHours    Float @default(0)  // corrected: rest breaks counted as worked
-  regularHours Float @default(0)
-  otHours      Float @default(0)
-  doubleHours  Float @default(0)
-  premiumHours Float @default(0)  // CA 226.7 meal + rest premiums owed
+  rawHours     Float   @default(0) // as exported by QSP
+  paidHours    Float   @default(0) // corrected: rest breaks counted as worked
+  regularHours Float   @default(0)
+  otHours      Float   @default(0)
+  doubleHours  Float   @default(0)
+  premiumHours Float   @default(0) // CA 226.7 meal + rest premiums owed
   // true when a workweek in this period is cut off by the pay-period boundary,
   // so its >40 overtime is provisional until the neighbouring period is known.
   partialWeek  Boolean @default(false)
@@ -763,16 +763,16 @@ model Timesheet {
   data         Json
 
   // the generated corrected PDF
-  pdfUrl      String?
+  pdfUrl String?
 
   // delivery
-  sentAt      DateTime?
+  sentAt        DateTime?
   // the address it actually went to - in test mode this is the tester, which is
   // why intendedEmail is stored separately.
-  sentToEmail String?
+  sentToEmail   String?
   intendedEmail String?
-  dueAt       DateTime?
-  message     String?
+  dueAt         DateTime?
+  message       String?
 
   // signing
   signedAt     DateTime?
@@ -795,17 +795,17 @@ model Timesheet {
   // set when the employee reports something wrong. a disputed sheet can't be
   // signed - you shouldn't attest to a document you're contesting - so this
   // holds the signature until management resolves every open correction.
-  disputedAt  DateTime?
+  disputedAt   DateTime?
   // per-day adjustments accepted by management, keyed by the date as QSP prints
   // it: { "07/20/26": { mealViolation, restViolation, paidHours, removed } }.
   // kept separate from `data` so the original computation is never overwritten
   // and you can always see what was changed by hand.
-  overrides   Json?
+  overrides    Json?
   // when the figures above were last recomputed from those overrides
   recomputedAt DateTime?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   corrections TimesheetCorrection[]
 
@@ -854,7 +854,7 @@ model Timesheet {
 // later changes their photo or leaves. That is the half Mánu is asking for when
 // he says "who has contacted who".
 model TimesheetCheckFlag {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   batchId      String
   rowKey       String
   flaggedById  String
@@ -862,7 +862,7 @@ model TimesheetCheckFlag {
   // there is no third meaning for a row that exists with nothing on it - the
   // absence of the row IS "not started". Every row in the table predates this
   // column by zero rows, so the default rewrites nothing.
-  status       String   @default("contacted")
+  status       String  @default("contacted")
   // HOW they were contacted: "phone" | "email", null on the states where the
   // question does not arise. Mánu 2026-08-13: "under contacted. We can choose
   // phone or email. So it can show the little phone or email icon with whoever
@@ -901,11 +901,11 @@ model TimesheetCheckFlag {
   // same program scoping as TimesheetBreakAnswer, same reason: marks are
   // read by (period, person, finding) and two payrolls share both the
   // periods and, occasionally, the people.
-  program      String  @default("MLS")
-  periodFrom   String?
-  periodTo     String?
-  personKey    String?
-  findingKey   String?
+  program    String  @default("MLS")
+  periodFrom String?
+  periodTo   String?
+  personKey  String?
+  findingKey String?
 
   // HOW FAR THE DATA REACHED WHEN THIS WAS MARKED, as QSP prints a date.
   //
@@ -915,8 +915,8 @@ model TimesheetCheckFlag {
   // something to raise without disturbing what was already settled.
   coveredThrough String?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([batchId, rowKey])
   @@index([batchId])
@@ -1003,20 +1003,20 @@ model TimesheetRowComment {
 }
 
 model TimesheetContactLog {
-  id        String   @id @default(cuid())
-  batchId   String
+  id      String  @id @default(cuid())
+  batchId String
   // same key the flag uses, so a row on any of the three screens can find its
   // own history: "person-<timesheetId>" today
-  rowKey    String
+  rowKey  String
   // what it was set TO. "contacted" | "no-response" | "verified"
-  status    String
+  status  String
   // "phone" | "email", only on contacted
-  via       String?
-  byId      String
+  via     String?
+  byId    String
   // copied at the moment, so an entry keeps saying who made it even if that
   // person later changes their photo or leaves
-  byName    String?
-  byImage   String?
+  byName  String?
+  byImage String?
 
   // the same key as the mark it belongs to - see TimesheetCheckFlag. The log is
   // the half that must NOT be lost on a re-upload: a mark can be re-made, but
@@ -1038,17 +1038,17 @@ model TimesheetContactLog {
 }
 
 model TimesheetCorrection {
-  id          String    @id @default(cuid())
-  timesheetId String
-  timesheet   Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  timesheetId  String
+  timesheet    Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
   // the day it's about, exactly as QSP prints it ("07/20/26"). null = the whole
   // sheet (used by the catch-all "something else" kind).
-  date        String?
+  date         String?
   // see CORRECTION_KINDS in src/lib/timesheet/corrections.js
-  kind        String
+  kind         String
   // what they say they actually worked that day, when the kind calls for it
   claimedHours Float?
-  note        String?
+  note         String?
   // WHEN THEY SAY THEY TOOK THEIR BREAKS, on a day they answered "I took them".
   // [{ kindOf: "meal" | "rest", from, to, minutes, source: "typed" | "schedule" | "gap" }]
   //
@@ -1076,10 +1076,10 @@ model TimesheetCorrection {
   //
   // Null on every row written before 2026-08-16 - four of them, all on the
   // July test batch.
-  question       Json?
+  question Json?
 
   // open | accepted | declined
-  status         String    @default("open")
+  status String  @default("open")
   // THE ANSWER THEY ACTUALLY PICKED, where a kind offers more than two.
   //
   // `status` collapses everything that is not "yes" into "declined", which was
@@ -1092,15 +1092,15 @@ model TimesheetCorrection {
   //
   // Null on every row written before 2026-08-12, and on any answer whose status
   // already says everything - readers fall back to `status`.
-  choice         String?
+  choice String?
 
   resolvedAt     DateTime?
   resolvedById   String?
   resolvedBy     User?     @relation("TimesheetCorrectionResolvedBy", fields: [resolvedById], references: [id])
   resolutionNote String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([timesheetId])
   @@index([status])
@@ -1210,29 +1210,29 @@ model Notification {
 }
 
 model NewsletterItem {
-  id        String             @id @default(cuid())
-  title     String
-  body      String
-  imageUrl  String?
-  category  NewsletterCategory
+  id               String             @id @default(cuid())
+  title            String
+  body             String
+  imageUrl         String?
+  category         NewsletterCategory
   // optional date the event happened / will happen. shown on the public
   // page. separate from createdAt (when it was submitted).
-  eventDate DateTime?
-  status    NewsletterStatus   @default(SUBMITTED)
+  eventDate        DateTime?
+  status           NewsletterStatus   @default(SUBMITTED)
   // submitter attests written consent is on file for anyone pictured.
   // required by the server action whenever an image is attached.
-  consentConfirmed Boolean      @default(false)
+  consentConfirmed Boolean            @default(false)
   // optional note from a reviewer - e.g. why something was rejected, or
   // a tweak request. shown back to the submitter.
-  reviewNote String?
+  reviewNote       String?
 
   submittedById String
-  submittedBy   User    @relation("NLSubmittedBy", fields: [submittedById], references: [id])
+  submittedBy   User      @relation("NLSubmittedBy", fields: [submittedById], references: [id])
   approvedById  String?
-  approvedBy    User?   @relation("NLApprovedBy", fields: [approvedById], references: [id])
+  approvedBy    User?     @relation("NLApprovedBy", fields: [approvedById], references: [id])
   approvedAt    DateTime?
   publishedById String?
-  publishedBy   User?   @relation("NLPublishedBy", fields: [publishedById], references: [id])
+  publishedBy   User?     @relation("NLPublishedBy", fields: [publishedById], references: [id])
   publishedAt   DateTime?
 
   createdAt DateTime @default(now())
@@ -1298,14 +1298,14 @@ model VerificationToken {
 //   took-it    they say they took it and it is not punched. THAT is a QSP fix,
 //              and the next export either shows it or does not.
 model TimesheetBreakAnswer {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   // WHICH PAYROLL. Both programs run the same fortnights with, sometimes, the
   // SAME person - Velasquez works both - and his 08/13 rest finding carries
   // the same findingKey on both sides. Without this in the key, an answer
   // taken on the day program side would overwrite what his live MLS sheet
   // displays above a pending signature. Default MLS: every row that predates
   // the column was an MLS answer.
-  program    String   @default("MLS")
+  program    String @default("MLS")
   periodFrom String
   periodTo   String
   personKey  String
@@ -1313,16 +1313,16 @@ model TimesheetBreakAnswer {
 
   // kept for reading and for printing on the sheet, so nothing has to be
   // recovered by parsing the finding key back apart
-  date       String?
-  kind       String
-  answer     String
+  date   String?
+  kind   String
+  answer String
 
   // WHY. Null means nobody gathered one, and that is not a blank field - it is
   // the state that moves the question to the employee, whose timesheet does not
   // generate until they answer it.
-  reason     String?
+  reason String?
   // how we heard it: "phone" | "email" | "in-person"
-  via        String?
+  via    String?
 
   // HOW MANY OF THEM THEY TOOK, and how many the day was short.
   //
@@ -1335,9 +1335,9 @@ model TimesheetBreakAnswer {
 
   // scalars, like the check flags: this records who took the answer AT THE TIME
   // and must not follow a later rename or cascade away with an account.
-  byId       String
-  byName     String?
-  byImage    String?
+  byId    String
+  byName  String?
+  byImage String?
 
   // set when the employee has seen our wording and agreed it. Their own
   // correction, when they disagree, is a second row rather than an overwrite -
@@ -1345,8 +1345,8 @@ model TimesheetBreakAnswer {
   confirmedAt   DateTime?
   confirmedText String?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([program, periodFrom, periodTo, personKey, findingKey])
   @@index([periodFrom, periodTo, personKey])
@@ -1397,12 +1397,12 @@ model DayProgramBatch {
   // Stored on the batch because it is a fact about the FILE, and because the
   // review screen is the point of this feature - nothing generates until a
   // person has been through it.
-  faults     Json?
+  faults Json?
 
   // whether sends from this batch were redirected to the test inbox - recorded
   // per batch so a test run can never be mistaken for a real one later, same
   // as TimesheetBatch.testMode.
-  testMode     Boolean @default(true)
+  testMode Boolean @default(true)
 
   // SOMEBODY HAS SAID THIS EXPORT IS FINAL. Same attestation as the MLS batch,
   // and here it is the WHOLE send gate: the day program's last workday is
@@ -1414,9 +1414,9 @@ model DayProgramBatch {
   lockedByName String?
 
   uploadedById String
-  uploadedBy   User   @relation("DayProgramBatchUploadedBy", fields: [uploadedById], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  uploadedBy   User              @relation("DayProgramBatchUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
   sheets       DayProgramSheet[]
 
   @@index([createdAt])
@@ -1477,4 +1477,46 @@ model DayProgramSheet {
 
   @@index([batchId])
   @@index([userId])
+}
+
+// PAID TIME OFF, AS ITS OWN RECORD RATHER THAN AS HOURS ON A SHEET.
+//
+// KEYED LIKE THE BREAK ANSWERS, and for the same reason: (program, period,
+// person, date) rather than a timesheet id. PTO is agreed with a person before
+// any export is pulled and must not be re-entered every time a period is
+// re-uploaded - a batch-scoped record would be wiped by the next upload, which
+// is exactly how nine people's time off would quietly vanish.
+//
+// IT DOES NOT NEED A TIMESHEET TO EXIST. Somebody whose whole fortnight is PTO
+// never appears on a QSP export, because they worked no hours and QSP prints
+// punches. Hanging this off a sheet would make their time off unrecordable.
+//
+// HOURS HERE ARE NOT WORKED HOURS. They are shown beside the worked figures and
+// counted in neither the paid total nor the over-40 overtime test - a PTO day
+// is not a shift, owes no rest breaks, and must never push somebody into
+// overtime on time they did not work.
+model PtoEntry {
+  id         String  @id @default(cuid())
+  program    String  @default("MLS")
+  periodFrom String
+  periodTo   String
+  // the account, the same key TimesheetBreakAnswer uses. Not the export's
+  // spelling of the name, which differs between documents for the same person.
+  personKey  String
+  // the day it covers, in the sheet's own format ("08/10/26"), so it lines up
+  // with `day.date` without parsing on either side.
+  date       String
+  hours      Float
+  note       String?
+
+  // who recorded it, as scalars - this is a record of an agreement and must not
+  // follow a rename or cascade away with an account.
+  byId   String?
+  byName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([program, periodFrom, periodTo, personKey, date])
+  @@index([program, periodFrom, periodTo])
 }

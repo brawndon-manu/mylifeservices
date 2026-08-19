@@ -369,6 +369,17 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           >
             Signed timesheets →
           </Link>
+          {/* THE PERIOD AS A GRID, for the day program only: they have no Misc
+              classification, so a day off reads as a gap and the gap is where
+              time off gets recorded. */}
+          {batch.program === "DP" && (
+            <Link
+              href={`/portal/admin/timesheets/${batch.id}/calendar`}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+            >
+              Calendar &amp; time off &rarr;
+            </Link>
+          )}
           {/* CORRECT A FEW PEOPLE WITHOUT REPLACING THE PERIOD. Only on a batch
               that is still the current one: a superseded upload refuses the
               write anyway, and offering the door is worse than not having it. */}
