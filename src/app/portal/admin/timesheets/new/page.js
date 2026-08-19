@@ -40,6 +40,8 @@ const ERRORS = {
     "File storage rejected the upload - the Blob token is probably expired. Run `vercel env pull .env.local` to refresh it, then try again. Nothing was created.",
   unstorable:
     "One of those exports carries a character the database will not store - a NUL or half a surrogate pair, both invisible in any viewer and both untouched by a trim. The people it affects are named below. This has happened once, on 08/15/26: a single NUL beside the print date in one person's footer. The timesheet PDF is cleaned of these as it is read, so a file reaching this message means it came off the schedule or one of the two .xls reports. Nothing was created - the upload is refused whole rather than landing everybody else and quietly dropping them.",
+  partial:
+    "That correction was refused and nothing was written. The batch it was meant to land on is unchanged, and so is everybody on it - this is checked before any sheet is touched, so a refusal here never leaves half the people replaced. The reason is below.",
   save:
     "The generated timesheets could not be saved. Nothing was created: the batch and all of its sheets go in as one write, so a failure here leaves nothing behind to clean up and nothing that could take the current upload read-only. Try again - if it fails the same way twice, the message below is the database's own.",
 };
@@ -53,6 +55,18 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
 
   // the batch a new upload would land on top of: the most recent one. Only its
   // id and period, because all this drives is a presence poll and a sentence.
+  // THE BATCH THIS UPLOAD CORRECTS, when the screen was reached from one.
+  // Loaded rather than trusted: the period is printed back so a wrong id is
+  // visible before any file is picked, and an id that is gone drops the screen
+  // back to being an ordinary upload rather than failing at the write.
+  const intoId = typeof sp?.into === "string" ? sp.into : null;
+  const into = intoId
+    ? await prisma.timesheetBatch.findUnique({
+      where: { id: intoId },
+      select: { id: true, periodFrom: true, periodTo: true, program: true },
+    })
+    : null;
+
   const latest = await prisma.timesheetBatch.findFirst({
     // this screen uploads the AGENCY's export, so the batch it would land on
     // top of is an agency one. Without this a day program upload would make
@@ -156,8 +170,26 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
         </div>
       )}
 
+      {/* WHAT A CORRECTION IS ABOUT TO DO, before the files are picked rather
+          than after they are processed. The people it will replace are the
+          people in the export, which is not visible until it is read - so this
+          says the RULE, and the batch page confirms the names afterwards. */}
+      {into && (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">
+            Correcting {into.periodFrom} to {into.periodTo}, not creating a new upload.
+          </p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            Only the people in these exports are replaced. Everyone else keeps their sheet,
+            their signature and the link already in their inbox. The people you do replace
+            lose their signature and their answers, because their figures are changing, and
+            go back out to be signed again.
+          </p>
+        </div>
+      )}
+
       <div className="mt-8">
-        <UploadForm action={uploadBatch} aside={aside} />
+        <UploadForm action={uploadBatch} aside={aside} into={into?.id || null} />
       </div>
     </section>
   );

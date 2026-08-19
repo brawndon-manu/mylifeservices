@@ -65,7 +65,7 @@ function FileRow({ id, label, selected, size, onPick, tone, accept = "applicatio
   );
 }
 
-export default function UploadForm({ action, aside }) {
+export default function UploadForm({ action, aside, into = null }) {
   // the action returns instead of redirecting, so the finished screen can be
   // shown before the batch page takes over. errors still redirect back here.
   const [result, formAction] = useActionState(
@@ -162,6 +162,10 @@ export default function UploadForm({ action, aside }) {
 
       <form ref={formRef} action={formAction} onSubmit={onSubmit}>
         <input ref={idFieldRef} type="hidden" name="uploadId" />
+        {/* which batch this upload corrects, when it corrects one. Read by
+            `uploadBatch`, which runs every parse and check the same way and
+            differs only in the write. */}
+        {into ? <input type="hidden" name="into" value={into} /> : null}
 
       {/* the pickers go away once it starts. four "Browse…" buttons that can't
           be used are noise on a screen you are waiting on - the files reappear
