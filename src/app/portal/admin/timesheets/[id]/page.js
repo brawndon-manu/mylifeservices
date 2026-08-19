@@ -368,7 +368,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             Insights &amp; stats →
           </Link>
           <Link
-            href="/portal/admin/timesheets/patterns"
+            href={`/portal/admin/timesheets/patterns?program=${batch.program || "MLS"}`}
             className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
             Repeat patterns →

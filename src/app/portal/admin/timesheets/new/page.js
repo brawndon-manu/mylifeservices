@@ -54,6 +54,10 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
   // the batch a new upload would land on top of: the most recent one. Only its
   // id and period, because all this drives is a presence poll and a sentence.
   const latest = await prisma.timesheetBatch.findFirst({
+    // this screen uploads the AGENCY's export, so the batch it would land on
+    // top of is an agency one. Without this a day program upload would make
+    // the warning name a period nobody here is working on.
+    where: { program: "MLS" },
     orderBy: { createdAt: "desc" },
     select: { id: true, periodFrom: true, periodTo: true },
   });

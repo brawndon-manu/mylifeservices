@@ -122,6 +122,7 @@ export default async function AllPeoplePage({ params }) {
     // re-made, "we rang them on the 12th and again on the 13th" cannot - so it
     // must not be scoped to the upload that happened to be open at the time.
     where: {
+      program: batch.program,
       periodFrom: batch.periodFrom, periodTo: batch.periodTo,
       status: { in: MARK_STATUS_VALUES },
     },
