@@ -102,10 +102,6 @@ export default function FormFiller({
   signLabel = null,
   // one line above the document, for a caller that knows what it is
   signIntro = null,
-  // FORCE THE UNDRAWABLE PATH, so it can be looked at on a browser where it
-  // would never happen. Gated to a reviewer by the page that passes it - an
-  // employee appending the parameter gets the ordinary page.
-  forceNoDraw = false,
 }) {
   const [status, setStatus] = useState("loading");
   const [pages, setPages] = useState([]); // { url, w, h }
@@ -230,7 +226,6 @@ export default function FormFiller({
         let cantDraw = false;
         let imgs = [];
         try {
-        if (forceNoDraw) throw new Error("forced");
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = WORKER_SRC;
         const pdf = await pdfjs.getDocument({ data: buf.slice(0) }).promise;
@@ -290,7 +285,7 @@ export default function FormFiller({
       active = false;
       clearTimeout(watchdog);
     };
-  }, [fileUrl, signMode, forceNoDraw]);
+  }, [fileUrl, signMode]);
 
   function setVal(name, v) {
     setValues((prev) => ({ ...prev, [name]: v }));
