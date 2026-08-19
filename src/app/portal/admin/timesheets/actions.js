@@ -3658,3 +3658,110 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------- offline sign-off
+
+// A SIGNATURE THAT ARRIVED OUTSIDE THE PORTAL.
+//
+// People sign the PDF and email it back. Until now there was nowhere to put
+// that fact, and it is not cosmetic: `premiumStanding` holds an employee's
+// waived hours in `pendingSignoff` until a signature covers them, so a sheet
+// signed on paper reads on the payroll report as if they had never answered.
+// One person's returned PDF was worth four premium hours.
+//
+// IT DOES NOT INVENT A SIGNATURE. `signedName` is theirs because they signed;
+// what this records alongside it is that a reviewer entered it, when, and how
+// it arrived, in `data.signedOffline`. Anybody reading the row later can tell
+// the difference between this and somebody signing on their own link, which a
+// bare `signedAt` could not.
+//
+// AND IT REFUSES A SHEET THAT DOES NOT GENERATE. The portal will not let an
+// employee sign until every question is answered; accepting a returned PDF for
+// a sheet with open questions would walk straight around that rule. The one
+// exception is deliberate: a sheet whose answers were RESET after it was signed
+// is exactly the case this has to handle, and the caller says so explicitly.
+export async function recordOfflineSignature(timesheetId, formData) {
+  const user = await requireTimesheetAccess();
+  if (!isSuper(user?.role)) return { ok: false, error: "auth" };
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true, batchId: true, sourceName: true, userId: true, data: true,
+      signedAt: true, disputedAt: true, renderOk: true,
+    },
+  });
+  if (!ts) return { ok: false, error: "gone" };
+  if (ts.signedAt) return { ok: false, error: "already" };
+  if (ts.disputedAt) return { ok: false, error: "disputed" };
+  if (!ts.renderOk) return { ok: false, error: "norender" };
+
+  const name = (formData.get("signedName") || "").toString().trim().slice(0, 120);
+  if (!name) return { ok: false, error: "noname" };
+  const how = (formData.get("how") || "").toString().trim().slice(0, 200) || "returned by email";
+  const whenRaw = (formData.get("signedOn") || "").toString().trim();
+  // THE DATE THEY SIGNED, NOT THE DATE IT WAS TYPED IN. A sheet signed on the
+  // 18th and entered on the 19th is a document dated the 18th, and the pay
+  // period it falls in can depend on which.
+  const when = whenRaw ? new Date(whenRaw) : new Date();
+  if (Number.isNaN(when.getTime())) return { ok: false, error: "baddate" };
+
+  // the returned file, when there is one. Optional, because a signature can
+  // arrive as a photo in a text message - but a record with nothing behind it
+  // is worth less, and the UI says so.
+  let signedPdfUrl = null;
+  const file = formData.get("file");
+  if (file && typeof file === "object" && "size" in file && file.size > 0) {
+    if (file.size > 8_000_000) return { ok: false, error: "toobig" };
+    if (!hasBlobStorage()) return { ok: false, error: "noblob" };
+    try {
+      const key = `timesheets/signed/${randomBytes(12).toString("hex")}.pdf`;
+      const blob = await putBlob(key, Buffer.from(await file.arrayBuffer()), {
+        access: "public",
+        contentType: file.type || "application/pdf",
+      });
+      signedPdfUrl = blob.url;
+    } catch (e) {
+      console.error("offline signature upload failed:", e);
+      return { ok: false, error: "store" };
+    }
+  }
+
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: {
+      signedAt: when,
+      signedName: name,
+      signedPdfUrl,
+      // NOT an ip. Nothing about this came from a browser of theirs, and
+      // putting the reviewer's address in a field that means "where they signed
+      // from" would be a small lie in a record built to be checkable.
+      signedIp: null,
+      data: {
+        ...(ts.data || {}),
+        signedOffline: {
+          how,
+          recordedById: user.id,
+          recordedByName: preferredName(user) || user.email || user.id,
+          recordedAt: new Date().toISOString(),
+          hasFile: !!signedPdfUrl,
+        },
+      },
+    },
+  });
+
+  console.log(
+    `offline signature recorded by ${user.id} for ${ts.sourceName}: `
+    + `signed ${when.toISOString().slice(0, 10)}, ${how}, file=${!!signedPdfUrl}`,
+  );
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/signed`);
+  return { ok: true, signedAt: when.toISOString(), file: !!signedPdfUrl };
+}
