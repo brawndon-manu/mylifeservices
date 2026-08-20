@@ -514,6 +514,7 @@ export default function AnnouncementForm({
                 defaultEveryone={d.ackEveryone === true}
                 defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
                 defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
+                showAllRoles
               />
             </div>
           )}
@@ -670,6 +671,7 @@ export default function AnnouncementForm({
                   defaultEveryone={d.ackEveryone === true}
                   defaultTitles={Array.isArray(d.ackTitles) ? d.ackTitles : []}
                   defaultUserIds={Array.isArray(d.ackUserIds) ? d.ackUserIds : []}
+                  showAllRoles
                 />
               </div>
 

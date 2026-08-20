@@ -11,7 +11,10 @@
 // you can see picks without expanding, a running total up top, and the list scrolls
 // in a fixed height. whole roles post as titles (compact), the rest as user ids.
 import { useEffect, useRef, useState } from "react";
-import { POSITIONS } from "@/lib/positions";
+import { POSITIONS, OFFICES, OFFICE_LABELS, OFFICE_FULL } from "@/lib/positions";
+
+// the agency goes by its short name, the day program is spelled out.
+const officeLabel = (o) => (o === "DP" ? OFFICE_FULL[o] : OFFICE_LABELS[o]) || o;
 
 function TriCheckbox({ checked, indeterminate, onChange, className }) {
   const ref = useRef(null);
@@ -42,6 +45,12 @@ export default function AudiencePicker({
   // when "Everyone" is on we normally dim the role/person list (it's moot). set
   // false to keep it crisp + clickable so the author can still narrow it down.
   dimWhenEveryone = true,
+  // show every role at once instead of scrolling a fixed box. on for the
+  // create/edit form, where the page scrolls anyway and having to scroll a
+  // little window inside a long form to find a role is miserable. stays OFF for
+  // the Send-by-email dialog, which is a centered modal with no scroll of its
+  // own - an uncapped list there pushes its own buttons off the screen.
+  showAllRoles = false,
 }) {
   const peopleOf = (t) => (staffByTitle[t] || []).map((p) => p.id);
   const uniq = (a) => [...new Set(a)];
@@ -52,9 +61,18 @@ export default function AudiencePicker({
   );
   const [expanded, setExpanded] = useState(() => new Set(defaultTitles || []));
   const [search, setSearch] = useState({});
+  // "" = every office. narrows what the list SHOWS; it never touches what is
+  // already ticked, so switching offices cannot silently drop a selection.
+  const [office, setOffice] = useState("");
 
   // roles present in this picker's pool (non-empty), in POSITIONS order.
-  const roles = POSITIONS.filter((t) => (staffByTitle[t] || []).length > 0);
+  const allRoles = POSITIONS.filter((t) => (staffByTitle[t] || []).length > 0);
+  const visibleOf = (t) =>
+    (staffByTitle[t] || []).filter(
+      (p) => !office || (p.offices || []).includes(office),
+    );
+  // roles worth drawing under the current filter.
+  const roles = allRoles.filter((t) => visibleOf(t).length > 0);
   const selSet = new Set(userIds);
   const selCountOf = (t) => peopleOf(t).filter((id) => selSet.has(id)).length;
   const allSel = (t) => {
@@ -62,8 +80,23 @@ export default function AudiencePicker({
     return p.length > 0 && p.every((id) => selSet.has(id));
   };
 
+  // one row per person no matter how many titles they hold, for the chip counts.
+  const pool = [
+    ...new Map(
+      allRoles.flatMap((t) => (staffByTitle[t] || []).map((p) => [p.id, p])),
+    ).values(),
+  ];
+  const officeCount = (o) =>
+    o ? pool.filter((p) => (p.offices || []).includes(o)).length : pool.length;
+  const noOffice = pool.filter((p) => !(p.offices || []).length).length;
+
   // compact posted audience: whole roles as titles, everyone else as ids.
-  const wholeRoles = roles.filter(allSel);
+  //
+  // MEASURED AGAINST THE WHOLE ROLE, NOT THE FILTERED VIEW. a title posts as a
+  // title, and the server expands it to every holder of it. so picking the four
+  // day program people out of a role of twelve must post four ids: post the
+  // title and the other eight are invited too.
+  const wholeRoles = allRoles.filter(allSel);
   const wholeIds = new Set(wholeRoles.flatMap(peopleOf));
   const individualIds = userIds.filter((id) => !wholeIds.has(id));
 
@@ -74,7 +107,8 @@ export default function AudiencePicker({
 
   function toggleRole(t, checked) {
     setEveryone(false);
-    const ids = peopleOf(t);
+    // only the people the filter is showing, which is the point of the filter.
+    const ids = visibleOf(t).map((p) => p.id);
     setUserIds((prev) =>
       checked ? uniq([...prev, ...ids]) : prev.filter((id) => !ids.includes(id)),
     );
@@ -132,16 +166,41 @@ export default function AudiencePicker({
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <div
-        className={`max-h-72 space-y-0.5 overflow-y-auto pr-1 ${
-          everyone && dimWhenEveryone ? "pointer-events-none opacity-50" : ""
-        }`}
-      >
+      <div className={everyone && dimWhenEveryone ? "pointer-events-none opacity-50" : ""}>
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wider text-faint">
+            Office
+          </span>
+          {["", ...OFFICES].map((o) => (
+            <button
+              key={o || "all"}
+              type="button"
+              onClick={() => setOffice(o)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                office === o
+                  ? "border-brand-light bg-brand text-white"
+                  : "border-border-strong bg-surface-2 text-muted hover:border-brand-light hover:text-foreground"
+              }`}
+            >
+              {o ? officeLabel(o) : "All offices"}
+              <span className="ml-1.5 font-medium opacity-70">{officeCount(o)}</span>
+            </button>
+          ))}
+        </div>
+
+        <div
+          className={`space-y-0.5 pr-1 ${
+            showAllRoles ? "" : "max-h-72 overflow-y-auto"
+          }`}
+        >
         {roles.map((t) => {
-          const people = staffByTitle[t] || [];
+          const people = visibleOf(t);
+          // the badge counts the whole role so a pick hidden by the filter is
+          // never invisible; the box reflects what is on screen right now.
           const n = selCountOf(t);
-          const all = allSel(t);
-          const part = n > 0 && !all;
+          const visIds = people.map((p) => p.id);
+          const all = visIds.length > 0 && visIds.every((id) => selSet.has(id));
+          const part = visIds.some((id) => selSet.has(id)) && !all;
           const isOpen = expanded.has(t);
           const q = (search[t] || "").toLowerCase();
           const shown = q ? people.filter((p) => p.name.toLowerCase().includes(q)) : people;
@@ -215,11 +274,23 @@ export default function AudiencePicker({
             </div>
           );
         })}
+        </div>
       </div>
 
       <p className="pt-2 text-xs text-muted">
         Check a role for everyone in it, or expand it to pick certain people.
       </p>
+      {(office || noOffice > 0) && (
+        <p className="mt-2 border-t border-border pt-2 text-xs text-faint">
+          {office
+            ? `Filtered to ${officeLabel(office)}.${
+                noOffice > 0
+                  ? ` ${noOffice} active staff have no office set and are hidden while a filter is on.`
+                  : ""
+              } Anything already ticked stays ticked.`
+            : `${noOffice} active staff have no office set. They appear under All offices only.`}
+        </p>
+      )}
     </div>
   );
 }

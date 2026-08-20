@@ -39,6 +39,8 @@ export async function getStaffByTitle({ excludeTitle } = {}) {
       preferredFirstName: true,
       preferredLastName: true,
       title: true,
+      // which office(s) they work out of, so the picker can filter by one.
+      offices: true,
     },
     orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
   });
@@ -49,7 +51,11 @@ export async function getStaffByTitle({ excludeTitle } = {}) {
     // "Assistant Program Manager" matching "Program Manager").
     for (const t of POSITIONS) {
       if (titleHasSegment(u.title, t)) {
-        byTitle[t].push({ id: u.id, name: preferredName(u) });
+        byTitle[t].push({
+          id: u.id,
+          name: preferredName(u),
+          offices: u.offices || [],
+        });
       }
     }
   }
