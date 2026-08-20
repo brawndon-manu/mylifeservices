@@ -1,0 +1,49 @@
+name: CI
+
+# Runs on every push and every pull request, on every branch.
+#
+# There is one engineer on this repo and no second pair of eyes, so this is the
+# reviewer. The suite is ~3 seconds; there is no reason for it not to run.
+#
+# It does NOT touch the database. DATABASE_URL is a throwaway string that exists
+# only because `prisma generate` reads the datasource from prisma.config.ts. No
+# migration, no seed, no connection - CI must never be able to reach production,
+# and the way to guarantee that is to never give it the real URL.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall runs `prisma generate`, which lint and the tests both need
+      - run: npm ci
+
+      # THE GATE. 864 tests, ~3 seconds, and they have to pass.
+      - name: Tests
+        run: npm test
+
+      # REPORTED, NOT ENFORCED, and deliberately so rather than by neglect.
+      #
+      # There are 13 pre-existing errors in 9 files: 3 are unescaped apostrophes
+      # in JSX, the other 10 are React Hooks rules (setState inside an effect,
+      # reading a ref during render) that need those components restructured.
+      # They are all in working production UI and none is new.
+      #
+      # Gating on them would make this red on its first run, and a red build
+      # nobody can fix is a build everybody learns to ignore. So it reports.
+      # When those 13 are cleared, delete continue-on-error and it becomes a gate.
+      - name: Lint (advisory - 13 known errors, see comment)
+        run: npm run lint
+        continue-on-error: true
