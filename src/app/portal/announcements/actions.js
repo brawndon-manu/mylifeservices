@@ -2441,16 +2441,34 @@ async function sendAttestation({ post, form, presentIds, formData }) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   let sent = 0;
   let error = null;
-  for (let i = 0; i < messages.length; i += 100) {
-    const chunk = messages.slice(i, i + 100);
-    try {
-      const { error: e } = await resend.batch.send(chunk);
-      if (e) { console.error("attestation batch error:", e); error = "send"; }
-      else sent += chunk.length;
-    } catch (e) {
-      console.error("attestation send threw:", e);
-      error = "send";
+  try {
+    if (files.length) {
+      // ONE AT A TIME WHEN THERE ARE DOCUMENTS. Resend's BATCH endpoint does not
+      // take attachments - "the attachments field is not supported yet" - and it
+      // does NOT complain: the call succeeds and the PDFs are quietly dropped.
+      // The whole point of this mail is the document it carries, so batching it
+      // would send everyone a link to sign something they were never sent.
+      //
+      // The same trap already cost this codebase a week of announcements going
+      // out with their documents missing. Same fix, same throttle.
+      for (const m of messages) {
+        // Resend allows 10 requests a second per team.
+        if (sent > 0) await new Promise((r) => setTimeout(r, 120));
+        const { error: e } = await resend.emails.send(m);
+        if (e) { console.error(`attestation email failed (${m.to}):`, e); error = "send"; }
+        else sent += 1;
+      }
+    } else {
+      for (let i = 0; i < messages.length; i += 100) {
+        const chunk = messages.slice(i, i + 100);
+        const { error: e } = await resend.batch.send(chunk);
+        if (e) { console.error("attestation batch error:", e); error = "send"; }
+        else sent += chunk.length;
+      }
     }
+  } catch (e) {
+    console.error("attestation send threw:", e);
+    error = "send";
   }
   return { sent, error };
 }
