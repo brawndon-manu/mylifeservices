@@ -53,7 +53,7 @@ export async function GET(request) {
   }
   const resend = new Resend(process.env.RESEND_API_KEY);
   const now = new Date();
-  const result = { reminders: 0, nudges: 0, notices: 0, emails: 0 };
+  const result = { reminders: 0, nudges: 0, notices: 0, emails: 0, held: 0 };
 
   // test mode: while CRON_TEST_RECIPIENTS is set, only those addresses ever get
   // an email - so you can dry-run the whole thing on prod without hitting staff.
@@ -62,15 +62,38 @@ export async function GET(request) {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 
+  // returns whether the caller may stamp this job as done. a batch that was held
+  // back was NOT delivered, and stamping it would retire a reminder nobody got.
   const sendBatch = async (messagesIn) => {
-    const filtered = testList.length
-      ? messagesIn.filter((m) => m.to.some((a) => testList.includes(a.toLowerCase())))
-      : messagesIn;
-    // AND THE LOCK, because the line above is an opt-in filter, not a guard:
-    // with CRON_TEST_RECIPIENTS unset this route mails real staff from wherever
-    // it is run. Off the real deployment every reminder and notice is
+    // ALL OR NOTHING, and that is the fix. this used to drop the addresses it
+    // did not recognise and quietly send the rest, while the caller stamped the
+    // job as done either way. so with the list set, a real meeting's reminder
+    // was thrown away AND marked as sent, and it could never fire again.
+    //
+    // holding the whole batch also avoids the other half of that trade: send
+    // only the one recognised address out of five and skip the stamp, and that
+    // one person gets the same reminder again every five minutes until the
+    // grace window closes.
+    //
+    // so the list is now a guard. either every recipient in a batch is on it, or
+    // nothing leaves and the job stays unstamped for when the list comes off.
+    if (testList.length) {
+      const off = messagesIn.filter(
+        (m) => !m.to.some((a) => testList.includes(a.toLowerCase())),
+      );
+      if (off.length) {
+        console.warn(
+          `cron: held ${messagesIn.length} message(s), ${off.length} not on CRON_TEST_RECIPIENTS`,
+        );
+        result.held += messagesIn.length;
+        return false;
+      }
+    }
+    // AND THE LOCK, because the list above is opt-in and is usually not set at
+    // all: with CRON_TEST_RECIPIENTS unset this route mails real staff from
+    // wherever it is run. Off the real deployment every reminder and notice is
     // redirected, same rule as announcements and form submissions.
-    const messages = filtered.map((m) => {
+    const messages = messagesIn.map((m) => {
       const route = resolveAnnouncementRecipients(m.to[0]);
       if (!route.redirected) return m;
       return {
@@ -89,6 +112,7 @@ export async function GET(request) {
         console.error("cron email threw:", e);
       }
     }
+    return true;
   };
 
   const meetings = await prisma.announcement.findMany({
@@ -154,7 +178,9 @@ export async function GET(request) {
   // only their session's time. carries a "See original post" button.
   const sendSessionReminder = async (m, optionId, hasOptions, subject, eyebrow, session) => {
     const recipients = await goingRecipients(m, optionId, hasOptions);
-    if (!recipients.length) return;
+    // nobody is going, so there is nothing to send and nothing to wait for.
+    // stamp it and stop asking on every tick.
+    if (!recipients.length) return true;
     const bodyHtml = renderMarkdown(m.content, { email: true });
     const meetingHtml = buildMeetingBlockHtml(m, session);
     const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${m.id}`);
@@ -188,7 +214,7 @@ export async function GET(request) {
       }),
       text: `${subject}. ${m.zoomLink || ""}`,
     }));
-    await sendBatch(messages);
+    return sendBatch(messages);
   };
 
   // 8pm the day before a session, in the session's own zone, as an instant.
@@ -220,14 +246,16 @@ export async function GET(request) {
       if (!sent.has(`soon:${s.optionId}`)) {
         const remindAt = s.at.getTime() - lead;
         if (now.getTime() >= remindAt && now.getTime() <= s.at.getTime() + GRACE_MS) {
-          await sendSessionReminder(
+          const ok = await sendSessionReminder(
             m, s.optionId, opts.length > 0,
             `Coming up - you're confirmed: ${title}`, "Reminder", s.opt,
           );
-          await prisma.announcementMeetingReminder
-            .create({ data: { announcementId: m.id, optionId: s.optionId, kind: "soon" } })
-            .catch(() => {});
-          result.reminders++;
+          if (ok) {
+            await prisma.announcementMeetingReminder
+              .create({ data: { announcementId: m.id, optionId: s.optionId, kind: "soon" } })
+              .catch(() => {});
+            result.reminders++;
+          }
         }
       }
       // night-before ("meeting tomorrow"), only while it's genuinely the day before
@@ -236,14 +264,16 @@ export async function GET(request) {
         const nowDate = instantToZoned(now.toISOString(), s.tz).date;
         const sessDate = instantToZoned(s.at.toISOString(), s.tz).date;
         if (nightAt && now.getTime() >= nightAt && nowDate < sessDate) {
-          await sendSessionReminder(
+          const ok = await sendSessionReminder(
             m, s.optionId, opts.length > 0,
             `Meeting tomorrow: ${title}`, "Tomorrow", s.opt,
           );
-          await prisma.announcementMeetingReminder
-            .create({ data: { announcementId: m.id, optionId: s.optionId, kind: "night" } })
-            .catch(() => {});
-          result.reminders++;
+          if (ok) {
+            await prisma.announcementMeetingReminder
+              .create({ data: { announcementId: m.id, optionId: s.optionId, kind: "night" } })
+              .catch(() => {});
+            result.reminders++;
+          }
         }
       }
     }
@@ -257,7 +287,7 @@ export async function GET(request) {
         if (now.getTime() >= earliest - NUDGE_LEAD_MS && now.getTime() < earliest) {
           const editUrl = `${base}/portal/announcements/${m.id}`;
           const hasLink = !!m.zoomLink;
-          await sendBatch([
+          const ok = await sendBatch([
             {
               from,
               to: [m.author.email],
@@ -276,11 +306,13 @@ export async function GET(request) {
                 : `Your meeting "${m.title}" is coming up and has no Zoom link yet. Add it: ${editUrl}`,
             },
           ]);
-          await prisma.announcement.update({
-            where: { id: m.id },
-            data: { meetingAuthorNudgeSentAt: new Date() },
-          });
-          result.nudges++;
+          if (ok) {
+            await prisma.announcement.update({
+              where: { id: m.id },
+              data: { meetingAuthorNudgeSentAt: new Date() },
+            });
+            result.nudges++;
+          }
         }
       }
     }
@@ -296,6 +328,8 @@ export async function GET(request) {
       ]);
       const respondedIds = new Set(responded.map((r) => r.userId));
       const noResp = audience.filter((u) => !respondedIds.has(u.id));
+      // everybody answered, so there is no notice to send and the job is done.
+      let ok = true;
       if (noResp.length) {
         const link = `${base}/portal/announcements/${m.id}`;
         const messages = noResp.map((u) => ({
@@ -310,13 +344,15 @@ export async function GET(request) {
           }),
           text: `Second notice - please respond to "${m.title}": ${link}`,
         }));
-        await sendBatch(messages);
+        ok = await sendBatch(messages);
       }
-      await prisma.announcement.update({
-        where: { id: m.id },
-        data: { meetingResponseNoticeSentAt: new Date() },
-      });
-      result.notices++;
+      if (ok) {
+        await prisma.announcement.update({
+          where: { id: m.id },
+          data: { meetingResponseNoticeSentAt: new Date() },
+        });
+        result.notices++;
+      }
     }
   }
 
