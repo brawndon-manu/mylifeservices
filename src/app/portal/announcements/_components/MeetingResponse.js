@@ -598,9 +598,17 @@ export default function MeetingResponse({
           </>
         )}
 
-        {/* "can't make any" for FLAT multi-session lists (single-session has its own
-            above; series uses the "can't attend one or more" control). */}
-        {hasSessions && !isSeries && (
+        {/* "CAN'T MAKE ANY OF THESE" - for flat lists AND for series.
+            Single-session meetings have their own version above.
+
+            Series meetings used to hide this, on the reasoning that declining
+            every series says the same thing. It does not: the per-series control
+            takes no reason and reads as "not this week", while somebody who
+            cannot attend any date at all needs an in-person session booked and
+            an admin needs to know why. cantMakeMeeting already clears every pick
+            including the cant:<seriesId> rows, so the server side always
+            supported this - only the button was missing. */}
+        {hasSessions && (
         <details className="rounded-lg border border-border" open={cantMakeIt || undefined}>
           <summary className="flex cursor-pointer list-none items-center gap-3 p-3 text-sm [&::-webkit-details-marker]:hidden">
             <span
@@ -613,6 +621,9 @@ export default function MeetingResponse({
             <span className="font-medium text-foreground">I can&apos;t make any of these</span>
           </summary>
           <form action={cantMake.bind(null, postId)} className="px-3 pb-3">
+            <p className="mb-2 text-xs text-muted">
+              You&apos;ll be scheduled for an in-person session instead.
+            </p>
             <textarea
               name="reason"
               value={reason}
