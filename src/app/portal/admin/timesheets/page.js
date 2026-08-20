@@ -8,6 +8,7 @@ import BackLink from "@/components/BackLink";
 import SendModeBanner from "./_components/SendModeBanner";
 import { groupByPeriod } from "@/lib/timesheet/batch-state";
 import PeriodCards from "./_components/PeriodCards";
+import OfficeSwitch from "./_components/OfficeSwitch";
 
 export const metadata = { title: "Timesheets", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ export default async function TimesheetBatchesPage() {
           Upload a pay period
         </Link>
       </div>
+      <OfficeSwitch current="MLS" />
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
         Upload the QSP export for a pay period. Every employee&apos;s hours are
         recalculated with paid rest breaks and California overtime, then sent out
