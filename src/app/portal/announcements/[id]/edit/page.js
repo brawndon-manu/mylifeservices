@@ -179,6 +179,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
           forms={forms}
+          attestationForms={allForms}
           docs={docs}
           cancelHref={`/portal/announcements/${id}`}
           submitLabel={isDraft ? "Save changes and preview" : "Save changes"}

@@ -41,6 +41,7 @@ import SendEmailDialog from "../_components/SendEmailDialog";
 import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
+import ConcludeMeeting from "../_components/ConcludeMeeting";
 import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
 import PublishBar from "../_components/PublishBar";
@@ -80,6 +81,7 @@ import {
   adminAddToSession,
   adminMoveSession,
   adminSetGoing,
+  concludeMeeting,
   adminSetCantMake,
   adminRemoveFromMeeting,
   adminRecordChoices,
@@ -201,6 +203,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       author: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, role: true, email: true, image: true, title: true } },
       postedBy: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true } },
       form: { select: { id: true, title: true } },
+      meetingAttestationForm: { select: { id: true, title: true } },
       likes: { where: { userId: user.id }, select: { userId: true } },
       acks: { where: { userId: user.id }, select: { viaEmail: true, createdAt: true } },
       meetingChoices: { where: { userId: user.id }, select: { optionId: true, attended: true } },
@@ -574,6 +577,40 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       goingCount: audienceUsers.filter((u) => isGoing(u.id)).length,
       total: audienceUsers.length,
       responded: respByUser.size,
+      // HEADCOUNTS FOR THE CONCLUDE DIALOG, counted in PEOPLE rather than rows.
+      // A multi-session meeting stores one choice row per session, so a row
+      // count would tell somebody "12 will be marked absent" about six people.
+      // Mirrors concludeMeeting: only the going, never the "cant:" pseudo-rows,
+      // and present wins over any other mark that person carries.
+      attendance: (() => {
+        let present = 0, absent = 0, unmarked = 0;
+        if (meetingOptions.length) {
+          const marks = new Map();
+          for (const c of choices) {
+            if (!audIds.has(c.userId) || !isGoing(c.userId)) continue;
+            if (typeof c.optionId === "string" && c.optionId.startsWith("cant:")) continue;
+            const m = marks.get(c.userId) || { present: false, absent: false, unmarked: false };
+            if (c.attended === "present") m.present = true;
+            else if (c.attended === "absent") m.absent = true;
+            else m.unmarked = true;
+            marks.set(c.userId, m);
+          }
+          for (const m of marks.values()) {
+            if (m.present) present++;
+            else if (m.unmarked) unmarked++;
+            else absent++;
+          }
+        } else {
+          for (const u of audienceUsers) {
+            if (!isGoing(u.id)) continue;
+            const a = respByUser.get(u.id)?.attended || null;
+            if (a === "present") present++;
+            else if (a === "absent") absent++;
+            else unmarked++;
+          }
+        }
+        return { present, absent, unmarked };
+      })(),
       // for the admin override controls: the real sessions (move / record targets)
       // and a slim audience list (walk-in picker).
       sessions: meetingOptions.map((o) => ({
@@ -983,6 +1020,32 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         }}
                       />
                     </div>
+
+                    {isAdmin && !isDraft && (
+                      <ConcludeMeeting
+                        action={concludeMeeting.bind(null, post.id)}
+                        present={meetingRoster.attendance.present}
+                        alreadyAbsent={meetingRoster.attendance.absent}
+                        willMarkAbsent={meetingRoster.attendance.unmarked}
+                        attestationTitle={post.meetingAttestationForm?.title || null}
+                        documents={[
+                          ...(post.meetingAttestationForm ? [post.meetingAttestationForm.title] : []),
+                          ...attachments
+                            .filter((a) => a.formId !== post.meetingAttestationForm?.id)
+                            .map((a) => a.name),
+                        ]}
+                        defaultSubject={
+                          post.meetingAttestationSubject ||
+                          `Please sign: ${post.title || "Company meeting"}`
+                        }
+                        defaultBody={
+                          post.meetingAttestationBody ||
+                          "Thanks for attending. Please review and sign the attestation so we have your record on file."
+                        }
+                        concludedAt={post.meetingConcludedAt}
+                        sentCount={post.meetingAttestationSentAt ? meetingRoster.attendance.present : null}
+                      />
+                    )}
 
                     {/* Going */}
                     <div className="mt-4">

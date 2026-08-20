@@ -356,6 +356,8 @@ export default function AnnouncementForm({
   ackStaffByTitle = {},
   ackEveryoneTotal = null,
   forms = [],
+  // every fillable form, not just the ack-eligible ones - see MeetingFields.
+  attestationForms = [],
   docs = [],
   cancelHref = "/portal/announcements",
   submitLabel = "Preview",
@@ -495,7 +497,11 @@ export default function AnnouncementForm({
           </div>
 
           {meeting && (
-            <MeetingFields defaults={d} showTimeNotify={mode === "edit" && !isDraft} />
+            <MeetingFields
+              defaults={d}
+              showTimeNotify={mode === "edit" && !isDraft}
+              attestationForms={attestationForms}
+            />
           )}
 
           {event && <EventFields defaults={d} />}

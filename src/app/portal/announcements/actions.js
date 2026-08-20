@@ -173,6 +173,9 @@ function parseMeetingFields(formData, tag) {
     zoomLinkTbd: false,
     meetingNightBefore: true,
     meetingReminderLeadMin: 10,
+    meetingAttestationFormId: null,
+    meetingAttestationSubject: null,
+    meetingAttestationBody: null,
   };
   if (!isCompanyMeeting(tag)) return blank;
 
@@ -283,7 +286,32 @@ function parseMeetingFields(formData, tag) {
       const n = parseInt(formData.get("meetingReminderLeadMin"), 10);
       return Number.isFinite(n) && n >= 0 && n <= 1440 ? n : 10;
     })(),
+    // the wording for the attestation mail. the form ID itself is resolved
+    // separately and asynchronously - see resolveAttestationFormId - because a
+    // posted id has to be checked against the database before it is trusted.
+    meetingAttestationSubject: trim(formData.get("meetingAttestationSubject"), 200),
+    meetingAttestationBody: trim(formData.get("meetingAttestationBody"), 4000),
   };
+}
+
+// the attestation a meeting asks for once it has concluded. same rule as
+// resolveFormId: never trust the posted id, it has to be a real fillable form.
+//
+// DELIBERATELY NOT REQUIRING AN EMAIL ROUTE, which is where this parts company
+// with resolveFormId. That check exists because an acknowledgment is completed
+// by submitting the form to a review team, so a form with nowhere to send is
+// useless there. An attestation is signed through its own /a/attest link and
+// filed against the meeting, so it needs no review team at all.
+async function resolveAttestationFormId(formData, tag) {
+  if (!isCompanyMeeting(tag)) return null;
+  const raw = formData.get("meetingAttestationFormId");
+  if (typeof raw !== "string" || !raw) return null;
+  const form = await prisma.form.findUnique({
+    where: { id: raw },
+    select: { id: true, fillable: true },
+  });
+  if (!form || !form.fillable) return null;
+  return form.id;
 }
 
 // PDFs UPLOADED STRAIGHT ONTO A POST. Same store and same cleanup as the image,
@@ -472,6 +500,7 @@ export async function createPost(formData) {
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
   const formId = await resolveFormId(formData, requireAck);
+  const meetingAttestationFormId = await resolveAttestationFormId(formData, tag);
 
   // DOCUMENTS THAT RIDE ALONG. Two sources, both validated here: ids picked
   // from the forms library (looked up, never trusted as posted) and PDFs
@@ -511,6 +540,7 @@ export async function createPost(formData) {
       ackUserIds,
       formId,
       ...parseMeetingFields(formData, tag),
+      meetingAttestationFormId,
       ...parseEventFields(formData, tag),
     },
   });
@@ -714,8 +744,10 @@ export async function editPost(postId, formData) {
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
   const formId = await resolveFormId(formData, requireAck);
+  const meetingAttestationFormId = await resolveAttestationFormId(formData, tag);
 
   const meetingFields = parseMeetingFields(formData, tag);
+  meetingFields.meetingAttestationFormId = meetingAttestationFormId;
   // the kept ones come back as hidden fields, so an edit that touches nothing
   // else leaves the documents exactly as they were. Anything the author removed
   // is simply absent from the post and its blob goes below.
@@ -2227,4 +2259,198 @@ export async function rsvpEvent(postId, formData) {
     update: { going, clientCount },
   });
   revalidatePath(`/portal/announcements/${postId}`);
+}
+
+// ---------------------------------------------------------------- concluding
+
+// CLOSING THE ROLL CALL, and sending the attestation if this meeting asks for
+// one. Admin/IT/Super only, the same gate as marking attendance.
+//
+// TWO THINGS IN ONE PRESS, so both are stamped separately:
+//   meetingConcludedAt        the roll call closed. always set.
+//   meetingAttestationSentAt  the mail actually left. only set if it did.
+//
+// Separate because a meeting with no attestation form concludes without sending
+// anything, and because a send that fails should leave the absences recorded and
+// the mail still owed rather than pretending it went.
+//
+// WHO GETS MARKED ABSENT: people who said they were going and were never marked
+// either way. NOT everyone invited. Attendance hangs off the response row, so
+// marking a no-reply absent would mean inventing a response they never gave, and
+// "absent" would stop meaning "said they would come and did not".
+export async function concludeMeeting(postId, formData) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true, title: true, tag: true, content: true, deletedAt: true,
+      attachments: true, meetingOptions: true, meetingConcludedAt: true,
+      meetingAttestationSubject: true, meetingAttestationBody: true,
+      meetingAttestationForm: {
+        select: { id: true, title: true, fileUrl: true, fillable: true },
+      },
+    },
+  });
+  if (!post || post.deletedAt || !isCompanyMeeting(post.tag)) {
+    redirect("/portal/announcements");
+  }
+  // idempotent by refusal: the button is gone once pressed, and a stale tab
+  // posting it a second time must not re-send to everybody.
+  if (post.meetingConcludedAt) {
+    redirect(`/portal/announcements/${postId}?error=alreadyConcluded`);
+  }
+
+  const hasOptions = Array.isArray(post.meetingOptions) && post.meetingOptions.length > 0;
+
+  // 1. THE ROLL CALL. per-session for multi/series meetings, meeting-level for
+  //    single ones - the same split writeAttendance uses.
+  const absent = hasOptions
+    ? await prisma.announcementMeetingChoice.updateMany({
+        // "cant:<seriesId>" rows are not sessions - they are how somebody says
+        // they cannot attend a series at all. Marking those absent would be
+        // marking a refusal as a no-show.
+        where: {
+          announcementId: postId,
+          attended: null,
+          NOT: { optionId: { startsWith: "cant:" } },
+        },
+        data: { attended: "absent" },
+      })
+    : await prisma.announcementMeetingResponse.updateMany({
+        where: { announcementId: postId, cantMakeIt: false, attended: null },
+        data: { attended: "absent" },
+      });
+
+  // 2. WHO WAS PRESENT, and so who owes an attestation.
+  const presentIds = hasOptions
+    ? [...new Set(
+        (await prisma.announcementMeetingChoice.findMany({
+          where: { announcementId: postId, attended: "present" },
+          select: { userId: true },
+        })).map((r) => r.userId),
+      )]
+    : (await prisma.announcementMeetingResponse.findMany({
+        where: { announcementId: postId, attended: "present" },
+        select: { userId: true },
+      })).map((r) => r.userId);
+
+  const form = post.meetingAttestationForm;
+  let sent = 0;
+  let mailError = null;
+
+  if (form?.fillable && presentIds.length) {
+    const result = await sendAttestation({ post, form, presentIds, formData });
+    sent = result.sent;
+    mailError = result.error;
+  }
+
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: {
+      meetingConcludedAt: new Date(),
+      ...(sent > 0 ? { meetingAttestationSentAt: new Date() } : {}),
+    },
+  });
+
+  revalidatePath(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
+  const q = new URLSearchParams({ concluded: String(absent.count), sent: String(sent) });
+  if (mailError) q.set("mailError", "1");
+  redirect(`/portal/announcements/${postId}?${q}`);
+}
+
+// the attestation mail itself. Wording comes from the meeting, overridden by
+// whatever was typed on the confirm step - that override applies to this send
+// only and is never written back.
+async function sendAttestation({ post, form, presentIds, formData }) {
+  const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
+  const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
+  if (!from || !base || !process.env.RESEND_API_KEY) {
+    console.error("attestation email misconfigured");
+    return { sent: 0, error: "config" };
+  }
+  const recipients = await prisma.user.findMany({
+    where: { id: { in: presentIds }, deactivatedAt: null },
+    select: { id: true, email: true, name: true, preferredFirstName: true, preferredLastName: true },
+  });
+  if (!recipients.length) return { sent: 0, error: null };
+
+  const title = post.title || "Company meeting";
+  const subject =
+    (typeof formData?.get("subject") === "string" && formData.get("subject").trim()) ||
+    post.meetingAttestationSubject ||
+    `Please sign: ${title}`;
+  const message =
+    (typeof formData?.get("message") === "string" && formData.get("message").trim()) ||
+    post.meetingAttestationBody ||
+    "Thanks for attending. Please review and sign the attestation so we have your record on file.";
+
+  // the attestation goes first, then whatever the post already carried - the
+  // guides people were taken through ride along without being picked twice.
+  const files = [];
+  for (const a of emailAttachmentsOf(post, form)) {
+    try {
+      const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(String(res.status));
+      files.push({
+        filename: `${a.name.replace(/[^\w .-]/g, "_").slice(0, 80)}.pdf`,
+        content: Buffer.from(await res.arrayBuffer()).toString("base64"),
+      });
+    } catch (e) {
+      console.error(`attestation attachment skipped (${a.url}):`, e?.message || e);
+    }
+  }
+
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
+  const messages = recipients.map((r) => {
+    const url = `${base}/a/attest/${signAckToken(post.id, r.id)}`;
+    const greeting = `Hi ${firstNameOf(r) || "there"},`;
+    const html = buildAnnouncementEmailHtml({
+      logoUrl,
+      title,
+      authorName: "My Life Services",
+      authorTitle: null,
+      dateStr: "",
+      eyebrow: "Attestation",
+      requireAck: false,
+      bodyHtml: renderMarkdown(`${greeting}\n\n${message}`, { email: true }),
+      ackUrl: null,
+      meetingHtml: "",
+      ctaHtml: postButton(url, "Review and sign"),
+    });
+    // AND THE LOCK. Off the real deployment this is redirected, same rule as
+    // every other announcement mail - a laptop must not send staff a document
+    // to sign with links pointing at localhost.
+    const route = resolveAnnouncementRecipients(r.email);
+    return {
+      from,
+      to: route.to,
+      subject: route.redirected
+        ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}`
+        : subject,
+      html,
+      text: `${greeting}\n\n${message}\n\nReview and sign: ${url}\n\nThe link is just for you, so please don't forward it. No login needed.`,
+      attachments: files.length ? files : undefined,
+    };
+  });
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  let sent = 0;
+  let error = null;
+  for (let i = 0; i < messages.length; i += 100) {
+    const chunk = messages.slice(i, i + 100);
+    try {
+      const { error: e } = await resend.batch.send(chunk);
+      if (e) { console.error("attestation batch error:", e); error = "send"; }
+      else sent += chunk.length;
+    } catch (e) {
+      console.error("attestation send threw:", e);
+      error = "send";
+    }
+  }
+  return { sent, error };
 }
