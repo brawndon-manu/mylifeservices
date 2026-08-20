@@ -1021,8 +1021,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                       />
                     </div>
 
-                    {isAdmin && !isDraft && (
+                    {isAdmin && (
                       <ConcludeMeeting
+                        isDraft={isDraft}
                         action={concludeMeeting.bind(null, post.id)}
                         present={meetingRoster.attendance.present}
                         alreadyAbsent={meetingRoster.attendance.absent}
