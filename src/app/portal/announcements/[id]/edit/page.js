@@ -75,6 +75,13 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       meetingResponseDueTz: true,
       meetingReminderLeadMin: true,
       meetingNightBefore: true,
+      // the post-meeting attestation. HAS to be listed: this page selects meeting
+      // fields one by one, and anything missing comes back undefined, shows as
+      // unset in the form, and is then SAVED as unset. Leaving these out did not
+      // just hide the attestation, it wiped it on the next edit.
+      meetingAttestationFormId: true,
+      meetingAttestationSubject: true,
+      meetingAttestationBody: true,
       // event fields - so editing an Event reloads audience / date / location.
       eventAudience: true,
       eventAt: true,

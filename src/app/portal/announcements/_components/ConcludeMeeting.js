@@ -25,8 +25,33 @@ export default function ConcludeMeeting({
   defaultBody = "",
   concludedAt = null,
   sentCount = null,
+  // a draft cannot be concluded - it has not happened. But saying nothing at all
+  // left the author with no way to tell whether an attestation was even attached
+  // without reopening Edit, so the state is shown read-only instead of hidden.
+  isDraft = false,
 }) {
   const [open, setOpen] = useState(false);
+
+  if (isDraft) {
+    return (
+      <div className="mt-4 rounded-xl border border-border bg-surface-2 p-3">
+        <p className="text-sm font-medium text-foreground">
+          {attestationTitle ? "Attestation ready" : "No attestation on this meeting"}
+        </p>
+        <p className="mt-0.5 text-xs text-muted">
+          {attestationTitle ? (
+            <>
+              <b className="font-semibold text-foreground">{attestationTitle}</b>{" "}
+              goes to everyone marked present when you press &ldquo;Meeting has
+              concluded&rdquo;. That button appears once this meeting is published.
+            </>
+          ) : (
+            <>Add one in Edit if you want people to sign something afterwards.</>
+          )}
+        </p>
+      </div>
+    );
+  }
 
   if (concludedAt) {
     return (
