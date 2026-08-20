@@ -11,6 +11,13 @@
 // so it doesn't belong here.
 // listed roughly high -> low privilege / seniority. "Unknown Job Title" stays
 // last (under Independent Living Instructor) as the catch-all.
+//
+// the six day program titles were typed into the custom-title box rather than
+// picked from this list, so they existed on real people without existing here.
+// anything not in this list is invisible to the audience picker, which builds
+// its roles from POSITIONS, so day program staff could only be reached through
+// "Everyone". listed here now. a title typed into the custom box still lands
+// outside the picker the same way, so new ones belong here too.
 export const POSITIONS = [
   "Owner / Director",
   "Program Manager",
@@ -18,13 +25,19 @@ export const POSITIONS = [
   "Field Operations Manager",
   "HR Administrator",
   "Field Supervisor",
+  "Supervisor",
   "Quality Assurance Specialist",
+  "BCBA Behavioralist Specialist",
+  "Behaviorist (RBT)",
   "IT / Web Developer",
   "Resources Specialist",
+  "Marketing, Public Relations, Events Assistant",
   "Lead Staff",
   "Day Program",
   "Attendant",
+  "Intern",
   "Tester",
+  "Community Integration Specialist",
   "Independent Living Instructor",
   "Unknown Job Title",
 ];
