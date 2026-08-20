@@ -125,6 +125,7 @@ export default async function NewAnnouncementPage({ searchParams }) {
           ackEveryoneTotal={ackEveryone}
           emailEveryoneTotal={allActive}
           forms={forms}
+          attestationForms={allForms}
           docs={docs}
           submitLabel="Preview"
         />

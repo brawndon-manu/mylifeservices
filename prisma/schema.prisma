@@ -355,7 +355,21 @@ model Announcement {
   // an optional fillable form attached to this announcement: acknowledging it
   // means filling + submitting the form, which writes the ack (see FormSubmission).
   formId                      String?
-  form                        Form?                         @relation(fields: [formId], references: [id])
+  form                        Form?                         @relation("AnnouncementForm", fields: [formId], references: [id])
+  // POST-MEETING ATTESTATION, and it is optional on purpose: a meeting with no
+  // form here still concludes, it just does not email anybody.
+  meetingAttestationFormId    String?
+  meetingAttestationForm      Form?                         @relation("MeetingAttestationForm", fields: [meetingAttestationFormId], references: [id])
+  // the mail that goes out when the meeting is concluded. kept on the meeting so
+  // the wording is decided when the meeting is written, and still editable at the
+  // moment of sending - what is typed there applies to that send only.
+  meetingAttestationSubject   String?
+  meetingAttestationBody      String?
+  // when the roll call was closed, and when the attestation actually left. two
+  // stamps, not one, because a meeting with no attestation form concludes
+  // without sending, and "concluded" should still mean something then.
+  meetingConcludedAt          DateTime?
+  meetingAttestationSentAt    DateTime?
   // DOCUMENTS THAT RIDE ALONG WITH THE POST. [{ name, url, formId?, bytes? }]
   //
   // Two sources on purpose. A `formId` entry points at something already in the
@@ -565,7 +579,9 @@ model Form {
   updatedAt   DateTime @updatedAt
 
   submissions   FormSubmission[]
-  announcements Announcement[]
+  announcements Announcement[]  @relation("AnnouncementForm")
+  // meetings that ask for this form to be signed once they have concluded
+  attestationFor Announcement[] @relation("MeetingAttestationForm")
 
   @@index([category])
 }

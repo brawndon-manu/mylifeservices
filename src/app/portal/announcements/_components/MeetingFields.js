@@ -254,8 +254,20 @@ function OptionCard({ o, index, online, onPatch, onRemove, showName = true, name
   );
 }
 
-export default function MeetingFields({ defaults = {}, showTimeNotify = false }) {
+export default function MeetingFields({
+  defaults = {},
+  showTimeNotify = false,
+  // fillable forms that can be asked for once the meeting is over. a WIDER set
+  // than the ack picker's: that one only offers forms with an email route,
+  // because an acknowledgment is completed by submitting to a review team. an
+  // attestation is signed through its own link and goes nowhere else, so any
+  // fillable form qualifies.
+  attestationForms = [],
+}) {
   const d = defaults;
+  const [attestationFormId, setAttestationFormId] = useState(
+    d.meetingAttestationFormId || "",
+  );
   const [format, setFormat] = useState(d.meetingFormat || "zoom");
   const [linkTbd, setLinkTbd] = useState(!!d.zoomLinkTbd);
   // mandatory drives the RSVP requirement: when on, we ask for a "Response needed
@@ -829,6 +841,71 @@ export default function MeetingFields({ defaults = {}, showTimeNotify = false })
           </div>
         </div>
       )}
+
+      {/* AFTER THE MEETING. Optional on purpose: leave the form unset and the
+          meeting still concludes, it just does not email anybody. */}
+      <div className="border-t border-border pt-4">
+        <label htmlFor="meetingAttestationFormId" className={LABEL}>
+          Attestation to sign afterwards{" "}
+          <span className="text-faint">(optional)</span>
+        </label>
+        <select
+          id="meetingAttestationFormId"
+          name="meetingAttestationFormId"
+          value={attestationFormId}
+          onChange={(e) => setAttestationFormId(e.target.value)}
+          className={INPUT}
+        >
+          <option value="">No attestation for this meeting</option>
+          {attestationForms.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.title}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-muted">
+          Sent only when you press &ldquo;Meeting has concluded&rdquo;, and only to
+          the people marked present.
+        </p>
+
+        {attestationFormId && (
+          <div className="mt-3 space-y-3">
+            <div>
+              <label htmlFor="meetingAttestationSubject" className={LABEL}>
+                Email subject
+              </label>
+              <input
+                id="meetingAttestationSubject"
+                name="meetingAttestationSubject"
+                type="text"
+                defaultValue={d.meetingAttestationSubject || ""}
+                placeholder="Please sign: (meeting title)"
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label htmlFor="meetingAttestationBody" className={LABEL}>
+                Email message
+              </label>
+              <textarea
+                id="meetingAttestationBody"
+                name="meetingAttestationBody"
+                rows={4}
+                defaultValue={d.meetingAttestationBody || ""}
+                placeholder={
+                  "Thanks for attending. Please review and sign the attestation so we have your record on file."
+                }
+                className={INPUT}
+              />
+            </div>
+            <p className="text-xs text-muted">
+              Leave either blank to use the wording shown. You can still change
+              both when you conclude the meeting, and what you type then applies
+              to that send only.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
