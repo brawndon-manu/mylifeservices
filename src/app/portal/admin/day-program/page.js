@@ -7,6 +7,7 @@ import { sendModeSummary } from "@/lib/timesheet-send";
 import BackLink from "@/components/BackLink";
 import SendModeBanner from "../timesheets/_components/SendModeBanner";
 import PeriodCards from "../timesheets/_components/PeriodCards";
+import OfficeSwitch from "../timesheets/_components/OfficeSwitch";
 import { groupByPeriod } from "@/lib/timesheet/batch-state";
 
 export const metadata = { title: "Day program", robots: { index: false, follow: false } };
@@ -51,6 +52,7 @@ export default async function DayProgramBatchesPage() {
           Upload a pay period
         </Link>
       </div>
+      <OfficeSwitch current="DP" />
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
         The day program&apos;s pay periods, separate from the agency&apos;s.
         Hours and overtime come from the QSP timesheet, rest breaks from the
