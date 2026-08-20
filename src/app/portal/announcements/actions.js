@@ -1841,10 +1841,20 @@ export async function sendAckEmails(postId) {
   const messages = recipients.map((r) => {
     const url = `${base}/a/ack/${signAckToken(postId, r.id)}`;
     const firstName = firstNameOf(r) || "there";
+    // AND THE LOCK. This was the last sender in this file without one: pressed
+    // from a laptop it mailed real staff for real, with every acknowledge link
+    // pointing at localhost - the exact incident the guard was written for after
+    // a timesheet reached an employee from a dev server. Every other announcement
+    // path has been redirected off the real deployment since; this one was
+    // missed, and being the roster's nudge button it is easy to press by
+    // accident while testing.
+    const route = resolveAnnouncementRecipients(r.email);
     return {
       from,
-      to: [r.email],
-      subject,
+      to: route.to,
+      subject: route.redirected
+        ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}`
+        : subject,
       html: ackEmailHtml({ firstName, title, snippet, url }),
       text: `Hi ${firstName},\n\n${snippet}\n\nAcknowledge that you've read this: ${url}\n\nOne click confirms it, no login needed.`,
     };
