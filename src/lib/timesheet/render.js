@@ -1255,10 +1255,21 @@ export async function renderCorrected(sheet, opts = {}) {
   // that instead. Chosen by the flag the day program pipeline sets on its
   // sheets; an MLS sheet can never carry it, and the MLS paragraph below is
   // untouched.
+  //
+  // THE MILEAGE CLAUSE IS ON BOTH BRANCHES, added 2026-08-21. It first shipped
+  // only on the MLS one, which was harmless while `upload-rows.js` set every
+  // day program sheet to `qspMiles: null` - no figure, nothing to attest to.
+  // The moment a day program sheet carried miles, that gap inverted the rule
+  // three paragraphs up: the number printed under the totals and the paragraph
+  // said nothing about it, so a signature covered every figure on the page
+  // except the one we had just added. Same wording, same gate, both branches.
   const attest = sheet.onDutyMeal
     ? "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
       "I attest that I have received all my rest and recovery periods consistent with My Life Services's policy and applicable law, and that every rest period I did not take is " +
       "accurately reported above. I understand that my meal period is an on-duty paid meal period consistent with the meal period agreement I have signed. " +
+      (sheet.milesDriven != null
+        ? "I attest that the miles recorded above are the actual miles I drove for work during this pay period. "
+        : "") +
       "I also attest that I reported every injury sustained on the job during the pay period, if there were any."
     : "I attest that all hours I worked during the pay period recorded above are the actual hours I worked on each day, including all overtime hours worked. Unless otherwise recorded above, " +
     "I attest that I have received all my meal, rest and recovery periods consistent with My Life Services's policy and applicable law, and that every meal and rest period I did not take is " +
