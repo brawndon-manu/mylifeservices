@@ -644,6 +644,15 @@ model TimesheetBatch {
   // audit xlsx that confirms the 2nd breaks typed into DSN summaries - its
   // blob url plus everything its reader flagged for a person to look at.
   dpAudit        Json?
+  // day program only: the Employee Mileage Tracking Report (.xls). The agency's
+  // batches take their miles off the Simple Payroll Processing Report, which
+  // the day program has no equivalent of - so its mileage arrives as its own
+  // export and lands here. Kept for the same reason every other source is: the
+  // figure is printed under the totals on a sheet somebody signs and attests
+  // to, and a number on a signed document nobody can trace is worth less than
+  // no number at all.
+  dpMileageUrl   String?
+  dpMileageName  String?
   // the pay period exactly as QSP printed it, e.g. "07/16/26" / "07/31/26".
   periodFrom     String
   periodTo       String

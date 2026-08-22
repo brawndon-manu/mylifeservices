@@ -26,13 +26,16 @@ export async function buildDayProgramSheetRows(result, users, generatedOn) {
     for (const n of p.scheduleNotes || []) {
       comments.push({ text: `${n.date}: ${n.note}`, italic: true });
     }
-    for (const d of p.days) {
-      if (d.auditNote) comments.push({ text: `${d.date}: ${d.auditNote}`, italic: true });
-    }
-    const confirmedDates = p.days.filter((d) => (d.auditRests || 0) > 0).map((d) => d.date);
-    if (confirmedDates.length) {
+    // A second break credited from a note is SAID OUT LOUD on the sheet. It was
+    // read out of free text rather than off a column, so the person signing is
+    // told which days it happened on and can say if it is wrong.
+    //
+    // This replaced the same sentence naming the retired rest break audit
+    // (2026-08-22) - same principle, different source.
+    const notedDates = p.days.filter((d) => (d.noteRests || 0) > 0).map((d) => d.date);
+    if (notedDates.length) {
       comments.push({
-        text: `Rest breaks on ${confirmedDates.join(", ")} confirmed from the day program's rest break audit (recorded in the DSN summary).`,
+        text: `Second rest breaks on ${notedDates.join(", ")} credited from the times recorded in the schedule notes above.`,
         italic: true,
       });
     }
@@ -45,8 +48,12 @@ export async function buildDayProgramSheetRows(result, users, generatedOn) {
       partialWeekDates: p.partialWeekDates,
       payPeriod: p.payPeriod || null,
       comments: comments.length ? comments : null,
-      // no payroll report exists for the day program, which is not zero miles
-      qspMiles: null,
+      // MILES, off the day program's own mileage export rather than a payroll
+      // report - it has none. Still null when that export was not uploaded,
+      // which is not zero miles: null draws no mileage line on the sheet and
+      // drops the mileage clause from the paragraph they sign, so nobody is
+      // ever asked to attest to a figure we did not receive.
+      qspMiles: p.miles ?? null,
       sourcePages: p.pages || [],
       schedulePages: p.schedulePages || [],
       // the evidence block, holding what this batch actually has: a rest

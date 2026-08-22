@@ -42,9 +42,16 @@ const present = (f) => f && typeof f === "object" && "size" in f && f.size > 0;
 // What stays different is what the day program's documents genuinely lack: no
 // schedule PDF, no payroll report, no clock export - all stored as their
 // honest absences - and every day carries `onDutyMeal`, which is the one rule
-// change (see parse.js). David's audit spreadsheet lands in `dpAudit` on the
-// batch: its confirmed 2nd breaks are already folded into the days as rest
-// evidence, and everything its reader flagged is kept for a person to read.
+// change (see parse.js).
+//
+// THE REST BREAK AUDIT IS GONE, Mánu 2026-08-22: "we will never be using it."
+// David built that spreadsheet once, in August, to carry the 2nd breaks that
+// only existed inside DSN summaries. `noteBreak` in analyze.js now reads those
+// same breaks off the schedule notes the staff already type - 70 of them across
+// 08/01-08/15, with no row it should have caught left behind - so the sheet it
+// existed to supply is supplied by the export itself. Nothing writes `dpAudit`
+// any more. The two screens that DISPLAY it still do, because the August batch
+// holds real audit data and its premiums were settled against it.
 export async function uploadDayProgramBatch(formData) {
   const user = await requireAccess();
 
@@ -55,31 +62,52 @@ export async function uploadDayProgramBatch(formData) {
   const restsFile = formData.get("rests");
   if (!present(restsFile)) err("norests");
 
-  // David's sheet is OPTIONAL on purpose: the 2nd-break confirmations make
-  // the numbers better, but a period can run without one and every
-  // unconfirmed break simply stays what the rest report says it is.
-  const auditFile = formData.get("audit");
-  const hasAudit = present(auditFile);
-  if (hasAudit && !/\.xlsx$/i.test(String(auditFile.name || ""))) err("notxlsx");
-
   // the Employee Schedules PDF, optional: the second opinion on shift shape,
   // same cross-check the MLS upload runs.
   const schedFile = formData.get("schedule");
   const hasSched = present(schedFile);
 
+  // the Employee Mileage Tracking Report, optional: the day program's only
+  // source of miles, because it has no payroll report to carry the column.
+  const mileageFile = formData.get("mileage");
+  const hasMileage = present(mileageFile);
+
   const timesheetBytes = new Uint8Array(await pdfFile.arrayBuffer());
   const restsBytes = Buffer.from(await restsFile.arrayBuffer());
-  const auditBytes = hasAudit ? Buffer.from(await auditFile.arrayBuffer()) : null;
   const scheduleBytes = hasSched ? new Uint8Array(await schedFile.arrayBuffer()) : null;
+  const mileageBytes = hasMileage ? Buffer.from(await mileageFile.arrayBuffer()) : null;
 
   let result;
   try {
-    result = await analyzeDayProgram({ timesheetBytes, restsBytes, auditBytes, scheduleBytes });
+    result = await analyzeDayProgram({ timesheetBytes, restsBytes, scheduleBytes, mileageBytes });
   } catch (e) {
     console.error("day program analyze failed:", e);
     err("parse", e?.message || e);
   }
   if (!result.people.length) err("empty", "the timesheet read fine but held no employee hours");
+
+  // A MILEAGE FILE THAT MATCHES NOBODY, OR SAYS NOBODY DROVE.
+  //
+  // Refused rather than warned, on the same principle as the schedule coverage
+  // check on the MLS side: these miles print under the totals of a document
+  // somebody signs and attests to, so a wrong export must not become thirty
+  // sheets quietly swearing to 0.00. Both readings are far likelier to be the
+  // wrong file than the truth.
+  if (hasMileage) {
+    if (!result.mileage?.anyMiles) {
+      err("mileage", "every row of that mileage report reads 0.00 miles - is it the right period?");
+    }
+    const unmatched = result.mileage.unmatched || [];
+    if (unmatched.length >= result.mileage.people) {
+      err(
+        "mileage",
+        `none of the ${result.mileage.people} people in that mileage report match anyone on the timesheet`,
+      );
+    }
+    if (unmatched.length) {
+      console.warn(`day program mileage: ${unmatched.length} unmatched - ${unmatched.join(", ")}`);
+    }
+  }
 
   // suggest a portal account per person, same matcher and same bar as the
   // timesheets: only a unique full-coverage match auto-assigns.
@@ -102,7 +130,7 @@ export async function uploadDayProgramBatch(formData) {
     const blob = await putBlob(key, body, { access: "public", contentType });
     return blob.url;
   };
-  let sourceUrl, restsUrl, auditUrl = null, scheduleUrl = null;
+  let sourceUrl, restsUrl, scheduleUrl = null, mileageUrl = null;
   try {
     const tag = () => randomBytes(10).toString("hex");
     sourceUrl = await store(`timesheets/source/${tag()}.pdf`, Buffer.from(timesheetBytes), "application/pdf");
@@ -110,11 +138,11 @@ export async function uploadDayProgramBatch(formData) {
     if (scheduleBytes) {
       scheduleUrl = await store(`timesheets/schedule/${tag()}.pdf`, Buffer.from(scheduleBytes), "application/pdf");
     }
-    if (auditBytes) {
-      auditUrl = await store(
-        `day-program/audit/${tag()}.xlsx`,
-        auditBytes,
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    if (mileageBytes) {
+      mileageUrl = await store(
+        `day-program/mileage/${tag()}.xls`,
+        mileageBytes,
+        "application/vnd.ms-excel",
       );
     }
   } catch (e) {
@@ -136,16 +164,12 @@ export async function uploadDayProgramBatch(formData) {
           restsName: String(restsFile.name || "rest-periods.xls"),
           scheduleUrl,
           scheduleName: hasSched ? String(schedFile.name || "schedule.pdf") : null,
+          dpMileageUrl: mileageUrl,
+          dpMileageName: hasMileage ? String(mileageFile.name || "mileage.xls") : null,
           restsByDate: result.restRows,
-          dpAudit: hasAudit
-            ? {
-                url: auditUrl,
-                name: String(auditFile.name || "audit.xlsx"),
-                faults: result.faults,
-                unmatchedAudit: result.unmatchedAudit,
-                span: result.auditSpan,
-              }
-            : null,
+          // dpAudit is deliberately not written. See the note on this function:
+          // the audit sheet is retired, and a null here is the honest record
+          // that no such document backed this batch.
           testMode: !liveSendConfigured(),
           uploadedById: user.id,
         },

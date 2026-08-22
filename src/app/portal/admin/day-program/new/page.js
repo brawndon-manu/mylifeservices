@@ -9,9 +9,10 @@ export const metadata = { title: "Upload day program period", robots: { index: f
 const ERRORS = {
   notimesheet: "Pick the Simple Timesheet PDF first - hours come from it and nothing runs without it.",
   notpdf: "The timesheet needs to be the PDF export from QSP, not a scan or a print-to-PDF.",
-  norests: "The Rest Periods Report (.xls) is required - it's the only systematic record that a rest break happened.",
-  notxlsx: "The rest break audit needs to be the .xlsx spreadsheet itself, not a re-saved copy.",
+  norests: "The Rest Periods Report (.xls) is required - it's the only systematic record that a rest break happened, and the second breaks are read out of its schedule notes.",
   parse: "Couldn't read one of those files. The message below says which reader gave up.",
+  mileage:
+    "That mileage report was refused, and nothing was created. Miles print on the sheet people sign and attest to, so a file matching nobody - or saying nobody drove all period - is far more likely to be the wrong export than the truth. Check it covers this period, then try again.",
   empty: "The timesheet read fine but held no employee hours. Is it the right export?",
   noblob:
     "File storage isn't configured (BLOB_READ_WRITE_TOKEN is missing), so nothing could be saved. Nothing was created.",
@@ -38,9 +39,11 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
       <p className="mt-4 text-base leading-relaxed text-muted">
         The same engine the MLS timesheets run on, fed from the day
         program&apos;s documents. Hours and overtime come from the QSP
-        timesheet; rest breaks, second breaks and the staff&apos;s own schedule
-        notes come from the Rest Periods report. Meals are exempt under the
-        on-duty meal agreement, so no meal premium is ever computed here.
+        timesheet. Rest breaks come from the Rest Periods report, and the
+        second breaks staff type into their own schedule notes are read
+        straight off it - no spreadsheet to keep by hand. Miles come from the
+        mileage export. Meals are exempt under the on-duty meal agreement, so
+        no meal premium is ever computed here.
       </p>
 
       {error && (
@@ -61,7 +64,7 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
         <FilePick
           id="rests"
           label="Rest Periods Report (.xls)"
-          hint="The QSP export, or your edited copy with the second break columns filled in - both layouts read. The 2nd breaks and the schedule notes come from here."
+          hint="Straight from QSP. Both layouts read, so an edited copy with second-break columns filled in still works - but you don't need to fill anything in. Rest breaks, the second breaks named in schedule notes, and the reasons staff give all come from here."
           accept=".xls,application/vnd.ms-excel"
           required
         />
@@ -72,10 +75,10 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
           accept=".pdf,application/pdf"
         />
         <FilePick
-          id="audit"
-          label="Rest break audit (.xlsx) - optional"
-          hint="David's compliance sheet. Still the only record of the 2nd breaks that live in DSN summaries - without it those days read short."
-          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          id="mileage"
+          label="Employee Mileage Tracking Report (.xls) - optional"
+          hint="QSP > Reports > Employee Mileage Tracking. The day program has no payroll report to carry a mileage column, so this is the only place miles come from. Leave it out and the sheet says nothing about mileage, rather than printing a 0.00 nobody should have to attest to."
+          accept=".xls,application/vnd.ms-excel"
         />
         <button
           type="submit"

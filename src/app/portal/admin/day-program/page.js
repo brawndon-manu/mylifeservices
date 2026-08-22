@@ -55,9 +55,10 @@ export default async function DayProgramBatchesPage() {
       <OfficeSwitch current="DP" />
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
         The day program&apos;s pay periods, separate from the agency&apos;s.
-        Hours and overtime come from the QSP timesheet, rest breaks from the
-        Rest Periods report, and meals stay on the clock under the on-duty
-        meal agreement.
+        Hours and overtime come from the QSP timesheet, rest breaks and the
+        second breaks staff note on their own schedules from the Rest Periods
+        report, and miles from the mileage export. Meals stay on the clock
+        under the on-duty meal agreement.
       </p>
 
       <SendModeBanner mode={mode} />
