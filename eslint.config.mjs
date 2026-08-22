@@ -1,5 +1,6 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
+import globals from "globals";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -24,6 +25,28 @@ const eslintConfig = defineConfig([
     "archive/**",
     "mls-handoff/**",
   ]),
+  // A NAME NOTHING DECLARES IS AN ERROR, NOT A RUNTIME SURPRISE.
+  //
+  // eslint-config-next leaves `no-undef` off because it assumes TypeScript is
+  // catching this. This project is plain JavaScript, so nothing was.
+  //
+  // 2026-08-22: deleting the retired rest break audit out of analyze.js also
+  // deleted the line declaring `last` and `first`, which the SCHEDULE matcher
+  // below it still used. The file parsed, eslint said nothing, and all 880
+  // tests passed - none of them calls analyzeDayProgram, which needs real PDF
+  // and XLS bytes. Every day program upload would have thrown ReferenceError on
+  // the first employee. Running the real files is what found it.
+  //
+  // Turned on across src at zero violations, so this costs nothing and refuses
+  // that whole class of edit.
+  {
+    files: ["src/**/*.js", "src/**/*.mjs", "src/**/*.jsx"],
+    languageOptions: {
+      // otherwise every window/document/process/fetch reads as undefined
+      globals: { ...globals.browser, ...globals.node },
+    },
+    rules: { "no-undef": "error" },
+  },
 ]);
 
 export default eslintConfig;
