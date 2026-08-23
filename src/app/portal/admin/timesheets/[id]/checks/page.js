@@ -6,6 +6,8 @@ import { canManageTimesheets } from "@/lib/roles";
 import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import { violationsFor, VIOLATION_KINDS } from "@/lib/timesheet/violations";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
+import { complianceFor, complianceCounts, COMPLIANCE_KINDS, CAP_MINUTES } from "@/lib/timesheet/compliance";
+import { preferredName } from "@/lib/contacts";
 import { markKeyOf, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
@@ -181,6 +183,25 @@ export default async function ChecksPage({ params }) {
   // ask whether the break happened - so they belong in this total
   const needsPerson = counts.decide + counts.unworked + counts.violation;
 
+  // every scheduling finding in this period, worst first, with the person on it.
+  // Read per sheet through the same `complianceFor` the patterns page and the
+  // person cards ask, so the three cannot disagree about what one is.
+  const scheduling = (() => {
+    const rows = [];
+    for (const ts of batch.timesheets) {
+      const who = ts.user ? preferredName(ts.user) : ts.sourceName;
+      for (const f of complianceFor(ts.data)) rows.push({ ...f, who });
+    }
+    rows.sort((a, b) => b.minutes - a.minutes || String(a.who).localeCompare(String(b.who)));
+    const counts = complianceCounts(rows);
+    return {
+      rows,
+      total: rows.length,
+      overCap: counts["booking-over-cap"] || 0,
+      overlap: counts["blocks-overlap"] || 0,
+    };
+  })();
+
   const notes = batchNotes(batch.timesheets);
 
   // the recompute prompt belongs to a SHEET, not a day, so it rides on the
@@ -263,6 +284,63 @@ export default async function ChecksPage({ params }) {
               </li>
             ))}
           </ul>
+        </details>
+      )}
+
+      {/* HOW THE SCHEDULE WAS BUILT, for this period.
+          Deliberately NOT folded into the findings list above. Every row there
+          is a day somebody has to decide about - confirm the break, correct the
+          punch, mark them contacted - and carries the control to do it. These
+          have no such answer: the booking was already rostered and worked, so
+          nobody can resolve one from this screen, and dropping unanswerable
+          rows into a list of questions is how the anomaly pile stopped being
+          readable. The fix is in QuickSolve before the next period is built,
+          and the trend lives on Repeat patterns. */}
+      {scheduling.total > 0 && (
+        <details className="mt-6 rounded-xl border border-sky-300 bg-sky-50/60 p-5 dark:border-sky-800/70 dark:bg-sky-950/30">
+          <summary className="cursor-pointer list-none text-base font-semibold tracking-tight text-foreground">
+            <span className="mr-1.5 inline-block text-[10px] text-faint">&#9656;</span>
+            Scheduling to stop
+            <span className="ml-2 rounded-full border border-sky-300 bg-sky-100 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
+              {scheduling.total}
+            </span>
+          </summary>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Nobody is owed anything for these and none of them reaches a sheet
+            anyone signs. They are rules broken by how the schedule was{" "}
+            <em>built</em>, before the shift was worked, so the fix is in
+            QuickSolve rather than here.{" "}
+            {scheduling.overCap > 0 && (
+              <>
+                <strong>{scheduling.overCap}</strong>{" "}
+                {scheduling.overCap === 1 ? "booking runs" : "bookings run"} past{" "}
+                {CAP_MINUTES / 60} hours.{" "}
+              </>
+            )}
+            {scheduling.overlap > 0 && (
+              <>
+                <strong>{scheduling.overlap}</strong>{" "}
+                {scheduling.overlap === 1 ? "day has" : "days have"} blocks over
+                each other, and every overlapping minute bills twice.
+              </>
+            )}
+          </p>
+          <ul className="mt-4 space-y-1.5">
+            {scheduling.rows.map((f, i) => (
+              <li
+                key={`${f.who}-${f.date}-${f.kind}-${i}`}
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border/60 pt-1.5 text-sm first:border-0 first:pt-0"
+              >
+                <span className="min-w-[13rem] font-medium text-foreground">{f.who}</span>
+                <span className="font-mono text-xs text-muted">{f.date}</span>
+                <span className="text-muted">{COMPLIANCE_KINDS[f.kind].describe(f)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-muted">
+            {COMPLIANCE_KINDS["booking-over-cap"].action}{" "}
+            {COMPLIANCE_KINDS["blocks-overlap"].action}
+          </p>
         </details>
       )}
 

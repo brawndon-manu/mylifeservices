@@ -90,6 +90,80 @@ test("an overlapping booking is a billing conflict, not a punch that does not re
   assert.ok(!byKey(plain, "overlap"));
 });
 
+// ------------------------------------------------------- how it was scheduled
+
+// THE UNDERCOUNT, 2026-08-22. The overlap tag counted days that overlapped AND
+// produced a punch issue. A clean overlap raises no punch issue at all, so it
+// was invisible - 31 days tagged against the 77 that actually overlap, and
+// Cain's 08/01 card read zero while ten of her days had bookings over each
+// other. Those minutes bill twice whether or not a punch looks odd.
+test("an overlap is counted even when the punches are fine", () => {
+  const tags = tagsForPerson(
+    sheet([{ date: "08/03/26", paidHours: 8 }], {
+      // no punchIssues at all
+      scheduleCheck: {
+        byDate: {
+          "08/03/26": {
+            shifts: [
+              { text: "9a-12p Smith, J-ILS Service (3:00)", minutes: 180 },
+              { text: "11a-1p -ILS Travel(2:00)", minutes: 120 },
+            ],
+          },
+        },
+      },
+    }),
+  );
+  assert.equal(byKey(tags, "overlap").n, 1);
+});
+
+test("a booking past the cap gets its own tag, counted", () => {
+  const tags = tagsForPerson(
+    sheet([{ date: "08/03/26", paidHours: 8 }], {
+      scheduleCheck: {
+        byDate: {
+          "08/03/26": { shifts: [{ text: "9a-5p Smith, J-ILS Service (8:00)", minutes: 480 }] },
+          "08/04/26": { shifts: [{ text: "9a-3p Wood, A-Self Determination Program(6:00)", minutes: 360 }] },
+        },
+      },
+    }),
+  );
+  assert.equal(byKey(tags, "over-cap").n, 2);
+});
+
+test("a long travel block is not one", () => {
+  const tags = tagsForPerson(
+    sheet([{ date: "08/03/26", paidHours: 8 }], {
+      scheduleCheck: {
+        byDate: { "08/03/26": { shifts: [{ text: "8a-4p -ILS Travel(8:00)", minutes: 480 }] } },
+      },
+    }),
+  );
+  assert.equal(byKey(tags, "over-cap"), undefined);
+});
+
+// THE POINT OF THE SEPARATE TONE. A booking was rostered before this person
+// clocked into it, so dressing it in the same colour as a punch that does not
+// read - or worse, as a premium - puts somebody else's decision on them.
+test("scheduling tags carry their own tone, never a violation or premium one", () => {
+  const tags = tagsForPerson(
+    sheet([{ date: "08/03/26", paidHours: 8 }], {
+      scheduleCheck: {
+        byDate: {
+          "08/03/26": {
+            shifts: [
+              { text: "9a-5p Smith, J-ILS Service (8:00)", minutes: 480 },
+              { text: "11a-1p -ILS Travel(2:00)", minutes: 120 },
+            ],
+          },
+        },
+      },
+    }),
+  );
+  for (const key of ["over-cap", "overlap"]) {
+    assert.equal(byKey(tags, key).tone, "scheduling", `${key} must not borrow another tone`);
+  }
+});
+
 test("schedule flags collapse to one tag per kind, counted", () => {
   // all three are zero on both live batches, so this is the only place the
   // behaviour is pinned at all

@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { restKey, restNameFor } from "@/lib/timesheet/rests";
 import { preferredName } from "@/lib/contacts";
+import { sortKeyFrom, sortPeople } from "@/lib/timesheet/people-sort";
+import SortBar from "../../_components/SortBar";
 import Avatar from "@/components/Avatar";
 import CheckStatusChip from "@/components/CheckStatusChip";
 import ContactViaIcon from "@/components/ContactViaIcon";
@@ -51,6 +53,12 @@ const TONE = {
   conflict: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300",
   anomaly: "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800/70 dark:bg-violet-950/40 dark:text-violet-300",
   missing: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/40 dark:text-amber-300",
+  // HOW THE SCHEDULE WAS BUILT, and deliberately the only cool colour here.
+  // Every tone above is warm because it says something about this person's
+  // record or their pay. A booking rostered past the cap was set before they
+  // clocked in, so it is the office's to fix, and dressing it in the same rose
+  // as a punch that does not read puts it on them.
+  scheduling: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300",
 };
 
 // EVERYBODY ON THE TIMESHEET, ONE CARD EACH.
@@ -68,11 +76,14 @@ const TONE = {
 //
 // It does not re-decide anything. Every tag reads a source that is already the
 // single definition of its own question - see `person-tags.js`.
-export default async function AllPeoplePage({ params }) {
+export default async function AllPeoplePage({ params, searchParams }) {
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) redirect("/portal");
 
   const { id } = await params;
+  // the order lives in the URL so it can be sent to somebody. Unknown keys fall
+  // back to the default rather than erroring - see sortKeyFrom.
+  const sort = sortKeyFrom((await searchParams)?.sort);
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     include: {
@@ -280,6 +291,12 @@ export default async function AllPeoplePage({ params }) {
   // flight. Name and picture only - the client never needs an id.
   const me = { name: preferredName(user) || user.name, email: user.email, image: user.image };
 
+  // ORDERED FOR THE LIST ONLY. Everything counted below - the clean tally, the
+  // status strip - reads `people`, and those are totals: they mean the same
+  // thing whatever order the cards are in, and would be wrong to recompute per
+  // sort. `sortPeople` returns a new array for that reason.
+  const listed = sortPeople(people, sort);
+
   const clean = people.filter((p) => p.clean).length;
   const period = batch.partialPeriod
     ? `${batch.partialFrom} to ${batch.partialThrough}`
@@ -312,6 +329,10 @@ export default async function AllPeoplePage({ params }) {
         clean can be found. Open anybody to see their day by day with the
         calendar under each day.
       </p>
+
+      {/* the totals below are the same whatever order the cards are in, so the
+          control sits between the copy and them rather than above everything */}
+      <SortBar basePath={`/portal/admin/timesheets/${batch.id}/people`} current={sort} />
 
       <div className="mt-6 flex flex-wrap gap-x-10 gap-y-4 rounded-xl border border-border bg-surface p-5">
         {[
@@ -423,7 +444,7 @@ export default async function AllPeoplePage({ params }) {
       </div>
 
       <div className="mt-6 space-y-2">
-        {people.map((p) => {
+        {listed.map((p) => {
           // SETTLED BY THE EXPORT WEARS ITS OWN COLOUR, not the state it came
           // from. Amber next to a name means chase them, and there is nothing
           // left to chase - the fix is already in the file.
@@ -573,7 +594,13 @@ export default async function AllPeoplePage({ params }) {
                         {tag.n != null && (
                           <span className="tabular-nums">{tag.figure ? f2(tag.n) : tag.n} </span>
                         )}
-                        {tag.label}
+                        {/* a tag may carry a plural, and most do not: the older
+                            labels are phrases a count sits in front of without
+                            agreeing ("2 Rest period not taken"), and rewording
+                            those is a copy decision, not this one. A tag that
+                            DOES supply a plural gets it used, so the newer ones
+                            can read properly at one and at nine. */}
+                        {tag.plural && tag.n !== 1 ? tag.plural : tag.label}
                       </span>
                     ))
                   )}

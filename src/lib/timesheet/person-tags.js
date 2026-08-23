@@ -18,6 +18,7 @@
 // component holds the literal strings.
 import { violationsFor, VIOLATION_KINDS } from "./violations.js";
 import { overlapInfo } from "./schedule-overlap.js";
+import { overCapBookings, overlappingDays, CAP_MINUTES } from "./compliance.js";
 
 // what a schedule flag is called in front of a person. `compareToSchedule`
 // produces these three and they are all ZERO on both live batches as of
@@ -61,17 +62,56 @@ export function tagsForPerson(t, { restRowCount = 0 } = {}) {
   // everything else is a punch that does not read. Garcia's punches are exactly
   // what QSP wrote, and filing her under "punches that do not read" is what
   // Mánu objected to.
-  let overlapDays = 0;
   let punchDays = 0;
   for (const p of data.punchIssues || []) {
-    if (overlapInfo(byDate[p.date]?.shifts)) overlapDays++;
-    else punchDays++;
-  }
-  if (overlapDays) {
-    tags.push({ key: "overlap", label: "Bookings billed over each other", n: overlapDays, tone: "conflict" });
+    if (!overlapInfo(byDate[p.date]?.shifts)) punchDays++;
   }
   if (punchDays) {
     tags.push({ key: "punch", label: "Punches that do not read", n: punchDays, tone: "conflict" });
+  }
+
+  // ---- how the schedule was BUILT ------------------------------------------
+  //
+  // Not the person's record and not their pay: a booking is rostered before
+  // anyone clocks into it, so these say something about the office. See the
+  // note at the top of compliance.js. They carry their own tone for that
+  // reason - every other tag here is warm, meaning something about this person
+  // needs looking at, and reading these the same way blames them for a
+  // schedule they were handed.
+  //
+  // COUNTED OFF THE ROSTER, NOT OFF punchIssues, 2026-08-22. The overlap tag
+  // used to count days that overlapped AND produced a punch issue, which is a
+  // subset and a much smaller one: 31 days against the 77 that actually
+  // overlap. Cain's 08/01 card read zero while ten of her days had bookings
+  // over each other - a clean overlap raises no punch problem at all, and its
+  // minutes still bill twice, which is the whole reason it is a finding. The
+  // punch split above keeps asking `overlapInfo`, because deciding whether a
+  // punch issue is explained by an overlap is a different question from
+  // counting overlaps.
+  // These carry a `plural` because a count sits in front of them on the card.
+  // COMPLIANCE_KINDS holds the heading each one gets on the checks panel, where
+  // it stands alone and reads as a title; "9 Two blocks rostered over each
+  // other" is not a sentence, so the card says it its own way.
+  const overlaps = overlappingDays(byDate);
+  if (overlaps.length) {
+    tags.push({
+      key: "overlap",
+      label: "day with bookings over each other",
+      plural: "days with bookings over each other",
+      n: overlaps.length,
+      tone: "scheduling",
+    });
+  }
+
+  const overCap = overCapBookings(byDate);
+  if (overCap.length) {
+    tags.push({
+      key: "over-cap",
+      label: `booking over ${CAP_MINUTES / 60} hours`,
+      plural: `bookings over ${CAP_MINUTES / 60} hours`,
+      n: overCap.length,
+      tone: "scheduling",
+    });
   }
 
   for (const f of data.scheduleCheck?.flagged || []) {
