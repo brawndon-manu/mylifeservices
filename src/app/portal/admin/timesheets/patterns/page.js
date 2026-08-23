@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
+import {
+  complianceFor, complianceCounts, repeatsByPerson, COMPLIANCE_KINDS, CAP_MINUTES,
+} from "@/lib/timesheet/compliance";
 
 export const metadata = { title: "Repeat patterns", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -32,7 +35,7 @@ export default async function PatternsPage({ searchParams }) {
   const sp = await searchParams;
   const program = sp?.program === "DP" ? "DP" : "MLS";
 
-  const batches = await prisma.timesheetBatch.findMany({
+  const allBatches = await prisma.timesheetBatch.findMany({
     where: { program },
     orderBy: { createdAt: "asc" },
     include: {
@@ -45,6 +48,29 @@ export default async function PatternsPage({ searchParams }) {
       },
     },
   });
+
+  // ONE UPLOAD PER PAY PERIOD, 2026-08-22.
+  //
+  // This read every batch row, and a re-uploaded period is a second batch row
+  // holding the same fortnight again. 08/01-08/15 was uploaded fourteen times,
+  // so seventeen rows covered three periods and every total on this page counted
+  // the same days over and over: Garcia read 160 missed breaks against a real 21,
+  // Cain 140 against 32. The miss RATE survived it - both halves inflated
+  // together - which is why a page of wrong numbers still looked plausible.
+  //
+  // The "missed in every period" callout was not inflated but broken: it compares
+  // `periodsWithMisses`, counted per batch, against `periodCount`, counted per
+  // period. Fourteen never equals three, so people who miss breaks every single
+  // period fell out of the one list built to find them - 1 shown where there are
+  // 11.
+  //
+  // Current-per-period is the same rule `supersededBy` applies: newest createdAt
+  // for the same program and fortnight. Ordered ascending above, so the last one
+  // written for a key wins.
+  const currentByPeriod = new Map();
+  for (const b of allBatches) currentByPeriod.set(`${b.periodFrom}-${b.periodTo}`, b);
+  const batches = [...currentByPeriod.values()];
+  const supersededCount = allBatches.length - batches.length;
 
   // group by the matched account where there is one, otherwise by the name QSP
   // printed, so an unmatched row still aggregates with itself across periods.
@@ -99,9 +125,35 @@ export default async function PatternsPage({ searchParams }) {
     // more days than everyone else
     .sort((a, b) => b.rate - a.rate || b.missed - a.missed);
 
+  // now one batch per fortnight, so this counts pay periods rather than uploads
   const periodCount = batches.length;
-  // "every period" only means something once there's more than one to compare
+  // "every period" only means something once there's more than one to compare.
+  // `periodsWithMisses` and `periodCount` are finally counting the same unit.
   const recurring = rows.filter((r) => r.periodCount > 1 && r.periodsWithMisses === r.periodCount);
+
+  // ---- scheduling compliance, which is nobody's pay and somebody's job ------
+  //
+  // Mánu 2026-08-22: "I want to have a way to have MLS violations where it
+  // becomes admins job to see patterns and repeats and stop it." A booking
+  // rostered at eight hours was built that way before anyone clocked in, so it
+  // is not on the person who worked it and never reaches their pay - see the
+  // note at the top of compliance.js. It belongs here, on the page about what
+  // keeps happening.
+  const complianceRows = [];
+  for (const b of batches) {
+    const period = `${b.periodFrom} to ${b.periodTo}`;
+    for (const ts of b.timesheets) {
+      complianceRows.push({
+        who: ts.user ? preferredName(ts.user) : ts.sourceName,
+        period,
+        findings: complianceFor(ts.data),
+      });
+    }
+  }
+  const repeats = repeatsByPerson(complianceRows);
+  const complianceTotals = complianceCounts(complianceRows.flatMap((r) => r.findings));
+  const overCapTotal = complianceTotals["booking-over-cap"] || 0;
+  const overlapTotal = complianceTotals["blocks-overlap"] || 0;
 
   // people who have never once clocked a rest break. that someone clocks their
   // MEALS but never a rest is the giveaway - they use the clock fine, they just
@@ -127,6 +179,15 @@ export default async function PatternsPage({ searchParams }) {
         the company a premium every time, so it&apos;s worth a conversation
         rather than a recalculation.
       </p>
+
+      {supersededCount > 0 && (
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          Counting the current upload of each pay period only. {supersededCount}{" "}
+          earlier {supersededCount === 1 ? "upload was" : "uploads were"} replaced
+          by a newer one of the same fortnight and {supersededCount === 1 ? "is" : "are"}{" "}
+          not counted again here.
+        </p>
+      )}
 
       {periodCount < 2 && (
         <div className="mt-6 rounded-md border border-border bg-surface-2 px-4 py-3 text-sm text-muted">
@@ -188,7 +249,80 @@ export default async function PatternsPage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-8 overflow-x-auto rounded-xl border border-border">
+      {repeats.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">
+            Scheduling to stop
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm text-muted">
+            Not breaks and not pay. These are rules broken by how the schedule
+            was <em>built</em>{" "}
+            {/* the space has to live INSIDE the expression - see the note
+                further up this file. A text node that runs onto the next line
+                loses the space that opened it, so this rendered as "built- a
+                booking" on screen while the source plainly had one. Fourth
+                time this file's shape has caught somebody. */}
+            - a booking rostered past the cap, or two rostered over each other -
+            so nobody is owed anything and nothing here appears on the sheet
+            anyone signs. They were set before the shift was worked, which makes
+            them the office&apos;s to fix.{" "}
+            <strong>{overCapTotal}</strong>{" "}
+            {overCapTotal === 1 ? "booking runs" : "bookings run"} past{" "}
+            {CAP_MINUTES / 60} hours and <strong>{overlapTotal}</strong>{" "}
+            {overlapTotal === 1 ? "day has" : "days have"} blocks over each other,
+            across {repeats.length}{" "}
+            {repeats.length === 1 ? "person" : "people"}.
+          </p>
+
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[780px] text-sm">
+              <thead className="bg-surface-2 text-xs uppercase tracking-wider text-muted">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Employee</th>
+                  <th className="px-3 py-2 text-right font-semibold">Periods</th>
+                  <th className="px-3 py-2 text-right font-semibold">
+                    Over {CAP_MINUTES / 60}h
+                  </th>
+                  <th className="px-3 py-2 text-right font-semibold">Overlaps</th>
+                  <th className="px-3 py-2 text-left font-semibold">Longest booking</th>
+                </tr>
+              </thead>
+              <tbody>
+                {repeats.map((p) => (
+                  <tr key={p.who} className="border-t border-border">
+                    <td className="px-3 py-2 text-foreground">{p.who}</td>
+                    {/* a person with ten in one fortnight is a different
+                        conversation from one with ten spread over five */}
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {p.periods.length}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-foreground">
+                      {p.byKind["booking-over-cap"] || 0}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-foreground">
+                      {p.byKind["blocks-overlap"] || 0}
+                    </td>
+                    <td className="px-3 py-2 text-muted">
+                      {p.worst
+                        ? `${p.worst.date} - ${COMPLIANCE_KINDS["booking-over-cap"].describe(p.worst)}`
+                        : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            {COMPLIANCE_KINDS["booking-over-cap"].action}{" "}
+            {COMPLIANCE_KINDS["blocks-overlap"].action}
+          </p>
+        </div>
+      )}
+
+      <h2 className="mt-10 text-xl font-semibold tracking-tight text-foreground">
+        Breaks, by person
+      </h2>
+      <div className="mt-4 overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[780px] text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wider text-muted">
             <tr>
