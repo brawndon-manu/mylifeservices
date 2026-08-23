@@ -40,6 +40,7 @@ import { blockService, blockClient, overlapInfo, RANGE, toMin } from "./schedule
 // spelling, 33 rostered blocks - is covered without hard-coding the noun.
 export const CAP_MINUTES = 3.5 * 60;
 export const CAPPED_SERVICES = /^(ILS Service|Self Determination)/i;
+const CAP_HOURS_LABEL = CAP_MINUTES / 60;
 
 export const isCappedService = (service) => CAPPED_SERVICES.test(String(service || "").trim());
 
@@ -56,9 +57,49 @@ export const COMPLIANCE_KINDS = {
     action: "Fix the overlap in QuickSolve - every overlapping minute bills twice.",
     describe: (f) => `${f.subject} overlap by ${f.minutes} minutes`,
   },
+  // WORKED PAST THE CAP, which is a different problem from being rostered past
+  // it. Mánu 2026-08-22 wanted both, as separate findings: a booking BUILT at
+  // five hours should not have been authorised, and a three-hour booking WORKED
+  // as four bills an hour nobody authorised. Same cap, two fixes.
+  "worked-over-cap": {
+    label: `Worked longer than ${CAP_HOURS_LABEL} hours`,
+    action: "Check what was billed against what was authorised.",
+    describe: (f) =>
+      `${hrs(f.minutes)} worked on ${article(f.service)} ${f.service} shift`
+      + (f.client ? ` for ${f.client}` : "")
+      + (f.scheduledMin != null ? `, rostered at ${hrs(f.scheduledMin)}` : ""),
+  },
+  // ---- attendance, from the QSClock export -------------------------------
+  "no-clock-in": {
+    label: "Shift never clocked into",
+    action: "The times on it were typed, not clocked - ask why.",
+    describe: (f) => `no clock-in on ${article(f.service)} ${f.service || "scheduled"} shift${f.client ? ` for ${f.client}` : ""}`,
+  },
+  "no-clock-out": {
+    label: "Shift never clocked out of",
+    action: "The end time was typed, not clocked - ask why.",
+    describe: (f) => `no clock-out on ${article(f.service)} ${f.service || "scheduled"} shift${f.client ? ` for ${f.client}` : ""}`,
+  },
+  // THE HONEST POPULATION ONLY. A shift nobody clocked into has no location to
+  // capture and is already counted as a missed clock-in; counting its blank GPS
+  // as well would charge one lapse twice. 25 of these on 08/16-08/22, against
+  // 127 blanks.
+  "no-gps": {
+    label: "Clocked with no location captured",
+    action: "They clocked, but QSClock recorded no GPS - check the device.",
+    describe: (f) =>
+      `clocked ${f.which} with no GPS on ${article(f.service)} ${f.service || "scheduled"} shift`
+      + (f.client ? ` for ${f.client}` : ""),
+  },
 };
 
 const hrs = (min) => `${(Math.round((min / 60) * 100) / 100).toFixed(2)} hours`;
+
+// "an ILS Service shift", "a Self Determination Program shift". QSP's service
+// names start with either "ILS" - said "eye-el-es", so it takes `an` despite
+// the consonant - or "Self", which does not. Written off the letter because
+// that is what actually decides it for both.
+const article = (word) => (/^[aeiou]/i.test(String(word || "")) ? "an" : "a");
 
 // how long a rostered block runs. `minutes` is stored on the block by
 // compareToSchedule; the times in its own text are the fallback for a block
@@ -113,10 +154,54 @@ export function overlappingDays(scheduleByDate) {
   return out.sort((a, b) => b.minutes - a.minutes);
 }
 
-// everything this file knows about one person's period, from their stored sheet
+// WHAT THE CLOCK EXPORT SAYS ABOUT ONE PERSON'S SHIFTS.
+//
+// Monitoring only, and that word is load-bearing: none of these changes an
+// hour, a premium or a word on a signed sheet. `parseClockReport` in clock.js
+// still owns the one thing clock data IS allowed to move - whether a premium
+// counts as evidenced - and nothing here goes near it.
+//
+// Takes the normalised rows from `clockShifts`, already filtered to one person.
+export function attendanceFindings(shifts) {
+  const out = [];
+  for (const s of shifts || []) {
+    const base = { date: s.date, service: s.service, client: s.client, minutes: 0 };
+    if (s.noIn) out.push({ ...base, kind: "no-clock-in" });
+    if (s.noOut) out.push({ ...base, kind: "no-clock-out" });
+    // one finding per end, because clocking in without GPS and clocking out
+    // without it are two separate device failures on the same shift
+    if (s.gpsIn === "no") out.push({ ...base, kind: "no-gps", which: "in" });
+    if (s.gpsOut === "no") out.push({ ...base, kind: "no-gps", which: "out" });
+    if (
+      isCappedService(s.service)
+      && s.workedMin != null
+      && s.workedMin > CAP_MINUTES
+    ) {
+      out.push({
+        ...base,
+        kind: "worked-over-cap",
+        minutes: s.workedMin,
+        over: s.workedMin - CAP_MINUTES,
+        scheduledMin: s.scheduledMin ?? null,
+      });
+    }
+  }
+  return out.sort((a, b) => b.minutes - a.minutes);
+}
+
+// everything this file knows about one person's period, from their stored sheet.
+//
+// Two sources, both already on the sheet: the roster it was built from, and the
+// clock export where one was uploaded. `data.attendance` is absent on every
+// batch that predates the clock upload being re-enabled, and absent is not zero
+// - those periods simply have nothing to say about clocking.
 export function complianceFor(data) {
   const byDate = data?.scheduleCheck?.byDate || {};
-  return [...overCapBookings(byDate), ...overlappingDays(byDate)];
+  return [
+    ...overCapBookings(byDate),
+    ...overlappingDays(byDate),
+    ...(data?.attendance?.findings || []),
+  ];
 }
 
 // counts per kind, for a tag or a table cell

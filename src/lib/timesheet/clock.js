@@ -88,6 +88,91 @@ export function parseClockReport(bytes) {
   return out;
 }
 
+// THE SAME DOCUMENT, READ IN FULL.
+//
+// `parseClockReport` above collapses this export to the one question premium
+// grading asks: was every shift on this day clocked. It reads 4 of the 25
+// columns and it must keep doing exactly that, because `gradePremium` decides
+// whether a premium can be signed off and nothing here may move that.
+//
+// This reads the rest of them, for monitoring - who did not clock, who clocked
+// with no location captured, and how long a shift actually ran. Mánu 2026-08-22:
+// "we can get data about if they clock into their service shift, clck out, if
+// they were geofenced." A second reader over one file rather than a second file.
+//
+// GPS IS THREE-VALUED AND THAT IS THE WHOLE TRAP. Measured on 08/16-08/22:
+// "Yes" 360, blank 127, "No" 25 - and the blanks are not missing location, they
+// are the shifts nobody clocked into, so there was never a location to capture.
+// 123 of the 127 line up exactly with "No Clock In". Reading blank as missing
+// would report 152 where there are 25, a six-fold overstatement, and would
+// charge somebody twice for one missed clock-in. `null` means nothing to say.
+const GPS = (v, clocked) => {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (s === "yes") return "yes";
+  if (s === "no") return "no";
+  // blank on a shift they DID clock is still unknown rather than missing: four
+  // rows on 08/16-08/22 say clocked-in with no time and no GPS, and guessing
+  // about those is how a data oddity becomes an accusation.
+  return clocked ? null : null;
+};
+
+// "02:45 PM" -> minutes past midnight
+export function clockMinute(v) {
+  const m = /^(\d{1,2}):(\d{2})\s*([AP])\.?M\.?$/i.exec(String(v ?? "").trim());
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  if (m[3].toUpperCase() === "P") h += 12;
+  return h * 60 + Number(m[2]);
+}
+
+// minutes between two clock times, allowing a shift to cross midnight
+export function spanMinutes(from, to) {
+  const a = clockMinute(from);
+  const b = clockMinute(to);
+  if (a == null || b == null) return null;
+  return b < a ? b - a + 1440 : b - a;
+}
+
+const REQUIRED_SHIFTS = ["Employee Name", "Schedule Start Date", "No Clock In", "No Clock Out"];
+
+// One normalised row per scheduled shift. Everything downstream reads these
+// rather than the spreadsheet's own column names.
+export function clockShifts(bytes) {
+  const { headers, rows } = readXlsTable(bytes);
+  const missing = REQUIRED_SHIFTS.filter((h) => !headers.includes(h));
+  if (missing.length) {
+    throw new Error(`that doesn't look like the QSClock Time and Attendance report (no ${missing.join(", ")})`);
+  }
+
+  const out = [];
+  for (const r of rows) {
+    const name = r["Employee Name"];
+    const date = normalizeDate(r["Schedule Start Date"]);
+    if (!name || !date) continue;
+    const noIn = YES(r["No Clock In"]);
+    const noOut = YES(r["No Clock Out"]);
+    out.push({
+      name: String(name).trim(),
+      key: clockKey(name),
+      date,
+      client: String(r.Client ?? "").trim() || null,
+      service: String(r["Service Type"] ?? "").trim() || null,
+      scheduledMin: spanMinutes(r["Schedule Start Time"], r["Schedule End Time"]),
+      workedMin: noIn || noOut ? null : spanMinutes(r["Actual Start Time"], r["Actual End Time"]),
+      noIn,
+      noOut,
+      gpsIn: GPS(r["GPS Captured on Clock In"], !noIn),
+      gpsOut: GPS(r["GPS Captured on Clock Out"], !noOut),
+      // a shift the field staff added themselves rather than one rostered for
+      // them. Zero of these on 08/16-08/22, carried because a column that is
+      // empty this week is not a column that stays empty.
+      selfCreated: YES(r["Field Staff Created Shift"]),
+      reason: String(r.Reason ?? "").replace(/\s*\n\s*/g, " ").trim() || null,
+    });
+  }
+  return out;
+}
+
 // How well is each premium hour evidenced?
 //
 //   recorded   - QSP's own records say so. A rest premium where the Rest

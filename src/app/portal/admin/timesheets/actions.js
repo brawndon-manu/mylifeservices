@@ -39,7 +39,8 @@ import { unstorable, unstorableRows } from "@/lib/timesheet/storable";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
-import { parseClockReport, clockKey, gradePremiums } from "@/lib/timesheet/clock";
+import { parseClockReport, clockShifts, clockKey, gradePremiums } from "@/lib/timesheet/clock";
+import { attendanceFindings } from "@/lib/timesheet/compliance";
 import { parseRestReport, restKey, restNameFor, restRowTimes, allRestRows, clockMin, serviceFit, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { parsePayrollReport, payrollTotals, payrollKey } from "@/lib/timesheet/payroll";
@@ -130,10 +131,19 @@ export async function uploadBatch(formData) {
   const hasRests = restFile && typeof restFile === "object" && "size" in restFile && restFile.size > 0;
   if (!hasRests) redirect(`${NEW}error=norests`);
 
-  // QSClock stays out for now - the decision was "hold, we may add it later".
-  // null means no punch is graded clocked-vs-typed, which every reader below
-  // already handles.
-  const clockFile = null;
+  // QSClock came back on 2026-08-22, optional. It was held out on 08-06 when the
+  // export set was cut to three, and the columns below are why it returned:
+  // "we can get data about if they clock into their service shift, clck out, if
+  // they were geofenced."
+  //
+  // OPTIONAL, so every batch uploaded without one still works exactly as it has
+  // since August: null means no punch is graded clocked-vs-typed and no
+  // attendance finding exists, which every reader below already handles.
+  const clockPick = formData.get("clock");
+  const clockFile =
+    clockPick && typeof clockPick === "object" && "size" in clockPick && clockPick.size > 0
+      ? clockPick
+      : null;
 
   // the browser made this id up before submitting, so it can poll for progress
   // while this action runs. namespaced under the user inside progressKey - it is
@@ -364,6 +374,42 @@ export async function uploadBatch(formData) {
   // charging for it.
   let clocks = null;
   let clockUrl = null;
+  // normalised shifts from the same file, for monitoring. Empty when no clock
+  // export was uploaded, which is not the same as everybody clocking - see
+  // `attendanceFindings`, which is only ever asked about shifts that exist.
+  let clockRows = [];
+  if (clockFile) {
+    P.stage = "clock";
+    await setProgress(prog, P);
+    const cbytes = new Uint8Array(await clockFile.arrayBuffer());
+    try {
+      const key = `timesheets/clock/${randomBytes(10).toString("hex")}.xls`;
+      const blob = await putBlob(key, Buffer.from(cbytes), {
+        access: "public",
+        contentType: "application/vnd.ms-excel",
+      });
+      clockUrl = blob.url;
+    } catch (e) {
+      console.error("clock report upload failed:", e);
+    }
+    try {
+      clocks = parseClockReport(Buffer.from(cbytes));
+      clockRows = clockShifts(Buffer.from(cbytes));
+      console.log(
+        `clock parsed: ${clocks.size} employees, ${clockRows.length} shifts, ` +
+          `${clockRows.filter((r) => r.noIn).length} never clocked into, ` +
+          `${clockRows.filter((r) => r.gpsIn === "no" || r.gpsOut === "no").length} clocked with no GPS`,
+      );
+    } catch (e) {
+      // OPTIONAL MEANS OPTIONAL. A clock export that will not read must not cost
+      // the batch: the hours, the premiums and every figure people are paid on
+      // come from the other documents, and refusing here would hold up a payroll
+      // over a monitoring extra.
+      console.error("clock parse failed:", e);
+      clocks = null;
+      clockRows = [];
+    }
+  }
 
   // the rest report. refused rather than skipped: a batch missing it silently
   // loses every rest premium, and nothing on screen would say why.
@@ -867,6 +913,31 @@ export async function uploadBatch(formData) {
               }
             : { matched: false },
         },
+        // WHAT THE CLOCK EXPORT SAYS, for monitoring only.
+        //
+        // Absent - not an empty object - on a batch uploaded without one, so a
+        // screen can tell "nobody missed a clock-in" from "we never asked".
+        // Matched under whatever spelling the clock report used for them, via
+        // the same `clockHit` the premium grading above resolved, so one
+        // person is never two people across the two readings of one file.
+        //
+        // Stored per sheet rather than on the batch because these are per
+        // person and the surfaces that read them are per person. Nothing here
+        // is an input to any figure: `attendanceFindings` is monitoring, and
+        // the one thing clock data moves - how well a premium is evidenced -
+        // stays where it was, in `premiumSupport` above.
+        attendance: clockRows.length
+          ? (() => {
+              const mine = clockRows.filter(
+                (r) => r.key === clockKey(clk?.name || clockHit.via || t.employee),
+              );
+              return {
+                matched: mine.length > 0,
+                shifts: mine.length,
+                findings: attendanceFindings(mine),
+              };
+            })()
+          : undefined,
         // data-quality findings. stored, surfaced, never auto-applied.
         punchIssues,
         // the one exception: reversed breaks where the repaired figure

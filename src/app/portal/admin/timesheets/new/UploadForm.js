@@ -35,18 +35,22 @@ function mintUploadId() {
   );
 }
 
-function FileRow({ id, label, selected, size, onPick, tone, accept = "application/pdf,.pdf" }) {
+// `optional` exists because the QSClock export came back optional on
+// 2026-08-22 and this row hardcoded both the asterisk and `required` - so an
+// "optional" field silently refused to let the form submit at all. Every other
+// caller is genuinely required and passes nothing.
+function FileRow({ id, label, selected, size, onPick, tone, optional = false, accept = "application/pdf,.pdf" }) {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-muted">
-        {label} <span className="text-rose-600">*</span>
+        {label} {optional ? null : <span className="text-rose-600">*</span>}
       </label>
       <input
         id={id}
         name={id}
         type="file"
         accept={accept}
-        required
+        required={!optional}
         onChange={onPick}
         className={`mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-semibold ${
           tone === "primary"
@@ -76,6 +80,7 @@ export default function UploadForm({ action, aside, into = null }) {
   const [schedName, setSchedName] = useState("");
   const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
+  const [clockName, setClockName] = useState("");
   // the partial-period box, held in state only so the date range can be revealed
   // under it - the value the action reads is the checkbox's own
   const [partial, setPartial] = useState(false);
@@ -104,6 +109,7 @@ export default function UploadForm({ action, aside, into = null }) {
     { role: "Schedule", kind: "pdf", name: schedName },
     { role: "Payroll", kind: "xls", name: payrollName },
     { role: "Rest breaks", kind: "xls", name: restsName },
+    { role: "Clocking", kind: "xls", name: clockName },
   ];
 
   // elapsed time, started when the upload does and frozen once it lands
@@ -218,6 +224,25 @@ export default function UploadForm({ action, aside, into = null }) {
         onPick={(e) => {
           setRestsName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, rests: e.target.files?.[0]?.size || 0 }));
+        }}
+      />
+
+      {/* BACK AFTER 2026-08-06, and optional, 2026-08-22. It was dropped when
+          the export set was cut to three; it returns for monitoring only -
+          who did not clock, who clocked with no location captured, how long a
+          shift actually ran. It still grades how well a premium is evidenced,
+          which is the one thing clock data has always been allowed to move,
+          and it still changes no hour and no figure. */}
+      <FileRow
+        id="clock"
+        optional
+        label="QSClock Time and Attendance (.xls) - optional"
+        accept=".xls,application/vnd.ms-excel"
+        selected={clockName}
+        size={sizes.clock || 0}
+        onPick={(e) => {
+          setClockName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, clock: e.target.files?.[0]?.size || 0 }));
         }}
       />
         </div>
