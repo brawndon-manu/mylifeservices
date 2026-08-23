@@ -104,12 +104,35 @@ test("no refusal from either misc action falls through to try again", () => {
   for (const name of ["classifyMiscTime", "clearMiscClassification"]) {
     const i = ACT.indexOf(`export async function ${name}`);
     const end = ACT.indexOf("export async function", i + 10);
-    for (const m of ACT.slice(i, end).matchAll(/error: "([a-z]+)"/g)) codes.add(m[1]);
+    const body = ACT.slice(i, end);
+    for (const m of body.matchAll(/error: "([a-z]+)"/g)) codes.add(m[1]);
+    // A REFUSAL RETURNED THROUGH A HELPER IS STILL A REFUSAL, 2026-08-22.
+    // This swept for `error: "..."` written in the body and nothing else, so
+    // `return refusal(newer)` - whose code lives in superseded.js - was invisible
+    // to it. A reviewer on a replaced upload got "that did not save, try again",
+    // the one instruction that cannot work, and this test passed the whole time.
+    if (/return refusal\(/.test(body)) codes.add(SUPERSEDED_CODE);
   }
-  assert.ok(codes.size >= 4, `expected the full set, found ${[...codes].join(", ")}`);
+  assert.ok(codes.has("superseded"), "the superseded refusal must be in the set");
+  assert.ok(codes.size >= 5, `expected the full set, found ${[...codes].join(", ")}`);
   const map = MISCCARD.slice(MISCCARD.indexOf("function errorText"));
   const missing = [...codes].filter((c) => !map.includes(`"${c}"`));
   assert.deepEqual(missing, [], `refusals with no words: ${missing.join(", ")}`);
+});
+
+// read from the source of truth rather than typed here, so renaming the code
+// breaks this test instead of silently passing it
+const SUPERSEDED_CODE = /error: "([a-z]+)"/.exec(
+  fs.readFileSync("src/lib/timesheet/superseded.js", "utf8").slice(
+    fs.readFileSync("src/lib/timesheet/superseded.js", "utf8").indexOf("export function refusal"),
+  ),
+)[1];
+
+// and the replaced-upload refusal points somewhere, because "try again" was
+// wrong precisely for having no next step
+test("the superseded refusal offers the current upload", () => {
+  assert.match(MISCCARD, /currentBatchId/);
+  assert.match(MISCCARD, /Open the current upload/);
 });
 
 test("clearing something already clear is not a failure", () => {

@@ -52,14 +52,14 @@ export default function MiscClassify({
     start(async () => {
       setError(null);
       const res = await classifyMiscTime(timesheetId, date, k);
-      if (!res?.ok) setError(res?.error || "failed");
+      if (!res?.ok) setError(res || { error: "failed" });
     });
 
   const undo = () =>
     start(async () => {
       setError(null);
       const res = await clearMiscClassification(timesheetId, date);
-      if (!res?.ok) setError(res?.error || "failed");
+      if (!res?.ok) setError(res || { error: "failed" });
     });
 
   if (kind) {
@@ -117,7 +117,25 @@ export default function MiscClassify({
         >
           {pending ? "Working..." : "Change this"}
         </button>
-        {error && <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{errorText(error)}</p>}
+        {error && (
+        <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+          {errorText(error.error)}
+          {/* A REPLACED UPLOAD HAS SOMEWHERE TO GO, so the refusal says where.
+              Retrying is the one thing that cannot work here. */}
+          {error.currentBatchId && (
+            <>
+              {" "}
+              <a
+                href={`/portal/admin/timesheets/${error.currentBatchId}`}
+                className="font-semibold underline hover:no-underline"
+              >
+                Open the current upload
+              </a>
+              .
+            </>
+          )}
+        </p>
+      )}
       </div>
     );
   }
@@ -167,11 +185,19 @@ export default function MiscClassify({
             only answer on any surface that can put a premium ON, and a reviewer
             deciding it should be able to see that first. */}
         <span className="text-[11px] text-faint">
+          {/* WHAT THE EXPENSIVE ANSWER COSTS, in the terms the day is judged in.
+              This read "puts the time back and would add nothing to this day",
+              which Mánu found confusing on 2026-08-22 - and fairly: "adds
+              nothing" sounds like the button does nothing, when what it does is
+              count the time toward the day's break entitlement. It is the
+              PREMIUM that would be nothing. Both halves are said now, and the
+              figure names the hours rather than leaving "the time" to be
+              guessed at. */}
           {pending
             ? "Working..."
             : wouldAdd === 0
-              ? "Hours worked puts the time back and would add nothing to this day."
-              : `Hours worked puts the time back and would add ${wouldAdd} premium ${wouldAdd === 1 ? "hour" : "hours"} to this day.`}
+              ? `Hours worked counts these ${hours} hrs toward what the day owes in breaks. Here that adds no premium.`
+              : `Hours worked counts these ${hours} hrs toward what the day owes in breaks, which adds ${wouldAdd} premium ${wouldAdd === 1 ? "hour" : "hours"} here.`}
         </span>
       </div>
       {error && <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{errorText(error)}</p>}
@@ -183,6 +209,15 @@ export default function MiscClassify({
 // is the wrong instruction for both of them: one is a judgement about what was
 // sent and the other is about a sheet that has moved underneath the screen.
 function errorText(e) {
+  // THE ONE THAT SLIPPED THROUGH, 2026-08-22. `superseded` is not written in
+  // either action's body - it comes back from `refusal()` in superseded.js - so
+  // the test that swept the actions for `error: "..."` literals never saw it,
+  // and a reviewer on a replaced upload was told to try again. Retrying is the
+  // one instruction that can never work: the refusal is permanent for that
+  // batch and the change belongs on the current one.
+  if (e === "superseded") {
+    return "This upload has been replaced, so its figures cannot move. Notes, marks and answers carry over to the current one on their own.";
+  }
   if (e === "signed") return "This sheet is signed, so its figures cannot move.";
   if (e === "nomisc") return "This day has no Misc time stored. Recompute the batch first.";
   if (e === "noday") return "That day is not on this sheet.";
