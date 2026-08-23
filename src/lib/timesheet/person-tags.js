@@ -18,7 +18,7 @@
 // component holds the literal strings.
 import { violationsFor, VIOLATION_KINDS } from "./violations.js";
 import { overlapInfo } from "./schedule-overlap.js";
-import { overCapBookings, overlappingDays, CAP_MINUTES } from "./compliance.js";
+import { overCapBookings, overlappingDays, complianceCounts, CAP_MINUTES } from "./compliance.js";
 
 // what a schedule flag is called in front of a person. `compareToSchedule`
 // produces these three and they are all ZERO on both live batches as of
@@ -32,7 +32,11 @@ const FLAG_LABELS = {
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
-export function tagsForPerson(t, { restRowCount = 0 } = {}) {
+// `attendance` is the BATCH's clock reading for this person, handed in rather
+// than read off the sheet: the clock export writes nothing to a Timesheet row.
+// Null when the period came with no clock export, and that is not zero - see
+// complianceFor.
+export function tagsForPerson(t, { restRowCount = 0, attendance = null } = {}) {
   const data = t?.data || {};
   const v = violationsFor(data);
   const byDate = data.scheduleCheck?.byDate || {};
@@ -101,6 +105,21 @@ export function tagsForPerson(t, { restRowCount = 0 } = {}) {
       n: overlaps.length,
       tone: "scheduling",
     });
+  }
+
+  // what the clock export saw, if the period came with one. Same tone as the
+  // two above: none of it is this person's doing in the way a missed break is,
+  // and none of it touches their pay.
+  const clockCounts = complianceCounts(attendance?.findings || []);
+  const CLOCK_TAGS = [
+    ["no-clock-in", "shift never clocked into", "shifts never clocked into"],
+    ["no-clock-out", "shift never clocked out of", "shifts never clocked out of"],
+    ["no-gps", "clock with no location captured", "clocks with no location captured"],
+    ["worked-over-cap", `shift worked past ${CAP_MINUTES / 60} hours`, `shifts worked past ${CAP_MINUTES / 60} hours`],
+  ];
+  for (const [kind, one, many] of CLOCK_TAGS) {
+    if (!clockCounts[kind]) continue;
+    tags.push({ key: kind, label: one, plural: many, n: clockCounts[kind], tone: "scheduling" });
   }
 
   const overCap = overCapBookings(byDate);

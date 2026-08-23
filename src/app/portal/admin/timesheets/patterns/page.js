@@ -6,7 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import {
-  complianceFor, complianceCounts, repeatsByPerson, COMPLIANCE_KINDS, CAP_MINUTES,
+  complianceFor, complianceCounts, repeatsByPerson, attendanceOf, COMPLIANCE_KINDS, CAP_MINUTES,
 } from "@/lib/timesheet/compliance";
 
 export const metadata = { title: "Repeat patterns", robots: { index: false, follow: false } };
@@ -146,7 +146,7 @@ export default async function PatternsPage({ searchParams }) {
       complianceRows.push({
         who: ts.user ? preferredName(ts.user) : ts.sourceName,
         period,
-        findings: complianceFor(ts.data),
+        findings: complianceFor(ts.data, attendanceOf(b, ts.sourceName)),
       });
     }
   }

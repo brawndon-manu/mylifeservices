@@ -189,19 +189,31 @@ export function attendanceFindings(shifts) {
   return out.sort((a, b) => b.minutes - a.minutes);
 }
 
-// everything this file knows about one person's period, from their stored sheet.
+// everything this file knows about one person's period.
 //
-// Two sources, both already on the sheet: the roster it was built from, and the
-// clock export where one was uploaded. `data.attendance` is absent on every
-// batch that predates the clock upload being re-enabled, and absent is not zero
-// - those periods simply have nothing to say about clocking.
-export function complianceFor(data) {
+// TWO SOURCES AND TWO PLACES, deliberately. The roster comes off their own
+// sheet, because the sheet was generated from it. The clock export does not:
+// Mánu 2026-08-22, "the qsp attendance report shouldnt touch anything at all.
+// it is purely for observing", so it writes nothing to a Timesheet row and its
+// findings are handed in from the batch instead.
+//
+// `attendance` absent is not zero. A period uploaded without a clock export has
+// nothing to say about clocking, which is a different fact from everybody
+// having clocked in - and a screen that reads "0 missed" off a batch nobody
+// asked would be stating the opposite of what is known.
+export function complianceFor(data, attendance = null) {
   const byDate = data?.scheduleCheck?.byDate || {};
   return [
     ...overCapBookings(byDate),
     ...overlappingDays(byDate),
-    ...(data?.attendance?.findings || []),
+    ...(attendance?.findings || []),
   ];
+}
+
+// the batch's clock reading for one person, under the timesheet's own spelling.
+// Null when no clock export came with the period.
+export function attendanceOf(batch, sourceName) {
+  return batch?.clockFindings?.byPerson?.[sourceName] || null;
 }
 
 // counts per kind, for a tag or a table cell

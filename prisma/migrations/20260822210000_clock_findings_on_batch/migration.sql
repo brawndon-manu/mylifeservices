@@ -1,0 +1,21 @@
+-- THE ATTENDANCE EXPORT OBSERVES, AND TOUCHES NOTHING.
+--
+-- Mánu 2026-08-22: "the qsp attendance report shouldnt touch anything at all.
+-- it is purely for observing."
+--
+-- The QSClock Time and Attendance export came back that day after being held
+-- out since 08-06. It changes no hour, no premium and no day - measured, by
+-- uploading one period with it and without it across 62 sheets - and it is not
+-- allowed to grade a premium either, which is the one thing clock data used to
+-- move. What was left was quieter and still real: it wrote its findings, its own
+-- match, and the spelling it matched somebody under onto every Timesheet row.
+--
+-- Now it writes none of them. Everything the export produces lands here, on the
+-- batch, the same way `restsByDate` holds a whole rest report for the same
+-- reason: one document covering everybody. A Timesheet row carries nothing from
+-- this file at all.
+--
+-- NULLABLE AND ADDITIVE. Null means no clock export was uploaded with the
+-- period, which is not the same as everybody having clocked in. Every existing
+-- batch keeps it null and no code that predates the column can be surprised.
+ALTER TABLE "TimesheetBatch" ADD COLUMN "clockFindings" JSONB;

@@ -696,6 +696,23 @@ model TimesheetBatch {
   // Stored on the BATCH because the report is one document covering everyone.
   // Nullable: batches uploaded before this column exists have nothing here.
   restsByDate    Json?
+  // WHAT THE QSCLOCK EXPORT OBSERVED, and it is observation only.
+  //
+  // Mánu 2026-08-22: "the qsp attendance report shouldnt touch anything at all.
+  // it is purely for observing." So nothing this export produces is written to a
+  // Timesheet row - not the findings, not its own match, not the spelling it
+  // matched somebody under. It all lives here, on the batch, exactly as
+  // `restsByDate` above holds a whole report for the same reason: one document
+  // covering everybody.
+  //
+  // Keyed by the timesheet's own spelling of each name, so a screen holding a
+  // sheet can find its row without the clock export having stamped anything on
+  // that sheet.
+  //
+  // Nullable, and absent is not zero: a batch uploaded with no clock export has
+  // nothing to say about clocking, which is a different fact from everybody
+  // having clocked.
+  clockFindings  Json?
   // the Simple Payroll Processing Report (.xls). one row per employee carrying
   // QSP's OWN regular, overtime and double-time figures - the numbers payroll
   // actually runs on. This is what settles an overtime disagreement without

@@ -608,6 +608,11 @@ export async function uploadBatch(formData) {
   // people we could not place in one of the other reports, with the best guess
   // and how sure it is. shown, never acted on.
   const aliasQuestions = [];
+  // WHAT THE CLOCK EXPORT SAW, gathered per person and written to the BATCH.
+  // Never to a sheet - see the note on `clockFindings` in the schema. Keyed by
+  // the timesheet's own spelling, so a screen holding a sheet can find its row
+  // without this export having stamped anything on that sheet.
+  const clockByPerson = {};
 
   // what the finished screen says. gathered as we go rather than re-queried
   // afterwards, so the summary is of exactly the sheets that were just written.
@@ -787,6 +792,22 @@ export async function uploadBatch(formData) {
       }
     }
 
+    // The export's entire contribution to this upload, collected rather than
+    // attached. Matched through the same `clockHit` the alias work above
+    // resolved, so one person is never two people across two readings of one
+    // file. `matched: false` is the honest record for somebody the export has
+    // no rows for - which is not the same as somebody who clocked everything.
+    if (clockRows.length) {
+      const mine = clockRows.filter(
+        (r) => r.key === clockKey(clk?.name || clockHit.via || t.employee),
+      );
+      clockByPerson[t.employee] = {
+        matched: mine.length > 0,
+        shifts: mine.length,
+        findings: attendanceFindings(mine),
+      };
+    }
+
     // nothing found under any spelling: the best guess, for the screen only
     if (clocks && !clk) {
       const guess = suggestAlias(t.employee, clockNames, staff);
@@ -910,9 +931,8 @@ export async function uploadBatch(formData) {
           // the spelling the other reports used, when it differed. shown
           // rather than silently substituted.
           readAs: {
-            clock: clockHit.via
-              ? { name: clockHit.via, confidence: clockHit.confidence, exact: clockHit.exact }
-              : null,
+            // the clock export names nobody on a sheet - see `clock` below
+            clock: null,
             rests: restHit.via
               ? { name: restHit.via, confidence: restHit.confidence, exact: restHit.exact }
               : null,
@@ -920,41 +940,13 @@ export async function uploadBatch(formData) {
               ? { name: schedHit.via, confidence: schedHit.confidence, exact: schedHit.exact }
               : null,
           },
-          clock: clk
-            ? {
-                matched: true,
-                shifts: clk.shifts,
-                missingIn: clk.missingIn,
-                missingOut: clk.missingOut,
-                byDate: clk.byDate,
-              }
-            : { matched: false },
+          // NOT WRITTEN FROM THE CLOCK EXPORT ANY MORE, 2026-08-22. It used to
+          // carry that person's clock picture onto their sheet; the export is
+          // observation only now and puts everything on the batch instead, in
+          // `clockFindings`. Kept as the shape readers expect, saying the one
+          // honest thing left: this sheet holds no clock data.
+          clock: { matched: false },
         },
-        // WHAT THE CLOCK EXPORT SAYS, for monitoring only.
-        //
-        // Absent - not an empty object - on a batch uploaded without one, so a
-        // screen can tell "nobody missed a clock-in" from "we never asked".
-        // Matched under whatever spelling the clock report used for them, via
-        // the same `clockHit` the premium grading above resolved, so one
-        // person is never two people across the two readings of one file.
-        //
-        // Stored per sheet rather than on the batch because these are per
-        // person and the surfaces that read them are per person. Nothing here
-        // is an input to any figure: `attendanceFindings` is monitoring, and
-        // the one thing clock data moves - how well a premium is evidenced -
-        // stays where it was, in `premiumSupport` above.
-        attendance: clockRows.length
-          ? (() => {
-              const mine = clockRows.filter(
-                (r) => r.key === clockKey(clk?.name || clockHit.via || t.employee),
-              );
-              return {
-                matched: mine.length > 0,
-                shifts: mine.length,
-                findings: attendanceFindings(mine),
-              };
-            })()
-          : undefined,
         // data-quality findings. stored, surfaced, never auto-applied.
         punchIssues,
         // the one exception: reversed breaks where the repaired figure
@@ -1037,6 +1029,16 @@ export async function uploadBatch(formData) {
   // text comes off the page, but the schedule PDF and the two .xls reports feed
   // the same record and have no such pass, so this is the net under all four.
   const refused = [...unstorableRows(sheetRows)];
+  // observation only, and on the batch rather than on anybody's sheet
+  batchData.clockFindings = clockRows.length
+    ? {
+        name: clockFile?.name || null,
+        shifts: clockRows.length,
+        people: Object.keys(clockByPerson).length,
+        byPerson: clockByPerson,
+      }
+    : null;
+
   const badBatch = unstorable(batchData.restsByDate);
   if (badBatch) refused.push({ name: "the rest periods report", ...badBatch });
   if (refused.length) {

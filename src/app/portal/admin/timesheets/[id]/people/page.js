@@ -12,6 +12,7 @@ import CheckStatusChip from "@/components/CheckStatusChip";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { violationsFor } from "@/lib/timesheet/violations";
 import { tagsForPerson, isClean } from "@/lib/timesheet/person-tags";
+import { attendanceOf } from "@/lib/timesheet/compliance";
 import { STANDING_STATUSES, MARK_STATUS_VALUES, checkStatus, normalizeCheckStatus } from "@/lib/timesheet/check-status";
 import { markKey, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
 import BackLink from "@/components/BackLink";
@@ -233,7 +234,11 @@ export default async function AllPeoplePage({ params, searchParams }) {
 
   const people = batch.timesheets.map((t) => {
     const v = violationsFor(t.data);
-    const tags = tagsForPerson(t, { restRowCount: restRows.get(t.id) || 0 });
+    const tags = tagsForPerson(t, {
+      restRowCount: restRows.get(t.id) || 0,
+      // the batch's clock reading for them - the export writes nothing to a sheet
+      attendance: attendanceOf(batch, t.sourceName),
+    });
     // the portal's own name for them, shown under the export's spelling only
     // when the two actually differ - "Uribe, Brandon" over "Brandon Uribe" is
     // noise, and this list already has enough on each row.

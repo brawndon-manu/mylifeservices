@@ -6,7 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import { violationsFor, VIOLATION_KINDS } from "@/lib/timesheet/violations";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
-import { complianceFor, complianceCounts, COMPLIANCE_KINDS, CAP_MINUTES } from "@/lib/timesheet/compliance";
+import { complianceFor, complianceCounts, attendanceOf, COMPLIANCE_KINDS, CAP_MINUTES } from "@/lib/timesheet/compliance";
 import { preferredName } from "@/lib/contacts";
 import { markKeyOf, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
 import BackLink from "@/components/BackLink";
@@ -190,7 +190,7 @@ export default async function ChecksPage({ params }) {
     const rows = [];
     for (const ts of batch.timesheets) {
       const who = ts.user ? preferredName(ts.user) : ts.sourceName;
-      for (const f of complianceFor(ts.data)) rows.push({ ...f, who });
+      for (const f of complianceFor(ts.data, attendanceOf(batch, ts.sourceName))) rows.push({ ...f, who });
     }
     rows.sort((a, b) => b.minutes - a.minutes || String(a.who).localeCompare(String(b.who)));
     const counts = complianceCounts(rows);
