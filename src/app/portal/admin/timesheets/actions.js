@@ -807,7 +807,24 @@ export async function uploadBatch(formData) {
         )
       : {};
     const support = gradePremiums(t.days, {
-      clockDays: clk?.byDate || null,
+      // WITHHELD ON PURPOSE. Mánu 2026-08-22: "the new report shouldnt do
+      // anything to the timesheet its jsut for us to observe for now."
+      //
+      // Grading a premium "recorded" because the day was clocked is the one
+      // thing clock data was ever allowed to move, and it does move it:
+      // uploading 08/16-08/22 with the export and without it changed no hour,
+      // no premium and no day on any of 62 sheets, but shifted 19 of them from
+      // unverified to recorded. That is a real change to a stored figure, so
+      // it waits for a decision rather than arriving as a side effect.
+      //
+      // Passing null is not a new behaviour: every batch before 2026-08-22 had
+      // no clock export at all, so this is exactly what they all did. The
+      // export's whole contribution stays in `attendance`, which nothing reads
+      // but the admin screens.
+      //
+      // To turn it on, this becomes `clk?.byDate || null` again - one line, and
+      // the reason it is off is above it.
+      clockDays: null,
       // whether QSP's rest report holds this person at all. if it does, its
       // count is what decided every rest violation on the sheet.
       restCovered: !!rest,
