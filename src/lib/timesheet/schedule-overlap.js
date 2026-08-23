@@ -36,12 +36,42 @@ export function toMin(t) {
 // or misc. Telling somebody two clients were double-booked when one of them was
 // the drive between them sends them looking for a scheduling problem that isn't
 // there.
+// THE SERVICE A BLOCK IS BILLED UNDER, exactly as QSP spells it: "ILS Service",
+// "Self Determination Program", "ILS Travel", "Meal Break". Across 07/16-08/31
+// the schedule prints eight of them and nothing else.
+//
+// Separate from `blockKind` below, which turns the same reading into a phrase
+// for a sentence ("a client booking"). The compliance rules need the name, not
+// the phrase - the 3.5 hour cap applies to two services by name and to no
+// other - and one parser answering both is the point. A client whose surname
+// carries a hyphen ("Conklin-Miller, E-ILS Service(3:00)") resolves correctly:
+// the type may hold letters and spaces but no comma, so the earlier dash fails
+// to match and the engine advances to the real one.
+export function blockService(text) {
+  const m = /-\s*([A-Za-z][A-Za-z ]*?)\s*\(/.exec(String(text || "").replace(RANGE, ""));
+  return m ? m[1].trim() : null;
+}
+
+// the client a block is booked against, or "" on a block with none (travel,
+// admin, training all print with an empty name before the dash).
+export function blockClient(text) {
+  const m = /^\s*(.*?)-\s*(?:[A-Za-z][A-Za-z ]*?)\s*\(/.exec(String(text || "").replace(RANGE, ""));
+  return m ? m[1].trim() : null;
+}
+
 export function blockKind(text) {
-  const m = /^\s*(.*?)-(?:ILS\s*)?([A-Za-z ]+?)\s*\(/.exec(String(text || "").replace(RANGE, ""));
-  if (!m) return "another scheduled block";
-  const client = m[1].trim();
-  const type = m[2].trim().toLowerCase();
+  const service = blockService(text);
+  if (service == null) return "another scheduled block";
+  const client = blockClient(text) || "";
+  // "ILS Service" and "Service" have always read the same here
+  const type = service.replace(/^ILS\s+/i, "").trim().toLowerCase();
   if (type === "service") return client ? "a client booking" : "a service block";
+  // Self Determination is a client service like ILS Service is, and read as
+  // "another scheduled block" until 2026-08-22 - so an overlap between two of
+  // them described itself as vaguely as an overlap with a training block. 33
+  // of these are rostered across 07/16-08/31 and they carry the same 3.5 hour
+  // cap, which is the whole reason the distinction started mattering.
+  if (type === "self determination program") return client ? "a client booking" : "a service block";
   if (type === "travel") return "a travel block";
   if (type === "training") return "a training block";
   if (type === "admin") return "an admin block";
