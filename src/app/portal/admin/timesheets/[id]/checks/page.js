@@ -194,8 +194,31 @@ export default async function ChecksPage({ params }) {
     }
     rows.sort((a, b) => b.minutes - a.minutes || String(a.who).localeCompare(String(b.who)));
     const counts = complianceCounts(rows);
+
+    // GROUPED BY KIND, AND CAPPED, 2026-08-22. The first upload carrying a clock
+    // export took this panel from 54 rows to 458, and a flat 458 is the wall
+    // this screen already learned about once: "six kinds of finding interleaved
+    // by surname is a wall, not a screen". 123 missed clock-ins listed one per
+    // shift tell you nothing that "123, and here are the worst" does not.
+    //
+    // The cap is stated, never silent. A list that quietly stops at twelve reads
+    // as a complete list of twelve.
+    const SHOWN_PER_KIND = 12;
+    const groups = [];
+    for (const kind of Object.keys(COMPLIANCE_KINDS)) {
+      const mine = rows.filter((r) => r.kind === kind);
+      if (!mine.length) continue;
+      groups.push({
+        kind,
+        total: mine.length,
+        shown: mine.slice(0, SHOWN_PER_KIND),
+        more: Math.max(0, mine.length - SHOWN_PER_KIND),
+      });
+    }
+
     return {
       rows,
+      groups,
       total: rows.length,
       overCap: counts["booking-over-cap"] || 0,
       overlap: counts["blocks-overlap"] || 0,
@@ -325,22 +348,43 @@ export default async function ChecksPage({ params }) {
               </>
             )}
           </p>
-          <ul className="mt-4 space-y-1.5">
-            {scheduling.rows.map((f, i) => (
-              <li
-                key={`${f.who}-${f.date}-${f.kind}-${i}`}
-                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border/60 pt-1.5 text-sm first:border-0 first:pt-0"
-              >
-                <span className="min-w-[13rem] font-medium text-foreground">{f.who}</span>
-                <span className="font-mono text-xs text-muted">{f.date}</span>
-                <span className="text-muted">{COMPLIANCE_KINDS[f.kind].describe(f)}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-xs text-muted">
-            {COMPLIANCE_KINDS["booking-over-cap"].action}{" "}
-            {COMPLIANCE_KINDS["blocks-overlap"].action}
-          </p>
+          {scheduling.groups.map((g) => (
+            <div key={g.kind} className="mt-5">
+              <p className="text-sm font-semibold text-foreground">
+                {COMPLIANCE_KINDS[g.kind].label}
+                <span className="ml-2 rounded-full border border-sky-300 bg-sky-100 px-2 py-0.5 font-mono text-[11px] text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
+                  {g.total}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-muted">{COMPLIANCE_KINDS[g.kind].action}</p>
+              <ul className="mt-2 space-y-1.5">
+                {g.shown.map((f, i) => (
+                  <li
+                    key={`${f.who}-${f.date}-${f.kind}-${i}`}
+                    className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border/60 pt-1.5 text-sm first:border-0 first:pt-0"
+                  >
+                    <span className="min-w-[13rem] font-medium text-foreground">{f.who}</span>
+                    <span className="font-mono text-xs text-muted">{f.date}</span>
+                    <span className="text-muted">{COMPLIANCE_KINDS[f.kind].describe(f)}</span>
+                  </li>
+                ))}
+              </ul>
+              {/* said out loud rather than silently truncated */}
+              {g.more > 0 && (
+                <p className="mt-1.5 text-xs text-muted">
+                  and {g.more} more - the whole picture, per person and across
+                  periods, is on{" "}
+                  <Link
+                    href={`/portal/admin/timesheets/patterns?program=${batch.program}`}
+                    className="font-medium text-brand hover:underline"
+                  >
+                    Repeat patterns
+                  </Link>
+                  .
+                </p>
+              )}
+            </div>
+          ))}
         </details>
       )}
 
