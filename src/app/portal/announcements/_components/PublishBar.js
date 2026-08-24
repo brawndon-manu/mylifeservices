@@ -8,7 +8,7 @@ import { useState } from "react";
 import Link from "next/link";
 import AudiencePicker from "./AudiencePicker";
 import DatePicker from "@/components/DatePicker";
-import { zonedToInstant, deviceTimezone } from "@/lib/meeting-time";
+import { zonedToInstant, US_TIMEZONES } from "@/lib/meeting-time";
 
 // every half hour of the day. This started as 6am-8pm borrowed from the
 // signing setup's office hours, and the first thing Manu tried was 9:30 PM -
@@ -34,15 +34,21 @@ export default function PublishBar({ postId, publish, discard, cancelSchedule, i
   const [sendLater, setSendLater] = useState(false);
   const [laterDate, setLaterDate] = useState("");
   const [laterTime, setLaterTime] = useState("08:00");
+  // THE COMPANY'S ZONE BY DEFAULT, NOT THE DEVICE'S. This read deviceTimezone()
+  // and Manu opened it from New Zealand, where "Aug 23, 9:30 PM" had already
+  // happened - the send he wanted was 9:30 PM Pacific. Everyone this portal
+  // schedules for is in California, so Pacific is the meaning of a bare time
+  // here, and the select is for the times it is not.
+  const [laterTz, setLaterTz] = useState("America/Los_Angeles");
   const laterIso = sendLater && laterDate
-    ? zonedToInstant(laterDate, laterTime, deviceTimezone()) || ""
+    ? zonedToInstant(laterDate, laterTime, laterTz) || ""
     : "";
   // computed when a field changes rather than on render - the purity rule is
   // right that a render must not read the clock. The server re-checks anyway,
   // so the worst a stale value costs is one round trip to ?error=publishAt.
   const [laterInPast, setLaterInPast] = useState(false);
-  const checkPast = (date, time) => {
-    const iso = date ? zonedToInstant(date, time, deviceTimezone()) : null;
+  const checkPast = (date, time, tz) => {
+    const iso = date ? zonedToInstant(date, time, tz) : null;
     setLaterInPast(!!iso && new Date(iso).getTime() <= Date.now());
   };
   // only promise an email when one will actually send: an ack/meeting post
@@ -271,7 +277,7 @@ export default function PublishBar({ postId, publish, discard, cancelSchedule, i
                       <DatePicker
                         id="publish-later-date"
                         value={laterDate}
-                        onChange={(v) => { setLaterDate(v); checkPast(v, laterTime); }}
+                        onChange={(v) => { setLaterDate(v); checkPast(v, laterTime, laterTz); }}
                         inputClassName="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 pr-10 text-sm text-foreground"
                       />
                     </div>
@@ -282,7 +288,7 @@ export default function PublishBar({ postId, publish, discard, cancelSchedule, i
                       <select
                         id="publish-later-time"
                         value={laterTime}
-                        onChange={(e) => { setLaterTime(e.target.value); checkPast(laterDate, e.target.value); }}
+                        onChange={(e) => { setLaterTime(e.target.value); checkPast(laterDate, e.target.value, laterTz); }}
                         className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
                       >
                         {SEND_TIMES.map((t) => (
@@ -290,10 +296,25 @@ export default function PublishBar({ postId, publish, discard, cancelSchedule, i
                         ))}
                       </select>
                     </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted" htmlFor="publish-later-tz">
+                        Time zone
+                      </label>
+                      <select
+                        id="publish-later-tz"
+                        value={laterTz}
+                        onChange={(e) => { setLaterTz(e.target.value); checkPast(laterDate, laterTime, e.target.value); }}
+                        className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                      >
+                        {US_TIMEZONES.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
                     <p className="col-span-2 text-xs text-muted">
                       {laterInPast
                         ? "That time has already passed - pick one ahead."
-                        : "Sends within five minutes of the time you pick, in your timezone."}
+                        : `Sends within five minutes of that time, ${US_TIMEZONES.find((t) => t.value === laterTz)?.label || "Pacific"} time.`}
                     </p>
                   </div>
                 )}
