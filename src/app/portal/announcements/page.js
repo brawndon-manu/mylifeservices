@@ -23,6 +23,7 @@ import {
   isAckExempt,
   canSeeAnnouncement,
 } from "@/lib/announcements";
+import { companyDateTime } from "@/lib/company-time";
 import AuthorPreview from "./_components/AuthorPreview";
 import ConfirmButton from "@/components/ConfirmButton";
 import BackLink from "@/components/BackLink";
@@ -55,6 +56,30 @@ export default async function AnnouncementsPage({ searchParams }) {
   if (pinnedOnly) {
     where.pinnedAt = { not: null };
   }
+
+  // WHAT IS SCHEDULED TO GO OUT. A draft with a publishAt is queued for the
+  // cron, and until now the only place that said so was the draft's own page -
+  // schedule one, close the tab, and there was nothing anywhere showing it was
+  // going to happen (Mánu closed the page on 2026-08-24 and had to ask).
+  //
+  // Shown to the oversight tier, who are also exactly the people the draft
+  // pages themselves admit, so every link here opens.
+  const scheduled = isElevated(user.role)
+    ? await prisma.announcement.findMany({
+        where: { deletedAt: null, publishedAt: null, publishAt: { not: null } },
+        orderBy: { publishAt: "asc" },
+        select: {
+          id: true,
+          title: true,
+          tag: true,
+          publishAt: true,
+          publishEmail: true,
+          author: {
+            select: { name: true, preferredFirstName: true, preferredLastName: true },
+          },
+        },
+      })
+    : [];
 
   const posts = await prisma.announcement.findMany({
     where,
@@ -110,6 +135,34 @@ export default async function AnnouncementsPage({ searchParams }) {
           </Link>
         )}
       </div>
+
+      {scheduled.length > 0 && (
+        <div className="mt-6 rounded-xl border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/40 dark:bg-sky-950/30">
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-300">
+            Scheduled to post
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {scheduled.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/portal/announcements/${p.id}`}
+                  className="group flex flex-wrap items-baseline gap-x-2 text-sm"
+                >
+                  <span className="font-semibold text-sky-900 group-hover:underline dark:text-sky-200">
+                    {p.title || "Untitled"}
+                  </span>
+                  <span className="text-sky-800/80 dark:text-sky-300/80">
+                    {companyDateTime(p.publishAt)} PT
+                    {p.publishEmail?.doEmail ? " · emails on publish" : ""}
+                    {" · "}
+                    {preferredName(p.author) || "unknown"}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* filter bar */}
       <form
