@@ -153,36 +153,26 @@ export function resolveFormRecipients(intendedEmail, cc = [], env = process.env)
   return redirectOffProduction(intendedEmail, cc, env);
 }
 
-// CLIENT ATTESTATIONS. Two locks, exactly like the timesheets, and NOT the
-// single lock the announcements and forms get.
+// CLIENT ATTESTATIONS. One lock now, the same one the announcements and the
+// forms have: a send from the real deployment is a person doing their job and
+// goes through; a send from anywhere else is redirected to Mánu's inbox with
+// the intended address riding along in the subject.
 //
-// The reason is volume and audience. A month is 252 documents, and the people
-// receiving them are staff - which is the one send Mánu has a standing rule
-// about: nothing goes to staff from here, he does that himself. So the default
-// with the phrase unset is that everything comes to him, on the real deployment
-// as well as off it.
-//
-// ITS OWN PHRASE, deliberately not TIMESHEET_LIVE_SEND. Opening live payroll
-// sending is a different decision from opening this, and one switch for both
-// would mean making the second decision without noticing.
-const ATTESTATION_LIVE_PHRASE = "yes-send-client-attestations";
-
+// This started with a second lock - its own live phrase, like the timesheets -
+// and Mánu removed it on 2026-08-24 once the flow was verified end to end:
+// "lets remove the testing for production for the emails." What the phrase was
+// protecting is still protected where it matters: nothing can leave a laptop,
+// and every send is a button somebody pressed on the review screen, never a
+// side effect of uploading.
 export function attestationLiveSend(env = process.env) {
-  return (
-    env.CLIENT_ATTESTATION_LIVE_SEND === ATTESTATION_LIVE_PHRASE &&
-    isProductionDeployment(env)
-  );
-}
-
-export function attestationLiveConfigured(env = process.env) {
-  return env.CLIENT_ATTESTATION_LIVE_SEND === ATTESTATION_LIVE_PHRASE;
+  return isProductionDeployment(env);
 }
 
 export function resolveAttestationRecipients(intendedEmail, env = process.env) {
-  if (attestationLiveSend(env)) {
+  if (isProductionDeployment(env)) {
     return { to: [intendedEmail], redirected: false, intendedEmail };
   }
-  return { to: testRecipients(env), redirected: true, intendedEmail };
+  return { to: localInboxes(env), redirected: true, intendedEmail };
 }
 
 // what the review screen shows, so the current mode is never implicit
@@ -190,15 +180,11 @@ export function attestationSendMode(env = process.env) {
   if (attestationLiveSend(env)) {
     return { live: true, label: "LIVE - emails go to the people you pick", recipients: [], reason: null };
   }
-  const reason = attestationLiveConfigured(env) ? "local" : "not-live";
   return {
     live: false,
-    label:
-      reason === "local"
-        ? "TEST - not the live site, so everything is redirected"
-        : "TEST - everything is redirected",
-    recipients: testRecipients(env),
-    reason,
+    label: "TEST - not the live site, so everything is redirected",
+    recipients: localInboxes(env),
+    reason: "local",
   };
 }
 
