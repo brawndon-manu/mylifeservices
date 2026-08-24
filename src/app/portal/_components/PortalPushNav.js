@@ -81,7 +81,10 @@ export default function PortalPushNav({ children }) {
       // document and cannot be reached from a component's own styles.
       const mine = navOwner.current.claim();
       root.dataset.nav = direction;
-      const done = document.startViewTransition(
+      // assigned before the callback's timeout can ever fire - the callback
+      // runs synchronously inside startViewTransition, the timeout later
+      let done;
+      done = document.startViewTransition(
         () =>
           new Promise((resolve) => {
             settle.current = resolve;
@@ -89,18 +92,43 @@ export default function PortalPushNav({ children }) {
             // A NAVIGATION THAT NEVER ARRIVES MUST NOT FREEZE THE PAGE. A
             // refused route or a slow server would otherwise leave the document
             // held in a transition with nothing on screen able to move.
+            //
+            // AND IT MUST NOT ANIMATE A LIE EITHER. Giving up used to resolve
+            // the promise and let the slide play anyway - but the route hasn't
+            // rendered, so the "new" snapshot is the OLD page, and the slide
+            // shows you arriving... back where you already were. Then the real
+            // render lands seconds later with a third jump. Mánu 2026-08-24:
+            // "it glitches by showing the page then goes back to where you
+            // were then again to the page you clicked." A slow navigation now
+            // skips the animation entirely and appears plainly when it
+            // arrives, which is what every navigation did before the slide
+            // existed.
             setTimeout(() => {
               if (settle.current === resolve) {
                 settle.current = null;
+                try {
+                  done?.skipTransition();
+                } catch {
+                  // an already-finished transition has nothing to skip
+                }
                 resolve();
               }
             }, 1200);
           }),
       );
-      done.finished.finally(() => {
-        // only if a later navigation has not taken the attribute over
-        if (mine()) delete root.dataset.nav;
-      });
+      // A SKIPPED TRANSITION REJECTS `ready` WITH AN AbortError - that is the
+      // spec's way of saying "no animation", not a failure, and with nobody
+      // listening it surfaced as "Runtime AbortError: Transition was skipped"
+      // in the overlay. Swallowed on purpose: the skip is the plan.
+      done.ready.catch(() => {});
+      done.finished
+        .then(() => {
+          // only if a later navigation has not taken the attribute over
+          if (mine()) delete root.dataset.nav;
+        })
+        .catch(() => {
+          if (mine()) delete root.dataset.nav;
+        });
     },
     [router],
   );
