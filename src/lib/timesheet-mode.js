@@ -153,6 +153,55 @@ export function resolveFormRecipients(intendedEmail, cc = [], env = process.env)
   return redirectOffProduction(intendedEmail, cc, env);
 }
 
+// CLIENT ATTESTATIONS. Two locks, exactly like the timesheets, and NOT the
+// single lock the announcements and forms get.
+//
+// The reason is volume and audience. A month is 252 documents, and the people
+// receiving them are staff - which is the one send Mánu has a standing rule
+// about: nothing goes to staff from here, he does that himself. So the default
+// with the phrase unset is that everything comes to him, on the real deployment
+// as well as off it.
+//
+// ITS OWN PHRASE, deliberately not TIMESHEET_LIVE_SEND. Opening live payroll
+// sending is a different decision from opening this, and one switch for both
+// would mean making the second decision without noticing.
+const ATTESTATION_LIVE_PHRASE = "yes-send-client-attestations";
+
+export function attestationLiveSend(env = process.env) {
+  return (
+    env.CLIENT_ATTESTATION_LIVE_SEND === ATTESTATION_LIVE_PHRASE &&
+    isProductionDeployment(env)
+  );
+}
+
+export function attestationLiveConfigured(env = process.env) {
+  return env.CLIENT_ATTESTATION_LIVE_SEND === ATTESTATION_LIVE_PHRASE;
+}
+
+export function resolveAttestationRecipients(intendedEmail, env = process.env) {
+  if (attestationLiveSend(env)) {
+    return { to: [intendedEmail], redirected: false, intendedEmail };
+  }
+  return { to: testRecipients(env), redirected: true, intendedEmail };
+}
+
+// what the review screen shows, so the current mode is never implicit
+export function attestationSendMode(env = process.env) {
+  if (attestationLiveSend(env)) {
+    return { live: true, label: "LIVE - emails go to the people you pick", recipients: [], reason: null };
+  }
+  const reason = attestationLiveConfigured(env) ? "local" : "not-live";
+  return {
+    live: false,
+    label:
+      reason === "local"
+        ? "TEST - not the live site, so everything is redirected"
+        : "TEST - everything is redirected",
+    recipients: testRecipients(env),
+    reason,
+  };
+}
+
 // one announcement email, addressed to one member of staff. Same rule: off the
 // real deployment it comes to Mánu instead, and the intended address rides back
 // so the subject can say whose copy it was.

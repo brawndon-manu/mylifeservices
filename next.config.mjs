@@ -44,6 +44,13 @@ const nextConfig = {
     "/portal/admin/timesheets/**": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],
+    // the client attestations read the QSP schedule export through the same
+    // pdfjs, so they need the same worker traced in - without this the upload
+    // dies on Vercel with "Cannot find module .../pdf.worker.mjs" and works
+    // perfectly on a laptop, where node_modules is all there.
+    "/portal/admin/client-attestations/**": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    ],
   },
   // allow rendering remote images from Vercel Blob (hub post images).
   // host pattern matches any blob store — Vercel doesnt pin a fixed

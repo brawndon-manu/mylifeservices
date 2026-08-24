@@ -211,6 +211,20 @@ export function canManageTimesheets(role) {
   return isAdminUp(role) || role === "HR" || role === "MANAGER";
 }
 
+// client attestations: upload the monthly QSP client schedule, review the
+// matches, send the forms out and collect the signed ones back.
+//
+// SAME TIER AS TIMESHEETS, and for the same reason: it is the identical shape of
+// job - a QSP export cut into one document per person, sent for signature - run
+// by the same desk. HR owns the monthly round, Manager and above oversee it.
+//
+// Deliberately NOT extended to SUPERVISOR. A field supervisor signs the forms
+// for their own staff's clients and reaches them through the emailed link,
+// which is a different thing from uploading a batch for the whole agency.
+export function canManageClientAttestations(role) {
+  return canManageTimesheets(role);
+}
+
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {

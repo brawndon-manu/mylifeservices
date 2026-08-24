@@ -102,6 +102,25 @@ export default function FormFiller({
   signLabel = null,
   // one line above the document, for a caller that knows what it is
   signIntro = null,
+  // SIGNATURE FIELDS THAT MAY STAY EMPTY in sign mode, by field name. The
+  // client attestation carries two signature boxes and only the supervisor's is
+  // required - the client's is optional on the paper form, and the browser must
+  // not demand more than the paper does. Everything not named here is still
+  // required, so the timesheet's single signature behaves exactly as before.
+  optionalSignatures = [],
+  // A FIELD WHOSE VALUE COMES BACK AS payload.employeeName. The attestation
+  // form has a "Supervisor name (print)" box; whoever signs from the emailed
+  // link types their name there anyway, and the row's audit trail wants the
+  // same name without asking twice. Null leaves the payload exactly as it was.
+  nameFrom = null,
+  // PARTIAL SIGNING: only these fields are offered, and the built PDF stamps
+  // exactly them onto the page - value drawn as content, field removed - and
+  // DOES NOT flatten the rest. That is what keeps the remaining fields live for
+  // the next person: the client attestation is signed by the client first and
+  // finished by the field supervisor, and a flatten at the first stage would
+  // hand the supervisor a form with nothing left to fill.
+  // Null (the default) is the whole form and a full flatten, exactly as before.
+  onlyFields = null,
 }) {
   const [status, setStatus] = useState("loading");
   const [pages, setPages] = useState([]); // { url, w, h }
@@ -202,6 +221,10 @@ export default function FormFiller({
           }
         }
 
+        // a partial signer is only offered its own fields; everything else on
+        // the page stays visible in the bitmap but takes no input here
+        const offered = onlyFields ? pls.filter((p) => onlyFields.includes(p.name)) : pls;
+
         // DRAWING THE DOCUMENT AND SIGNING IT ARE TWO DIFFERENT JOBS, and only
         // one of them is allowed to fail the page.
         //
@@ -233,7 +256,15 @@ export default function FormFiller({
         // bitmap matches the element pixel for pixel, so small type has nothing
         // to anti-alias against and dense documents come out muddy. capped so a
         // 3x phone doesn't build a canvas we then have to base64 into a data url.
-        const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
+        //
+        // A SHORT DOCUMENT AFFORDS MORE. The cap exists because a fortnight
+        // timesheet is several pages each held as a full-size PNG, and WKWebView
+        // silently blanks canvases past its memory ceiling. A one-page document
+        // - the client attestation is a 900pt-wide calendar whose cell type is
+        // small on any screen - is nowhere near that ceiling, and at 2.5x it
+        // read as "the resolution is so awful" (Mánu 2026-08-24). One page gets
+        // 4x; anything longer keeps the old cap.
+        const dpr = pdf.numPages === 1 ? 4 : Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
         for (let i = 0; i < pdf.numPages; i++) {
           const page = await pdf.getPage(i + 1);
           const base = page.getViewport({ scale: 1 });
@@ -254,7 +285,7 @@ export default function FormFiller({
         }
 
         if (active) {
-          setPlacements(pls);
+          setPlacements(offered);
           setPages(imgs);
           setCantDraw(cantDraw);
           // sign-only documents (timesheets) date themselves - the only date on
@@ -285,7 +316,11 @@ export default function FormFiller({
       active = false;
       clearTimeout(watchdog);
     };
-  }, [fileUrl, signMode]);
+    // onlyFields joined to a string: callers pass array literals, and the raw
+    // array would be a new identity every render - depended on directly it
+    // refetches the document forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileUrl, signMode, onlyFields ? onlyFields.join("|") : null]);
 
   function setVal(name, v) {
     setValues((prev) => ({ ...prev, [name]: v }));
@@ -337,6 +372,9 @@ export default function FormFiller({
       const typedStamps = [];
       const sigFieldsToRemove = [];
       for (const f of form.getFields()) {
+        // a partial signer only ever touches its own fields - blanking or
+        // removing anybody else's would eat the next signer's boxes
+        if (onlyFields && !onlyFields.includes(f.getName())) continue;
         const isTextSig = f instanceof PDFTextField && isSignatureName(f.getName());
         const isRealSig = f instanceof PDFSignature;
         if (!isTextSig && !isRealSig) continue;
@@ -362,7 +400,9 @@ export default function FormFiller({
         }
         // text-sig fields flatten fine once blanked; a real signature field can't
         // be flattened, so drop it first (we draw the image over its spot anyway).
-        if (isTextSig) {
+        // In a partial build there is no flatten at all, so a blanked field
+        // would keep its empty widget on top of the stamped mark - remove it.
+        if (isTextSig && !onlyFields) {
           try {
             f.setText("");
           } catch {
@@ -380,7 +420,56 @@ export default function FormFiller({
         }
       }
 
-      form.flatten();
+      if (!onlyFields) {
+        form.flatten();
+      } else {
+        // A PER-FIELD FLATTEN, BY HAND. The values this signer typed become
+        // page content - drawn text, a drawn check - and their fields are
+        // removed, so what they signed cannot quietly change afterwards. Every
+        // field that is not theirs is left exactly as it was: live, empty, and
+        // waiting for the supervisor's link.
+        const contentFont = await doc.embedFont(StandardFonts.Helvetica);
+        for (const f of form.getFields()) {
+          if (!onlyFields.includes(f.getName())) continue;
+          const val = values[f.getName()];
+          const stampable =
+            (f instanceof PDFTextField && typeof val === "string" && val.trim() && !isSignatureName(f.getName())) ||
+            (f instanceof PDFCheckBox && !!val);
+          if (stampable) {
+            for (const w of f.acroField.getWidgets()) {
+              const pref = w.dict.get(PDFName.of("P"));
+              const pi = pref ? sigPageIndex(pref) : -1;
+              if (pi < 0) continue;
+              const pg = sigPages[pi];
+              const r = normRect(w.getRectangle());
+              if (f instanceof PDFCheckBox) {
+                const size = Math.min(r.height, r.width) * 0.85;
+                pg.drawText("X", {
+                  x: r.x + (r.width - contentFont.widthOfTextAtSize("X", size)) / 2,
+                  y: r.y + (r.height - contentFont.heightAtSize(size)) / 2 + size * 0.1,
+                  size,
+                  font: contentFont,
+                });
+              } else {
+                let size = Math.min(r.height * 0.62, 11);
+                const text = String(val).trim();
+                while (size > 5 && contentFont.widthOfTextAtSize(text, size) > r.width * 0.96) size -= 0.5;
+                pg.drawText(text, {
+                  x: r.x + 2,
+                  y: r.y + (r.height - contentFont.heightAtSize(size)) / 2 + size * 0.14,
+                  size,
+                  font: contentFont,
+                });
+              }
+            }
+          }
+          try {
+            form.removeField(f);
+          } catch {
+            // ignore
+          }
+        }
+      }
 
       for (const s of sigStamps) {
         let png;
@@ -473,7 +562,12 @@ export default function FormFiller({
     // and the stored copy came back with the signature line blank - the
     // AcroForm flattened with nothing in it, one image on the page and that was
     // the logo. Payroll would have filed an attestation nobody signed.
-    if (signMode && placements.some((p) => p.kind === "signature" && !values[p.name])) {
+    if (
+      signMode &&
+      placements.some(
+        (p) => p.kind === "signature" && !optionalSignatures.includes(p.name) && !values[p.name],
+      )
+    ) {
       setSendErr(sendErrorText("nosignature"));
       return;
     }
@@ -493,6 +587,9 @@ export default function FormFiller({
       if (publicMode) {
         payload.employeeName = empName.trim();
         payload.employeeEmail = empEmail.trim();
+      }
+      if (nameFrom && typeof values[nameFrom] === "string" && values[nameFrom].trim()) {
+        payload.employeeName = values[nameFrom].trim();
       }
       const r = await submitAction(payload);
       if (r?.ok) {

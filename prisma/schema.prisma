@@ -57,6 +57,24 @@ model User {
   // separate from createdAt which is just when their row was added to
   // our portal db. used for tenure displays + sorting in the admin list.
   hireDate                     DateTime?
+  // THE FIELD SUPERVISOR THIS PERSON REPORTS TO.
+  //
+  // Mánu 2026-08-23: "next week the field supervisors will be assigned to staff
+  // per staff. right now its kind of random and is per client amongst the staff
+  // which is just too messy."
+  //
+  // So the mapping is STAFF -> SUPERVISOR, one hop, and a client's supervisor is
+  // whoever supervises the staff on that client's schedule. The old arrangement
+  // - a supervisor picked per client - is not modelled at all, on purpose: it is
+  // the thing being replaced, and carrying it would mean two answers to the same
+  // question for as long as both existed.
+  //
+  // Starts empty for everybody and is filled in by hand. Nothing breaks while it
+  // is null; an attestation with no supervisor is simply one nobody has been
+  // assigned yet, and the review screen says so.
+  supervisorId                 String?
+  supervisor                   User?                         @relation("StaffSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  supervises                   User[]                        @relation("StaffSupervisor")
   // contact phone for the team directory. self-editable in Settings,
   // admins can also set it. stored as the raw string the user typed.
   phone                        String?
@@ -105,6 +123,10 @@ model User {
   timesheetCorrectionsResolved TimesheetCorrection[]         @relation("TimesheetCorrectionResolvedBy")
   dayProgramBatches            DayProgramBatch[]             @relation("DayProgramBatchUploadedBy")
   dayProgramSheets             DayProgramSheet[]             @relation("DayProgramEmployee")
+  clientAttestationBatches     ClientAttestationBatch[]      @relation("ClientAttestationBatchUploadedBy")
+  clientAttestationsAsStaff    ClientAttestation[]           @relation("ClientAttestationStaff")
+  clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
+  clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -1573,4 +1595,184 @@ model PtoEntry {
 
   @@unique([program, periodFrom, periodTo, personKey, date])
   @@index([program, periodFrom, periodTo])
+}
+
+// ONE MONTH'S CLIENT ATTESTATION RUN.
+//
+// The job, in HR's own words: "Pull current client schedule ... work with
+// supervisors to have clients review and sign an attestation confirming they
+// were provided their schedule, they want to continue with their current staff,
+// and staff have been providing services as scheduled."
+//
+// It happens once a month, so the whole thing hangs off one upload: QSP's
+// Client Schedules export, one page per client. August 2026 was 252 pages and
+// 252 clients. Each page becomes one form somebody signs.
+//
+// SHAPED LIKE TimesheetBatch DELIBERATELY - upload a QSP export, cut it into one
+// document per person, match those to accounts, send them out, collect
+// signatures - because it is the same job with different nouns, and the second
+// copy of a workflow should not invent a second set of habits.
+model ClientAttestationBatch {
+  id String @id @default(cuid())
+
+  // the month every page of the export prints in its header, e.g. "August 2026".
+  // Taken from the document rather than picked by the operator: a batch labelled
+  // one month and holding another is not a mistake anybody catches later.
+  monthLabel String
+
+  // the uploaded source PDF, kept for audit and streamed back through a gated
+  // route like every other stored document here.
+  sourceUrl  String?
+  sourceName String?
+
+  // whether sends from this batch were redirected to the test inbox. Recorded
+  // per batch, and defaulting to TRUE, for the same reason the timesheet batches
+  // do it: a test run must never be mistakable for a real one afterwards.
+  testMode Boolean @default(true)
+
+  uploadedById String
+  uploadedBy   User   @relation("ClientAttestationBatchUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  attestations ClientAttestation[]
+
+  @@index([createdAt])
+}
+
+// ONE CLIENT'S SCHEDULE PAGE AND THE SIGN-OFF IT COLLECTS.
+model ClientAttestation {
+  id      String                 @id @default(cuid())
+  batchId String
+  batch   ClientAttestationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // the name exactly as the schedule printed it ("Jacob Acuna"), kept even after
+  // matching so the operator can always see what the source said.
+  clientName String
+  // the same name reduced to sorted tokens, which is what joins this page to
+  // HR's roster - that document spells it the other way round ("Acuna, Jacob").
+  // See src/lib/client-attestations/names.js.
+  clientKey  String
+  // which page of the source PDF this came off, 1-based, so a form can always be
+  // traced back to the document it was cut from.
+  sourcePage Int
+
+  // WHO IS ON THIS SCHEDULE, exactly as QSP abbreviated them ("Solorzano, I").
+  // This is what the client is being asked about - whether they want to continue
+  // with these people - and it is also how the form finds its supervisor.
+  staffNames     String[] @default([])
+  // what the page adds up to, for the review screen. Not a payroll figure and
+  // never used as one: it is the scheduled total, not hours worked.
+  scheduledHours Float    @default(0)
+  entryCount     Int      @default(0)
+
+  // FROM HR'S ROSTER, copied at upload rather than joined live. The roster is a
+  // spreadsheet somebody re-exports every month; a form that changed its mind
+  // about who the case worker was after it had been signed would be worthless.
+  caseWorker  String?
+  clientEmail String?
+  office      String?
+
+  // ROUTING. Both nullable and both only ever suggestions until somebody
+  // confirms them - a wrong match sends one client's schedule to another
+  // client's supervisor.
+  staffUserId      String?
+  staffUser        User?   @relation("ClientAttestationStaff", fields: [staffUserId], references: [id], onDelete: SetNull)
+  supervisorUserId String?
+  supervisor       User?   @relation("ClientAttestationSupervisor", fields: [supervisorUserId], references: [id], onDelete: SetNull)
+  // how the staff match happened: initial | manual | ambiguous | unmatched
+  matchMethod      String  @default("unmatched")
+
+  // the generated form - the client's schedule page with the sign-off block
+  // under it. Stored rather than rebuilt on demand because this is the document
+  // that gets signed, and a form that re-renders differently after the fact is
+  // not the thing anybody agreed to.
+  formUrl String?
+
+  // delivery
+  sentAt        DateTime?
+  // the address it actually went to - in test mode that is the tester, which is
+  // why the address it was MEANT for is stored beside it.
+  sentToEmail   String?
+  intendedEmail String?
+  dueAt         DateTime?
+
+  // signing
+  signedAt     DateTime?
+  signedPdfUrl String?
+  signedName   String?
+  signedIp     String?
+  // which kind of recipient the send went to: supervisor | staff | client |
+  // other. The address alone doesn't say - a supervisor and a typed address
+  // look identical a month later.
+  sentToKind   String?
+
+  // THE CLIENT'S HALF OF THE SIGNATURE, when it happens first.
+  //
+  // Mánu 2026-08-24: a link sent to the client (or to the staff sitting with
+  // them) offers ONLY the client's fields; the supervisor link carries the
+  // whole form. When the client half is filed first, the partly-filled PDF
+  // lands here and goes on to the field supervisor for the rest - the final
+  // copy still arrives in signedPdfUrl like every other one.
+  clientSignedAt     DateTime?
+  clientSignedPdfUrl String?
+  clientSignedIp     String?
+  // which link filed it: "client" or "staff"
+  clientSignedVia    String?
+  // "portal" when it came back through the emailed link, "paper" when somebody
+  // sat with the client, signed it on paper and uploaded the scan. Both are real
+  // and the second one is how most of these will actually happen this month.
+  signedVia    String?
+  // who filed the paper copy, as scalars: a record of who did it AT THE TIME,
+  // which must not follow a later rename or cascade away with a closed account.
+  filedById    String?
+  filedByName  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([clientKey])
+  @@index([supervisorUserId])
+  @@index([signedAt])
+}
+
+
+// THE CLIENT ROSTER: WHICH STAFF HAVE WHICH CLIENTS.
+//
+// Mánu 2026-08-24: "there should be database showing that. which staff have
+// which clients. because this would be the hierarchy - Field Supervisor >
+// Staff > Clients."
+//
+// One row per client, imported from HR's roster spreadsheet. The staff half of
+// the hierarchy is this table; the supervisor half is User.supervisorId, so the
+// full tree is Client -> assigned staff -> that staff's field supervisor and
+// nothing here stores the supervisor twice.
+//
+// NO EMAIL COLUMN, DELIBERATELY. The spreadsheet carries client emails; Mánu
+// 2026-08-24: "for now we dont store clients emails." A send to a client is a
+// typed address every time until that decision changes.
+model Client {
+  id String @id @default(cuid())
+
+  // the name as HR's roster prints it, e.g. "Acuna, Jacob"
+  name      String
+  // the same name as sorted tokens - the key that joins this row to a schedule
+  // page, which spells the same person "Jacob Acuna". See
+  // src/lib/client-attestations/names.js.
+  clientKey String @unique
+  office    String?
+  status    String?
+
+  // the assigned staff, exactly as the roster printed them ("Gutierrez, Joseph"),
+  // kept even after matching so the screen can always show what the source said
+  caseWorkerName String?
+  // the same person as a portal account, when exactly one matches
+  staffUserId String?
+  staffUser   User?   @relation("ClientAssignedStaff", fields: [staffUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffUserId])
 }

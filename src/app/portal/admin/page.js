@@ -7,6 +7,7 @@ import {
   isIT,
   canViewFormRecords,
   canManageTimesheets,
+  canManageClientAttestations,
 } from "@/lib/roles";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { toggleMaintenance } from "./maintenance-actions";
@@ -92,6 +93,14 @@ export default async function AdminPage() {
             href="/portal/admin/day-program"
             title="Day program"
             body="The day program's own timesheets, separate from the agency's: upload their QSP exports, review, and send for signature under their rules."
+          />
+        )}
+        {canManageClientAttestations(user.role) && (
+          <LinkCard
+            href="/portal/admin/client-attestations"
+            title="Client attestations"
+            body="Upload the month's QSP client schedule: every client gets their own schedule with a sign-off block under it, routed to the supervisor who collects the signature."
+            isNew
           />
         )}
         {canManageTimesheets(user.role) && (
