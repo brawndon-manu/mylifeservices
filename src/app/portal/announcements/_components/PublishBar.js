@@ -10,10 +10,12 @@ import AudiencePicker from "./AudiencePicker";
 import DatePicker from "@/components/DatePicker";
 import { zonedToInstant, deviceTimezone } from "@/lib/meeting-time";
 
-// the half-hour times a send would actually be scheduled for. 6am-8pm, same
-// range the signing setup offers its office hours.
+// every half hour of the day. This started as 6am-8pm borrowed from the
+// signing setup's office hours, and the first thing Manu tried was 9:30 PM -
+// a send time is not an office hour, and there is no wrong time to schedule
+// an email for.
 const SEND_TIMES = [];
-for (let h = 6; h <= 20; h++) {
+for (let h = 0; h <= 23; h++) {
   for (const m of [0, 30]) {
     SEND_TIMES.push({
       value: `${String(h).padStart(2, "0")}:${m === 0 ? "00" : "30"}`,
