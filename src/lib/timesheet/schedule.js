@@ -129,12 +129,26 @@ function readPage(items, prev = null, pageNum = 0) {
       colCentres.push({ sum: c, n: 1 });
     }
   }
-  // a continuation page may carry no day numbers of its own, so the column grid
-  // comes from the page it continues.
+  // A CONTINUATION PAGE ALWAYS USES THE GRID OF THE PAGE IT CONTINUES. It is
+  // the same calendar - the columns cannot have moved - and its own day numbers
+  // are whatever happens to be left of the month, which is exactly the wrong
+  // thing to rebuild a grid from. Mariel Zuchniak's August is the case this
+  // rule comes from: page 93 carried only "30" and "31", so the seven columns
+  // collapsed to two, Tuesday's spill-over blocks snapped onto Monday the 24th
+  // (8.00 scheduled read as 10.75), and Wednesday's fell off the grid entirely.
   const cols =
-    colCentres.length > 1 ? colCentres.map((c) => c.sum / c.n) : (prev?.cols ?? colCentres.map((c) => c.sum / c.n));
+    isContinuation && prev?.cols?.length
+      ? prev.cols
+      : colCentres.length > 1
+        ? colCentres.map((c) => c.sum / c.n)
+        : (prev?.cols ?? colCentres.map((c) => c.sum / c.n));
   const rowYs = [...new Set(dayCells.map((d) => Math.round(d.y)))].sort((a, b) => b - a);
-  const colWidth = cols.length > 1 ? cols[1] - cols[0] : (prev?.colWidth ?? 123);
+  const colWidth =
+    isContinuation && prev?.colWidth
+      ? prev.colWidth
+      : cols.length > 1
+        ? cols[1] - cols[0]
+        : (prev?.colWidth ?? 123);
 
   const colIndex = (x) => {
     // entries are left-aligned, so measure from the cell's left edge
