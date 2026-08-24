@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
+import { prisma } from "@/lib/prisma";
 import { isAdminUp, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 import { firstNameOf } from "@/lib/contacts";
 
@@ -28,6 +29,24 @@ export default async function PortalDashboard() {
   // since they signed in (Settings page, role bumps, etc.).
   const user = await getCurrentUser();
   const role = user?.role ?? "STAFF";
+
+  // WHETHER THIS PERSON HAS A CASELOAD - clients assigned to them on the
+  // roster, or staff they supervise. Two cheap counts, and the card only exists
+  // for people they come back non-zero for: a caseload page on everybody's
+  // dashboard would read as broken for the many accounts that have neither.
+  let hasCaseload = false;
+  if (user?.id) {
+    try {
+      const [clients, supervises] = await Promise.all([
+        prisma.client.count({ where: { staffUserId: user.id } }),
+        prisma.user.count({ where: { supervisorId: user.id, deactivatedAt: null } }),
+      ]);
+      hasCaseload = clients > 0 || supervises > 0;
+    } catch (e) {
+      // the dashboard must render even if the roster tables are unreachable
+      console.error("caseload check failed:", e?.message || e);
+    }
+  }
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
@@ -58,6 +77,13 @@ export default async function PortalDashboard() {
       </p>
 
       <div className="mt-12 grid gap-6 sm:grid-cols-2">
+        {hasCaseload && (
+          <LinkCard
+            href="/portal/caseload"
+            title="My caseload"
+            body="The clients assigned to you on the roster, and for field supervisors, each of your staff with theirs."
+          />
+        )}
         <LinkCard
           href="/portal/announcements"
           title="Announcements"
