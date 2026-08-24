@@ -11,6 +11,7 @@ import { unstorableRows } from "@/lib/timesheet/storable";
 import { analyzeDayProgram } from "@/lib/day-program/analyze";
 import { buildDayProgramSheetRows } from "@/lib/day-program/upload-rows";
 import { liveSendConfigured } from "@/lib/timesheet-send";
+import { isoDate } from "@/lib/timesheet/partial";
 
 // same tier as the timesheets card. this whole area is that feature's sibling,
 // so it answers to the same gate.
@@ -72,6 +73,18 @@ export async function uploadDayProgramBatch(formData) {
   const mileageFile = formData.get("mileage");
   const hasMileage = present(mileageFile);
 
+  // MID-PERIOD UPLOADS, same option the MLS upload has. The day program runs
+  // these several times a day right through the period, so the refusal of
+  // future days needs the same way past it: keep the window, drop the rest.
+  // THE RANGE IS TYPED BECAUSE THE EXPORT DOES NOT CARRY IT - QSP returns the
+  // whole pay period whatever range it was asked for.
+  const wantPartial = formData.get("partial") === "on";
+  const partialFromInput = isoDate((formData.get("partialFrom") || "").toString());
+  const partialToInput = isoDate((formData.get("partialTo") || "").toString());
+  if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {
+    err("range", "the start of the range is after its end");
+  }
+
   const timesheetBytes = new Uint8Array(await pdfFile.arrayBuffer());
   const restsBytes = Buffer.from(await restsFile.arrayBuffer());
   const scheduleBytes = hasSched ? new Uint8Array(await schedFile.arrayBuffer()) : null;
@@ -79,10 +92,24 @@ export async function uploadDayProgramBatch(formData) {
 
   let result;
   try {
-    result = await analyzeDayProgram({ timesheetBytes, restsBytes, scheduleBytes, mileageBytes });
+    result = await analyzeDayProgram({
+      timesheetBytes,
+      restsBytes,
+      scheduleBytes,
+      mileageBytes,
+      partial: wantPartial ? { from: partialFromInput, to: partialToInput } : null,
+    });
   } catch (e) {
+    // a mid-period export refused whole is its own message, not a parse failure
+    if (e?.code === "future") err("future", e.message);
     console.error("day program analyze failed:", e);
     err("parse", e?.message || e);
+  }
+  if (result.partial) {
+    console.log(
+      `day program partial period: kept ${result.partial.from} to ${result.partial.through}, ` +
+        `dropped ${result.partial.dropped.length}${result.partial.clamped ? " (end clamped to today)" : ""}`,
+    );
   }
   if (!result.people.length) err("empty", "the timesheet read fine but held no employee hours");
 
@@ -167,6 +194,11 @@ export async function uploadDayProgramBatch(formData) {
           dpMileageUrl: mileageUrl,
           dpMileageName: hasMileage ? String(mileageFile.name || "mileage.xls") : null,
           restsByDate: result.restRows,
+          // a partial record says so on the batch, exactly as the MLS side
+          // does - nothing else afterwards would say the last workweek is cut
+          partialPeriod: !!result.partial && result.partial.dropped.length > 0,
+          partialFrom: result.partial?.from || null,
+          partialThrough: result.partial?.through || null,
           // dpAudit is deliberately not written. See the note on this function:
           // the audit sheet is retired, and a null here is the honest record
           // that no such document backed this batch.

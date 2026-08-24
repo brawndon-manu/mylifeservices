@@ -22,6 +22,7 @@
 // see the block in parse.js. Rest rules run exactly as they do for MLS.
 
 import { parseTimesheetPdf, analyzeTimesheet, analyzeDay } from "../timesheet/parse.js";
+import { futureDates, trimDays } from "../timesheet/partial.js";
 import { reviewSheet } from "../timesheet/anomalies.js";
 import { restKey, restRowTimes, clockMin, serviceFit } from "../timesheet/rests.js";
 import { dayProgramRestRows } from "./rest-xls.js";
@@ -100,8 +101,43 @@ const overlaps = (a, b) => a.out < b.in && b.out < a.in;
 
 export async function analyzeDayProgram({
   timesheetBytes, restsBytes, scheduleBytes, mileageBytes,
+  // MID-PERIOD UPLOADS, same contract as the MLS side. Null refuses a file
+  // holding days nobody has worked yet; { from, to } (either end optional)
+  // keeps the window and drops the rest. The day program runs these several
+  // times a day right through the period - Mánu 2026-08-24: "we upload a few
+  // times a day every day until the end of the pay period so we can address
+  // people with issues as they come up."
+  partial = null,
 }) {
-  const sheets = (await parseTimesheetPdf(timesheetBytes)).filter((s) => !s.empty);
+  let sheets = (await parseTimesheetPdf(timesheetBytes)).filter((s) => !s.empty);
+
+  // ONE DEFINITION OF "FUTURE", the same futureDates/trimDays pair the MLS
+  // upload runs - see ../timesheet/partial.js for why the guard and the trim
+  // must be the same comparison. QSP prints scheduled shifts exactly like
+  // worked ones, so a mid-period export is part record and part forecast, and
+  // without the partial option it is refused whole rather than becoming sheets
+  // that ask people to sign for shifts they have not worked.
+  const future = futureDates(sheets);
+  let partialResult = null;
+  if (future.size && !partial) {
+    const sample = [...future].sort().slice(0, 3).join(", ");
+    const e = new Error(
+      `${future.size} dated after today (${sample}). Wait until the pay period has ended, ` +
+        `or tick "partial pay period" to drop them and keep what has been worked.`,
+    );
+    e.code = "future";
+    throw e;
+  }
+  if (partial) {
+    const trimmed = trimDays(sheets, { from: partial.from, to: partial.to });
+    sheets = trimmed.sheets;
+    partialResult = {
+      dropped: trimmed.dropped,
+      from: trimmed.from,
+      through: trimmed.through,
+      clamped: trimmed.clamped,
+    };
+  }
   const restRows = dayProgramRestRows(restsBytes);
   // the Employee Schedules PDF, when one was uploaded: the second opinion on
   // shift shape, exactly the MLS cross-check. Schedule names print "Devin
@@ -271,6 +307,7 @@ export async function analyzeDayProgram({
     : [];
 
   return {
+    partial: partialResult,
     payPeriod: sheets[0]?.payPeriod || null,
     people,
     restRows,

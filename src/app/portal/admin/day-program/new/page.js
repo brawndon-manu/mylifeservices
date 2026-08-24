@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
 import { uploadDayProgramBatch } from "../actions";
+import PartialPick from "./PartialPick";
 
 export const metadata = { title: "Upload day program period", robots: { index: false, follow: false } };
 
@@ -20,6 +21,9 @@ const ERRORS = {
     "File storage rejected the upload - the Blob token is probably expired. Run `vercel env pull .env.local` to refresh it, then try again. Nothing was created.",
   save:
     "The sheets could not be saved. Nothing was created: the batch and all of its sheets go in as one write, so a failure here leaves nothing behind to clean up.",
+  future:
+    "That export contains days that haven't happened yet. QSP prints scheduled shifts exactly like worked ones, so those would become sheets asking people to sign for time they haven't worked. Pull the period again once it has ended - or tick \"partial pay period\" below to drop the unworked days and keep what has been worked.",
+  range: "That date range doesn't work: the start is after the end.",
 };
 
 export default async function NewDayProgramBatchPage({ searchParams }) {
@@ -80,6 +84,10 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
           hint="QSP > Reports > Employee Mileage Tracking. The day program has no payroll report to carry a mileage column, so this is the only place miles come from. Leave it out and the sheet says nothing about mileage, rather than printing a 0.00 nobody should have to attest to."
           accept=".xls,application/vnd.ms-excel"
         />
+        {/* deliberately last: the upload refuses a file holding days nobody
+            has worked, and this is the way past that check, so it should read
+            like what it is rather than an ordinary option. */}
+        <PartialPick />
         <button
           type="submit"
           className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"

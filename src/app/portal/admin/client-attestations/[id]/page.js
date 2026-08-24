@@ -93,6 +93,12 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
         </div>
         <div className="flex flex-wrap gap-2">
           <a
+            href={`/portal/admin/client-attestations/${batch.id}/download-pdf`}
+            className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
+          >
+            One PDF to print
+          </a>
+          <a
             href={`/portal/admin/client-attestations/${batch.id}/download`}
             className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
           >
@@ -245,9 +251,9 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
 
       {counts.unrouted > 0 && (
         <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted">
-          {counts.unrouted} of {counts.all} clients have no field supervisor. A
-          client&apos;s supervisor is whoever supervises their assigned staff,
-          set on the Caseloads page.
+          {counts.unrouted} of {counts.all}{" "}clients have no field
+          supervisor. A client&apos;s supervisor is whoever supervises their
+          assigned staff, set on the Caseloads page.
         </p>
       )}
     </section>
