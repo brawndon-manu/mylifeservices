@@ -9,7 +9,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { cleanEmail, cleanDisplayName, checkRateLimit } from "@/lib/security";
 import { formEmailRoute } from "@/lib/forms";
-import { resolveRecipient } from "@/lib/form-recipients";
+import { resolveRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
 import { storeFormSubmission } from "@/lib/form-store";
 
@@ -62,7 +62,7 @@ export async function submitPublicFormByEmail({
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
-    ccEmails: buildCc(route.cc, email, recipient.email),
+    ccEmails: buildCc(await routeCcList(route), email, recipient.email),
     submitterName: name,
     submitterEmail: email,
     replyTo: email,

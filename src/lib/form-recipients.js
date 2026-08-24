@@ -71,3 +71,27 @@ export async function resolveRecipient(title, userId) {
   if (!titleHasSegment(u.title, title)) return null;
   return { name: preferredName(u), email: u.email };
 }
+
+// THE ROUTE'S WHOLE CC LIST: its fixed entries plus every active holder of each
+// title in `ccTitles`, resolved live so it follows whoever holds the title -
+// the same rule as the TO line. The handbook route is why this exists: signed
+// copies go to Kristy (Assistant Program Manager, the TO) and to Britny (HR
+// Administrator, cc'd here) without either name being hardcoded.
+export async function routeCcList(route) {
+  const fixed = Array.isArray(route?.cc) ? route.cc : [];
+  const titles = Array.isArray(route?.ccTitles) ? route.ccTitles : [];
+  if (!titles.length) return fixed;
+  const holders = await prisma.user.findMany({
+    where: {
+      deactivatedAt: null,
+      OR: titles.map((t) => titleSegmentMatch(t)),
+    },
+    select: { email: true, name: true, preferredFirstName: true, preferredLastName: true },
+  });
+  return [
+    ...fixed,
+    ...holders
+      .filter((u) => u.email)
+      .map((u) => ({ name: preferredName(u), email: u.email })),
+  ];
+}

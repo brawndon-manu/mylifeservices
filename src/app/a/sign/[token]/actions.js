@@ -17,7 +17,7 @@ import { verifyAckToken } from "@/lib/ack-token";
 import { checkRateLimit } from "@/lib/security";
 import { preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
-import { resolveRecipient, resolveDefaultRecipient } from "@/lib/form-recipients";
+import { resolveRecipient, resolveDefaultRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
 import { storeFormSubmission } from "@/lib/form-store";
 
@@ -73,7 +73,7 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
     route,
     formTitle: post.form.title,
     recipientEmail: recipient.email,
-    ccEmails: buildCc(route.cc, user.email, recipient.email),
+    ccEmails: buildCc(await routeCcList(route), user.email, recipient.email),
     submitterName: name,
     submitterEmail: user.email,
     replyTo: user.email,

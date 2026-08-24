@@ -45,12 +45,15 @@ export const FORM_EMAIL_ROUTES = [
   },
   {
     key: "employee-handbook",
-    // "MLS Employee Handbook" - the acknowledgement on its last page. Kristy
-    // asked for signed copies back (2026-08-24: "please also sign the
-    // acknowledgement for this handbook and return to me") and holds Assistant
-    // Program Manager, so this follows the title rather than her name.
+    // "MLS Employee Handbook" - the acknowledgement on its last page, for the
+    // people who cannot come sign in person. Kristy asked for signed copies
+    // back (2026-08-24: "please also sign the acknowledgement for this handbook
+    // and return to me") and holds Assistant Program Manager; Britny keeps the
+    // HR record and holds HR Administrator. Both follow the title rather than
+    // the name, and the submitter is cc'd their own copy like every form.
     match: (title) => /employee handbook/i.test(title || ""),
     recipientTitle: "Assistant Program Manager",
+    ccTitles: ["HR Administrator"],
   },
   {
     key: "rest-meal-break",

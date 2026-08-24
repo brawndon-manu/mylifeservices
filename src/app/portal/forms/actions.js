@@ -9,7 +9,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
 import { prisma } from "@/lib/prisma";
-import { resolveRecipient } from "@/lib/form-recipients";
+import { resolveRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
 import { storeFormSubmission } from "@/lib/form-store";
 
@@ -53,7 +53,7 @@ export async function submitFormByEmail({
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
-    ccEmails: buildCc(route.cc, user.email, recipient.email),
+    ccEmails: buildCc(await routeCcList(route), user.email, recipient.email),
     submitterName: preferredName(user) || user.email,
     submitterEmail: user.email,
     replyTo: user.email,
