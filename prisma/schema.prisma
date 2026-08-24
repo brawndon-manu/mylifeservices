@@ -426,6 +426,13 @@ model Announcement {
   // optional sessions to pick from: [{ id, label }]. empty = single meeting.
   meetingOptions              Json?
   // when true, attendees may pick more than one session.
+  // EMAIL THE AUTHOR AS SLOTS ARE PICKED. Mánu 2026-08-24, about the in-person
+  // signing weeks: "an option for announcements to toggle when new people have
+  // chosen slots." Flipped from the announcement page itself - not the form -
+  // so it can be turned on for a meeting that is already posted or scheduled.
+  // Each new pick emails the author and whoever posted on their behalf, through
+  // the same off-production guard every announcement email runs.
+  meetingSlotAlerts Boolean @default(false)
   meetingMultiPick            Boolean                       @default(false)
   // the meeting's start as an absolute instant (UTC). each viewer sees it in
   // their own device timezone. meetingTimezone is the zone the author set it in

@@ -42,6 +42,7 @@ import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
 import ConcludeMeeting from "../_components/ConcludeMeeting";
+import SlotAlertsToggle from "../_components/SlotAlertsToggle";
 import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
 import PublishBar from "../_components/PublishBar";
@@ -89,6 +90,7 @@ import {
   adminAddInvitee,
   adminRemoveInvitee,
   markAckFor,
+  setSlotAlerts,
 } from "../actions";
 import {
   PersonKebab,
@@ -1020,6 +1022,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         </span>
                       </p>
                       <div className="flex flex-wrap items-center justify-end gap-2">
+                        {/* slot alerts: flippable here rather than on the edit
+                            form, so a meeting already posted or scheduled can
+                            start emailing without being reopened */}
+                        <SlotAlertsToggle
+                          on={post.meetingSlotAlerts}
+                          action={setSlotAlerts.bind(null, post.id)}
+                        />
                         {canSend && !isDraft && meetingRoster.noResponse.length > 0 && (
                           <AckEmailAction
                             postId={post.id}

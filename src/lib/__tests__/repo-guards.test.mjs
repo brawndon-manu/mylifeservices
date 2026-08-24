@@ -94,6 +94,9 @@ test("the announcement edit page selects every editable meeting field", () => {
     "meetingResponseNoticeSentAt",
     "meetingAuthorNudgeSentAt",
     "meetingReminders",
+    // toggled from the announcement page by its own action, never posted by the
+    // edit form - so an edit cannot clear it and the form has no reason to load it
+    "meetingSlotAlerts",
   ]);
   const editable = fields.filter((f) => !serverOwned.has(f));
   assert.ok(editable.length > 5, "expected several editable meeting fields, got " + editable.length);

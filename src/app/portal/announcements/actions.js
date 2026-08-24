@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
+import { sendSlotAlert } from "@/lib/slot-alert-email";
 import { canTake } from "@/lib/meeting-slots";
 import { getCurrentUser } from "@/lib/current-user";
 import {
@@ -949,6 +950,27 @@ async function resetChangedMeetingSessions(post, newFields) {
   return affected;
 }
 
+// EMAIL-ME-AS-SLOTS-ARE-PICKED, flipped from the announcement page. Author,
+// whoever posted on their behalf, or a moderator - the same people the roster
+// answers to. Not part of the edit form on purpose: it has to be flippable on
+// a meeting that is already posted or scheduled without opening an edit.
+export async function setSlotAlerts(postId, on) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true, postedById: true, deletedAt: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  const allowed =
+    post.authorId === user.id || post.postedById === user.id || isModerator(user.role);
+  if (!allowed) redirect(`/portal/announcements/${postId}`);
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: { meetingSlotAlerts: !!on },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+}
+
 export async function togglePin(postId) {
   const user = await requireUser();
   if (!isModerator(user.role)) {
@@ -1206,6 +1228,16 @@ export async function chooseMeetingOption(postId, optionId) {
     }
   }
 
+  // a NEW pick tells the author, when the announcement asked to be told. Best
+  // effort: the pick is already saved and a failed email must not undo it.
+  if (!existing) {
+    try {
+      await sendSlotAlert(postId, user, [optionId]);
+    } catch (e) {
+      console.error("slot alert failed:", e?.message || e);
+    }
+  }
+
   // sync the response: going if any pick remains, otherwise back to no-response.
   const respKey = {
     announcementId_userId: { announcementId: postId, userId: user.id },
@@ -1331,6 +1363,22 @@ export async function setMeetingChoices(postId, formData) {
         data: ids.map((optionId) => ({ announcementId: postId, userId: user.id, optionId })),
         skipDuplicates: true,
       });
+    }
+  }
+
+  // a NEW pick tells the author, when the announcement asked to be told. New =
+  // held now and not held when the form opened; re-confirming an existing pick
+  // says nothing. Best effort: the picks are saved and a failed email must not
+  // undo them.
+  {
+    const before = new Set(myChoices.map((c) => c.optionId));
+    const fresh = ids.filter((oid) => !before.has(oid));
+    if (fresh.length) {
+      try {
+        await sendSlotAlert(postId, user, fresh);
+      } catch (e) {
+        console.error("slot alert failed:", e?.message || e);
+      }
     }
   }
 
