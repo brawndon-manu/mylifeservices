@@ -44,6 +44,15 @@ export const FORM_EMAIL_ROUTES = [
     recipientTitle: "HR Administrator",
   },
   {
+    key: "employee-handbook",
+    // "MLS Employee Handbook" - the acknowledgement on its last page. Kristy
+    // asked for signed copies back (2026-08-24: "please also sign the
+    // acknowledgement for this handbook and return to me") and holds Assistant
+    // Program Manager, so this follows the title rather than her name.
+    match: (title) => /employee handbook/i.test(title || ""),
+    recipientTitle: "Assistant Program Manager",
+  },
+  {
     key: "rest-meal-break",
     // "Rest & Meal Period Policy and Acknowledgement"
     match: (title) => /rest\b.*\bmeal\b/i.test(title || ""),
