@@ -151,10 +151,18 @@ export const MEETING_FORMATS = [
   { value: "zoom", label: "Zoom" },
   { value: "in_person", label: "In person" },
   { value: "hybrid", label: "Hybrid" },
+  // IN-PERSON SIGNING, 2026-08-22. Mánu: "this needs to be its own type of
+  // meeting format. We can call it in person signing... TIme slots as its own
+  // unique setup." A signing week is one room, one appointment length, the same
+  // hours every day - so its setup is a rule that GENERATES the slots (see
+  // signing-slots.js) instead of twenty session cards described by hand. What
+  // comes out is ordinary meeting options, so the picker, roster, reminders and
+  // attestation all work on it unchanged.
+  { value: "signing", label: "In-person signing" },
 ];
 
 export function isValidMeetingFormat(f) {
-  return f === "zoom" || f === "in_person" || f === "hybrid";
+  return f === "zoom" || f === "in_person" || f === "hybrid" || f === "signing";
 }
 
 // zoom + hybrid need a link/passcode; in-person + hybrid need an address.
@@ -162,13 +170,15 @@ export function formatHasOnline(f) {
   return f === "zoom" || f === "hybrid";
 }
 export function formatHasAddress(f) {
-  return f === "in_person" || f === "hybrid";
+  // a signing happens somewhere too
+  return f === "in_person" || f === "hybrid" || f === "signing";
 }
 
 export const MEETING_FORMAT_LABELS = {
   zoom: "Zoom",
   in_person: "In person",
   hybrid: "Hybrid",
+  signing: "In-person signing",
 };
 
 export const ANNOUNCEMENT_TITLE_MAX = 140;

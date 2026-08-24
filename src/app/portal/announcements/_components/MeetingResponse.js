@@ -7,6 +7,7 @@
 // version of the same confirmed/change pattern.
 import { useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
+import { isFull, slotLabel, remainingFor } from "@/lib/meeting-slots";
 import MeetingTime from "./MeetingTime";
 import CopyButton from "./CopyButton";
 import { formatDuration } from "@/lib/meeting-time";
@@ -76,6 +77,13 @@ function JoinRow({ link, code }) {
 export default function MeetingResponse({
   postId,
   options = [],
+  // how many have taken each slot, keyed by option id. Empty for every
+  // meeting with no capacity set, which is all of them until an in-person one
+  // needs it - see meeting-slots.js.
+  taken = {},
+  // an in-person signing renders its slots grouped by day - a hundred flat
+  // buttons is a scroll, five day columns is a glance. See dayGroups below.
+  signing = false,
   multiPick = false,
   online = false,
   isAdmin = false,
@@ -183,18 +191,80 @@ export default function MeetingResponse({
   // active choice - the moment you pick a session/series option it clears.
   const cantActive = cantMakeIt && selected.size === 0;
 
+  // A SIGNING'S SLOTS, GROUPED BY DAY. The generator emits one day at a time,
+  // so a day is a consecutive run of options whose label starts with the same
+  // word - "Monday 8:00 AM", "Monday 8:30 AM"... - and that run structure is
+  // what gets rendered: a heading per day, a compact grid of times under it.
+  // Grouped off the LABEL, not off `at` in the viewer's timezone: the label
+  // was written in the meeting's own zone when the slots were generated, so it
+  // is the same string on the server and on every device, and hydration never
+  // sees two different groupings.
+  const dayGroups = [];
+  if (signing) {
+    for (const opt of options) {
+      const day = String(opt.label || "").split(" ")[0] || "Day";
+      const last = dayGroups[dayGroups.length - 1];
+      if (last && last.day === day) last.options.push(opt);
+      else dayGroups.push({ day, options: [opt] });
+    }
+  }
+
+  // one compact time cell in a signing's day grid. The same selection state
+  // and the same server-checked cap as the full-width rows - only the layout
+  // is smaller, because a day holds twenty of these.
+  const slotCell = (opt) => {
+    const on = selected.has(opt.id);
+    const count = taken[opt.id] || 0;
+    const full = !on && isFull(opt, count);
+    const left = remainingFor(opt, count);
+    const time = String(opt.label || "").replace(/^\S+\s+/, "");
+    return (
+      <button
+        key={opt.id}
+        type="button"
+        disabled={full}
+        onClick={() => toggle(opt.id)}
+        title={slotLabel(opt, count) || undefined}
+        className={`rounded-md border px-2 py-1.5 text-center text-xs font-medium transition ${
+          full
+            ? "cursor-not-allowed border-border bg-surface-2 text-muted opacity-60"
+            : on
+              ? "border-brand bg-sky-50 text-brand ring-1 ring-brand dark:bg-sky-950/40"
+              : "border-border bg-surface text-foreground hover:border-brand-light"
+        }`}
+      >
+        <span className="block">{time}</span>
+        {full ? (
+          <span className="block text-[10px] font-normal">Full</span>
+        ) : left != null ? (
+          <span className="block text-[10px] font-normal text-muted">{left} left</span>
+        ) : null}
+      </button>
+    );
+  };
+
   // one selectable option button (radio for single/series, checkbox for multi).
   // `onPick` overrides the default toggle (series rows pick within their series).
   const optBtn = (opt, onPick) => {
     const on = selected.has(opt.id);
     const square = multiPick && !isSeries;
+    // A FULL SLOT IS STILL PICKABLE BY WHOEVER IS IN IT. Somebody re-opening
+    // this to change something else must not find their own time greyed out -
+    // they hold that seat. The server refuses new picks either way; this only
+    // saves people from choosing something that will be refused.
+    const count = taken[opt.id] || 0;
+    const full = !on && isFull(opt, count);
+    const note = slotLabel(opt, count);
     return (
       <button
         key={opt.id}
         type="button"
+        disabled={full}
         onClick={onPick || (() => toggle(opt.id))}
         className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-          on ? "border-brand bg-sky-50 dark:bg-sky-950/30" : "border-border hover:border-brand-light"
+          full
+            ? "cursor-not-allowed border-border bg-surface-2 opacity-60"
+            : on ? "border-brand bg-sky-50 dark:bg-sky-950/30" : "border-border hover:border-brand-light"
         }`}
       >
         <span
@@ -205,7 +275,14 @@ export default function MeetingResponse({
           {on && <Check className="h-3 w-3" />}
         </span>
         <span className="flex-1">
-          <span className="block text-sm font-medium text-foreground">{opt.label}</span>
+          <span className="block text-sm font-medium text-foreground">
+            {opt.label}
+            {note && (
+              <span className={`ml-2 text-xs font-normal ${full ? "text-rose-600 dark:text-rose-400" : "text-muted"}`}>
+                {note}
+              </span>
+            )}
+          </span>
           {(opt.at || formatDuration(opt.durationFromMin, opt.durationToMin)) && (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
               {opt.at && <MeetingTime iso={opt.at} setTz={opt.tz} />}
@@ -434,6 +511,17 @@ export default function MeetingResponse({
                     </div>
                   );
                 })}
+              </div>
+            ) : signing ? (
+              <div className="space-y-4">
+                {dayGroups.map((g) => (
+                  <div key={g.day + g.options[0]?.id}>
+                    <p className="text-sm font-semibold text-foreground">{g.day}</p>
+                    <div className="mt-1.5 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                      {g.options.map(slotCell)}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               options.map((opt) => optBtn(opt))

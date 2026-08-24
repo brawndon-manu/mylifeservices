@@ -103,7 +103,33 @@ export function buildRsvpButtons(post, url) {
 
   // date preview (display only - the picking happens on the linked page)
   let preview = "";
-  if (opts.length && isSeries) {
+  const isSigning = post.meetingFormat === "signing";
+  if (opts.length && isSigning) {
+    // A SIGNING'S SLOTS ARE A RULE, SO THE EMAIL STATES THE RULE. A hundred
+    // generated half-hours printed as a hundred bullets was the first thing
+    // this format mailed, and Mánu 2026-08-23 called it horrendous - the
+    // reader needs the week, the hours and the visit length, and the picking
+    // happens on the linked page anyway.
+    const first = opts[0];
+    const last = opts[opts.length - 1];
+    const datePart = (o) => (o?.at ? formatInstant(o.at, EMAIL_TZ).split(" \u00b7 ")[0] : "");
+    const timePart = (o) => (o?.at ? formatInstant(o.at, EMAIL_TZ).split(" \u00b7 ")[1] || "" : "");
+    const dur = first?.durationFromMin || null;
+    const endIso = last?.at && dur
+      ? new Date(new Date(last.at).getTime() + dur * 60000).toISOString()
+      : null;
+    const endTime = endIso ? formatInstant(endIso, EMAIL_TZ).split(" \u00b7 ")[1] || "" : "";
+    const range = datePart(first) && datePart(last) && datePart(first) !== datePart(last)
+      ? `${datePart(first)} through ${datePart(last)}`
+      : datePart(first);
+    const hours = timePart(first) && endTime ? `${timePart(first).replace(/ [A-Z]{2,4}$/, "")} to ${endTime}` : "";
+    preview =
+      `<div style="font-size:13px;color:#334155;">` +
+      (range ? `<div style="font-weight:700;color:#111827;">${esc(range)}</div>` : "") +
+      (hours ? `<div style="margin-top:3px;">Come in any day, ${esc(hours)}</div>` : "") +
+      (dur ? `<div style="margin-top:3px;">Plan for about ${esc(String(dur))} minutes</div>` : "") +
+      `</div>`;
+  } else if (opts.length && isSeries) {
     const groups = [];
     for (const o of opts) {
       let g = groups.find((x) => x.id === o.seriesId);
@@ -127,9 +153,13 @@ export function buildRsvpButtons(post, url) {
   if (preview) preview = `<div style="margin-bottom:16px;">${preview}</div>`;
 
   const line = opts.length
-    ? "To sign up for your dates, or let us know you can't make it, tap below."
+    ? isSigning
+      ? "Pick the day and time you'll come in, or let us know you can't make it. Tap below."
+      : "To sign up for your dates, or let us know you can't make it, tap below."
     : "Let us know if you can make it. Tap below.";
-  const btnLabel = opts.length ? (isSeries ? "Choose my dates" : "Choose my date") : "Respond";
+  const btnLabel = opts.length
+    ? isSigning ? "Pick my time" : isSeries ? "Choose my dates" : "Choose my date"
+    : "Respond";
 
   return `<div style="margin-top:22px;border-top:1px solid #eef1f5;padding-top:20px;">${preview}<div style="font-size:14px;font-weight:600;color:#1f2937;margin-bottom:12px;">${esc(line)}</div><a href="${url}" style="${BTN}">${esc(btnLabel)} &rarr;</a><div style="margin-top:12px;font-size:12px;color:#8a93a0;">No login needed. You can change your response anytime in the portal.</div></div>`;
 }

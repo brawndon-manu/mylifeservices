@@ -7,6 +7,7 @@
 // editable name (default "Session N"), serialized to a hidden meetingOptions
 // JSON field. otherwise the single meeting's time is emitted as hidden fields.
 import { useState, useEffect } from "react";
+import SigningSetup from "./SigningSetup";
 import {
   MEETING_KINDS,
   MEETING_FORMATS,
@@ -200,6 +201,35 @@ function OptionCard({ o, index, online, onPatch, onRemove, showName = true, name
         </button>
       </div>
       <TimeBlock value={o} onChange={(v) => onPatch(v)} hideTime={hideTime} hideDuration={hideDuration} />
+      {/* HOW MANY THIS ONE HOLDS. Blank means everybody, which is what every
+          meeting meant before in-person slots needed a limit - so a Zoom
+          all-hands is untouched by leaving it alone. Only shown for in-person
+          formats, because a room is the thing that runs out. */}
+      {!online && (
+        <div className="mt-3">
+          <label className={LABEL} htmlFor={`cap-${o.id}`}>
+            People per {showName ? "session" : "slot"}
+          </label>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              id={`cap-${o.id}`}
+              type="number"
+              min="1"
+              inputMode="numeric"
+              value={o.capacity ?? ""}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                onPatch({ capacity: Number.isFinite(n) && n > 0 ? n : null });
+              }}
+              placeholder="No limit"
+              className="w-28 rounded-md border border-border bg-surface px-2 py-1 text-sm text-foreground"
+            />
+            <span className="text-xs text-muted">
+              Leave blank for no limit. Full slots cannot be picked.
+            </span>
+          </div>
+        </div>
+      )}
       {online && (
         <div className="mt-3">
           <span className={LABEL}>Zoom link for this {showName ? "session" : "date"}</span>
@@ -305,6 +335,8 @@ export default function MeetingFields({
       linkMode: o.zoomLink ? "different" : "same",
       seriesId: o.seriesId || null,
       seriesLabel: o.seriesLabel || "",
+      // read back so editing a capped meeting does not silently uncap it
+      capacity: Number.isInteger(o.capacity) && o.capacity > 0 ? o.capacity : null,
       editing: false,
     };
   });
@@ -368,6 +400,11 @@ export default function MeetingFields({
   }, []);
 
   const online = formatHasOnline(format);
+  // AN IN-PERSON SIGNING GENERATES ITS SLOTS FROM A RULE - see SigningSetup.
+  // The single-time block, the sessions editor and the series machinery all
+  // step aside for it: describing twenty identical slots by hand is the exact
+  // work this format exists to remove.
+  const signing = format === "signing";
   const addr = formatHasAddress(format);
   const singleInstant = !hasOptions ? zonedToInstant(single.date, single.time, single.tz) : null;
 
@@ -437,6 +474,9 @@ export default function MeetingFields({
           // "same" leaves it blank so it falls back to the default link.
           zoomLink: online && o.linkMode === "different" ? (o.zoomLink || "").trim() : "",
           zoomCode: online && o.linkMode === "different" ? (o.zoomCode || "").trim() : "",
+          // null rather than 0 or "" - the parser reads anything that is not a
+          // positive whole number as no limit, and null says so plainly
+          capacity: Number.isInteger(o.capacity) && o.capacity > 0 ? o.capacity : null,
         };
         if (seriesMode && o.seriesId) {
           base.seriesId = o.seriesId;
@@ -467,7 +507,7 @@ export default function MeetingFields({
       <div>
         <label className={LABEL}>Format</label>
         <input type="hidden" name="meetingFormat" value={format} />
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {MEETING_FORMATS.map((f) => (
             <button
               key={f.value}
@@ -581,7 +621,9 @@ export default function MeetingFields({
       <div>
         <label className={LABEL}>Reminder</label>
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
-          Send a &quot;starting soon&quot; email
+          {/* a signing is a visit, not a session - the same reminders fire,
+              the words just say what the thing is */}
+          Send a &quot;{signing ? "your visit is coming up" : "starting soon"}&quot; email
           <input
             name="meetingReminderLeadMin"
             type="text"
@@ -589,7 +631,7 @@ export default function MeetingFields({
             defaultValue={d.meetingReminderLeadMin ?? 10}
             className={`${INPUT} mt-0 !w-16`}
           />
-          minutes before each session starts.
+          minutes before {signing ? "their chosen time" : "each session starts"}.
         </div>
         <label className="mt-2 flex items-center gap-2">
           <input
@@ -599,13 +641,29 @@ export default function MeetingFields({
             className="h-4 w-4 accent-brand"
           />
           <span className="text-sm text-foreground">
-            Also send a &quot;meeting tomorrow&quot; reminder the night before{" "}
+            Also send a &quot;{signing ? "your visit is tomorrow" : "meeting tomorrow"}&quot; reminder the night before{" "}
             <span className="text-xs text-muted">(8pm the day before)</span>
           </span>
         </label>
       </div>
 
-      <div className="border-t border-border pt-4">
+      {signing && (
+        <div className="border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">Time slots</p>
+          <p className="mt-0.5 text-xs text-muted">
+            Say which days, which hours, how long each visit runs and how many
+            people fit at once - the slots build themselves. Staff pick one and
+            full slots close on their own.
+          </p>
+          <SigningSetup
+            tz={initTz}
+            zonedToInstant={zonedToInstant}
+            initialOptions={Array.isArray(d.meetingOptions) ? d.meetingOptions : []}
+          />
+        </div>
+      )}
+
+      {!signing && <div className="border-t border-border pt-4">
         {/* choose single-vs-multi FIRST, then show the matching time fields -
             otherwise checking this box wipes the date/time you just entered */}
         <label className="flex items-start gap-3">
@@ -812,7 +870,7 @@ export default function MeetingFields({
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {showTimeNotify && (
         <div className="border-t border-border pt-4">

@@ -39,22 +39,34 @@ function Marker({ tone, on, box }) {
 }
 
 // a clickable selection row (not a form input - state is posted via hidden inputs).
-function Choice({ label, tone, on, box, onClick }) {
-  const state = on
+function Choice({ label, tone, on, box, onClick, full = false, note = null }) {
+  // A FULL SLOT IS SHOWN, NOT HIDDEN. Somebody who was told to pick Tuesday
+  // 10:00 needs to see that it went rather than wonder where it is - and a slot
+  // they are already in never arrives here as full.
+  const state = full
+    ? "cursor-not-allowed border-border bg-background text-muted opacity-60"
+    : on
     ? tone === "cant"
       ? "border-rose-500 bg-rose-500/10 text-rose-200"
       : "border-brand-light bg-brand-light/10 text-foreground"
     : tone === "cant"
-      ? "border-border bg-background text-rose-300/90 hover:border-rose-500/60"
+      // was text-rose-300/90, which on the light page read as a disabled
+      // control - Manu asked why it was "darkened out". It is an ordinary
+      // choice and now looks like one.
+      ? "border-rose-300 bg-background text-rose-600 hover:border-rose-500 dark:border-rose-500/40 dark:text-rose-300/90"
       : "border-border bg-background text-brand-light hover:border-brand-light/60";
   return (
     <button
       type="button"
+      disabled={full}
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm font-semibold transition ${state}`}
     >
       <Marker tone={tone} on={on} box={box} />
-      <span>{label}</span>
+      <span>
+        {label}
+        {note && <span className="ml-2 text-xs font-normal opacity-80">{note}</span>}
+      </span>
     </button>
   );
 }
@@ -247,6 +259,8 @@ export default function RsvpForm({
                   <Choice
                     key={o.id}
                     label={o.dateLabel}
+                    full={o.full}
+                    note={o.note}
                     on={seriesPick[s.id] === o.id && !cantSeries.has(s.id)}
                     onClick={() => pickSeriesDate(s.id, o.id)}
                   />
@@ -262,12 +276,65 @@ export default function RsvpForm({
               This meeting has already started, so it can&apos;t be changed here.
             </p>
           ) : (
+            flat.signing ? (
+              // A SIGNING'S SLOTS, GROUPED BY DAY - the same shape the portal
+              // picker draws. Days are consecutive runs, because the generator
+              // emits one day at a time; times sit in a compact grid under
+              // each heading instead of a hundred stacked rows.
+              <div className="flex flex-col gap-4">
+                {flat.options
+                  .reduce((groups, o) => {
+                    const last = groups[groups.length - 1];
+                    if (last && last.day === o.day) last.options.push(o);
+                    else groups.push({ day: o.day, options: [o] });
+                    return groups;
+                  }, [])
+                  .map((g) => (
+                    <div key={g.day}>
+                      <p className="text-sm font-semibold text-foreground">{g.day}</p>
+                      <div className="mt-1.5 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                        {/* the same cell the announcement page draws, so the
+                            emailed link and the portal read as one feature:
+                            time on top, the room left under it, Full greyed. */}
+                        {g.options.map((o) => {
+                          const on = flatVal === o.id && !fullCant;
+                          return (
+                            <button
+                              key={o.id}
+                              type="button"
+                              disabled={o.full}
+                              onClick={() => pickFlat(o.id)}
+                              title={o.note || undefined}
+                              className={`rounded-md border px-2 py-1.5 text-center text-xs font-medium transition ${
+                                o.full
+                                  ? "cursor-not-allowed border-border bg-surface-2 text-muted opacity-60"
+                                  : on
+                                    ? "border-brand bg-sky-50 text-brand ring-1 ring-brand dark:bg-sky-950/40"
+                                    : "border-border bg-surface text-foreground hover:border-brand-light"
+                              }`}
+                            >
+                              <span className="block">{o.time || o.dateLabel}</span>
+                              {o.full ? (
+                                <span className="block text-[10px] font-normal">Full</span>
+                              ) : o.left != null ? (
+                                <span className="block text-[10px] font-normal text-muted">{o.left} left</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
             <div className="flex flex-col gap-2">
               {flat.options.map((o) =>
                 isMulti ? (
                   <Choice
                     key={o.id}
                     label={o.dateLabel}
+                    full={o.full}
+                    note={o.note}
                     box
                     on={flatChecks.has(o.id) && !fullCant}
                     onClick={() => toggleFlatMulti(o.id)}
@@ -276,12 +343,15 @@ export default function RsvpForm({
                   <Choice
                     key={o.id}
                     label={o.dateLabel}
+                    full={o.full}
+                    note={o.note}
                     on={flatVal === o.id && !fullCant}
                     onClick={() => pickFlat(o.id)}
                   />
                 ),
               )}
             </div>
+            )
           )}
         </div>
       )}
@@ -293,9 +363,12 @@ export default function RsvpForm({
             type="button"
             onClick={toggleCant}
             className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed px-3.5 py-3 text-sm font-semibold transition ${
+              // rose-300 was written for the dark card and on the light page
+              // it read as a disabled control - Manu asked why it was
+              // "darkened out". It is an ordinary choice in either theme now.
               cantOpen
-                ? "border-rose-500/70 text-rose-300"
-                : "border-rose-500/30 text-rose-300/80 hover:border-rose-500/60"
+                ? "border-rose-500 text-rose-700 dark:border-rose-500/70 dark:text-rose-300"
+                : "border-rose-400/70 text-rose-600 hover:border-rose-500 dark:border-rose-500/40 dark:text-rose-300/90 dark:hover:border-rose-500/60"
             }`}
           >
             <span aria-hidden>✕</span> {cantLabel}

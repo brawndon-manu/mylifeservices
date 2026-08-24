@@ -73,6 +73,7 @@ import {
   sendAnnouncementEmail,
   publishAnnouncement,
   discardDraft,
+  cancelScheduledPublish,
   setMeetingChoices,
   attendMeeting,
   cantMakeMeeting,
@@ -421,6 +422,19 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   // ---- Company Meeting ----
   const meetingOptions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
   const myPicks = (post.meetingChoices || []).map((c) => c.optionId);
+  // HOW FULL EACH SLOT IS, for everybody and not only for admins. The roster
+  // below loads every choice, but that branch is admin-only, and the person
+  // choosing a time is the one who most needs to know Tuesday 10:00 has gone.
+  // A grouped count rather than the rows: this needs the number, not who.
+  const takenByOption = Object.fromEntries(
+    (
+      await prisma.announcementMeetingChoice.groupBy({
+        by: ["optionId"],
+        where: { announcementId: post.id },
+        _count: { _all: true },
+      })
+    ).map((c) => [c.optionId, c._count._all]),
+  );
   // can I pick a session? = in the meeting audience (same membership as ack).
   const iCanPick = post.ackEveryone
     ? !isAckExempt(user)
@@ -454,6 +468,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         })
       : [];
     publishInfo = {
+      // the pending schedule, if one is set - the banner names it and offers
+      // the way off the clock
+      scheduledAtIso: post.publishAt ? post.publishAt.toISOString() : null,
       hasAudience,
       count: recipients.length,
       recipients: recipients.map((u) => ({ id: u.id, name: preferredName(u), title: u.title || "" })),
@@ -693,7 +710,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
       {publishInfo && (
         <div className="mt-4">
-          <PublishBar postId={post.id} publish={publishAnnouncement} discard={discardDraft} info={publishInfo} />
+          <PublishBar postId={post.id} publish={publishAnnouncement} discard={discardDraft} cancelSchedule={cancelScheduledPublish} info={publishInfo} />
         </div>
       )}
 
@@ -968,6 +985,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     defaultLink={post.zoomLink}
                     defaultCode={post.zoomCode}
                     myPicks={myPicks}
+                    taken={takenByOption}
+                    signing={post.meetingFormat === "signing"}
                     myResponse={
                       myResponse
                         ? { cantMakeIt: myResponse.cantMakeIt, reason: myResponse.reason }
@@ -1057,7 +1076,23 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                         </span>
                       </p>
                       {meetingOptions.length > 0 ? (
-                        meetingRoster.bySession.map(({ option, users }) => {
+                        (() => {
+                          // A SIGNING LISTS ONLY THE SLOTS SOMEBODY TOOK. A
+                          // hundred generated slots each reading "0 going -
+                          // nobody yet" is a hundred lines of nothing; Mánu
+                          // 2026-08-23 called that view horrendous, fairly. An
+                          // ordinary multi-session meeting keeps its empty
+                          // sessions - three rostered sessions with one empty
+                          // is information - but a signing's slots exist
+                          // before anyone wants them, so absence is the
+                          // default, not news. One line stands in for it.
+                          const shown = post.meetingFormat === "signing"
+                            ? meetingRoster.bySession.filter(({ users }) => users.length > 0)
+                            : meetingRoster.bySession;
+                          if (!shown.length) {
+                            return <p className="py-1 text-xs text-faint">No responses yet.</p>;
+                          }
+                          return shown.map(({ option, users }) => {
                           const present = users.filter((u) => u.attended === "present").length;
                           const absent = users.filter((u) => u.attended === "absent").length;
                           return (
@@ -1106,7 +1141,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                               </div>
                             </div>
                           );
-                        })
+                          });
+                        })()
                       ) : meetingRoster.singleGoing.length === 0 ? (
                         <p className="py-1 text-xs text-faint">nobody yet</p>
                       ) : (

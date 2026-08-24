@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { isFull, slotLabel, remainingFor } from "@/lib/meeting-slots";
 import { verifyRsvpToken } from "@/lib/rsvp-token";
 import { firstNameOf } from "@/lib/contacts";
 import { isCompanyMeeting, computeMeetingLocks } from "@/lib/announcements";
@@ -40,6 +41,9 @@ export default async function RsvpPage({ params, searchParams }) {
           publishedAt: true,
           meetingOptions: true,
           meetingMultiPick: true,
+          // the select is the reason `signing` read false with the flag set:
+          // an unselected field is undefined, and undefined !== "signing"
+          meetingFormat: true,
           meetingAt: true,
           requireAck: true,
           ackEveryone: true,
@@ -104,6 +108,20 @@ export default async function RsvpPage({ params, searchParams }) {
       myAttended: myResp?.attended || null,
       now: Date.now(),
     });
+    // HOW FULL EACH SLOT IS. `submitRsvpPicks` already refuses a full one, but
+    // being told no after choosing is a worse experience than not being offered
+    // it - and this is the link most people will use, straight from the email.
+    const takenByOption = Object.fromEntries(
+      (
+        await prisma.announcementMeetingChoice.groupBy({
+          by: ["optionId"],
+          where: { announcementId: post.id },
+          _count: { _all: true },
+        })
+      ).map((c) => [c.optionId, c._count._all]),
+    );
+    const mineAlready = new Set(myChoices.map((c) => c.optionId));
+
     const reason = myResp?.reason || "";
     const tapped = parsed.choice && opts.find((o) => o.id === parsed.choice);
 
@@ -148,7 +166,24 @@ export default async function RsvpPage({ params, searchParams }) {
       flat = {
         multi,
         locked: locks.lockedAll,
-        options: opts.map((o) => ({ id: o.id, dateLabel: optDateLabel(o) })),
+        // A SIGNING GROUPS BY DAY, exactly as the portal picker does - a
+        // hundred full-width radio rows was the first thing this page ever
+        // rendered for one, and Manu called it horrendous. Day and time ride
+        // separately so the form can print day headings over compact times.
+        signing: post.meetingFormat === "signing",
+        options: opts.map((o) => {
+          const parts = optDateLabel(o).split(" \u00b7 ");
+          return {
+            id: o.id,
+            dateLabel: optDateLabel(o),
+            day: parts[0] || optDateLabel(o),
+            time: (parts[1] || "").replace(/ [A-Z]{2,4}$/, "") || null,
+            // a slot they are already in is never shown as full to them
+            full: !mineAlready.has(o.id) && isFull(o, takenByOption[o.id] || 0),
+            note: slotLabel(o, takenByOption[o.id] || 0),
+            left: remainingFor(o, takenByOption[o.id] || 0),
+          };
+        }),
       };
       const existingPicks = myChoices
         .map((c) => c.optionId)

@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
+import { canTake } from "@/lib/meeting-slots";
 import { getCurrentUser } from "@/lib/current-user";
 import {
   isModerator,
@@ -20,7 +21,6 @@ import {
   isSuper,
 } from "@/lib/roles";
 import { firstNameOf, preferredName } from "@/lib/contacts";
-import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import { signAckToken } from "@/lib/ack-token";
 import { recordAnnouncementAck } from "@/lib/announcement-ack";
 import { formEmailRoute } from "@/lib/forms";
@@ -40,6 +40,12 @@ import {
   COMMENT_CONTENT_MAX,
 } from "@/lib/hub";
 import { resolveAnnouncementRecipients } from "@/lib/timesheet-mode";
+import {
+  emailAnnouncement,
+  emailAudienceWhere,
+  EMAIL_AUTHOR_SELECT,
+  EMAIL_MEETING_SELECT,
+} from "@/lib/announce-send";
 import {
   isValidAnnouncementTag,
   isChangelog,
@@ -230,6 +236,11 @@ function parseMeetingFields(formData, tag) {
             return {
               id: String(o.id || `opt${i}`),
               label: o.label.trim().slice(0, 140),
+              // HOW MANY THIS SESSION HOLDS, added 2026-08-22 for in-person
+              // slots. posInt already reads 0 and rubbish as null, which is
+              // exactly right here: null holds everybody, and every meeting
+              // written before this keeps meaning that.
+              capacity: posInt(o.capacity),
               at,
               tz: at && typeof o.tz === "string" ? o.tz.slice(0, 60) : null,
               durationFromMin: posInt(o.durationFromMin),
@@ -585,9 +596,39 @@ export async function publishAnnouncement(postId, formData) {
   }
   if (post.publishedAt) redirect(`/portal/announcements/${postId}`); // already live
 
+  // SEND LATER. The same dialog, one more choice: a real future instant means
+  // the draft is scheduled rather than published, and the cron fires it - and
+  // its email - when the clock passes. The email decision is captured NOW,
+  // because the dialog holding it is about to close and the send happens with
+  // nobody in the room. Precision is the cron's five-minute pass.
+  const laterIso = String(formData?.get("publishAtIso") || "");
+  if (formData?.get("sendLater") === "on" && laterIso) {
+    const at = new Date(laterIso);
+    if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) {
+      redirect(`/portal/announcements/${postId}?error=publishAt`);
+    }
+    await prisma.announcement.update({
+      where: { id: postId },
+      data: {
+        publishAt: at,
+        publishEmail: {
+          doEmail: formData.get("doEmail") === "on",
+          everyone: formData.get("emailEveryone") === "on",
+          titles: formData.getAll("emailTitles").filter((t) => typeof t === "string" && t),
+          userIds: formData.getAll("emailUserIds").filter((t) => typeof t === "string" && t),
+        },
+      },
+    });
+    revalidatePath("/portal/announcements");
+    revalidatePath(`/portal/announcements/${postId}`);
+    redirect(`/portal/announcements/${postId}?scheduled=1`);
+  }
+
   await prisma.announcement.update({
     where: { id: postId },
-    data: { publishedAt: new Date() },
+    // publishing by hand also clears any schedule, so "publish now" on a
+    // scheduled draft cannot fire a second time from the cron
+    data: { publishedAt: new Date(), publishAt: null, publishEmail: null },
   });
 
   let res = { sent: 0 };
@@ -610,6 +651,27 @@ export async function publishAnnouncement(postId, formData) {
   redirect(
     `/portal/announcements/${postId}?published=1${res.sent ? `&sent=${res.sent}` : ""}`,
   );
+}
+
+// take a scheduled draft off the clock. It stays a draft, untouched otherwise -
+// unscheduling is not discarding, and the author may just be moving the time.
+export async function cancelScheduledPublish(postId) {
+  const user = await requireUser();
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true, deletedAt: true, publishedAt: true, publishAt: true },
+  });
+  if (!post || post.deletedAt) redirect("/portal/announcements");
+  if (post.authorId !== user.id && !isModerator(user.role)) {
+    redirect(`/portal/announcements/${postId}?error=forbidden`);
+  }
+  if (post.publishedAt || !post.publishAt) redirect(`/portal/announcements/${postId}`);
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: { publishAt: null, publishEmail: null },
+  });
+  revalidatePath(`/portal/announcements/${postId}`);
+  redirect(`/portal/announcements/${postId}?unscheduled=1`);
 }
 
 // discard a draft entirely (it was never published, so nothing is saved). hard
@@ -1106,6 +1168,25 @@ export async function chooseMeetingOption(postId, optionId) {
     },
   };
   const existing = await prisma.announcementMeetingChoice.findUnique({ where: key });
+
+  // THE SLOT'S CAP, CHECKED ON THE SERVER. The picker greys a full session out,
+  // and a greyed control is a suggestion: two people can press the last seat in
+  // the same second, and one of them has to be told no. Counted here rather
+  // than trusted from the page.
+  //
+  // Somebody already in the slot is never turned away from it - re-confirming a
+  // pick they hold must not fail because the slot filled around them. Only a
+  // new pick can be refused, which is why `existing` is passed in.
+  const chosen = opts.find((o) => o && o.id === optionId);
+  if (!existing) {
+    const taken = await prisma.announcementMeetingChoice.count({
+      where: { announcementId: postId, optionId },
+    });
+    if (!canTake(chosen, taken, false)) {
+      return { ok: false, error: "full", say: "That time is full. Please pick another." };
+    }
+  }
+
   if (post.meetingMultiPick) {
     if (existing) {
       await prisma.announcementMeetingChoice.delete({ where: key });
@@ -1179,6 +1260,40 @@ export async function setMeetingChoices(postId, formData) {
   });
 
   let ids = [...new Set(formData.getAll("optionId").map(String))].filter(valid);
+
+  // THE CAP, ON THE OTHER WAY IN. This path takes the whole response at once -
+  // it is the one the emailed link posts through - so a full slot has to be
+  // refused here too, or the cap only holds for people who happened to use the
+  // portal. Counted per option they are NOT already in; a pick they already
+  // hold is theirs to keep.
+  //
+  // The whole submission is refused rather than quietly dropping the full ones:
+  // somebody who picked Tuesday 10:00 and got a confirmation with no Tuesday on
+  // it would have no idea what happened.
+  {
+    const mine = new Set(myChoices.map((c) => c.optionId));
+    const wanted = ids.filter((id) => !isCant(id) && !mine.has(id));
+    if (wanted.length) {
+      const counts = await prisma.announcementMeetingChoice.groupBy({
+        by: ["optionId"],
+        where: { announcementId: postId, optionId: { in: wanted } },
+        _count: { _all: true },
+      });
+      const takenBy = new Map(counts.map((c) => [c.optionId, c._count._all]));
+      const full = wanted.filter((id) => !canTake(optById.get(id), takenBy.get(id) || 0, false));
+      if (full.length) {
+        const names = full.map((id) => optById.get(id)?.label).filter(Boolean).join(", ");
+        return {
+          ok: false,
+          error: "full",
+          say: names
+            ? `${names} ${full.length === 1 ? "is" : "are"} full now. Please pick another time.`
+            : "That time is full. Please pick another.",
+        };
+      }
+    }
+  }
+
   if (isSeries) {
     const lockedSeries = new Set(locks.lockedSeriesIds);
     // one decision per series; ignore any change to a locked series.
@@ -1943,258 +2058,8 @@ export async function emailMeetingNoResponse(postId) {
 
 // the prisma `where` for the "Who gets the email?" picker: Everyone = all active
 // (incl. the Owner/Director), else the picked titles/people. null = nobody.
-function emailAudienceWhere({ everyone, titles, userIds = [] }) {
-  if (everyone) return { deactivatedAt: null };
-  if (!titles?.length && !userIds?.length) return null;
-  return {
-    deactivatedAt: null,
-    OR: [
-      ...titles.map((t) => titleSegmentMatch(t)),
-      ...(userIds.length ? [{ id: { in: userIds } }] : []),
-    ],
-  };
-}
-
-// core email send, shared by the dialog AND the create form. `where` is the
-// recipient query (null = nobody). `includeDirector` also adds the Owner/
-// Director (used by "same as ack" where they're otherwise excluded). when the
-// announcement requires ack, each email carries that person's one-click link.
-// best-effort; stamps ackEmailSentAt when any go out. returns { ok, sent,
-// reason }. `post` must include id/title/content/requireAck/createdAt + author.
-async function emailAnnouncement(
-  post,
-  where,
-  // `reminder` overrides the has-it-been-sent check for callers that know the
-  // answer already, like the "email whoever has not acknowledged" button.
-  { includeDirector = false, reminder = null } = {},
-) {
-  const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
-  const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
-  if (!from || !base || !process.env.RESEND_API_KEY) {
-    console.error("announcement email misconfigured - missing from/base/key");
-    return { ok: false, reason: "config", sent: 0 };
-  }
-  if (!where) return { ok: false, reason: "recipients", sent: 0 };
-  const select = {
-    id: true,
-    email: true,
-    name: true,
-    preferredFirstName: true,
-    preferredLastName: true,
-  };
-  // THE DOCUMENTS, FETCHED ONCE AND SHARED BY EVERY MESSAGE. Mánu 2026-08-10:
-  // staff should get the PDFs in the email the way HR sends them today, AND the
-  // button back to the portal to sign. A library attachment is a same-origin
-  // path, so it is resolved against the site's own base url.
-  //
-  // Best effort by design: a document that will not fetch must not stop the
-  // announcement going out. It is still on the post, and the email still links
-  // there.
-  // THE SIGNABLE FORM COUNTS AS ONE OF THE DOCUMENTS. A post's `formId` and its
-  // attachment list are separate fields, so choosing a form to be signed did not
-  // put that form in the email - people were sent the reading material and not
-  // the thing they were being asked to sign. Looked up here rather than trusted
-  // off `post`, because emailAnnouncement is called with several different
-  // selects and only some of them carry the form.
-  const signForm = post.formId
-    ? await prisma.form.findUnique({
-        where: { id: post.formId },
-        select: { id: true, title: true, fileUrl: true },
-      })
-    : null;
-
-  // HAS THIS POST BEEN EMAILED BEFORE? Gmail threads on subject + sender and
-  // hides the repeat behind "Show trimmed content", so a second send of the same
-  // subject arrives with its body collapsed. Read from the row rather than from
-  // `post`, for the same reason as the form above: the callers pass different
-  // selects and only some carry `ackEmailSentAt`.
-  const priorSend =
-    reminder ??
-    !!(
-      await prisma.announcement.findUnique({
-        where: { id: post.id },
-        select: { ackEmailSentAt: true },
-      })
-    )?.ackEmailSentAt;
-
-  const files = [];
-  for (const a of emailAttachmentsOf(post, signForm)) {
-    try {
-      const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const buf = Buffer.from(await res.arrayBuffer());
-      files.push({
-        filename: `${a.name.replace(/[^\w .-]/g, "_").slice(0, 80)}.pdf`,
-        content: buf.toString("base64"),
-      });
-    } catch (e) {
-      console.error(`announcement attachment skipped (${a.url}):`, e?.message || e);
-    }
-  }
-
-  const recipients = await prisma.user.findMany({ where, select });
-  if (includeDirector) {
-    const director = await prisma.user.findFirst({
-      where: { deactivatedAt: null, OR: titleSegmentMatch(ACK_EXEMPT_TITLE).OR },
-      select,
-    });
-    if (director && !recipients.some((r) => r.id === director.id)) {
-      recipients.push(director);
-    }
-  }
-  if (!recipients.length) return { ok: true, sent: 0 };
-
-  const title = post.title || "Announcement";
-  // "Reminder: Acknowledgment required: X" reads badly, so the second send gets
-  // its own sentence rather than a prefix bolted onto the first one's.
-  const subject = priorSend
-    ? post.requireAck
-      ? `Reminder: ${title} still needs your acknowledgment`
-      : `Reminder: ${title}`
-    : post.requireAck
-      ? `Acknowledgment required: ${title}`
-      : title;
-  // email mode: any picture in the body gets sized inline, since there's no
-  // stylesheet on the other end to keep it inside the card.
-  const bodyHtml = renderMarkdown(post.content, { email: true });
-  const dateStr = new Date(post.createdAt).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: EMAIL_TZ,
-  });
-  // Blob-hosted logo so it renders in every mail client (base is localhost in
-  // dev, which recipients can't reach); falls back to the on-site logo.
-  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
-  const authorName = preferredName(post.author);
-  const authorTitle = post.author?.title || null;
-  const isMeeting = isCompanyMeeting(post.tag);
-  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
-  // a meeting with sessions to pick lists every date in the RSVP buttons already,
-  // so skip the redundant date block; a single-session meeting keeps its time +
-  // Join block.
-  const meetingHtml = isMeeting && opts.length === 0 ? buildMeetingBlockHtml(post) : "";
-
-  const messages = recipients.map((r) => {
-    // a meeting gets one-click RSVP buttons (responding also records the ack, so
-    // no separate ack button); everything else gets the ack link + a "go to post"
-    // button. both are signed per recipient so the link needs no login.
-    const ackUrl =
-      post.requireAck && !isMeeting ? `${base}/a/ack/${signAckToken(post.id, r.id)}` : null;
-    // THE POST IN THE PORTAL. Mánu 2026-08-10: this button points at
-    // /portal/announcements/<id> and that is deliberate. Signed in, you land on
-    // the announcement; not signed in, the proxy shows you the login screen.
-    // That is the intended behaviour, not a wall to route around - "Review and
-    // sign" is the button that works without a login.
-    const ctaHtml = isMeeting
-      ? buildRsvpButtons(post, `${base}/a/rsvp/${signRsvpToken(post.id, r.id, "pick")}`)
-      : postButton(`${base}/portal/announcements/${post.id}`, "Go to the announcement");
-    const html = buildAnnouncementEmailHtml({
-      logoUrl,
-      title,
-      authorName,
-      authorTitle,
-      dateStr,
-      eyebrow: isMeeting ? "Company meeting" : "Announcement",
-      requireAck: post.requireAck && !isMeeting,
-      // a form-backed post cannot be finished with a tick - the button takes
-      // them to the document instead
-      ackNeedsSignature: !!post.formId,
-      bodyHtml,
-      ackUrl,
-      meetingHtml,
-      ctaHtml,
-      footer: isMeeting ? "My Life Services &middot; staff meeting" : undefined,
-    });
-    const firstName = firstNameOf(r) || "there";
-    const text = isMeeting
-      ? `${title}\n\nHi ${firstName}, please RSVP for this meeting: ${base}/portal/announcements/${post.id}`
-      : post.requireAck && ackUrl
-        ? post.formId
-          ? `${title}\n\nHi ${firstName}, please review this and sign the form: ${ackUrl}`
-          : `${title}\n\nHi ${firstName}, please read this announcement and acknowledge: ${ackUrl}`
-        : `${title}\n\nHi ${firstName}, a new announcement was posted. View it in the portal.`;
-    // OFF THE REAL DEPLOYMENT THIS DOES NOT GO TO STAFF. Publishing from a
-    // laptop used to email every targeted employee for real, with every link
-    // pointing at localhost so none of them worked. Timesheets have been
-    // guarded since one reached an employee mid-meeting; announcements were
-    // not, which is why a "test" post reached Britny. On production nothing
-    // changes. Mánu 2026-08-10.
-    const route = resolveAnnouncementRecipients(r.email);
-    return {
-      from,
-      to: route.to,
-      subject: route.redirected ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}` : subject,
-      html,
-      text,
-      ...(files.length ? { attachments: files } : {}),
-    };
-  });
-
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  let sent = 0;
-  try {
-    if (files.length) {
-      // ONE AT A TIME WHEN THERE ARE DOCUMENTS, because Resend's BATCH endpoint
-      // does not accept attachments - "the attachments field is not supported
-      // yet" - and it does not complain. The batch call succeeds and the PDFs
-      // are silently dropped, so every announcement this week went out with its
-      // documents missing. The SDK says the same thing in its own types:
-      // CreateBatchEmailOptions = Omit<CreateEmailOptions, 'attachments' | ...>.
-      //
-      // Each message is already addressed to one person, so this changes how
-      // they are handed over, not who receives what.
-      for (const m of messages) {
-        // Resend allows 10 requests a second per team. Sequential awaits are
-        // usually slower than that on their own, but not always, so hold the
-        // floor rather than find out during a 77-person send.
-        if (sent > 0) await new Promise((r) => setTimeout(r, 120));
-        const { error } = await resend.emails.send(m);
-        if (error) console.error(`announcement email failed (${m.to}):`, error);
-        else sent += 1;
-      }
-    } else {
-      for (let i = 0; i < messages.length; i += 100) {
-        const chunk = messages.slice(i, i + 100);
-        const { error } = await resend.batch.send(chunk);
-        if (error) console.error("announcement email batch error:", error);
-        else sent += chunk.length;
-      }
-    }
-  } catch (e) {
-    console.error("announcement email send threw:", e);
-  }
-
-  if (sent > 0) {
-    await prisma.announcement.update({
-      where: { id: post.id },
-      data: { ackEmailSentAt: new Date() },
-    });
-  }
-  return { ok: true, sent };
-}
-
-const EMAIL_AUTHOR_SELECT = {
-  name: true,
-  preferredFirstName: true,
-  preferredLastName: true,
-  title: true,
-};
-
-// meeting fields the email needs to render the access block.
-const EMAIL_MEETING_SELECT = {
-  tag: true,
-  meetingFormat: true,
-  zoomLink: true,
-  zoomCode: true,
-  meetingAddress: true,
-  meetingAt: true,
-  meetingTimezone: true,
-  meetingDurationFromMin: true,
-  meetingDurationToMin: true,
-  meetingOptions: true,
-};
+// emailAudienceWhere / emailAnnouncement moved to @/lib/announce-send on
+// 2026-08-23 so the scheduled-publish cron sends through the same code.
 
 // "Send by email" dialog action. Supervisor+ only.
 export async function sendAnnouncementEmail(postId, formData) {
