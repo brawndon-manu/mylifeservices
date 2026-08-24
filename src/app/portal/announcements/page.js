@@ -74,6 +74,11 @@ export default async function AnnouncementsPage({ searchParams }) {
           tag: true,
           publishAt: true,
           publishEmail: true,
+          // who may edit: the edit page admits the author, a Super, and whoever
+          // posted a draft on the author's behalf - the Edit link only renders
+          // for someone it would actually let in
+          authorId: true,
+          postedById: true,
           author: {
             select: { name: true, preferredFirstName: true, preferredLastName: true },
           },
@@ -142,24 +147,44 @@ export default async function AnnouncementsPage({ searchParams }) {
             Scheduled to post
           </p>
           <ul className="mt-2 space-y-1.5">
-            {scheduled.map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/portal/announcements/${p.id}`}
-                  className="group flex flex-wrap items-baseline gap-x-2 text-sm"
+            {scheduled.map((p) => {
+              const canEdit =
+                p.authorId === user.id || isSuper(user.role) || p.postedById === user.id;
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
                 >
-                  <span className="font-semibold text-sky-900 group-hover:underline dark:text-sky-200">
-                    {p.title || "Untitled"}
-                  </span>
-                  <span className="text-sky-800/80 dark:text-sky-300/80">
-                    {companyDateTime(p.publishAt)} PT
-                    {p.publishEmail?.doEmail ? " · emails on publish" : ""}
-                    {" · "}
-                    {preferredName(p.author) || "unknown"}
-                  </span>
-                </Link>
-              </li>
-            ))}
+                  <div className="min-w-0 text-sm">
+                    <span className="font-semibold text-sky-900 dark:text-sky-200">
+                      {p.title || "Untitled"}
+                    </span>{" "}
+                    <span className="text-sky-800/80 dark:text-sky-300/80">
+                      {companyDateTime(p.publishAt)} PT
+                      {p.publishEmail?.doEmail ? " · emails on publish" : ""}
+                      {" · "}
+                      {preferredName(p.author) || "unknown"}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 gap-3 text-sm font-semibold">
+                    <Link
+                      href={`/portal/announcements/${p.id}`}
+                      className="text-sky-800 hover:underline dark:text-sky-300"
+                    >
+                      Preview
+                    </Link>
+                    {canEdit && (
+                      <Link
+                        href={`/portal/announcements/${p.id}/edit`}
+                        className="text-sky-800 hover:underline dark:text-sky-300"
+                      >
+                        Edit
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
