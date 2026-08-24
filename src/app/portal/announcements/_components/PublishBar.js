@@ -7,11 +7,42 @@
 import { useState } from "react";
 import Link from "next/link";
 import AudiencePicker from "./AudiencePicker";
+import DatePicker from "@/components/DatePicker";
+import { zonedToInstant, deviceTimezone } from "@/lib/meeting-time";
 
-export default function PublishBar({ postId, publish, discard, info }) {
+// the half-hour times a send would actually be scheduled for. 6am-8pm, same
+// range the signing setup offers its office hours.
+const SEND_TIMES = [];
+for (let h = 6; h <= 20; h++) {
+  for (const m of [0, 30]) {
+    SEND_TIMES.push({
+      value: `${String(h).padStart(2, "0")}:${m === 0 ? "00" : "30"}`,
+      label: `${h % 12 === 0 ? 12 : h % 12}:${m === 0 ? "00" : "30"} ${h < 12 ? "AM" : "PM"}`,
+    });
+  }
+}
+
+export default function PublishBar({ postId, publish, discard, cancelSchedule, info }) {
   const [open, setOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [doEmail, setDoEmail] = useState(false);
+  // SEND LATER. A date + time in the author's own timezone, combined into the
+  // instant the cron watches for. The cron passes every five minutes, so
+  // "8:00 AM" lands between 8:00 and 8:05 - the dialog says so.
+  const [sendLater, setSendLater] = useState(false);
+  const [laterDate, setLaterDate] = useState("");
+  const [laterTime, setLaterTime] = useState("08:00");
+  const laterIso = sendLater && laterDate
+    ? zonedToInstant(laterDate, laterTime, deviceTimezone()) || ""
+    : "";
+  // computed when a field changes rather than on render - the purity rule is
+  // right that a render must not read the clock. The server re-checks anyway,
+  // so the worst a stale value costs is one round trip to ?error=publishAt.
+  const [laterInPast, setLaterInPast] = useState(false);
+  const checkPast = (date, time) => {
+    const iso = date ? zonedToInstant(date, time, deviceTimezone()) : null;
+    setLaterInPast(!!iso && new Date(iso).getTime() <= Date.now());
+  };
   // only promise an email when one will actually send: an ack/meeting post
   // defaults to emailing its audience; a plain post emails only if the author
   // ticks the box below.
@@ -24,11 +55,42 @@ export default function PublishBar({ postId, publish, discard, info }) {
           i
         </span>
         <div className="flex-1 text-sm text-foreground">
-          <span className="font-semibold">Preview - not published yet.</span>{" "}
-          <span className="text-muted">
-            This is how it will look when posted. Review, then publish.
-          </span>
+          {info.scheduledAtIso ? (
+            <>
+              {/* rendered on the server in its timezone and re-rendered in the
+                  viewer's - suppress the one-paint mismatch the way MeetingTime
+                  does by correcting after mount */}
+              <span className="font-semibold" suppressHydrationWarning>
+                Scheduled - sends{" "}
+                {new Date(info.scheduledAtIso).toLocaleString("en-US", {
+                  weekday: "short", month: "short", day: "numeric",
+                  hour: "numeric", minute: "2-digit",
+                })}
+                .
+              </span>{" "}
+              <span className="text-muted">
+                It posts and emails on its own within five minutes of that time.
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Preview - not published yet.</span>{" "}
+              <span className="text-muted">
+                This is how it will look when posted. Review, then publish.
+              </span>
+            </>
+          )}
         </div>
+        {info.scheduledAtIso && cancelSchedule && (
+          <form action={cancelSchedule.bind(null, postId)}>
+            <button
+              type="submit"
+              className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-muted transition hover:text-foreground"
+            >
+              Cancel schedule
+            </button>
+          </form>
+        )}
         <button
           type="button"
           onClick={() => setDiscardOpen(true)}
@@ -182,6 +244,59 @@ export default function PublishBar({ postId, publish, discard, info }) {
                 </>
               )}
 
+              {/* ---- send later ---- */}
+              <div className="mt-3 rounded-lg border border-border bg-surface-2 p-3">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    name="sendLater"
+                    checked={sendLater}
+                    onChange={(e) => setSendLater(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-brand"
+                  />
+                  <span className="text-sm text-foreground">
+                    Send later{" "}
+                    <span className="text-xs text-muted">
+                      (stays a draft until then; it posts and emails on its own)
+                    </span>
+                  </span>
+                </label>
+                {sendLater && (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <input type="hidden" name="publishAtIso" value={laterIso} />
+                    <div>
+                      <span className="block text-xs font-medium text-muted">Day</span>
+                      <DatePicker
+                        id="publish-later-date"
+                        value={laterDate}
+                        onChange={(v) => { setLaterDate(v); checkPast(v, laterTime); }}
+                        inputClassName="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 pr-10 text-sm text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted" htmlFor="publish-later-time">
+                        Time
+                      </label>
+                      <select
+                        id="publish-later-time"
+                        value={laterTime}
+                        onChange={(e) => { setLaterTime(e.target.value); checkPast(laterDate, e.target.value); }}
+                        className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                      >
+                        {SEND_TIMES.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="col-span-2 text-xs text-muted">
+                      {laterInPast
+                        ? "That time has already passed - pick one ahead."
+                        : "Sends within five minutes of the time you pick, in your timezone."}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {info.meeting && (
                 <div className="mt-3 flex gap-2 rounded-lg border border-brand/30 bg-brand/10 p-3 text-[13px] leading-relaxed text-foreground">
                   <span className="flex-none">🔔</span>
@@ -208,9 +323,10 @@ export default function PublishBar({ postId, publish, discard, info }) {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-brand-light px-4 py-2 text-sm font-bold text-white transition hover:bg-brand"
+                  disabled={sendLater && (!laterIso || laterInPast)}
+                  className="rounded-lg bg-brand-light px-4 py-2 text-sm font-bold text-white transition hover:bg-brand disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Publish now
+                  {sendLater ? "Schedule it" : "Publish now"}
                 </button>
               </div>
             </form>

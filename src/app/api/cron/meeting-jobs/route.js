@@ -8,7 +8,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Resend } from "resend";
-import { ackAudienceWhere, formatHasOnline } from "@/lib/announcements";
+import { ackAudienceWhere, formatHasOnline, isCompanyMeeting } from "@/lib/announcements";
+import {
+  emailAnnouncement,
+  emailAudienceWhere,
+  EMAIL_AUTHOR_SELECT,
+  EMAIL_MEETING_SELECT,
+} from "@/lib/announce-send";
 import { firstNameOf } from "@/lib/contacts";
 import { renderMarkdown } from "@/lib/markdown";
 import { instantToZoned, zonedToInstant } from "@/lib/meeting-time";
@@ -53,7 +59,55 @@ export async function GET(request) {
   }
   const resend = new Resend(process.env.RESEND_API_KEY);
   const now = new Date();
-  const result = { reminders: 0, nudges: 0, notices: 0, emails: 0, held: 0 };
+  const result = { reminders: 0, nudges: 0, notices: 0, emails: 0, held: 0, published: 0 };
+
+  // ---- scheduled publishes, first ----
+  //
+  // SEND LATER, 2026-08-23. A draft whose publishAt has passed goes live here,
+  // through emailAnnouncement - the exact code the Publish button runs - so a
+  // scheduled post cannot behave differently from a hand-published one. First,
+  // before the reminder passes below, so a meeting published at 8:00 is
+  // already live when the same run walks meetings.
+  //
+  // Publish-then-email in that order, and the publishedAt write is the claim:
+  // a row updated by this pass belongs to this pass, so a slow run overlapping
+  // the next five-minute tick cannot double-send.
+  {
+    const due = await prisma.announcement.findMany({
+      where: { publishedAt: null, deletedAt: null, publishAt: { lte: now } },
+      select: {
+        id: true, tag: true, title: true, content: true, attachments: true,
+        formId: true, requireAck: true, createdAt: true,
+        ackEveryone: true, ackTitles: true, ackUserIds: true,
+        publishEmail: true,
+        ...EMAIL_MEETING_SELECT,
+        author: { select: EMAIL_AUTHOR_SELECT },
+      },
+    });
+    for (const post of due) {
+      const claimed = await prisma.announcement.updateMany({
+        where: { id: post.id, publishedAt: null },
+        data: { publishedAt: new Date(), publishAt: null, publishEmail: null },
+      });
+      if (!claimed.count) continue; // another pass got here first
+      result.published += 1;
+      const plan = post.publishEmail || {};
+      if (plan.doEmail) {
+        const hasAudience = isCompanyMeeting(post.tag) || post.requireAck;
+        const where = hasAudience
+          ? ackAudienceWhere(post)
+          : emailAudienceWhere({
+              everyone: !!plan.everyone,
+              titles: Array.isArray(plan.titles) ? plan.titles : [],
+              userIds: Array.isArray(plan.userIds) ? plan.userIds : [],
+            });
+        if (where) {
+          const res = await emailAnnouncement(post, where);
+          result.emails += res.sent || 0;
+        }
+      }
+    }
+  }
 
   // test mode: while CRON_TEST_RECIPIENTS is set, only those addresses ever get
   // an email - so you can dry-run the whole thing on prod without hitting staff.
@@ -241,6 +295,9 @@ export async function GET(request) {
         ? [{ optionId: "", at: new Date(m.meetingAt), tz: defTz, opt: null }]
         : [];
     const title = m.title || "Company meeting";
+    // a signing is a visit somebody booked, not a meeting they attend - same
+    // reminders, words that say what the thing is. Manu 2026-08-23.
+    const signing = m.meetingFormat === "signing";
     for (const s of sessions) {
       // starting-soon (confirmation)
       if (!sent.has(`soon:${s.optionId}`)) {
@@ -248,7 +305,10 @@ export async function GET(request) {
         if (now.getTime() >= remindAt && now.getTime() <= s.at.getTime() + GRACE_MS) {
           const ok = await sendSessionReminder(
             m, s.optionId, opts.length > 0,
-            `Coming up - you're confirmed: ${title}`, "Reminder", s.opt,
+            signing
+              ? `Your visit is coming up: ${title}`
+              : `Coming up - you're confirmed: ${title}`,
+            "Reminder", s.opt,
           );
           if (ok) {
             await prisma.announcementMeetingReminder
@@ -266,7 +326,8 @@ export async function GET(request) {
         if (nightAt && now.getTime() >= nightAt && nowDate < sessDate) {
           const ok = await sendSessionReminder(
             m, s.optionId, opts.length > 0,
-            `Meeting tomorrow: ${title}`, "Tomorrow", s.opt,
+            signing ? `Your visit is tomorrow: ${title}` : `Meeting tomorrow: ${title}`,
+            "Tomorrow", s.opt,
           );
           if (ok) {
             await prisma.announcementMeetingReminder

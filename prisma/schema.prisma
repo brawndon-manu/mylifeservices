@@ -340,6 +340,18 @@ model Announcement {
   // set to now() on Publish. existing rows are backfilled to createdAt so nothing
   // already posted disappears.
   publishedAt                 DateTime?
+  // SEND LATER, 2026-08-23. A draft with `publishAt` set is scheduled: the
+  // meeting-jobs cron publishes it - and sends its email - once the clock
+  // passes it, through the exact code the Publish button runs. Null on every
+  // published post and every ordinary draft. Cleared when it fires, so a
+  // scheduled post is exactly one of: waiting (publishAt set, publishedAt
+  // null) or live (the reverse).
+  publishAt                   DateTime?
+  // what the author chose in the schedule dialog, held until the send:
+  // { doEmail, everyone, titles, userIds }. The ack/meeting audience lives on
+  // the post already; this is only the plain-post email choice, which
+  // otherwise exists nowhere but the dialog that closed.
+  publishEmail                Json?
   // when true, staff get an "I read this" box and management gets a
   // who-has/who-hasnt roster. opt-in per announcement (see requireAck box
   // on the form). plain posts leave it false.
