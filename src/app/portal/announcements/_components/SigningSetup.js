@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import DatePicker from "@/components/DatePicker";
+import { US_TIMEZONES } from "@/lib/meeting-time";
 import {
   generateSigningSlots, describeSetup, minutesOfDay,
 } from "@/lib/signing-slots";
@@ -62,6 +63,12 @@ function ruleFrom(options) {
 
 export default function SigningSetup({ tz, zonedToInstant, initialOptions = [] }) {
   const initial = ruleFrom(initialOptions);
+  // THE ZONE THE HOURS MEAN, said out loud and defaulted to Pacific. The
+  // generator always ran in the meeting timezone rather than the device one,
+  // but nothing on screen said so - and Manu, scheduling from New Zealand,
+  // asked for it where he could see it. An edit reads the zone back off the
+  // saved slots themselves.
+  const [slotTz, setSlotTz] = useState(initialOptions?.[0]?.tz || tz || "America/Los_Angeles");
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [startTime, setStartTime] = useState(initial.startTime);
@@ -75,9 +82,9 @@ export default function SigningSetup({ tz, zonedToInstant, initialOptions = [] }
         from, to, startTime, endTime,
         lengthMin: Number(lengthMin) || 0,
         capacity: Number(capacity) || null,
-        tz, zonedToInstant,
+        tz: slotTz, zonedToInstant,
       }),
-    [from, to, startTime, endTime, lengthMin, capacity, tz, zonedToInstant],
+    [from, to, startTime, endTime, lengthMin, capacity, slotTz, zonedToInstant],
   );
   const summary = useMemo(
     () => describeSetup({
@@ -145,6 +152,17 @@ export default function SigningSetup({ tz, zonedToInstant, initialOptions = [] }
       </div>
 
       <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={LABEL} htmlFor="signing-tz">Time zone</label>
+          <select
+            id="signing-tz" value={slotTz}
+            onChange={(e) => setSlotTz(e.target.value)} className={INPUT}
+          >
+            {US_TIMEZONES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+        </div>
         <div>
           <label className={LABEL} htmlFor="signing-length">Appointment length</label>
           <select
