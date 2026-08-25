@@ -32,12 +32,27 @@ const POLL_HIDDEN_MS = 30_000;
 // until the battery went.
 const HIDDEN_GRACE_MS = 10 * 60_000;
 
-export default function LiveRefresh({ token }) {
+export default function LiveRefresh({ token, renderedVersion = null }) {
   const router = useRouter();
   // the version we have already rendered. Null until the first answer, so the
   // page never refreshes on the poll that merely learns the number.
   const seen = useRef(null);
   const hiddenSince = useRef(null);
+
+  // THE PAGE SAYS WHICH VERSION IT WAS BUILT FROM, every time it renders. An
+  // employee's OWN answer bumps the counter and ALSO re-renders the page
+  // through the action's response - so the poll used to see the new number and
+  // re-render the whole tree a second time for a change already on screen.
+  // Twice per answer, and on an iPhone the second one lands mid-keyboard and
+  // throws the scroll (the 2026-08-24 staff report: "the screen would auto
+  // scroll to the bottom of the page and vice versa"). Syncing `seen` to what
+  // is actually rendered means the poll only ever refreshes for changes made
+  // SOMEWHERE ELSE, which is the one job it exists to do.
+  useEffect(() => {
+    if (renderedVersion !== null && (seen.current === null || renderedVersion > seen.current)) {
+      seen.current = Number(renderedVersion) || 0;
+    }
+  }, [renderedVersion]);
 
   useEffect(() => {
     let alive = true;

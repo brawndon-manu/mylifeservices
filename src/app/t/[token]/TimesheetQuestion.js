@@ -1412,7 +1412,7 @@ function OneQuestion({
                       disabled={pending}
                       value={raw}
                       onChange={(e) => setSlotAt((t) => ({ ...t, [need.slot]: e.target.value }))}
-                      placeholder="e.g. 230 or 2:30pm"
+                      placeholder="e.g. 331 for 3:31"
                       className={`w-36 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
                         mins ? "border-emerald-500" : raw.trim() ? "border-rose-500" : "border-amber-500/70"
                       }`}
@@ -1462,7 +1462,7 @@ function OneQuestion({
                 disabled={pending}
                 value={at}
                 onChange={(e) => setAt(e.target.value)}
-                placeholder="e.g. 230 or 2:30pm"
+                placeholder="e.g. 331 for 3:31"
                 className={`w-40 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
                   at.trim() && !typedHHMM ? "border-rose-500" : "border-border-strong"
                 }`}
@@ -2325,7 +2325,7 @@ export function BatchProvider({
                   disabled={pending}
                   value={raw || (need.prefill && !(q.id in times && need.slot in (times[q.id] || {})) ? need.prefill : raw)}
                   onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
-                  placeholder="e.g. 115 or 1:15p"
+                  placeholder="e.g. 115 for 1:15"
                   className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
                     bad ? "border-rose-500"
                       : mins ? "border-emerald-500"

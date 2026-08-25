@@ -34,6 +34,7 @@ import { sendTimesheets } from "@/app/portal/admin/timesheets/actions";
 import PreviewSend from "./PreviewSend";
 import PreviewReset from "./PreviewReset";
 import LiveRefresh from "./LiveRefresh";
+import { getSheetVersion } from "@/lib/timesheet-presence";
 import ModeBar from "./ModeBar";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
@@ -583,7 +584,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           reload - which is the difference between fixing something while an
           employee is on the phone and talking them through a refresh. Renders
           nothing; see LiveRefresh. */}
-      <LiveRefresh token={token} />
+      <LiveRefresh token={token} renderedVersion={await getSheetVersion(ts.id)} />
       {/* SAYING WHOSE PAGE THIS IS. Without it a preview is indistinguishable
           from your own sheet - same layout, same questions, somebody else's
           hours - and the first thing anybody does on a page like this is click
