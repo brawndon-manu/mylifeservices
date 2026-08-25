@@ -84,13 +84,15 @@ export async function renderAckReport(p, opts = {}) {
     size: 8.5, color: MUTED,
   });
   st.y -= 16;
+  // the state first, then what was posted - a long post must not push the
+  // tiles off the first page
+  drawTiles(st, ackTiles(p.stats));
   if (p.content) {
     drawBody(st, p.content, {
       maxLines: 45,
       contTitle: `${p.title} (continued)`,
     });
   }
-  drawTiles(st, ackTiles(p.stats));
 
   if (!p.rows.length) {
     st.text("Nobody is expected to acknowledge this.", L, st.y - 6, {
