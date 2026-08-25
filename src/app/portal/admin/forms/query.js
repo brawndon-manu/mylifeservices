@@ -1,6 +1,14 @@
 // the form-submissions filter set, shared by the admin page and its CSV
 // download so the file always matches what the screen shows.
 
+// how a submission got tied to a person, as words
+export const ATTRIBUTION_LABELS = {
+  "signed-in": "signed in",
+  "email-match": "email match",
+  assigned: "assigned",
+  unassigned: "needs assignment",
+};
+
 export const PERIODS = {
   "30": "Last 30 days",
   "90": "Last 90 days",

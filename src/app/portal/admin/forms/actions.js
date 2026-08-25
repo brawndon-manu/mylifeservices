@@ -37,7 +37,7 @@ export async function assignFormSubmission(submissionId, userId) {
     await recordAnnouncementAck({ announcementId: submission.announcementId, userId: target.id });
   }
 
-  revalidatePath("/portal/admin/forms");
+  revalidatePath("/portal/admin/forms", "layout");
 }
 
 // undo a bad assign/email-match - back to "needs assignment". doesn't touch any
@@ -50,5 +50,5 @@ export async function unassignFormSubmission(submissionId) {
     where: { id: submissionId },
     data: { userId: null, attribution: "unassigned" },
   });
-  revalidatePath("/portal/admin/forms");
+  revalidatePath("/portal/admin/forms", "layout");
 }

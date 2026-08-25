@@ -5,18 +5,11 @@ import { preferredName } from "@/lib/contacts";
 import { cell, csvResponse } from "@/lib/csv";
 import { firstLine } from "../../acknowledgments/roster";
 import { fmtStamp, fileDate } from "../../acknowledgments/audit";
-import { readFilters, submissionWhere } from "../query";
+import { ATTRIBUTION_LABELS, readFilters, submissionWhere } from "../query";
 
 // the form-submissions list as a file, honoring the same filters as the page:
 // who signed which form, when, and how the signature got attributed.
 export const dynamic = "force-dynamic";
-
-const ATTRIBUTION_LABELS = {
-  "signed-in": "signed in",
-  "email-match": "email match",
-  assigned: "assigned",
-  unassigned: "needs assignment",
-};
 
 export async function GET(req) {
   const user = await getCurrentUser();
