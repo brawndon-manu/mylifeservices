@@ -127,6 +127,19 @@ export default async function LoginPage({ searchParams }) {
           Send sign-in link
         </button>
       </form>
+
+      {/* `next dev` only - production builds never render this, and the route
+          it points at is a 404 there. Exists because an installed home-screen
+          app has its own cookie container and no address bar - see
+          src/app/dev-login/route.js. */}
+      {process.env.NODE_ENV !== "production" && (
+        <a
+          href="/dev-login"
+          className="mt-6 rounded-md border border-dashed border-border-strong px-4 py-2 text-center text-sm font-medium text-muted"
+        >
+          Dev sign-in (local only)
+        </a>
+      )}
     </section>
   );
 }

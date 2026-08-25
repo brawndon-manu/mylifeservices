@@ -34,7 +34,11 @@ export default auth(async (req) => {
   // an account you'll get an email") and /login/error are part of it, and
   // bouncing someone to the maintenance splash right after they hit submit
   // makes it look like the sign-in failed.
-  const isLogin = pathname === "/login" || pathname.startsWith("/login/");
+  // /dev-login is part of the sign-in flow too - `next dev` only, the route
+  // itself is a 404 on production builds, so exempting it here changes nothing
+  // live. Without this the maintenance splash eats it before it can run.
+  const isLogin =
+    pathname === "/login" || pathname.startsWith("/login/") || pathname === "/dev-login";
   const isMaintenancePage = pathname === "/maintenance";
   // unguessable public share links stay reachable during maintenance: forms
   // (/f/<slug>), resources (/r/<id>) and guidebook pages (/g/<slug>). they're
