@@ -8,6 +8,7 @@ import Avatar from "@/components/Avatar";
 import { fuzzyGuesses } from "./match";
 import { assignFormSubmission, unassignFormSubmission } from "./actions";
 import AssignPicker from "./_components/AssignPicker";
+import { PERIODS, readFilters, submissionWhere } from "./query";
 
 export const metadata = {
   title: "Form submissions",
@@ -16,27 +17,12 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-const PERIODS = {
-  "30": "Last 30 days",
-  "90": "Last 90 days",
-  year: "This year",
-  all: "All time",
-};
-
 const ATTRIBUTION = {
   "signed-in": { label: "Signed in", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" },
   "email-match": { label: "Email match", cls: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" },
   assigned: { label: "Assigned", cls: "bg-sky-100 text-brand" },
   unassigned: { label: "Needs assignment", cls: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" },
 };
-
-function periodStart(period) {
-  const now = new Date();
-  if (period === "30") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  if (period === "90") return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  if (period === "year") return new Date(now.getFullYear(), 0, 1);
-  return null;
-}
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -47,26 +33,9 @@ export default async function FormSubmissionsPage({ searchParams }) {
   if (!canViewFormRecords(user?.role)) redirect("/portal");
   const sp = await searchParams;
 
-  const formFilter = typeof sp?.form === "string" ? sp.form : "";
-  const statusFilter = typeof sp?.status === "string" ? sp.status : "all";
-  const period = typeof sp?.period === "string" && PERIODS[sp.period] ? sp.period : "all";
-  const q = typeof sp?.q === "string" ? sp.q.trim() : "";
-
-  const where = {};
-  if (formFilter) where.formId = formFilter;
-  if (statusFilter === "unassigned") where.attribution = "unassigned";
-  else if (statusFilter === "attributed") where.attribution = { in: ["signed-in", "email-match", "assigned"] };
-  const since = periodStart(period);
-  if (since) where.createdAt = { gte: since };
-  if (q) {
-    where.OR = [
-      { submitterName: { contains: q, mode: "insensitive" } },
-      { submitterEmail: { contains: q, mode: "insensitive" } },
-      { user: { name: { contains: q, mode: "insensitive" } } },
-      { user: { preferredFirstName: { contains: q, mode: "insensitive" } } },
-      { user: { preferredLastName: { contains: q, mode: "insensitive" } } },
-    ];
-  }
+  const filters = readFilters(sp);
+  const { form: formFilter, status: statusFilter, period, q } = filters;
+  const where = submissionWhere(filters);
 
   const [submissions, forms, activeUsers] = await Promise.all([
     prisma.formSubmission.findMany({
@@ -186,6 +155,12 @@ export default async function FormSubmissionsPage({ searchParams }) {
             Clear
           </a>
         )}
+        <a
+          href={`/portal/admin/forms/csv${qs({})}`}
+          className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+        >
+          Download CSV
+        </a>
       </form>
 
       {submissions.length === 0 ? (

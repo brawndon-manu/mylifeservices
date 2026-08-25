@@ -104,12 +104,20 @@ export default async function AcknowledgmentDetailPage({ params }) {
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin/acknowledgments">Back to acknowledgments</BackLink>
-        <Link
-          href={`/portal/announcements/${p.id}?from=ackDetail`}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-        >
-          View announcement →
-        </Link>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/portal/admin/acknowledgments/${p.id}/csv`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download CSV
+          </a>
+          <Link
+            href={`/portal/announcements/${p.id}?from=ackDetail`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            View announcement →
+          </Link>
+        </div>
       </div>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">

@@ -87,7 +87,17 @@ export default async function AcknowledgmentsPage() {
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-12 sm:py-16">
-      <BackLink href="/portal/admin">Back to admin dashboard</BackLink>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <BackLink href="/portal/admin">Back to admin dashboard</BackLink>
+        {/* a file download, not a page - Link would try to client-navigate */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a
+          href="/portal/admin/acknowledgments/csv"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+        >
+          Download CSV
+        </a>
+      </div>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         Admin
       </p>
