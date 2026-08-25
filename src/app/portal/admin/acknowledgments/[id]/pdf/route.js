@@ -5,14 +5,16 @@ import { isAdminUp } from "@/lib/roles";
 import { isCompanyMeeting } from "@/lib/announcements";
 import { renderAckReport } from "@/lib/ack-report-pdf";
 import { audienceLabel, firstLine, fmtPosted } from "../../roster";
-import { ackAuditPeople, ackStats, fileDate } from "../../audit";
+import {
+  ackAuditPeople, ackStats, fileDate, officeFromSearch, OFFICE_LABELS,
+} from "../../audit";
 
 // one announcement's acknowledgment record as a document: the post itself,
 // then who acknowledged it - in portal or by email link - and when. built on
 // demand so it can never disagree with the screen.
 export const dynamic = "force-dynamic";
 
-export async function GET(_req, { params }) {
+export async function GET(req, { params }) {
   const user = await getCurrentUser();
   // read-receipts are sensitive - Admin/IT/Super only, same gate as the page.
   if (!isAdminUp(user?.role)) {
@@ -48,7 +50,8 @@ export async function GET(_req, { params }) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const people = await ackAuditPeople(p);
+  const office = officeFromSearch(Object.fromEntries(new URL(req.url).searchParams));
+  const people = await ackAuditPeople(p, { office });
   const stats = ackStats(people);
   const title = p.title || firstLine(p.content);
 
@@ -59,7 +62,9 @@ export async function GET(_req, { params }) {
         title,
         tag: p.tag,
         postedLabel: fmtPosted(p.publishedAt),
-        audLabel: audienceLabel(p, stats.expected),
+        audLabel:
+          audienceLabel(p, stats.expected) +
+          (office ? ` · ${OFFICE_LABELS[office]} only` : ""),
         content: p.content,
         hasForm: !!p.formId,
         stats,
@@ -82,10 +87,11 @@ export async function GET(_req, { params }) {
     .replace(/[^\w]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "announcement";
+  const suffix = office ? `-${office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="acknowledgments-${slug}-${fileDate()}.pdf"`,
+      "Content-Disposition": `inline; filename="acknowledgments-${slug}${suffix}-${fileDate()}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });

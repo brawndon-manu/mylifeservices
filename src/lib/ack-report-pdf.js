@@ -5,7 +5,7 @@
 // (`renderAcksOverviewReport`). same rows as the acknowledgment pages and
 // their CSVs. drawing engine shared with the forms reports (report-pdf.js).
 import {
-  L, R, BRAND, MUTED, INK,
+  L, R, BRAND, MUTED, INK, GRID,
   clip, makeSt, drawMasthead, drawTiles, drawTable, drawBody, finish,
 } from "./report-pdf";
 
@@ -58,20 +58,35 @@ function monitorIcon(st, x, y, color = INK) {
   st.page.drawLine({ start: { x: x + w / 2 - 1.6, y: y + 0.2 }, end: { x: x + w / 2 + 1.6, y: y + 0.2 }, thickness: 0.7, color });
 }
 
-// how the icons read, printed right above the roster
-function drawKey(st) {
-  let x = L;
-  const label = (s) => {
-    st.text(s, x, st.y, { size: 7.5, color: MUTED });
-    x += st.font.widthOfTextAtSize(s, 7.5) + 16;
-  };
-  mailIcon(st, x, st.y, MUTED);
-  x += 11;
-  label("acknowledged via the email link");
-  monitorIcon(st, x, st.y, MUTED);
-  x += 11;
-  label("acknowledged in the portal");
-  st.y -= 15;
+// the key, boxed above the roster: what the icons mean, and - when any row
+// carries it - what the † mark means
+function drawKey(st, { hasIcons, hasNotes }) {
+  const lines = (hasIcons ? 1 : 0) + (hasNotes ? 1 : 0);
+  if (!lines) return;
+  const boxH = 8 + lines * 11;
+  st.page.drawRectangle({
+    x: L, y: st.y - boxH + 9, width: R - L, height: boxH,
+    borderColor: GRID, borderWidth: 0.6,
+  });
+  let y = st.y - 2;
+  if (hasIcons) {
+    let x = L + 7;
+    const label = (s) => {
+      st.text(s, x, y, { size: 7.5, color: MUTED });
+      x += st.font.widthOfTextAtSize(s, 7.5) + 16;
+    };
+    mailIcon(st, x, y, MUTED);
+    x += 11;
+    label("acknowledged via the email link");
+    monitorIcon(st, x, y, MUTED);
+    x += 11;
+    label("acknowledged in the portal");
+    y -= 11;
+  }
+  if (hasNotes) {
+    st.text(NOTE_LINE, L + 7, y, { size: 7.5, color: MUTED });
+  }
+  st.y -= boxH + 5;
 }
 
 function ackTiles(stats) {
@@ -85,11 +100,13 @@ function ackTiles(stats) {
 
 // rows: { who, email, acked, how, when, signed, signedDay, note }. not-yet
 // rows print muted with "not yet" in the timestamp column - status needs no
-// column of its own. returns whether any row carries the audience note.
+// column of its own.
 function drawAckTable(st, title, rows, hasForm) {
-  if (rows.some((r) => r.how === "email link" || r.how === "in portal")) {
-    if (st.y < 90) st.addPage();
-    drawKey(st);
+  const hasIcons = rows.some((r) => r.how === "email link" || r.how === "in portal");
+  const hasNotes = rows.some((r) => r.note);
+  if (hasIcons || hasNotes) {
+    if (st.y < 110) st.addPage();
+    drawKey(st, { hasIcons, hasNotes });
   }
   drawTable(st, hasForm ? COLS_FORM : COLS_PLAIN, rows, {
     contTitle: `${title} · acknowledgment record (continued)`,
@@ -120,15 +137,6 @@ function drawAckTable(st, title, rows, hasForm) {
       return cells;
     },
   });
-  return rows.some((r) => r.note);
-}
-
-function drawNoteLine(st) {
-  if (st.y > 46) {
-    st.y -= 6;
-    st.text(NOTE_LINE, L, st.y, { size: 7.5, color: MUTED });
-    st.y -= 12;
-  }
 }
 
 // one announcement. p: { title, tag, postedLabel, audLabel, content, hasForm,
@@ -157,8 +165,8 @@ export async function renderAckReport(p, opts = {}) {
     st.text("Nobody is expected to acknowledge this.", L, st.y - 6, {
       size: 10, color: MUTED,
     });
-  } else if (drawAckTable(st, p.title, p.rows, p.hasForm)) {
-    drawNoteLine(st);
+  } else {
+    drawAckTable(st, p.title, p.rows, p.hasForm);
   }
   return finish(st, opts);
 }
@@ -175,7 +183,7 @@ const SUMMARY_COLS = [
 // every ack-required announcement in one file: a cover with the totals and a
 // per-announcement summary, then each announcement's record - post text, then
 // the roster - on a fresh page.
-export async function renderAcksOverviewReport({ posts }, opts = {}) {
+export async function renderAcksOverviewReport({ posts, filterLabel }, opts = {}) {
   const st = await makeSt();
   st.addPage();
   drawMasthead(st, "Acknowledgment Records");
@@ -195,6 +203,10 @@ export async function renderAcksOverviewReport({ posts }, opts = {}) {
     L, st.y, { size: 11, f: st.bold },
   );
   st.y -= 13;
+  if (filterLabel) {
+    st.text(`Filtered: ${filterLabel}`, L, st.y, { size: 8.5, color: MUTED });
+    st.y -= 12;
+  }
   drawTiles(st, ackTiles(overall));
 
   drawTable(st, SUMMARY_COLS, posts, {
@@ -227,9 +239,7 @@ export async function renderAcksOverviewReport({ posts }, opts = {}) {
         contTitle: `${p.title} (continued)`,
       });
     }
-    if (drawAckTable(st, p.title, p.rows, p.hasForm)) {
-      drawNoteLine(st);
-    }
+    drawAckTable(st, p.title, p.rows, p.hasForm);
   }
   return finish(st, opts);
 }

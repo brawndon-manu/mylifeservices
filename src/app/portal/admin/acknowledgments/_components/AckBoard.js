@@ -4,7 +4,7 @@ import Avatar from "@/components/Avatar";
 // the acknowledgments report: one read-only summary card per ack-required
 // announcement (acknowledged / not-yet face stacks). clicking a card opens its
 // dedicated page, where the full list + mark-acknowledged override live.
-export default function AckBoard({ posts, counts }) {
+export default function AckBoard({ posts, counts, officeQs = "" }) {
   return (
     <>
       <div className="mt-6 flex flex-wrap items-center gap-2.5">
@@ -29,7 +29,7 @@ export default function AckBoard({ posts, counts }) {
       ) : (
         <div className="mt-8 space-y-3.5">
           {posts.map((p) => (
-            <AckCard key={p.id} p={p} />
+            <AckCard key={p.id} p={p} officeQs={officeQs} />
           ))}
         </div>
       )}
@@ -94,11 +94,11 @@ function MonitorIcon({ className }) {
   );
 }
 
-function AckCard({ p }) {
+function AckCard({ p, officeQs = "" }) {
   const s = p.summary;
   return (
     <Link
-      href={`/portal/admin/acknowledgments/${p.id}`}
+      href={`/portal/admin/acknowledgments/${p.id}${officeQs}`}
       className="group block rounded-xl border border-border bg-surface p-5 shadow-sm card-lift"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">

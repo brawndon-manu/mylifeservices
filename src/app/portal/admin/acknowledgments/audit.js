@@ -5,7 +5,16 @@
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import { ackAudienceWhere } from "@/lib/announcements";
+import { OFFICES } from "@/lib/positions";
 import { PACIFIC, fmtPosted } from "./roster";
+
+// office filter for the rosters and their files. most ack posts are for the
+// MLS office, so the pages let you look at one office's staff at a time.
+export const OFFICE_LABELS = { MLS: "MLS office", DP: "Day program" };
+
+export function officeFromSearch(sp) {
+  return OFFICES.includes(sp?.office) ? sp.office : "";
+}
 
 const stampFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: PACIFIC,
@@ -43,11 +52,15 @@ const USER_SELECT = {
 // `p` needs id, formId, ackEveryone, ackTitles, ackUserIds, and acks rows
 // carrying userId / viaEmail / recordedById / createdAt. returns one object
 // per person - the audience first, then anyone who acked but has since left
-// it. the CSV and the PDF report both build from these.
-export async function ackAuditPeople(p) {
+// it. the CSV and the PDF report both build from these. `office` narrows every
+// part of the roster to that office's staff.
+export async function ackAuditPeople(p, { office = "" } = {}) {
   const [audienceUsers, submissions] = await Promise.all([
     prisma.user.findMany({
-      where: ackAudienceWhere(p),
+      where: {
+        ...ackAudienceWhere(p),
+        ...(office ? { offices: { has: office } } : {}),
+      },
       select: USER_SELECT,
       orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
     }),
@@ -69,7 +82,13 @@ export async function ackAuditPeople(p) {
   const [outsideUsers, recorders] = await Promise.all([
     outsideIds.length
       ? prisma.user.findMany({
-          where: { id: { in: outsideIds } },
+          // the same office narrowing - otherwise filtering to one office
+          // would relabel the whole other office's ackers as "no longer in
+          // audience"
+          where: {
+            id: { in: outsideIds },
+            ...(office ? { offices: { has: office } } : {}),
+          },
           select: { ...USER_SELECT, deactivatedAt: true },
           orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
         })
@@ -142,9 +161,9 @@ export function ackStats(people) {
 }
 
 // the same people as arrays of plain strings in AUDIT_COLUMNS order, for the CSVs
-export async function ackAuditRows(p) {
+export async function ackAuditRows(p, opts = {}) {
   const hasForm = !!p.formId;
-  return (await ackAuditPeople(p)).map((r) => [
+  return (await ackAuditPeople(p, opts)).map((r) => [
     r.who,
     r.title,
     r.email,

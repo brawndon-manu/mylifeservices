@@ -12,6 +12,8 @@ import {
   tagCls,
 } from "./roster";
 import AckBoard from "./_components/AckBoard";
+import OfficeFilter from "./_components/OfficeFilter";
+import { officeFromSearch } from "./audit";
 
 export const metadata = {
   title: "Acknowledgments",
@@ -20,13 +22,15 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function AcknowledgmentsPage() {
+export default async function AcknowledgmentsPage({ searchParams }) {
   const user = await getCurrentUser();
   // read-receipts are sensitive (who has / hasn't) - Admin/IT/Super only, same
   // gate as each announcement's detail-page roster.
   if (!isAdminUp(user?.role)) {
     redirect("/portal");
   }
+  const office = officeFromSearch(await searchParams);
+  const officeQs = office ? `?office=${office}` : "";
 
   const rawPosts = await prisma.announcement.findMany({
     where: {
@@ -52,7 +56,10 @@ export default async function AcknowledgmentsPage() {
   const posts = await Promise.all(
     rawPosts.map(async (p) => {
       const audienceUsers = await prisma.user.findMany({
-        where: ackAudienceWhere(p),
+        where: {
+          ...ackAudienceWhere(p),
+          ...(office ? { offices: { has: office } } : {}),
+        },
         select: {
           id: true,
           name: true,
@@ -91,15 +98,14 @@ export default async function AcknowledgmentsPage() {
         <BackLink href="/portal/admin">Back to admin dashboard</BackLink>
         {/* file downloads, not pages - Link would try to client-navigate */}
         <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
-            href="/portal/admin/acknowledgments/csv"
+            href={`/portal/admin/acknowledgments/csv${officeQs}`}
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
             Download CSV
           </a>
           <a
-            href="/portal/admin/acknowledgments/pdf"
+            href={`/portal/admin/acknowledgments/pdf${officeQs}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
@@ -120,7 +126,9 @@ export default async function AcknowledgmentsPage() {
         stragglers by email.
       </p>
 
-      <AckBoard posts={posts} counts={{ total: posts.length, done, avg }} />
+      <OfficeFilter basePath="/portal/admin/acknowledgments" current={office} />
+
+      <AckBoard posts={posts} counts={{ total: posts.length, done, avg }} officeQs={officeQs} />
     </section>
   );
 }

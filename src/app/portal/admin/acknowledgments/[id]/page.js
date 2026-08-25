@@ -14,6 +14,8 @@ import {
   tagCls,
 } from "../roster";
 import AckBreakdown from "../_components/AckBreakdown";
+import OfficeFilter from "../_components/OfficeFilter";
+import { officeFromSearch } from "../audit";
 
 export const metadata = {
   title: "Acknowledgments",
@@ -31,13 +33,15 @@ function Stat({ tone, label, value }) {
   );
 }
 
-export default async function AcknowledgmentDetailPage({ params }) {
+export default async function AcknowledgmentDetailPage({ params, searchParams }) {
   const { id } = await params;
   const user = await getCurrentUser();
   // read-receipts are sensitive - Admin/IT/Super only.
   if (!isAdminUp(user?.role)) {
     redirect("/portal");
   }
+  const office = officeFromSearch(await searchParams);
+  const officeQs = office ? `?office=${office}` : "";
 
   const p = await prisma.announcement.findUnique({
     where: { id },
@@ -71,6 +75,7 @@ export default async function AcknowledgmentDetailPage({ params }) {
         image: true,
         email: true,
         phone: true,
+        offices: true,
       },
       orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
     }),
@@ -88,7 +93,13 @@ export default async function AcknowledgmentDetailPage({ params }) {
     }),
   ]);
 
-  const r = buildAckRoster(p, audienceUsers);
+  // the roster narrows to one office in JS so the invitee logic below still
+  // sees the whole audience - a person from the other office is in the
+  // audience, not an invitee candidate
+  const roster = office
+    ? audienceUsers.filter((u) => (u.offices || []).includes(office))
+    : audienceUsers;
+  const r = buildAckRoster(p, roster);
 
   const audIds = new Set(audienceUsers.map((u) => u.id));
   const inviteeCandidates = allActive
@@ -106,13 +117,13 @@ export default async function AcknowledgmentDetailPage({ params }) {
         <BackLink href="/portal/admin/acknowledgments">Back to acknowledgments</BackLink>
         <div className="flex items-center gap-2">
           <a
-            href={`/portal/admin/acknowledgments/${p.id}/csv`}
+            href={`/portal/admin/acknowledgments/${p.id}/csv${officeQs}`}
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
             Download CSV
           </a>
           <a
-            href={`/portal/admin/acknowledgments/${p.id}/pdf`}
+            href={`/portal/admin/acknowledgments/${p.id}/pdf${officeQs}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
@@ -143,6 +154,8 @@ export default async function AcknowledgmentDetailPage({ params }) {
         {p.publishedAt && <>Posted {fmtPosted(p.publishedAt)} · </>}
         audience: {audienceLabel(p, r.expected)}
       </p>
+
+      <OfficeFilter basePath={`/portal/admin/acknowledgments/${p.id}`} current={office} />
 
       <div className="mt-5 rounded-xl border border-border bg-surface p-4">
         <div className="flex items-baseline justify-between text-sm">
