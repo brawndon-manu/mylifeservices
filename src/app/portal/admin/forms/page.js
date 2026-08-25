@@ -56,14 +56,24 @@ export default async function FormSubmissionsPage() {
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin">Back to Admin</BackLink>
-        {/* a file download, not a page - Link would try to client-navigate */}
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a
-          href="/portal/admin/forms/csv"
-          className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-        >
-          Download CSV (all forms)
-        </a>
+        {/* file downloads, not pages - Link would try to client-navigate */}
+        <div className="flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a
+            href="/portal/admin/forms/csv"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download CSV (all forms)
+          </a>
+          <a
+            href="/portal/admin/forms/pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download PDF (all forms)
+          </a>
+        </div>
       </div>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
