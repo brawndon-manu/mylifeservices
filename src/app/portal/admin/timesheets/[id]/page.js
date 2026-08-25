@@ -807,9 +807,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       {unmatched > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           <strong>{unmatched}</strong>{" "}
-          {unmatched === 1 ? "timesheet has" : "timesheets have"} no matched
-          employee yet. Those can&apos;t be sent until you pick who they belong
-          to.
+          {unmatched === 1 ? "timesheet has" : "timesheets have"}{" "}
+          no matched employee yet. Those can&apos;t be sent until you pick who
+          they belong to.
         </div>
       )}
 
