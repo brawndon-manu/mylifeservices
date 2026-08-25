@@ -8,6 +8,8 @@ import BackLink from "@/components/BackLink";
 import { ackAudienceWhere, isCompanyMeeting } from "@/lib/announcements";
 import { buildRoster, meetingMeta } from "../roster";
 import MeetingBreakdown from "../_components/MeetingBreakdown";
+import OfficeFilter from "@/components/OfficeFilter";
+import { officeFromSearch } from "@/lib/positions";
 
 export const metadata = {
   title: "Meeting attendance",
@@ -32,7 +34,7 @@ function Stat({ tone, label, value }) {
   );
 }
 
-export default async function MeetingAttendanceDetailPage({ params }) {
+export default async function MeetingAttendanceDetailPage({ params, searchParams }) {
   const { id } = await params;
   const user = await getCurrentUser();
   // roster is sensitive - Admin/IT/Super only, same gate as the report + the
@@ -40,6 +42,7 @@ export default async function MeetingAttendanceDetailPage({ params }) {
   if (!isAdminUp(user?.role)) {
     redirect("/portal");
   }
+  const office = officeFromSearch(await searchParams);
 
   const m = await prisma.announcement.findUnique({
     where: { id },
@@ -74,6 +77,7 @@ export default async function MeetingAttendanceDetailPage({ params }) {
         image: true,
         email: true,
         phone: true,
+        offices: true,
       },
       orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
     }),
@@ -99,17 +103,23 @@ export default async function MeetingAttendanceDetailPage({ params }) {
     }),
   ]);
 
-  const r = buildRoster(m, audienceUsers, choices, responses);
+  // the roster narrows to one office in JS so the invitee logic below still
+  // sees the whole audience - a person from the other office is invited, not
+  // an invitee candidate
+  const roster = office
+    ? audienceUsers.filter((u) => (u.offices || []).includes(office))
+    : audienceUsers;
+  const r = buildRoster(m, roster, choices, responses);
   const meta = meetingMeta(m, r);
 
   // invitee-manager data: everyone not already invited + the added-by-hand people.
-  const audIds = new Set(r.audience.map((a) => a.id));
+  const audIds = new Set(audienceUsers.map((u) => u.id));
   const inviteeCandidates = allActive
     .filter((u) => !audIds.has(u.id))
     .map((u) => ({ id: u.id, displayName: preferredName(u), title: u.title || "", image: u.image || null }));
-  const addedInvitees = r.audience
-    .filter((a) => (m.ackUserIds || []).includes(a.id))
-    .map((a) => ({ id: a.id, displayName: a.displayName }));
+  const addedInvitees = audienceUsers
+    .filter((u) => (m.ackUserIds || []).includes(u.id))
+    .map((u) => ({ id: u.id, displayName: preferredName(u) }));
 
   const breakdown = {
     id: m.id,
@@ -164,6 +174,8 @@ export default async function MeetingAttendanceDetailPage({ params }) {
           </span>
         </p>
       )}
+
+      <OfficeFilter basePath={`/portal/admin/meeting-attendance/${m.id}`} current={office} />
 
       <div className="mt-5 rounded-xl border border-border bg-surface p-4">
         <div className="flex items-baseline justify-between text-sm">

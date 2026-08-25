@@ -4,7 +4,7 @@ import Avatar from "@/components/Avatar";
 // the meeting-attendance report: one read-only summary card per Company Meeting
 // (attending / no-response / can't-make-it face stacks). clicking a card opens
 // its dedicated page, where the full drill-down + roll-call + override live.
-export default function AttendanceBoard({ upcoming, past, counts }) {
+export default function AttendanceBoard({ upcoming, past, counts, officeQs = "" }) {
   return (
     <>
       <div className="mt-6 flex flex-wrap items-center gap-2.5">
@@ -37,7 +37,7 @@ export default function AttendanceBoard({ upcoming, past, counts }) {
               <SectionLabel>Upcoming</SectionLabel>
               <div className="space-y-3.5">
                 {upcoming.map((m) => (
-                  <MeetingCard key={m.id} m={m} />
+                  <MeetingCard key={m.id} m={m} officeQs={officeQs} />
                 ))}
               </div>
             </>
@@ -47,7 +47,7 @@ export default function AttendanceBoard({ upcoming, past, counts }) {
               <SectionLabel>Past</SectionLabel>
               <div className="space-y-3.5 opacity-70">
                 {past.map((m) => (
-                  <MeetingCard key={m.id} m={m} past />
+                  <MeetingCard key={m.id} m={m} past officeQs={officeQs} />
                 ))}
               </div>
             </>
@@ -171,11 +171,11 @@ function SummarySection({ label, tone, count, people, roll }) {
   );
 }
 
-function MeetingCard({ m }) {
+function MeetingCard({ m, officeQs = "" }) {
   const s = m.summary;
   return (
     <Link
-      href={`/portal/admin/meeting-attendance/${m.id}`}
+      href={`/portal/admin/meeting-attendance/${m.id}${officeQs}`}
       className="group block rounded-xl border border-border bg-surface p-5 shadow-sm card-lift"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">

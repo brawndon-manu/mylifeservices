@@ -1,7 +1,9 @@
 // the form-submissions filter set, shared by the admin page and its CSV
 // download so the file always matches what the screen shows.
 
-import { preferredName } from "@/lib/contacts";
+// LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName. the pages
+// show preferred names; these rows feed the files, and files are records.
+import { payrollName } from "@/lib/contacts";
 import { officeFromSearch } from "@/lib/positions";
 import { fmtStamp } from "../acknowledgments/audit";
 
@@ -10,7 +12,7 @@ import { fmtStamp } from "../acknowledgments/audit";
 // and the signed-document bundles so every download names people the same way.
 export function submissionRow(s) {
   return {
-    who: s.user ? preferredName(s.user) : s.submitterName,
+    who: s.user ? payrollName(s.user, s.submitterName) : s.submitterName,
     email: s.user ? s.user.email || "" : s.submitterEmail,
     how: ATTRIBUTION_LABELS[s.attribution] || s.attribution,
     when: fmtStamp(s.createdAt),

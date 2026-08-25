@@ -2,8 +2,10 @@
 // announcement expected an acknowledgment from, plus rows for anyone who acked
 // but has since left the audience (deactivated, or the audience was edited) -
 // an audit trail keeps those, even though the on-screen roster drops them.
+// LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName. the on-screen
+// rosters show preferred names; the files these rows feed are records.
 import { prisma } from "@/lib/prisma";
-import { preferredName } from "@/lib/contacts";
+import { payrollName } from "@/lib/contacts";
 import { ackAudienceWhere } from "@/lib/announcements";
 import { PACIFIC, fmtPosted } from "./roster";
 
@@ -96,7 +98,7 @@ export async function ackAuditPeople(p, { office = "" } = {}) {
         })
       : [],
   ]);
-  const recorderName = new Map(recorders.map((u) => [u.id, preferredName(u)]));
+  const recorderName = new Map(recorders.map((u) => [u.id, payrollName(u)]));
 
   const ackByUser = new Map((p.acks || []).map((a) => [a.userId, a]));
   const signedByUser = new Map(
@@ -106,7 +108,7 @@ export async function ackAuditPeople(p, { office = "" } = {}) {
     const a = ackByUser.get(u.id);
     const sub = signedByUser.get(u.id);
     return {
-      who: preferredName(u),
+      who: payrollName(u),
       title: u.title || "",
       email: u.email || "",
       acked: !!a,

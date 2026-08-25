@@ -6,6 +6,8 @@ import BackLink from "@/components/BackLink";
 import { ackAudienceWhere, COMPANY_MEETING_TAG } from "@/lib/announcements";
 import { buildRoster, meetingMeta } from "./roster";
 import AttendanceBoard from "./_components/AttendanceBoard";
+import OfficeFilter from "@/components/OfficeFilter";
+import { officeFromSearch } from "@/lib/positions";
 
 export const metadata = {
   title: "Meeting attendance",
@@ -14,13 +16,15 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function MeetingAttendancePage() {
+export default async function MeetingAttendancePage({ searchParams }) {
   const user = await getCurrentUser();
   // roster is sensitive (who's going / who didn't show) - Admin/IT/Super only,
   // same gate as each meeting's detail-page roster.
   if (!isAdminUp(user?.role)) {
     redirect("/portal");
   }
+  const office = officeFromSearch(await searchParams);
+  const officeQs = office ? `?office=${office}` : "";
 
   const meetings = await prisma.announcement.findMany({
     where: { tag: COMPANY_MEETING_TAG, deletedAt: null, publishedAt: { not: null } },
@@ -43,7 +47,10 @@ export default async function MeetingAttendancePage() {
     meetings.map(async (m) => {
       const [audienceUsers, choices, responses] = await Promise.all([
         prisma.user.findMany({
-          where: ackAudienceWhere(m),
+          where: {
+            ...ackAudienceWhere(m),
+            ...(office ? { offices: { has: office } } : {}),
+          },
           select: {
             id: true,
             name: true,
@@ -106,7 +113,10 @@ export default async function MeetingAttendancePage() {
         open its full breakdown and take roll-call. Times shown in Pacific.
       </p>
 
+      <OfficeFilter basePath="/portal/admin/meeting-attendance" current={office} />
+
       <AttendanceBoard
+        officeQs={officeQs}
         upcoming={upcoming}
         past={past}
         counts={{
