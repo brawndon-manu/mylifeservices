@@ -39,6 +39,8 @@ import {
   createNavOwner,
   mayDropSnapshots,
   originForProgress,
+  nativeEdgeBackGesture,
+  SPRING_HOLD_MS,
 } from "@/lib/portal-nav";
 
 export default function PortalPushNav({ children }) {
@@ -186,6 +188,17 @@ export default function PortalPushNav({ children }) {
   useEffect(() => {
     if (typeof document === "undefined" || !document.startViewTransition) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // iOS Safari's own edge swipe already does this - see the note on
+    // `nativeEdgeBackGesture`. Two gestures on one edge wedge the page.
+    if (
+      nativeEdgeBackGesture({
+        userAgent: navigator.userAgent,
+        maxTouchPoints: navigator.maxTouchPoints || 0,
+        standalone:
+          navigator.standalone === true ||
+          window.matchMedia("(display-mode: standalone)").matches,
+      })
+    ) return;
 
     const EDGE = 32;
     // how far sideways before the drag counts as a back rather than a stray
@@ -337,6 +350,16 @@ export default function PortalPushNav({ children }) {
     // what letting go does, shared by a lifted finger and a touch that was
     // lost and never came back
     const release = (d) => {
+      // NOTHING BELOW MAY HOLD THE SNAPSHOTS FOREVER. The spring walks them
+      // back on requestAnimationFrame - and the frozen two-page state in the
+      // Simulator was a release whose rAF loop never got to run again, so the
+      // skip it was walking toward never came. A plain timer does not depend
+      // on the compositor being happy: past every legitimate path's worst
+      // case, skip the transition no matter what. Skipping one that already
+      // finished is a no-op.
+      setTimeout(() => {
+        try { d.vt?.skipTransition?.(); } catch { /* already gone */ }
+      }, NAV_MS + SPRING_HOLD_MS + 300);
       const anims = d.anims || [];
       // THE BROWSER SKIPPED THE TRANSITION, AND THE NAVIGATION STILL HAPPENED.
       //

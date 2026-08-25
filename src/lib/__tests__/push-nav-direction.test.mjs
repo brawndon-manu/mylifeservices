@@ -20,6 +20,7 @@ import {
   directionFor, depthOf, TAB_ROOTS,
   dragProgress, viewTransitionAnimations, navTransitionCss, NAV_MS, NAV_COMMIT_AT,
   createNavOwner, mayDropSnapshots, SPRING_HOLD_MS, originForProgress,
+  nativeEdgeBackGesture,
 } from "../portal-nav.js";
 
 // TWO TRANSITIONS, ONE ATTRIBUTE. `data-nav` on <html> is what every keyframe
@@ -263,4 +264,61 @@ test("an adopted touch carries the peek on from where it stands", () => {
 test("a missing width cannot poison the adopted origin with NaN", () => {
   assert.equal(originForProgress(50, 0.5, 0), 50);
   assert.equal(originForProgress(50, undefined, 390), 50);
+});
+
+// THE BROWSER'S OWN EDGE SWIPE WINS BY US STANDING DOWN. iOS Safari drives
+// history from the edge itself; running the custom drag as well wedged the
+// page (Simulator, 2026-08-25, on a slow swipe). Standalone mode has no
+// native gesture, so there the custom one still runs - and so does everywhere
+// else.
+test("in-browser iOS Safari owns the edge and the custom drag stands down", () => {
+  assert.equal(
+    nativeEdgeBackGesture({
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15",
+      maxTouchPoints: 5,
+      standalone: false,
+    }),
+    true,
+  );
+});
+
+test("installed to the home screen there is no native gesture to defer to", () => {
+  assert.equal(
+    nativeEdgeBackGesture({
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15",
+      maxTouchPoints: 5,
+      standalone: true,
+    }),
+    false,
+  );
+});
+
+test("iPadOS pretends to be a Mac and the touch points give it away", () => {
+  assert.equal(
+    nativeEdgeBackGesture({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+      maxTouchPoints: 5,
+      standalone: false,
+    }),
+    true,
+  );
+});
+
+test("a real Mac and Android keep the custom drag", () => {
+  assert.equal(
+    nativeEdgeBackGesture({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+      maxTouchPoints: 0,
+      standalone: false,
+    }),
+    false,
+  );
+  assert.equal(
+    nativeEdgeBackGesture({
+      userAgent: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/130",
+      maxTouchPoints: 5,
+      standalone: false,
+    }),
+    false,
+  );
 });

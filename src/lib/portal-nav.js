@@ -144,6 +144,27 @@ export function mayDropSnapshots(pathNow, home, heldMs) {
   return pathNow === home || heldMs > SPRING_HOLD_MS;
 }
 
+// THE BROWSER'S OWN EDGE SWIPE WINS BY US STANDING DOWN.
+//
+// iOS Safari drives history from the screen edge itself - real page snapshots,
+// finger tracking, the works - and it does it for pushState entries too. Run
+// the custom drag as well and a SLOW swipe starts both: ours commits
+// `router.back()` at 10px, Safari then takes the touch for its native gesture,
+// and the two animations fight over one history until the page wedges - both
+// pages stacked semi-transparent, frozen. Reproduced in the iOS Simulator
+// 2026-08-25 on exactly the slow swipe Mánu reported.
+//
+// So where a native edge-back gesture exists, the custom one does not run.
+// Installed to the home screen there is no native gesture (standalone mode),
+// and there the custom drag carries the weight alone.
+export function nativeEdgeBackGesture({ userAgent = "", maxTouchPoints = 0, standalone = false } = {}) {
+  const ios =
+    /iPad|iPhone|iPod/.test(userAgent) ||
+    // iPadOS reports itself as a Mac; the touch points give it away
+    (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
+  return ios && !standalone;
+}
+
 // A TOUCH THE GLASS DROPPED AND GAVE BACK. At the very edge of the screen the
 // digitizer can lose a resting finger - half of it is off the glass - and
 // re-acquire it a beat later as a brand new touch. A drag that survives that
