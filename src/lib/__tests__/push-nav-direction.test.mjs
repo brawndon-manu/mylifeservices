@@ -21,6 +21,7 @@ import {
   dragProgress, viewTransitionAnimations, navTransitionCss, NAV_MS, NAV_COMMIT_AT,
   createNavOwner, mayDropSnapshots, SPRING_HOLD_MS, originForProgress,
   nativeEdgeBackGesture,
+  scrubbableViewTransitions,
 } from "../portal-nav.js";
 
 // TWO TRANSITIONS, ONE ATTRIBUTE. `data-nav` on <html> is what every keyframe
@@ -319,6 +320,34 @@ test("a real Mac and Android keep the custom drag", () => {
       maxTouchPoints: 5,
       standalone: false,
     }),
+    false,
+  );
+});
+
+// THE SCRUB ONLY WORKS WHERE THE ANIMATIONS CAN BE DRIVEN BY HAND. WebKit
+// wedges when a transition starts mid-touch (Simulator, 2026-08-25), so there
+// the gesture navigates on release through the ordinary transition instead.
+test("WebKit gets the release-driven gesture, Chromium keeps the scrub", () => {
+  // iOS Safari + the installed web app (pure WebKit)
+  assert.equal(
+    scrubbableViewTransitions("Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15"),
+    false,
+  );
+  // macOS Safari
+  assert.equal(
+    scrubbableViewTransitions("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15"),
+    false,
+  );
+  // Chrome on Android - AppleWebKit token present, but Chromium underneath
+  assert.equal(
+    scrubbableViewTransitions("Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36"),
+    true,
+  );
+});
+
+test("Chrome on iOS runs on WebKit and must not scrub either", () => {
+  assert.equal(
+    scrubbableViewTransitions("Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/130.0.0.0 Mobile Safari/605.1.15"),
     false,
   );
 });

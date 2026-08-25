@@ -165,6 +165,30 @@ export function nativeEdgeBackGesture({ userAgent = "", maxTouchPoints = 0, stan
   return ios && !standalone;
 }
 
+// THE SCRUB ONLY WORKS WHERE THE ANIMATIONS CAN BE DRIVEN BY HAND.
+//
+// The finger-tracked back gesture pauses the view transition's pseudo-element
+// animations and sets their currentTime from the thumb - and that needs
+// `document.getAnimations()` to hand them over, which WebKit does not do.
+// Worse: starting a transition mid-touch and holding it open WEDGES WebKit -
+// instrumented in the Simulator 2026-08-25, the commit logs, `ready` never
+// resolves, no further touch events are processed, and both snapshots freeze
+// stacked on screen. No failsafe can fire inside a wedged page.
+//
+// So on WebKit the gesture is RELEASE-DRIVEN instead: the drag is only
+// measured, and crossing the line and letting go plays the ordinary back
+// transition - the same safe path a tap on "Back" takes. Chromium keeps the
+// finger-tracked scrub.
+export function scrubbableViewTransitions(userAgent = "") {
+  // on iOS every browser is WebKit no matter whose name is on the app -
+  // Chrome and Edge there carry CriOS/EdgiOS tokens but run Apple's engine
+  if (/iPad|iPhone|iPod/.test(userAgent)) return false;
+  const webkitOnly =
+    /AppleWebKit/.test(userAgent) &&
+    !/Chrome|CriOS|EdgiOS|Edg\/|OPR|SamsungBrowser/.test(userAgent);
+  return !webkitOnly;
+}
+
 // A TOUCH THE GLASS DROPPED AND GAVE BACK. At the very edge of the screen the
 // digitizer can lose a resting finger - half of it is off the glass - and
 // re-acquire it a beat later as a brand new touch. A drag that survives that

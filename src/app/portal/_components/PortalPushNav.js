@@ -40,6 +40,7 @@ import {
   mayDropSnapshots,
   originForProgress,
   nativeEdgeBackGesture,
+  scrubbableViewTransitions,
   SPRING_HOLD_MS,
 } from "@/lib/portal-nav";
 
@@ -76,7 +77,7 @@ export default function PortalPushNav({ children }) {
   }, [pathname]);
 
   const go = useCallback(
-    (href, direction) => {
+    (direction, navigate) => {
       const root = document.documentElement;
       // ONE ATTRIBUTE PICKS THE KEYFRAMES. Held on <html> rather than passed
       // around, because `::view-transition-*` pseudo-elements live on the
@@ -90,7 +91,7 @@ export default function PortalPushNav({ children }) {
         () =>
           new Promise((resolve) => {
             settle.current = resolve;
-            router.push(href);
+            navigate();
             // A NAVIGATION THAT NEVER ARRIVES MUST NOT FREEZE THE PAGE. A
             // refused route or a slow server would otherwise leave the document
             // held in a transition with nothing on screen able to move.
@@ -132,7 +133,7 @@ export default function PortalPushNav({ children }) {
           if (mine()) delete root.dataset.nav;
         });
     },
-    [router],
+    [],
   );
 
   // FORWARD: catch the click before the router does.
@@ -153,7 +154,8 @@ export default function PortalPushNav({ children }) {
       const direction = directionFor(pathname, to);
       if (direction !== "forward") return;
       e.preventDefault();
-      go(a.pathname + a.search + a.hash, "forward");
+      const href = a.pathname + a.search + a.hash;
+      go("forward", () => router.push(href));
     };
 
     // CAPTURE, NOT BUBBLE, and this is the whole reason the first version did
@@ -168,7 +170,7 @@ export default function PortalPushNav({ children }) {
     // anything else listening for the click still hears it.
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [pathname, go]);
+  }, [pathname, go, router]);
 
   // BACK: a drag that starts in the left edge strip.
   //
@@ -199,6 +201,10 @@ export default function PortalPushNav({ children }) {
           window.matchMedia("(display-mode: standalone)").matches,
       })
     ) return;
+    // WebKit wedges if a transition starts mid-touch - see
+    // `scrubbableViewTransitions`. There the gesture only MEASURES the drag
+    // and navigates on release, through the same transition a tap uses.
+    const canScrub = scrubbableViewTransitions(navigator.userAgent);
 
     const EDGE = 32;
     // how far sideways before the drag counts as a back rather than a stray
@@ -344,8 +350,10 @@ export default function PortalPushNav({ children }) {
       }
       if (e.cancelable) e.preventDefault();
       d.p = dragProgress(dx, window.innerWidth);
-      if (!d.committed && dx > WAKE_PX) commit(d);
-      else scrub(d.p);
+      if (canScrub) {
+        if (!d.committed && dx > WAKE_PX) commit(d);
+        else scrub(d.p);
+      }
     };
     // what letting go does, shared by a lifted finger and a touch that was
     // lost and never came back
@@ -447,6 +455,14 @@ export default function PortalPushNav({ children }) {
       // must not release it
       if (d.lost) return;
       dragging.current = null;
+      if (!canScrub) {
+        // RELEASE-DRIVEN: nothing has navigated yet. Past the line, play the
+        // ordinary back transition; under it, the drag was just a touch.
+        if (e.type !== "touchcancel" && d.p >= NAV_COMMIT_AT) {
+          go("back", () => router.back());
+        }
+        return;
+      }
       if (!d.committed) return;
       release(d);
     };
@@ -462,7 +478,7 @@ export default function PortalPushNav({ children }) {
       document.removeEventListener("touchcancel", end);
       if (dragging.current?.lostTimer) clearTimeout(dragging.current.lostTimer);
     };
-  }, [router]);
+  }, [router, go]);
 
   return children;
 }
