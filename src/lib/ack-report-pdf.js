@@ -5,7 +5,7 @@
 // (`renderAcksOverviewReport`). same rows as the acknowledgment pages and
 // their CSVs. drawing engine shared with the forms reports (report-pdf.js).
 import {
-  L, R, BRAND, MUTED,
+  L, R, BRAND, MUTED, INK,
   clip, makeSt, drawMasthead, drawTiles, drawTable, drawBody, finish,
 } from "./report-pdf";
 
@@ -31,6 +31,49 @@ const COLS_FORM = [
 const NOTE_LINE =
   "† acknowledged, but no longer in the expected audience (deactivated, or the audience was edited).";
 
+// ---------- the How icons, same shapes the on-screen roster uses ----------
+// tiny stroke drawings on the row baseline (y). the key above the table names
+// them, so the rows carry no words - except "logged by <name>", where the name
+// is the point and words stay.
+
+function mailIcon(st, x, y, color = INK) {
+  const w = 7.5;
+  const h = 5.5;
+  st.page.drawRectangle({
+    x, y: y - 0.25, width: w, height: h,
+    borderColor: color, borderWidth: 0.7,
+  });
+  const top = y - 0.25 + h;
+  st.page.drawLine({ start: { x, y: top }, end: { x: x + w / 2, y: top - 2.4 }, thickness: 0.7, color });
+  st.page.drawLine({ start: { x: x + w / 2, y: top - 2.4 }, end: { x: x + w, y: top }, thickness: 0.7, color });
+}
+
+function monitorIcon(st, x, y, color = INK) {
+  const w = 7.5;
+  st.page.drawRectangle({
+    x, y: y + 1.4, width: w, height: 4.6,
+    borderColor: color, borderWidth: 0.7,
+  });
+  st.page.drawLine({ start: { x: x + w / 2, y: y + 1.4 }, end: { x: x + w / 2, y: y + 0.2 }, thickness: 0.7, color });
+  st.page.drawLine({ start: { x: x + w / 2 - 1.6, y: y + 0.2 }, end: { x: x + w / 2 + 1.6, y: y + 0.2 }, thickness: 0.7, color });
+}
+
+// how the icons read, printed right above the roster
+function drawKey(st) {
+  let x = L;
+  const label = (s) => {
+    st.text(s, x, st.y, { size: 7.5, color: MUTED });
+    x += st.font.widthOfTextAtSize(s, 7.5) + 16;
+  };
+  mailIcon(st, x, st.y, MUTED);
+  x += 11;
+  label("acknowledged via the email link");
+  monitorIcon(st, x, st.y, MUTED);
+  x += 11;
+  label("acknowledged in the portal");
+  st.y -= 15;
+}
+
 function ackTiles(stats) {
   return [
     { n: `${stats.acked}/${stats.expected}`, label: `acknowledged · ${stats.pct}%` },
@@ -44,9 +87,25 @@ function ackTiles(stats) {
 // rows print muted with "not yet" in the timestamp column - status needs no
 // column of its own. returns whether any row carries the audience note.
 function drawAckTable(st, title, rows, hasForm) {
+  if (rows.some((r) => r.how === "email link" || r.how === "in portal")) {
+    if (st.y < 90) st.addPage();
+    drawKey(st);
+  }
   drawTable(st, hasForm ? COLS_FORM : COLS_PLAIN, rows, {
     contTitle: `${title} · acknowledgment record (continued)`,
     muted: (r) => !r.acked,
+    drawCell: (st2, r, ci, x, y) => {
+      if (ci !== 3) return false;
+      if (r.how === "email link") {
+        mailIcon(st2, x + 5, y);
+        return true;
+      }
+      if (r.how === "in portal") {
+        monitorIcon(st2, x + 5, y);
+        return true;
+      }
+      return false;
+    },
     cells: (r, i) => {
       const cells = [
         String(i + 1),

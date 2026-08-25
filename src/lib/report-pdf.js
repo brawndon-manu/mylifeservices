@@ -142,8 +142,10 @@ function drawHead(st, cols) {
 }
 
 // a paginating table. cells() maps a row to strings; muted() marks the rows
-// drawn quiet; contTitle heads the run-over pages.
-export function drawTable(st, cols, rows, { cells, muted = () => false, contTitle }) {
+// drawn quiet; contTitle heads the run-over pages. drawCell, when given, gets
+// first shot at each cell (st, row, colIndex, x, baselineY) - returning true
+// means it drew something (an icon) and the text for that cell is skipped.
+export function drawTable(st, cols, rows, { cells, muted = () => false, contTitle, drawCell }) {
   drawHead(st, cols);
   const rowH = 15;
   let alt = false;
@@ -163,6 +165,10 @@ export function drawTable(st, cols, rows, { cells, muted = () => false, contTitl
     let x = L;
     cells(r, i).forEach((c, ci) => {
       const [, w, numeric] = cols[ci];
+      if (drawCell?.(st, r, ci, x, st.y)) {
+        x += w;
+        return;
+      }
       const s = clip(c, w - 10, st.font, 8.5);
       const cx = numeric ? x + w - 5 - st.font.widthOfTextAtSize(s, 8.5) : x + 5;
       st.text(s, cx, st.y, { size: 8.5, color: quiet ? MUTED : INK });
