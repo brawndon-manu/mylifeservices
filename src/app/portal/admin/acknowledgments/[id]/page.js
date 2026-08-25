@@ -111,6 +111,14 @@ export default async function AcknowledgmentDetailPage({ params }) {
           >
             Download CSV
           </a>
+          <a
+            href={`/portal/admin/acknowledgments/${p.id}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download report PDF
+          </a>
           <Link
             href={`/portal/announcements/${p.id}?from=ackDetail`}
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"

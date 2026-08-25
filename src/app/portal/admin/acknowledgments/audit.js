@@ -5,7 +5,7 @@
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import { ackAudienceWhere } from "@/lib/announcements";
-import { PACIFIC } from "./roster";
+import { PACIFIC, fmtPosted } from "./roster";
 
 const stampFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: PACIFIC,
@@ -41,9 +41,10 @@ const USER_SELECT = {
 };
 
 // `p` needs id, formId, ackEveryone, ackTitles, ackUserIds, and acks rows
-// carrying userId / viaEmail / recordedById / createdAt. returns arrays of
-// plain strings, one per person, in AUDIT_COLUMNS order.
-export async function ackAuditRows(p) {
+// carrying userId / viaEmail / recordedById / createdAt. returns one object
+// per person - the audience first, then anyone who acked but has since left
+// it. the CSV and the PDF report both build from these.
+export async function ackAuditPeople(p) {
   const [audienceUsers, submissions] = await Promise.all([
     prisma.user.findMany({
       where: ackAudienceWhere(p),
@@ -91,37 +92,69 @@ export async function ackAuditRows(p) {
   const signedByUser = new Map(
     submissions.filter((s) => s.userId).map((s) => [s.userId, s]),
   );
-  const hasForm = !!p.formId;
-
-  const row = (u, note) => {
+  const person = (u, note) => {
     const a = ackByUser.get(u.id);
     const sub = signedByUser.get(u.id);
-    const how = !a
-      ? ""
-      : a.recordedById
-        ? `logged by ${recorderName.get(a.recordedById) || "an admin"}`
-        : a.viaEmail
-          ? "email link"
-          : "in portal";
-    return [
-      preferredName(u),
-      u.title || "",
-      u.email || "",
-      a ? "acknowledged" : "not yet",
-      how,
-      a ? fmtStamp(a.createdAt) : "",
-      hasForm ? (sub ? "signed" : "not signed") : "",
-      sub ? fmtStamp(sub.createdAt) : "",
+    return {
+      who: preferredName(u),
+      title: u.title || "",
+      email: u.email || "",
+      acked: !!a,
+      how: !a
+        ? ""
+        : a.recordedById
+          ? `logged by ${recorderName.get(a.recordedById) || "an admin"}`
+          : a.viaEmail
+            ? "email link"
+            : "in portal",
+      when: a ? fmtStamp(a.createdAt) : "",
+      signed: !!sub,
+      signedWhen: sub ? fmtStamp(sub.createdAt) : "",
+      signedDay: sub ? fmtPosted(sub.createdAt) : "",
       note,
-    ];
+    };
   };
 
   return [
-    ...audienceUsers.map((u) => row(u, "")),
+    ...audienceUsers.map((u) => person(u, "")),
     ...outsideUsers.map((u) =>
-      row(u, u.deactivatedAt ? "deactivated" : "no longer in audience"),
+      person(u, u.deactivatedAt ? "deactivated" : "no longer in audience"),
     ),
   ];
+}
+
+// roster arithmetic over the audit people. only the still-expected audience
+// counts toward the denominator - people who acked and then left it appear in
+// the rows but not in these numbers, same as the on-screen roster.
+export function ackStats(people) {
+  const audience = people.filter((r) => !r.note);
+  const acked = audience.filter((r) => r.acked);
+  const viaEmail = acked.filter((r) => r.how === "email link").length;
+  const expected = audience.length;
+  return {
+    expected,
+    acked: acked.length,
+    inPortal: acked.length - viaEmail,
+    viaEmail,
+    notYet: expected - acked.length,
+    pct: expected ? Math.round((acked.length / expected) * 100) : 0,
+  };
+}
+
+// the same people as arrays of plain strings in AUDIT_COLUMNS order, for the CSVs
+export async function ackAuditRows(p) {
+  const hasForm = !!p.formId;
+  return (await ackAuditPeople(p)).map((r) => [
+    r.who,
+    r.title,
+    r.email,
+    r.acked ? "acknowledged" : "not yet",
+    r.how,
+    r.when,
+    hasForm ? (r.signed ? "signed" : "not signed") : "",
+    r.signedWhen,
+    r.note,
+  ]);
 }
 
 // YYYY-MM-DD in Pacific, for filenames
