@@ -2,6 +2,7 @@
 // download so the file always matches what the screen shows.
 
 import { preferredName } from "@/lib/contacts";
+import { officeFromSearch } from "@/lib/positions";
 import { fmtStamp } from "../acknowledgments/audit";
 
 // one submission as report-row facts: resolved person (or the typed claim),
@@ -40,20 +41,24 @@ function periodStart(period) {
   return null;
 }
 
-// normalize raw searchParams into the four filters
+// normalize raw searchParams into the filters
 export function readFilters(sp) {
   return {
     form: typeof sp?.form === "string" ? sp.form : "",
     status: typeof sp?.status === "string" ? sp.status : "all",
     period: typeof sp?.period === "string" && PERIODS[sp.period] ? sp.period : "all",
     q: typeof sp?.q === "string" ? sp.q.trim() : "",
+    office: officeFromSearch(sp),
   };
 }
 
-// the prisma `where` for one filter set
-export function submissionWhere({ form, status, period, q }) {
+// the prisma `where` for one filter set. an office narrows to submissions
+// attributed to that office's staff - unassigned ones have no person, so no
+// office, and only show unfiltered.
+export function submissionWhere({ form, status, period, q, office }) {
   const where = {};
   if (form) where.formId = form;
+  if (office) where.user = { offices: { has: office } };
   if (status === "unassigned") where.attribution = "unassigned";
   else if (status === "attributed") where.attribution = { in: ["signed-in", "email-match", "assigned"] };
   const since = periodStart(period);

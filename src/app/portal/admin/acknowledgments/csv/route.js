@@ -4,9 +4,8 @@ import { isAdminUp } from "@/lib/roles";
 import { cell, csvResponse } from "@/lib/csv";
 import { COMPANY_MEETING_TAG } from "@/lib/announcements";
 import { audienceLabel, firstLine, fmtPosted } from "../roster";
-import {
-  ackAuditRows, AUDIT_COLUMNS, fileDate, officeFromSearch, OFFICE_LABELS,
-} from "../audit";
+import { officeFromSearch, OFFICE_FILTER_LABELS } from "@/lib/positions";
+import { ackAuditRows, AUDIT_COLUMNS, fileDate } from "../audit";
 
 // the full acknowledgment audit as a file: every ack-required announcement,
 // one row per person, who acked what and when. same dataset as the
@@ -59,7 +58,7 @@ export async function GET(req) {
     const posted = p.publishedAt ? fmtPosted(p.publishedAt) : "";
     const audience =
       audienceLabel(p, rows.length) +
-      (office ? ` · ${OFFICE_LABELS[office]} only` : "");
+      (office ? ` · ${OFFICE_FILTER_LABELS[office]} only` : "");
     for (const r of rows) {
       lines.push([title, p.tag, posted, audience, ...r].map(cell).join(","));
     }

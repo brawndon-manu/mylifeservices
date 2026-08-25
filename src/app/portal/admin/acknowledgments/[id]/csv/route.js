@@ -4,7 +4,8 @@ import { isAdminUp } from "@/lib/roles";
 import { cell, csvResponse } from "@/lib/csv";
 import { isCompanyMeeting } from "@/lib/announcements";
 import { firstLine } from "../../roster";
-import { ackAuditRows, AUDIT_COLUMNS, fileDate, officeFromSearch } from "../../audit";
+import { officeFromSearch } from "@/lib/positions";
+import { ackAuditRows, AUDIT_COLUMNS, fileDate } from "../../audit";
 
 // one announcement's acknowledgment roster as a file - the same list as the
 // detail page, one row per person.

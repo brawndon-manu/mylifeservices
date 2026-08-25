@@ -5,9 +5,8 @@ import { isAdminUp } from "@/lib/roles";
 import { COMPANY_MEETING_TAG } from "@/lib/announcements";
 import { renderAcksOverviewReport } from "@/lib/ack-report-pdf";
 import { audienceLabel, firstLine, fmtPosted } from "../roster";
-import {
-  ackAuditPeople, ackStats, fileDate, officeFromSearch, OFFICE_LABELS,
-} from "../audit";
+import { officeFromSearch, OFFICE_FILTER_LABELS } from "@/lib/positions";
+import { ackAuditPeople, ackStats, fileDate } from "../audit";
 
 // every ack-required announcement in one document: a cover with the totals,
 // then each announcement's record - the post itself, then who acknowledged it,
@@ -61,7 +60,7 @@ export async function GET(req) {
       postedLabel: fmtPosted(p.publishedAt),
       audLabel:
         audienceLabel(p, stats.expected) +
-        (office ? ` · ${OFFICE_LABELS[office]} only` : ""),
+        (office ? ` · ${OFFICE_FILTER_LABELS[office]} only` : ""),
       content: p.content,
       hasForm: !!p.formId,
       stats,
@@ -72,7 +71,7 @@ export async function GET(req) {
   let bytes;
   try {
     const out = await renderAcksOverviewReport(
-      { posts, filterLabel: office ? `${OFFICE_LABELS[office]} only` : "" },
+      { posts, filterLabel: office ? `${OFFICE_FILTER_LABELS[office]} only` : "" },
       {
         generatedOn: new Date().toLocaleDateString("en-US", {
           timeZone: "America/Los_Angeles",

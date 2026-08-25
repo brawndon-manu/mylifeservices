@@ -1,16 +1,25 @@
 import Link from "next/link";
-import { OFFICES } from "@/lib/positions";
-import { OFFICE_LABELS } from "../audit";
+import { OFFICES, OFFICE_FILTER_LABELS } from "@/lib/positions";
 
-// which office's staff the roster shows. unlike the timesheets switch (which
-// navigates between two separate screens), this FILTERS the one screen - an
-// acknowledgment audience spans offices, and most ack posts are for the MLS
-// office, so one click narrows the roster and its downloads to one office.
-export default function OfficeFilter({ basePath, current }) {
+// which office's staff an admin list shows. unlike the timesheets switch
+// (which navigates between two separate screens), this FILTERS the one screen
+// via ?office= - most of these lists are MLS-office people, so one click
+// narrows the roster and its downloads to one office. `extra` carries the
+// page's other query params (a search, a period) across the switch.
+export default function OfficeFilter({ basePath, current, extra = {} }) {
   const options = [
     { key: "", label: "All staff" },
-    ...OFFICES.map((o) => ({ key: o, label: OFFICE_LABELS[o] })),
+    ...OFFICES.map((o) => ({ key: o, label: OFFICE_FILTER_LABELS[o] })),
   ];
+  const href = (key) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(extra)) {
+      if (v && v !== "all") params.set(k, v);
+    }
+    if (key) params.set("office", key);
+    const s = params.toString();
+    return s ? `${basePath}?${s}` : basePath;
+  };
   return (
     <div className="mt-5 flex flex-wrap items-center gap-3">
       <span className="text-xs font-semibold uppercase tracking-wider text-muted">
@@ -33,7 +42,7 @@ export default function OfficeFilter({ basePath, current }) {
           ) : (
             <Link
               key={o.key || "all"}
-              href={o.key ? `${basePath}?office=${o.key}` : basePath}
+              href={href(o.key)}
               className="rounded-md px-3 py-1.5 text-sm font-medium text-muted transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               {o.label}

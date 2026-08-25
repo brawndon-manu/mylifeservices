@@ -24,8 +24,9 @@ export async function GET(req, { params }) {
   if (!form) return new NextResponse("Not found", { status: 404 });
 
   const sp = Object.fromEntries(new URL(req.url).searchParams);
+  const filters = { ...readFilters(sp), form: form.id };
   const submissions = await prisma.formSubmission.findMany({
-    where: submissionWhere({ ...readFilters(sp), form: form.id }),
+    where: submissionWhere(filters),
     orderBy: { createdAt: "desc" },
     include: {
       user: {
@@ -72,10 +73,11 @@ export async function GET(req, { params }) {
     .replace(/[^\w]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "form";
+  const suffix = filters.office ? `-${filters.office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="signed-${slug}-${fileDate()}.pdf"`,
+      "Content-Disposition": `inline; filename="signed-${slug}${suffix}-${fileDate()}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });

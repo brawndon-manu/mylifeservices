@@ -53,6 +53,13 @@ export const OFFICES = ["MLS", "DP"];
 export const OFFICE_LABELS = { MLS: "MLS", DP: "DP" };
 export const OFFICE_FULL = { MLS: "My Life Services", DP: "Day Program" };
 
+// how the admin office FILTERS name the offices (acknowledgments, forms), and
+// the one place a ?office= query param gets validated.
+export const OFFICE_FILTER_LABELS = { MLS: "MLS office", DP: "Day program" };
+export function officeFromSearch(sp) {
+  return OFFICES.includes(sp?.office) ? sp.office : "";
+}
+
 // the Owner/Director is exempt from acknowledgments (too busy) - everyone else
 // acknowledges. used to drop them from the ack picker + roster.
 export const ACK_EXEMPT_TITLE = "Owner / Director";

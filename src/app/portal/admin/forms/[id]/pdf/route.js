@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { OFFICE_FILTER_LABELS } from "@/lib/positions";
 import { renderFormSignatureReport } from "@/lib/form-report-pdf";
 import { PERIODS, readFilters, submissionWhere, submissionRow } from "../../query";
 import { fileDate } from "../../../acknowledgments/audit";
@@ -43,6 +44,7 @@ export async function GET(req, { params }) {
 
   const unassigned = submissions.filter((s) => s.attribution === "unassigned").length;
   const bits = [];
+  if (filters.office) bits.push(`${OFFICE_FILTER_LABELS[filters.office]} only`);
   if (filters.status === "unassigned") bits.push("needs assignment only");
   if (filters.status === "attributed") bits.push("attributed only");
   if (filters.period !== "all") bits.push(PERIODS[filters.period].toLowerCase());
@@ -80,10 +82,11 @@ export async function GET(req, { params }) {
     .replace(/[^\w]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "form";
+  const suffix = filters.office ? `-${filters.office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="signatures-${slug}-${fileDate()}.pdf"`,
+      "Content-Disposition": `inline; filename="signatures-${slug}${suffix}-${fileDate()}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });

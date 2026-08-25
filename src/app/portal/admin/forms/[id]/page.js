@@ -8,6 +8,7 @@ import Avatar from "@/components/Avatar";
 import { fuzzyGuesses } from "../match";
 import { assignFormSubmission, unassignFormSubmission } from "../actions";
 import AssignPicker from "../_components/AssignPicker";
+import OfficeFilter from "@/components/OfficeFilter";
 import { PERIODS, readFilters, submissionWhere } from "../query";
 import { firstLine } from "../../acknowledgments/roster";
 import { fmtStamp } from "../../acknowledgments/audit";
@@ -39,7 +40,7 @@ export default async function FormRecordPage({ params, searchParams }) {
 
   const sp = await searchParams;
   const filters = { ...readFilters(sp), form: form.id };
-  const { status: statusFilter, period, q } = filters;
+  const { status: statusFilter, period, q, office } = filters;
 
   const [submissions, activeUsers] = await Promise.all([
     prisma.formSubmission.findMany({
@@ -80,7 +81,7 @@ export default async function FormRecordPage({ params, searchParams }) {
 
   const qs = (() => {
     const params2 = new URLSearchParams();
-    for (const [k, v] of Object.entries({ status: statusFilter, period, q })) {
+    for (const [k, v] of Object.entries({ status: statusFilter, period, q, office })) {
       if (v && v !== "all") params2.set(k, v);
     }
     const s = params2.toString();
@@ -133,7 +134,15 @@ export default async function FormRecordPage({ params, searchParams }) {
         </div>
       )}
 
+      <OfficeFilter
+        basePath={`/portal/admin/forms/${form.id}`}
+        current={office}
+        extra={{ status: statusFilter, period, q }}
+      />
+
       <form className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-surface-2 p-4">
+        {/* the office filter above is links; keep its choice across a submit */}
+        {office && <input type="hidden" name="office" value={office} />}
         <div>
           <label htmlFor="status" className="block text-xs font-medium text-muted">Status</label>
           <select
@@ -177,7 +186,7 @@ export default async function FormRecordPage({ params, searchParams }) {
         >
           Filter
         </button>
-        {(statusFilter !== "all" || period !== "all" || q) && (
+        {(statusFilter !== "all" || period !== "all" || q || office) && (
           <a
             href={`/portal/admin/forms/${form.id}`}
             className="text-sm font-medium text-muted transition hover:text-foreground"

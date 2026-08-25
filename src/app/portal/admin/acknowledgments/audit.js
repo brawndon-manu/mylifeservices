@@ -5,16 +5,7 @@
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import { ackAudienceWhere } from "@/lib/announcements";
-import { OFFICES } from "@/lib/positions";
 import { PACIFIC, fmtPosted } from "./roster";
-
-// office filter for the rosters and their files. most ack posts are for the
-// MLS office, so the pages let you look at one office's staff at a time.
-export const OFFICE_LABELS = { MLS: "MLS office", DP: "Day program" };
-
-export function officeFromSearch(sp) {
-  return OFFICES.includes(sp?.office) ? sp.office : "";
-}
 
 const stampFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: PACIFIC,

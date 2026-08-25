@@ -5,9 +5,8 @@ import { isAdminUp } from "@/lib/roles";
 import { isCompanyMeeting } from "@/lib/announcements";
 import { renderAckReport } from "@/lib/ack-report-pdf";
 import { audienceLabel, firstLine, fmtPosted } from "../../roster";
-import {
-  ackAuditPeople, ackStats, fileDate, officeFromSearch, OFFICE_LABELS,
-} from "../../audit";
+import { officeFromSearch, OFFICE_FILTER_LABELS } from "@/lib/positions";
+import { ackAuditPeople, ackStats, fileDate } from "../../audit";
 
 // one announcement's acknowledgment record as a document: the post itself,
 // then who acknowledged it - in portal or by email link - and when. built on
@@ -64,7 +63,7 @@ export async function GET(req, { params }) {
         postedLabel: fmtPosted(p.publishedAt),
         audLabel:
           audienceLabel(p, stats.expected) +
-          (office ? ` · ${OFFICE_LABELS[office]} only` : ""),
+          (office ? ` · ${OFFICE_FILTER_LABELS[office]} only` : ""),
         content: p.content,
         hasForm: !!p.formId,
         stats,

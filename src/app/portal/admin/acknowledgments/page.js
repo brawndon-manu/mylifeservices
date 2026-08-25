@@ -12,8 +12,8 @@ import {
   tagCls,
 } from "./roster";
 import AckBoard from "./_components/AckBoard";
-import OfficeFilter from "./_components/OfficeFilter";
-import { officeFromSearch } from "./audit";
+import OfficeFilter from "@/components/OfficeFilter";
+import { officeFromSearch } from "@/lib/positions";
 
 export const metadata = {
   title: "Acknowledgments",

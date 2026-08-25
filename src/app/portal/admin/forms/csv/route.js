@@ -18,8 +18,9 @@ export async function GET(req) {
   }
 
   const sp = Object.fromEntries(new URL(req.url).searchParams);
+  const filters = readFilters(sp);
   const submissions = await prisma.formSubmission.findMany({
-    where: submissionWhere(readFilters(sp)),
+    where: submissionWhere(filters),
     orderBy: { createdAt: "desc" },
     include: {
       form: { select: { title: true } },
@@ -78,5 +79,6 @@ export async function GET(req) {
     );
   }
 
-  return csvResponse(lines, `form-submissions-${fileDate()}.csv`);
+  const suffix = filters.office ? `-${filters.office.toLowerCase()}` : "";
+  return csvResponse(lines, `form-submissions${suffix}-${fileDate()}.csv`);
 }

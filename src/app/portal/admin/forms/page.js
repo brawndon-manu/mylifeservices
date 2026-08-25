@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
+import OfficeFilter from "@/components/OfficeFilter";
+import { officeFromSearch } from "@/lib/positions";
 import { fmtPosted } from "../acknowledgments/roster";
 
 export const metadata = {
@@ -13,9 +15,13 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function FormSubmissionsPage() {
+export default async function FormSubmissionsPage({ searchParams }) {
   const user = await getCurrentUser();
   if (!canViewFormRecords(user?.role)) redirect("/portal");
+  const office = officeFromSearch(await searchParams);
+  const officeQs = office ? `?office=${office}` : "";
+  // an office narrows counts to submissions attributed to that office's staff
+  const officeWhere = office ? { user: { offices: { has: office } } } : {};
 
   const [forms, counts, unassignedCounts] = await Promise.all([
     prisma.form.findMany({
@@ -24,12 +30,13 @@ export default async function FormSubmissionsPage() {
     }),
     prisma.formSubmission.groupBy({
       by: ["formId"],
+      where: officeWhere,
       _count: { _all: true },
       _max: { createdAt: true },
     }),
     prisma.formSubmission.groupBy({
       by: ["formId"],
-      where: { attribution: "unassigned" },
+      where: { attribution: "unassigned", ...officeWhere },
       _count: { _all: true },
     }),
   ]);
@@ -58,15 +65,14 @@ export default async function FormSubmissionsPage() {
         <BackLink href="/portal/admin">Back to Admin</BackLink>
         {/* file downloads, not pages - Link would try to client-navigate */}
         <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
-            href="/portal/admin/forms/csv"
+            href={`/portal/admin/forms/csv${officeQs}`}
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
             Download CSV
           </a>
           <a
-            href="/portal/admin/forms/pdf"
+            href={`/portal/admin/forms/pdf${officeQs}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
@@ -74,7 +80,7 @@ export default async function FormSubmissionsPage() {
             Download report PDF
           </a>
           <a
-            href="/portal/admin/forms/signed-pdf"
+            href={`/portal/admin/forms/signed-pdf${officeQs}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
@@ -103,6 +109,8 @@ export default async function FormSubmissionsPage() {
         )}
       </div>
 
+      <OfficeFilter basePath="/portal/admin/forms" current={office} />
+
       {cards.length === 0 ? (
         <p className="mt-10 rounded-xl border border-border bg-surface p-6 text-sm text-muted">
           No forms in the library yet.
@@ -112,7 +120,7 @@ export default async function FormSubmissionsPage() {
           {cards.map((f) => (
             <Link
               key={f.id}
-              href={`/portal/admin/forms/${f.id}`}
+              href={`/portal/admin/forms/${f.id}${officeQs}`}
               className="group block rounded-xl border border-border bg-surface p-5 shadow-sm card-lift"
             >
               <div className="flex items-start justify-between gap-3">

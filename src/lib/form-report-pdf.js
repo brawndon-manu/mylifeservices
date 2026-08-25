@@ -91,7 +91,7 @@ export async function renderFormSignatureReport(
 // the whole library in one file. forms: [{ formTitle, category, stats, rows }]
 // in library order - every form lands in the cover summary, and each one with
 // signatures gets its own section on a fresh page.
-export async function renderFormsOverviewReport({ forms }, opts = {}) {
+export async function renderFormsOverviewReport({ forms, filterLabel }, opts = {}) {
   const st = await makeSt();
   st.addPage();
   drawMasthead(st, "Form Signature Records");
@@ -110,6 +110,10 @@ export async function renderFormsOverviewReport({ forms }, opts = {}) {
     L, st.y, { size: 11, f: st.bold },
   );
   st.y -= 13;
+  if (filterLabel) {
+    st.text(`Filtered: ${filterLabel}`, L, st.y, { size: 8.5, color: MUTED });
+    st.y -= 12;
+  }
   drawTiles(st, statTiles(overall));
 
   drawTable(st, SUMMARY_COLS, forms, {
