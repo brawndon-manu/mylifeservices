@@ -1,6 +1,22 @@
 // the form-submissions filter set, shared by the admin page and its CSV
 // download so the file always matches what the screen shows.
 
+import { preferredName } from "@/lib/contacts";
+import { fmtStamp } from "../acknowledgments/audit";
+
+// one submission as report-row facts: resolved person (or the typed claim),
+// how it got attributed, and the Pacific timestamp. shared by the PDF reports
+// and the signed-document bundles so every download names people the same way.
+export function submissionRow(s) {
+  return {
+    who: s.user ? preferredName(s.user) : s.submitterName,
+    email: s.user ? s.user.email || "" : s.submitterEmail,
+    how: ATTRIBUTION_LABELS[s.attribution] || s.attribution,
+    when: fmtStamp(s.createdAt),
+    asTyped: !s.user,
+  };
+}
+
 // how a submission got tied to a person, as words
 export const ATTRIBUTION_LABELS = {
   "signed-in": "signed in",

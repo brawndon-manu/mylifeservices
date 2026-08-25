@@ -2,14 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
-import { renderFormsOverviewReport } from "@/lib/form-report-pdf";
+import { renderSignedFormsBundle } from "@/lib/signed-forms-pdf";
 import { submissionRow } from "../query";
 import { fileDate } from "../../acknowledgments/audit";
-import { fmtPosted } from "../../acknowledgments/roster";
 
-// the whole forms library as one document: a cover with the totals and a
-// per-form summary, then each form's signature record. built on demand so it
-// can never disagree with the screen.
+// every signed document on file, all forms, in one file - grouped in library
+// order with a divider page before each document.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -37,33 +35,32 @@ export async function GET() {
       },
     }),
   ]);
-
-  const byForm = new Map(forms.map((f) => [f.id, []]));
-  for (const s of submissions) {
-    byForm.get(s.formId)?.push(s);
+  if (!submissions.length) {
+    return new NextResponse("No submissions on file", { status: 404 });
   }
 
-  const sections = forms.map((f) => {
-    const subs = byForm.get(f.id) || [];
-    const unassigned = subs.filter((s) => s.attribution === "unassigned").length;
-    return {
+  const withBytes = await Promise.all(
+    submissions.map(async (s) => ({
+      formId: s.formId,
+      ...submissionRow(s),
+      bytes: await fetch(s.pdfUrl)
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .catch(() => null),
+    })),
+  );
+
+  const groups = forms
+    .map((f) => ({
       formTitle: f.title,
       category: f.category,
-      stats: {
-        total: subs.length,
-        attributed: subs.length - unassigned,
-        unassigned,
-        lastLabel: subs.length ? fmtPosted(subs[0].createdAt) : null,
-        lastAt: subs.length ? subs[0].createdAt : null,
-      },
-      rows: subs.map(submissionRow),
-    };
-  });
+      items: withBytes.filter((s) => s.formId === f.id),
+    }))
+    .filter((g) => g.items.length);
 
   let bytes;
   try {
-    const out = await renderFormsOverviewReport(
-      { forms: sections },
+    const out = await renderSignedFormsBundle(
+      { groups },
       {
         generatedOn: new Date().toLocaleDateString("en-US", {
           timeZone: "America/Los_Angeles",
@@ -72,14 +69,14 @@ export async function GET() {
     );
     bytes = out.bytes;
   } catch (e) {
-    console.error("forms overview pdf failed:", e);
-    return new NextResponse("Could not build the report", { status: 500 });
+    console.error("signed forms bundle pdf failed:", e);
+    return new NextResponse("Could not build the bundle", { status: 500 });
   }
 
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="form-signature-records-${fileDate()}.pdf"`,
+      "Content-Disposition": `inline; filename="signed-forms-${fileDate()}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });

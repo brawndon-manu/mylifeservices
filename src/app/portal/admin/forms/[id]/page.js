@@ -104,7 +104,15 @@ export default async function FormRecordPage({ params, searchParams }) {
             rel="noopener noreferrer"
             className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
-            Download PDF
+            Download report PDF
+          </a>
+          <a
+            href={`/portal/admin/forms/${form.id}/signed-pdf${qs}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download signed PDFs
           </a>
         </div>
       </div>

@@ -63,7 +63,7 @@ export default async function FormSubmissionsPage() {
             href="/portal/admin/forms/csv"
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
-            Download CSV (all forms)
+            Download CSV
           </a>
           <a
             href="/portal/admin/forms/pdf"
@@ -71,7 +71,15 @@ export default async function FormSubmissionsPage() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
           >
-            Download PDF (all forms)
+            Download report PDF
+          </a>
+          <a
+            href="/portal/admin/forms/signed-pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download signed PDFs
           </a>
         </div>
       </div>

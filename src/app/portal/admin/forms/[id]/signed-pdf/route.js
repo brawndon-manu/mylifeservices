@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
-import { renderFormSignatureReport } from "@/lib/form-report-pdf";
-import { PERIODS, readFilters, submissionWhere, submissionRow } from "../../query";
+import { renderSignedFormsBundle } from "@/lib/signed-forms-pdf";
+import { readFilters, submissionWhere, submissionRow } from "../../query";
 import { fileDate } from "../../../acknowledgments/audit";
-import { fmtPosted } from "../../../acknowledgments/roster";
 
-// one form's signature record as a document, honoring the same filters as the
-// page. built on demand so it can never disagree with the screen.
+// one form's actual signed documents in one file, a divider page before each.
+// honors the same filters as the record page.
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
@@ -25,9 +24,8 @@ export async function GET(req, { params }) {
   if (!form) return new NextResponse("Not found", { status: 404 });
 
   const sp = Object.fromEntries(new URL(req.url).searchParams);
-  const filters = { ...readFilters(sp), form: form.id };
   const submissions = await prisma.formSubmission.findMany({
-    where: submissionWhere(filters),
+    where: submissionWhere({ ...readFilters(sp), form: form.id }),
     orderBy: { createdAt: "desc" },
     include: {
       user: {
@@ -40,29 +38,23 @@ export async function GET(req, { params }) {
       },
     },
   });
+  if (!submissions.length) {
+    return new NextResponse("No submissions match", { status: 404 });
+  }
 
-  const unassigned = submissions.filter((s) => s.attribution === "unassigned").length;
-  const bits = [];
-  if (filters.status === "unassigned") bits.push("needs assignment only");
-  if (filters.status === "attributed") bits.push("attributed only");
-  if (filters.period !== "all") bits.push(PERIODS[filters.period].toLowerCase());
-  if (filters.q) bits.push(`search "${filters.q}"`);
+  const items = await Promise.all(
+    submissions.map(async (s) => ({
+      ...submissionRow(s),
+      bytes: await fetch(s.pdfUrl)
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .catch(() => null),
+    })),
+  );
 
   let bytes;
   try {
-    const out = await renderFormSignatureReport(
-      {
-        formTitle: form.title,
-        category: form.category,
-        filterLabel: bits.join(" · "),
-        stats: {
-          total: submissions.length,
-          attributed: submissions.length - unassigned,
-          unassigned,
-          lastLabel: submissions.length ? fmtPosted(submissions[0].createdAt) : null,
-        },
-        rows: submissions.map(submissionRow),
-      },
+    const out = await renderSignedFormsBundle(
+      { groups: [{ formTitle: form.title, category: form.category, items }] },
       {
         generatedOn: new Date().toLocaleDateString("en-US", {
           timeZone: "America/Los_Angeles",
@@ -71,8 +63,8 @@ export async function GET(req, { params }) {
     );
     bytes = out.bytes;
   } catch (e) {
-    console.error("form signature report pdf failed:", e);
-    return new NextResponse("Could not build the report", { status: 500 });
+    console.error("signed forms bundle pdf failed:", e);
+    return new NextResponse("Could not build the bundle", { status: 500 });
   }
 
   const slug = form.title
@@ -83,7 +75,7 @@ export async function GET(req, { params }) {
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="signatures-${slug}-${fileDate()}.pdf"`,
+      "Content-Disposition": `inline; filename="signed-${slug}-${fileDate()}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });
