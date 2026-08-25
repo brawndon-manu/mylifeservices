@@ -25,6 +25,8 @@ export function fmtAck(iso) {
   }).format(new Date(iso));
 }
 
+// the full audience, every targeted title spelled out. this is the AUDIT form
+// - it goes in the CSVs and PDFs, where "which titles exactly" is the point.
 export function audienceLabel(p, expected) {
   if (p.ackEveryone || (!p.ackTitles?.length && !p.ackUserIds?.length)) {
     return `Everyone (${expected})`;
@@ -34,6 +36,21 @@ export function audienceLabel(p, expected) {
     bits.push(`${p.ackUserIds.length} ${p.ackUserIds.length === 1 ? "person" : "people"}`);
   }
   return `${bits.join(", ")} (${expected})`;
+}
+
+// the same audience compacted for the screens - nine spelled-out titles turn a
+// summary card into a wall of text, so past two they collapse to a count.
+export function audienceLabelShort(p, expected) {
+  if (p.ackEveryone || (!p.ackTitles?.length && !p.ackUserIds?.length)) {
+    return `Everyone (${expected})`;
+  }
+  const titles = p.ackTitles || [];
+  const people = p.ackUserIds?.length || 0;
+  const bits = [];
+  if (titles.length > 2) bits.push(`${titles.length} job titles`);
+  else bits.push(...titles);
+  if (people) bits.push(`${people} ${people === 1 ? "person" : "people"} added`);
+  return `${bits.join(" + ")} (${expected})`;
 }
 
 export function firstLine(content) {

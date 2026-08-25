@@ -6,7 +6,7 @@ import BackLink from "@/components/BackLink";
 import { ackAudienceWhere, COMPANY_MEETING_TAG } from "@/lib/announcements";
 import {
   buildAckRoster,
-  audienceLabel,
+  audienceLabelShort,
   firstLine,
   fmtPosted,
   tagCls,
@@ -77,7 +77,7 @@ export default async function AcknowledgmentsPage({ searchParams }) {
         tag: p.tag,
         tagCls: tagCls(p.tag),
         dateLabel: p.publishedAt ? fmtPosted(p.publishedAt) : null,
-        audience: audienceLabel(p, r.expected),
+        audience: audienceLabelShort(p, r.expected),
         expected: r.expected,
         acked: r.acked,
         notYetCount: r.notYet,

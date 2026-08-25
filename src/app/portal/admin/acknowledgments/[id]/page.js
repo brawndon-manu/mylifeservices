@@ -8,7 +8,7 @@ import BackLink from "@/components/BackLink";
 import { ackAudienceWhere, isCompanyMeeting } from "@/lib/announcements";
 import {
   buildAckRoster,
-  audienceLabel,
+  audienceLabelShort,
   firstLine,
   fmtPosted,
   tagCls,
@@ -152,7 +152,7 @@ export default async function AcknowledgmentDetailPage({ params, searchParams })
       </div>
       <p className="mt-2 text-sm text-muted">
         {p.publishedAt && <>Posted {fmtPosted(p.publishedAt)} · </>}
-        audience: {audienceLabel(p, r.expected)}
+        audience: {audienceLabelShort(p, r.expected)}
       </p>
 
       <OfficeFilter basePath={`/portal/admin/acknowledgments/${p.id}`} current={office} />

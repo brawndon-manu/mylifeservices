@@ -6,8 +6,17 @@
 // their CSVs. drawing engine shared with the forms reports (report-pdf.js).
 import {
   L, R, BRAND, MUTED, INK, GRID,
-  clip, makeSt, drawMasthead, drawTiles, drawTable, drawBody, finish,
+  clip, wrap, makeSt, drawMasthead, drawTiles, drawTable, drawBody, finish,
 } from "./report-pdf";
+
+// the audience names every targeted title, so it wraps instead of running off
+// the right edge of the page
+function drawMetaLine(st, text) {
+  for (const ln of wrap(text, R - L, st.font, 8.5)) {
+    st.text(ln, L, st.y, { size: 8.5, color: MUTED });
+    st.y -= 11;
+  }
+}
 
 // [label, width, numeric] - widths sum to exactly R - L (532).
 // the Signed column only exists when the post carries a fillable form, and the
@@ -147,10 +156,8 @@ export async function renderAckReport(p, opts = {}) {
   drawMasthead(st, p.title);
   st.text(`Acknowledgment record · ${p.tag}`, L, st.y, { size: 11, f: st.bold });
   st.y -= 13;
-  st.text(`Posted ${p.postedLabel} · audience: ${p.audLabel}`, L, st.y, {
-    size: 8.5, color: MUTED,
-  });
-  st.y -= 16;
+  drawMetaLine(st, `Posted ${p.postedLabel} · audience: ${p.audLabel}`);
+  st.y -= 5;
   // the state first, then what was posted - a long post must not push the
   // tiles off the first page
   drawTiles(st, ackTiles(p.stats));
@@ -229,10 +236,12 @@ export async function renderAcksOverviewReport({ posts, filterLabel }, opts = {}
     });
     st.y -= 20;
     st.text(
-      `${p.tag} · posted ${p.postedLabel} · audience: ${p.audLabel} · ${p.stats.acked} of ${p.stats.expected} acknowledged (${p.stats.inPortal} in portal, ${p.stats.viaEmail} via email) · ${p.stats.notYet} not yet`,
+      `${p.tag} · posted ${p.postedLabel} · ${p.stats.acked} of ${p.stats.expected} acknowledged (${p.stats.inPortal} in portal, ${p.stats.viaEmail} via email) · ${p.stats.notYet} not yet`,
       L, st.y, { size: 8.5, color: MUTED },
     );
-    st.y -= 16;
+    st.y -= 11;
+    drawMetaLine(st, `audience: ${p.audLabel}`);
+    st.y -= 5;
     if (p.content) {
       drawBody(st, p.content, {
         maxLines: 14,
