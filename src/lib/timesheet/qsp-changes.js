@@ -1,6 +1,7 @@
 // THE CHANGES SOMEBODY STILL NEEDS TO MAKE IN QUICKSOLVE, from the answers
-// they gave. One derivation, because two surfaces need the same list: the
-// email that carries their signed copy back, and later the screen that checks
+// they gave. One derivation, because three surfaces need the same list: the
+// email that carries their signed copy back, the corrections email that goes
+// to the office (timesheet-review-email.js), and later the screen that checks
 // whether the fixes actually landed (the re-upload is what answers that - see
 // reupload-diff.js).
 //
@@ -18,6 +19,13 @@
 // here speaks about pay - these are record fixes, and this list reaches
 // employees.
 //
+// EACH EDIT IS A FACT AND AN ACTION, SPLIT ON PURPOSE. Mánu 2026-08-25: the
+// office makes the QuickSolve edits now, not the employee. So the employee's
+// email states the FACT ("The lunch recorded 12p to 12:30p actually happened
+// 1p to 1:30p.") and the office email carries the fact with its ACTION
+// ("Change the entry to match."). Both sentences are worded without "you",
+// because the same words reach both inboxes.
+//
 // Imports only corrections.js (for the receipt sentences), which node --test
 // reaches directly - so this stays testable the same way as
 // timesheet-subjects.js.
@@ -33,8 +41,8 @@ function shortClock(min) {
 
 const kindWord = (kindOf) => (kindOf === "meal" ? "lunch" : "rest break");
 
-// every edit ONE row implies, as [{ date, text }]. The rules live here once;
-// both shapes below are built from them.
+// every edit ONE row implies, as [{ date, fact, action }]. The rules live here
+// once; both shapes below are built from them.
 function changesForRow(c) {
   const out = [];
   const kind = String(c.kind || "");
@@ -47,12 +55,13 @@ function changesForRow(c) {
     const onDate = b.date || c.date;
     if (b.replaces?.from && b.replaces?.to) {
       out.push({ date: onDate,
-        text: `The ${kindWord(b.kindOf)} recorded ${b.replaces.from} to ${b.replaces.to} actually `
-          + `happened ${b.from} to ${b.to}. Change the entry to match.` });
+        fact: `The ${kindWord(b.kindOf)} recorded ${b.replaces.from} to ${b.replaces.to} actually `
+          + `happened ${b.from} to ${b.to}.`,
+        action: "Change the entry to match." });
     } else {
       out.push({ date: onDate,
-        text: `Log the ${kindWord(b.kindOf)} you took from ${b.from} to ${b.to} - `
-          + `nothing is recorded for it.` });
+        fact: `The ${kindWord(b.kindOf)} taken from ${b.from} to ${b.to} has nothing recorded for it.`,
+        action: "Log it." });
     }
   }
 
@@ -64,8 +73,8 @@ function changesForRow(c) {
   const acceptedOntime = kind === "meal_ontime" && c.status === "accepted";
   if (declinedLate || acceptedOntime) {
     out.push({ date: c.date,
-      text: "The lunch is punched starting later than it did. Correct the start "
-        + "time to when it actually began." });
+      fact: "The lunch is punched starting later than it did.",
+      action: "Correct the start time to when it actually began." });
   }
 
   // THE BACKWARDS ENTRY, acknowledged from their page. The engine already
@@ -76,8 +85,8 @@ function changesForRow(c) {
     const at = Number.isFinite(min) && min >= 0 && min <= 1439
       ? ` around ${shortClock(min)}` : "";
     out.push({ date: c.date,
-      text: `The rest entry${at} is recorded backwards - its out and in times are `
-        + `swapped. Swap them so it reads the right way round.` });
+      fact: `The rest entry${at} is recorded backwards - its out and in times are swapped.`,
+      action: "Swap them so it reads the right way round." });
   }
 
   // REPORTS MANAGEMENT ACCEPTED. Each accepted kind that implies an edit
@@ -85,34 +94,36 @@ function changesForRow(c) {
   // break or a mistaken entry leaves QuickSolve already right.
   if (c.status === "accepted") {
     if (kind === "meal_taken") {
-      out.push({ date: c.date, text: "The lunch you took that day was never punched. Punch it in." });
+      out.push({ date: c.date, fact: "The lunch taken that day was never punched.", action: "Punch it in." });
     }
     if (kind === "rest_taken") {
-      out.push({ date: c.date, text: "The rest break you took that day is not recorded. Log it." });
+      out.push({ date: c.date, fact: "The rest break taken that day is not recorded.", action: "Log it." });
     }
     if (kind === "day_missing") {
-      out.push({ date: c.date, text: "The whole day is missing its punches. Enter them." });
+      out.push({ date: c.date, fact: "The whole day is missing its punches.", action: "Enter them." });
     }
     if (kind === "day_extra") {
-      out.push({ date: c.date, text: "The day should not be there. Remove its entries." });
+      out.push({ date: c.date, fact: "The day should not be there.", action: "Remove its entries." });
     }
   }
 
-  return out.filter((x) => x.date && x.text);
+  return out.filter((x) => x.date && x.fact);
 }
 
-// -> [{ date, text }], sorted by date. `corrections` are TimesheetCorrection
-// rows with { kind, date, status, choice, statedBreaks }.
+// -> [{ date, text }], sorted by date, fact and action joined - the full
+// instruction, for the surfaces that address whoever makes the edit.
+// `corrections` are TimesheetCorrection rows with { kind, date, status,
+// choice, statedBreaks }.
 export function qspChanges(corrections) {
   const out = [];
   const seen = new Set();
   for (const c of corrections || []) {
     if (!c || c.status === "open") continue;
     for (const x of changesForRow(c)) {
-      const key = `${x.date}|${x.text}`;
+      const key = `${x.date}|${x.fact}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push(x);
+      out.push({ date: x.date, text: `${x.fact} ${x.action}` });
     }
   }
   out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -130,9 +141,9 @@ export function qspChanges(corrections) {
 // themselves. Rows with a receipt and no edit are the rest of their review
 // record: what they told us that changes nothing in QuickSolve. Pass those
 // through so the email can show the whole set of choices, not only the ones
-// that grew an instruction.
+// that grew an edit.
 //
-// -> [{ date, said, changes: [text] }], sorted by date.
+// -> [{ date, said, changes: [{ fact, action }] }], sorted by date.
 export function reviewChoices(corrections) {
   const out = [];
   const seen = new Set();
@@ -141,10 +152,10 @@ export function reviewChoices(corrections) {
     const said = employeeResolution(c, c.question || null);
     const changes = [];
     for (const x of changesForRow(c)) {
-      const key = `${x.date}|${x.text}`;
+      const key = `${x.date}|${x.fact}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      changes.push(x.text);
+      changes.push({ fact: x.fact, action: x.action });
     }
     if (!said && !changes.length) continue;
     // a grouped answer's stated times can sit on a different date than the

@@ -1,15 +1,19 @@
 // THE SIGNED COPY GOING BACK. Mánu 2026-08-17: "once signed a signed copy
 // gets emailed back to the employee along with the changes if any they need
-// to make in quicksolve."
+// to make in quicksolve." Amended 2026-08-25: the office makes the QuickSolve
+// edits now, so this email states each correction as a fact of the record and
+// carries no instruction - the instructions go to the office instead (see
+// timesheet-review-email.js, which the employee is deliberately not told
+// about).
 //
 // The attachment is the exact bytes they signed - the same PDF the sign
 // action stores - so what lands in their inbox and what the portal holds can
-// never be two documents. The changes list comes from qsp-changes.js, the one
-// derivation of what their answers mean for the QuickSolve record.
+// never be two documents. The corrections list comes from qsp-changes.js, the
+// one derivation of what their answers mean for the QuickSolve record.
 //
 // LIKE EVERY EMPLOYEE SURFACE, IT CARRIES NO FIGURES AND SAYS NOTHING ABOUT
-// PAY. The changes are record fixes - times to log, punches to correct - and
-// the vocabulary is the page's own: "things to fix in QuickSolve".
+// PAY. The corrections are record facts - a break not logged, times recorded
+// wrong - stated in the record's own voice.
 import { Resend } from "resend";
 import { buildTimesheetShell } from "@/lib/announcement-email";
 import { signedCopySubject } from "@/lib/timesheet-subjects";
@@ -26,8 +30,10 @@ function esc(s) {
 export function buildSignedTimesheetEmailHtml({
   employeeName,
   periodLabel,
-  // [{ date, said, changes: [text] }] from reviewChoices - the choices they
-  // made on their review, each with the QuickSolve edits it produced
+  // [{ date, said, changes: [{ fact, action }] }] from reviewChoices - the
+  // choices they made on their review, each with the record facts it produced.
+  // Only the FACT of each change is shown here: the action belongs to the
+  // office now, and an instruction in this email would read as theirs to do.
   items = [],
   redirectedFrom = null,
 }) {
@@ -39,39 +45,35 @@ export function buildSignedTimesheetEmailHtml({
        </div>`
     : "";
 
-  // EVERY CHANGE SITS UNDER THE CHOICE THAT PRODUCED IT. An instruction with
+  // EVERY FACT SITS UNDER THE CHOICE THAT PRODUCED IT. A record statement with
   // no memory of the answer behind it asks somebody to trust it blind; this
-  // way each edit reads as "you told us this, so change this". Choices that
-  // produced no edit are listed too - the rest of their review record.
-  const fixCount = items.reduce((n, it) => n + (it.changes?.length || 0), 0);
+  // way each line reads as "you told us this, so the record shows this".
+  // Choices that produced no correction are listed too - the rest of their
+  // review record.
   const itemHtml = (it) => {
     const saidLine = it.said
       ? `<p style="margin:0 0 4px;color:#5f4a17;">${esc(it.said)}</p>`
       : "";
-    const changeLines = (it.changes || []).map((t) =>
-      `<p style="margin:0 0 4px;color:#7a4a12;"><strong>Change in QuickSolve:</strong> ${esc(t)}</p>`,
+    const changeLines = (it.changes || []).map((ch) =>
+      `<p style="margin:0 0 4px;color:#7a4a12;">${esc(ch.fact)}</p>`,
     ).join("");
-    const nothing = !it.changes?.length && it.said
-      ? `<p style="margin:0 0 4px;font-size:13px;color:#8a7a4a;">Nothing to change for this one.</p>`
-      : "";
     return `<li style="margin:0 0 12px;">
         <p style="margin:0 0 4px;font-weight:600;color:#5f4a17;">${esc(it.date)}</p>
-        ${saidLine}${changeLines}${nothing}
+        ${saidLine}${changeLines}
       </li>`;
   };
 
   const review = items.length
     ? `<div style="margin:0 0 18px;padding:14px 16px;background:#fffbeb;border:1px solid #f0d48a;border-radius:10px;">
          <p style="margin:0 0 10px;font-weight:600;color:#7a5a12;">
-           ${fixCount === 0
-             ? "What you told us on your review"
-             : fixCount === 1
-               ? "One thing to fix in QuickSolve, from your review"
-               : `${fixCount} things to fix in QuickSolve, from your review`}
+           What you told us on your review
          </p>
          <ul style="margin:0;padding:0 0 0 18px;list-style:none;">
            ${items.map(itemHtml).join("")}
          </ul>
+         <p style="margin:10px 0 0;font-size:13px;color:#8a7a4a;">
+           Nothing further is needed from you.
+         </p>
        </div>`
     : "";
 
@@ -119,11 +121,10 @@ export async function sendSignedTimesheetCopy({
 
   // the plain-text copy says the same thing and no more, so a client that
   // strips html gets the same email rather than a different one
-  const fixCount = items.reduce((n, it) => n + (it.changes?.length || 0), 0);
   const itemText = (it) => [
     `  ${it.date}`,
     it.said ? `    ${it.said}` : "",
-    ...(it.changes || []).map((t) => `    Change in QuickSolve: ${t}`),
+    ...(it.changes || []).map((ch) => `    ${ch.fact}`),
   ].filter(Boolean).join("\n");
   const text = [
     redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
@@ -131,10 +132,9 @@ export async function sendSignedTimesheetCopy({
     ``,
     `Thank you - your timesheet for ${periodLabel} is signed. Your copy is attached.`,
     items.length
-      ? `\n${fixCount === 0
-          ? "What you told us on your review:"
-          : `${fixCount === 1 ? "One thing" : `${fixCount} things`} to fix in QuickSolve, from your review:`}\n`
+      ? `\nWhat you told us on your review:\n`
         + items.map(itemText).join("\n")
+        + `\n\nNothing further is needed from you.`
       : "",
     ``,
     `If anything looks wrong on the attached copy, reply to this email.`,

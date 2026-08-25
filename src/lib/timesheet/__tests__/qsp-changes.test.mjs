@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { qspChanges, reviewChoices } from "../qsp-changes.js";
-import { signedCopySubject } from "../../timesheet-subjects.js";
+import { signedCopySubject, reviewCorrectionsSubject } from "../../timesheet-subjects.js";
 
 // THE QUICKSOLVE CHANGES LIST, derived from the correction rows and nothing
 // else. A line is an EDIT to the record; an answer that agrees with the
-// record gets none. This is what the signed-copy email carries, so the rules
-// are pinned here before any inbox sees them.
+// record gets none. This is what the signed-copy email states and the office
+// corrections email instructs, so the rules are pinned here before any inbox
+// sees them. Each edit is a FACT (both emails) and an ACTION (office only).
 
 const stated = (over = {}) => ({
   from: "12p", to: "12:10p", kindOf: "rest", minutes: 10,
@@ -19,8 +20,8 @@ test("a break they logged nowhere becomes a 'log it' line", () => {
   ]);
   assert.equal(out.length, 1);
   assert.equal(out[0].date, "07/28/26");
-  assert.match(out[0].text, /Log the rest break you took from 12p to 12:10p/);
-  assert.match(out[0].text, /nothing is recorded/);
+  assert.match(out[0].text, /The rest break taken from 12p to 12:10p has nothing recorded/);
+  assert.match(out[0].text, /Log it\./);
 });
 
 test("a stated time that supersedes a recorded row becomes a 'change it' line", () => {
@@ -40,7 +41,7 @@ test("a stated lunch says lunch, not rest break", () => {
     { kind: "q_nothingDocumentedMeal", date: "07/30/26", status: "accepted",
       statedBreaks: [stated({ kindOf: "meal", from: "12p", to: "12:30p", minutes: 30 })] },
   ]);
-  assert.match(out[0].text, /Log the lunch/);
+  assert.match(out[0].text, /The lunch taken from 12p to 12:30p/);
 });
 
 test("declining the late lunch is a punch fix; confirming it is nothing", () => {
@@ -121,7 +122,9 @@ test("every change carries the choice behind it", () => {
   assert.match(out[0].said, /You said you took your rest periods/);
   assert.match(out[0].said, /12p to 12:10p/);
   assert.equal(out[0].changes.length, 1);
-  assert.match(out[0].changes[0], /Log the rest break/);
+  // the fact reaches both emails; the action reaches only the office's
+  assert.match(out[0].changes[0].fact, /The rest break taken from 12p to 12:10p/);
+  assert.equal(out[0].changes[0].action, "Log it.");
 });
 
 test("a choice that changes nothing is still in the record", () => {
@@ -142,7 +145,8 @@ test("a change with no receipt sentence stands alone", () => {
   ]);
   assert.equal(out.length, 1);
   assert.equal(out[0].said, null);
-  assert.match(out[0].changes[0], /recorded backwards/);
+  assert.match(out[0].changes[0].fact, /recorded backwards/);
+  assert.match(out[0].changes[0].action, /Swap them/);
 });
 
 test("the record sorts by date and never repeats an edit", () => {
@@ -168,5 +172,20 @@ test("the subject is uniform, and a redirected copy says so", () => {
   assert.equal(
     signedCopySubject({ periodLabel: "07/16/26 to 07/31/26", redirectedFrom: "a@b.c" }),
     "[TEST -> a@b.c] Your signed timesheet for 07/16/26 to 07/31/26",
+  );
+});
+
+test("the office corrections subject names the person and the period", () => {
+  assert.equal(
+    reviewCorrectionsSubject({ employeeName: "Mira, Gabriela", periodLabel: "07/16/26 to 07/31/26" }),
+    "Timesheet corrections from Mira, Gabriela - 07/16/26 to 07/31/26",
+  );
+  assert.equal(
+    reviewCorrectionsSubject({
+      employeeName: "Mira, Gabriela",
+      periodLabel: "07/16/26 to 07/31/26",
+      redirectedFrom: "a@b.c",
+    }),
+    "[TEST -> a@b.c] Timesheet corrections from Mira, Gabriela - 07/16/26 to 07/31/26",
   );
 });

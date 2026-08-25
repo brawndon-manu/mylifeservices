@@ -75,11 +75,12 @@ test("a backwards row gets a panel in the work column", () => {
   assert.match(DBD, /\.filter\(\(b\) => b\.attention\)/);
 });
 
-test("it says what to change it FROM and TO, not just that it is wrong", () => {
-  // "the times are the other way round" is a verdict. The pair of times is the
-  // instruction, and it is what somebody retypes into QuickSolve.
+test("it says what it should read FROM and TO, not just that it is wrong", () => {
+  // "the times are the other way round" is a verdict. The pair of times is
+  // what the office retypes into QuickSolve, and the panel states it without
+  // telling the employee to do it - the office corrects the record now.
   assert.match(DBD, /QuickSolve has/);
-  assert.match(DBD, /Change it to/);
+  assert.match(DBD, /It should read/);
   assert.match(DBD, /b\.recorded\?\.from/);
 });
 

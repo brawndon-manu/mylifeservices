@@ -423,22 +423,24 @@ function copyFor(q, standing) {
         // AND THE HALF WE CANNOT DO FOR THEM.
         //
         // Saying the break really happened at a time nothing was booked for
-        // leaves the record still not showing it. Two entries are missing and
-        // both are theirs to make: the schedule has to carry those minutes, and
-        // a rest period has to be filed against them. That is what turns this
-        // into the shape the engine reads as a break taken, the same shape as a
-        // short Misc block with a rest row over it.
+        // leaves the record still not showing it. Two entries are missing -
+        // the schedule has to carry those minutes, and a rest period has to be
+        // filed against them. That is what turns this into the shape the
+        // engine reads as a break taken, the same shape as a short Misc block
+        // with a rest row over it. The office makes both edits; this card only
+        // says what the record is missing.
         //
         // It sits on the ANSWERED card rather than in the confirm panel. The
-        // confirm panel says what the answer does; this is a job to go and do,
-        // and it has to still be on the page when they come back to the day.
+        // confirm panel says what the answer does; this is the state of the
+        // record, and it has to still be on the page when they come back to
+        // the day.
         afterYes: loggedAt && loggedTo
           ? {
-            title: "Two things to add in QuickSolve",
+            title: "Two entries missing in QuickSolve",
             body: <>
-              Book <b>{loggedAt} to {loggedTo}</b> on <b>{q.date}</b> as <b>Misc</b> time on your
-              schedule, then add a <b>rest period</b> at that same time. Until both are in, nothing
-              on the record shows the break you have just told us about.
+              <b>{loggedAt} to {loggedTo}</b> on <b>{q.date}</b> is not booked as <b>Misc</b> time
+              on the schedule, and no <b>rest period</b> is filed against it. Until both are in,
+              nothing on the record shows the break you have just told us about.
             </>,
           }
           : null,
@@ -1496,7 +1498,7 @@ function OneQuestion({
           </p>
           <p className="mt-1 text-xs text-muted">
             It is {q.row?.blockFrom} to {q.row?.blockTo} now. Tell us what it becomes with the meal
-            break moved out of it, and change it in QuickSolve to match.
+            break moved out of it.
           </p>
           <input
             type="text"
@@ -1771,9 +1773,9 @@ export function IssuePanel({ rows = [], standing }) {
                 {r.said && <span className="mt-0.5 block text-xs text-muted">{r.said}</span>}
               </span>
               {/* THREE STATES, AND THE MIDDLE ONE IS NOT A QUESTION. A backwards
-                  span is something to go and change in QuickSolve, not something
-                  to answer here, and a row that said "Answer" would be asking
-                  for something this page cannot take. */}
+                  span is something recorded wrong that the office corrects, not
+                  something to answer here, and a row that said "Answer" would be
+                  asking for something this page cannot take. */}
               <span className={`flex-none rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
                 r.done || isReady(r)
                   ? "border-emerald-300 text-emerald-700 dark:border-emerald-800/70 dark:text-emerald-300"

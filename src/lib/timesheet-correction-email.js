@@ -99,6 +99,8 @@ export function buildCorrectionAlertHtml({
 
 export async function sendCorrectionAlert({
   to,
+  // dropped on a redirect, so a test run cannot half-reach real management
+  cc = [],
   employeeName,
   periodLabel,
   items,
@@ -119,6 +121,7 @@ export async function sendCorrectionAlert({
   // "everything on that july one if sent" includes the mail we send ourselves.
   const { to: resolved, redirected } = resolveRecipients(to[0], process.env, { forceTo });
   const finalTo = redirected ? resolved : to;
+  const finalCc = redirected ? [] : (cc || []).filter(Boolean);
 
   const subject = correctionAlertSubject({
     employeeName,
@@ -157,6 +160,7 @@ export async function sendCorrectionAlert({
     const { error } = await resend.emails.send({
       from,
       to: finalTo,
+      ...(finalCc.length ? { cc: finalCc } : {}),
       subject,
       html,
       text,

@@ -1,4 +1,4 @@
-// THE SUBJECT LINE OF ALL THREE TIMESHEET EMAILS, in one dependency-free place.
+// THE SUBJECT LINE OF EVERY TIMESHEET EMAIL, in one dependency-free place.
 //
 // Same reasoning as timesheet-mode.js: these are the strings that decide what
 // lands in somebody's inbox, they have no dependencies at all, and keeping them
@@ -32,6 +32,14 @@ export function timesheetSubject({ periodLabel, isResend = false, redirectedFrom
 // rule the send email settled on 2026-08-12.
 export function signedCopySubject({ periodLabel, redirectedFrom = null }) {
   const line = `Your signed timesheet for ${periodLabel}`;
+  return redirectedFrom ? `[TEST -> ${redirectedFrom}] ${line}` : line;
+}
+
+// THE FOURTH ONE, TO THE OFFICE: the corrections a signed review produced,
+// with the reasons behind them. Same shape live and test - only the prefix
+// differs, like the signed copy.
+export function reviewCorrectionsSubject({ employeeName, periodLabel, redirectedFrom = null }) {
+  const line = `Timesheet corrections from ${employeeName} - ${periodLabel}`;
   return redirectedFrom ? `[TEST -> ${redirectedFrom}] ${line}` : line;
 }
 

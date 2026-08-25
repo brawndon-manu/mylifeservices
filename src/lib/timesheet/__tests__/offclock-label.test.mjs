@@ -104,16 +104,17 @@ test("and it leaves alone anything it cannot read", () => {
 });
 
 
-// AND THE HALF WE CANNOT DO FOR THEM.
+// AND THE HALF THE ANSWER CANNOT DO BY ITSELF.
 //
 // Saying the break really happened at a time nothing was booked for leaves the
-// record still not showing it. Two entries are missing and both are theirs: the
-// schedule has to carry the minutes as Misc, and a rest period has to be filed
-// against them. Without both, the answer changes what we know and nothing else.
-test("confirming the time asks for both QuickSolve entries", () => {
+// record still not showing it. Two entries are missing - the schedule has to
+// carry the minutes as Misc, and a rest period has to be filed against them.
+// The office makes both edits now, so the card states what is missing rather
+// than telling the employee to go and add it.
+test("confirming the time names both missing QuickSolve entries", () => {
   assert.match(BLOCK, /afterYes:/);
   assert.match(BLOCK, /as <b>Misc<\/b> time/);
-  assert.match(BLOCK, /add a <b>rest period<\/b> at that same time/);
+  assert.match(BLOCK, /no <b>rest period<\/b> is filed against it/);
 });
 
 test("it names the day and both ends of the break", () => {

@@ -57,6 +57,7 @@ import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
 // the signed copy going back, and the review record it carries
 import { sendSignedTimesheetCopy } from "@/lib/timesheet-signed-email";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
 import { pushRecent } from "@/lib/timesheet-stages";
@@ -1641,18 +1642,27 @@ export async function submitTimesheetCorrections({ token, items }) {
   const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
   const reviewUrl = `${base}/portal/admin/timesheets/${ts.batchId}/corrections`;
 
-  // who hears about it. an explicit address list wins; otherwise it goes to
-  // whoever uploaded the batch, since they're the one running this period.
-  let to = (process.env.TIMESHEET_ALERT_TO || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!to.length && ts.batch.uploadedById) {
-    const uploader = await prisma.user.findUnique({
-      where: { id: ts.batch.uploadedById },
-      select: { email: true },
-    });
-    if (uploader?.email) to = [uploader.email];
+  // who hears about it: the same four people the review corrections email
+  // reaches, resolved by name (Mánu 2026-08-25). TIMESHEET_ALERT_TO and the
+  // batch uploader are only the fallback for the day none of them resolve.
+  let to = [];
+  let cc = [];
+  const office = await resolveReviewRecipients();
+  if (office.to) {
+    to = [office.to];
+    cc = office.cc;
+  } else {
+    to = (process.env.TIMESHEET_ALERT_TO || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!to.length && ts.batch.uploadedById) {
+      const uploader = await prisma.user.findUnique({
+        where: { id: ts.batch.uploadedById },
+        select: { email: true },
+      });
+      if (uploader?.email) to = [uploader.email];
+    }
   }
 
   // best-effort, like every other notification here: a mail hiccup must not
@@ -1661,6 +1671,7 @@ export async function submitTimesheetCorrections({ token, items }) {
     if (to.length) {
       await sendCorrectionAlert({
         to,
+        cc,
         employeeName: who,
         periodLabel,
         items: clean,
@@ -3401,8 +3412,9 @@ function resolutionFor(q, choice, stated, statedBreaks, block) {
 // `attention` is set on exactly one thing - a rest row the report holds the
 // wrong way round, `!row.repair && !!row.reversed`. There is nothing to answer:
 // the engine already reads it the right way round and already counts the break.
-// What was missing was any way to say "seen, I will fix it in QuickSolve", so
-// the row sat there permanently and the panel at the top could never tick it off.
+// What was missing was any way to say "seen", so the row sat there permanently
+// and the panel at the top could never tick it off. The QSP entry itself is the
+// office's to swap now - the review corrections email carries that instruction.
 //
 // KEYED TO THE SHEET, NOT THE PERIOD, and that is the point. A break answer is
 // keyed to the period so it survives a re-upload; this must NOT. Mánu 2026-08-15:
@@ -3445,8 +3457,8 @@ export async function acknowledgeSpan({ token, date, min, undo = false }) {
           status: "accepted",
           resolvedAt: new Date(),
           note: `Acknowledged the reversed rest entry on ${date}.`,
-          resolutionNote: "Employee has seen the backwards entry and is correcting it in QSP. "
-            + "Nothing moves: the engine already reads it the right way round and already counts the break.",
+          resolutionNote: "Employee has seen the backwards entry. Its out and in times still need "
+            + "swapping in QSP. Nothing moves: the engine already reads it the right way round and already counts the break.",
         },
       });
     }
@@ -3571,16 +3583,22 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // broken" to the person holding the pen. Failure is logged and the action
   // still succeeds; their copy stays one click away on the page.
   let emailed = false;
+  const reviewItems = reviewChoices(ts.corrections);
+  const employeeName = (ts.user ? preferredName(ts.user) : null) || ts.sourceName;
+  const periodLabel = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
+  // one reading of the rehearsal flag drives both sends, so they can never
+  // disagree about where a test batch's mail may go
+  const forceTo = batchForceTo(ts.batch);
   try {
     const r = await sendSignedTimesheetCopy({
       intendedEmail: ts.intendedEmail || ts.user?.email || null,
-      employeeName: (ts.user ? preferredName(ts.user) : null) || ts.sourceName,
-      periodLabel: `${ts.batch.periodFrom} to ${ts.batch.periodTo}`,
-      // the choices they made on their review, each with the QuickSolve
-      // edits it produced - so every instruction carries the answer behind it
-      items: reviewChoices(ts.corrections),
+      employeeName,
+      periodLabel,
+      // the choices they made on their review, each with the record facts it
+      // produced - so every statement carries the answer behind it
+      items: reviewItems,
       pdfBytes: Buffer.from(pdfBase64, "base64"),
-      forceTo: batchForceTo(ts.batch),
+      forceTo,
     });
     emailed = !!r?.ok;
     if (!r?.ok && r?.error !== "norecipient") {
@@ -3588,6 +3606,32 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     }
   } catch (e) {
     console.error(`signed copy email threw for ${ts.sourceName}:`, e);
+  }
+
+  // THE SAME REVIEW RECORD GOES TO THE OFFICE, WITH THE EDITS TO MAKE. The
+  // office corrects QuickSolve now, not the employee - see
+  // timesheet-review-email.js for who receives it and why nothing on the
+  // employee's surfaces mentions it. Only when the review actually said
+  // something: a clean signature has no corrections and raises no mail.
+  //
+  // Best-effort like the copy above, and after it on purpose: their receipt
+  // must not hinge on our internal routing working.
+  if (reviewItems.length) {
+    try {
+      const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+      const r = await sendReviewCorrections({
+        employeeName,
+        periodLabel,
+        items: reviewItems,
+        batchUrl: `${base}/portal/admin/timesheets/${ts.batchId}`,
+        forceTo,
+      });
+      if (!r?.ok) {
+        console.error(`review corrections email failed for ${ts.sourceName}:`, r?.error);
+      }
+    } catch (e) {
+      console.error(`review corrections email threw for ${ts.sourceName}:`, e);
+    }
   }
   return { ok: true, emailed };
 }

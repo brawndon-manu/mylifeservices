@@ -45,8 +45,9 @@ import TimesheetQuestion, {
 //
 // DELIBERATELY NOT A QUESTION. There is nothing to answer - a row reading out
 // 12:10p, in 12p is unambiguous, the engine already reads it the right way round
-// and already counts the break. What is left is an instruction, so it says what
-// the record holds, what it was read as, and what to change it to.
+// and already counts the break. It says what the record holds and what it should
+// read; the office makes the QuickSolve edit, and the button below only records
+// that the person has seen it.
 //
 // AND IT SAYS NOTHING IS OWED, because the amber would otherwise read as money.
 function NeedsFixing({ items, token, ackOn, ackAction }) {
@@ -59,8 +60,8 @@ function NeedsFixing({ items, token, ackOn, ackAction }) {
     <div className="mb-3 rounded-xl border border-amber-400/70 bg-amber-50 p-4 dark:border-amber-600/60 dark:bg-amber-950/30">
       <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
         {items.length === 1
-          ? "One thing to fix in QuickSolve"
-          : `${items.length} things to fix in QuickSolve`}
+          ? "One entry recorded backwards"
+          : `${items.length} entries recorded backwards`}
       </p>
       <ul className="mt-2 space-y-2.5">
         {items.map((b, i) => (
@@ -70,7 +71,7 @@ function NeedsFixing({ items, token, ackOn, ackAction }) {
               <span className="font-mono font-semibold text-amber-900 dark:text-amber-200">
                 {b.recorded?.from} to {b.recorded?.to}
               </span>
-              <span className="text-amber-800/80 dark:text-amber-300/80">Change it to</span>
+              <span className="text-amber-800/80 dark:text-amber-300/80">It should read</span>
               <span className="font-mono font-semibold text-emerald-800 dark:text-emerald-300">
                 {clock(b.min)} to {clock(b.min + (b.minutes || 10))}
               </span>
@@ -397,7 +398,7 @@ export default function DayByDay({
         key: `f-${day.date}-${b.min}`, date: day.date, fix: true,
         label: "Break recorded backwards",
         said: seen
-          ? "You are correcting this in QuickSolve"
+          ? "Acknowledged"
           : b.recorded?.from ? `QuickSolve has ${b.recorded.from} to ${b.recorded.to}` : null,
         done: seen,
       });
