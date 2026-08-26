@@ -20,7 +20,6 @@
 // test mode the whole thing is redirected to the tester and the CC list is
 // dropped, so a dry run never emails real management.
 import { Resend } from "resend";
-import { prisma } from "@/lib/prisma";
 import { buildTimesheetShell } from "@/lib/announcement-email";
 import { resolveRecipients } from "@/lib/timesheet-mode";
 import { reviewCorrectionsSubject } from "@/lib/timesheet-subjects";
@@ -29,7 +28,12 @@ import { reviewCorrectionsSubject } from "@/lib/timesheet-subjects";
 const TO_NAME = "Gabriel Miranda";
 const CC_NAMES = ["Kristy Hatt", "April Martinez", "David Zermeno"];
 
+// PRISMA COMES IN WHEN A SEND ASKS FOR IT, not when this file is imported.
+// The Tests card renders the body below to show what goes out, and importing
+// it must not construct a database client to do that - see fixture.js, which
+// touches nothing. The builder and the send have no business sharing that.
 async function emailByName(name) {
+  const { prisma } = await import("@/lib/prisma");
   const u = await prisma.user.findFirst({
     where: { deactivatedAt: null, name: { equals: name, mode: "insensitive" } },
     select: { email: true },

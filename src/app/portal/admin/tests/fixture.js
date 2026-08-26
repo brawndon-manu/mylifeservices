@@ -18,10 +18,14 @@ import { restKey, restNameFor } from "@/lib/timesheet/rests";
 import { drawnBreaksFor, mealAmPmSlip } from "@/lib/timesheet/recorded-breaks";
 import { buildTimesheetEmailHtml } from "@/lib/timesheet-email";
 import { buildCorrectionAlertHtml } from "@/lib/timesheet-correction-email";
+import { buildSignedTimesheetEmailHtml } from "@/lib/timesheet-signed-email";
+import { buildReviewCorrectionsEmailHtml } from "@/lib/timesheet-review-email";
 // the subjects from the dependency-free module rather than through the two
 // above: the alert's file constructs a Resend client, and a preview has no
 // business importing a mail client to read a string
-import { timesheetSubject, correctionAlertSubject } from "@/lib/timesheet-subjects";
+import {
+  timesheetSubject, correctionAlertSubject, signedCopySubject, reviewCorrectionsSubject,
+} from "@/lib/timesheet-subjects";
 import {
   FIXTURE_NAME, FIXTURE_PERIOD, FIXTURE_DAYS, FIXTURE_SCHEDULE, KIND_DATES,
   FIXTURE_RESTS as SEEDED_RESTS,
@@ -352,16 +356,61 @@ export const FIXTURE_BREAK_REASONS = [
 ];
 
 // ---------------------------------------------------------------------------
-// THE THREE EMAILS. Rendered by the same builders that render the ones we send,
+// THE FIVE EMAILS. Rendered by the same builders that render the ones we send,
 // with the same subject functions, so nothing here can drift from what goes out
 // without the preview drifting with it.
 const SIGN_URL = "https://www.mylifeservicesinc.com/t/example-token";
+const BATCH_URL = "https://www.mylifeservicesinc.com/portal/admin/timesheets/example-batch";
 const TESTER = "payroll.tester@mylifeservicesinc.com";
 
 const ALERT_ITEMS = [
   { date: "07/20/26", kind: "hours", claimedHours: 8.5, note: "I clocked out at 5, not 4." },
   { date: "07/22/26", kind: "day_missing", note: "I worked the 22nd and it is not on here." },
   { date: null, kind: "rest_missed", note: null },
+];
+
+// WHAT A FINISHED REVIEW LOOKS LIKE, in `reviewChoices` shape: each answer with
+// the record facts it produced, and the action that belongs to the office.
+//
+// WRITTEN, NOT DERIVED, and that is the point of it being here. Running
+// `reviewChoices` over the fabricated sheet would show whatever that sheet
+// happens to hold; these are the four shapes the two emails have to survive -
+// a break with nothing recorded for it, a recorded time the employee moved, an
+// answer that changes nothing in QuickSolve, and the backwards entry, which has
+// no receipt sentence and carries its facts alone.
+//
+// The sentences are the real ones, copied from qsp-changes.js. A preview whose
+// job is to show what goes out must not paraphrase what goes out.
+const REVIEW_ITEMS = [
+  {
+    date: "07/17/26",
+    said: "You said you did not get your rest periods that day.",
+    changes: [],
+  },
+  {
+    date: "07/20/26",
+    said: "You said you took your rest periods and did not write them down, at 11:30a to 11:40a.",
+    changes: [{
+      fact: "The rest break taken from 11:30a to 11:40a has nothing recorded for it.",
+      action: "Log it.",
+    }],
+  },
+  {
+    date: "07/22/26",
+    said: null,
+    changes: [{
+      fact: "The rest entry around 12:15p is recorded backwards - its out and in times are swapped.",
+      action: "Swap them so it reads the right way round.",
+    }],
+  },
+  {
+    date: "07/24/26",
+    said: "You said the recorded time was wrong, and gave 11:50a to 12p instead.",
+    changes: [{
+      fact: "The rest break recorded 12p to 12:10p actually happened 11:50a to 12p.",
+      action: "Change the entry to match.",
+    }],
+  },
 ];
 
 // what the toggles on the stage can change, and nothing else. Each variant is
@@ -384,6 +433,42 @@ export function emailVariants() {
       message: withMessage ? message : null,
       dueAt: withDue ? dueAt : null,
       signUrl: SIGN_URL,
+      redirectedFrom: test ? TESTER : null,
+    }),
+  });
+
+  // THE SIGNED COPY BACK TO THEM. Facts only - the actions belong to the office
+  // - and `noFixes` is the clean review: answers on record, nothing to change.
+  const signed = ({ test, noFixes }) => ({
+    subject: signedCopySubject({
+      periodLabel: PERIOD_LABEL,
+      redirectedFrom: test ? TESTER : null,
+    }),
+    html: buildSignedTimesheetEmailHtml({
+      employeeName,
+      periodLabel: PERIOD_LABEL,
+      items: noFixes
+        ? REVIEW_ITEMS.filter((it) => !it.changes.length)
+        : REVIEW_ITEMS,
+      redirectedFrom: test ? TESTER : null,
+    }),
+  });
+
+  // THE SAME REVIEW GOING TO THE OFFICE, with the edits to make. `attached` is
+  // the signed PDF riding along, which is the ordinary case - the send only
+  // drops it if the bytes never arrived.
+  const office = ({ test, noAttachment }) => ({
+    subject: reviewCorrectionsSubject({
+      employeeName: FIXTURE_NAME,
+      periodLabel: PERIOD_LABEL,
+      redirectedFrom: test ? TESTER : null,
+    }),
+    html: buildReviewCorrectionsEmailHtml({
+      employeeName: FIXTURE_NAME,
+      periodLabel: PERIOD_LABEL,
+      items: REVIEW_ITEMS,
+      batchUrl: BATCH_URL,
+      attached: !noAttachment,
       redirectedFrom: test ? TESTER : null,
     }),
   });
@@ -436,6 +521,32 @@ export function emailVariants() {
               employee({ isResend: true, test, withMessage, withDue }),
             ]),
           ),
+        ),
+      ),
+    },
+    signed: {
+      name: "Signed copy",
+      goesTo: "the employee · the moment they sign",
+      toggles: ["test", "noFixes"],
+      states: Object.fromEntries(
+        [false, true].flatMap((test) =>
+          [false, true].map((noFixes) => [
+            `${+test}${+noFixes}`,
+            signed({ test, noFixes }),
+          ]),
+        ),
+      ),
+    },
+    office: {
+      name: "Corrections to the office",
+      goesTo: "Gabriel, cc Kristy · April · David",
+      toggles: ["test", "noAttachment"],
+      states: Object.fromEntries(
+        [false, true].flatMap((test) =>
+          [false, true].map((noAttachment) => [
+            `${+test}${+noAttachment}`,
+            office({ test, noAttachment }),
+          ]),
         ),
       ),
     },
