@@ -405,42 +405,48 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
 
 // A LUNCH THE ROSTER BOOKED INSIDE A BLOCK SOMEBODY WAS ALREADY WORKING.
 //
-// You clock in and out of a service shift, so a meal booked inside one cannot
-// have been taken - the punches would show the hole and they do not. That makes
-// "did you take your lunch?" the wrong question on those days: we already know.
+// EVERY SERVICE IS WORKED TIME. Mánu 2026-08-26 gave the whole list the office
+// books under: Housing Search, ILS Admin, ILS Assessment, ILS Misc, ILS
+// Service, ILS Training, ILS Travel, Personal Appointment, Self Determination
+// Program - and Day Program, Personal Appointment and Shared on the Day Program
+// Office side. "All but meal break should be counted as hours worked." So a
+// meal booked on top of ANY of them is a meal booked over work and could not
+// have been taken as one; the only block that is not work is the Meal Break
+// itself.
 //
-// TWO KINDS OF BLOCK, AND THEY GET OPPOSITE TREATMENT. Mánu 2026-08-15:
+// WHAT DIFFERS IS WHETHER THE BLOCK CAN BE MOVED, which is a separate question
+// from whether it is work, and the one this classifier is really asking:
 //
-//   CLOCKED    ILS Service, Self Determination, ILS Training. Punched, and not
-//              ours to move. The lunch could not have happened and the schedule
-//              is what needs correcting.
-//   MOVABLE    ILS Admin, ILS Misc. Typed in rather than punched, so the BLOCK
-//              can move and the lunch can stand.
+//   CLOCKED    ILS Service and Self Determination, and nothing else - Mánu
+//              2026-08-26. Punched against a client, and not ours to move. The
+//              lunch could not have happened and the schedule is what needs
+//              correcting.
+//   MOVABLE    everything else. Typed in rather than punched against a client,
+//              so the BLOCK can move and the lunch can stand once it does.
 //
-// TRAVEL IS CLOCKED, settled 2026-08-26. Mánu: "travel time is working hours."
-// It was deliberately neither until then, and being neither meant a lunch
-// booked on top of a drive fell out of `mealBookedInside` altogether and the
-// day was handed the generic "did you take your lunch?" card - the one question
-// that can take the premium back off. Nine days across the uploads are that
-// shape, Espinoza 08/25 among them.
+// A DENYLIST, NOT AN ALLOWLIST, and that is the point of the shape. This was
+// four names against two, and anything matching neither fell out of the
+// function entirely - so a lunch booked over travel was handed the generic
+// "did you take your lunch?" card, the one question that can take the premium
+// back off. Nine days across the uploads were that shape. Housing Search, ILS
+// Assessment, Day Program, Shared and Personal Appointment would each have done
+// the same on the day they first appeared. Now the default is "movable", so a
+// name nobody has taught this function still gets a real question.
 //
-// CLOCKED AND NOT MOVABLE, because a drive is pinned by the appointments either
-// side of it: those minutes are worked, the person is at the wheel, and no meal
-// period was on offer. The same reading ILS Service gets, and the branch that
-// cannot remove an hour.
+// PERSONAL APPOINTMENT IS WORKED TIME. Mánu, same day: "so no a meal break
+// cannot be inside of it. a 10 minute rest period is fine." It reads movable
+// like the rest - the appointment can be rearranged around a lunch - and the
+// note that used to sit here saying a lunch inside one was fine is gone with
+// the ruling that replaced it.
 //
-// It says nothing about REST breaks. A ten is paid and on the clock, so a rest
-// inside travel is a rest taken inside worked time and counts like any other -
-// which is the other half of the same ruling.
-// Personal Appointment is work and a lunch inside it is fine.
+// NONE OF THIS IS ABOUT REST BREAKS. A ten is paid and on the clock, so a rest
+// inside travel, inside an appointment, inside anything worked, is a rest taken
+// during work and counts like any other. Only the meal has to be clear of it.
 //
 // ONLY ON A DAY THAT OWES A MEAL. The overlap on its own is not a finding: 281
 // live days have one and took their lunch in a real punch gap anyway. The
 // overlap decides WHICH question a day already owing a meal gets asked.
-const CLOCKED_SERVICE = /ils\s*service|self\s*determ|training|travel/i;
-const MOVABLE_SERVICE = /admin|misc/i;
-// clocked, but the least descriptive kind of clocked - see `mealBookedInside`
-const TRAVEL_SERVICE = /travel/i;
+const CLOCKED_SERVICE = /ils\s*service|self\s*determ/i;
 
 // THE ROSTER'S LUNCH IS TOO SHORT TO BE ONE, read off the same entries.
 //
@@ -471,17 +477,11 @@ export function mealBookedInside(entry) {
     const svc = serviceOf(sh.text) || "";
     // the clocked overlap wins outright where a lunch spans both - Cain 08/03
     // runs across ILS Travel AND the service shift after it, and the service is
-    // what makes it impossible
-    // A REAL SERVICE NAMES THE FINDING AHEAD OF THE DRIVE IT ABUTS. Cain 08/03
-    // runs across ILS Travel AND the service shift after it, and both are
-    // clocked now - but "inside ILS Travel" describes the smaller half of what
-    // made the meal impossible. A non-travel block replaces a travel one; the
-    // first of equal rank still wins, as it always did.
-    if (CLOCKED_SERVICE.test(svc)) {
-      const better = !clocked || (TRAVEL_SERVICE.test(clocked.service) && !TRAVEL_SERVICE.test(svc));
-      if (better) clocked = { service: svc, from: t.start, to: t.end };
-    }
-    else if (MOVABLE_SERVICE.test(svc)) movable = movable || { service: svc, from: t.start, to: t.end };
+    // what makes it impossible to move
+    if (CLOCKED_SERVICE.test(svc)) clocked = clocked || { service: svc, from: t.start, to: t.end };
+    // EVERY OTHER NAMED BLOCK, including ones this file has never seen. The
+    // meal is skipped above, so anything reaching here is worked time.
+    else movable = movable || { service: svc, from: t.start, to: t.end };
   }
   const hit = clocked || movable;
   if (!hit) return null;

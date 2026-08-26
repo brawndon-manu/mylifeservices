@@ -378,15 +378,45 @@ test("an overlap on a day that owes no meal raises nothing", () => {
   assert.equal(dayViolations(f.day, f.entry).filter((x) => /meal/.test(x.kind)).length, 0);
 });
 
-test("travel is clocked time, so a lunch booked on it could not have been taken", () => {
-  // THE RULE THIS TEST WAS WAITING FOR. It read "travel alone is neither case,
-  // for this period ... if travel ever becomes movable this test is what should
-  // fail first", and it did exactly that job: it failed the moment travel was
-  // classified. Mánu settled it on 2026-08-26 - "travel time is working hours" -
-  // so a meal booked across a drive is clocked, like ILS Service.
+test("travel is worked time, and the block can be moved around the lunch", () => {
+  // THE RULE THIS TEST WAS WAITING FOR, in two steps on 2026-08-26. First
+  // "travel time is working hours", which took it out of the unclassified pile
+  // where a lunch booked on a drive fell out of this function altogether. Then
+  // the line that decides which branch: "ILS Service and Self Determination are
+  // clocked services. The rest can be treated as movable service."
+  //
+  // So a drive is work - no lunch happened inside it - and it is the kind of
+  // work that can be rearranged so the lunch can stand.
   const hit = mealBookedInside(FIXTURES.quiet.entry);
   assert.ok(hit, "travel is being left unclassified again");
-  assert.equal(hit.kind, "clocked", "movable would let the premium come back off");
+  assert.equal(hit.kind, "movable");
+});
+
+test("a service this file has never seen is movable, not invisible", () => {
+  // THE SHAPE THAT CAUSED THE TRAVEL BUG. Two allowlists meant an unknown name
+  // matched neither and the day was handed the generic "did you take your
+  // lunch?" card - the one question that can take the premium back off. Housing
+  // Search, ILS Assessment, Day Program, Shared and Personal Appointment were
+  // all one upload away from doing it again.
+  const entry = { shifts: [
+    { text: "9a-5p Client-Housing Search(8:00)" },
+    { text: "12p-12:30p -Meal Break(0:30)", meal: true },
+  ] };
+  const hit = mealBookedInside(entry);
+  assert.ok(hit, "an unknown service is falling through again");
+  assert.equal(hit.kind, "movable");
+  assert.equal(hit.service, "Housing Search");
+});
+
+test("a lunch booked over a personal appointment is not a lunch", () => {
+  // Mánu 2026-08-26: "Personal Appointment is worked time so no a meal break
+  // cannot be inside of it. a 10 minute rest period is fine." The comment this
+  // replaced said the opposite - that a lunch inside one was fine.
+  const entry = { shifts: [
+    { text: "9a-5p Client-Personal Appointment(8:00)" },
+    { text: "12p-12:30p -Meal Break(0:30)", meal: true },
+  ] };
+  assert.equal(mealBookedInside(entry)?.kind, "movable");
 });
 
 test("but the day still has to owe a meal before anything is asked", () => {

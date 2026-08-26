@@ -75,7 +75,17 @@ test("a day that owes a meal and two rests asks for three times", () => {
 test("a rostered meal nobody punched IS pre-filled, and a rest never is", () => {
   // the one honest pre-fill: the roster booked the lunch, so it is a real time
   // rather than a guess. 20 of 855 slots on the live batch.
-  const entry = { shifts: [{ text: "8a-4:30p Rincon" }, { text: "12p-12:30p lunch", meal: true }] };
+  // THE ROSTER LEAVES A HOLE FOR IT. A lunch booked on top of a booking is a
+  // different finding entirely - `mealBookedInside` - and this fixture used to
+  // book one across "8a-4:30p" and rely on that block being unreadable to fall
+  // through to this question. Every named service is worked time as of
+  // 2026-08-26, so the block has to actually make room for the lunch, which is
+  // what the 20 live days this is about look like.
+  const entry = { shifts: [
+    { text: "8a-12p Rincon-ILS Service(4:00)" },
+    { text: "12p-12:30p lunch", meal: true },
+    { text: "12:30p-4:30p Rincon-ILS Service(4:00)" },
+  ] };
   assert.deepEqual(rosteredMeal(entry), { from: 720, to: 750 });
 
   const q = { needs: buildQuestions(

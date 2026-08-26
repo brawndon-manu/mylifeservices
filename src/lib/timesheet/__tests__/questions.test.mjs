@@ -480,10 +480,17 @@ test("a rostered lunch is proposed, and a schedule gap is only suggested", () =>
           // two bookings 15 minutes apart, and a lunch rostered elsewhere in
           // the day. The hole AROUND a rostered lunch is not a rest gap - it is
           // the lunch - so the two have to be separate to test either.
+          //
+          // THE ROSTER BREAKS FOR THE LUNCH at 3p rather than booking it on top
+          // of a block running to 5p. It used to do the latter and lean on
+          // "Rincon" being a name this file could not read as a service - every
+          // named service is worked time as of 2026-08-26, so a lunch inside
+          // one is `mealBookedInside` and never reaches this question.
           shifts: [
-            { text: "9a-12p Rincon" },
-            { text: "12:15p-5p Rincon" },
+            { text: "9a-12p Rincon-ILS Service(3:00)" },
+            { text: "12:15p-3p Rincon-ILS Service(2:45)" },
             { text: "3p-3:30p", meal: true },
+            { text: "3:30p-5p Rincon-ILS Service(1:30)" },
           ],
         },
       },
