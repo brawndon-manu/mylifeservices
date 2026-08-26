@@ -255,6 +255,24 @@ export function clockShifts(bytes) {
   return out;
 }
 
+// WHICH DAYS AN EXPORT ACTUALLY COVERS.
+//
+// The clock report is pulled a WEEK at a time - "08-16-2026-08-22-2026 QSClock
+// Time and Attendance Report.xls" - and a pay period is a fortnight, so one
+// period takes two of them. A card that says "512 shifts" without saying which
+// days they came from cannot tell a period with one week loaded from a period
+// where nobody worked the second week.
+//
+// Compared on the stamp rather than the printed string: "08/16/26" and
+// "09/02/26" sort correctly as text only by accident of the year.
+export function clockCoverage(rows) {
+  const dates = [...new Set((rows || []).map((r) => r.date).filter(Boolean))];
+  if (!dates.length) return { from: null, to: null, days: 0 };
+  const key = (d) => stampMinutes(d, "12:00 AM") ?? 0;
+  dates.sort((a, b) => key(a) - key(b));
+  return { from: dates[0], to: dates[dates.length - 1], days: dates.length };
+}
+
 // WHERE QSP'S VERDICT AND QSP'S TIMES CANNOT BOTH BE RIGHT.
 //
 // 135 shifts in one week say "late clock-in" over a clock-in printed at the

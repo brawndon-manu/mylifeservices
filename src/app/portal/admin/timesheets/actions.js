@@ -39,7 +39,7 @@ import { unstorable, unstorableRows } from "@/lib/timesheet/storable";
 import {
   parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
 } from "@/lib/timesheet/schedule";
-import { parseClockReport, clockShifts, clockKey, gradePremiums } from "@/lib/timesheet/clock";
+import { parseClockReport, clockShifts, clockKey, clockCoverage, gradePremiums } from "@/lib/timesheet/clock";
 import { attendanceFindings } from "@/lib/timesheet/compliance";
 import { parseRestReport, restKey, restNameFor, restRowTimes, allRestRows, clockMin, serviceFit, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
@@ -1037,11 +1037,53 @@ export async function uploadBatch(formData) {
         shifts: clockRows.length,
         people: Object.keys(clockByPerson).length,
         byPerson: clockByPerson,
+        // WHICH FILES THE PERIOD IS HOLDING, and where they are.
+        //
+        // The audit screen needs the shift rows themselves - "rostered 12p-3p,
+        // clocked 12:08p-2:53p" needs the times, and no finding carries them -
+        // and it reads them back off the file rather than out of this column.
+        //
+        // Storing them here was the obvious move and it is the wrong one: the
+        // rows come to 225KB of JSON for a single week, and every query that
+        // loads a batch without naming its columns would then carry half a
+        // megabyte of them per period. Repeat patterns reads every batch there
+        // has ever been. Re-reading the file costs 8ms, the batch row stays
+        // small, and the export stays the only copy of what it said.
+        //
+        // A list rather than one, because the report is exported a week at a
+        // time and a pay period is a fortnight.
+        files: [
+          {
+            name: clockFile?.name || null,
+            url: clockUrl,
+            shifts: clockRows.length,
+            ...clockCoverage(clockRows),
+          },
+        ],
       }
     : null;
 
   const badBatch = unstorable(batchData.restsByDate);
   if (badBatch) refused.push({ name: "the rest periods report", ...badBatch });
+  // THE CLOCK FINDINGS GET THE SAME NET AND A DIFFERENT VERDICT.
+  //
+  // They carry text off a spreadsheet - client and service names, and the file
+  // names beside them - into jsonb, where a NUL comes back as `22P05` and a
+  // stack trace naming neither the person nor the character. The rest report
+  // next door has had this net since the day that happened; this column never
+  // did, and it is fed by the same kind of file.
+  //
+  // Refusing the upload over it would break the rule the parse above already
+  // keeps: optional means optional, and the hours everybody is paid on come from
+  // the other four documents. So the monitoring extra is dropped and the payroll
+  // goes through, which is the same outcome as uploading without the file.
+  const badClock = unstorable(batchData.clockFindings);
+  if (badClock) {
+    console.error(
+      `clock export dropped: it carries ${badClock.what} - ${badClock.near}`,
+    );
+    batchData.clockFindings = null;
+  }
   if (refused.length) {
     for (const r of refused) console.error(`timesheet upload refused: ${r.name} carries ${r.what} - ${r.near}`);
     redirect(
