@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets, isSuper } from "@/lib/roles";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { restKey, restNameFor, restRowTimes, clockMin, serviceFit } from "@/lib/timesheet/rests";
-import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
+import { blockTimes, serviceOf, clientOf } from "@/lib/timesheet/schedule";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
 import { violationsFor, VIOLATION_KINDS, violationHead } from "@/lib/timesheet/violations";
 import { mealBookedInside } from "@/lib/timesheet/questions";
@@ -337,7 +337,11 @@ export default async function PersonSchedulePage({ params, searchParams }) {
     for (const sh of byDate[d.date]?.shifts || []) {
       const at = blockTimes(sh.text);
       const service = serviceOf(sh.text);
-      if (at && service) blocks.push({ from: at.start, to: at.end, service, meal: !!sh.meal });
+      // the client rides along so the calendar can name who each service was
+      // booked with - see `clientOf`, added 2026-08-26
+      if (at && service) {
+        blocks.push({ from: at.start, to: at.end, service, client: clientOf(sh.text), meal: !!sh.meal });
+      }
     }
     const drawn = [];
     for (const row of sheet.batch.restsByDate || []) {

@@ -513,6 +513,27 @@ export function serviceOf(text) {
   return (cut >= 0 ? s.slice(cut + 1) : s).trim() || null;
 }
 
+// WHO THE BLOCK WAS BOOKED WITH, which is the half `serviceOf` throws away.
+//
+// "10a-12p Gonzalez, G-ILS Service(2:00)" names a client and a service; the
+// service alone is what every screen has drawn since the calendars were built,
+// so "ILS Service" appeared five times on a day worked with five different
+// people. Mánu 2026-08-26 asked for the name beside each one.
+//
+// The name is everything between the times and the LAST hyphen, which is the
+// same cut `serviceOf` makes from the other side - so the two can never
+// disagree about where the client ends and the service begins. A block with no
+// client ("-ILS Misc") leaves nothing before the cut and returns null.
+export function clientOf(text) {
+  const s = String(text || "")
+    .replace(LEADING_TIMES, "")
+    .replace(/\([^)]*\)\s*$/, "")
+    .trim();
+  const cut = s.lastIndexOf("-");
+  if (cut < 0) return null;
+  return s.slice(0, cut).trim() || null;
+}
+
 // A day's rostered blocks as minutes, in order, so the engine can ask where a
 // punch gap falls relative to them. Meal blocks are kept and marked rather than
 // dropped: a gap that lines up with a rostered meal is a different animal from

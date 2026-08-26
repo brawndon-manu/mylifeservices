@@ -22,7 +22,7 @@ import {
 import {
   buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
 } from "@/lib/timesheet/questions";
-import { blockTimes, serviceOf } from "@/lib/timesheet/schedule";
+import { blockTimes, serviceOf, clientOf } from "@/lib/timesheet/schedule";
 import { restKey, restNameFor } from "@/lib/timesheet/rests";
 import { drawnBreaksFor, mealAmPmSlip } from "@/lib/timesheet/recorded-breaks";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
@@ -392,8 +392,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // WHAT THE ROSTER BOOKED EACH STRETCH OF THE DAY AS, so the calendar can name
   // it. Read here, on the server, because `schedule.js` pulls in the pdf stack
   // and none of that belongs in a browser bundle - the client is handed plain
-  // {from, to, service} and nothing else. The client name is dropped in
-  // `serviceOf`, so it never reaches the page at all.
+  // {from, to, service, client} and nothing else. The client name rides along
+  // since 2026-08-26 so each service can say who it was booked with.
   // WHAT THE TWO-LUNCHES ANSWER DOES TO THE PICTURE.
   //
   // Mánu 2026-08-12: "when they confirm what it is the change can happen live to
@@ -446,6 +446,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
         from: slip ? slip.from : t.start,
         to: slip ? slip.to : t.end,
         service,
+        client: clientOf(sh.text),
         meal: !!sh.meal,
         ...(slip ? { ampmFixed: true, wasFrom: t.start, wasTo: t.end } : null),
       });

@@ -23,7 +23,7 @@
 import { restKey, restNameFor, clockMin, countsAsTaken, FULL_REST_MIN } from "./rests.js";
 import { workedBeforeMin, RULES } from "./parse.js";
 import { describePunchIssue, scheduledPaidHours } from "./anomalies.js";
-import { blockTimes, serviceOf } from "./schedule.js";
+import { blockTimes, serviceOf, clientOf } from "./schedule.js";
 import { drawnRest } from "./recorded-breaks.js";
 import { violationsFor } from "./violations.js";
 import { RANGE, toMin, overlapInfo } from "./schedule-overlap.js";
@@ -643,8 +643,11 @@ export function buildFindings(batch) {
   // Built here rather than in the component because `schedule.js` pulls in the
   // pdf stack and none of that belongs in a browser bundle - the same reason the
   // employee's own page reads its blocks on the server. The client is handed
-  // plain {from, to, service, meal} and nothing else, and the client NAME is
-  // dropped by `serviceOf` before it ever leaves this function.
+  // plain {from, to, service, client, meal} and nothing else.
+  //
+  // THE CLIENT NAME RIDES ALONG SINCE 2026-08-26, on Mánu's ask: a day worked
+  // with five people drew "ILS Service" five times over. `clientOf` is the same
+  // cut `serviceOf` makes, taken from the other side of it.
   //
   // Keyed on timesheet AND date, so a rest row that matched no timesheet simply
   // finds nothing and draws no control - which is right, since there is no
@@ -656,7 +659,9 @@ export function buildFindings(batch) {
       for (const sh of t.data?.scheduleCheck?.byDate?.[d.date]?.shifts || []) {
         const at = blockTimes(sh.text);
         const service = serviceOf(sh.text);
-        if (at && service) blocks.push({ from: at.start, to: at.end, service, meal: !!sh.meal });
+        if (at && service) {
+          blocks.push({ from: at.start, to: at.end, service, client: clientOf(sh.text), meal: !!sh.meal });
+        }
       }
       // EVERY ROW THE REPORT HOLDS FOR THIS DAY, drawn as `drawnRest` says.
       //

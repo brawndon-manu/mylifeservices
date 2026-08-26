@@ -326,7 +326,7 @@ function dayWindow(day, shifts, extras = [], scheduled = []) {
 // MEAL BLOCKS ARE SKIPPED. They live in the same list and they are not a service
 // - a shift that runs across a rostered lunch would otherwise come back labelled
 // "Meal Break", which is both wrong and the opposite of what it is.
-function serviceFor(scheduled, shift) {
+function blockFor(scheduled, shift) {
   let best = null;
   let bestOverlap = 0;
   for (const b of scheduled || []) {
@@ -334,8 +334,10 @@ function serviceFor(scheduled, shift) {
     const overlap = Math.min(b.to, shift.to) - Math.max(b.from, shift.from);
     if (overlap > bestOverlap) { bestOverlap = overlap; best = b; }
   }
-  return bestOverlap > 0 ? best.service : null;
+  return bestOverlap > 0 ? best : null;
 }
+// the service alone, which is all most of this file wants
+const serviceFor = (scheduled, shift) => blockFor(scheduled, shift)?.service || null;
 
 // A PUNCH GAP IS NOT A REST PERIOD, and this drew it as one.
 //
@@ -803,7 +805,9 @@ export default function DayCalendar({
             client's name." A day with no schedule keeps the times alone, which
             is what this always showed. */}
         {worked.map((s) => {
-          const booked = serviceFor(scheduled, s);
+          const bookedBlock = blockFor(scheduled, s);
+          const booked = bookedBlock?.service || null;
+          const bookedClient = bookedBlock?.client || null;
           // room for the two stacked lines a laned block wants, at 15px each
           const twoLines = (s.drawTo - s.drawFrom) * (PX_PER_HOUR / 60) >= 30;
           // A SHORT BLOCK IN A CLASH SPENDS ITS ONE LINE ON THE SERVICE. Stacked
@@ -892,6 +896,19 @@ export default function DayCalendar({
                           `miscBreakFor`. Only the longer blocks are the ones the
                           PTO / sick / worked question is about. */}
                       {miscBreak ? "Misc Break" : serviceLabel(booked, day)}
+                    </span>
+                  )}
+                  {/* WHO IT WAS BOOKED WITH. Mánu 2026-08-26 asked for the name
+                      beside each service: a day worked with five people read
+                      "ILS Service" five times and the picture could not tell
+                      them apart. Only where the roster names one - travel,
+                      admin and misc carry no client - and only where the block
+                      is not being called a Misc Break, which is not a service
+                      at all. Dimmer than the service, because the service is
+                      what the day is made of and the name is which one. */}
+                  {!miscBreak && bookedClient && (
+                    <span className="max-w-full truncate text-[12px] leading-[15px] text-faint">
+                      {bookedClient}
                     </span>
                   )}
                 </>
@@ -1032,11 +1049,16 @@ export default function DayCalendar({
                   : b.said
                   ? "The record says"
                   // it is on the roster and not in the punches, and saying
-                  // "Meal" would claim they clocked out for it
+                  // "Meal" would claim they clocked out for it.
+                  //
+                  // "On the schedule", not "on YOUR schedule": this calendar is
+                  // the employee's own view AND the picture under every row of
+                  // the admin checks screen (see DayPeek), where "your" was the
+                  // page talking to the wrong person. Mánu 2026-08-26.
                   : b.booked
                     ? "Meal"
                   : b.rostered
-                    ? "On your schedule"
+                    ? "On the schedule"
                     : b.label || (b.guess ? "We think" : b.kind === "meal" ? (b.staged ? "Lunch" : "Meal") : "Rest")}{" "}
                 {/* the range while it has the column to itself; the start time
                     alone once it is sharing, where a range cannot fit and a
