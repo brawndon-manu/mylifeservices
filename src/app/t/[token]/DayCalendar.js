@@ -408,7 +408,37 @@ export default function DayCalendar({
   const shifts = shiftsOf(day);
   if (!shifts.length) return null;
 
-  const axis = dayWindow(day, shifts, [...staged, ...rests, ...proposed], scheduled);
+  // the rostered meal blocks that fall inside worked time, which is exactly the
+  // set the gap logic above cannot reach - see the note where they are drawn
+  // A BOOKED MEAL WE ARE RAISING IS DRAWN WHETHER OR NOT IT FITS ONE SHIFT.
+  //
+  // `insideAShift` wants the whole span within a SINGLE punched stretch, and the
+  // ones that matter most do not qualify: Cain 08/03 books 1p-1:30p across a
+  // 1p-1:15p travel punch and the 1:15p-3:15p service after it, so the block the
+  // question is about was not drawn at all and the card had no picture.
+  //
+  // Where the engine has raised it, the roster's claim is the point and it is
+  // drawn on that alone. Everywhere else the old test stands, so nothing new
+  // appears on the days nobody is being asked about.
+  const rosteredUnpunched = (scheduled || []).filter(
+    (b) => b.meal && Number.isFinite(b.from) && Number.isFinite(b.to) && b.to > b.from
+      && (bookedMeal || insideAShift(shifts, b.from, b.to - b.from)),
+  );
+
+  // AND THE AXIS ONLY MAKES ROOM FOR THE ONES IT DRAWS.
+  //
+  // `dayWindow` widened for every scheduled block, drawn or not. Bucio 07/25 is
+  // rostered a ten minute "Meal Break" at midnight that no punch goes near, so
+  // it is not drawn - and it still pulled her column back to 12a, nine empty
+  // hours squashing a day worked 9a to 4:45p into the bottom third. Mánu
+  // 2026-08-26, looking for it on the picture: "where is that midnight 10?"
+  //
+  // Work blocks still widen it as they always did. Only the meals are narrowed
+  // to what is actually on the page.
+  const axis = dayWindow(day, shifts, [...staged, ...rests, ...proposed], [
+    ...(scheduled || []).filter((b) => !b.meal),
+    ...rosteredUnpunched,
+  ]);
   const span = axis.to - axis.from;
   const height = (span / 60) * PX_PER_HOUR;
   const top = (m) => ((m - axis.from) / span) * 100;
@@ -596,23 +626,6 @@ export default function DayCalendar({
       meal: true, before: true, away: axis.from - b.wasTo,
     });
   }
-
-  // the rostered meal blocks that fall inside worked time, which is exactly the
-  // set the gap logic above cannot reach - see the note where they are drawn
-  // A BOOKED MEAL WE ARE RAISING IS DRAWN WHETHER OR NOT IT FITS ONE SHIFT.
-  //
-  // `insideAShift` wants the whole span within a SINGLE punched stretch, and the
-  // ones that matter most do not qualify: Cain 08/03 books 1p-1:30p across a
-  // 1p-1:15p travel punch and the 1:15p-3:15p service after it, so the block the
-  // question is about was not drawn at all and the card had no picture.
-  //
-  // Where the engine has raised it, the roster's claim is the point and it is
-  // drawn on that alone. Everywhere else the old test stands, so nothing new
-  // appears on the days nobody is being asked about.
-  const rosteredUnpunched = (scheduled || []).filter(
-    (b) => b.meal && Number.isFinite(b.from) && Number.isFinite(b.to) && b.to > b.from
-      && (bookedMeal || insideAShift(shifts, b.from, b.to - b.from)),
-  );
 
   // A REST INSIDE A MISC BREAK WAS DRAWN TWICE.
   //
