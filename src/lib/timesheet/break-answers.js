@@ -164,6 +164,9 @@ export const REASON_ON = {
   // moved says they took it, and a break somebody took has nothing to explain.
   mealInShift: ["no"],
   mealMovable: ["no"],
+  // the roster's lunch was too short to be one, so the meal was missed - same
+  // obligation as the two above, and the same slot
+  mealShort: ["no"],
 };
 
 export function reasonOwedOn(kind, choice) {
@@ -187,6 +190,7 @@ const REASON_SLOT = {
   // here and one given on the plain meal question are the same row
   mealInShift: "meal",
   mealMovable: "meal",
+  mealShort: "meal",
   nothingDocumentedRest: "rest",
   repair: "rest",
   restNoTimes: "rest",

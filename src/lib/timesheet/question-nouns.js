@@ -26,6 +26,7 @@ export const QUESTION_NOUN = {
   nothingDocumentedMeal: "meal break with nothing recorded",
   nothingDocumentedRest: "rest periods with nothing recorded",
   shortMealRest: "ten minute meal block read as a rest period",
+  mealShort: "meal break the schedule booked for less than thirty minutes",
   mealLate: "meal period that started after the fifth hour",
   mealInShift: "meal break the roster booked inside a shift they clock in and out of",
   mealMovable: "meal break the roster booked inside unpunched time",

@@ -525,6 +525,11 @@ export function employeeResolution(correction, question = null) {
         ? "You said the short meal block was your rest break."
         : "You said it was not your rest break.";
 
+    case "mealShort":
+      return yes
+        ? "You said you took a full thirty minutes for lunch anyway."
+        : "You said you did not get a meal break that day.";
+
     default:
       return null;
   }

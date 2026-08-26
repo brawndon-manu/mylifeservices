@@ -42,6 +42,10 @@ import { shortTime, rosteredMeal } from "./recorded-breaks.js";
 // reading the roster's own blocks, the same two functions every other screen
 // uses to say what a stretch of the day was booked as
 import { blockTimes, serviceOf } from "./schedule.js";
+// the thirty minute figure, from the one place that holds it. `findings.js`
+// reaches for RULES the same way; parse.js loads pdfjs lazily, so importing it
+// costs a function reference and nothing else.
+import { RULES } from "./parse.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -437,6 +441,23 @@ const CLOCKED_SERVICE = /ils\s*service|self\s*determ|training|travel/i;
 const MOVABLE_SERVICE = /admin|misc/i;
 // clocked, but the least descriptive kind of clocked - see `mealBookedInside`
 const TRAVEL_SERVICE = /travel/i;
+
+// THE ROSTER'S LUNCH IS TOO SHORT TO BE ONE, read off the same entries.
+//
+// The sibling of `mealBookedInside` and deliberately shaped like it: both are
+// the roster failing to offer a lawful break, and Mánu asked for them to be
+// counted the same way. Returns the block and how far under thirty it is, or
+// null when the roster's meal is a full one - or when there is none at all,
+// which is a different finding entirely.
+export function mealBookedShort(entry) {
+  const meal = rosteredMeal(entry);
+  if (!meal) return null;
+  const minutes = meal.to - meal.from;
+  // the same two bounds analyzeDay uses: over a rest's length, under a meal's.
+  // A ten minute "Meal Break" is a mislabelled rest and has its own question.
+  if (!(minutes > RULES.mealAsRestMaxMin && minutes < RULES.mealFullMin)) return null;
+  return { minutes, short: RULES.mealFullMin - minutes, mealFrom: meal.from, mealTo: meal.to };
+}
 
 export function mealBookedInside(entry) {
   const meal = rosteredMeal(entry);
@@ -1096,6 +1117,32 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
           });
           continue;
         }
+        // AND THE OTHER WAY THE ROSTER CAN FAIL TO OFFER A BREAK: it booked one,
+        // clear of every shift, and made it shorter than a meal period. Same
+        // standing as the overlap above and the same shape of card - Mánu
+        // 2026-08-26: "for the short lunches it should be counted the same way
+        // lunches are counted when they are overlapping."
+        const short = part === "meal" ? mealBookedShort(byDate[date]) : null;
+        if (short) {
+          out.push({
+            kind: "mealShort",
+            date,
+            at: "",
+            // the premium is on the sheet by construction, exactly like the
+            // overlap: the day stopped counting the block as a meal
+            moves: -1,
+            movesOnDecline: 0,
+            row: {
+              part: "meal",
+              minutes: short.minutes,
+              short: short.short,
+              mealFrom: clock(short.mealFrom),
+              mealTo: clock(short.mealTo),
+              hours: r2((dayOf(date)?.paidHours) || 0),
+            },
+          });
+          continue;
+        }
         out.push({
           kind: part === "meal" ? "nothingDocumentedMeal" : "nothingDocumentedRest",
           date,
@@ -1195,6 +1242,9 @@ const OPTIONAL_KINDS = new Set([
   // a correction that moves nothing either way, and one the employee can dispute
   // afterwards without a figure hanging on it
   "restTooLongOffClock", "shortMealRest",
+  // the roster's lunch was under thirty minutes - the same shape as a lunch
+  // booked inside a shift, and optional for the same reason
+  "mealShort",
 ]);
 
 export const isMandatory = (kind) => !OPTIONAL_KINDS.has(kind);
@@ -1459,6 +1509,11 @@ export function patchesFor(question, choice, day) {
     // the block CAN be rearranged is saying the lunch really was taken, just not
     // where the roster put it - so the premium comes off, exactly as confirming
     // an undocumented meal does. Saying it cannot leaves the day as it stands.
+    // THE TWO WAYS THE ROSTER FAILED TO OFFER A BREAK ANSWER ALIKE. Both start
+    // with the premium on the sheet: "they took it anyway" takes the hour off,
+    // and confirming it was missed leaves it exactly where it is.
+    case "mealShort":
+      return yes ? { mealViolation: false } : { mealViolation: null };
     case "mealInShift":
       return { mealViolation: null };
     case "mealMovable":

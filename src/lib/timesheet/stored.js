@@ -34,6 +34,8 @@ export const REQUIRED_DAY_FIELDS = [
   // explanation beside it - which is the one thing that must never happen on a
   // document somebody signs.
   "restsOffClock", "restsOffClockMin", "addedHours", "mealInsideBooking",
+  // the roster booked a lunch shorter than thirty minutes
+  "mealBookedShort",
   // the 2026-08-09 EVENING rulings, read back by `buildQuestions` to decide
   // whether a correction we already applied still needs confirming
   "restsFromShortMeals",
@@ -105,6 +107,7 @@ export function storedDay(d) {
     // read off the SCHEDULE, and recompute never sees the schedule again.
     mealGapKind: d.mealGapKind ?? null,
     mealGapMin: d.mealGapMin ?? null,
+    mealBookedShort: !!d.mealBookedShort,
     // the second meal period. `mealsRostered` is how many the schedule gave
     // them, which is the only thing that can witness a second one.
     mealsRostered: d.mealsRostered ?? null,

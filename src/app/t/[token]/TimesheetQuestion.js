@@ -867,6 +867,44 @@ function copyFor(q, standing) {
         ),
       };
 
+    // THE SCHEDULE BOOKED A LUNCH TOO SHORT TO BE ONE.
+    //
+    // Mánu 2026-08-26: "for the short lunches it should be counted the same way
+    // lunches are counted when they are overlapping." So this is `mealInShift`
+    // with one fact swapped - there the block sat inside a shift, here it is
+    // simply not long enough - and it carries the same single option for the
+    // same reason: there is no second true answer to give.
+    //
+    // IT DOES NOT ACCUSE THEM OF ANYTHING. The roster is what was short. The
+    // rule line says so before the option does.
+    case "mealShort":
+      return {
+        title: "Your meal break is booked for less than thirty minutes",
+        short: "Meal booked under thirty minutes",
+        rule: "A meal break is thirty minutes. Your schedule books "
+          + `${q.row?.minutes} of them, which is ${q.row?.short} short of one, so it is not a `
+          + "meal period. Your schedule needs it lengthened.",
+        facts: [
+          { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
+          { label: "That is", value: `${q.row?.minutes} minutes` },
+        ],
+        body: (
+          <>
+            Your schedule books a meal break at <b>{q.row?.mealFrom} to {q.row?.mealTo}</b> on{" "}
+            <b>{q.date}</b>. That is <b>{q.row?.minutes} minutes</b>.
+            <br /><br />
+            A meal break is thirty minutes, so a shorter one is not a meal period you could have
+            taken. What needs fixing is the schedule.
+          </>
+        ),
+        // ONE OPTION, exactly like the booked-inside-a-shift card above.
+        no: {
+          label: "I understand, I did not get a meal break that day",
+          why: "Your record says the meal break was missed, with your reason on it.",
+        },
+        noEffect: <>Your record says the meal break was missed, with your reason on it.</>,
+      };
+
     default:
       return null;
   }

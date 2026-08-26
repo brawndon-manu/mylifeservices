@@ -66,6 +66,12 @@ const PREMIUM_ANSWER_KINDS = {
   // land on one hour.
   q_nothingDocumentedMeal: ["meal"],
   q_nothingDocumentedRest: ["rest"],
+  // THE ONE THAT RUNS THE OTHER WAY. Every kind above starts with the premium
+  // ON and an accept gives it up; `mealShort` starts with it OFF, because the
+  // day cleared on a rostered meal nobody had measured. Accepting still means
+  // the break happened - a full thirty - so "taken" is still the right word for
+  // a yes, and the decline is what puts the hour on.
+  q_mealShort: ["meal"],
 };
 
 // "MM/DD/YY:meal" -> "taken" | "owed", for every answer on record.

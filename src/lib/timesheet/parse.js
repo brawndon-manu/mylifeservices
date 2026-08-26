@@ -26,8 +26,18 @@ export const RULES = {
   // paid 10-minute rest break. a range, since real punches drift a minute or two.
   restMinMin: 2,
   restMaxMin: 20,
-  // unpaid 30-minute meal period.
+  // unpaid 30-minute meal period. `mealMinMin` is the CLASSIFIER - the shortest
+  // punch gap still read as lunch-shaped rather than rest-shaped - and it has
+  // never been a compliance figure. `mealFullMin` is the compliance one: §512
+  // asks for thirty uninterrupted minutes, and a rostered block under it is
+  // what the `mealShort` question in questions.js is built from.
   mealMinMin: 21,
+  mealFullMin: 30,
+  // a rostered "Meal Break" this short is not a short meal, it is a REST
+  // mislabelled - Mánu 2026-08-09 on Bucio's midnight ten. It is credited as
+  // one (`restsFromShortMeals`), so the too-short-meal rule steps over it
+  // rather than charging the same block twice.
+  mealAsRestMaxMin: 15,
   mealMaxMin: 90,
   // one rest break per 4 hours worked "or major fraction thereof". a major
   // fraction of a 4-hour block is anything over 2 hours, which is what produces
@@ -762,7 +772,7 @@ export function analyzeDay(day) {
   //
   // ZERO CASES on 07/16-07/31 - no short meal blocks at all - so this closes a
   // hole rather than moving a figure. It bites the first time a roster has one.
-  const REST_LENGTH_MAX = 15;
+  const REST_LENGTH_MAX = RULES.mealAsRestMaxMin;
   const shortMealBlocks = Array.isArray(day.scheduleBlocks)
     ? day.scheduleBlocks.filter(
         (b) => b.meal && b.end - b.start > 0 && b.end - b.start <= REST_LENGTH_MAX,
@@ -1129,7 +1139,32 @@ export function analyzeDay(day) {
     : null;
   const mealInsideBooking =
     !!cleanRosteredMeals && rosteredMeals.length > 0 && cleanRosteredMeals.length === 0;
-  const mealTaken = mealScheduled === true && !mealInsideBooking;
+
+  // A BLOCK TOO SHORT TO BE A MEAL PERIOD IS NOT ONE EITHER.
+  //
+  // Mánu 2026-08-25, on Garcia 08/21: "why is this lunch break counted if its
+  // under 30 minutes?" It was counted because the only test above is whether a
+  // meal is rostered and clear of a booking - the LENGTH was never looked at.
+  // QSP had booked her "11:35a-12p -Meal Break(0:25)", so the schedule itself
+  // offered 25 minutes where §512 asks for thirty uninterrupted.
+  //
+  // COUNTED THE SAME WAY AN OVERLAPPING ONE IS, on his instruction of
+  // 2026-08-26: "for the short lunches it should be counted the same way
+  // lunches are counted when they are overlapping." Both are the roster failing
+  // to offer a lawful break, so both stop the meal counting and both raise
+  // their own question - see `mealBookedShort` in questions.js.
+  //
+  // The LONGEST clean one decides it: a day rostered a 25 and a 35 was offered
+  // a lawful break, and the short one beside it changes nothing.
+  // A block short enough to be a rest is one, and is credited as one above -
+  // judging it as a short MEAL as well would charge the same ten minutes twice.
+  const mealLengthBlocks = (cleanRosteredMeals || [])
+    .map((m) => m.end - m.start)
+    .filter((n) => n > RULES.mealAsRestMaxMin);
+  const longestClean = mealLengthBlocks.length ? Math.max(...mealLengthBlocks) : null;
+  const mealBookedShort = longestClean !== null && longestClean < RULES.mealFullMin;
+
+  const mealTaken = mealScheduled === true && !mealInsideBooking && !mealBookedShort;
   // no schedule at all is not a violation and not a pass. it goes to a person.
   const mealUnknown = mealRequired && mealScheduled === null;
 
@@ -1413,6 +1448,11 @@ export function analyzeDay(day) {
     // about the premium, never a change to it.
     mealGapKind,
     mealGapMin: mealShaped ? longestGap.min : null,
+    // the roster's own meal block is under thirty minutes, so it is not a meal
+    // period - the same standing as one booked inside a shift, and stored for
+    // the same reason: it is read off the SCHEDULE, which a recompute never
+    // sees again.
+    mealBookedShort,
     // ONE premium per workday however many meals were missed (§226.7), so this
     // stays a single boolean. A day that misses both meals pays one hour, the
     // same as a day that misses either.

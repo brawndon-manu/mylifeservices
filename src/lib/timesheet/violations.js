@@ -33,7 +33,7 @@
 // third definition of the same rule.
 // `.js` on purpose: every intra-lib import here carries it, because these
 // modules are read by `node --test`, which has no bundler to guess with.
-import { mealWindows, mealBookedInside } from "./questions.js";
+import { mealWindows, mealBookedInside, mealBookedShort } from "./questions.js";
 
 export const VIOLATION_KINDS = {
   "rest-not-taken": {
@@ -73,6 +73,15 @@ export const VIOLATION_KINDS = {
     label: "Meal booked inside unpunched time",
     ask: "Not a clocked shift, so the block can be moved rather than the meal break being written "
       + "off. Ask whether it can be rearranged and what the meal break and the block become.",
+  },
+  // the third way the roster can fail to offer a break: it booked one, clear of
+  // every shift, and made it too short to be a meal period. Same standing as
+  // the two above - Mánu 2026-08-26 asked for short lunches to be counted the
+  // way overlapping ones are.
+  "meal-short": {
+    label: "Meal booked under thirty minutes",
+    ask: "The roster books a meal break shorter than thirty minutes, so it is not a meal period "
+      + "and could not have been taken as one. The schedule needs it lengthened. Ask why they did not get one.",
   },
   "meal-late": {
     label: "Meal period started too late",
@@ -123,6 +132,10 @@ export function dayViolations(d, entry = null) {
     });
   }
   const booked = d.mealViolation && !d.mealLate ? mealBookedInside(entry) : null;
+  // only where nothing overlaps: a block that is both inside a shift AND short
+  // is already answered by the overlap, and two rows would be two ways to say
+  // one thing
+  const short = d.mealViolation && !d.mealLate && !booked ? mealBookedShort(entry) : null;
   if (d.mealViolation) {
     out.push(
       d.mealLate
@@ -132,6 +145,11 @@ export function dayViolations(d, entry = null) {
             kind: booked.kind === "clocked" ? "meal-in-shift" : "meal-movable",
             detail: `${clock(booked.mealFrom)}-${clock(booked.mealTo)}, inside ${booked.service}`,
           }
+          : short
+            ? {
+              kind: "meal-short",
+              detail: `${clock(short.mealFrom)}-${clock(short.mealTo)}, ${short.minutes} minutes`,
+            }
           : {
           kind: "meal-not-recorded",
           detail: `nothing recorded on a ${r2(d.paidHours).toFixed(2)} hour day`,
