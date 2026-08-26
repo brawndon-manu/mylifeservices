@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
-import { clockKey, clockShifts, clockCoverage, clockDisagreements } from "@/lib/timesheet/clock";
+import {
+  clockKey, clockShifts, clockCoverage, clockDisagreements, paidAboveClock,
+} from "@/lib/timesheet/clock";
 import { isCappedService, CAP_MINUTES } from "@/lib/timesheet/compliance";
 import BackLink from "@/components/BackLink";
 import AuditTable from "./AuditTable";
@@ -92,6 +94,10 @@ export default async function AttendancePage({ params }) {
     // reading that changes when the rule changes must not be frozen into a
     // batch uploaded before it
     disagrees: clockDisagreements(r),
+    // COMPUTED HERE, NOT IN THE TABLE. `clock.js` pulls in the .xls reader, and
+    // the table is a client component - importing it there would ship a
+    // spreadsheet parser to the browser to do one subtraction.
+    gapMin: paidAboveClock(r),
     overCap:
       isCappedService(r.service) && r.workedMin != null && r.workedMin > CAP_MINUTES,
   }));

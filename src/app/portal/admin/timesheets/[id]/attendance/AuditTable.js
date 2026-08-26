@@ -32,6 +32,20 @@ const signed = (n) => (n == null ? null : n > 0 ? `+${n}` : String(n));
 // catches nothing.
 const OFF_BY = 10;
 
+// WHAT IS PAID AGAINST WHAT WAS CLOCKED, handed in by the page.
+//
+// Payroll runs off the roster: all 62 sheets of 62 on the 08/16-08/22 batch
+// have paid hours exactly equal to their non-meal scheduled total. So a shift
+// bills its rostered length whatever the clock says. `paidAboveClock` in
+// clock.js owns the rule and is tested there; null means the shift was not
+// clocked at both ends, which is not a difference of zero.
+const gapOf = (s) => s.gapMin ?? null;
+
+// the same ten minutes the punctuality filter uses. A shift paid nine minutes
+// above its clock is inside the noise of when people press the button; the
+// bands measured on one week put 44 of the 61 short shifts at ten or more.
+const PAID_OVER = 10;
+
 const isOff = (s) =>
   (s.startDelta != null && Math.abs(s.startDelta) >= OFF_BY)
   || (s.endDelta != null && Math.abs(s.endDelta) >= OFF_BY);
@@ -48,6 +62,12 @@ const FILTERS = [
     label: `Off the roster by ${OFF_BY} minutes or more`,
     hint: "The clock and the schedule disagree by ten minutes or more at one end of the shift.",
     match: isOff,
+  },
+  {
+    key: "paidover",
+    label: `Paid ${PAID_OVER} minutes or more above the clock`,
+    hint: "The shift bills its rostered length and the clock ran shorter than that. Ending early can be perfectly proper - the reason column is where that shows.",
+    match: (s) => (gapOf(s) ?? 0) >= PAID_OVER,
   },
   {
     key: "gps",
@@ -76,6 +96,7 @@ const FILTERS = [
 ];
 
 const TONE = {
+  paidover: "border-2 border-orange-400 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/40",
   noclock: "border-2 border-rose-400 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40",
   off: "border-2 border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40",
   gps: "border-2 border-sky-400 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/40",
@@ -84,6 +105,7 @@ const TONE = {
   reason: "border-2 border-emerald-400 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40",
 };
 const NUM = {
+  paidover: "text-orange-600 dark:text-orange-400",
   noclock: "text-rose-600 dark:text-rose-400",
   off: "text-amber-600 dark:text-amber-400",
   gps: "text-sky-600 dark:text-sky-400",
@@ -115,6 +137,22 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
     [shifts],
   );
 
+  // THE BILLABLE READING. Paid across every shift, against clocked on the ones
+  // that can answer for themselves - two different denominators, so both are
+  // printed rather than one figure that quietly mixes them.
+  const money = useMemo(() => {
+    let paidAll = 0, paid = 0, clocked = 0, n = 0;
+    for (const s of shifts) {
+      paidAll += s.scheduledMin ?? 0;
+      const g = gapOf(s);
+      if (g == null) continue;
+      n++;
+      paid += s.scheduledMin;
+      clocked += s.workedMin;
+    }
+    return { paidAll, paid, clocked, n, gap: paid - clocked };
+  }, [shifts]);
+
   const active = FILTERS.filter((f) => on[f.key]);
 
   // the search narrows WHO is on the page; the chips narrow which of their
@@ -143,10 +181,19 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
     for (const s of searched) {
       let p = m.get(s.who);
       if (!p) {
-        p = { who: s.who, shifts: 0, noIn: 0, noOut: 0, gps: 0, cap: 0, off: 0, disagrees: 0 };
+        p = { who: s.who, shifts: 0, noIn: 0, noOut: 0, gps: 0, cap: 0, off: 0, disagrees: 0,
+              paid: 0, clocked: 0, gap: 0 };
         m.set(s.who, p);
       }
       p.shifts++;
+      // THE THREE MONEY COLUMNS DESCRIBE ONE POPULATION. Counting paid over
+      // every shift while clocked can only count the clocked ones leaves a row
+      // whose own arithmetic does not work - Torres reads 16.75 paid, 11.22
+      // clocked and a difference of 3.53 - and a reader is right to distrust
+      // the whole table over it. The shifts with nothing to compare are
+      // reported by the two columns that exist to report them.
+      const g = gapOf(s);
+      if (g != null) { p.paid += s.scheduledMin; p.clocked += s.workedMin; p.gap += g; }
       if (s.noIn) p.noIn++;
       if (s.noOut) p.noOut++;
       if (s.gpsIn === "no" || s.gpsOut === "no") p.gps++;
@@ -154,7 +201,7 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
       if (isOff(s)) p.off++;
       if (s.disagrees.length) p.disagrees++;
     }
-    return [...m.values()].sort((a, b) => b.noIn + b.noOut - (a.noIn + a.noOut) || a.who.localeCompare(b.who));
+    return [...m.values()].sort((a, b) => b.gap - a.gap || a.who.localeCompare(b.who));
   }, [searched]);
 
   return (
@@ -169,12 +216,28 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
         )}
       </p>
 
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-faint">
+      {/* WHAT IS PAID, AGAINST WHAT WAS CLOCKED. The first figure a reviewer
+          wants and the reason the screen exists, so it leads - and it names its
+          own denominator, because the shifts that can answer are a subset and a
+          single number would hide that. */}
+      <div className="mt-5 flex flex-wrap gap-x-10 gap-y-4 rounded-xl border border-border bg-surface-2 p-5">
+        <Figure n={hrs(money.paidAll)} label="Paid" sub={`${shifts.length} shifts, at their rostered length`} />
+        <Figure n={hrs(money.clocked)} label="Clocked" sub={`${money.n} shifts clocked at both ends`} />
+        <Figure
+          n={`${money.gap >= 0 ? "+" : ""}${hrs(money.gap)}`}
+          label="Paid above the clock"
+          sub={`on those ${money.n}, against ${hrs(money.paid)} paid`}
+          tone={money.gap > 0 ? "text-orange-600 dark:text-orange-400" : "text-foreground"}
+        />
+      </div>
+
+      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-faint">
         {shifts.length} shifts. {comparable.start} can be compared at the clock-in and{" "}
         {comparable.end} at the clock-out; the rest were never clocked at that end.{" "}
         {comparable.worked} ran long enough to measure against the{" "}
-        {(capMinutes / 60).toFixed(1)} hour cap. Nothing on this page changes an hour, a premium
-        or a signed timesheet.
+        {(capMinutes / 60).toFixed(1)} hour cap. Payroll pays the rostered hours, so a shift that
+        ran short was still paid in full. Nothing on this page changes an hour, a premium or a
+        signed timesheet.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -230,7 +293,8 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
         <>
         <p className="mt-4 text-xs text-faint">
           Every shift each person worked in the period, not only the ones the boxes above are
-          showing.
+          showing. Paid, clocked and the difference cover the shifts clocked at both ends; the
+          two columns beside them count the shifts that left nothing to compare.
         </p>
         <div className="mt-2 overflow-x-auto rounded-xl border border-border">
           <table className="w-full min-w-[48rem] text-sm">
@@ -238,6 +302,9 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
               <tr>
                 <th className="px-3 py-2 font-semibold">Person</th>
                 <th className="px-3 py-2 text-right font-semibold">Shifts</th>
+                <th className="px-3 py-2 text-right font-semibold">Paid</th>
+                <th className="px-3 py-2 text-right font-semibold">Clocked</th>
+                <th className="px-3 py-2 text-right font-semibold">Above the clock</th>
                 <th className="px-3 py-2 text-right font-semibold">No clock-in</th>
                 <th className="px-3 py-2 text-right font-semibold">No clock-out</th>
                 <th className="px-3 py-2 text-right font-semibold">Off by {OFF_BY}+</th>
@@ -251,6 +318,17 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
                 <tr key={p.who} className="hover:bg-surface-2">
                   <td className="px-3 py-2 font-medium text-foreground">{p.who}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{p.shifts}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(p.paid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(p.clocked)}</td>
+                  <td
+                    className={`px-3 py-2 text-right tabular-nums ${
+                      p.gap >= PAID_OVER
+                        ? "font-semibold text-orange-600 dark:text-orange-400"
+                        : "text-faint"
+                    }`}
+                  >
+                    {p.gap > 0 ? `+${hrs(p.gap)}` : p.gap < 0 ? hrs(p.gap) : "-"}
+                  </td>
                   <Cell n={p.noIn} tone="text-rose-600 dark:text-rose-400" />
                   <Cell n={p.noOut} tone="text-rose-600 dark:text-rose-400" />
                   <Cell n={p.off} tone="text-amber-600 dark:text-amber-400" />
@@ -278,7 +356,8 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
                 <th className="px-3 py-2 font-semibold">Clocked</th>
                 <th className="px-3 py-2 text-right font-semibold">In</th>
                 <th className="px-3 py-2 text-right font-semibold">Out</th>
-                <th className="px-3 py-2 text-right font-semibold">Worked</th>
+                <th className="px-3 py-2 text-right font-semibold">Paid</th>
+                <th className="px-3 py-2 text-right font-semibold">Clocked</th>
                 <th className="px-3 py-2 font-semibold">Location</th>
               </tr>
             </thead>
@@ -297,6 +376,17 @@ export default function AuditTable({ shifts, files, coverage, capMinutes }) {
         </p>
       )}
     </>
+  );
+}
+
+// one headline number with its unit under it
+function Figure({ n, label, sub, tone = "text-foreground" }) {
+  return (
+    <span className="block">
+      <span className={`block text-3xl font-bold tabular-nums leading-none ${tone}`}>{n}</span>
+      <span className="mt-1 block text-sm font-bold text-foreground">{label}</span>
+      <span className="mt-0.5 block text-xs text-muted">{sub}</span>
+    </span>
   );
 }
 
@@ -332,6 +422,7 @@ function Delta({ n }) {
 function Row({ s }) {
   const rostered = span(s.schedFrom, s.schedTo);
   const clocked = span(s.actualFrom, s.actualTo);
+  const gap = gapOf(s);
   return (
     <tr className="align-top hover:bg-surface-2">
       <td className="sticky left-0 z-10 bg-surface px-3 py-2 font-medium text-foreground">{s.who}</td>
@@ -373,18 +464,25 @@ function Row({ s }) {
       <td className="px-3 py-2 text-right">
         <Delta n={s.endDelta} />
       </td>
+      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums text-muted">
+        {s.scheduledMin == null ? <span className="text-faint">-</span> : hrs(s.scheduledMin)}
+      </td>
       <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
         {s.workedMin == null ? (
           <span className="text-faint">-</span>
         ) : (
-          <span className={s.overCap ? "font-semibold text-fuchsia-600 dark:text-fuchsia-400" : "text-muted"}>
-            {hrs(s.workedMin)}
-            {s.overCap && s.scheduledMin != null && (
-              <span className="block text-[11px] font-normal text-faint">
-                rostered {hrs(s.scheduledMin)}
+          <>
+            <span className={s.overCap ? "font-semibold text-fuchsia-600 dark:text-fuchsia-400" : "text-muted"}>
+              {hrs(s.workedMin)}
+            </span>
+            {/* the shift bills its rostered length whatever the clock says, so
+                the difference is the whole point of the column beside it */}
+            {gap != null && gap >= PAID_OVER && (
+              <span className="block text-[11px] font-semibold text-orange-600 dark:text-orange-400">
+                +{hrs(gap)} paid
               </span>
             )}
-          </span>
+          </>
         )}
       </td>
       <td className="px-3 py-2 whitespace-nowrap">

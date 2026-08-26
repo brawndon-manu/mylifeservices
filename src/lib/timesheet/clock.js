@@ -170,16 +170,17 @@ const REQUIRED_SHIFTS = ["Employee Name", "Schedule Start Date", "No Clock In", 
 // time printed IS the scheduled start time, to the minute. Not one flagged-late
 // row shows an actual time earlier than rostered.
 //
-// Two readings fit and this file cannot choose between them: QSP may measure
-// lateness in seconds while printing minutes (clock in at 2:45:20 against a
-// 2:45:00 roster and you are late, and it prints 02:45 PM), or the punch may
-// have been edited afterwards to match the roster while the original verdict
-// stuck to the row. The second is the thing an audit exists to catch.
+// THE TIMES WIN. Mánu 2026-08-26, asked directly: "the clock in and clock out
+// is the record because that differens from schedule clock in and clock out if
+// they arent the same." So the four times are the punch, and these six columns
+// are not evidence that a punch was edited - they are QSP grading its own
+// record and doing it inconsistently. Its grace window sits around five minutes
+// either way, which cannot explain a "late" over a clock-in on the rostered
+// minute, and no explanation for that is in this file.
 //
-// So both are carried and neither is resolved here. `startDelta` is ours, off
-// the times; `says` is theirs. The audit screen shows the disagreement rather
-// than picking a winner, because if it is the second reading, the disagreement
-// is the finding.
+// Carried and shown, because an auditor looking at a shift should see both
+// records, and never used to decide anything. `startDelta` is ours, off the
+// times; `says` is theirs.
 const verdicts = (r) => ({
   lateIn: YES(r["Late Clock In"]),
   lateOut: YES(r["Late Clock Out"]),
@@ -271,6 +272,27 @@ export function clockCoverage(rows) {
   const key = (d) => stampMinutes(d, "12:00 AM") ?? 0;
   dates.sort((a, b) => key(a) - key(b));
   return { from: dates[0], to: dates[dates.length - 1], days: dates.length };
+}
+
+// WHAT WAS PAID FOR THE SHIFT, AGAINST WHAT THE CLOCK RECORDED.
+//
+// Payroll runs off the ROSTER, not the clock. Measured on the 08/16-08/22
+// batch: all 62 sheets of 62 have paid hours exactly equal to their non-meal
+// scheduled total, no exception. Mánu 2026-08-26: "the simple payroll report
+// shows the time from the schedule not the clock in and out". So a shift bills
+// its rostered length whatever the clock says, and the difference is the only
+// measure of time paid but not worked.
+//
+// Positive means paid above the clock.
+//
+// NULL IS NOT ZERO, and that is the trap. 131 of 512 shifts were not clocked at
+// both ends, so there is nothing to subtract - and a zero there would say the
+// shift matched its roster exactly, which is the opposite of what is known.
+// Ending a shift early can be perfectly proper; this reports the minutes and
+// says nothing about why.
+export function paidAboveClock(s) {
+  if (!s || s.scheduledMin == null || s.workedMin == null) return null;
+  return s.scheduledMin - s.workedMin;
 }
 
 // WHERE QSP'S VERDICT AND QSP'S TIMES CANNOT BOTH BE RIGHT.

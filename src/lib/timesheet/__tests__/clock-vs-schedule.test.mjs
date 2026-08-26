@@ -10,7 +10,7 @@
 // through now, and the difference at each end with them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stampMinutes, shiftFromRow, clockDisagreements } from "../clock.js";
+import { stampMinutes, shiftFromRow, clockDisagreements, paidAboveClock } from "../clock.js";
 
 // one spreadsheet row, in QSP's own column names
 const row = (over = {}) => ({
@@ -136,4 +136,45 @@ test("a shift nobody clocked raises no disagreement whatever the flags say", () 
 test("a row with no verdicts at all is silent rather than a throw", () => {
   assert.deepEqual(clockDisagreements(null), []);
   assert.deepEqual(clockDisagreements({}), []);
+});
+
+// ---- what was paid against what was clocked ----
+//
+// Payroll runs off the ROSTER. Measured on the 08/16-08/22 batch, 62 sheets of
+// 62 with no exception: paid hours equal the non-meal scheduled total exactly.
+// Mánu 2026-08-26: "the simple payroll report shows the time from the schedule
+// not the clock in and out." So a shift bills its rostered length and this is
+// the only measure of time paid but not worked.
+
+test("a shift clocked short of its roster was paid above the clock", () => {
+  // rostered 12p-3p is 180 minutes, clocked 12:08p-2:53p is 165
+  assert.equal(paidAboveClock(shiftFromRow(row())), 15);
+});
+
+test("a shift clocked past its roster comes back negative", () => {
+  const s = shiftFromRow(row({ "Actual End Time": "03:30 PM", "Actual Start Time": "12:00 PM" }));
+  assert.equal(paidAboveClock(s), -30);
+});
+
+test("a shift worked exactly as rostered owes nothing either way", () => {
+  const s = shiftFromRow(row({ "Actual Start Time": "12:00 PM", "Actual End Time": "03:00 PM" }));
+  assert.equal(paidAboveClock(s), 0);
+});
+
+// THE TRAP. 131 of 512 shifts were not clocked at both ends, so there is
+// nothing to subtract. Zero would say the shift matched its roster exactly,
+// which is the opposite of what is known about it - and summed over a period it
+// would report a payroll perfectly evidenced by a clock nobody punched.
+test("a shift not clocked at both ends has no answer, not an answer of zero", () => {
+  const noOut = shiftFromRow(row({ "No Clock Out": "Yes", "Actual End Time": "" }));
+  assert.equal(noOut.workedMin, null);
+  assert.equal(paidAboveClock(noOut), null);
+
+  const noIn = shiftFromRow(row({ "No Clock In": "Yes", "Actual Start Time": "" }));
+  assert.equal(paidAboveClock(noIn), null);
+});
+
+test("nothing to read is null rather than a throw", () => {
+  assert.equal(paidAboveClock(null), null);
+  assert.equal(paidAboveClock({}), null);
 });
