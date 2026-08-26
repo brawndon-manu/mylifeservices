@@ -2361,11 +2361,27 @@ export function BatchProvider({
 
   // one entry per DAY, carrying its one or two decisions. The card stays a list
   // of days; only a day short both grows a second row.
+  //
+  // KEYED ON THE DATE, NOT ON THE ONE BEFORE IT. This merged with the PREVIOUS
+  // entry only, which assumed a day's two questions always arrive together -
+  // and `list` is not in date order. An answered question sorts after every
+  // open one, so a day short both a lunch and its tens splits the moment ONE of
+  // them is answered: Uribe's 07/28 sat at index 6 with its meal and index 12
+  // with its rest.
+  //
+  // Two entries with one date is two <li> keyed "07/28/26", which React warns
+  // about and may duplicate or drop on the next update - and the day rendered
+  // as two separate rows instead of the one row reading "2 to answer", which is
+  // what every other doubled day shows. Found 2026-08-25 on his own sheet.
   const byDay = [];
+  const dayAt = new Map();
   for (const item of chosen) {
-    const last = byDay[byDay.length - 1];
-    if (last && last.date === item.q.date) last.items.push(item);
-    else byDay.push({ date: item.q.date, hours: item.q.row?.hours, items: [item] });
+    const at = dayAt.get(item.q.date);
+    if (at != null) byDay[at].items.push(item);
+    else {
+      dayAt.set(item.q.date, byDay.length);
+      byDay.push({ date: item.q.date, hours: item.q.row?.hours, items: [item] });
+    }
   }
 
   return (
