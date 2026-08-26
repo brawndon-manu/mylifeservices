@@ -378,11 +378,24 @@ test("an overlap on a day that owes no meal raises nothing", () => {
   assert.equal(dayViolations(f.day, f.entry).filter((x) => /meal/.test(x.kind)).length, 0);
 });
 
-test("travel alone is neither case, for this period", () => {
-  // deliberately unhandled until the rule for it is decided - 2 live days, 4 in
-  // July. If travel ever becomes movable this test is what should fail first.
+test("travel is clocked time, so a lunch booked on it could not have been taken", () => {
+  // THE RULE THIS TEST WAS WAITING FOR. It read "travel alone is neither case,
+  // for this period ... if travel ever becomes movable this test is what should
+  // fail first", and it did exactly that job: it failed the moment travel was
+  // classified. Mánu settled it on 2026-08-26 - "travel time is working hours" -
+  // so a meal booked across a drive is clocked, like ILS Service.
   const hit = mealBookedInside(FIXTURES.quiet.entry);
-  assert.equal(hit, null, "travel is being classified before anybody decided what it is");
+  assert.ok(hit, "travel is being left unclassified again");
+  assert.equal(hit.kind, "clocked", "movable would let the premium come back off");
+});
+
+test("but the day still has to owe a meal before anything is asked", () => {
+  // the quiet fixture clocked out and took a real lunch, so classifying travel
+  // must not turn 281 quiet days into questions
+  const f = FIXTURES.quiet;
+  assert.equal(f.day.mealViolation, false);
+  const kinds = kindsOn(f);
+  assert.ok(!kinds.includes("mealInShift"), `got ${kinds.join(", ")}`);
 });
 
 

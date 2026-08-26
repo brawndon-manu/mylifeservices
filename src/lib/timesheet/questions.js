@@ -413,16 +413,30 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
 //   MOVABLE    ILS Admin, ILS Misc. Typed in rather than punched, so the BLOCK
 //              can move and the lunch can stand.
 //
-// TRAVEL IS DELIBERATELY NEITHER, for this period. It overlaps on 2 live days
-// and 4 in July, and the rule for it is not settled - so those days keep asking
-// what they ask today rather than being given an answer nobody has decided.
+// TRAVEL IS CLOCKED, settled 2026-08-26. Mánu: "travel time is working hours."
+// It was deliberately neither until then, and being neither meant a lunch
+// booked on top of a drive fell out of `mealBookedInside` altogether and the
+// day was handed the generic "did you take your lunch?" card - the one question
+// that can take the premium back off. Nine days across the uploads are that
+// shape, Espinoza 08/25 among them.
+//
+// CLOCKED AND NOT MOVABLE, because a drive is pinned by the appointments either
+// side of it: those minutes are worked, the person is at the wheel, and no meal
+// period was on offer. The same reading ILS Service gets, and the branch that
+// cannot remove an hour.
+//
+// It says nothing about REST breaks. A ten is paid and on the clock, so a rest
+// inside travel is a rest taken inside worked time and counts like any other -
+// which is the other half of the same ruling.
 // Personal Appointment is work and a lunch inside it is fine.
 //
 // ONLY ON A DAY THAT OWES A MEAL. The overlap on its own is not a finding: 281
 // live days have one and took their lunch in a real punch gap anyway. The
 // overlap decides WHICH question a day already owing a meal gets asked.
-const CLOCKED_SERVICE = /ils\s*service|self\s*determ|training/i;
+const CLOCKED_SERVICE = /ils\s*service|self\s*determ|training|travel/i;
 const MOVABLE_SERVICE = /admin|misc/i;
+// clocked, but the least descriptive kind of clocked - see `mealBookedInside`
+const TRAVEL_SERVICE = /travel/i;
 
 export function mealBookedInside(entry) {
   const meal = rosteredMeal(entry);
@@ -437,7 +451,15 @@ export function mealBookedInside(entry) {
     // the clocked overlap wins outright where a lunch spans both - Cain 08/03
     // runs across ILS Travel AND the service shift after it, and the service is
     // what makes it impossible
-    if (CLOCKED_SERVICE.test(svc)) clocked = clocked || { service: svc, from: t.start, to: t.end };
+    // A REAL SERVICE NAMES THE FINDING AHEAD OF THE DRIVE IT ABUTS. Cain 08/03
+    // runs across ILS Travel AND the service shift after it, and both are
+    // clocked now - but "inside ILS Travel" describes the smaller half of what
+    // made the meal impossible. A non-travel block replaces a travel one; the
+    // first of equal rank still wins, as it always did.
+    if (CLOCKED_SERVICE.test(svc)) {
+      const better = !clocked || (TRAVEL_SERVICE.test(clocked.service) && !TRAVEL_SERVICE.test(svc));
+      if (better) clocked = { service: svc, from: t.start, to: t.end };
+    }
     else if (MOVABLE_SERVICE.test(svc)) movable = movable || { service: svc, from: t.start, to: t.end };
   }
   const hit = clocked || movable;
