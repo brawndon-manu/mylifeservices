@@ -25,7 +25,7 @@ import DayCalendar from "@/app/t/[token]/DayCalendar";
 // rather than <details>. A <details> renders its contents whether or not it is
 // open, and this batch draws 124 rows - a calendar apiece, each one laying out
 // a day's blocks, for pictures nobody has asked to see yet.
-export default function DayPeek({ day, rests = [], scheduled = [], bookedMeal = false }) {
+export default function DayPeek({ day, rests = [], scheduled = [], bookedMeal = false, notes = [] }) {
   const [open, setOpen] = useState(false);
   // a day with no punch pairs draws nothing at all - `DayCalendar` returns null
   // on it - so the control would open onto an empty box
@@ -54,8 +54,40 @@ export default function DayPeek({ day, rests = [], scheduled = [], bookedMeal = 
         // Nothing competes for the width here, unlike the employee's own page
         // where the calendar shares the row with the answer options, so it takes
         // what the card gives it up to a readable cap.
-        <div className="mt-2 max-w-2xl rounded-md border border-border bg-surface-2 p-3 pr-4">
-          <DayCalendar day={day} rests={rests} scheduled={scheduled} bookedMeal={bookedMeal} />
+        <div className="mt-2 max-w-4xl rounded-md border border-border bg-surface-2 p-3 pr-4">
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <DayCalendar day={day} rests={rests} scheduled={scheduled} bookedMeal={bookedMeal} />
+            {/* WHAT THEY WROTE ON THE DAY, BESIDE THE DAY. Mánu 2026-08-26:
+                "is there a way to show those notes next to the shifts in the
+                admin day by day view only? ... it can live in the space next to
+                the calendar."
+
+                ADMIN ONLY, which is why it is here and not in `DayCalendar`.
+                The calendar is shared with the employee's own page, and these
+                are the notes payroll reads while deciding a premium - they are
+                already the employee's own words, but where they are read
+                matters. Nothing on `/t/` renders this file.
+
+                Each note names its own block, so the time is the label and the
+                sentence sits under it. */}
+            {notes.length > 0 && (
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-faint">
+                  Notes on this day
+                </p>
+                <ul className="mt-2 space-y-2.5">
+                  {notes.map((c) => (
+                    <li key={`${c.n}-${c.from}`} className="text-xs leading-relaxed">
+                      <span className="block font-mono font-semibold text-foreground">
+                        {c.from}&ndash;{c.to}
+                      </span>
+                      <span className="text-muted">{c.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

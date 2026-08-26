@@ -6,6 +6,7 @@ import { canManageTimesheets, isSuper } from "@/lib/roles";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { restKey, restNameFor, restRowTimes, clockMin, serviceFit } from "@/lib/timesheet/rests";
 import { blockTimes, serviceOf, clientOf } from "@/lib/timesheet/schedule";
+import { notesFor } from "@/lib/timesheet/comments";
 import { drawnRest } from "@/lib/timesheet/recorded-breaks";
 import { violationsFor, VIOLATION_KINDS, violationHead } from "@/lib/timesheet/violations";
 import { mealBookedInside } from "@/lib/timesheet/questions";
@@ -359,6 +360,9 @@ export default async function PersonSchedulePage({ params, searchParams }) {
       // the day the reviewer is ringing them about. Read from the engine, not
       // re-derived, and only where the day actually owes a meal.
       bookedMeal: !!(d.mealViolation && !d.mealLate && mealBookedInside(byDate[d.date])),
+      // what they wrote about this day on the timesheet - admin screens only,
+      // see the note in DayPeek
+      notes: notesFor(sheet.data?.comments, d.date),
     });
   }
 

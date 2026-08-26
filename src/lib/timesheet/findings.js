@@ -24,6 +24,8 @@ import { restKey, restNameFor, clockMin, countsAsTaken, FULL_REST_MIN } from "./
 import { workedBeforeMin, RULES } from "./parse.js";
 import { describePunchIssue, scheduledPaidHours } from "./anomalies.js";
 import { blockTimes, serviceOf, clientOf } from "./schedule.js";
+// the Comments Details block, split back into the days it is about
+import { notesFor } from "./comments.js";
 import { drawnRest } from "./recorded-breaks.js";
 import { violationsFor } from "./violations.js";
 import { RANGE, toMin, overlapInfo } from "./schedule-overlap.js";
@@ -696,6 +698,10 @@ export function buildFindings(batch) {
         day: { date: d.date, punches: d.punches || [], breaks: d.breaks || [], miscBreaks: d.miscBreaks || [] },
         rests: drawn,
         scheduled: blocks,
+        // what they wrote about this day on the timesheet itself. Read here
+        // with everything else the row needs, so the component stays a
+        // component - and only the admin screens mount it.
+        notes: notesFor(t.data?.comments, d.date),
       });
     }
   }
