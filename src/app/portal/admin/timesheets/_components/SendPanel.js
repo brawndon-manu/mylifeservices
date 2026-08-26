@@ -4,6 +4,7 @@
 // deliberately requires a confirm, since this is the button that mails every
 // employee their own payroll document.
 import { useState } from "react";
+import DatePicker from "@/components/DatePicker";
 
 export default function SendPanel({
   batchId, readyToSend, alreadySent, send, live,
@@ -103,11 +104,10 @@ Send anyway?`)) e.preventDefault();
             <label htmlFor="dueAt" className="block text-sm font-medium text-muted">
               Sign by <span className="text-faint">(optional)</span>
             </label>
-            <input
+            <DatePicker
               id="dueAt"
               name="dueAt"
-              type="date"
-              className="mt-1.5 rounded-lg border border-border-strong bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+              inputClassName="mt-1.5 w-full rounded-lg border border-border-strong bg-background px-3 py-2 pr-10 text-sm text-foreground focus:border-brand focus:outline-none"
             />
           </div>
           <label className="flex items-center gap-2 text-sm text-muted">

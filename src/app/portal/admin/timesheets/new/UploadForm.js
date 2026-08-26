@@ -9,6 +9,7 @@
 // structurally identical and the status line is always present rather than
 // appearing and disappearing.
 import { useActionState, useEffect, useRef, useState } from "react";
+import DatePicker from "@/components/DatePicker";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
 
@@ -275,18 +276,16 @@ export default function UploadForm({ action, aside, into = null }) {
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-xs font-medium text-amber-900 dark:text-amber-200">
                   <span className="block">Keep days from</span>
-                  <input
-                    type="date"
+                  <DatePicker
                     name="partialFrom"
-                    className="mt-1 rounded border border-amber-400 bg-surface px-2 py-1 font-mono text-xs text-foreground dark:border-amber-700"
+                    inputClassName="mt-1 w-40 rounded border border-amber-400 bg-surface px-2 py-1 pr-10 font-mono text-xs text-foreground dark:border-amber-700"
                   />
                 </label>
                 <label className="text-xs font-medium text-amber-900 dark:text-amber-200">
                   <span className="block">to</span>
-                  <input
-                    type="date"
+                  <DatePicker
                     name="partialTo"
-                    className="mt-1 rounded border border-amber-400 bg-surface px-2 py-1 font-mono text-xs text-foreground dark:border-amber-700"
+                    inputClassName="mt-1 w-40 rounded border border-amber-400 bg-surface px-2 py-1 pr-10 font-mono text-xs text-foreground dark:border-amber-700"
                   />
                 </label>
               </div>

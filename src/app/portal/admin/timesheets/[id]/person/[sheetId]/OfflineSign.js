@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import DatePicker from "@/components/DatePicker";
 import { useRouter } from "next/navigation";
 
 // RECORD A SIGNATURE THAT CAME BACK OUTSIDE THE PORTAL.
@@ -83,10 +84,9 @@ export default function OfflineSign({ action, timesheetId, sourceName, disabled 
         <label className="text-xs text-muted">
           {/* the date on THEIR signature, not today - see the note in the action */}
           Date they signed
-          <input
-            name="signedOn" type="date" value={when} onChange={(e) => setWhen(e.target.value)}
-            disabled={busy}
-            className="mt-1 block w-full rounded-md border border-border-strong bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-brand"
+          <DatePicker
+            name="signedOn" value={when} onChange={setWhen}
+            inputClassName="mt-1 block w-full rounded-md border border-border-strong bg-background px-2 py-1.5 pr-10 text-sm text-foreground outline-none focus:border-brand"
           />
           <span className="mt-1 block text-[11px] text-faint">Leave blank for today.</span>
         </label>

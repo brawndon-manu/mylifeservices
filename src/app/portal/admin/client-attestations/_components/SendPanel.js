@@ -8,6 +8,7 @@
 // destination that resolves for it; anything that does not resolve is reported
 // by name.
 import { useState } from "react";
+import DatePicker from "@/components/DatePicker";
 import { useFormStatus } from "react-dom";
 
 function Go({ label }) {
@@ -130,10 +131,9 @@ export default function SendPanel({ counts, action }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-semibold text-foreground">Needed by (optional)</span>
-              <input
-                type="date"
+              <DatePicker
                 name="dueAt"
-                className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+                inputClassName="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 pr-10 text-sm text-foreground"
               />
             </label>
             <label className="block">

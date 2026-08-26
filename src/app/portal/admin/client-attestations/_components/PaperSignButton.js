@@ -4,6 +4,7 @@
 // name on the signature, and the date it was signed; the row flips to Signed
 // with the file stored and the filer on record.
 import { useState } from "react";
+import DatePicker from "@/components/DatePicker";
 import { useRouter } from "next/navigation";
 
 const ERRORS = {
@@ -88,11 +89,9 @@ export default function PaperSignButton({ attestation, action }) {
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-foreground">Date signed</span>
-                <input
+                <DatePicker
                   name="signedOn"
-                  type="date"
-                  disabled={busy}
-                  className="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+                  inputClassName="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-2 pr-10 text-sm text-foreground"
                 />
                 <span className="mt-1 block text-xs text-faint">
                   The date on the signature. Blank is today.
