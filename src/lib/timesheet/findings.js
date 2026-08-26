@@ -24,6 +24,14 @@ import { restKey, restNameFor, clockMin, countsAsTaken, FULL_REST_MIN } from "./
 import { workedBeforeMin, RULES } from "./parse.js";
 import { describePunchIssue, scheduledPaidHours } from "./anomalies.js";
 import { blockTimes, serviceOf, clientOf } from "./schedule.js";
+
+// minutes past midnight -> "12:10a", the short form every sheet prints
+const shortClock = (min) => {
+  const h24 = Math.floor(min / 60);
+  const mm = min % 60;
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
+};
 // the Comments Details block, split back into the days it is about
 import { notesFor } from "./comments.js";
 import { drawnRest } from "./recorded-breaks.js";
@@ -798,6 +806,53 @@ export function buildFindings(batch) {
               `failed to provide. `
             : ``) +
           QSP_REMEDY));
+      }
+      // A "MEAL BREAK" THE ROSTER BOOKED AT REST LENGTH, CREDITED AS A REST.
+      //
+      // Mánu 2026-08-26, looking for Bucio's midnight ten on the calendar:
+      // "where is that midnight 10? i dont see it." Nothing drew it, because
+      // no punch goes near it - and nothing said it existed either, while it
+      // was quietly supplying the "1 of 2 recorded" on her rest line.
+      //
+      // The employee is already asked to confirm it (`shortMealRest` - "we read
+      // a meal block as your rest break, is that right?"). This is the reviewer
+      // half of the same fact, which was missing.
+      //
+      // AN ANOMALY, NOT A VIOLATION. The credit stands; the day is only owed a
+      // premium if the rest count still falls short, and that has its own row.
+      if (d.restsFromShortMeals > 0) {
+        const blocks = (t.data?.scheduleCheck?.byDate?.[d.date]?.shifts || [])
+          .filter((sh) => sh.meal)
+          .map((sh) => ({ sh, at: blockTimes(sh.text) }))
+          .filter((x) => x.at && x.at.end - x.at.start > 0 && x.at.end - x.at.start <= 15);
+        const where = blocks.map((x) => `${shortClock(x.at.start)}-${shortClock(x.at.end)}`).join(", ");
+        entries.push({
+          timesheetId: t.id,
+          rowKey: `meal-as-rest-${t.id}-${d.date}`,
+          personKey: t.userId ?? null,
+          findingKey: `meal-as-rest-${d.date}`,
+          who: t.sourceName,
+          signed: !!t.signedAt,
+          overrides: {},
+          dayByDate: {},
+          dayHours: {},
+          byDate: {},
+          kind: "meal-as-rest",
+          date: d.date,
+          d: {
+            group: "anomaly",
+            head: d.restsFromShortMeals === 1
+              ? "a meal block counted as a rest"
+              : `${d.restsFromShortMeals} meal blocks counted as rests`,
+            tone: "text-violet-700 dark:text-violet-300",
+            lead:
+              `The schedule books ${where || "a meal break"} as a Meal Break, which is rest length `
+              + `rather than meal length. It is counted as a rest period, which is where `
+              + `${d.restTaken} of ${d.restRequired} on this day comes from. Nothing is charged for `
+              + `it. It is worth correcting in QSP so the block says what it is, and it does not `
+              + `stand in for the meal - a day still owes a lawful thirty somewhere else.`,
+          },
+        });
       }
       if (!d.restTackedOn) continue;
       entries.push({
