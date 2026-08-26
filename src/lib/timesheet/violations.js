@@ -79,9 +79,10 @@ export const VIOLATION_KINDS = {
   // the two above - Mánu 2026-08-26 asked for short lunches to be counted the
   // way overlapping ones are.
   "meal-short": {
-    label: "Meal booked under thirty minutes",
-    ask: "The roster books a meal break shorter than thirty minutes, so it is not a meal period "
-      + "and could not have been taken as one. The schedule needs it lengthened. Ask why they did not get one.",
+    label: "Meal break leaves less than thirty minutes",
+    ask: "The roster leaves less than thirty minutes clear for the meal break, either because the "
+      + "block is short or because a booking runs into it, so it is not a meal period. The schedule "
+      + "needs a clear thirty. Ask why they did not get one.",
   },
   "meal-late": {
     label: "Meal period started too late",
@@ -148,7 +149,14 @@ export function dayViolations(d, entry = null) {
           : short
             ? {
               kind: "meal-short",
-              detail: `${clock(short.mealFrom)}-${clock(short.mealTo)}, ${short.minutes} minutes`,
+              // WHICH OF THE TWO IT IS, in the row rather than in the sentence.
+              // "1:30p-2p, 24 minutes clear - ILS Service runs 6 min into it"
+              // and "11:35a-12p, booked for 25 minutes" are different problems
+              // with the same schedule and the fix differs.
+              detail: short.eaten > 0
+                ? `${clock(short.mealFrom)}-${clock(short.mealTo)}, ${short.minutes} minutes clear`
+                  + ` - ${short.service || "a booking"} runs ${short.eaten} min into it`
+                : `${clock(short.mealFrom)}-${clock(short.mealTo)}, booked for ${short.minutes} minutes`,
             }
           : {
           kind: "meal-not-recorded",

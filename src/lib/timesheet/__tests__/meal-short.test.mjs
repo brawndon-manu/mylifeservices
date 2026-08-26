@@ -16,7 +16,9 @@
 // Run through the real functions. Nothing here greps source as text.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildQuestions, mealBookedShort, patchesFor, isMandatory } from "../questions.js";
+import {
+  buildQuestions, mealBookedShort, mealBookedInside, patchesFor, isMandatory,
+} from "../questions.js";
 import { analyzeDay, RULES } from "../parse.js";
 import { dayViolations, VIOLATION_KINDS } from "../violations.js";
 import { employeeResolution } from "../corrections.js";
@@ -95,8 +97,8 @@ test("no rostered meal at all is a different finding entirely", () => {
 test("the reviewer is told what the roster did, not to chase a punch", () => {
   const v = dayViolations(SHORT_DAY, ENTRY).find((x) => x.kind === "meal-short");
   assert.ok(v, `got ${dayViolations(SHORT_DAY, ENTRY).map((x) => x.kind).join(", ")}`);
-  assert.equal(v.detail, "11:35a-12p, 25 minutes");
-  assert.match(VIOLATION_KINDS["meal-short"].label, /under thirty minutes/i);
+  assert.equal(v.detail, "11:35a-12p, booked for 25 minutes");
+  assert.match(VIOLATION_KINDS["meal-short"].label, /less than thirty minutes/i);
   assert.match(VIOLATION_KINDS["meal-short"].ask, /thirty/i);
   assert.match(VIOLATION_KINDS["meal-short"].ask, /schedule/i);
 });
@@ -127,4 +129,46 @@ test("their answer reads back in their own words", () => {
   const said = (choice) => employeeResolution({ kind: "q_mealShort", date: "08/21/26", choice });
   assert.match(said("yes"), /thirty minutes/);
   assert.match(said("no"), /did not get/);
+});
+
+// ------------------------------------------------ THE OTHER WAY IT GOES SHORT
+// Aranda 08/21/26. The roster books a full half hour and then runs an ILS
+// Service six minutes into the front of it. Mánu 2026-08-26: "what about if
+// they have overlapping part of their meal which makes their meal break less
+// than 30 ... if the overlapping takes the entirety of the meal break then it
+// wont have that option."
+const EATEN = {
+  shifts: [
+    { text: "9a-10a -ILS Misc(1:00)", meal: false },
+    { text: "10a-1:36p Client-ILS Service (3:36)", meal: false },
+    { text: "1:30p-2p -Meal Break(0:30)", meal: true },
+    { text: "2p-2:30p -ILS Travel(0:30)", meal: false },
+    { text: "2:30p-4:46p Client-ILS Service(2:16)", meal: false },
+  ],
+};
+
+test("a booking running into the meal leaves it short, not buried", () => {
+  const hit = mealBookedShort(EATEN);
+  assert.ok(hit, "the overlap is being read as all or nothing again");
+  assert.equal(hit.minutes, 24, "24 of the 30 minutes are clear");
+  assert.equal(hit.eaten, 6, "and six were eaten by the booking");
+  assert.equal(hit.service, "ILS Service");
+});
+
+test("the finding names the booking that ate into it", () => {
+  const day = { ...SHORT_DAY, date: "08/21/26" };
+  const v = dayViolations(day, EATEN).find((x) => x.kind === "meal-short");
+  assert.ok(v);
+  assert.equal(v.detail, "1:30p-2p, 24 minutes clear - ILS Service runs 6 min into it");
+});
+
+test("a meal a booking swallows whole is the other finding entirely", () => {
+  // his line: "if the overlapping takes the entirety of the meal break then it
+  // wont have that option"
+  const swallowed = { shifts: [
+    { text: "9a-5p Client-ILS Service(8:00)", meal: false },
+    { text: "12p-12:30p -Meal Break(0:30)", meal: true },
+  ] };
+  assert.equal(mealBookedShort(swallowed), null);
+  assert.equal(mealBookedInside(swallowed)?.kind, "clocked");
 });

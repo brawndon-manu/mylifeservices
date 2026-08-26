@@ -448,50 +448,124 @@ function slotsFor(day, entry, wantMeal, wantRest, known = []) {
 // overlap decides WHICH question a day already owing a meal gets asked.
 const CLOCKED_SERVICE = /ils\s*service|self\s*determ/i;
 
-// THE ROSTER'S LUNCH IS TOO SHORT TO BE ONE, read off the same entries.
+// HOW MUCH OF THE ROSTERED MEAL IS CLEAR OF ROSTERED WORK.
 //
-// The sibling of `mealBookedInside` and deliberately shaped like it: both are
-// the roster failing to offer a lawful break, and Mánu asked for them to be
-// counted the same way. Returns the block and how far under thirty it is, or
-// null when the roster's meal is a full one - or when there is none at all,
-// which is a different finding entirely.
+// The one reading both findings below are built from, so they can never claim
+// different things about the same half hour. Same arithmetic as `analyzeDay`,
+// off the schedule text rather than off the stored blocks - see the long note
+// there for why the overlap is measured rather than treated as all or nothing.
+//
+// It describes ANY rostered meal, however short. A block of fifteen minutes or
+// less is a mislabelled rest and must not be CHARGED as a short meal - that
+// guard lives in `mealBookedShort` - but a ten minute one buried inside a shift
+// is still worth telling a reviewer about, which is what Devine 07/21 is.
+//
+// -> { mealFrom, mealTo, blockMin, clearMin, service, blockFrom, blockTo, kind }
+//    or null when the roster books no meal worth the name.
+export function mealCoverage(entry) {
+  const meals = [];
+  const work = [];
+  for (const sh of entry?.shifts || []) {
+    const t = blockTimes(sh.text);
+    if (!t) continue;
+    if (sh.meal) meals.push(t);
+    else work.push({ ...t, service: serviceOf(sh.text) || "" });
+  }
+  if (!meals.length) return null;
+  work.sort((a, b) => a.start - b.start);
+
+  const clearOf = (m) => {
+    let clear = 0;
+    let at = m.start;
+    for (const w of work) {
+      if (!(m.start < w.end && m.end > w.start)) continue;
+      if (w.start > at) clear += Math.min(w.start, m.end) - at;
+      at = Math.max(at, Math.min(w.end, m.end));
+    }
+    if (at < m.end) clear += m.end - at;
+    return clear;
+  };
+
+  // WHICH BLOCK THE DAY RESTS ON, where the roster books more than one.
+  //
+  // Bucio 07/25 books two: a ten minute "Meal Break" at midnight - her rest,
+  // mislabelled - and a real half hour at 12:45p that sits inside a booking
+  // running to 4:45p. Reading the FIRST one described the midnight ten and
+  // reported nothing wrong with the day, while `analyzeDay` was looking at the
+  // half hour and calling it buried. Two functions, two answers, one day.
+  //
+  // So it is the same choice the engine makes: among blocks long enough to be a
+  // meal, the one leaving the most clear time. A day rostered a buried 30 and a
+  // free 30 was offered a lawful break.
+  const candidates = meals.filter((m) => m.end - m.start > RULES.mealAsRestMaxMin);
+  // no block is long enough to be a meal at all - a buried ten is still worth
+  // reporting, and `mealBookedShort` refuses to charge it
+  const chosen = candidates.length
+    ? candidates.reduce((best, m) => (clearOf(m) > clearOf(best) ? m : best))
+    : meals[0];
+
+  let clocked = null;
+  let movable = null;
+  for (const w of work) {
+    if (!(chosen.start < w.end && chosen.end > w.start)) continue;
+    if (CLOCKED_SERVICE.test(w.service)) clocked = clocked || w;
+    else movable = movable || w;
+  }
+  const hit = clocked || movable;
+
+  return {
+    mealFrom: chosen.start,
+    mealTo: chosen.end,
+    blockMin: chosen.end - chosen.start,
+    clearMin: clearOf(chosen),
+    service: hit?.service || null,
+    blockFrom: hit?.start ?? null,
+    blockTo: hit?.end ?? null,
+    kind: hit ? (clocked ? "clocked" : "movable") : null,
+  };
+}
+
+// THE ROSTER LEAVES SOMETHING, BUT NOT A LAWFUL THIRTY.
+//
+// Two rosters land here and they read the same to the person it happens to:
+// the meal block booked short in the first place (Garcia's "11:35a-12p -Meal
+// Break(0:25)"), and the full half hour a booking runs into (Aranda's six
+// minutes of ILS Service). Mánu 2026-08-26: "this should just be for
+// overlapping in meal break which makes the meal break less than 30 ... if the
+// overlapping takes the entirety of the meal break then it wont have that
+// option" - so a meal with nothing left is the OTHER finding, not this one.
 export function mealBookedShort(entry) {
-  const meal = rosteredMeal(entry);
-  if (!meal) return null;
-  const minutes = meal.to - meal.from;
-  // the same two bounds analyzeDay uses: over a rest's length, under a meal's.
-  // A ten minute "Meal Break" is a mislabelled rest and has its own question.
-  if (!(minutes > RULES.mealAsRestMaxMin && minutes < RULES.mealFullMin)) return null;
-  return { minutes, short: RULES.mealFullMin - minutes, mealFrom: meal.from, mealTo: meal.to };
+  const c = mealCoverage(entry);
+  if (!c || c.blockMin <= RULES.mealAsRestMaxMin) return null;
+  if (!(c.clearMin > 0 && c.clearMin < RULES.mealFullMin)) return null;
+  return {
+    minutes: c.clearMin,
+    short: RULES.mealFullMin - c.clearMin,
+    blockMin: c.blockMin,
+    // how it came to be short: the block itself, or a booking eating into it
+    eaten: c.blockMin - c.clearMin,
+    mealFrom: c.mealFrom,
+    mealTo: c.mealTo,
+    service: c.service,
+    blockFrom: c.blockFrom,
+    blockTo: c.blockTo,
+  };
 }
 
 export function mealBookedInside(entry) {
-  const meal = rosteredMeal(entry);
-  if (!meal) return null;
-  let clocked = null;
-  let movable = null;
-  for (const sh of entry?.shifts || []) {
-    if (sh.meal) continue;
-    const t = blockTimes(sh.text);
-    if (!t || !(meal.from < t.end && meal.to > t.start)) continue;
-    const svc = serviceOf(sh.text) || "";
-    // the clocked overlap wins outright where a lunch spans both - Cain 08/03
-    // runs across ILS Travel AND the service shift after it, and the service is
-    // what makes it impossible to move
-    if (CLOCKED_SERVICE.test(svc)) clocked = clocked || { service: svc, from: t.start, to: t.end };
-    // EVERY OTHER NAMED BLOCK, including ones this file has never seen. The
-    // meal is skipped above, so anything reaching here is worked time.
-    else movable = movable || { service: svc, from: t.start, to: t.end };
-  }
-  const hit = clocked || movable;
-  if (!hit) return null;
+  const c = mealCoverage(entry);
+  // NOTHING LEFT OF IT. A meal a booking only runs into is `mealBookedShort` -
+  // Mánu 2026-08-26 - and this one is for the half hour that is entirely spoken
+  // for. It used to fire on ANY overlap, so Aranda 08/21 read as a lunch that
+  // could not have been taken when twenty-four of her thirty minutes were free.
+  if (!c || c.clearMin !== 0 || !c.kind) return null;
   return {
-    kind: clocked ? "clocked" : "movable",
-    service: hit.service,
-    blockFrom: hit.from,
-    blockTo: hit.to,
-    mealFrom: meal.from,
-    mealTo: meal.to,
+    kind: c.kind,
+    service: c.service,
+    blockFrom: c.blockFrom,
+    blockTo: c.blockTo,
+    mealFrom: c.mealFrom,
+    mealTo: c.mealTo,
   };
 }
 
@@ -1136,6 +1210,11 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
               part: "meal",
               minutes: short.minutes,
               short: short.short,
+              // how it came to be short, so the card can say which - a block
+              // booked short reads differently from one a booking ran into
+              eaten: short.eaten,
+              service: short.service,
+              blockTo: short.blockTo == null ? null : clock(short.blockTo),
               mealFrom: clock(short.mealFrom),
               mealTo: clock(short.mealTo),
               hours: r2((dayOf(date)?.paidHours) || 0),

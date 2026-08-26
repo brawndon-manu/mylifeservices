@@ -1134,37 +1134,74 @@ export function analyzeDay(day) {
   const rosteredWork = Array.isArray(day.scheduleBlocks)
     ? day.scheduleBlocks.filter((b) => !b.meal)
     : null;
-  const cleanRosteredMeals = rosteredMeals && rosteredWork
-    ? rosteredMeals.filter((m) => !rosteredWork.some((w) => m.start < w.end && m.end > w.start))
-    : null;
-  const mealInsideBooking =
-    !!cleanRosteredMeals && rosteredMeals.length > 0 && cleanRosteredMeals.length === 0;
 
-  // A BLOCK TOO SHORT TO BE A MEAL PERIOD IS NOT ONE EITHER.
+  // HOW MUCH OF A ROSTERED MEAL IS ACTUALLY CLEAR OF WORK.
   //
-  // Mánu 2026-08-25, on Garcia 08/21: "why is this lunch break counted if its
-  // under 30 minutes?" It was counted because the only test above is whether a
-  // meal is rostered and clear of a booking - the LENGTH was never looked at.
-  // QSP had booked her "11:35a-12p -Meal Break(0:25)", so the schedule itself
-  // offered 25 minutes where §512 asks for thirty uninterrupted.
+  // This used to be all or nothing: a meal overlapping ANY booking was struck
+  // out entirely, so Aranda 08/21 - a half hour with six minutes of ILS Service
+  // running into the front of it - read exactly like a lunch buried inside a
+  // shift. It is not. Twenty-four of her thirty minutes were free, and the
+  // finding said the meal could not have been taken at all.
   //
-  // COUNTED THE SAME WAY AN OVERLAPPING ONE IS, on his instruction of
-  // 2026-08-26: "for the short lunches it should be counted the same way
-  // lunches are counted when they are overlapping." Both are the roster failing
-  // to offer a lawful break, so both stop the meal counting and both raise
-  // their own question - see `mealBookedShort` in questions.js.
+  // Mánu 2026-08-26: "this should just be for overlapping in meal break which
+  // makes the meal break less than 30 ... if the overlapping takes the entirety
+  // of the meal break then it wont have that option." So the overlap is
+  // MEASURED, and what is left of the meal decides which of the two findings
+  // the day gets - or neither.
   //
-  // The LONGEST clean one decides it: a day rostered a 25 and a 35 was offered
-  // a lawful break, and the short one beside it changes nothing.
+  // THE SCHEDULE ALONE. Punches say nothing here on his instruction ("we arent
+  // using the clock in data for anything like that yet"), so this is a question
+  // about what the roster offered, not about what anybody did with it.
+  const clearOf = (m) => {
+    const covering = (rosteredWork || [])
+      .filter((w) => w.start < m.end && w.end > m.start)
+      .sort((a, b) => a.start - b.start);
+    let clear = 0;
+    let at = m.start;
+    for (const w of covering) {
+      if (w.start > at) clear += Math.min(w.start, m.end) - at;
+      at = Math.max(at, Math.min(w.end, m.end));
+    }
+    if (at < m.end) clear += m.end - at;
+    return clear;
+  };
+
   // A block short enough to be a rest is one, and is credited as one above -
   // judging it as a short MEAL as well would charge the same ten minutes twice.
-  const mealLengthBlocks = (cleanRosteredMeals || [])
-    .map((m) => m.end - m.start)
-    .filter((n) => n > RULES.mealAsRestMaxMin);
-  const longestClean = mealLengthBlocks.length ? Math.max(...mealLengthBlocks) : null;
-  const mealBookedShort = longestClean !== null && longestClean < RULES.mealFullMin;
+  // Bucio's midnight ten is why. Measured on the BLOCK, before any overlap: a
+  // half hour eaten down to ten is a meal cut short, not a mislabelled rest.
+  const mealCandidates = (rosteredMeals || []).filter(
+    (m) => m.end - m.start > RULES.mealAsRestMaxMin,
+  );
+  const usableMeal = rosteredWork && mealCandidates.length
+    ? Math.max(...mealCandidates.map(clearOf))
+    : null;
 
-  const mealTaken = mealScheduled === true && !mealInsideBooking && !mealBookedShort;
+  // NOTHING LEFT OF ANY OF THEM. Mánu 2026-08-09: "if someone books their meal
+  // break, their lunch, during a shift scheduled, then that lunch doesn't
+  // count. And they owe that premium and needs to be flagged." QSP will roster
+  // the meal and a client booking over the same half hour, which is not an
+  // offer of a break - it is two things asked of one person at once.
+  const mealInsideBooking = usableMeal !== null && mealCandidates.length > 0 && usableMeal === 0;
+
+  // THE ROSTER'S ONLY "MEAL" IS REST-LENGTH, so no meal was offered at all.
+  // Devine 07/21 books ten minutes and calls it a Meal Break; it is credited as
+  // her REST above, which leaves the day with nothing that could be a meal.
+  // Without this the day would read as a meal provided, because there is no
+  // buried block and no short one to point at.
+  const noRealMealRostered =
+    !!rosteredWork && (rosteredMeals || []).length > 0 && mealCandidates.length === 0;
+
+  // SOMETHING LEFT, BUT NOT A LAWFUL THIRTY. Two rosters land here and they read
+  // the same to the person it happens to: one where the meal block itself was
+  // booked short (Garcia's "11:35a-12p -Meal Break(0:25)"), and one where a
+  // booking runs into an otherwise full half hour (Aranda's six minutes).
+  // §512 asks for thirty uninterrupted, and neither of these offers it.
+  const mealBookedShort =
+    usableMeal !== null && usableMeal > 0 && usableMeal < RULES.mealFullMin;
+
+  const mealTaken =
+    mealScheduled === true && !mealInsideBooking && !mealBookedShort && !noRealMealRostered;
   // no schedule at all is not a violation and not a pass. it goes to a person.
   const mealUnknown = mealRequired && mealScheduled === null;
 
@@ -1175,8 +1212,12 @@ export function analyzeDay(day) {
   // ...and only the ones that could actually be taken count here too, or a
   // second meal buried inside a booking would clear the second-meal question
   // the same way it used to clear the first.
+  // A MEAL THAT COULD ACTUALLY BE TAKEN, which since 2026-08-26 means one that
+  // leaves a clear thirty. A second meal eaten down to twenty by a booking
+  // would otherwise clear the second-meal question the same way a buried one
+  // used to clear the first.
   const mealsRostered = Array.isArray(day.scheduleBlocks)
-    ? (cleanRosteredMeals ? cleanRosteredMeals.length : 0)
+    ? mealCandidates.filter((m) => clearOf(m) >= RULES.mealFullMin).length
     : null;
 
   // the meal has to START by the end of the fifth hour worked. a late lunch is

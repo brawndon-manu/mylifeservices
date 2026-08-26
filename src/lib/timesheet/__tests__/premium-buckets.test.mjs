@@ -637,7 +637,19 @@ test("a schedule block called a meal but only rest-length is credited as a rest"
   assert.equal(bucio.restTaken, 1, "credited, though the report recorded none");
   assert.equal(bucio.restRequired, 2);
   assert.equal(bucio.restViolation, true, "1 of 2 is still a violation, so her premium stands");
-  assert.equal(bucio.mealViolation, false, "and the real 30 minute meal still satisfies the meal");
+
+  // AND THE MEAL IS OWED, WHICH REVERSED ON 2026-08-26. This line read
+  // "the real 30 minute meal still satisfies the meal" and asserted false - but
+  // her 12:45-1:15 meal is booked inside the 12:45-4:45 booking, so under the
+  // 2026-08-09 ruling it never counted. The day only passed because the code
+  // struck out any meal that overlapped work and kept the ones that did not,
+  // and the one that did not was the MIDNIGHT TEN - a block this same function
+  // credits as her rest period. A ten minute rest was clearing her meal.
+  //
+  // Overlap is measured now rather than being all or nothing, so the ten is a
+  // rest and nothing else, and the only real meal on the day is buried.
+  assert.equal(bucio.mealInsideBooking, true, "the 30 minute meal is inside the booking");
+  assert.equal(bucio.mealViolation, true, "so no meal was provided and the day owes one");
 
   // DEVINE 07/29: TWO of them on one day, which is the case that actually costs
   // an hour. Counted per row it reads "still a violation" twice and the check

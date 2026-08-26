@@ -881,20 +881,38 @@ function copyFor(q, standing) {
       return {
         title: "Your meal break is booked for less than thirty minutes",
         short: "Meal booked under thirty minutes",
-        rule: "A meal break is thirty minutes. Your schedule books "
-          + `${q.row?.minutes} of them, which is ${q.row?.short} short of one, so it is not a `
-          + "meal period. Your schedule needs it lengthened.",
+        rule: q.row?.eaten
+          ? "A meal break has to be thirty minutes clear of work. Your "
+            + `${q.row?.service || "shift"} runs ${q.row?.eaten} minutes into this one, which `
+            + `leaves ${q.row?.minutes}. Your schedule needs the two moved apart.`
+          : "A meal break has to be thirty minutes. Your schedule books this one for "
+            + `${q.row?.minutes} minutes, so it is not a meal break. Your schedule needs it `
+            + "lengthened.",
         facts: [
           { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
-          { label: "That is", value: `${q.row?.minutes} minutes` },
+          ...(q.row?.eaten
+            ? [
+              { label: "Worked until", value: `${q.row?.blockTo}, ${q.row?.service}` },
+              { label: "Left clear", value: `${q.row?.minutes} minutes` },
+            ]
+            : [{ label: "Length", value: `${q.row?.minutes} minutes` }]),
         ],
         body: (
           <>
             Your schedule books a meal break at <b>{q.row?.mealFrom} to {q.row?.mealTo}</b> on{" "}
-            <b>{q.date}</b>. That is <b>{q.row?.minutes} minutes</b>.
+            <b>{q.date}</b>.{" "}
+            {q.row?.eaten ? (
+              <>
+                Your <b>{q.row?.service}</b> runs until <b>{q.row?.blockTo}</b>, which is{" "}
+                <b>{q.row?.eaten} minutes</b> into it, so only <b>{q.row?.minutes} minutes</b> of it
+                are clear.
+              </>
+            ) : (
+              <>That is <b>{q.row?.minutes} minutes</b>, and a meal break has to be thirty.</>
+            )}
             <br /><br />
-            A meal break is thirty minutes, so a shorter one is not a meal period you could have
-            taken. What needs fixing is the schedule.
+            A meal break has to be thirty minutes clear of work, so this one is not a break you
+            could have taken. What needs fixing is the schedule.
           </>
         ),
         // ONE OPTION, exactly like the booked-inside-a-shift card above.

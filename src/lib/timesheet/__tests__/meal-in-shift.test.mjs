@@ -19,7 +19,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mealBookedInside, buildQuestions, patchesFor,
+  mealBookedInside, mealBookedShort, buildQuestions, patchesFor,
 } from "../questions.js";
 import { dayViolations, VIOLATION_KINDS } from "../violations.js";
 import { reasonOwedOn, reasonSlotFor } from "../break-answers.js";
@@ -387,9 +387,21 @@ test("travel is worked time, and the block can be moved around the lunch", () =>
   //
   // So a drive is work - no lunch happened inside it - and it is the kind of
   // work that can be rearranged so the lunch can stand.
-  const hit = mealBookedInside(FIXTURES.quiet.entry);
+  // the quiet fixture's drive covers only the FIRST half of the meal, and since
+  // 2026-08-26 a meal with something left of it is `mealBookedShort` rather
+  // than this - so the travel case needs a drive over the whole half hour
+  const wholeMeal = { shifts: [
+    { text: "9a-12p Client-ILS Service (3:00)", meal: false },
+    { text: "12p-12:30p -ILS Travel(0:30)", meal: false },
+    { text: "12p-12:30p -Meal Break(0:30)", meal: true },
+  ] };
+  const hit = mealBookedInside(wholeMeal);
   assert.ok(hit, "travel is being left unclassified again");
   assert.equal(hit.kind, "movable");
+
+  // and half a drive over it is the other finding, not this one
+  assert.equal(mealBookedInside(FIXTURES.quiet.entry), null);
+  assert.equal(mealBookedShort(FIXTURES.quiet.entry)?.minutes, 15);
 });
 
 test("a service this file has never seen is movable, not invisible", () => {
