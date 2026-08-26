@@ -403,6 +403,12 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           >
             Repeat patterns →
           </Link>
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/attendance`}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            QSClock attendance →
+          </Link>
         </span>
       </div>
 
@@ -766,6 +772,29 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           </div>
         </div>
       )}
+
+      {/* THE CLOCK EXPORT, WHICH IS NOT PART OF THE PAYROLL. It is optional, it
+          moves no figure on this page, and it answers a different question from
+          everything above: not what anybody is owed, but whether the times on
+          the record were clocked or typed. Its own card for that reason, and
+          the only card here that says something when it is empty - a period
+          uploaded without the export has no attendance record at all, and that
+          is worth seeing rather than guessing at. */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+        <p className="text-xs text-muted">
+          {batch.clockFindings
+            ? `${batch.clockFindings.shifts} shifts from the clock export, rostered against what was `
+              + `actually clocked, with the location and the 3.5 hour cap beside them.`
+            : "No clock export on this pay period, so there is no record of who clocked in, who "
+              + "clocked out, or where they were."}
+        </p>
+        <Link
+          href={`/portal/admin/timesheets/${batch.id}/attendance`}
+          className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
+        >
+          QSClock Time and Attendance →
+        </Link>
+      </div>
 
       {disputed > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
