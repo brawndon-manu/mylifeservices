@@ -133,7 +133,110 @@ export function spanMinutes(from, to) {
   return b < a ? b - a + 1440 : b - a;
 }
 
+// A DATE AND A TIME AS ONE NUMBER, so two stamps can be subtracted.
+//
+// The audit compares a rostered time against a clocked one, and clock times
+// alone cannot answer that across midnight: rostered 11:30 PM against a
+// 12:05 AM clock-in is thirty-five minutes late, and plain minute arithmetic
+// calls it 1,405 minutes early. The export prints a date beside every one of
+// the four times, so it never has to be guessed.
+//
+// No row on 08/16-08/22 crosses midnight and none has an actual date differing
+// from its scheduled one. That is one week, not a rule - overnight shifts exist
+// in this agency's data, so the arithmetic is built to survive one.
+export function stampMinutes(date, time) {
+  const d = normalizeDate(date);
+  const t = clockMinute(time);
+  if (!d || t == null) return null;
+  const [mm, dd, yy] = d.split("/").map(Number);
+  return Date.UTC(2000 + yy, mm - 1, dd) / 60000 + t;
+}
+
+// how far the clock landed from the roster, in minutes. Positive is later than
+// rostered at both ends: a late clock-in and a late clock-out.
+const delta = (schedDate, schedTime, actualDate, actualTime) => {
+  const a = stampMinutes(schedDate, schedTime);
+  const b = stampMinutes(actualDate ?? schedDate, actualTime);
+  return a == null || b == null ? null : b - a;
+};
+
 const REQUIRED_SHIFTS = ["Employee Name", "Schedule Start Date", "No Clock In", "No Clock Out"];
+
+// WHAT QSP ITSELF SAYS ABOUT THE SHIFT, kept apart from what its own times say.
+//
+// The export carries six verdict columns of its own - late, early and on time,
+// at each end. THEY DISAGREE WITH THE TIMES PRINTED BESIDE THEM. On 08/16-08/22,
+// 179 shifts are flagged "Late Clock In" and on 135 of them the actual start
+// time printed IS the scheduled start time, to the minute. Not one flagged-late
+// row shows an actual time earlier than rostered.
+//
+// Two readings fit and this file cannot choose between them: QSP may measure
+// lateness in seconds while printing minutes (clock in at 2:45:20 against a
+// 2:45:00 roster and you are late, and it prints 02:45 PM), or the punch may
+// have been edited afterwards to match the roster while the original verdict
+// stuck to the row. The second is the thing an audit exists to catch.
+//
+// So both are carried and neither is resolved here. `startDelta` is ours, off
+// the times; `says` is theirs. The audit screen shows the disagreement rather
+// than picking a winner, because if it is the second reading, the disagreement
+// is the finding.
+const verdicts = (r) => ({
+  lateIn: YES(r["Late Clock In"]),
+  lateOut: YES(r["Late Clock Out"]),
+  earlyIn: YES(r["Early Clock In"]),
+  earlyOut: YES(r["Early Clock Out"]),
+  onTimeIn: YES(r["On Time Clock In"]),
+  onTimeOut: YES(r["On Time Clock Out"]),
+});
+
+// ONE SPREADSHEET ROW, NORMALISED. Split out from `clockShifts` so it can be
+// driven directly by a test: the export it reads is a 280KB binary that is not
+// in the repo, and a reader nothing can exercise without one is a reader nobody
+// checks.
+export function shiftFromRow(r) {
+  const name = r["Employee Name"];
+  const date = normalizeDate(r["Schedule Start Date"]);
+  if (!name || !date) return null;
+  const noIn = YES(r["No Clock In"]);
+  const noOut = YES(r["No Clock Out"]);
+  return {
+    name: String(name).trim(),
+    key: clockKey(name),
+    date,
+    client: String(r.Client ?? "").trim() || null,
+    service: String(r["Service Type"] ?? "").trim() || null,
+    // THE FOUR TIMES THEMSELVES, which durations cannot stand in for. The
+    // audit's whole question is "rostered 12p-3p, clocked 12:08p-2:53p", and a
+    // pair of durations answers a different one - two shifts three hours long
+    // can start ninety minutes apart. Minutes past midnight; screens format them.
+    schedFrom: clockMinute(r["Schedule Start Time"]),
+    schedTo: clockMinute(r["Schedule End Time"]),
+    // null on a shift nobody clocked, which is a quarter of them: 123 of 512
+    // had no clock-in on 08/16-08/22. Absent is not "on time".
+    actualFrom: noIn ? null : clockMinute(r["Actual Start Time"]),
+    actualTo: noOut ? null : clockMinute(r["Actual End Time"]),
+    startDelta: noIn
+      ? null
+      : delta(r["Schedule Start Date"], r["Schedule Start Time"],
+              r["Actual Start Date"], r["Actual Start Time"]),
+    endDelta: noOut
+      ? null
+      : delta(r["Schedule End Date"], r["Schedule End Time"],
+              r["Actual End Date"], r["Actual End Time"]),
+    scheduledMin: spanMinutes(r["Schedule Start Time"], r["Schedule End Time"]),
+    workedMin: noIn || noOut ? null : spanMinutes(r["Actual Start Time"], r["Actual End Time"]),
+    noIn,
+    noOut,
+    says: verdicts(r),
+    gpsIn: GPS(r["GPS Captured on Clock In"], !noIn),
+    gpsOut: GPS(r["GPS Captured on Clock Out"], !noOut),
+    // a shift the field staff added themselves rather than one rostered for
+    // them. Zero of these on 08/16-08/22, carried because a column that is
+    // empty this week is not a column that stays empty.
+    selfCreated: YES(r["Field Staff Created Shift"]),
+    reason: String(r.Reason ?? "").replace(/\s*\n\s*/g, " ").trim() || null,
+  };
+}
 
 // One normalised row per scheduled shift. Everything downstream reads these
 // rather than the spreadsheet's own column names.
@@ -146,29 +249,36 @@ export function clockShifts(bytes) {
 
   const out = [];
   for (const r of rows) {
-    const name = r["Employee Name"];
-    const date = normalizeDate(r["Schedule Start Date"]);
-    if (!name || !date) continue;
-    const noIn = YES(r["No Clock In"]);
-    const noOut = YES(r["No Clock Out"]);
-    out.push({
-      name: String(name).trim(),
-      key: clockKey(name),
-      date,
-      client: String(r.Client ?? "").trim() || null,
-      service: String(r["Service Type"] ?? "").trim() || null,
-      scheduledMin: spanMinutes(r["Schedule Start Time"], r["Schedule End Time"]),
-      workedMin: noIn || noOut ? null : spanMinutes(r["Actual Start Time"], r["Actual End Time"]),
-      noIn,
-      noOut,
-      gpsIn: GPS(r["GPS Captured on Clock In"], !noIn),
-      gpsOut: GPS(r["GPS Captured on Clock Out"], !noOut),
-      // a shift the field staff added themselves rather than one rostered for
-      // them. Zero of these on 08/16-08/22, carried because a column that is
-      // empty this week is not a column that stays empty.
-      selfCreated: YES(r["Field Staff Created Shift"]),
-      reason: String(r.Reason ?? "").replace(/\s*\n\s*/g, " ").trim() || null,
-    });
+    const s = shiftFromRow(r);
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+// WHERE QSP'S VERDICT AND QSP'S TIMES CANNOT BOTH BE RIGHT.
+//
+// 135 shifts in one week say "late clock-in" over a clock-in printed at the
+// rostered minute. Whichever reading of that is true - seconds behind the
+// display, or a punch edited to match the roster - the row is not what it
+// appears to be, and the auditor should be the one to decide which.
+//
+// Silent where there is nothing to compare: a shift nobody clocked has no delta
+// and so cannot contradict anything, and a verdict column left blank is QSP
+// declining to say rather than QSP saying no.
+export function clockDisagreements(s) {
+  const out = [];
+  const says = s?.says;
+  if (!says) return out;
+  const d = s.startDelta, e = s.endDelta;
+  if (d != null) {
+    if (says.lateIn && d <= 0) out.push({ end: "in", says: "late", show: d === 0 ? "on the minute" : `${-d} min early` });
+    if (says.earlyIn && d >= 0) out.push({ end: "in", says: "early", show: d === 0 ? "on the minute" : `${d} min late` });
+    if (says.onTimeIn && d !== 0) out.push({ end: "in", says: "on time", show: `${d > 0 ? d + " min late" : -d + " min early"}` });
+  }
+  if (e != null) {
+    if (says.lateOut && e <= 0) out.push({ end: "out", says: "late", show: e === 0 ? "on the minute" : `${-e} min early` });
+    if (says.earlyOut && e >= 0) out.push({ end: "out", says: "early", show: e === 0 ? "on the minute" : `${e} min late` });
+    if (says.onTimeOut && e !== 0) out.push({ end: "out", says: "on time", show: `${e > 0 ? e + " min late" : -e + " min early"}` });
   }
   return out;
 }
