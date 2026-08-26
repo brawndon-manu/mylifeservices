@@ -1,6 +1,8 @@
 "use client";
 
 import { shiftsOf } from "@/lib/timesheet/questions";
+// the holes between punch pairs, and which of them the roster calls a meal
+import { gapsOf } from "@/lib/timesheet/day-gaps";
 import { useStagedOn } from "./StagedTimes";
 
 // ONE DAY DRAWN ON A TIME AXIS - the shape Mánu asked for on 2026-08-11, after
@@ -339,56 +341,6 @@ function blockFor(scheduled, shift) {
 // the service alone, which is all most of this file wants
 const serviceFor = (scheduled, shift) => blockFor(scheduled, shift)?.service || null;
 
-// A PUNCH GAP IS NOT A REST PERIOD, and this drew it as one.
-//
-// Mánu 2026-08-11, looking at his own 07/16: "Why is it showing rest one PM and
-// rest three fifteen? I've already said this before. If there's nothing on the
-// schedule for a time slot in between shifts, those are unworked hours.
-// Therefore, we cannot assume that the rest is right there."
-//
-// He is right and the engine already agreed with him - 07/16 carries
-// `restRecorded: 0` and `restTaken: 0`, and not one rest row in the report is
-// under his name that day. `parse.js` files any 10-15 minute gap between punch
-// pairs as `kind: "rest"` for its own arithmetic, and drawing that in the
-// document's yellow put "you took two rests" directly beside a question asking
-// whether he took any.
-//
-// AND A GAP IS NOT A MEAL EITHER - not even a gap the engine calls
-// "rostered-meal". That flag means the gap OVERLAPS a rostered lunch, not that
-// it IS one, and reading it as identity got 07/31 wrong: the roster books
-// 12:20p-12:50p and the punches are out from 12p to 1p, so the calendar drew
-// "Meal 12p-1p" - an hour long, starting twenty minutes early. Mánu 2026-08-12:
-// "meal time wrong for seven thirty one."
-//
-// So the SCHEDULE decides where a meal is and how long it runs, and the gap is
-// cut around it. 07/31 becomes: not scheduled 12p-12:20p, meal 12:20p-12:50p,
-// not scheduled 12:50p-1p. Where a rostered meal fills a gap exactly - his 07/27
-// - the gap is entirely meal and no "not scheduled" is drawn at all, which is
-// the other half of the same fix: that stretch IS scheduled.
-function gapsOf(day, shifts, scheduled = []) {
-  const meals = (scheduled || [])
-    .filter((b) => b.meal && b.to > b.from)
-    .sort((a, b) => a.from - b.from);
-  const out = [];
-  for (let i = 1; i < shifts.length; i++) {
-    const from = shifts[i - 1].to;
-    const to = shifts[i].from;
-    if (to <= from) continue;
-    // walk the gap, handing each stretch to the rostered meal that covers it
-    let at = from;
-    for (const m of meals) {
-      const lo = Math.max(m.from, from);
-      const hi = Math.min(m.to, to);
-      if (hi <= lo) continue;
-      if (lo > at) out.push({ from: at, to: lo, meal: false });
-      out.push({ from: lo, to: hi, meal: true });
-      at = hi;
-    }
-    if (at < to) out.push({ from: at, to, meal: false });
-  }
-  return out;
-}
-
 // what the day says out loud. The blocks are aria-hidden - absolutely positioned
 // colour is nothing at all to a screen reader, and this page is read by people
 // who use one.
@@ -401,8 +353,14 @@ function spoken(day, shifts, rests, staged, scheduled) {
     return `worked ${hhmm(s.from)} to ${hhmm(s.to)}${booked ? `, ${serviceLabel(booked, day)}` : ""}`;
   });
   for (const g of gapsOf(day, shifts, scheduled)) {
+    // `.meal`, NOT `.kind`. `gapsOf` returns the first and only the tiles below
+    // carry the second, so this read undefined on every gap and called every
+    // rostered lunch "not scheduled" - while the picture beside it drew the
+    // same half hour as a blue Meal block. A screen reader has been hearing the
+    // opposite of the page since the caption was written. Found 2026-08-26 on
+    // Devine 08/20, whose 12p-12:30p is rostered and drawn as one.
     bits.push(
-      `${g.kind === "meal" ? "meal break" : "not scheduled"} ${hhmm(g.from)} to ${hhmm(g.to)}`,
+      `${g.meal ? "meal break" : "not scheduled"} ${hhmm(g.from)} to ${hhmm(g.to)}`,
     );
   }
   for (const r of rests) {
