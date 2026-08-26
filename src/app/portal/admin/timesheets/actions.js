@@ -3624,6 +3624,9 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
         periodLabel,
         items: reviewItems,
         batchUrl: `${base}/portal/admin/timesheets/${ts.batchId}`,
+        // the same bytes their own copy carries, so the office is looking at
+        // the document they signed rather than a re-render of it
+        pdfBytes: Buffer.from(pdfBase64, "base64"),
         forceTo,
       });
       if (!r?.ok) {

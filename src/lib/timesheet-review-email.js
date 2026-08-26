@@ -1,7 +1,9 @@
 // THE CORRECTIONS A SIGNED REVIEW PRODUCED, GOING TO THE OFFICE. Mánu
 // 2026-08-25: the office makes the QuickSolve edits now, not the employee -
 // "i want the corrections / reasons to be emailed to Gabriel Miranda and CC
-// to kristy, april, david."
+// to kristy, april, david." The timesheet they signed rides along on the same
+// message - "add their generated pdf timesheet in that email as well" - so the
+// edits and the document they are against arrive together.
 //
 // AND THE EMPLOYEE IS NOT TOLD THIS EMAIL EXISTS. Their signed copy shows
 // their own review record and nothing about where else it went; nothing on
@@ -66,6 +68,9 @@ export function buildReviewCorrectionsEmailHtml({
   // [{ date, said, changes: [{ fact, action }] }] from reviewChoices
   items = [],
   batchUrl,
+  // whether the signed sheet rode along, so the body only promises what is
+  // actually on the message
+  attached = false,
   redirectedFrom = null,
 }) {
   const testBanner = redirectedFrom
@@ -106,7 +111,9 @@ export function buildReviewCorrectionsEmailHtml({
           : `Their review leaves ${fixCount} entries to change in QuickSolve.`}
     </p>
     <p style="margin:0 0 18px;font-size:13px;line-height:1.6;color:#5b6b7c;">
-      Their answers are quoted the way their review page worded them.
+      Their answers are quoted the way their review page worded them.${attached
+        ? " The timesheet they signed is attached."
+        : ""}
     </p>
     <div style="margin:0 0 22px;padding:14px 16px;background:#fffbeb;border:1px solid #f0d48a;border-radius:10px;">
       <ul style="margin:0;padding:0 0 0 18px;list-style:none;">
@@ -129,6 +136,12 @@ export async function sendReviewCorrections({
   periodLabel,
   items = [],
   batchUrl,
+  // THE SHEET THEY SIGNED, AS A BUFFER. The very bytes the sign action stored,
+  // so the copy in the office's inbox and the copy in the portal can never be
+  // two documents - the same rule the employee's copy follows. Mánu 2026-08-25.
+  // Absent, the email still goes: the corrections are the point and a missing
+  // attachment must not hold them up.
+  pdfBytes = null,
   // see `batchForceTo` - a rehearsal batch redirects this one as well
   forceTo = null,
 }) {
@@ -158,6 +171,7 @@ export async function sendReviewCorrections({
     periodLabel,
     items,
     batchUrl,
+    attached: !!pdfBytes,
     redirectedFrom: redirected ? intended.to : null,
   });
 
@@ -174,7 +188,8 @@ export async function sendReviewCorrections({
       ? "Their review changes nothing in QuickSolve; their answers are below."
       : `Their review leaves ${fixCount === 1 ? "one entry" : `${fixCount} entries`} to change in QuickSolve.`,
     ``,
-    `Their answers are quoted the way their review page worded them.`,
+    `Their answers are quoted the way their review page worded them.`
+      + (pdfBytes ? ` The timesheet they signed is attached.` : ``),
     ``,
     items.map(itemText).join("\n"),
     batchUrl ? `\n${batchUrl}` : "",
@@ -191,6 +206,16 @@ export async function sendReviewCorrections({
       subject,
       html,
       text,
+      ...(pdfBytes
+        ? {
+          attachments: [
+            {
+              filename: `${employeeName} - signed timesheet ${periodLabel}.pdf`,
+              content: pdfBytes,
+            },
+          ],
+        }
+        : {}),
     });
     if (error) {
       console.error("review corrections send error:", error);
