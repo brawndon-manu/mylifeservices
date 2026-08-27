@@ -162,8 +162,36 @@ export default async function AuditBatchPage({ params }) {
           clockLoaded++;
           const key = `${scheduleKey(row.name)}|${row.date}|${row.schedFrom}`;
           const existing = shifts.get(key);
-          if (existing) Object.assign(existing, { ...row, who: existing.who, clocked: true });
-          else shifts.set(key, { ...row, who: scheduleKey(row.name), clocked: true });
+          if (existing) {
+            // THE CLOCK EXPORT SAYS WHAT WAS CLOCKED. IT DOES NOT SAY WHAT WAS
+            // BILLED, and its own "Schedule Start/End Time" columns must never
+            // be allowed to say so.
+            //
+            // Spread whole over the rostered block, they did. Sebastian Torres
+            // 08/21 is rostered "12:15p-12:24p Myron, D-ILS Service(0:09)" with
+            // Misc filling the rest of the afternoon - nine billable minutes -
+            // and the clock export still carries the ORIGINAL two hour booking
+            // in its schedule columns. `Object.assign` overwrote the roster with
+            // it and the card read 2.00 hours billed, which is not what QSP
+            // shows and not what anybody bills.
+            //
+            // So the roster keeps its own schedule and the clock contributes
+            // only the clock.
+            Object.assign(existing, {
+              actualFrom: row.actualFrom, actualTo: row.actualTo,
+              workedMin: row.workedMin,
+              startDelta: row.startDelta, endDelta: row.endDelta,
+              noIn: row.noIn, noOut: row.noOut,
+              gpsIn: row.gpsIn, gpsOut: row.gpsOut,
+              selfCreated: row.selfCreated, reason: row.reason, says: row.says,
+              clocked: true,
+            });
+          } else {
+            // no rostered block starts at this minute, so the clock row is all
+            // there is to go on and its own schedule columns are the only
+            // account of what was booked
+            shifts.set(key, { ...row, who: scheduleKey(row.name), clocked: true, rosterMissing: true });
+          }
         }
       } catch (e) {
         console.error(`audit: clock export unreadable (${f.name}):`, e);
