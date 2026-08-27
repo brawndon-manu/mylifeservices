@@ -63,17 +63,24 @@ const dayNumber = (d) => {
 // not in the repo, and a reader nothing can exercise without one is a reader
 // nobody checks.
 export function noteFromLines(lines) {
+  // THE CLIENT IS THE LINE ABOVE THE SHIFT TIMES, not the third line of the
+  // note. Those are usually the same line and once in 1,259 they are not:
+  // Marilyn Urena's 08/04 note breaks between its own header and its client
+  // name, so page 1645 ends after "Daily Service Note" and the client
+  // ("Matthew Arslan") opens page 1646. Read positionally, the client came out
+  // as the page footer - "Printed by: Brandon Uribe Printed on: ...".
+  const at = lines.indexOf("Shift Dates/Times");
+  const above = at > 0 ? lines[at - 1] : null;
   const note = {
     employee: lines[0] || null,
-    client: lines[2] || null,
+    client: (above && !/Printed (by|on):/i.test(above) ? above : lines[2]) || null,
     date: null, start: null, end: null,
     summary: "", categories: [], comments: [],
     miles: null, signedBy: null, signedDate: null, signedAt: null,
   };
 
-  const t = lines.indexOf("Shift Dates/Times");
-  if (t >= 0) {
-    const m = SHIFT_TIMES.exec(lines[t + 1] || "");
+  if (at >= 0) {
+    const m = SHIFT_TIMES.exec(lines[at + 1] || "");
     if (m) { note.date = noteDate(m[1]); note.start = m[2]; note.end = m[3]; }
   }
 

@@ -165,3 +165,29 @@ test("a line is rebuilt left to right, and the page top to bottom", () => {
     ["hello world", "second"],
   );
 });
+
+// A NOTE THAT BREAKS BETWEEN ITS HEADER AND ITS CLIENT NAME.
+//
+// Once in 1,259: Marilyn Urena's 08/04 note ends a page after "Daily Service
+// Note" and opens the next one with the client. Read as "the third line of the
+// note", the client came out as the page footer - "Printed by: Brandon Uribe
+// Printed on: 8/26/2026 3:11 PM" - and the shift then matched no client at all.
+test("the client is the line above the shift times, across a page break", () => {
+  const n = noteFromLines([
+    "Marilyn Urena",
+    "Daily Service Note",
+    "Printed by: Brandon Uribe Printed on: 8/26/2026 3:11 PM",
+    "Matthew Arslan",
+    "Shift Dates/Times",
+    "8/4/2026 3:00 PM - 5:00 PM",
+    "Summary",
+    "Shifting Support to ILS",
+  ]);
+  assert.equal(n.client, "Matthew Arslan");
+  assert.equal(n.employee, "Marilyn Urena");
+  assert.equal(n.start, "3:00 PM");
+});
+
+test("an ordinary note still reads its client from the same place", () => {
+  assert.equal(noteFromLines(NOTE).client, "Carlos Michel");
+});
