@@ -224,18 +224,25 @@ export default function StudyMode({ rows, onExit }) {
                 should show original schdueled time, billed time, clock in and
                 clock out."
                 
-                Scheduled is what the booking was BEFORE anyone touched it -
-                QSP's Original End Time, which the clock export keeps in its own
-                schedule columns. Billed is what the Simple Timesheet pays,
-                which is the rostered block: 704 of 704 service blocks in
-                08/16-08/31 match a punch pair on the timesheet exactly. Clocked
-                is what actually happened, and documented is the note.
+                Billed is what the Simple Timesheet PAYS, and it is the figure
+                that matters: 704 of 704 rostered service blocks in 08/16-08/31
+                match a punch pair on the timesheet exactly. Clocked is what
+                actually happened. Documented is the note.
                 
-                Showing the original beside the billed figure is what makes a
-                trimmed booking legible without working it out: 1p-5p scheduled,
-                1p-3:54p billed, 1p-3:54p clocked is a session that ended early
-                and was corrected. 1p-5p scheduled, 1p-5p billed, 1p-3:54p
-                clocked is the thing this screen looks for. */}
+                Scheduled is the clock export's own schedule columns, and it is
+                NOT reliably "the booking before anyone touched it". QSP treats
+                the two ends differently and the two exports are snapshots:
+                
+                  Uribe 08/18   billed 1p-3:54p, clock schedule 1p-5p
+                                an early finish, booking trimmed, clock keeps
+                                the original END
+                  Salinas 08/17 billed 8a-12p, clock schedule 8:10a-12p
+                                a late start, event moved to the clock-in, and
+                                the timesheet still pays from 8a
+                
+                So it is shown for context and no rule is built on it alone. The
+                finding is always billed against clocked, because the timesheet
+                is what pays. */}
             <dl className="mt-6 grid gap-4 sm:grid-cols-5">
               <Figure
                 label="Scheduled"

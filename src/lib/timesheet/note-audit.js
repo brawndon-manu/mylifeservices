@@ -109,10 +109,13 @@ export const AUDIT_REASONS = {
   // The problem is a booking that still bills the original length after the
   // clock says the visit was shorter.
   //
-  // The clock export keeps the ORIGINAL booking in its own schedule columns
-  // while the roster carries the trimmed one, so the two together say which
-  // happened. Mánu's own 08/18: roster 1p-3:54p, clock schedule 1p-5p, clocked
-  // out 3:54p - trimmed correctly, and it raises nothing.
+  // MEASURED AGAINST THE CLOCK, never against the clock export's schedule
+  // columns. Those are not reliably the original booking: QSP keeps the original
+  // END where a session was cut short (Uribe 08/18 - billed 1p-3:54p, clock
+  // schedule 1p-5p) but moves the START to the clock-in where somebody began
+  // late (Salinas 08/17 - clock schedule 8:10a-12p while the timesheet still
+  // pays from 8a). The timesheet is what pays, so billed against clocked is the
+  // whole comparison and `neverTrimmed` only colours the sentence.
   "billed-over-clocked": {
     label: "Billed above what was clocked",
     weight: 90,

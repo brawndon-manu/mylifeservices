@@ -174,11 +174,13 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
         {totals.orphans > 0 && ` ${totals.orphans} notes matched no billed shift.`}
       </p>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-faint">
-        Scheduled is the booking before anyone touched it. Billed is what the Simple Timesheet
-        pays. Clocked is the QSClock export. Documented is the time on the service note. A session
-        ending early is ordinary and the booking being trimmed to match is correct, so nothing here
-        is a finding on its own. Approving a shift says it looks right to bill. Nothing on this
-        page changes an hour, a premium or a signed timesheet.
+        Billed is what the Simple Timesheet pays. Clocked is the QSClock export. Documented is
+        the time on the service note. Scheduled is what the clock export says the shift was booked
+        for, shown for context: QSP keeps the original end where a booking was trimmed, and moves
+        the start to the clock-in where somebody began late. A session ending early is ordinary and
+        the booking being trimmed to match is correct, so nothing here is a finding on its own.
+        Approving a shift says it looks right to bill. Nothing on this page changes an hour, a
+        premium or a signed timesheet.
       </p>
 
       {periods.length > 1 && (
