@@ -137,6 +137,24 @@ export default async function AuditBatchPage({ params }) {
   }
 
   // ---- what was CLOCKED: read back off each period's stored export ----
+  //
+  // MATCHED BY CLIENT AND OVERLAP, not by an exact scheduled start minute.
+  //
+  // The two documents disagree about the start on purpose. The roster carries
+  // the TRIMMED booking and the clock export carries the ORIGINAL, so a person
+  // who clocks in late has a roster block starting later than the clock row that
+  // belongs to it. Macareno 08/19: rostered "10:40a-1p Hernandez, J-ILS
+  // Service(2:20)", clock schedule 10:30a-1p, clocked in at 10:40a. Correctly
+  // trimmed, and exactly the honest shape.
+  //
+  // Keyed on the exact start minute those two never met, so the clock row was
+  // added as a SECOND shift billed off its own stale schedule - 2.50 hours
+  // against a 2.33 hour clock - and the screen reported an overbill that had not
+  // happened. Mánu flagged it before this was found.
+  //
+  // So a clock row goes to the rostered block for the same client whose time it
+  // overlaps most, and only becomes a shift of its own when there is no such
+  // block at all.
   let clockLoaded = 0;
   // WHICH PERIODS HAVE A CLOCK EXPORT AT ALL. "Nobody clocked this shift" and
   // "no clock export was uploaded for this fortnight" look identical on a card
@@ -144,6 +162,18 @@ export default async function AuditBatchPage({ params }) {
   // a missing file. 08/01-08/15 has no export, so without this every shift in it
   // reads as an accusation.
   const periodsWithClock = new Set();
+
+  const byPersonDayShift = new Map();
+  for (const shift of shifts.values()) {
+    const k = `${shift.who}|${shift.date}`;
+    if (!byPersonDayShift.has(k)) byPersonDayShift.set(k, []);
+    byPersonDayShift.get(k).push(shift);
+  }
+  const overlapOf = (a1, a2, b1, b2) =>
+    a1 == null || a2 == null || b1 == null || b2 == null
+      ? 0
+      : Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+
   for (const period of current.values()) {
     const files = period.clockFindings?.files?.length
       ? period.clockFindings.files
@@ -160,30 +190,25 @@ export default async function AuditBatchPage({ params }) {
           if (!isCappedService(row.service)) continue;
           if (dateKey(row.date) < notesFrom || dateKey(row.date) > notesTo) continue;
           clockLoaded++;
-          const key = `${scheduleKey(row.name)}|${row.date}|${row.schedFrom}`;
-          const existing = shifts.get(key);
-          if (existing) {
+          const who = scheduleKey(row.name);
+          const sameDay = (byPersonDayShift.get(`${who}|${row.date}`) || [])
+            .filter((x) => !x.clocked && sameClient(x.client, row.client));
+          const best = sameDay
+            .map((x) => ({
+              x,
+              // the clock row's own window against the booking's
+              overlap: Math.max(
+                overlapOf(x.schedFrom, x.schedTo, row.schedFrom, row.schedTo),
+                overlapOf(x.schedFrom, x.schedTo, row.actualFrom, row.actualTo),
+              ),
+            }))
+            .sort((a, b) => b.overlap - a.overlap)[0];
+
+          if (best && best.overlap > 0) {
             // THE CLOCK EXPORT SAYS WHAT WAS CLOCKED. IT DOES NOT SAY WHAT WAS
-            // BILLED, and its own "Schedule Start/End Time" columns must never
-            // be allowed to say so.
-            //
-            // Spread whole over the rostered block, they did. Sebastian Torres
-            // 08/21 is rostered "12:15p-12:24p Myron, D-ILS Service(0:09)" with
-            // Misc filling the rest of the afternoon - nine billable minutes -
-            // and the clock export still carries the ORIGINAL two hour booking
-            // in its schedule columns. `Object.assign` overwrote the roster with
-            // it and the card read 2.00 hours billed, which is not what QSP
-            // shows and not what anybody bills.
-            //
-            // So the roster keeps its own schedule and the clock contributes
-            // only the clock.
-            Object.assign(existing, {
-              // QSP'S "ORIGINAL END TIME", which the clock export keeps in its
-              // own schedule columns while the roster carries the corrected
-              // booking. Mánu's 08/18: roster "1p-3:54p Oceguera, R-ILS
-              // Service(2:54)", clock schedule 1p-5p, clocked out 3:54p. The
-              // pair is what tells a booking that was trimmed from one that was
-              // left at its original length.
+            // BILLED, and its own schedule columns must never be allowed to.
+            Object.assign(best.x, {
+              // QSP's "Original End Time" - the booking before anyone touched it
               originalFrom: row.schedFrom, originalTo: row.schedTo,
               actualFrom: row.actualFrom, actualTo: row.actualTo,
               workedMin: row.workedMin,
@@ -194,10 +219,14 @@ export default async function AuditBatchPage({ params }) {
               clocked: true,
             });
           } else {
-            // no rostered block starts at this minute, so the clock row is all
-            // there is to go on and its own schedule columns are the only
-            // account of what was booked
-            shifts.set(key, { ...row, who: scheduleKey(row.name), clocked: true, rosterMissing: true });
+            // nothing rostered for that client that day, so the clock row is all
+            // there is and its own schedule columns are the only account of the
+            // booking
+            const key = `${who}|${row.date}|${row.schedFrom}|clock`;
+            shifts.set(key, {
+              ...row, who, clocked: true, rosterMissing: true,
+              originalFrom: row.schedFrom, originalTo: row.schedTo,
+            });
           }
         }
       } catch (e) {

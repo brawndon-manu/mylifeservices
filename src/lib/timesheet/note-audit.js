@@ -212,9 +212,13 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
       kind: "billed-over-clocked",
       billedMin,
       clockedMin,
-      // the booking still ends where the clock export says it was originally
-      // scheduled, so nobody trimmed it to what was worked
-      neverTrimmed: shift.originalTo != null && shift.schedTo === shift.originalTo,
+      // THE BOOKING IS UNTOUCHED AT BOTH ENDS, so nobody adjusted it to what
+      // was worked. Comparing only the end missed a late clock-IN against an
+      // unaltered booking - Cain 08/18 bills 4p-5:30p against a clock starting
+      // 4:28p, and the end matching says nothing about that.
+      neverTrimmed:
+        shift.originalFrom != null && shift.originalTo != null
+        && shift.schedFrom === shift.originalFrom && shift.schedTo === shift.originalTo,
     });
   }
 
