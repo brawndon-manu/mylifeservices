@@ -7,6 +7,7 @@ import { preferredName } from "@/lib/contacts";
 import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
 import { clockShifts } from "@/lib/timesheet/clock";
 import { auditRow, shiftKeyOf, sameClient, displayClient } from "@/lib/timesheet/note-audit";
+import { buildWhoKey } from "@/lib/timesheet/people";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 
@@ -92,31 +93,13 @@ export default async function AuditBatchPage({ params }) {
     )
     : [];
 
-  // ONE PERSON, WHATEVER THEY ARE CALLED ON THE DOCUMENT.
-  //
-  // The timesheet prints the LEGAL name and the clock export prints the one
-  // they go by. Ruth Delgado Pineda goes by Angel and Francisco Velasquez goes
-  // by Frank, so their clock rows found no shift to attach to and thirteen
-  // shifts read "not clocked" while their punches sat in the file.
-  //
-  // The portal already knows both spellings, so both are mapped onto one key.
-  // Legal is the canonical side because that is what the timesheet - the
-  // document that pays - calls them.
+  // ONE PERSON, WHATEVER THE DOCUMENT CALLS THEM. See people.js - the timesheet
+  // prints the legal name, the clock export and the notes the one they go by,
+  // and one spelling in the portal is simply wrong.
   const staff = await prisma.user.findMany({
     select: { name: true, preferredFirstName: true, preferredLastName: true },
   });
-  const alias = new Map();
-  for (const u of staff) {
-    const legal = scheduleKey(u.name || "");
-    if (!legal) continue;
-    alias.set(legal, legal);
-    const goesBy = scheduleKey(preferredName(u));
-    if (goesBy && goesBy !== legal) alias.set(goesBy, legal);
-  }
-  const whoKey = (name) => {
-    const k = scheduleKey(name);
-    return alias.get(k) || k;
-  };
+  const whoKey = buildWhoKey(staff);
 
   // ---- what was BILLED: every rostered block, off the sheets themselves ----
   const shifts = new Map();          // person|date|startMin -> shift
