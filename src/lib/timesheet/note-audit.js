@@ -11,6 +11,24 @@
 // documented, in the words of the person who worked it).
 
 import { paidAboveClock } from "./clock.js";
+import { isCappedService } from "./compliance.js";
+
+// WHICH SERVICES ARE SUPPOSED TO CARRY A NOTE.
+//
+// A daily service note documents time spent WITH A CLIENT. Travel, admin, misc
+// and training are worked time and get billed, and nobody writes a service note
+// against them - the roster for 08/01-08/26 has 319 ILS Admin blocks and 29 of
+// them have a note.
+//
+// Asking for one anyway is not a harmless extra: it fired on 1,644 shifts, and
+// a list where two thirds of the rows are asking travel time to explain itself
+// is a list nobody reads to the bottom.
+//
+// The same two names the cap already uses - ILS Service and Self Determination -
+// because that is this codebase's existing definition of a client booking. If
+// the office expects notes on Training or Housing Search too, this is the line
+// that says so.
+const NOTE_EXPECTED = (service) => isCappedService(service);
 
 // ---------------------------------------------------------------- keywords
 
@@ -123,7 +141,8 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
   const billedMin = shift?.scheduledMin ?? null;
 
   if (!note) {
-    out.push({ kind: "no-note", billedMin });
+    // silence on a shift that was never going to have one, rather than a finding
+    if (NOTE_EXPECTED(shift?.service)) out.push({ kind: "no-note", billedMin });
   } else {
     if (sessionCalledOff(note)) out.push({ kind: "session-called-off", billedMin });
 
@@ -156,8 +175,14 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
   // where something else already objected
   if (shift && (shift.noIn || shift.noOut)) out.push({ kind: "never-clocked", billedMin });
 
+  // THE SENTENCE, NOT THE FUNCTION THAT WROTE IT. Spreading the whole entry
+  // carries `describe` along, and a function cannot cross into a client
+  // component - React refuses the render rather than dropping it.
   return out
-    .map((f) => ({ ...f, ...AUDIT_REASONS[f.kind], text: AUDIT_REASONS[f.kind].describe(f) }))
+    .map((f) => {
+      const kind = AUDIT_REASONS[f.kind];
+      return { ...f, label: kind.label, weight: kind.weight, text: kind.describe(f) };
+    })
     .sort((a, b) => b.weight - a.weight);
 }
 

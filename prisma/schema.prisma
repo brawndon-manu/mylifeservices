@@ -124,6 +124,7 @@ model User {
   dayProgramBatches            DayProgramBatch[]             @relation("DayProgramBatchUploadedBy")
   dayProgramSheets             DayProgramSheet[]             @relation("DayProgramEmployee")
   clientAttestationBatches     ClientAttestationBatch[]      @relation("ClientAttestationBatchUploadedBy")
+  serviceNoteBatches           ServiceNoteBatch[]            @relation("ServiceNoteBatchUploadedBy")
   clientAttestationsAsStaff    ClientAttestation[]           @relation("ClientAttestationStaff")
   clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
   clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
@@ -1782,4 +1783,55 @@ model Client {
   updatedAt DateTime @updatedAt
 
   @@index([staffUserId])
+}
+
+// THE SERVICE NOTES AUDIT, 2026-08-26.
+//
+// Mánu: "i need to go through the service notes and see whether or not the time
+// that is billed adds up for what the service is on paper."
+//
+// The Employee Detailed Daily Service Notes export is one note per shift,
+// written by the person who worked it, and it carries its own shift times -
+// which are the CLOCK times, matching the QSClock export exactly on 330 of 373
+// notes in the week both cover. So a period holds three records of one shift:
+// what the roster billed, what the clock recorded, and what the note documents.
+// The audit is the reconciliation of those three.
+//
+// SEPARATE FROM TimesheetBatch ON PURPOSE. The notes are exported over a date
+// range the operator picks, not over a pay period, and this one covers 8/1 to
+// 8/26 across two of them. Hanging it off a batch would force a range that is
+// not the document's own into the record.
+model ServiceNoteBatch {
+  id String @id @default(cuid())
+
+  // the range the notes actually cover, read off the notes rather than typed:
+  // a batch labelled one range and holding another is not a mistake anybody
+  // catches later. Same spelling as everywhere else here, "08/01/26".
+  periodFrom String
+  periodTo   String
+
+  // the uploaded source PDF, kept for audit and streamed back through a gated
+  // route like every other stored document here.
+  sourceUrl  String?
+  sourceName String?
+
+  // THE PARSED NOTES, and unlike the clock rows on TimesheetBatch these ARE
+  // stored. Re-reading costs 2.6 seconds against the clock export's 8ms, which
+  // is too slow to spend on a page view. 1.43MB for a month.
+  //
+  // It is safe here in a way it was not there: nothing else in the app loads a
+  // ServiceNoteBatch, so no unrelated query drags this along. THE LIST PAGE
+  // MUST STILL `select` WITHOUT IT - a list of twelve months would otherwise
+  // pull seventeen megabytes to print twelve dates.
+  notes Json
+
+  noteCount Int @default(0)
+
+  uploadedById String
+  uploadedBy   User   @relation("ServiceNoteBatchUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
 }

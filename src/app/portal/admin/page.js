@@ -103,6 +103,14 @@ export default async function AdminPage() {
             isNew
           />
         )}
+        {isAdminUp(user.role) && (
+          <LinkCard
+            href="/portal/admin/audit"
+            title="Audit"
+            body="What was billed for a shift, against what the clock recorded and what the service note documents. Upload the QSP service notes export; the hours come from the pay periods already uploaded."
+            isNew
+          />
+        )}
         {canManageTimesheets(user.role) && (
           <LinkCard
             href="/portal/admin/tests"

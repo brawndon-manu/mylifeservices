@@ -6,7 +6,9 @@
 // documents cover.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { noteFromLines, readNotePages, noteDate, noteMinute } from "../service-notes.js";
+import {
+  noteFromLines, readNotePages, noteDate, noteMinute, linesOf,
+} from "../service-notes.js";
 
 // the lines of one note, as they come off the page
 const NOTE = [
@@ -135,4 +137,31 @@ test("a note with no shift times is left out rather than kept unjudgeable", () =
 test("a document with no notes in it reads as none rather than throwing", () => {
   assert.deepEqual(readNotePages([]), []);
   assert.deepEqual(readNotePages([page(["Cover page"]), page(["Index"])]), []);
+});
+
+// THE CHARACTER THAT TAKES AN UPLOAD DOWN.
+//
+// The 8/1-8/26 export carries a NUL. Stored without stripping it the insert
+// comes back `22P05, unsupported Unicode escape sequence`, naming neither the
+// note nor the character - the failure that took four timesheet uploads down on
+// 2026-08-15. Taken off where the text comes off the page, the same place
+// `parse.js` does it for the timesheet.
+//
+// The escape is written out rather than pasted: a literal NUL in a source file
+// makes ripgrep call the whole file binary and skip it in every search.
+const NUL = String.fromCharCode(0);
+
+const item = (str, x, y) => ({ str, transform: [0, 0, 0, 0, x, y] });
+
+test("a control character is stripped as the text comes off the page", () => {
+  const lines = linesOf([item(`Taylor${NUL} Adams`, 0, 700), item("Daily Service Note", 0, 680)]);
+  assert.deepEqual(lines, ["Taylor Adams", "Daily Service Note"]);
+  assert.equal(lines[0].includes(NUL), false);
+});
+
+test("a line is rebuilt left to right, and the page top to bottom", () => {
+  assert.deepEqual(
+    linesOf([item("second", 0, 100), item("world", 60, 200), item("hello", 10, 200)]),
+    ["hello world", "second"],
+  );
 });

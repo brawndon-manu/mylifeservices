@@ -176,9 +176,22 @@ export function readNotePages(pages) {
 // text items -> one string per printed line, left to right, top to bottom.
 // The same shape `schedule.js` builds, for the same reason: these documents are
 // laid out in columns and reading the items in emission order interleaves them.
+// THE SAME STRIP THE TIMESHEET READER DOES, at the same point: as the text
+// comes off the page.
+//
+// A NUL in this export is not hypothetical - the 8/1-8/26 notes carry one, and
+// storing them without this comes back as `22P05, unsupported Unicode escape
+// sequence` with nothing in the message naming the note or the character. That
+// is the failure that took four timesheet uploads down on 2026-08-15.
+//
+// Written with escapes on purpose: a literal NUL anywhere in a file makes
+// ripgrep call the whole file binary and skip it in every search across src.
+const stripControl = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+
 export function linesOf(items) {
   const rows = new Map();
-  for (const it of items) {
+  for (const raw of items) {
+    const it = { ...raw, str: stripControl(raw.str) };
     if (!it.str?.trim()) continue;
     const y = Math.round(it.transform[5]);
     if (!rows.has(y)) rows.set(y, []);
