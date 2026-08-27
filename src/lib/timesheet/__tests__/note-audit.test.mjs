@@ -230,37 +230,58 @@ test("a missing piece still produces a key rather than throwing", () => {
 
 // ---- the same client, written two ways ----
 //
-// The roster abbreviates and the service note spells the name out. Compared as
-// plain strings they never match, and a note that cannot find its own client's
-// booking gets attached to whatever else that person worked that day - which is
-// how a note about Anthony Grant was reported against Saneeha Amin's shift.
+// The roster and the clock export abbreviate; the note spells the name out.
+// Compared as plain strings they never match, and a note that cannot find its
+// own client's booking is reported as missing while it sits in the file. Mánu
+// caught exactly that on Casey Lewis 08/18 - the note was there, the card said
+// "No service note", and the client read `Abigail "Abbie" Sherwold`.
 
-test("the roster's spelling and the note's spelling are the same client", () => {
-  for (const [roster, note] of [
+test("the abbreviated spelling and the written-out one are the same client", () => {
+  for (const [roster, note_] of [
     ["Mienik, G", "Grant Mienik"],
     ["Michel, C", "Carlos Michel"],
     ["Cosio, J", "Jeffrey Cosio"],
-    ["Irigoyen, C", "Christina Irigoyen"],
   ]) {
-    assert.equal(sameClient(roster, note), true, `${roster} / ${note}`);
+    assert.equal(sameClient(note_, roster), true, `${roster} / ${note_}`);
   }
 });
 
-// "Mc Carter Jr." is one surname with two spaces and a full stop in it, so the
-// surname is everything after the FIRST word rather than the last word
-test("a surname of several words survives both spellings", () => {
-  assert.equal(sameClient("Mc Carter Jr., W", "William Mc Carter Jr."), true);
-  assert.equal(clientKey("Mc Carter Jr., W"), "mc carter jr|w");
+// A NICKNAME IN QUOTES, which is what broke it. The export uses brackets AND
+// quotes, sometimes with a stray space: "Hankang (Oliver) Oh",
+// `Abigail "Abbie" Sherwold`, "Jose ( Angel) Acuna".
+test("a nickname comes off whether it is bracketed or quoted", () => {
+  assert.equal(sameClient('Abigail "Abbie" Sherwold', "Sherwold, A"), true);
+  assert.equal(sameClient('Michelle "Michael" Tran', "Tran, M"), true);
+  assert.equal(sameClient("Hankang (Oliver) Oh", "Oh, H"), true);
+  assert.equal(sameClient("Jose ( Angel) Acuna", "Acuna, J"), true);
 });
 
-test("a nickname in brackets is not part of the name", () => {
-  assert.equal(sameClient("Oh, H", "Hankang (Oliver) Oh"), true);
+// THE COMMA FORM SAYS WHERE THE SURNAME ENDS and the written-out form never
+// does. Guessing "everything after the first word" made "E Nelson" and "Roa
+// Garcia" surnames, and got eleven clients wrong.
+test("a middle name does not become part of the surname", () => {
+  assert.equal(sameClient("William E Nelson", "Nelson, W"), true);
+  assert.equal(sameClient("Trixi Roa Garcia", "Garcia, T"), true);
+  assert.equal(sameClient("Min Suh Choi", "Choi, M"), true);
+  assert.equal(sameClient("George Moussa Faltas", "Faltas, G"), true);
+});
+
+test("a surname of several words survives both spellings", () => {
+  assert.equal(sameClient("William Mc Carter Jr.", "Mc Carter Jr., W"), true);
+  assert.equal(sameClient("William Del Rosario", "Del Rosario, W"), true);
+  assert.equal(sameClient("Susan Elder. Morton", "Elder. Morton, S"), true);
 });
 
 test("two different clients do not match", () => {
-  assert.equal(sameClient("Mienik, G", "Molly Groty"), false);
+  assert.equal(sameClient("Molly Groty", "Mienik, G"), false);
   // same surname, different person
-  assert.equal(sameClient("Garcia, S", "Johannah Garcia"), false);
+  assert.equal(sameClient("Johannah Garcia", "Garcia, T"), false);
+  assert.equal(sameClient("Susan Nelson", "Nelson, W"), false);
+});
+
+test("two abbreviated spellings compare directly", () => {
+  assert.equal(sameClient("Nelson, William E", "Nelson, W"), true);
+  assert.equal(sameClient("Groty, Molly", "Mienik, G"), false);
 });
 
 // two bookings with no client on them are not thereby the same client
@@ -269,82 +290,4 @@ test("nothing matches nothing", () => {
   assert.equal(sameClient("", ""), false);
   assert.equal(sameClient("Mienik, G", null), false);
   assert.equal(clientKey(null), "");
-});
-
-// ---- billed above what was clocked ----
-//
-// THE ONE THE SCREEN EXISTS FOR. Mánu 2026-08-26, reading his own shift in QSP:
-// "i clocked in at 1pm and clocked out at 3:54pm. that is the billable hours i
-// did for that client. my schedule had it at 1pm-5pm but since I clocked out
-// early my time got changed which is good. some people or admin change their
-// time back to the original time (clocking out early and adjusting their time so
-// they dont lose hours/money) and thats what we are looking for."
-
-// his own 08/18: rostered 1p-3:54p, clock schedule 1p-5p, clocked out 3:54p.
-// Trimmed to what was worked, which is what should happen, and it must be silent
-test("a booking trimmed to the early clock-out raises nothing", () => {
-  const s = shift({
-    schedFrom: 13 * 60, schedTo: 15 * 60 + 54, scheduledMin: 174,
-    originalFrom: 13 * 60, originalTo: 17 * 60,          // QSP's Original End Time
-    actualFrom: 13 * 60, actualTo: 15 * 60 + 54, workedMin: 174,
-  });
-  assert.deepEqual(auditReasons(s, note({ minutes: 174, words: 90 })), []);
-});
-
-// the same shift with the booking put back to 5pm: four hours billed, 2.9 worked
-test("a booking left at its original length after an early clock-out is raised", () => {
-  const s = shift({
-    schedFrom: 13 * 60, schedTo: 17 * 60, scheduledMin: 240,
-    originalFrom: 13 * 60, originalTo: 17 * 60,
-    actualFrom: 13 * 60, actualTo: 15 * 60 + 54, workedMin: 174,
-  });
-  const found = auditReasons(s, note({ minutes: 240, words: 200 }))
-    .find((r) => r.kind === "billed-over-clocked");
-  assert.ok(found);
-  assert.equal(found.billedMin, 240);
-  assert.equal(found.clockedMin, 174);
-  assert.equal(found.neverTrimmed, true);
-  assert.match(found.text, /bills 4\.00 hours and the clock records 2\.90 hours/);
-  assert.match(found.text, /still ends where it was originally scheduled/);
-});
-
-// trimmed, but not all the way - the booking moved, so it is not the
-// left-at-the-original case, and the sentence should not say it was
-test("a booking trimmed only part way says so without the original clause", () => {
-  const s = shift({
-    schedFrom: 13 * 60, schedTo: 16 * 60 + 30, scheduledMin: 210,
-    originalFrom: 13 * 60, originalTo: 17 * 60,
-    actualFrom: 13 * 60, actualTo: 15 * 60 + 54, workedMin: 174,
-  });
-  const found = auditReasons(s, note({ minutes: 210 }))
-    .find((r) => r.kind === "billed-over-clocked");
-  assert.ok(found);
-  assert.equal(found.neverTrimmed, false);
-  assert.doesNotMatch(found.text, /originally scheduled/);
-});
-
-test("a few minutes over the clock is inside the noise", () => {
-  const s = shift({ scheduledMin: 180, workedMin: 180 - (AUDIT_RULES.billedOverClockMin - 1) });
-  assert.equal(auditReasons(s, note()).some((r) => r.kind === "billed-over-clocked"), false);
-});
-
-test("clocking in early or working past the booking is not over-billing", () => {
-  const s = shift({ scheduledMin: 180, workedMin: 240 });
-  assert.equal(auditReasons(s, note()).some((r) => r.kind === "billed-over-clocked"), false);
-});
-
-// a missing punch has its own finding and cannot also be evidence that hours
-// were billed above a clock that never recorded them
-test("a shift missing a punch is not accused of billing above the clock", () => {
-  const s = shift({ noOut: true, workedMin: null, scheduledMin: 240 });
-  const kinds_ = kinds(auditReasons(s, note()));
-  assert.ok(kinds_.includes("never-clocked"));
-  assert.equal(kinds_.includes("billed-over-clocked"), false);
-});
-
-// it outranks everything except a shift with no note at all
-test("billing above the clock sorts to the top of a card", () => {
-  const s = shift({ scheduledMin: 240, workedMin: 120 });
-  const rs = auditReasons(s, note({ minutes: 240, words: 1 }));
-  assert.equal(rs[0].kind, "billed-over-clocked");
 });

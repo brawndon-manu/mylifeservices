@@ -287,46 +287,70 @@ export function shiftKeyOf({ employeeKey, date, startMin, client }) {
 
 // THE SAME CLIENT, WRITTEN TWO WAYS.
 //
-// The roster abbreviates: "Mienik, G", "Mc Carter Jr., W", "Oh, H". The service
-// note spells the name out: "Grant Mienik", "William Mc Carter Jr.", "Hankang
-// (Oliver) Oh". Compared as plain strings they never match, and a note that
-// cannot find its own client's booking gets attached to whatever else that
-// person worked that day - which is how a note about Anthony Grant ended up
-// reported against Saneeha Amin's shift.
+// The roster and the clock export abbreviate: "Mienik, G", "Sherwold, A",
+// "Mc Carter Jr., W". The service note spells the name out: "Grant Mienik",
+// `Abigail "Abbie" Sherwold`, "William Mc Carter Jr.". Compared as plain
+// strings they never match, and a note that cannot find its own client's
+// booking gets attached to another one - or, worse, its shift is reported as
+// having no note at all while the note sits in the file.
 //
-// So the comparable part is the surname and the first initial, which is all the
-// roster ever gives. Held to that, 226 rostered spellings line up with 218
-// written ones.
+// THE COMMA FORM IS THE AUTHORITY. It says exactly where the surname ends,
+// which the written-out form never does: "William E Nelson", "Trixi Roa
+// Garcia" and "Min Suh Choi" all carry a middle name, and "William Mc Carter
+// Jr." is one surname of three words. Guessing "everything after the first
+// word" got Sherwold, Nelson, Garcia, Choi and seven others wrong.
 //
-// A parenthetical goes first ("Hankang (Oliver) Oh"), then the form decides how
-// to read it: a comma means "Last, First" and no comma means "First Last",
-// where the surname is everything after the first word - "Mc Carter Jr." is one
-// surname with two spaces and a full stop in it.
-export function clientKey(name) {
-  const clean = String(name || "")
+// So the abbreviated side supplies the surname and the initial, and the written
+// side only has to END with that surname and START with that initial.
+//
+// Nicknames come off first, in brackets OR quotes - the export uses both:
+// "Hankang (Oliver) Oh", `Abigail "Abbie" Sherwold`, "Jose ( Angel) Acuna".
+const tidy = (s) =>
+  String(s || "")
     .replace(/\([^)]*\)/g, " ")
+    .replace(/["'\u2018\u2019\u201c\u201d][^"'\u2018\u2019\u201c\u201d]*["'\u2018\u2019\u201c\u201d]/g, " ")
+    .toLowerCase()
+    .replace(/[.,]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!clean) return "";
-  const tidy = (s) => s.toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
 
-  const comma = clean.lastIndexOf(",");
-  let last, first;
+function clientParts(name) {
+  const raw = String(name || "");
+  const comma = raw.lastIndexOf(",");
   if (comma >= 0) {
-    last = clean.slice(0, comma);
-    first = clean.slice(comma + 1);
-  } else {
-    const parts = clean.split(" ");
-    first = parts[0];
-    last = parts.slice(1).join(" ") || parts[0];
+    const surname = tidy(raw.slice(0, comma));
+    const initial = tidy(raw.slice(comma + 1)).charAt(0);
+    return { abbreviated: true, surname, initial, words: tidy(raw).split(" ").filter(Boolean) };
   }
-  const initial = tidy(first).charAt(0);
-  return `${tidy(last)}|${initial}`;
+  const words = tidy(raw).split(" ").filter(Boolean);
+  return { abbreviated: false, surname: words.slice(1).join(" "), initial: (words[0] || "").charAt(0), words };
+}
+
+// does the written-out name end with this surname and start with this initial?
+function answersTo({ surname, initial }, words) {
+  if (!surname || !initial || !words.length) return false;
+  const parts = surname.split(" ").filter(Boolean);
+  if (words.length < parts.length) return false;
+  const tail = words.slice(words.length - parts.length).join(" ");
+  return tail === surname && words[0].charAt(0) === initial;
+}
+
+export function clientKey(name) {
+  const p = clientParts(name);
+  return p.surname && p.initial ? `${p.surname}|${p.initial}` : "";
 }
 
 // null names never match each other: two bookings with no client on them are
 // not thereby the same client
-export const sameClient = (a, b) => {
-  const x = clientKey(a);
-  return !!x && x === clientKey(b);
-};
+export function sameClient(a, b) {
+  const A = clientParts(a);
+  const B = clientParts(b);
+  if (!A.words.length || !B.words.length) return false;
+  if (A.abbreviated && B.abbreviated) {
+    return !!A.surname && A.surname === B.surname && A.initial === B.initial;
+  }
+  if (A.abbreviated) return answersTo(A, B.words);
+  if (B.abbreviated) return answersTo(B, A.words);
+  // neither is abbreviated, so fall back to comparing them whole
+  return A.words.join(" ") === B.words.join(" ");
+}
