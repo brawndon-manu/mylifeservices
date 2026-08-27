@@ -16,7 +16,7 @@
 // surfaced, and never tells the reviewer what to conclude.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
-import { span, hrs, clockedFigure } from "./figures";
+import { span, hrs, clockedFigure, punchEnd } from "./figures";
 
 export default function StudyMode({ rows: allRows, onExit }) {
   const [at, setAt] = useState(0);
@@ -279,64 +279,70 @@ export default function StudyMode({ rows: allRows, onExit }) {
               </span>
             </div>
 
-            {/* FOUR RECORDS, IN THE ORDER THEY HAPPEN. Mánu 2026-08-27: "it
-                should show original schdueled time, billed time, clock in and
-                clock out."
+            {/* WHEN THE FILE IS NOT THERE, SAY SO ONCE.
                 
-                Billed is what the Simple Timesheet PAYS, and it is the figure
-                that matters: 704 of 704 rostered service blocks in 08/16-08/31
-                match a punch pair on the timesheet exactly. Clocked is what
-                actually happened.
-                
-                THE NOTE'S OWN TIME IS NOT SHOWN AS A FIGURE. It is not a third
-                record: over the 494 shifts holding both a note and a clock, the
-                note's time equals the BILLED time 494 times out of 494 and the
-                clocked time in none of the 43 where those differ. QSP fills it
-                from the booking, so a fourth column of it read as corroboration
-                and was a copy. The note is on the card for its PROSE.
-                
-                Scheduled is the clock export's own schedule columns, and it is
-                NOT reliably "the booking before anyone touched it". QSP treats
-                the two ends differently and the two exports are snapshots:
-                
-                  Uribe 08/18   billed 1p-3:54p, clock schedule 1p-5p
-                                an early finish, booking trimmed, clock keeps
-                                the original END
-                  Salinas 08/17 billed 8a-12p, clock schedule 8:10a-12p
-                                a late start, event moved to the clock-in, and
-                                the timesheet still pays from 8a
-                
-                So it is shown for context and no rule is built on it alone. The
-                finding is always billed against clocked, because the timesheet
-                is what pays. */}
+                Scheduled, clocked and both punch lines all come out of the
+                clock export, so a period with none said "no clock export" three
+                times over and a dash beside it - four ways of reporting one
+                missing upload. Mánu asked why they were not just crosses: a
+                cross says the person did not clock, and this says we never
+                loaded the file. Those are different facts and only one of them
+                is about the person. */}
             <dl className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-4 sm:gap-4">
-              <Figure
-                label="Scheduled"
-                value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
-                sub={span(row.originalFrom, row.originalTo)}
-                tone="text-muted"
-              />
-              <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
-              <Figure
-                label="Clocked"
-                value={clockedFigure(row).value}
-                sub={clockedFigure(row).sub}
-                tone={
-                  clockedFigure(row).tone === "bad"
-                    ? "text-rose-500"
-                    : clockedFigure(row).tone === "faint" ? "text-faint" : null
-                }
-              />
-              <Gps row={row} />
+              {row.clockAvailable ? (
+                <>
+                  <Figure
+                    label="Scheduled"
+                    value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
+                    sub={span(row.originalFrom, row.originalTo)}
+                    tone="text-muted"
+                  />
+                  <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+                  <Figure
+                    label="Clocked"
+                    value={clockedFigure(row).value}
+                    sub={clockedFigure(row).sub}
+                    tone={
+                      clockedFigure(row).tone === "bad"
+                        ? "text-rose-500"
+                        : clockedFigure(row).tone === "faint" ? "text-faint" : null
+                    }
+                  />
+                  <Punches row={row} />
+                </>
+              ) : (
+                <>
+                  <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+                  <div className="col-span-1 sm:col-span-3">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
+                      Clock
+                    </dt>
+                    <dd className="text-sm text-faint">
+                      No clock export was uploaded for {row.period}, so there is nothing to check
+                      these hours against.
+                    </dd>
+                  </div>
+                </>
+              )}
             </dl>
 
             {/* WHAT EACH FIGURE IS, on every card. Four times sitting in a row
                 with one-word labels do not explain themselves - Mánu read a card
                 and asked what they meant, which is the right question and the
                 card should have answered it. */}
+            {/* the legend names only what is on the card - a period with no
+                clock export shows neither Scheduled nor Clocked */}
             <p className="mt-3 text-[11px] leading-relaxed text-faint">
-              <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
-              <b>Clocked</b> the punch in and out
+              {row.clockAvailable ? (
+                <>
+                  <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
+                  <b>Clocked</b> the punch in and out
+                </>
+              ) : (
+                <>
+                  <b>Billed</b> what the timesheet pays
+                </>
+              )}
             </p>
 
             {row.reasons.length > 0 && (
@@ -508,34 +514,39 @@ function Figure({ label, value, sub, tone }) {
   );
 }
 
-// BOTH ENDS, ALWAYS SHOWN. Mánu 2026-08-26: "location geofence should have both
-// indicators for in and out shown." A single summary hid which end failed, and
-// they are two separate device failures on one shift.
-//
-// Three-valued, like everywhere else the clock export is read: a shift nobody
-// clocked into never had a location to capture, so it has nothing to say rather
-// than a failure to report.
-function Gps({ row }) {
-  const one = (v, end) => {
-    const text = v === "yes" ? "captured" : v === "no" ? "none" : "nothing to capture";
-    const tone = v === "yes"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : v === "no" ? "text-sky-600 dark:text-sky-400" : "text-faint";
-    return (
-      <dd className={`text-xs font-semibold ${tone}`}>
-        clock-{end}: {text}
-      </dd>
-    );
-  };
+// THE TWO ENDS OF THE CLOCK, laid out like QSP's own attendance table: the
+// punch and its location, each a tick or a cross, on a line of its own.
+function Punches({ row }) {
   return (
     <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Location</dt>
-      <div className="mt-1 space-y-0.5">
-        {one(row.gpsIn, "in")}
-        {one(row.gpsOut, "out")}
-      </div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Clock</dt>
+      <PunchLine row={row} end="in" />
+      <PunchLine row={row} end="out" />
     </div>
   );
+}
+
+function PunchLine({ row, end }) {
+  const p = punchEnd(row, end);
+  if (!p.mark && !p.time && !p.gps) {
+    return <dd className="text-xs text-faint">{end}: no clock export</dd>;
+  }
+  return (
+    <dd className="mt-0.5 flex items-center gap-1.5 text-sm">
+      <span className="w-7 text-xs text-faint">{end}</span>
+      <Mark v={p.mark} />
+      <span className="tabular-nums text-foreground">{p.time || "-"}</span>
+      <span className="text-xs text-faint">GPS</span>
+      <Mark v={p.gps} />
+    </dd>
+  );
+}
+
+// a tick, a cross, or nothing to say
+function Mark({ v }) {
+  if (v === "yes") return <span className="font-bold text-emerald-500">&#10003;</span>;
+  if (v === "no") return <span className="font-bold text-rose-500">&#10007;</span>;
+  return <span className="text-faint">-</span>;
 }
 
 // A NARROWING CONTROL. Native select on purpose: on a phone it opens the

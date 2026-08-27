@@ -22,7 +22,7 @@
 // Nothing here computes an hour. See the page beside it.
 import { useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
-import { span, hrs, clockedFigure } from "./figures";
+import { span, hrs, clockedFigure, punchEnd } from "./figures";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -449,36 +449,53 @@ function Card({ r }) {
         {r.client ? ` · ${r.client}` : ""}
       </p>
 
-      {/* scheduled, billed, clocked, documented - the four records in the order
-          they happen. See the note in StudyMode. */}
+      {/* one line where the clock export is missing, rather than four ways of
+          saying the same upload never happened. See StudyMode. */}
       <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
-        <Figure
-          label="Scheduled"
-          value={r.originalFrom != null ? hrs(r.originalTo - r.originalFrom) : "-"}
-          sub={span(r.originalFrom, r.originalTo)}
-          tone="text-muted"
-        />
-        <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
-        <Figure
-          label="Clocked"
-          value={clockedFigure(r).value}
-          sub={clockedFigure(r).sub}
-          tone={
-            clockedFigure(r).tone === "bad"
-              ? "text-rose-600 dark:text-rose-400"
-              : clockedFigure(r).tone === "faint" ? "text-faint" : undefined
-          }
-        />
+        {r.clockAvailable ? (
+          <>
+            <Figure
+              label="Scheduled"
+              value={r.originalFrom != null ? hrs(r.originalTo - r.originalFrom) : "-"}
+              sub={span(r.originalFrom, r.originalTo)}
+              tone="text-muted"
+            />
+            <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
+            <Figure
+              label="Clocked"
+              value={clockedFigure(r).value}
+              sub={clockedFigure(r).sub}
+              tone={
+                clockedFigure(r).tone === "bad"
+                  ? "text-rose-600 dark:text-rose-400"
+                  : clockedFigure(r).tone === "faint" ? "text-faint" : undefined
+              }
+            />
+            <Punches row={r} />
+          </>
+        ) : (
+          <>
+            <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
+            <Figure label="Clock" value="no export for this period" tone="text-faint" />
+          </>
+        )}
         <Figure
           label="Note"
           value={r.note ? `${r.note.words} words` : "none"}
           tone={r.note ? undefined : "text-rose-600 dark:text-rose-400"}
         />
-        <GpsPair row={r} />
       </dl>
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
-        <b>Clocked</b> the punch in and out
+        {r.clockAvailable ? (
+          <>
+            <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
+            <b>Clocked</b> the punch in and out
+          </>
+        ) : (
+          <>
+            <b>Billed</b> what the timesheet pays
+          </>
+        )}
       </p>
 
       {surfaced && (
@@ -548,30 +565,40 @@ function Figure({ label, value, sub, tone }) {
   );
 }
 
-// BOTH ENDS, SEPARATELY. Mánu 2026-08-26: "location geofence should have both
-// indicators for in and out shown." Clocking in without a location and clocking
-// out without one are two device failures on one shift, and a single summary hid
-// which end it was.
+// THE TWO ENDS OF THE CLOCK, laid out like QSP's own attendance table: the
+// punch and its location, each a tick or a cross, on a line of its own.
 //
-// Three-valued: a shift nobody clocked into never had a location to capture, so
-// it has nothing to say rather than a failure to report.
-function GpsPair({ row }) {
-  const one = (v, end) => (
-    <dd
-      className={`text-xs font-semibold ${
-        v === "yes"
-          ? "text-emerald-600 dark:text-emerald-400"
-          : v === "no" ? "text-sky-600 dark:text-sky-400" : "text-faint"
-      }`}
-    >
-      clock-{end}: {v === "yes" ? "captured" : v === "no" ? "none" : "nothing to capture"}
-    </dd>
-  );
+// A single "Location: captured" line said nothing about WHICH end and nothing
+// about the punch itself. Mánu 2026-08-27 sent QSP's table as the shape to copy.
+function Punches({ row }) {
   return (
     <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Location</dt>
-      {one(row.gpsIn, "in")}
-      {one(row.gpsOut, "out")}
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Clock</dt>
+      <PunchLine row={row} end="in" />
+      <PunchLine row={row} end="out" />
     </div>
   );
+}
+
+function PunchLine({ row, end }) {
+  const p = punchEnd(row, end);
+  if (!p.mark && !p.time && !p.gps) {
+    return <dd className="text-xs text-faint">{end}: no clock export</dd>;
+  }
+  return (
+    <dd className="flex items-center gap-1.5 text-xs">
+      <span className="w-6 text-faint">{end}</span>
+      <Mark v={p.mark} />
+      <span className="tabular-nums text-muted">{p.time || "-"}</span>
+      <span className="text-faint">GPS</span>
+      <Mark v={p.gps} />
+    </dd>
+  );
+}
+
+// a tick, a cross, or nothing to say
+function Mark({ v }) {
+  if (v === "yes") return <span className="font-bold text-emerald-600 dark:text-emerald-400">&#10003;</span>;
+  if (v === "no") return <span className="font-bold text-rose-600 dark:text-rose-400">&#10007;</span>;
+  return <span className="text-faint">-</span>;
 }

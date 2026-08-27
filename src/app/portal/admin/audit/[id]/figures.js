@@ -38,3 +38,27 @@ export function clockedFigure(row) {
   if (to != null) return { value: "no clock-in", sub: `out ${clock(to)}`, tone: "bad" };
   return { value: "not clocked", sub: null, tone: "bad" };
 }
+
+// EACH END OF THE CLOCK, ON ITS OWN LINE, WITH ITS LOCATION.
+//
+// Mánu 2026-08-27 sent QSP's own attendance table as the shape to copy: Clock
+// In, Clock In Location, Clock Out, Clock Out Location, each a tick or a cross.
+// It reads at a glance and a single "Location: captured" line never did - it
+// said nothing about WHICH end, and nothing about the punch itself.
+//
+// Three states, not two. A shift nobody clocked into never had a location to
+// capture, so its location is neither a tick nor a cross: the export leaves it
+// blank and so does this. Drawing a cross there would report 127 failures where
+// there are 25.
+export function punchEnd(row, end) {
+  const clocked = end === "in" ? row.actualFrom : row.actualTo;
+  const missed = end === "in" ? row.noIn : row.noOut;
+  const gps = end === "in" ? row.gpsIn : row.gpsOut;
+
+  if (!row.clockAvailable) return { mark: null, time: null, gps: null };
+  return {
+    mark: clocked != null ? "yes" : missed ? "no" : null,
+    time: clock(clocked),
+    gps: gps === "yes" ? "yes" : gps === "no" ? "no" : null,
+  };
+}
