@@ -37,11 +37,16 @@ export default function StudyMode({ rows, onExit }) {
   const [reason, setReason] = useState("");
   const [openNote, setOpenNote] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A REF AS WELL AS THE STATE. `busy` is what greys the buttons out, but state
+  // does not settle until the next render, so two events in the same tick both
+  // see `busy === false` and both send. The ref flips synchronously.
+  const inFlight = useRef(false);
   // STATE RATHER THAN A REF, because the Undo button's disabled attribute reads
   // it during render, and a ref read during render does not re-render when it
   // changes - the button would stay greyed out after the first decision.
   const [history, setHistory] = useState([]);
   const reasonBox = useRef(null);
+  const cardBox = useRef(null);
 
   const counts = useMemo(() => {
     let approved = 0, flagged = 0;
@@ -56,7 +61,8 @@ export default function StudyMode({ rows, onExit }) {
   const done = at >= rows.length;
 
   const send = useCallback(async (decision, why) => {
-    if (!row || busy) return;
+    if (!row || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     const body = new FormData();
     body.set("decision", decision);
@@ -71,6 +77,7 @@ export default function StudyMode({ rows, onExit }) {
     body.set("documentedMin", row.documentedMin ?? "");
     if (why) body.set("reason", why);
     const res = await reviewShift(body);
+    inFlight.current = false;
     setBusy(false);
     if (!res?.ok) return;
     setDecided((d) => ({ ...d, [row.shiftKey]: decision }));
@@ -79,10 +86,11 @@ export default function StudyMode({ rows, onExit }) {
     setReason("");
     setOpenNote(false);
     setAt((i) => i + 1);
-  }, [row, busy]);
+  }, [row]);
 
   const back = useCallback(async () => {
-    if (busy || !history.length) return;
+    if (inFlight.current || !history.length) return;
+    inFlight.current = true;
     const key = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
     const i = rows.findIndex((r) => r.shiftKey === key);
@@ -90,33 +98,42 @@ export default function StudyMode({ rows, onExit }) {
     const body = new FormData();
     body.set("shiftKey", key);
     await undoReview(body);
+    inFlight.current = false;
     setBusy(false);
     setDecided((d) => { const next = { ...d }; delete next[key]; return next; });
     setFlagging(false);
     setReason("");
     setOpenNote(false);
     if (i >= 0) setAt(i);
-  }, [rows, busy, history]);
+  }, [rows, history]);
 
-  useEffect(() => {
-    const onKey = (e) => {
-      // the reason box owns every key while it is open, or typing "a" in it
-      // would approve the shift being flagged
-      if (flagging) {
-        if (e.key === "Escape") { setFlagging(false); setReason(""); }
-        return;
-      }
-      if (e.key === "ArrowRight" || e.key.toLowerCase() === "a") { e.preventDefault(); send("approved"); }
-      else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "f") { e.preventDefault(); setFlagging(true); }
-      else if (e.key === " ") { e.preventDefault(); setOpenNote((v) => !v); }
-      else if (e.key === "Backspace") { e.preventDefault(); back(); }
-      else if (e.key === "Escape") onExit();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [send, back, flagging, onExit]);
+  // THE SHORTCUTS BELONG TO THE CARD, NOT TO THE WINDOW.
+  //
+  // Bound to `window`, a bare "a" approves whatever is on screen from anywhere
+  // on the page - and A KEY THAT REPEATS APPROVES A RUN OF SHIFTS. That is not
+  // hypothetical: four consecutive shifts were approved two seconds apart during
+  // testing, by a key nobody meant to hold. On a screen whose whole output is a
+  // record of who signed off what, a decision nobody made is the worst thing it
+  // can produce.
+  //
+  // So: the listener sits on the card, which has to hold focus for a key to do
+  // anything, auto-repeat is dropped, and a keystroke that lands while a send is
+  // still in flight is dropped with it.
+  const onKey = (e) => {
+    if (e.repeat) return;
+    if (flagging) {
+      if (e.key === "Escape") { setFlagging(false); setReason(""); }
+      return;
+    }
+    if (e.key === "ArrowRight" || e.key.toLowerCase() === "a") { e.preventDefault(); send("approved"); }
+    else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "f") { e.preventDefault(); setFlagging(true); }
+    else if (e.key === " ") { e.preventDefault(); setOpenNote((v) => !v); }
+    else if (e.key === "Backspace") { e.preventDefault(); back(); }
+    else if (e.key === "Escape") onExit();
+  };
 
   useEffect(() => { if (flagging) reasonBox.current?.focus(); }, [flagging]);
+  useEffect(() => { if (!flagging) cardBox.current?.focus(); }, [at, flagging]);
 
   return (
     <div className="mt-6">
@@ -160,7 +177,12 @@ export default function StudyMode({ rows, onExit }) {
         </div>
       ) : (
         <>
-          <article className="mt-4 min-h-[26rem] rounded-2xl border border-border bg-surface-2 p-8">
+          <article
+            ref={cardBox}
+            tabIndex={-1}
+            onKeyDown={onKey}
+            className="mt-4 min-h-[26rem] rounded-2xl border border-border bg-surface-2 p-8 outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          >
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <span>
                 <span className="block text-2xl font-semibold text-foreground">{row.who}</span>
