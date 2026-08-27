@@ -72,8 +72,8 @@ export const noteText = (note) =>
 //
 // `paidOverMin`: ten minutes, the same figure the attendance screen uses.
 export const AUDIT_RULES = {
-  paidOverMin: 10,
-  // the same ten minutes, against the clock rather than against the note
+  // ten minutes, measured against the CLOCK. There used to be a matching
+  // threshold against the note and it was measuring nothing - see below.
   billedOverClockMin: 10,
   minWordsPerHour: 15,
   signedEarlyMin: 60,
@@ -125,12 +125,6 @@ export const AUDIT_REASONS = {
         ? " The booking still ends where it was originally scheduled, so it was not trimmed to the clock."
         : ""),
   },
-  "paid-over-documented": {
-    label: "Billed above what the note documents",
-    weight: 60,
-    describe: (f) =>
-      `The roster bills ${hrs(f.billedMin)} and the note documents ${hrs(f.documentedMin)}.`,
-  },
   "signed-before-shift": {
     label: "Signed before the shift ended",
     weight: 50,
@@ -178,10 +172,17 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
   } else {
     if (sessionCalledOff(note)) out.push({ kind: "session-called-off", billedMin });
 
-    const documentedMin = note.minutes ?? null;
-    if (billedMin != null && documentedMin != null && billedMin - documentedMin >= rules.paidOverMin) {
-      out.push({ kind: "paid-over-documented", billedMin, documentedMin });
-    }
+    // THERE IS NO RULE HERE COMPARING BILLED TO THE NOTE'S OWN TIMES, and there
+    // must not be. The note does not carry an independent account of when the
+    // visit happened: measured over the 494 shifts holding both a note and a
+    // clock record, the note's time equals the BILLED time in 494 of 494, and
+    // the clocked time in none of the 43 where the two differ. QSP fills it from
+    // the booking.
+    //
+    // So billed-against-documented was comparing a number with a copy of itself.
+    // It fired on 2 shifts in 1,786 and neither said anything the clock did not
+    // say better. The note earns its place on the card as PROSE - what it
+    // describes, how much of it there is - and never as a third clock.
 
     if (note.signedAfterMin != null) {
       // BEFORE THE SHIFT BEGAN is a different statement from before it ended.

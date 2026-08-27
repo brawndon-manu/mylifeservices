@@ -123,18 +123,22 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
       let g = m.get(name);
       if (!g) {
         g = {
-          name, shifts: 0, billedMin: 0, clockedMin: 0, documentedMin: 0,
+          name, shifts: 0, billedMin: 0, clockedMin: 0, noted: 0,
           overMin: 0, approved: 0, flagged: 0, open: 0,
         };
         m.set(name, g);
       }
       g.shifts++;
       g.billedMin += r.billedMin ?? 0;
-      if (r.clockedMin != null) g.clockedMin += r.clockedMin;
-      if (r.documentedMin != null) {
-        g.documentedMin += r.documentedMin;
-        if (r.billedMin != null) g.overMin += Math.max(0, r.billedMin - r.documentedMin);
+      // MEASURED AGAINST THE CLOCK. It used to total billed-above-DOCUMENTED,
+      // and the note's time is a copy of the billed time - 494 of 494 - so the
+      // column was structurally zero and said a period was clean when nobody had
+      // compared it to anything.
+      if (r.clockedMin != null) {
+        g.clockedMin += r.clockedMin;
+        if (r.billedMin != null) g.overMin += Math.max(0, r.billedMin - r.clockedMin);
       }
+      if (r.note) g.noted++;
       if (r.review?.decision === "approved") g.approved++;
       else if (r.review?.decision === "flagged") g.flagged++;
       else g.open++;
@@ -174,13 +178,13 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
         {totals.orphans > 0 && ` ${totals.orphans} notes matched no billed shift.`}
       </p>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-faint">
-        Billed is what the Simple Timesheet pays. Clocked is the QSClock export. Documented is
-        the time on the service note. Scheduled is what the clock export says the shift was booked
-        for, shown for context: QSP keeps the original end where a booking was trimmed, and moves
-        the start to the clock-in where somebody began late. A session ending early is ordinary and
-        the booking being trimmed to match is correct, so nothing here is a finding on its own.
-        Approving a shift says it looks right to bill. Nothing on this page changes an hour, a
-        premium or a signed timesheet.
+        Billed is what the Simple Timesheet pays. Clocked is the QSClock export. Scheduled is what
+        the clock export says the shift was booked for, shown for context: QSP keeps the original
+        end where a booking was trimmed, and moves the start to the clock-in where somebody began
+        late. The service note is read for what it says rather than for its times, which QSP fills
+        in from the booking. A session ending early is ordinary and the booking being trimmed to
+        match is correct, so nothing here is a finding on its own. Approving a shift says it looks
+        right to bill. Nothing on this page changes an hour, a premium or a signed timesheet.
       </p>
 
       {periods.length > 1 && (
@@ -369,8 +373,9 @@ function RollUp({ rows, what, onOpen }) {
   return (
     <>
       <p className="mt-4 text-xs text-faint">
-        Totalled over the shifts showing above. Billed covers every shift; clocked and documented
-        cover only the shifts holding those records. A row opens that {what.toLowerCase()}.
+        Totalled over the shifts showing above. Billed covers every shift; clocked covers only the
+        shifts a clock export holds, so billed above clocked is measured on those alone. A row
+        opens that {what.toLowerCase()}.
       </p>
       <div className="mt-2 overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[56rem] text-sm">
@@ -380,8 +385,8 @@ function RollUp({ rows, what, onOpen }) {
               <th className="px-3 py-2 text-right font-semibold">Shifts</th>
               <th className="px-3 py-2 text-right font-semibold">Billed</th>
               <th className="px-3 py-2 text-right font-semibold">Clocked</th>
-              <th className="px-3 py-2 text-right font-semibold">Documented</th>
-              <th className="px-3 py-2 text-right font-semibold">Billed above documented</th>
+              <th className="px-3 py-2 text-right font-semibold">Billed above clocked</th>
+              <th className="px-3 py-2 text-right font-semibold">With a note</th>
               <th className="px-3 py-2 text-right font-semibold">Not decided</th>
               <th className="px-3 py-2 text-right font-semibold">Approved</th>
               <th className="px-3 py-2 text-right font-semibold">Flagged</th>
@@ -398,13 +403,15 @@ function RollUp({ rows, what, onOpen }) {
                 <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.billedMin)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.clockedMin)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.documentedMin)}</td>
                 <td
                   className={`px-3 py-2 text-right tabular-nums ${
                     g.overMin > 0 ? "font-semibold text-orange-600 dark:text-orange-400" : "text-faint"
                   }`}
                 >
                   {g.overMin > 0 ? `+${hrs(g.overMin)}` : "-"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {g.noted}/{g.shifts}
                 </td>
                 <Count n={g.open} tone="text-sky-600 dark:text-sky-400" />
                 <Count n={g.approved} tone="text-emerald-600 dark:text-emerald-400" />
@@ -473,13 +480,16 @@ function Card({ r }) {
           }
         />
         <Figure
-          label="Documented"
-          value={hrs(r.documentedMin) || "no note"}
-          sub={r.note ? `${r.note.start}-${r.note.end}` : null}
+          label="Note"
+          value={r.note ? `${r.note.words} words` : "none"}
           tone={r.note ? undefined : "text-rose-600 dark:text-rose-400"}
         />
         <GpsPair row={r} />
       </dl>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
+        <b>Clocked</b> the punch in and out
+      </p>
 
       {surfaced && (
         <ul className="mt-3 space-y-1">

@@ -227,7 +227,14 @@ export default function StudyMode({ rows, onExit }) {
                 Billed is what the Simple Timesheet PAYS, and it is the figure
                 that matters: 704 of 704 rostered service blocks in 08/16-08/31
                 match a punch pair on the timesheet exactly. Clocked is what
-                actually happened. Documented is the note.
+                actually happened.
+                
+                THE NOTE'S OWN TIME IS NOT SHOWN AS A FIGURE. It is not a third
+                record: over the 494 shifts holding both a note and a clock, the
+                note's time equals the BILLED time 494 times out of 494 and the
+                clocked time in none of the 43 where those differ. QSP fills it
+                from the booking, so a fourth column of it read as corroboration
+                and was a copy. The note is on the card for its PROSE.
                 
                 Scheduled is the clock export's own schedule columns, and it is
                 NOT reliably "the booking before anyone touched it". QSP treats
@@ -243,7 +250,7 @@ export default function StudyMode({ rows, onExit }) {
                 So it is shown for context and no rule is built on it alone. The
                 finding is always billed against clocked, because the timesheet
                 is what pays. */}
-            <dl className="mt-6 grid gap-4 sm:grid-cols-5">
+            <dl className="mt-6 grid gap-4 sm:grid-cols-4">
               <Figure
                 label="Scheduled"
                 value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
@@ -261,14 +268,17 @@ export default function StudyMode({ rows, onExit }) {
                   row.clockedMin != null ? null : row.clockAvailable ? "text-rose-500" : "text-faint"
                 }
               />
-              <Figure
-                label="Documented"
-                value={hrs(row.documentedMin) || "no note"}
-                sub={row.note ? `${row.note.start}-${row.note.end}` : null}
-                tone={row.note ? null : "text-rose-500"}
-              />
               <Gps row={row} />
             </dl>
+
+            {/* WHAT EACH FIGURE IS, on every card. Four times sitting in a row
+                with one-word labels do not explain themselves - Mánu read a card
+                and asked what they meant, which is the right question and the
+                card should have answered it. */}
+            <p className="mt-3 text-[11px] leading-relaxed text-faint">
+              <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
+              <b>Clocked</b> the punch in and out
+            </p>
 
             {row.reasons.length > 0 && (
               <ul className="mt-6 space-y-1 border-l-2 border-amber-400 pl-4">

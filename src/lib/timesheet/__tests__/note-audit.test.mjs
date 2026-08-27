@@ -54,26 +54,18 @@ test("Self Determination is a client booking and is asked", () => {
   assert.deepEqual(kinds(rs), ["no-note"]);
 });
 
-// ---- billed above what the note documents ----
-
-test("a note documenting less than was billed says so, with both figures", () => {
-  // billed 3.00 hours, the note documents 12:00-1:00
-  const rs = auditReasons(shift(), note({ end: "1:00 PM", endMin: 780, minutes: 60 }));
-  const found = rs.find((r) => r.kind === "paid-over-documented");
-  assert.ok(found);
-  assert.equal(found.billedMin, 180);
-  assert.equal(found.documentedMin, 60);
-  assert.match(found.text, /bills 3\.00 hours and the note documents 1\.00 hours/);
-});
-
-test("a few minutes either way is inside the noise and stays quiet", () => {
-  const rs = auditReasons(shift(), note({ minutes: 180 - (AUDIT_RULES.paidOverMin - 1) }));
+// THE RULE THAT WAS REMOVED, and the measurement that removed it.
+//
+// A note does not carry its own account of when the visit happened. Over the 494
+// shifts holding both a note and a clock record, the note's time equals the
+// BILLED time in 494 of 494, and the clocked time in none of the 43 where those
+// two differ - QSP fills it from the booking. Comparing billed against the note
+// was comparing a number with a copy of itself.
+test("the note's own times are never used as a finding", () => {
+  // a note claiming a quarter of the billed time raises nothing by itself
+  const rs = auditReasons(shift(), note({ minutes: 45 }));
   assert.equal(rs.some((r) => r.kind === "paid-over-documented"), false);
-});
-
-test("a note documenting MORE than was billed is not a finding", () => {
-  const rs = auditReasons(shift(), note({ minutes: 300 }));
-  assert.deepEqual(rs, []);
+  assert.equal(rs.some((r) => r.kind.includes("documented")), false);
 });
 
 // ---- the session being called off ----
