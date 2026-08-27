@@ -26,13 +26,20 @@ import { scheduleKey } from "./schedule.js";
 // those names to match until we get that sorted."
 export const NAME_FIXES = [
   {
-    // one missing "n". Corrected in QSP somewhere between the 08/01 and 08/16
-    // exports: the clock exports, the service notes and the 08/16 timesheet all
-    // spell it Hernandez, while the portal account and the 08/01 and 07/16
-    // timesheets still carry Hernadez.
+    // ONE MISSING "n", AND THE DOCUMENTS THAT STILL CARRY IT ARE FROZEN.
+    //
+    // QSP was corrected somewhere between the 08/01 and 08/16 exports: the
+    // clock exports, the service notes and the 08/16 timesheet all spell it
+    // Hernandez. The portal account was corrected on 2026-08-27.
+    //
+    // What CANNOT be corrected is the 08/01 and 07/16 timesheet exports already
+    // in the database - `sourceName` is what QSP printed at the time and this
+    // codebase keeps it verbatim on purpose, so somebody can check our reading
+    // against the document. So this entry stays until those periods are
+    // re-uploaded from a corrected export, and can be deleted then.
     canonical: "Hernandez, Joseph",
     also: ["Hernadez, Joseph"],
-    why: "the portal account and the 08/01 and 07/16 timesheet exports drop an n",
+    why: "the 08/01 and 07/16 timesheet exports drop an n; the portal account was fixed 2026-08-27",
   },
 ];
 
