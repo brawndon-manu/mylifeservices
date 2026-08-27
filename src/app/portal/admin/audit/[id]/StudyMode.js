@@ -16,21 +16,21 @@
 // surfaced, and never tells the reviewer what to conclude.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
+import { span, hrs, clockedFigure } from "./figures";
 
-const clock = (min) => {
-  if (min == null) return null;
-  const h = Math.floor(min / 60) % 24;
-  const m = min % 60;
-  return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "a" : "p"}`;
-};
-const span = (a, b) => (a == null || b == null ? null : `${clock(a)}-${clock(b)}`);
-const hrs = (m) => (m == null ? null : `${(m / 60).toFixed(2)}h`);
-
-export default function StudyMode({ rows, onExit }) {
+export default function StudyMode({ rows: allRows, onExit }) {
   const [at, setAt] = useState(0);
+  // NARROWING THE RUN WITHOUT LEAVING IT. Mánu 2026-08-27: "when youre going by
+  // it one by one we should have a way to change to diffferent employee or
+  // client or day with ease."
+  //
+  // Reviewing is done a person at a time or a client at a time - you hold one
+  // person's week in your head and work down it - and going back to the list to
+  // re-filter loses that. These narrow the run in place.
+  const [only, setOnly] = useState({ who: "", client: "", date: "" });
   const [decided, setDecided] = useState(() => {
     const m = {};
-    for (const r of rows) if (r.review) m[r.shiftKey] = r.review.decision;
+    for (const r of allRows) if (r.review) m[r.shiftKey] = r.review.decision;
     return m;
   });
   const [flagging, setFlagging] = useState(false);
@@ -47,6 +47,39 @@ export default function StudyMode({ rows, onExit }) {
   const [history, setHistory] = useState([]);
   const reasonBox = useRef(null);
   const cardBox = useRef(null);
+
+  const rows = useMemo(() => allRows.filter((r) =>
+    (!only.who || r.who === only.who)
+    && (!only.client || (r.client || "") === only.client)
+    && (!only.date || r.date === only.date)), [allRows, only]);
+
+  // the choices, each counted over what the OTHER two are already showing, so a
+  // combination that holds nothing is not offered
+  const choices = useMemo(() => {
+    const pick = (key, keep) => {
+      const m = new Map();
+      for (const r of allRows) {
+        if (!keep(r)) continue;
+        const v = key === "client" ? (r.client || "") : r[key];
+        if (v == null || v === "") continue;
+        m.set(v, (m.get(v) || 0) + 1);
+      }
+      return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    };
+    return {
+      who: pick("who", (r) => (!only.client || (r.client || "") === only.client) && (!only.date || r.date === only.date)),
+      client: pick("client", (r) => (!only.who || r.who === only.who) && (!only.date || r.date === only.date)),
+      date: pick("date", (r) => (!only.who || r.who === only.who) && (!only.client || (r.client || "") === only.client)),
+    };
+  }, [allRows, only]);
+
+  const narrow = (field, value) => {
+    setOnly((o) => ({ ...o, [field]: value }));
+    setAt(0);
+    setFlagging(false);
+    setReason("");
+    setOpenNote(false);
+  };
 
   const counts = useMemo(() => {
     let approved = 0, flagged = 0;
@@ -183,7 +216,33 @@ export default function StudyMode({ rows, onExit }) {
         </span>
       </div>
 
-      {done ? (
+      {/* ONE ROW, EVEN ON A PHONE. Stacked with a label over each, the three
+          pickers cost 340px before the card came into view - on the screen
+          where the whole point is to look at the card. The empty option names
+          the picker instead, so no label line is needed. */}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <Picker value={only.who} all="All employees" options={choices.who} onPick={(v) => narrow("who", v)} />
+        <Picker value={only.client} all="All clients" options={choices.client} onPick={(v) => narrow("client", v)} />
+        <Picker value={only.date} all="All days" options={choices.date} onPick={(v) => narrow("date", v)} />
+      </div>
+      {(only.who || only.client || only.date) && (
+        <p className="mt-2 text-xs text-faint">
+          {rows.length} {rows.length === 1 ? "shift" : "shifts"} in this run.{" "}
+          <button
+            type="button"
+            onClick={() => { setOnly({ who: "", client: "", date: "" }); setAt(0); }}
+            className="font-semibold text-brand underline underline-offset-4"
+          >
+            Show all {allRows.length} again
+          </button>
+        </p>
+      )}
+
+      {rows.length === 0 ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-border p-12 text-center text-sm text-faint">
+          Nothing matches that combination.
+        </div>
+      ) : done ? (
         <div className="mt-4 rounded-2xl border border-border bg-surface-2 p-12 text-center">
           <p className="text-lg font-semibold text-foreground">
             That is every shift in this list.
@@ -205,11 +264,11 @@ export default function StudyMode({ rows, onExit }) {
             ref={cardBox}
             tabIndex={-1}
             onKeyDown={onKey}
-            className="mt-4 min-h-[26rem] rounded-2xl border border-border bg-surface-2 p-8 outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            className="mt-4 rounded-2xl border border-border bg-surface-2 p-4 outline-none focus-visible:ring-2 focus-visible:ring-brand sm:min-h-[26rem] sm:p-8"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <span>
-                <span className="block text-2xl font-semibold text-foreground">{row.who}</span>
+                <span className="block text-xl font-semibold text-foreground sm:text-2xl">{row.who}</span>
                 <span className="mt-0.5 block text-sm text-muted">
                   {row.service}
                   {row.client ? ` · ${row.client}` : ""}
@@ -250,7 +309,7 @@ export default function StudyMode({ rows, onExit }) {
                 So it is shown for context and no rule is built on it alone. The
                 finding is always billed against clocked, because the timesheet
                 is what pays. */}
-            <dl className="mt-6 grid gap-4 sm:grid-cols-4">
+            <dl className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-4 sm:gap-4">
               <Figure
                 label="Scheduled"
                 value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
@@ -258,14 +317,14 @@ export default function StudyMode({ rows, onExit }) {
                 tone="text-muted"
               />
               <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
-              {/* a shift nobody clocked and a fortnight with no clock export
-                  look the same on a card and mean opposite things */}
               <Figure
                 label="Clocked"
-                value={hrs(row.clockedMin) || (row.clockAvailable ? "not clocked" : "no clock export")}
-                sub={span(row.actualFrom, row.actualTo)}
+                value={clockedFigure(row).value}
+                sub={clockedFigure(row).sub}
                 tone={
-                  row.clockedMin != null ? null : row.clockAvailable ? "text-rose-500" : "text-faint"
+                  clockedFigure(row).tone === "bad"
+                    ? "text-rose-500"
+                    : clockedFigure(row).tone === "faint" ? "text-faint" : null
                 }
               />
               <Gps row={row} />
@@ -372,12 +431,17 @@ export default function StudyMode({ rows, onExit }) {
               </div>
             </div>
           ) : (
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-3">
+              {/* TWO PER ROW ON A PHONE. Flowed with flex-wrap they came out as
+                  Previous+Flag, then Approve+Skip, then Undo alone - the two
+                  decisions split across rows, with Approve landing where
+                  Previous had just been. A grid keeps the pair together and in
+                  the same place. */}
               <button
                 type="button"
                 onClick={() => step(-1)}
                 title="Previous shift, deciding nothing (left arrow)"
-                className="rounded-xl border border-border-strong px-4 py-4 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                className="order-3 rounded-xl border border-border-strong px-4 py-3.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand sm:order-1"
               >
                 ← Previous
               </button>
@@ -386,7 +450,7 @@ export default function StudyMode({ rows, onExit }) {
                 disabled={busy}
                 onClick={() => setFlagging(true)}
                 title="Flag for review (F)"
-                className="rounded-xl border-2 border-amber-400 px-10 py-4 text-lg font-bold text-amber-500 transition hover:bg-amber-50 disabled:opacity-50 dark:hover:bg-amber-950/30"
+                className="order-1 rounded-xl border-2 border-amber-400 px-6 py-3.5 text-base font-bold text-amber-500 transition hover:bg-amber-50 disabled:opacity-50 sm:order-2 sm:px-10 sm:py-4 sm:text-lg dark:hover:bg-amber-950/30"
               >
                 Flag
               </button>
@@ -395,7 +459,7 @@ export default function StudyMode({ rows, onExit }) {
                 disabled={busy}
                 onClick={() => send("approved")}
                 title="Approve (A)"
-                className="rounded-xl border-2 border-emerald-400 px-10 py-4 text-lg font-bold text-emerald-500 transition hover:bg-emerald-50 disabled:opacity-50 dark:hover:bg-emerald-950/30"
+                className="order-2 rounded-xl border-2 border-emerald-400 px-6 py-3.5 text-base font-bold text-emerald-500 transition hover:bg-emerald-50 disabled:opacity-50 sm:order-3 sm:px-10 sm:py-4 sm:text-lg dark:hover:bg-emerald-950/30"
               >
                 Approve
               </button>
@@ -403,7 +467,7 @@ export default function StudyMode({ rows, onExit }) {
                 type="button"
                 onClick={() => step(1)}
                 title="Next shift, deciding nothing (right arrow)"
-                className="rounded-xl border border-border-strong px-4 py-4 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                className="order-4 rounded-xl border border-border-strong px-4 py-3.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand sm:order-4"
               >
                 Skip →
               </button>
@@ -412,17 +476,19 @@ export default function StudyMode({ rows, onExit }) {
                 disabled={busy || history.length === 0}
                 onClick={back}
                 title="Undo the last decision (Backspace)"
-                className="rounded-xl border border-border-strong px-4 py-4 text-sm font-medium text-muted transition hover:border-brand hover:text-brand disabled:opacity-40"
+                className="order-5 col-span-2 rounded-xl border border-border-strong px-4 py-3 text-sm font-medium text-muted transition hover:border-brand hover:text-brand disabled:opacity-40 sm:order-5 sm:col-span-1 sm:py-3.5"
               >
                 Undo
               </button>
             </div>
           )}
 
-          <p className="mt-4 text-center text-xs text-faint">
-            A to approve, F to flag. The arrows move between shifts and decide nothing, and the
-            list wraps round. Space opens the note, Backspace takes the last decision back.
+          <p className="mt-4 text-center text-xs leading-relaxed text-faint">
             Approve means the shift looks right to bill.
+            <span className="hidden sm:inline">
+              {" "}A to approve, F to flag. The arrows move between shifts and decide nothing, and
+              the list wraps round. Space opens the note, Backspace takes the last decision back.
+            </span>
           </p>
         </>
       )}
@@ -469,5 +535,33 @@ function Gps({ row }) {
         {one(row.gpsOut, "out")}
       </div>
     </div>
+  );
+}
+
+// A NARROWING CONTROL. Native select on purpose: on a phone it opens the
+// system picker, which scrolls a few hundred names far better than anything
+// built here would, and it is reachable by keyboard for free.
+//
+// The empty option carries the name of the control, so the row needs no labels
+// above it and costs one line instead of six.
+function Picker({ value, all, options, onPick }) {
+  return (
+    <select
+      value={value}
+      aria-label={all}
+      onChange={(e) => onPick(e.target.value)}
+      className={`w-full truncate rounded-md border px-2 py-2 text-xs focus:border-brand focus:outline-none sm:px-3 sm:text-sm ${
+        value
+          ? "border-brand bg-brand/10 font-semibold text-brand"
+          : "border-border-strong bg-surface text-muted"
+      }`}
+    >
+      <option value="">{all}</option>
+      {options.map(([name, n]) => (
+        <option key={name} value={name}>
+          {name} ({n})
+        </option>
+      ))}
+    </select>
   );
 }
