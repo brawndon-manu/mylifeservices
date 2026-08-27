@@ -2,10 +2,11 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { isCappedService } from "@/lib/timesheet/compliance";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
 import { clockShifts } from "@/lib/timesheet/clock";
-import { auditRow } from "@/lib/timesheet/note-audit";
+import { auditRow, shiftKeyOf } from "@/lib/timesheet/note-audit";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 
@@ -110,6 +111,12 @@ export default async function AuditBatchPage({ params }) {
       if (dateKey(date) < notesFrom || dateKey(date) > notesTo) continue;
       for (const block of entry.shifts || []) {
         if (block.meal) continue;
+        // ONLY SERVICE HOURS. Mánu 2026-08-26: "this is only needed for service
+        // hours like ILS Service and Self Determination". Travel, admin, misc
+        // and training are billed and worked, and no service note is written
+        // against them - putting them on this screen asked travel time to
+        // explain itself on two thirds of the rows.
+        if (!isCappedService(serviceOf(block.text))) continue;
         const times = blockTimes(block.text);
         if (!times) continue;
         shifts.set(`${key}|${date}|${times.start}`, {
@@ -143,6 +150,8 @@ export default async function AuditBatchPage({ params }) {
         const res = await fetch(f.url, { cache: "no-store" });
         if (!res.ok) throw new Error(`the file came back ${res.status}`);
         for (const row of clockShifts(Buffer.from(await res.arrayBuffer()))) {
+          if (!isCappedService(row.service)) continue;
+          if (dateKey(row.date) < notesFrom || dateKey(row.date) > notesTo) continue;
           clockLoaded++;
           const key = `${scheduleKey(row.name)}|${row.date}|${row.schedFrom}`;
           const existing = shifts.get(key);
@@ -180,8 +189,17 @@ export default async function AuditBatchPage({ params }) {
       taken.add(note);
     }
     const read = auditRow(shift, note);
+    const shiftKey = shiftKeyOf({
+      employeeKey: shift.who,
+      date: shift.date,
+      startMin: shift.schedFrom ?? shift.actualFrom,
+      client: shift.client || note?.client || null,
+    });
     rows.push({
-      key: `${shift.who}|${shift.date}|${shift.schedFrom ?? shift.actualFrom}`,
+      key: shiftKey,
+      shiftKey,
+      employeeKey: shift.who,
+      startMin: shift.schedFrom ?? shift.actualFrom ?? null,
       who: namesSeen.get(shift.who) || shift.name,
       date: shift.date,
       client: shift.client || note?.client || null,
@@ -204,6 +222,30 @@ export default async function AuditBatchPage({ params }) {
   // a note that never found a shift: the service was documented and nothing in
   // the uploaded periods bills for it
   const orphans = notes.filter((n) => !taken.has(n));
+
+  // WHAT HAS ALREADY BEEN DECIDED. Looked up by the shift's own key rather than
+  // by anything belonging to this upload, which is the point of the key.
+  const decisions = rows.length
+    ? await prisma.shiftReview.findMany({
+      where: { shiftKey: { in: rows.map((r) => r.shiftKey) } },
+      select: {
+        shiftKey: true, decision: true, reason: true, createdAt: true,
+        decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      },
+    })
+    : [];
+  const byKey = new Map(decisions.map((d) => [d.shiftKey, d]));
+  for (const r of rows) {
+    const d = byKey.get(r.shiftKey);
+    r.review = d
+      ? {
+        decision: d.decision,
+        reason: d.reason,
+        by: d.decidedBy ? preferredName(d.decidedBy) : null,
+        at: d.createdAt.toISOString(),
+      }
+      : null;
+  }
 
   rows.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
 

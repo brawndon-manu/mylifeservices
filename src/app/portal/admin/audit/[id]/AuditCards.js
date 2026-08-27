@@ -11,11 +11,12 @@
 // statement as "somebody checked it" - but it sorts to the bottom, and the
 // counters at the top say how many of each kind there are.
 //
-// Approve and flag are NOT here yet: a decision has to outlive a re-upload, and
-// that means a record keyed to the shift rather than to the batch it was read
-// from. Committing the buttons before that record exists would collect
-// decisions the next upload silently throws away.
+// "Go through these one by one" hands whatever the filters are showing to
+// StudyMode, which is where a shift is approved or flagged. A decision is keyed
+// to the SHIFT rather than to this upload, so re-uploading a period does not
+// throw away the reviewing that has already been done.
 import { useMemo, useState } from "react";
+import StudyMode from "./StudyMode";
 
 const clock = (min) => {
   if (min == null) return null;
@@ -35,6 +36,7 @@ export default function AuditCards({ rows, totals }) {
   const [group, setGroup] = useState("employee");
   const [only, setOnly] = useState(null);
   const [q, setQ] = useState("");
+  const [studying, setStudying] = useState(false);
 
   const kinds = useMemo(() => {
     const c = {};
@@ -70,6 +72,17 @@ export default function AuditCards({ rows, totals }) {
   }, [shown, group]);
 
   const withReasons = rows.filter((r) => r.reasons.length).length;
+  const undecided = shown.filter((r) => !r.review).length;
+
+  // THE QUEUE IS WHAT THE FILTERS ARE SHOWING, undecided first. Going through
+  // shifts already decided is not wrong - a decision can be replaced - but it
+  // should not be what the run opens on.
+  const queue = useMemo(
+    () => [...shown].sort((a, b) => (a.review ? 1 : 0) - (b.review ? 1 : 0)),
+    [shown],
+  );
+
+  if (studying) return <StudyMode rows={queue} onExit={() => setStudying(false)} />;
 
   return (
     <>
@@ -125,8 +138,16 @@ export default function AuditCards({ rows, totals }) {
           placeholder="Filter by employee, client or service"
           className="w-72 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none"
         />
+        <button
+          type="button"
+          disabled={shown.length === 0}
+          onClick={() => setStudying(true)}
+          className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand disabled:opacity-50"
+        >
+          Go through these one by one
+        </button>
         <span className="text-xs text-faint">
-          Showing {shown.length} of {rows.length} shifts.
+          Showing {shown.length} of {rows.length} shifts, {undecided} not yet decided.
         </span>
       </div>
 
@@ -187,7 +208,7 @@ function Card({ r }) {
           sub={r.note ? `${r.note.start}-${r.note.end}` : null}
           tone={r.note ? undefined : "text-rose-600 dark:text-rose-400"}
         />
-        <Figure label="Location" value={gps(r)} />
+        <GpsPair row={r} />
       </dl>
 
       {flagged && (
@@ -198,6 +219,18 @@ function Card({ r }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {r.review && (
+        <p className={`mt-3 text-xs font-semibold ${
+          r.review.decision === "approved"
+            ? "text-emerald-600 dark:text-emerald-400"
+            : "text-amber-600 dark:text-amber-400"
+        }`}>
+          {r.review.decision === "approved" ? "Approved" : "Flagged"}
+          {r.review.by ? ` by ${r.review.by}` : ""}
+          {r.review.reason ? ` - ${r.review.reason}` : ""}
+        </p>
       )}
 
       {r.note && (
@@ -243,10 +276,30 @@ function Figure({ label, value, sub, tone }) {
   );
 }
 
-// three-valued, like everywhere else the clock export is read: a shift nobody
-// clocked into never had a location to capture
-function gps(r) {
-  if (r.gpsIn == null && r.gpsOut == null) return "-";
-  const bad = [r.gpsIn === "no" && "in", r.gpsOut === "no" && "out"].filter(Boolean);
-  return bad.length ? `none on clock-${bad.join(" or ")}` : "captured";
+// BOTH ENDS, SEPARATELY. Mánu 2026-08-26: "location geofence should have both
+// indicators for in and out shown." Clocking in without a location and clocking
+// out without one are two device failures on one shift, and a single summary
+// hid which end it was.
+//
+// Three-valued: a shift nobody clocked into never had a location to capture, so
+// it has nothing to say rather than a failure to report.
+function GpsPair({ row }) {
+  const one = (v, end) => (
+    <dd
+      className={`text-xs font-semibold ${
+        v === "yes"
+          ? "text-emerald-600 dark:text-emerald-400"
+          : v === "no" ? "text-sky-600 dark:text-sky-400" : "text-faint"
+      }`}
+    >
+      clock-{end}: {v === "yes" ? "captured" : v === "no" ? "none" : "nothing to capture"}
+    </dd>
+  );
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Location</dt>
+      {one(row.gpsIn, "in")}
+      {one(row.gpsOut, "out")}
+    </div>
+  );
 }

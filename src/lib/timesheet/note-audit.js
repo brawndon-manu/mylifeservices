@@ -199,3 +199,31 @@ export function auditRow(shift, note) {
     score: reasons.reduce((n, r) => n + r.weight, 0),
   };
 }
+
+// ---------------------------------------------------------------- the key
+
+// WHAT A DECISION IS ATTACHED TO, and the reason it is not a row id.
+//
+// This project re-uploads pay periods constantly - four batches for 08/16-08/31
+// alone - and every re-upload writes new Timesheet rows. A review keyed to one
+// of those rows is thrown away the next time somebody corrects a period, which
+// is exactly when the reviewing has already been done.
+//
+// So a decision is keyed to the SHIFT ITSELF: who worked it, the day, the
+// minute the roster starts it, and the client it was booked for. Those four come
+// off the documents rather than out of our database, so they survive a
+// re-upload, a re-parse and a rebuild.
+//
+// The person is the normalised QSP spelling rather than a portal account,
+// because a shift can belong to somebody with no account matched yet - and the
+// spelling comes from the same export every time. `scheduleKey` is what
+// normalises it; this takes the result rather than doing it again, so there is
+// one definition of "the same person" in the codebase.
+export function shiftKeyOf({ employeeKey, date, startMin, client }) {
+  return [
+    String(employeeKey || "").trim(),
+    String(date || "").trim(),
+    startMin == null ? "" : String(startMin),
+    String(client || "").trim().toLowerCase(),
+  ].join("|");
+}

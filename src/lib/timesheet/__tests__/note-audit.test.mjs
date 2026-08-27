@@ -6,7 +6,9 @@
 // about - a rule that cries wolf on travel time is worse than no rule.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { auditReasons, auditRow, sessionCalledOff, AUDIT_RULES } from "../note-audit.js";
+import {
+  auditReasons, auditRow, sessionCalledOff, shiftKeyOf, AUDIT_RULES,
+} from "../note-audit.js";
 
 const shift = (over = {}) => ({
   name: "Test, Person", date: "08/17/26", service: "ILS Service", client: "Client, A",
@@ -188,4 +190,48 @@ test("a reason carries its sentence and not the function that wrote it", () => {
 test("nothing to read is no reasons rather than a throw", () => {
   assert.deepEqual(auditReasons(null, null), []);
   assert.equal(auditRow(null, null).score, 0);
+});
+
+// ---- what a decision is attached to ----
+//
+// THE LOAD-BEARING PROPERTY. This project re-uploads pay periods constantly -
+// four batches for 08/16-08/31 alone - and every re-upload writes new Timesheet
+// rows. A review keyed to one of those rows is discarded the next time somebody
+// corrects a period, which is exactly when the reviewing has already been done.
+
+const shiftId = {
+  employeeKey: "taylor adams", date: "08/17/26", startMin: 720, client: "Michel, Carlos",
+};
+
+test("the same shift produces the same key every time", () => {
+  assert.equal(shiftKeyOf(shiftId), shiftKeyOf({ ...shiftId }));
+});
+
+test("the key is built from the documents, so a re-upload cannot move it", () => {
+  // nothing in it comes from our own database
+  assert.equal(shiftKeyOf(shiftId), "taylor adams|08/17/26|720|michel, carlos");
+});
+
+test("a different shift on the same day is a different key", () => {
+  assert.notEqual(shiftKeyOf(shiftId), shiftKeyOf({ ...shiftId, startMin: 900 }));
+  assert.notEqual(shiftKeyOf(shiftId), shiftKeyOf({ ...shiftId, client: "Wang, Michael" }));
+  assert.notEqual(shiftKeyOf(shiftId), shiftKeyOf({ ...shiftId, date: "08/18/26" }));
+});
+
+// two bookings can start at the same minute for one person - the roster
+// overlaps them - so the client is part of what makes the shift itself
+test("the client separates two bookings that start at the same minute", () => {
+  assert.notEqual(
+    shiftKeyOf({ ...shiftId, client: "A" }),
+    shiftKeyOf({ ...shiftId, client: "B" }),
+  );
+});
+
+test("the client is matched regardless of how it was capitalised", () => {
+  assert.equal(shiftKeyOf(shiftId), shiftKeyOf({ ...shiftId, client: "MICHEL, CARLOS" }));
+});
+
+test("a missing piece still produces a key rather than throwing", () => {
+  assert.equal(shiftKeyOf({}), "|||");
+  assert.equal(shiftKeyOf({ employeeKey: "x", date: "08/17/26" }), "x|08/17/26||");
 });

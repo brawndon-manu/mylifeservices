@@ -125,6 +125,7 @@ model User {
   dayProgramSheets             DayProgramSheet[]             @relation("DayProgramEmployee")
   clientAttestationBatches     ClientAttestationBatch[]      @relation("ClientAttestationBatchUploadedBy")
   serviceNoteBatches           ServiceNoteBatch[]            @relation("ServiceNoteBatchUploadedBy")
+  shiftReviews                 ShiftReview[]                 @relation("ShiftReviewDecidedBy")
   clientAttestationsAsStaff    ClientAttestation[]           @relation("ClientAttestationStaff")
   clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
   clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
@@ -1834,4 +1835,55 @@ model ServiceNoteBatch {
   updatedAt DateTime @updatedAt
 
   @@index([createdAt])
+}
+
+// A REVIEWER'S DECISION ABOUT ONE BILLED SHIFT, 2026-08-26.
+//
+// Mánu: "then we can pick flag for review or approved then logs when and who
+// approved what". Approve means the shift looks right to bill.
+//
+// KEYED TO THE SHIFT, NOT TO THE UPLOAD IT WAS READ FROM. Pay periods are
+// re-uploaded constantly - four batches for 08/16-08/31 alone - and every
+// re-upload writes new Timesheet rows. A decision hanging off one of those rows
+// is discarded the moment somebody corrects a period, which is precisely when
+// the reviewing has already been done. `shiftKey` is built from what the
+// DOCUMENTS say (the person, the day, the rostered start, the client), so it
+// survives a re-upload, a re-parse and a rebuild.
+//
+// THE FIGURES ARE COPIED IN AS THEY STOOD. What was approved is the reading in
+// front of the reviewer at the time - if a later upload changes the hours, this
+// row still says what was actually signed off, which is the whole point of
+// having a record rather than a flag.
+model ShiftReview {
+  id String @id @default(cuid())
+
+  // person|date|startMin|client - see `shiftKeyOf` in note-audit.js
+  shiftKey String @unique
+
+  // the parts, kept separately as well so the table can be read and grouped
+  // without taking the key apart again
+  employeeKey String
+  date        String
+  startMin    Int?
+  client      String?
+  service     String?
+
+  // "approved" - it looks right to bill - or "flagged", which owes a reason
+  decision String
+  reason   String?
+
+  // the reading at the moment of the decision
+  billedMin     Int?
+  clockedMin    Int?
+  documentedMin Int?
+
+  decidedById String
+  decidedBy   User   @relation("ShiftReviewDecidedBy", fields: [decidedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([decision])
+  @@index([employeeKey])
+  @@index([date])
 }
