@@ -178,6 +178,13 @@ export default async function AuditBatchPage({ params }) {
             // So the roster keeps its own schedule and the clock contributes
             // only the clock.
             Object.assign(existing, {
+              // QSP'S "ORIGINAL END TIME", which the clock export keeps in its
+              // own schedule columns while the roster carries the corrected
+              // booking. Mánu's 08/18: roster "1p-3:54p Oceguera, R-ILS
+              // Service(2:54)", clock schedule 1p-5p, clocked out 3:54p. The
+              // pair is what tells a booking that was trimmed from one that was
+              // left at its original length.
+              originalFrom: row.schedFrom, originalTo: row.schedTo,
               actualFrom: row.actualFrom, actualTo: row.actualTo,
               workedMin: row.workedMin,
               startDelta: row.startDelta, endDelta: row.endDelta,
@@ -279,6 +286,7 @@ export default async function AuditBatchPage({ params }) {
       client: shift.client || note?.client || null,
       service: shift.service || null,
       schedFrom: shift.schedFrom ?? null, schedTo: shift.schedTo ?? null,
+      originalFrom: shift.originalFrom ?? null, originalTo: shift.originalTo ?? null,
       actualFrom: shift.actualFrom ?? null, actualTo: shift.actualTo ?? null,
       gpsIn: shift.gpsIn ?? null, gpsOut: shift.gpsOut ?? null,
       note: note

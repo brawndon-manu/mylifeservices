@@ -73,6 +73,8 @@ export const noteText = (note) =>
 // `paidOverMin`: ten minutes, the same figure the attendance screen uses.
 export const AUDIT_RULES = {
   paidOverMin: 10,
+  // the same ten minutes, against the clock rather than against the note
+  billedOverClockMin: 10,
   minWordsPerHour: 15,
   signedEarlyMin: 60,
   signedLateDays: 1,
@@ -92,6 +94,33 @@ export const AUDIT_REASONS = {
     label: "The note says the session was called off",
     weight: 80,
     describe: () => "The note says the client cancelled or called off the session.",
+  },
+  // THE ONE THE AUDIT EXISTS FOR.
+  //
+  // Mánu 2026-08-26, having opened his own shift in QSP: "i clocked in at 1pm
+  // and clocked out at 3:54pm. that is the billable hours i did for that client.
+  // my schedule had it at 1pm-5pm but since I clocked out early my time got
+  // changed which is good. some people or admin (cant do it anymore) change
+  // their time back to the original time (clocking out early and adjusting their
+  // time so they dont lose hours/money) and thats what we are looking for."
+  //
+  // Clocking out early is not the problem - a client ends a session early all
+  // the time, and QSP trims the booking to match, which is what SHOULD happen.
+  // The problem is a booking that still bills the original length after the
+  // clock says the visit was shorter.
+  //
+  // The clock export keeps the ORIGINAL booking in its own schedule columns
+  // while the roster carries the trimmed one, so the two together say which
+  // happened. Mánu's own 08/18: roster 1p-3:54p, clock schedule 1p-5p, clocked
+  // out 3:54p - trimmed correctly, and it raises nothing.
+  "billed-over-clocked": {
+    label: "Billed above what was clocked",
+    weight: 90,
+    describe: (f) =>
+      `The roster bills ${hrs(f.billedMin)} and the clock records ${hrs(f.clockedMin)}.`
+      + (f.neverTrimmed
+        ? " The booking still ends where it was originally scheduled, so it was not trimmed to the clock."
+        : ""),
   },
   "paid-over-documented": {
     label: "Billed above what the note documents",
@@ -169,6 +198,24 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
     if (billedMin > 0 && note.words / (billedMin / 60) < rules.minWordsPerHour) {
       out.push({ kind: "thin-note", words: note.words, billedMin });
     }
+  }
+
+  // BILLED ABOVE WHAT WAS CLOCKED, which is the thing this screen was built to
+  // find. Only where the shift was clocked at BOTH ends - a missing punch has
+  // its own finding and cannot also be evidence of over-billing.
+  const clockedMin = shift?.workedMin ?? null;
+  if (
+    billedMin != null && clockedMin != null
+    && billedMin - clockedMin >= rules.billedOverClockMin
+  ) {
+    out.push({
+      kind: "billed-over-clocked",
+      billedMin,
+      clockedMin,
+      // the booking still ends where the clock export says it was originally
+      // scheduled, so nobody trimmed it to what was worked
+      neverTrimmed: shift.originalTo != null && shift.schedTo === shift.originalTo,
+    });
   }
 
   // the clock cannot corroborate a shift it never recorded, which matters most
