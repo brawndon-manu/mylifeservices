@@ -77,7 +77,6 @@ export const AUDIT_RULES = {
   billedOverClockMin: 10,
   minWordsPerHour: 15,
   signedEarlyMin: 60,
-  signedLateDays: 1,
 };
 
 // ---------------------------------------------------------------- the reasons
@@ -133,11 +132,6 @@ export const AUDIT_REASONS = {
         ? "The note was signed before the shift began."
         : `The note was signed ${Math.abs(f.signedAfterMin)} minutes before the shift ended.`,
   },
-  "signed-late": {
-    label: "Signed days after the shift",
-    weight: 20,
-    describe: (f) => `The note was signed ${(f.signedAfterMin / 1440).toFixed(1)} days after the shift.`,
-  },
   "thin-note": {
     label: "Short for the time billed",
     weight: 30,
@@ -192,10 +186,12 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
       const beforeStart =
         note.startMin != null && note.endMin != null
         && note.signedAfterMin < -(note.endMin - note.startMin);
+      // NOTHING IS RAISED FOR WRITING UP LATE. Mánu 2026-08-27 had it removed:
+      // a note filed days afterwards is a paperwork habit, not a billing
+      // question, and it is the clock that says whether the hours were worked.
+      // The 21 it fired on were noise on a screen that has to stay readable.
       if (beforeStart || note.signedAfterMin <= -rules.signedEarlyMin) {
         out.push({ kind: "signed-before-shift", signedAfterMin: note.signedAfterMin, beforeStart });
-      } else if (note.signedAfterMin > rules.signedLateDays * 1440) {
-        out.push({ kind: "signed-late", signedAfterMin: note.signedAfterMin });
       }
     }
 

@@ -127,13 +127,15 @@ test("signed before the shift BEGAN says that instead", () => {
   assert.equal(found.text, "The note was signed before the shift began.");
 });
 
-test("signed days afterwards is its own, lighter reason", () => {
-  const rs = auditReasons(shift(), note({ signedAfterMin: 5 * 1440 }));
-  assert.deepEqual(kinds(rs), ["signed-late"]);
-  assert.match(rs[0].text, /5\.0 days after/);
+// REMOVED 2026-08-27 on Mánu's instruction: a note written up days afterwards
+// is a paperwork habit rather than a billing question, and the clock is what
+// says whether the hours were worked.
+test("writing the note up days afterwards raises nothing", () => {
+  assert.deepEqual(auditReasons(shift(), note({ signedAfterMin: 5 * 1440 })), []);
+  assert.deepEqual(auditReasons(shift(), note({ signedAfterMin: 30 * 1440 })), []);
 });
 
-test("a note with no signature raises neither", () => {
+test("a note with no signature raises nothing about signing", () => {
   const rs = auditReasons(shift(), note({ signedAfterMin: null, signedAt: null }));
   assert.equal(rs.some((r) => r.kind.startsWith("signed-")), false);
 });
