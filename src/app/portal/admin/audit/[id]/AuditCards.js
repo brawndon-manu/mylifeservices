@@ -41,6 +41,7 @@ const DECISIONS = [
 
 const VIEWS = [
   { key: "shifts", label: "Every shift" },
+  { key: "orphans", label: "Notes with no shift" },
   { key: "employee", label: "By employee", of: (r) => r.who },
   { key: "client", label: "By client", of: (r) => r.client || "No client on the booking" },
 ];
@@ -53,7 +54,7 @@ const TONE = {
   flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
-export default function AuditCards({ rows, totals }) {
+export default function AuditCards({ rows, totals, orphans = [] }) {
   const [decision, setDecision] = useState("open");
   const [view, setView] = useState("shifts");
   const [only, setOnly] = useState(null);
@@ -244,7 +245,9 @@ export default function AuditCards({ rows, totals }) {
         </span>
       </div>
 
-      {shown.length === 0 ? (
+      {view === "orphans" ? (
+        <Orphans rows={orphans} />
+      ) : shown.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
           {decision === "flagged"
             ? "Nothing has been flagged."
@@ -271,6 +274,48 @@ export default function AuditCards({ rows, totals }) {
       ) : (
         <RollUp rows={roll} what={view === "employee" ? "Employee" : "Client"} onOpen={drillInto} />
       )}
+    </>
+  );
+}
+
+// NOTES THAT MATCHED NO BILLED SHIFT.
+//
+// Either the service was documented and nothing in the uploaded periods bills
+// for it, or it is a SECOND note for a client whose booking already has one -
+// a visit written up twice. Both are worth a look and neither belongs on
+// somebody else's shift, which is where they used to end up.
+function Orphans({ rows }) {
+  if (!rows.length) {
+    return (
+      <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
+        Every note matched a billed shift.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="mt-4 text-xs text-faint">
+        {rows.length} notes were written that no billed shift claims. A second note for a client
+        whose booking already has one lands here too.
+      </p>
+      <ul className="mt-2 space-y-3">
+        {rows.map((n, i) => (
+          <li key={i} className="rounded-xl border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span className="text-base font-semibold text-foreground">{n.who}</span>
+              <span className="text-sm tabular-nums text-muted">{n.date}</span>
+            </div>
+            <p className="mt-0.5 text-sm text-muted">
+              {n.client || "no client on the note"} · {n.start}-{n.end}
+              {n.minutes != null ? ` · ${(n.minutes / 60).toFixed(2)}h documented` : ""}
+              {" · "}{n.words} words
+            </p>
+            {n.summary && (
+              <p className="mt-2 text-sm leading-relaxed text-faint">{n.summary}…</p>
+            )}
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

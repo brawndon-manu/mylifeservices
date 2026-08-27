@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  auditReasons, auditRow, sessionCalledOff, shiftKeyOf, AUDIT_RULES,
+  auditReasons, auditRow, sessionCalledOff, shiftKeyOf, clientKey, sameClient, AUDIT_RULES,
 } from "../note-audit.js";
 
 const shift = (over = {}) => ({
@@ -234,4 +234,47 @@ test("the client is matched regardless of how it was capitalised", () => {
 test("a missing piece still produces a key rather than throwing", () => {
   assert.equal(shiftKeyOf({}), "|||");
   assert.equal(shiftKeyOf({ employeeKey: "x", date: "08/17/26" }), "x|08/17/26||");
+});
+
+// ---- the same client, written two ways ----
+//
+// The roster abbreviates and the service note spells the name out. Compared as
+// plain strings they never match, and a note that cannot find its own client's
+// booking gets attached to whatever else that person worked that day - which is
+// how a note about Anthony Grant was reported against Saneeha Amin's shift.
+
+test("the roster's spelling and the note's spelling are the same client", () => {
+  for (const [roster, note] of [
+    ["Mienik, G", "Grant Mienik"],
+    ["Michel, C", "Carlos Michel"],
+    ["Cosio, J", "Jeffrey Cosio"],
+    ["Irigoyen, C", "Christina Irigoyen"],
+  ]) {
+    assert.equal(sameClient(roster, note), true, `${roster} / ${note}`);
+  }
+});
+
+// "Mc Carter Jr." is one surname with two spaces and a full stop in it, so the
+// surname is everything after the FIRST word rather than the last word
+test("a surname of several words survives both spellings", () => {
+  assert.equal(sameClient("Mc Carter Jr., W", "William Mc Carter Jr."), true);
+  assert.equal(clientKey("Mc Carter Jr., W"), "mc carter jr|w");
+});
+
+test("a nickname in brackets is not part of the name", () => {
+  assert.equal(sameClient("Oh, H", "Hankang (Oliver) Oh"), true);
+});
+
+test("two different clients do not match", () => {
+  assert.equal(sameClient("Mienik, G", "Molly Groty"), false);
+  // same surname, different person
+  assert.equal(sameClient("Garcia, S", "Johannah Garcia"), false);
+});
+
+// two bookings with no client on them are not thereby the same client
+test("nothing matches nothing", () => {
+  assert.equal(sameClient(null, null), false);
+  assert.equal(sameClient("", ""), false);
+  assert.equal(sameClient("Mienik, G", null), false);
+  assert.equal(clientKey(null), "");
 });

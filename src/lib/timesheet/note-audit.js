@@ -227,3 +227,51 @@ export function shiftKeyOf({ employeeKey, date, startMin, client }) {
     String(client || "").trim().toLowerCase(),
   ].join("|");
 }
+
+// ---------------------------------------------------------------- the client
+
+// THE SAME CLIENT, WRITTEN TWO WAYS.
+//
+// The roster abbreviates: "Mienik, G", "Mc Carter Jr., W", "Oh, H". The service
+// note spells the name out: "Grant Mienik", "William Mc Carter Jr.", "Hankang
+// (Oliver) Oh". Compared as plain strings they never match, and a note that
+// cannot find its own client's booking gets attached to whatever else that
+// person worked that day - which is how a note about Anthony Grant ended up
+// reported against Saneeha Amin's shift.
+//
+// So the comparable part is the surname and the first initial, which is all the
+// roster ever gives. Held to that, 226 rostered spellings line up with 218
+// written ones.
+//
+// A parenthetical goes first ("Hankang (Oliver) Oh"), then the form decides how
+// to read it: a comma means "Last, First" and no comma means "First Last",
+// where the surname is everything after the first word - "Mc Carter Jr." is one
+// surname with two spaces and a full stop in it.
+export function clientKey(name) {
+  const clean = String(name || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return "";
+  const tidy = (s) => s.toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+
+  const comma = clean.lastIndexOf(",");
+  let last, first;
+  if (comma >= 0) {
+    last = clean.slice(0, comma);
+    first = clean.slice(comma + 1);
+  } else {
+    const parts = clean.split(" ");
+    first = parts[0];
+    last = parts.slice(1).join(" ") || parts[0];
+  }
+  const initial = tidy(first).charAt(0);
+  return `${tidy(last)}|${initial}`;
+}
+
+// null names never match each other: two bookings with no client on them are
+// not thereby the same client
+export const sameClient = (a, b) => {
+  const x = clientKey(a);
+  return !!x && x === clientKey(b);
+};

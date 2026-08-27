@@ -6,7 +6,7 @@ import { isCappedService } from "@/lib/timesheet/compliance";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
 import { clockShifts } from "@/lib/timesheet/clock";
-import { auditRow, shiftKeyOf } from "@/lib/timesheet/note-audit";
+import { auditRow, shiftKeyOf, sameClient } from "@/lib/timesheet/note-audit";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 
@@ -166,24 +166,40 @@ export default async function AuditBatchPage({ params }) {
 
   // ---- what was DOCUMENTED: the notes, one per shift ----
   //
-  // Matched on the person and the day, then paired to the nearest shift by start
-  // time - and a shift already holding a note is not offered again, so two notes
-  // on a busy day cannot both land on the same booking.
+  // MATCHED ON THE CLIENT FIRST, and this is not a refinement - it is the
+  // difference between a true reading and a false accusation.
+  //
+  // Paired on the person, the day and the nearest start time alone, a note with
+  // no shift of its own lands on whatever else that person worked. Ashley Cain
+  // filed two notes on 08/17, both for Anthony Grant, both 6-7pm, describing the
+  // same Del Taco visit twice. The first found Grant's 6-7pm booking. The second
+  // was dropped onto Saneeha Amin's unrelated 10a-2p shift, which then read as
+  // four hours billed against one hour documented - a finding about a shift
+  // where nothing had happened at all.
+  //
+  // A note names its client, so it is only ever offered to that client's
+  // bookings. Anything left over is an orphan and reported as one, which is
+  // where a duplicate belongs.
   const byPersonDay = new Map();
   for (const n of notes) {
     const k = `${scheduleKey(n.employee)}|${n.date}`;
     if (!byPersonDay.has(k)) byPersonDay.set(k, []);
     byPersonDay.get(k).push(n);
   }
+
   const taken = new Set();
   const rows = [];
   for (const shift of shifts.values()) {
-    const candidates = (byPersonDay.get(`${shift.who}|${shift.date}`) || [])
+    const sameDay = (byPersonDay.get(`${shift.who}|${shift.date}`) || [])
       .filter((n) => !taken.has(n));
+    // the booking's client, against the client the note was written about
+    const forThisClient = shift.client
+      ? sameDay.filter((n) => sameClient(n.client, shift.client))
+      : sameDay;
     let note = null;
-    if (candidates.length) {
+    if (forThisClient.length) {
       const anchor = shift.actualFrom ?? shift.schedFrom ?? 0;
-      note = candidates
+      note = forThisClient
         .map((n) => ({ n, d: Math.abs((n.startMin ?? 0) - anchor) }))
         .sort((a, b) => a.d - b.d)[0].n;
       taken.add(note);
@@ -219,9 +235,27 @@ export default async function AuditBatchPage({ params }) {
     });
   }
 
-  // a note that never found a shift: the service was documented and nothing in
-  // the uploaded periods bills for it
-  const orphans = notes.filter((n) => !taken.has(n));
+  // A NOTE THAT NEVER FOUND A SHIFT. Two things land here and both are worth
+  // seeing: a service documented that nothing in the uploaded periods bills
+  // for, and a SECOND note for a client whose booking already has one - which
+  // is how Ashley Cain's duplicate 08/17 note shows up now instead of being
+  // dropped onto somebody else's shift.
+  //
+  // Trimmed to what the screen prints. The whole note is a paragraph of prose
+  // and there can be hundreds of them.
+  const orphans = notes
+    .filter((n) => !taken.has(n))
+    .map((n) => ({
+      who: namesSeen.get(scheduleKey(n.employee)) || n.employee,
+      date: n.date,
+      client: n.client,
+      start: n.start,
+      end: n.end,
+      minutes: n.minutes,
+      words: n.words,
+      summary: (n.summary || "").slice(0, 220),
+    }))
+    .sort((a, b) => a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
 
   // WHAT HAS ALREADY BEEN DECIDED. Looked up by the shift's own key rather than
   // by anything belonging to this upload, which is the point of the key.
@@ -261,6 +295,7 @@ export default async function AuditBatchPage({ params }) {
 
       <AuditCards
         rows={rows}
+        orphans={orphans}
         totals={{
           notes: notes.length,
           shifts: rows.length,
