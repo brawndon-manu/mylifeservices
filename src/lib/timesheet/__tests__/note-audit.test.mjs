@@ -105,39 +105,16 @@ test("the keyword reads the comments as well as the summary", () => {
 });
 
 // ---- when the note was signed ----
+//
+// REMOVED 2026-08-27 on Mánu's instruction, both of them. Writing a note up
+// early or late is a paperwork habit; what decides whether the hours were
+// worked is the clock. The signing time is still read and still shown under the
+// note, it just no longer surfaces a shift on its own.
 
-test("writing up at the end of the activity is ordinary and raises nothing", () => {
-  // signed four minutes after the shift ended, and 307 of 840 are within five
-  assert.deepEqual(auditReasons(shift(), note({ signedAfterMin: 4 })), []);
-  assert.deepEqual(auditReasons(shift(), note({ signedAfterMin: -12 })), []);
-});
-
-test("signed an hour or more before the shift ended is raised", () => {
-  const rs = auditReasons(shift(), note({ signedAfterMin: -90 }));
-  assert.deepEqual(kinds(rs), ["signed-before-shift"]);
-  assert.match(rs[0].text, /90 minutes before the shift ended/);
-});
-
-// Marilyn Urena's 8/14 note, signed at 7:56 PM on 8/13 - before the shift it
-// describes had begun. A different statement from being written up early.
-test("signed before the shift BEGAN says that instead", () => {
-  const rs = auditReasons(shift(), note({ signedAfterMin: -764 }));
-  const found = rs.find((r) => r.kind === "signed-before-shift");
-  assert.equal(found.beforeStart, true);
-  assert.equal(found.text, "The note was signed before the shift began.");
-});
-
-// REMOVED 2026-08-27 on Mánu's instruction: a note written up days afterwards
-// is a paperwork habit rather than a billing question, and the clock is what
-// says whether the hours were worked.
-test("writing the note up days afterwards raises nothing", () => {
-  assert.deepEqual(auditReasons(shift(), note({ signedAfterMin: 5 * 1440 })), []);
-  assert.deepEqual(auditReasons(shift(), note({ signedAfterMin: 30 * 1440 })), []);
-});
-
-test("a note with no signature raises nothing about signing", () => {
-  const rs = auditReasons(shift(), note({ signedAfterMin: null, signedAt: null }));
-  assert.equal(rs.some((r) => r.kind.startsWith("signed-")), false);
+test("nothing about the signing time raises a shift", () => {
+  for (const signedAfterMin of [4, -12, -90, -764, 5 * 1440, 30 * 1440, null]) {
+    assert.deepEqual(auditReasons(shift(), note({ signedAfterMin })), [], String(signedAfterMin));
+  }
 });
 
 // ---- too thin to carry the time ----
