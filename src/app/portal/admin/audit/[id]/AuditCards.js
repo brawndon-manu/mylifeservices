@@ -54,18 +54,27 @@ const TONE = {
   flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
-export default function AuditCards({ rows, totals, orphans = [] }) {
+export default function AuditCards({ rows, totals, orphans = [], periods = [] }) {
+  // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
+  // runs per period - a reviewer works one fortnight at a time. One notes upload
+  // spans several of them; 8/1 to 8/26 is three.
+  const [period, setPeriod] = useState(periods.length === 1 ? periods[0] : "all");
   const [decision, setDecision] = useState("open");
   const [view, setView] = useState("shifts");
   const [only, setOnly] = useState(null);
   const [q, setQ] = useState("");
   const [studying, setStudying] = useState(false);
 
+  const inPeriod = useMemo(
+    () => (period === "all" ? rows : rows.filter((r) => r.period === period)),
+    [rows, period],
+  );
+
   const kinds = useMemo(() => {
     const c = {};
-    for (const r of rows) for (const reason of r.reasons) c[reason.kind] = (c[reason.kind] || 0) + 1;
+    for (const r of inPeriod) for (const reason of r.reasons) c[reason.kind] = (c[reason.kind] || 0) + 1;
     return c;
-  }, [rows]);
+  }, [inPeriod]);
 
   const labelOf = useMemo(() => {
     const m = {};
@@ -73,22 +82,30 @@ export default function AuditCards({ rows, totals, orphans = [] }) {
     return m;
   }, [rows]);
 
+  const periodCounts = useMemo(() => {
+    const c = { all: rows.length };
+    for (const p of periods) c[p] = rows.filter((r) => r.period === p).length;
+    return c;
+  }, [rows, periods]);
+
+  // counted within the period showing, so the decision tabs answer "of the
+  // fortnight I am working on" rather than of everything ever uploaded
   const decisionCounts = useMemo(() => {
     const c = {};
-    for (const d of DECISIONS) c[d.key] = rows.filter(d.match).length;
+    for (const d of DECISIONS) c[d.key] = inPeriod.filter(d.match).length;
     return c;
-  }, [rows]);
+  }, [inPeriod]);
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const byDecision = DECISIONS.find((d) => d.key === decision).match;
-    return rows.filter((r) => {
+    return inPeriod.filter((r) => {
       if (!byDecision(r)) return false;
       if (only && !r.reasons.some((x) => x.kind === only)) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [rows, decision, only, q]);
+  }, [inPeriod, decision, only, q]);
 
   // ONE LINE PER PERSON OR PER CLIENT, over whatever is showing.
   //
@@ -163,8 +180,32 @@ export default function AuditCards({ rows, totals, orphans = [] }) {
         to bill. Nothing on this page changes an hour, a premium or a signed timesheet.
       </p>
 
-      {/* THE DECISION FIRST. "What is still open" and "what did we flag" are the
-          two questions somebody opens this screen already holding. */}
+      {periods.length > 1 && (
+        <div className="mt-6">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Pay period</p>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {["all", ...periods].map((p) => (
+              <button
+                key={p}
+                type="button"
+                aria-pressed={period === p}
+                onClick={() => setPeriod(p)}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  period === p
+                    ? "border-2 border-brand bg-brand/10 text-brand"
+                    : "border border-border-strong text-muted hover:border-brand hover:text-brand"
+                }`}
+              >
+                {p === "all" ? "Every period" : p}{" "}
+                <span className="tabular-nums">{periodCounts[p] ?? 0}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* THE DECISION SECOND. "What is still open" and "what did we flag" are
+          the two questions somebody opens this screen already holding. */}
       <div className="mt-6 flex flex-wrap gap-2">
         {DECISIONS.map((d) => (
           <button
@@ -241,12 +282,13 @@ export default function AuditCards({ rows, totals, orphans = [] }) {
           Go through these one by one
         </button>
         <span className="text-xs text-faint">
-          {shown.length} of {rows.length} shifts.
+          {shown.length} of {inPeriod.length} shifts
+          {period === "all" ? "" : ` in ${period}`}.
         </span>
       </div>
 
       {view === "orphans" ? (
-        <Orphans rows={orphans} />
+        <Orphans rows={period === "all" ? orphans : orphans.filter((n) => n.period === period)} />
       ) : shown.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
           {decision === "flagged"
@@ -409,9 +451,15 @@ function Card({ r }) {
         <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
         <Figure
           label="Clocked"
-          value={hrs(r.clockedMin) || "not clocked"}
+          value={hrs(r.clockedMin) || (r.clockAvailable ? "not clocked" : "no clock export")}
           sub={span(r.actualFrom, r.actualTo)}
-          tone={r.clockedMin == null ? "text-rose-600 dark:text-rose-400" : undefined}
+          tone={
+            r.clockedMin != null
+              ? undefined
+              : r.clockAvailable
+                ? "text-rose-600 dark:text-rose-400"
+                : "text-faint"
+          }
         />
         <Figure
           label="Documented"

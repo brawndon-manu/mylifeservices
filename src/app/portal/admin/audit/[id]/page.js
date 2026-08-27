@@ -138,6 +138,12 @@ export default async function AuditBatchPage({ params }) {
 
   // ---- what was CLOCKED: read back off each period's stored export ----
   let clockLoaded = 0;
+  // WHICH PERIODS HAVE A CLOCK EXPORT AT ALL. "Nobody clocked this shift" and
+  // "no clock export was uploaded for this fortnight" look identical on a card
+  // and mean opposite things - the first is about a person, the second is about
+  // a missing file. 08/01-08/15 has no export, so without this every shift in it
+  // reads as an accusation.
+  const periodsWithClock = new Set();
   for (const period of current.values()) {
     const files = period.clockFindings?.files?.length
       ? period.clockFindings.files
@@ -149,6 +155,7 @@ export default async function AuditBatchPage({ params }) {
       try {
         const res = await fetch(f.url, { cache: "no-store" });
         if (!res.ok) throw new Error(`the file came back ${res.status}`);
+        periodsWithClock.add(`${period.periodFrom} to ${period.periodTo}`);
         for (const row of clockShifts(Buffer.from(await res.arrayBuffer()))) {
           if (!isCappedService(row.service)) continue;
           if (dateKey(row.date) < notesFrom || dateKey(row.date) > notesTo) continue;
@@ -187,6 +194,27 @@ export default async function AuditBatchPage({ params }) {
     byPersonDay.get(k).push(n);
   }
 
+  // WHICH PAY PERIOD EACH SHIFT BELONGS TO.
+  //
+  // Mánu 2026-08-26: "can we seperate these by the timesheets dates, or should i
+  // reupload the notes for each set of dates."
+  //
+  // Split here rather than re-uploaded. The notes export runs over a range the
+  // operator picks - this one covers 8/1 to 8/26, which is three pay periods -
+  // and every note carries its own date, so the split costs nothing. Uploading
+  // the same notes once per period would put the same note in the database
+  // several times and make a job out of something the data already answers.
+  //
+  // It matters because approving is a BILLING judgement and billing runs per
+  // pay period: a reviewer works one fortnight at a time.
+  const periodOf = (date) => {
+    const d = dateKey(date);
+    for (const p of current.values()) {
+      if (d >= dateKey(p.periodFrom) && d <= dateKey(p.periodTo)) return `${p.periodFrom} to ${p.periodTo}`;
+    }
+    return "Outside every uploaded pay period";
+  };
+
   const taken = new Set();
   const rows = [];
   for (const shift of shifts.values()) {
@@ -218,6 +246,8 @@ export default async function AuditBatchPage({ params }) {
       startMin: shift.schedFrom ?? shift.actualFrom ?? null,
       who: namesSeen.get(shift.who) || shift.name,
       date: shift.date,
+      period: periodOf(shift.date),
+      clockAvailable: periodsWithClock.has(periodOf(shift.date)),
       client: shift.client || note?.client || null,
       service: shift.service || null,
       schedFrom: shift.schedFrom ?? null, schedTo: shift.schedTo ?? null,
@@ -248,6 +278,7 @@ export default async function AuditBatchPage({ params }) {
     .map((n) => ({
       who: namesSeen.get(scheduleKey(n.employee)) || n.employee,
       date: n.date,
+      period: periodOf(n.date),
       client: n.client,
       start: n.start,
       end: n.end,
@@ -296,6 +327,9 @@ export default async function AuditBatchPage({ params }) {
       <AuditCards
         rows={rows}
         orphans={orphans}
+        periods={[...current.values()]
+          .map((p) => `${p.periodFrom} to ${p.periodTo}`)
+          .sort((a, b) => dateKey(b.slice(0, 8)) - dateKey(a.slice(0, 8)))}
         totals={{
           notes: notes.length,
           shifts: rows.length,

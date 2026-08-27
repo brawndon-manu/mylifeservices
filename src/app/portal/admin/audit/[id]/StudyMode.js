@@ -222,11 +222,15 @@ export default function StudyMode({ rows, onExit }) {
 
             <dl className="mt-6 grid gap-4 sm:grid-cols-4">
               <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+              {/* a shift nobody clocked and a fortnight with no clock export
+                  look the same on a card and mean opposite things */}
               <Figure
                 label="Clocked"
-                value={hrs(row.clockedMin) || "not clocked"}
+                value={hrs(row.clockedMin) || (row.clockAvailable ? "not clocked" : "no clock export")}
                 sub={span(row.actualFrom, row.actualTo)}
-                tone={row.clockedMin == null ? "text-rose-500" : null}
+                tone={
+                  row.clockedMin != null ? null : row.clockAvailable ? "text-rose-500" : "text-faint"
+                }
               />
               <Figure
                 label="Documented"
