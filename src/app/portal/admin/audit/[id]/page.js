@@ -92,11 +92,37 @@ export default async function AuditBatchPage({ params }) {
     )
     : [];
 
+  // ONE PERSON, WHATEVER THEY ARE CALLED ON THE DOCUMENT.
+  //
+  // The timesheet prints the LEGAL name and the clock export prints the one
+  // they go by. Ruth Delgado Pineda goes by Angel and Francisco Velasquez goes
+  // by Frank, so their clock rows found no shift to attach to and thirteen
+  // shifts read "not clocked" while their punches sat in the file.
+  //
+  // The portal already knows both spellings, so both are mapped onto one key.
+  // Legal is the canonical side because that is what the timesheet - the
+  // document that pays - calls them.
+  const staff = await prisma.user.findMany({
+    select: { name: true, preferredFirstName: true, preferredLastName: true },
+  });
+  const alias = new Map();
+  for (const u of staff) {
+    const legal = scheduleKey(u.name || "");
+    if (!legal) continue;
+    alias.set(legal, legal);
+    const goesBy = scheduleKey(preferredName(u));
+    if (goesBy && goesBy !== legal) alias.set(goesBy, legal);
+  }
+  const whoKey = (name) => {
+    const k = scheduleKey(name);
+    return alias.get(k) || k;
+  };
+
   // ---- what was BILLED: every rostered block, off the sheets themselves ----
   const shifts = new Map();          // person|date|startMin -> shift
   const namesSeen = new Map();
   for (const t of sheets) {
-    const key = scheduleKey(t.sourceName);
+    const key = whoKey(t.sourceName);
     if (t.legal_name || t.preferred_first || t.preferred_last) {
       namesSeen.set(key, preferredName({
         name: t.legal_name,
@@ -190,7 +216,7 @@ export default async function AuditBatchPage({ params }) {
           if (!isCappedService(row.service)) continue;
           if (dateKey(row.date) < notesFrom || dateKey(row.date) > notesTo) continue;
           clockLoaded++;
-          const who = scheduleKey(row.name);
+          const who = whoKey(row.name);
           const sameDay = (byPersonDayShift.get(`${who}|${row.date}`) || [])
             .filter((x) => !x.clocked && sameClient(x.client, row.client));
           const best = sameDay
@@ -259,7 +285,7 @@ export default async function AuditBatchPage({ params }) {
   // where a duplicate belongs.
   const byPersonDay = new Map();
   for (const n of notes) {
-    const k = `${scheduleKey(n.employee)}|${n.date}`;
+    const k = `${whoKey(n.employee)}|${n.date}`;
     if (!byPersonDay.has(k)) byPersonDay.set(k, []);
     byPersonDay.get(k).push(n);
   }
@@ -357,7 +383,7 @@ export default async function AuditBatchPage({ params }) {
   const orphans = notes
     .filter((n) => !taken.has(n))
     .map((n) => ({
-      who: namesSeen.get(scheduleKey(n.employee)) || n.employee,
+      who: namesSeen.get(whoKey(n.employee)) || n.employee,
       date: n.date,
       period: periodOf(n.date),
       client: n.client,
