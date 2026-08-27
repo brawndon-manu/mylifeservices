@@ -220,7 +220,29 @@ export default function StudyMode({ rows, onExit }) {
               </span>
             </div>
 
-            <dl className="mt-6 grid gap-4 sm:grid-cols-4">
+            {/* FOUR RECORDS, IN THE ORDER THEY HAPPEN. Mánu 2026-08-27: "it
+                should show original schdueled time, billed time, clock in and
+                clock out."
+                
+                Scheduled is what the booking was BEFORE anyone touched it -
+                QSP's Original End Time, which the clock export keeps in its own
+                schedule columns. Billed is what the Simple Timesheet pays,
+                which is the rostered block: 704 of 704 service blocks in
+                08/16-08/31 match a punch pair on the timesheet exactly. Clocked
+                is what actually happened, and documented is the note.
+                
+                Showing the original beside the billed figure is what makes a
+                trimmed booking legible without working it out: 1p-5p scheduled,
+                1p-3:54p billed, 1p-3:54p clocked is a session that ended early
+                and was corrected. 1p-5p scheduled, 1p-5p billed, 1p-3:54p
+                clocked is the thing this screen looks for. */}
+            <dl className="mt-6 grid gap-4 sm:grid-cols-5">
+              <Figure
+                label="Scheduled"
+                value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
+                sub={span(row.originalFrom, row.originalTo)}
+                tone="text-muted"
+              />
               <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
               {/* a shift nobody clocked and a fortnight with no clock export
                   look the same on a card and mean opposite things */}

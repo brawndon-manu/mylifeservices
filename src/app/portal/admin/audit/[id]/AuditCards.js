@@ -174,10 +174,11 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
         {totals.orphans > 0 && ` ${totals.orphans} notes matched no billed shift.`}
       </p>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-faint">
-        Billed is what the roster says, which is what payroll pays. Clocked is the QSClock export.
-        Documented is the time on the note itself. A shift ending early is ordinary and can still
-        be billable, so nothing here is a finding on its own. Approving a shift says it looks right
-        to bill. Nothing on this page changes an hour, a premium or a signed timesheet.
+        Scheduled is the booking before anyone touched it. Billed is what the Simple Timesheet
+        pays. Clocked is the QSClock export. Documented is the time on the service note. A session
+        ending early is ordinary and the booking being trimmed to match is correct, so nothing here
+        is a finding on its own. Approving a shift says it looks right to bill. Nothing on this
+        page changes an hour, a premium or a signed timesheet.
       </p>
 
       {periods.length > 1 && (
@@ -447,7 +448,15 @@ function Card({ r }) {
         {r.client ? ` · ${r.client}` : ""}
       </p>
 
+      {/* scheduled, billed, clocked, documented - the four records in the order
+          they happen. See the note in StudyMode. */}
       <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+        <Figure
+          label="Scheduled"
+          value={r.originalFrom != null ? hrs(r.originalTo - r.originalFrom) : "-"}
+          sub={span(r.originalFrom, r.originalTo)}
+          tone="text-muted"
+        />
         <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
         <Figure
           label="Clocked"
