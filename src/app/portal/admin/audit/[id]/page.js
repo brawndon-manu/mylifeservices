@@ -6,7 +6,7 @@ import { isCappedService } from "@/lib/timesheet/compliance";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
 import { clockShifts } from "@/lib/timesheet/clock";
-import { auditRow, shiftKeyOf, sameClient } from "@/lib/timesheet/note-audit";
+import { auditRow, shiftKeyOf, sameClient, displayClient } from "@/lib/timesheet/note-audit";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 
@@ -208,6 +208,12 @@ export default async function AuditBatchPage({ params }) {
             // THE CLOCK EXPORT SAYS WHAT WAS CLOCKED. IT DOES NOT SAY WHAT WAS
             // BILLED, and its own schedule columns must never be allowed to.
             Object.assign(best.x, {
+              // THE FULL CLIENT NAME. The roster abbreviates to "Sherwold, A"
+              // and the clock export spells it out as "Sherwold, Abigail", in
+              // the same Last, First shape the rest of the portal uses. Kept
+              // apart from `client`, which stays the roster's own spelling so
+              // the matching that got us here is not rewritten under it.
+              clientFull: row.client || null,
               // QSP's "Original End Time" - the booking before anyone touched it
               originalFrom: row.schedFrom, originalTo: row.schedTo,
               actualFrom: row.actualFrom, actualTo: row.actualTo,
@@ -301,7 +307,12 @@ export default async function AuditBatchPage({ params }) {
       employeeKey: shift.who,
       date: shift.date,
       startMin: shift.schedFrom ?? shift.actualFrom,
-      client: shift.client || note?.client || null,
+      // FULL WHERE ANYTHING HAS IT. Mánu 2026-08-27: "lets show full names of
+      // clients". The clock export is preferred over the note because it is
+      // already "Last, First" like every other name on these screens, while the
+      // note writes "Abigail \"Abbie\" Sherwold". The roster's abbreviation is
+      // the last resort, for a shift no clock row and no note ever reached.
+      client: displayClient(shift.clientFull || note?.client, shift.client) || null,
     });
     rows.push({
       key: shiftKey,
@@ -312,7 +323,12 @@ export default async function AuditBatchPage({ params }) {
       date: shift.date,
       period: periodOf(shift.date),
       clockAvailable: periodsWithClock.has(periodOf(shift.date)),
-      client: shift.client || note?.client || null,
+      // FULL WHERE ANYTHING HAS IT. Mánu 2026-08-27: "lets show full names of
+      // clients". The clock export is preferred over the note because it is
+      // already "Last, First" like every other name on these screens, while the
+      // note writes "Abigail \"Abbie\" Sherwold". The roster's abbreviation is
+      // the last resort, for a shift no clock row and no note ever reached.
+      client: displayClient(shift.clientFull || note?.client, shift.client) || null,
       service: shift.service || null,
       schedFrom: shift.schedFrom ?? null, schedTo: shift.schedTo ?? null,
       originalFrom: shift.originalFrom ?? null, originalTo: shift.originalTo ?? null,

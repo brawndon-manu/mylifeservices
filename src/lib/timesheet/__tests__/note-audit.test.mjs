@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  auditReasons, auditRow, sessionCalledOff, shiftKeyOf, clientKey, sameClient, AUDIT_RULES,
+  auditReasons, auditRow, sessionCalledOff, shiftKeyOf, clientKey, sameClient,
+  displayClient, AUDIT_RULES,
 } from "../note-audit.js";
 
 const shift = (over = {}) => ({
@@ -290,4 +291,36 @@ test("nothing matches nothing", () => {
   assert.equal(sameClient("", ""), false);
   assert.equal(sameClient("Mienik, G", null), false);
   assert.equal(clientKey(null), "");
+});
+
+// ---- the name as it reads on screen ----
+//
+// Three spellings of one client reach these screens: the roster abbreviates,
+// the clock export spells it out back to front, the note spells it out front to
+// back. Showing whichever arrived first put all three shapes on one screen.
+
+test("the clock export's spelling keeps its shape, without the nickname", () => {
+  assert.equal(displayClient('Sherwold, Abigail "Abbie"', "Sherwold, A"), "Sherwold, Abigail");
+  assert.equal(displayClient("Munoz, Omar", "Munoz, O"), "Munoz, Omar");
+});
+
+test("the note's spelling is turned round", () => {
+  assert.equal(displayClient("Octavio Nieto", "Nieto, O"), "Nieto, Octavio");
+  assert.equal(displayClient("Hankang (Oliver) Oh", "Oh, H"), "Oh, Hankang");
+});
+
+// the abbreviated form is the only one that knows where the surname starts
+test("a middle name stays with the first name, not the surname", () => {
+  assert.equal(displayClient("William E Nelson", "Nelson, W"), "Nelson, William E");
+  assert.equal(displayClient("Trixi Roa Garcia", "Garcia, T"), "Garcia, Trixi Roa");
+});
+
+test("a surname of several words survives being turned round", () => {
+  assert.equal(displayClient("William Mc Carter Jr.", "Mc Carter Jr., W"), "Mc Carter Jr., William");
+});
+
+// a shift no clock row and no note ever reached keeps what the roster gave it
+test("with no full name anywhere the abbreviation stands", () => {
+  assert.equal(displayClient(null, "Sherwold, A"), "Sherwold, A");
+  assert.equal(displayClient("", "Sherwold, A"), "Sherwold, A");
 });

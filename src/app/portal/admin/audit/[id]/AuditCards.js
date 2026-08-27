@@ -22,15 +22,7 @@
 // Nothing here computes an hour. See the page beside it.
 import { useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
-
-const clock = (min) => {
-  if (min == null) return null;
-  const h = Math.floor(min / 60) % 24;
-  const m = min % 60;
-  return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "a" : "p"}`;
-};
-const span = (a, b) => (a == null || b == null ? null : `${clock(a)}-${clock(b)}`);
-const hrs = (m) => (m == null ? null : `${(m / 60).toFixed(2)}h`);
+import { span, hrs, clockedFigure } from "./figures";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -177,14 +169,14 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
         periods they cover.
         {totals.orphans > 0 && ` ${totals.orphans} notes matched no billed shift.`}
       </p>
+      {/* SHORT. Every figure is defined on the card itself, so repeating all
+          three here left a paragraph nobody read - Mánu called it what it was.
+          What is left is the part the cards cannot say: that a gap is not by
+          itself a finding, and that none of this moves money. */}
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-faint">
-        Billed is what the Simple Timesheet pays. Clocked is the QSClock export. Scheduled is what
-        the clock export says the shift was booked for, shown for context: QSP keeps the original
-        end where a booking was trimmed, and moves the start to the clock-in where somebody began
-        late. The service note is read for what it says rather than for its times, which QSP fills
-        in from the booking. A session ending early is ordinary and the booking being trimmed to
-        match is correct, so nothing here is a finding on its own. Approving a shift says it looks
-        right to bill. Nothing on this page changes an hour, a premium or a signed timesheet.
+        A session ending early is ordinary, so nothing here is a finding on its own. The note is
+        read for what it says: QSP fills its times in from the booking. Approving says the shift
+        looks right to bill, and nothing on this page changes pay.
       </p>
 
       {periods.length > 1 && (
@@ -469,14 +461,12 @@ function Card({ r }) {
         <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
         <Figure
           label="Clocked"
-          value={hrs(r.clockedMin) || (r.clockAvailable ? "not clocked" : "no clock export")}
-          sub={span(r.actualFrom, r.actualTo)}
+          value={clockedFigure(r).value}
+          sub={clockedFigure(r).sub}
           tone={
-            r.clockedMin != null
-              ? undefined
-              : r.clockAvailable
-                ? "text-rose-600 dark:text-rose-400"
-                : "text-faint"
+            clockedFigure(r).tone === "bad"
+              ? "text-rose-600 dark:text-rose-400"
+              : clockedFigure(r).tone === "faint" ? "text-faint" : undefined
           }
         />
         <Figure

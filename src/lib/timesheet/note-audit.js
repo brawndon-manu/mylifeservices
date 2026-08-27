@@ -340,6 +340,45 @@ export function clientKey(name) {
   return p.surname && p.initial ? `${p.surname}|${p.initial}` : "";
 }
 
+// THE NAME AS IT SHOULD READ ON SCREEN. Mánu 2026-08-27: "lets show full names
+// of clients."
+//
+// Three spellings of one client reach these screens: the roster abbreviates
+// ("Sherwold, A"), the clock export spells it out back to front ("Sherwold,
+// Abigail \"Abbie\"") and the note spells it out front to back ("Octavio
+// Nieto"). Showing whichever arrived first put all three shapes on one screen.
+//
+// Everything reads "Last, First" here, which is what the rest of the portal
+// uses for a person. Turning the note's shape round needs to know where the
+// surname starts, and only the abbreviated form knows - so it is handed in, the
+// same authority `sameClient` leans on.
+export function displayClient(full, abbreviated) {
+  const raw = String(full || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/["'\u2018\u2019\u201c\u201d][^"'\u2018\u2019\u201c\u201d]*["'\u2018\u2019\u201c\u201d]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return abbreviated || null;
+
+  const comma = raw.lastIndexOf(",");
+  if (comma >= 0) {
+    const last = raw.slice(0, comma).trim();
+    const first = raw.slice(comma + 1).trim();
+    return first ? `${last}, ${first}` : last;
+  }
+
+  const words = raw.split(" ");
+  const A = clientParts(abbreviated);
+  if (A.abbreviated && A.surname) {
+    const n = A.surname.split(" ").length;
+    if (words.length > n) {
+      return `${words.slice(words.length - n).join(" ")}, ${words.slice(0, words.length - n).join(" ")}`;
+    }
+  }
+  // nothing to lean on, so the last word is the surname
+  return words.length > 1 ? `${words[words.length - 1]}, ${words.slice(0, -1).join(" ")}` : raw;
+}
+
 // null names never match each other: two bookings with no client on them are
 // not thereby the same client
 export function sameClient(a, b) {
