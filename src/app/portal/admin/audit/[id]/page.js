@@ -311,34 +311,58 @@ export default async function AuditBatchPage({ params }) {
     return "Outside every uploaded pay period";
   };
 
+  // A NAMED CLIENT CLAIMS ITS NOTE FIRST.
+  //
+  // Some bookings carry no client at all - "10a-1p -Self Determination
+  // Program(3:00)" - and a shift with no client used to be offered every note
+  // that person wrote that day, taking the nearest by start time. On Mánu's
+  // 08/03 the clientless 10a block took the Gerson Mejia note and the 1:30p
+  // Mejia booking was then reported as having none, with the note sitting in the
+  // file naming both him and the client.
+  //
+  // So it runs twice: every booking that names a client matches on that client,
+  // and only then may a clientless booking take what is left. Self Determination
+  // still finds its note, and never somebody else's.
   const taken = new Set();
   const rows = [];
-  for (const shift of shifts.values()) {
+  const noteFor = new Map();
+
+  const claim = (shift, byClient) => {
     const sameDay = (byPersonDay.get(`${shift.who}|${shift.date}`) || [])
       .filter((n) => !taken.has(n));
-    // the booking's client, against the client the note was written about
-    const forThisClient = shift.client
+    const candidates = byClient
       ? sameDay.filter((n) => sameClient(n.client, shift.client))
       : sameDay;
-    let note = null;
-    if (forThisClient.length) {
-      const anchor = shift.actualFrom ?? shift.schedFrom ?? 0;
-      note = forThisClient
-        .map((n) => ({ n, d: Math.abs((n.startMin ?? 0) - anchor) }))
-        .sort((a, b) => a.d - b.d)[0].n;
-      taken.add(note);
-    }
+    if (!candidates.length) return null;
+    const anchor = shift.actualFrom ?? shift.schedFrom ?? 0;
+    const note = candidates
+      .map((n) => ({ n, d: Math.abs((n.startMin ?? 0) - anchor) }))
+      .sort((a, b) => a.d - b.d)[0].n;
+    taken.add(note);
+    return note;
+  };
+
+  const everyShift = [...shifts.values()];
+  for (const shift of everyShift) {
+    if (shift.client) noteFor.set(shift, claim(shift, true));
+  }
+  for (const shift of everyShift) {
+    if (!shift.client) noteFor.set(shift, claim(shift, false));
+  }
+
+  for (const shift of everyShift) {
+    const note = noteFor.get(shift) || null;
     const read = auditRow(shift, note);
+    // FULL WHERE ANYTHING HAS IT. The clock export is preferred over the note
+    // because it is already "Last, First" like every other name on these
+    // screens; the roster's abbreviation is the last resort, for a shift no
+    // clock row and no note ever reached.
+    const client = displayClient(shift.clientFull || note?.client, shift.client) || null;
     const shiftKey = shiftKeyOf({
       employeeKey: shift.who,
       date: shift.date,
       startMin: shift.schedFrom ?? shift.actualFrom,
-      // FULL WHERE ANYTHING HAS IT. Mánu 2026-08-27: "lets show full names of
-      // clients". The clock export is preferred over the note because it is
-      // already "Last, First" like every other name on these screens, while the
-      // note writes "Abigail \"Abbie\" Sherwold". The roster's abbreviation is
-      // the last resort, for a shift no clock row and no note ever reached.
-      client: displayClient(shift.clientFull || note?.client, shift.client) || null,
+      client,
     });
     rows.push({
       key: shiftKey,
@@ -349,16 +373,14 @@ export default async function AuditBatchPage({ params }) {
       date: shift.date,
       period: periodOf(shift.date),
       clockAvailable: periodsWithClock.has(periodOf(shift.date)),
-      // FULL WHERE ANYTHING HAS IT. Mánu 2026-08-27: "lets show full names of
-      // clients". The clock export is preferred over the note because it is
-      // already "Last, First" like every other name on these screens, while the
-      // note writes "Abigail \"Abbie\" Sherwold". The roster's abbreviation is
-      // the last resort, for a shift no clock row and no note ever reached.
-      client: displayClient(shift.clientFull || note?.client, shift.client) || null,
+      client,
       service: shift.service || null,
       schedFrom: shift.schedFrom ?? null, schedTo: shift.schedTo ?? null,
       originalFrom: shift.originalFrom ?? null, originalTo: shift.originalTo ?? null,
       actualFrom: shift.actualFrom ?? null, actualTo: shift.actualTo ?? null,
+      // the punch display draws a cross off these, so a missing one must not
+      // read as a shift nobody tried to clock
+      noIn: !!shift.noIn, noOut: !!shift.noOut,
       gpsIn: shift.gpsIn ?? null, gpsOut: shift.gpsOut ?? null,
       note: note
         ? {
