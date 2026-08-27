@@ -88,6 +88,25 @@ export default function StudyMode({ rows, onExit }) {
     setAt((i) => i + 1);
   }, [row]);
 
+  // MOVING WITHOUT DECIDING. Mánu 2026-08-26: "give me option to cycle through
+  // these without picking a choice."
+  //
+  // Reading a shift and leaving it alone is a real thing to want - most of a
+  // first pass is looking rather than deciding - and it must not be spelled the
+  // same way as approving it. So the arrows MOVE and never decide, and the
+  // decision keys are the letters.
+  //
+  // It wraps. Skipping off the end of the list returns to the start rather than
+  // hitting the finished screen, because that screen means "you decided these",
+  // and arriving at it having decided nothing would say something untrue.
+  const step = useCallback((by) => {
+    if (!rows.length) return;
+    setFlagging(false);
+    setReason("");
+    setOpenNote(false);
+    setAt((i) => (i + by + rows.length) % rows.length);
+  }, [rows.length]);
+
   const back = useCallback(async () => {
     if (inFlight.current || !history.length) return;
     inFlight.current = true;
@@ -125,8 +144,13 @@ export default function StudyMode({ rows, onExit }) {
       if (e.key === "Escape") { setFlagging(false); setReason(""); }
       return;
     }
-    if (e.key === "ArrowRight" || e.key.toLowerCase() === "a") { e.preventDefault(); send("approved"); }
-    else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "f") { e.preventDefault(); setFlagging(true); }
+    if (e.key.toLowerCase() === "a") { e.preventDefault(); send("approved"); }
+    else if (e.key.toLowerCase() === "f") { e.preventDefault(); setFlagging(true); }
+    // the arrows move and decide nothing. They used to BE the decision, which
+    // put "next" and "approve" on adjacent keys on a screen that records who
+    // signed off what.
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
     else if (e.key === " ") { e.preventDefault(); setOpenNote((v) => !v); }
     else if (e.key === "Backspace") { e.preventDefault(); back(); }
     else if (e.key === "Escape") onExit();
@@ -252,11 +276,23 @@ export default function StudyMode({ rows, onExit }) {
               <p className="mt-6 text-sm text-faint">No service note was filed against this shift.</p>
             )}
 
-            {row.review && (
-              <p className="mt-6 text-xs text-faint">
-                Already {row.review.decision}
-                {row.review.by ? ` by ${row.review.by}` : ""}
-                {row.review.reason ? ` - ${row.review.reason}` : ""}. Deciding again replaces it.
+            {/* WHAT THIS SHIFT ALREADY CARRIES, reading the decision made in
+                this session before the one the page was loaded with. Arrowing
+                back to a shift just approved would otherwise show the state it
+                had before, and say nothing about what was just done to it. */}
+            {(decided[row.shiftKey] || row.review) && (
+              <p
+                className={`mt-6 text-xs font-semibold ${
+                  (decided[row.shiftKey] || row.review.decision) === "approved"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-amber-600 dark:text-amber-400"
+                }`}
+              >
+                {(decided[row.shiftKey] || row.review.decision) === "approved"
+                  ? "Approved"
+                  : "Flagged"}
+                {row.review?.by ? ` by ${row.review.by}` : ""}
+                {row.review?.reason ? ` - ${row.review.reason}` : ""}. Deciding again replaces it.
               </p>
             )}
           </article>
@@ -293,7 +329,15 @@ export default function StudyMode({ rows, onExit }) {
               </div>
             </div>
           ) : (
-            <div className="mt-4 flex items-center justify-center gap-4">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => step(-1)}
+                title="Previous shift, deciding nothing (left arrow)"
+                className="rounded-xl border border-border-strong px-4 py-4 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                ← Previous
+              </button>
               <button
                 type="button"
                 disabled={busy}
@@ -314,9 +358,17 @@ export default function StudyMode({ rows, onExit }) {
               </button>
               <button
                 type="button"
+                onClick={() => step(1)}
+                title="Next shift, deciding nothing (right arrow)"
+                className="rounded-xl border border-border-strong px-4 py-4 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                Skip →
+              </button>
+              <button
+                type="button"
                 disabled={busy || history.length === 0}
                 onClick={back}
-                title="Undo the last one (Backspace)"
+                title="Undo the last decision (Backspace)"
                 className="rounded-xl border border-border-strong px-4 py-4 text-sm font-medium text-muted transition hover:border-brand hover:text-brand disabled:opacity-40"
               >
                 Undo
@@ -325,7 +377,8 @@ export default function StudyMode({ rows, onExit }) {
           )}
 
           <p className="mt-4 text-center text-xs text-faint">
-            A to approve, F to flag, Space to open the note, Backspace to take the last one back.
+            A to approve, F to flag. The arrows move between shifts and decide nothing, and the
+            list wraps round. Space opens the note, Backspace takes the last decision back.
             Approve means the shift looks right to bill.
           </p>
         </>
