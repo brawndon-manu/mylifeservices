@@ -197,9 +197,13 @@ const REC = {
   FORMULA: 0x0006, STRING: 0x0207,
 };
 
-// Returns the FIRST worksheet as an array of rows, each an array of cells.
-// QSP's reports are always one sheet, so that's all this needs to do.
-export function readXls(bytes) {
+// EVERY worksheet, each an array of rows, each row an array of cells.
+//
+// Most QSP reports are a single sheet and `readXls` below is what those want.
+// The Employee Service Notes export is not: it prints one sheet per member of
+// staff per client, 276 of them for a fortnight, and reading only the first
+// returns one person's notes for one client and looks like a working parse.
+export function readXlsSheets(bytes) {
   const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
   const wb = readCfb(buf);
 
@@ -227,6 +231,21 @@ export function readXls(bytes) {
     if (c > maxCol) maxCol = c;
   };
 
+  const sheets = [];
+  // the rows built so far, handed over whenever the next worksheet opens
+  const flush = () => {
+    const rows = [];
+    for (let r = 0; r <= maxRow; r++) {
+      const row = [];
+      for (let c = 0; c <= maxCol; c++) row.push(cells.get(`${r},${c}`) ?? null);
+      rows.push(row);
+    }
+    sheets.push(rows);
+    cells.clear();
+    maxRow = -1;
+    maxCol = -1;
+  };
+
   p = 0;
   let sheetsSeen = 0;
   let lastFormulaCell = null;
@@ -238,7 +257,8 @@ export function readXls(bytes) {
 
     if (type === REC.BOF && len >= 4 && d.readUInt16LE(2) === 0x0010) {
       sheetsSeen++;
-      if (sheetsSeen > 1) break; // first worksheet only
+      // the cells read so far belong to the sheet that just ended
+      if (sheetsSeen > 1) flush();
     }
     if (sheetsSeen === 0) continue;
 
@@ -270,13 +290,14 @@ export function readXls(bytes) {
     }
   }
 
-  const rows = [];
-  for (let r = 0; r <= maxRow; r++) {
-    const row = [];
-    for (let c = 0; c <= maxCol; c++) row.push(cells.get(`${r},${c}`) ?? null);
-    rows.push(row);
-  }
-  return rows;
+  // the last worksheet has no BOF after it to close it
+  if (sheetsSeen > 0) flush();
+  return sheets;
+}
+
+// The FIRST worksheet, which is the whole of every QSP report but one.
+export function readXls(bytes) {
+  return readXlsSheets(bytes)[0] ?? [];
 }
 
 // Find the header row (the first row with several non-empty cells) and return

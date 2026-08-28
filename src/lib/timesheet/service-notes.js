@@ -134,7 +134,9 @@ export function noteFromLines(lines) {
   return withDerived(note);
 }
 
-function withDerived(note) {
+// The derived figures, shared with the .xls reader next door so that `minutes`
+// and `words` mean one thing in this codebase rather than two.
+export function withDerived(note) {
   const from = noteMinute(note.start);
   const to = noteMinute(note.end);
   note.startMin = from;
