@@ -11,6 +11,7 @@ export const STAGES = [
   { key: "checking", label: "Checking the dates and looking for duplicates" },
   { key: "schedule", label: "Reading the schedule PDF" },
   { key: "clock", label: "Reading the clock report" },
+  { key: "notes", label: "Reading the service notes" },
   { key: "rests", label: "Reading the rest periods report" },
   { key: "generating", label: "Working out hours and generating each sheet" },
   { key: "saving", label: "Saving the batch" },

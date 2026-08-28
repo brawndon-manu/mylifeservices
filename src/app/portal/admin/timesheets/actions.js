@@ -44,6 +44,9 @@ import { attendanceFindings } from "@/lib/timesheet/compliance";
 import { parseRestReport, restKey, restNameFor, restRowTimes, allRestRows, clockMin, serviceFit, countsAsTaken, FULL_REST_MIN } from "@/lib/timesheet/rests";
 import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { parsePayrollReport, payrollTotals, payrollKey } from "@/lib/timesheet/payroll";
+import { parseServiceNotesPdf } from "@/lib/timesheet/service-notes";
+import { parseServiceNotesXls, mergeNotes } from "@/lib/timesheet/service-notes-xls";
+import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
 import { matchEmployee } from "@/lib/timesheet/match";
@@ -145,6 +148,21 @@ export async function uploadBatch(formData) {
     clockPick && typeof clockPick === "object" && "size" in clockPick && clockPick.size > 0
       ? clockPick
       : null;
+
+  // THE THREE NOTES EXPORTS, 2026-08-27. Mánu: "i want to be able to upload all
+  // of this info just to the timesheets page. and the audit card and more to
+  // come can just get it from that info."
+  //
+  // Optional, all three, exactly like the clock export above. A period should
+  // still upload when one of them is not ready, and a missing report means
+  // nothing was documented ONE WAY - never that nothing was documented.
+  const picked = (name) => {
+    const f = formData.get(name);
+    return f && typeof f === "object" && "size" in f && f.size > 0 ? f : null;
+  };
+  const notesFile = picked("notes");
+  const serviceNotesFile = picked("serviceNotes");
+  const scheduleNotesFile = picked("scheduleNotes");
 
   // the browser made this id up before submitting, so it can poll for progress
   // while this action runs. namespaced under the user inside progressKey - it is
@@ -412,6 +430,94 @@ export async function uploadBatch(formData) {
     }
   }
 
+  // THE THREE NOTES EXPORTS. None of them touches an hour or a premium: they
+  // are what the Audit screen reads, and every figure people are paid on comes
+  // off the documents above. So a notes export that will not read is logged and
+  // dropped rather than costing a payroll - the same rule the clock export has.
+  //
+  // TWO REPORTS OF SERVICE NOTES, MERGED, because they are two places a note
+  // gets written rather than one report and a broken copy of it. Mánu
+  // 2026-08-27: "field supervisors dont do daily service notes. they input
+  // their notes in the service notes and schdule notes." Of the 862 billable
+  // service shifts on 08/16-08/27 the Daily Service Notes PDF documents 660,
+  // the Employee Service Notes .xls 192, and the two together 793.
+  let notesUrl = null;
+  let serviceNotesUrl = null;
+  let scheduleNotesUrl = null;
+  let mergedNotes = [];
+  let pdfNoteCount = 0;
+  let xlsNoteCount = 0;
+  if (notesFile || serviceNotesFile || scheduleNotesFile) {
+    P.stage = "notes";
+    await setProgress(prog, P);
+  }
+  if (notesFile) {
+    const nbytes = new Uint8Array(await notesFile.arrayBuffer());
+    try {
+      const key = `timesheets/notes/${randomBytes(10).toString("hex")}.pdf`;
+      const blob = await putBlob(key, Buffer.from(nbytes), {
+        access: "public",
+        contentType: "application/pdf",
+      });
+      notesUrl = blob.url;
+    } catch (e) {
+      console.error("service notes upload failed:", e);
+    }
+    try {
+      const read = await parseServiceNotesPdf(nbytes);
+      pdfNoteCount = read.length;
+      mergedNotes = read;
+      console.log(`service notes pdf parsed: ${read.length} notes`);
+    } catch (e) {
+      console.error("service notes pdf parse failed:", e);
+    }
+  }
+  if (serviceNotesFile) {
+    const xbytes = new Uint8Array(await serviceNotesFile.arrayBuffer());
+    try {
+      const key = `timesheets/service-notes/${randomBytes(10).toString("hex")}.xls`;
+      const blob = await putBlob(key, Buffer.from(xbytes), {
+        access: "public",
+        contentType: "application/vnd.ms-excel",
+      });
+      serviceNotesUrl = blob.url;
+    } catch (e) {
+      console.error("service notes xls upload failed:", e);
+    }
+    try {
+      const read = parseServiceNotesXls(Buffer.from(xbytes));
+      xlsNoteCount = read.length;
+      mergedNotes = mergeNotes(mergedNotes, read);
+      console.log(
+        `service notes xls parsed: ${read.length} notes, ` +
+        `${mergedNotes.length} after merging with the pdf's ${pdfNoteCount}`,
+      );
+    } catch (e) {
+      console.error("service notes xls parse failed:", e);
+    }
+  }
+  if (scheduleNotesFile) {
+    const sbytes2 = new Uint8Array(await scheduleNotesFile.arrayBuffer());
+    try {
+      const key = `timesheets/schedule-notes/${randomBytes(10).toString("hex")}.xls`;
+      const blob = await putBlob(key, Buffer.from(sbytes2), {
+        access: "public",
+        contentType: "application/vnd.ms-excel",
+      });
+      scheduleNotesUrl = blob.url;
+    } catch (e) {
+      console.error("schedule notes upload failed:", e);
+    }
+    // PARSED ONLY TO CHECK IT READS. 4ms for a fortnight, so the screens that
+    // want it read it back off Blob rather than carrying 87KB on the batch.
+    try {
+      const read = parseScheduleNotesXls(Buffer.from(sbytes2));
+      console.log(`schedule notes parsed: ${read.length} notes`);
+    } catch (e) {
+      console.error("schedule notes parse failed:", e);
+    }
+  }
+
   // the rest report. refused rather than skipped: a batch missing it silently
   // loses every rest premium, and nothing on screen would say why.
   let rests = null;
@@ -563,6 +669,12 @@ export async function uploadBatch(formData) {
     restsByDate: restsByDate.length ? restsByDate : null,
     payrollUrl,
     payrollName: payrollUrl ? payFile?.name || null : null,
+    notesUrl,
+    notesName: notesUrl ? notesFile?.name || null : null,
+    serviceNotesUrl,
+    serviceNotesName: serviceNotesUrl ? serviceNotesFile?.name || null : null,
+    scheduleNotesUrl,
+    scheduleNotesName: scheduleNotesUrl ? scheduleNotesFile?.name || null : null,
     // whether the live-send PHRASE was set when this batch was made. Not the
     // send gate: that also requires being on the real deployment, and a big
     // upload has to be run from localhost because of Vercel's 4.5MB body cap,
@@ -1084,6 +1196,16 @@ export async function uploadBatch(formData) {
     );
     batchData.clockFindings = null;
   }
+  // THE SERVICE NOTES GET IT TOO, and for the same reason twice over: they are
+  // free text somebody typed, and the 8/1-8/26 export carried a NUL beside a
+  // print date. Dropped rather than refused - the Audit screen loses a period
+  // of notes, the payroll goes through, and that is the same outcome as
+  // uploading without the file.
+  const badNotes = unstorable(mergedNotes);
+  if (badNotes) {
+    console.error(`service notes dropped: they carry ${badNotes.what} - ${badNotes.near}`);
+    mergedNotes = [];
+  }
   if (refused.length) {
     for (const r of refused) console.error(`timesheet upload refused: ${r.name} carries ${r.what} - ${r.near}`);
     redirect(
@@ -1228,6 +1350,21 @@ export async function uploadBatch(formData) {
       await tx.timesheet.createMany({
         data: sheetRows.map((row) => ({ ...row, batchId: b.id })),
       });
+      // the period's service notes, in a row of their own: a fortnight of them
+      // is about a megabyte and Repeat patterns loads every batch there has
+      // ever been. Inside the transaction with everything else, so a period
+      // never lands holding notes from an export that did not arrive.
+      if (mergedNotes.length) {
+        await tx.batchServiceNotes.create({
+          data: {
+            batchId: b.id,
+            notes: mergedNotes,
+            noteCount: mergedNotes.length,
+            pdfCount: pdfNoteCount,
+            serviceCount: xlsNoteCount,
+          },
+        });
+      }
       return b;
     // Prisma gives an interactive transaction five seconds by default, which is
     // a sensible figure for a request and the wrong one for a megabyte going to

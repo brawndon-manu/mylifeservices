@@ -24,10 +24,20 @@ const securityHeaders = [
 
 const nextConfig = {
   // bump server action body size so hub post images (up to ~4MB) fit.
-  // vercel hobby caps payloads at 4.5mb so this is the practical ceiling.
+  //
+  // RAISED TO 50MB ON 2026-08-27 for the timesheet upload, which now carries
+  // eight QSP exports in one request. The Employee Service Notes export is
+  // 21.8MB on its own - QSP writes it as one worksheet per staff member per
+  // client and the file is mostly formatting - and the eight come to 26.9MB.
+  // At 5mb Next refused the request itself, before the form's own check.
+  //
+  // Vercel still caps a serverless request body at 4.5mb whatever this says, so
+  // this only helps an upload run from localhost - which is where the big ones
+  // have always been run, for exactly that reason. Nothing else on the site
+  // posts anything near this; the hub's images are capped in their own form.
   experimental: {
     serverActions: {
-      bodySizeLimit: "5mb",
+      bodySizeLimit: "50mb",
     },
   },
   // keep the PDF stack out of the bundler - pdfjs/pdf-lib are only used in

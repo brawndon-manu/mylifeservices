@@ -144,7 +144,7 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
         Upload a pay period
       </h1>
       <p className="mt-2 text-base text-muted">
-        Four exports from QSP. Every corrected timesheet is generated from them.
+        Eight exports from QSP. Every corrected timesheet is generated from them.
       </p>
 
       {/* WHO IS MID-JOB ON THE BATCH THIS IS ABOUT TO REPLACE. Uploading while

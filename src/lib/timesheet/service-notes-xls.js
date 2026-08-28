@@ -1,12 +1,17 @@
-// The QSP "Employee Service Notes" .xls export - the OTHER service notes
-// report, and the only one that contains Field Supervisors.
+// The QSP "Employee Service Notes" .xls export - the OTHER place a service note
+// gets written, and where Field Supervisors write theirs.
 //
 // WHY THIS EXISTS. The audit read service notes from the Employee Detailed
-// Daily Service Notes PDF, and that report leaves whole people out. Measured on
-// 08/16-08/27: the PDF holds 668 notes across 48 staff and every Field
-// Supervisor is missing from it - Solorzano, Rotter, Velasco, Rodriguez,
-// Romero-Alba and Stephanie Garcia have none at all, Aaron Jones has three of
-// fifty. Mánu opened one of the missing notes in QSP; this export has it.
+// Daily Service Notes PDF alone, and that is only one of the two. Mánu
+// 2026-08-27: "field supervisors dont do daily service notes. they input their
+// notes in the service notes and schdule notes." Which report a person uses
+// follows their job, and it shows: on 08/16-08/27 the PDF holds 668 notes
+// across 48 staff with Solorzano, Rotter, Velasco, Rodriguez, Romero-Alba and
+// Stephanie Garcia in none of them, while 25 Independent Living Instructors are
+// in the PDF and not here.
+//
+// So this is not the complete report and that one the broken one. Neither
+// covers everybody because neither was ever meant to.
 //
 // Against the 862 billable service shifts of that period:
 //

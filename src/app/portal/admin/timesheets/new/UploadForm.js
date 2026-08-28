@@ -13,7 +13,7 @@ import DatePicker from "@/components/DatePicker";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
 
-// Server Actions cap the whole request, and the four exports go up as one. A
+// Server Actions cap the whole request, and every export goes up as one. A
 // 24MB corrected-timesheet PDF sitting in the same Downloads folder as the QSP
 // export is very easy to pick by mistake, and until now that produced a 500
 // with a stack trace and no clue which file was too big.
@@ -21,8 +21,32 @@ import UploadDone from "./UploadDone";
 // Vercel caps a serverless request body at 4.5MB whatever this is set to, so
 // the number here is the real ceiling for an upload done in production. It is
 // higher locally, which is why uploads have been run from localhost.
-const BODY_LIMIT_MB = 5;
+//
+// RAISED FROM 5MB ON 2026-08-27, because the Employee Service Notes export is
+// 21.8MB on its own - QSP writes it as one worksheet per staff member per
+// client and the file is mostly formatting. Eight exports for 08/16-08/27 come
+// to 26.9MB, so a 5MB total would refuse every real upload.
+//
+// The wrong-file check moved rather than went: the file that gets picked by
+// mistake is a PDF, so the three PDF pickers keep a ceiling of their own. The
+// QSP timesheet is around 0.9MB, the schedule 0.6MB and a fortnight of service
+// notes 2.7MB; a corrected timesheet is twenty.
+const BODY_LIMIT_MB = 40;
+const PDF_LIMIT_MB = 10;
+const PDF_PICKERS = ["file", "schedule", "notes"];
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+// what each picker is called when an alert has to name one
+const LABELS = {
+  file: "timesheet",
+  schedule: "schedule",
+  payroll: "payroll",
+  rests: "rest breaks",
+  clock: "clocking",
+  notes: "service notes",
+  serviceNotes: "service notes",
+  scheduleNotes: "schedule notes",
+};
 
 // Module scope on purpose. Date.now and Math.random are impure, and once the
 // submit handler started reading render-scope values the React compiler began
@@ -82,6 +106,9 @@ export default function UploadForm({ action, aside, into = null }) {
   const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
   const [clockName, setClockName] = useState("");
+  const [notesName, setNotesName] = useState("");
+  const [serviceNotesName, setServiceNotesName] = useState("");
+  const [scheduleNotesName, setScheduleNotesName] = useState("");
   // the partial-period box, held in state only so the date range can be revealed
   // under it - the value the action reads is the checkbox's own
   const [partial, setPartial] = useState(false);
@@ -111,6 +138,9 @@ export default function UploadForm({ action, aside, into = null }) {
     { role: "Payroll", kind: "xls", name: payrollName },
     { role: "Rest breaks", kind: "xls", name: restsName },
     { role: "Clocking", kind: "xls", name: clockName },
+    { role: "Service notes", kind: "pdf", name: notesName },
+    { role: "Service notes", kind: "xls", name: serviceNotesName },
+    { role: "Schedule notes", kind: "xls", name: scheduleNotesName },
   ];
 
   // elapsed time, started when the upload does and frozen once it lands
@@ -136,14 +166,23 @@ export default function UploadForm({ action, aside, into = null }) {
     // stop it here rather than let the server reject the body. the message
     // names the biggest file, because the mistake is nearly always one wrong
     // pick rather than four large exports.
+    // A PDF far bigger than its export has ever been is the wrong file, and
+    // saying so names it instead of leaving the total to be worked out.
+    const fatPdf = PDF_PICKERS.find((k) => (sizes[k] || 0) > PDF_LIMIT_MB * 1024 * 1024);
+    if (fatPdf) {
+      e.preventDefault();
+      window.alert(
+        `The ${LABELS[fatPdf]} PDF is ${mb(sizes[fatPdf])}, and the QSP exports run to a few megabytes.\n\n` +
+        `A corrected timesheet runs to 20 MB and lives in the same folder. Check it is the right file.`,
+      );
+      return;
+    }
     if (overLimit) {
       e.preventDefault();
       const biggest = Object.entries(sizes).sort((a, b) => b[1] - a[1])[0];
-      const label = { file: "timesheet", schedule: "schedule", payroll: "payroll", rests: "rest breaks" };
       window.alert(
-        `Those four come to ${mb(totalBytes)} and the limit is ${BODY_LIMIT_MB} MB.\n\n` +
-        `The largest is the ${label[biggest[0]] || biggest[0]} file at ${mb(biggest[1])}. ` +
-        `Check it is the QSP export and not a corrected timesheet - those run to 20 MB and live in the same folder.`,
+        `These come to ${mb(totalBytes)} and the limit is ${BODY_LIMIT_MB} MB.\n\n` +
+        `The largest is the ${LABELS[biggest[0]] || biggest[0]} file at ${mb(biggest[1])}.`,
       );
       return;
     }
@@ -244,6 +283,53 @@ export default function UploadForm({ action, aside, into = null }) {
         onPick={(e) => {
           setClockName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, clock: e.target.files?.[0]?.size || 0 }));
+        }}
+      />
+
+      {/* THE THREE NOTES EXPORTS, 2026-08-27. They feed the Audit screen and
+          touch no hour and no premium, so all three are optional exactly as the
+          clock export is.
+
+          BOTH SERVICE NOTES REPORTS, because they are two places a note gets
+          written and which one a person uses follows their job. Field
+          Supervisors do not file Daily Service Notes; Independent Living
+          Instructors mostly do. On 08/16-08/27 the PDF documents 660 of 862
+          billable service shifts, the .xls 192, the two together 793. */}
+      <FileRow
+        id="notes"
+        optional
+        label="Employee Detailed Daily Service Notes (.pdf) - optional"
+        selected={notesName}
+        size={sizes.notes || 0}
+        onPick={(e) => {
+          setNotesName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, notes: e.target.files?.[0]?.size || 0 }));
+        }}
+      />
+
+      <FileRow
+        id="serviceNotes"
+        optional
+        label="Employee Service Notes (.xls) - optional"
+        accept=".xls,application/vnd.ms-excel"
+        selected={serviceNotesName}
+        size={sizes.serviceNotes || 0}
+        onPick={(e) => {
+          setServiceNotesName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, serviceNotes: e.target.files?.[0]?.size || 0 }));
+        }}
+      />
+
+      <FileRow
+        id="scheduleNotes"
+        optional
+        label="Employee Schedule Notes (.xls) - optional"
+        accept=".xls,application/vnd.ms-excel"
+        selected={scheduleNotesName}
+        size={sizes.scheduleNotes || 0}
+        onPick={(e) => {
+          setScheduleNotesName(e.target.files?.[0]?.name || "");
+          setSizes((p) => ({ ...p, scheduleNotes: e.target.files?.[0]?.size || 0 }));
         }}
       />
         </div>

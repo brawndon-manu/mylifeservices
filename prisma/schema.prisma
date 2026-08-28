@@ -714,6 +714,33 @@ model TimesheetBatch {
   // whether a premium can be signed off or needs a person to look at it.
   clockUrl       String?
   clockName      String?
+  // THE THREE NOTES EXPORTS, 2026-08-27. Mánu: "i want to be able to upload all
+  // of this info just to the timesheets page. and the audit card and more to
+  // come can just get it from that info ... i also want to do it by timesheet
+  // pay period."
+  //
+  // All three optional, like the clock export: a period should still upload
+  // when one of them is not ready, and absent means nothing was documented
+  // ONE WAY, never that nothing was documented.
+  //
+  // The Employee Detailed Daily Service Notes PDF - what staff wrote about each
+  // visit. Its parsed notes live in `BatchServiceNotes` rather than here,
+  // because reading them back costs 1.5 seconds against this .xls's 68ms.
+  notesUrl          String?
+  notesName         String?
+  // The Employee Service Notes .xls - THE OTHER PLACE A NOTE GETS WRITTEN.
+  // Field Supervisors do not file Daily Service Notes; they write here and in
+  // the schedule notes, which is why both exports are needed and neither is a
+  // broken version of the other. Read back off Blob per page view, like the
+  // clock export.
+  serviceNotesUrl   String?
+  serviceNotesName  String?
+  // The Employee Schedule Notes .xls - the reason staff typed when a shift did
+  // not run as booked. The timesheet's own Comments Details block carries the
+  // same notes; this one names the client on 256 of 290, which is what lets a
+  // reason be handed to one booking rather than to the whole day.
+  scheduleNotesUrl  String?
+  scheduleNotesName String?
   // the Rest Periods Report. decides whether a rest break was actually taken,
   // which is what the bigger half of the premium total turns on.
   //
@@ -804,8 +831,48 @@ model TimesheetBatch {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   timesheets   Timesheet[]
+  serviceNotes BatchServiceNotes?
 
   @@index([createdAt])
+}
+
+// THE SERVICE NOTES OF ONE PAY PERIOD, PARSED, 2026-08-27.
+//
+// A row of its own rather than a column on TimesheetBatch, for the reason the
+// clock rows are NOT stored at all: the notes of a fortnight are about a
+// megabyte, and Repeat patterns loads every batch there has ever been. A
+// megabyte per period on that table is seventeen on a screen printing twelve
+// dates.
+//
+// Stored rather than re-read, unlike the clock export, because the source is a
+// PDF: 1.5 seconds to parse against the clock's 8ms. The two .xls exports are
+// fast enough to read back off Blob on each page view and are not kept here.
+//
+// One row per batch, so a re-upload of a period replaces its notes with the
+// notes of the export that came with it, and deleting a batch takes them.
+//
+// SUPERSEDES ServiceNoteBatch, which had its own upload and its own date range.
+// That table is left in place until 08/01-08/15 is re-uploaded through the
+// timesheets page; nothing writes it any more.
+model BatchServiceNotes {
+  id String @id @default(cuid())
+
+  batchId String         @unique
+  batch   TimesheetBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // every note of the period, the PDF's and the .xls's merged - see
+  // `mergeNotes` in service-notes-xls.js. A note carries which export it came
+  // off, because only the PDF records who signed it and when.
+  notes Json
+
+  noteCount    Int @default(0)
+  // how many came off each report, so a period that is short on one of them is
+  // visible without counting a megabyte of JSON
+  pdfCount     Int @default(0)
+  serviceCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // one employee's corrected timesheet for a pay period: the computed figures, the
