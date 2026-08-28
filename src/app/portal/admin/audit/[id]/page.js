@@ -474,6 +474,12 @@ export default async function AuditBatchPage({ params }) {
       date: shift.date,
       period: periodOf(shift.date),
       clockAvailable: periodsWithClock.has(periodOf(shift.date)),
+      // WHETHER THE EXPORT HAS A ROW FOR THIS SHIFT, which is a different fact
+      // from whether the period has an export at all. 23 of the 862 billable
+      // shifts on 08/16-08/27 are booked on the roster and absent from the
+      // clock export - B. Rotter's 08/24 9:30a and 10:30a among them - and
+      // without this they read as though no file had been uploaded.
+      inClockExport: shift.clocked === true,
       client,
       service: shift.service || null,
       schedFrom: shift.schedFrom ?? null, schedTo: shift.schedTo ?? null,

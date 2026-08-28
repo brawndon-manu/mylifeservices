@@ -470,7 +470,15 @@ function Card({ r }) {
       {/* one line where the clock export is missing, rather than four ways of
           saying the same upload never happened. See StudyMode. */}
       <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
-        {r.clockAvailable ? (
+        {/* three shapes, three facts - see the same block in StudyMode. The
+            export is missing, it is here and has no row for this shift, or it
+            has one. Scheduled and Clocked both come out of that row. */}
+        {r.clockAvailable && r.inClockExport === false ? (
+          <>
+            <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
+            <Figure label="Clock" value="no row for this shift" tone="text-faint" />
+          </>
+        ) : r.clockAvailable ? (
           <>
             <Figure
               label="Scheduled"
@@ -504,7 +512,7 @@ function Card({ r }) {
         />
       </dl>
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        {r.clockAvailable ? (
+        {r.clockAvailable && r.inClockExport !== false ? (
           <>
             <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
             <b>Clocked</b> the punch in and out
@@ -650,9 +658,9 @@ function Punches({ row }) {
 
 function PunchLine({ row, end }) {
   const p = punchEnd(row, end);
-  if (!p.mark && !p.time && !p.gps) {
-    return <dd className="text-xs text-faint">{end}: no clock export</dd>;
-  }
+  // two reasons there is nothing to draw, and they are not the same fact: the
+  // export was never uploaded, or it was and this shift is not in it
+  if (p.why) return <dd className="text-xs text-faint">{end}: {p.why}</dd>;
   return (
     <dd className="flex items-center gap-1.5 text-xs">
       <span className="w-6 text-faint">{end}</span>

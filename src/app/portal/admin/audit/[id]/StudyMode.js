@@ -292,7 +292,28 @@ export default function StudyMode({ rows: allRows, onExit }) {
                 loaded the file. Those are different facts and only one of them
                 is about the person. */}
             <dl className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-4 sm:gap-4">
-              {row.clockAvailable ? (
+              {/* THREE SHAPES, BECAUSE THERE ARE THREE FACTS.
+                  
+                  The export is missing, the export is here and has no row for
+                  this shift, or it has one. Scheduled and Clocked both come out
+                  of that row, so the middle case has neither - and saying so
+                  once beats a dash and three repetitions of the same sentence.
+                  Mánu, with the QSP calendar open beside the card: "why does it
+                  say nothing for schdueled if there is". */}
+              {row.clockAvailable && row.inClockExport === false ? (
+                <>
+                  <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+                  <div className="col-span-1 sm:col-span-3">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
+                      Clock
+                    </dt>
+                    <dd className="text-sm text-faint">
+                      The clock export for {row.period} has no row for this shift, so there is no
+                      original booking and no punch to check these hours against.
+                    </dd>
+                  </div>
+                </>
+              ) : row.clockAvailable ? (
                 <>
                   <Figure
                     label="Scheduled"
@@ -336,7 +357,7 @@ export default function StudyMode({ rows: allRows, onExit }) {
             {/* the legend names only what is on the card - a period with no
                 clock export shows neither Scheduled nor Clocked */}
             <p className="mt-3 text-[11px] leading-relaxed text-faint">
-              {row.clockAvailable ? (
+              {row.clockAvailable && row.inClockExport !== false ? (
                 <>
                   <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
                   <b>Clocked</b> the punch in and out
@@ -583,9 +604,9 @@ function Punches({ row }) {
 
 function PunchLine({ row, end }) {
   const p = punchEnd(row, end);
-  if (!p.mark && !p.time && !p.gps) {
-    return <dd className="text-xs text-faint">{end}: no clock export</dd>;
-  }
+  // two reasons there is nothing to draw, and they are not the same fact: the
+  // export was never uploaded, or it was and this shift is not in it
+  if (p.why) return <dd className="text-xs text-faint">{end}: {p.why}</dd>;
   return (
     <dd className="mt-0.5 flex items-center gap-1.5 text-sm">
       <span className="w-7 text-xs text-faint">{end}</span>

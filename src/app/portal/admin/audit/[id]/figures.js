@@ -28,6 +28,13 @@ export const hrs = (m) => (m == null ? null : `${(m / 60).toFixed(2)}h`);
 // keep saying "not clocked" rather than inventing a time.
 export function clockedFigure(row) {
   if (!row.clockAvailable) return { value: "no clock export", sub: null, tone: "faint" };
+  // THE FILE IS HERE AND THIS SHIFT IS NOT IN IT, which is neither "no export"
+  // nor "they did not clock". 23 of the 862 billable shifts on 08/16-08/27 are
+  // on the roster and absent from the clock export. Saying "not clocked" there
+  // accuses somebody of something the document never recorded either way.
+  if (row.inClockExport === false) {
+    return { value: "not in the clock export", sub: null, tone: "faint" };
+  }
 
   const from = row.actualFrom;
   const to = row.actualTo;
@@ -55,10 +62,16 @@ export function punchEnd(row, end) {
   const missed = end === "in" ? row.noIn : row.noOut;
   const gps = end === "in" ? row.gpsIn : row.gpsOut;
 
-  if (!row.clockAvailable) return { mark: null, time: null, gps: null };
+  // `why` carries the reason there is nothing to draw, because the two reasons
+  // are different facts and only one of them is about the person.
+  if (!row.clockAvailable) return { mark: null, time: null, gps: null, why: "no clock export" };
+  if (row.inClockExport === false) {
+    return { mark: null, time: null, gps: null, why: "not in the clock export" };
+  }
   return {
     mark: clocked != null ? "yes" : missed ? "no" : null,
     time: clock(clocked),
     gps: gps === "yes" ? "yes" : gps === "no" ? "no" : null,
+    why: null,
   };
 }
