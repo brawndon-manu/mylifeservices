@@ -226,6 +226,29 @@ export default async function AuditBatchPage({ params }) {
   // overlaps most, and only becomes a shift of its own when there is no such
   // block at all.
   let clockLoaded = 0;
+  // rows that matched no booking by overlap, held for the second pass below
+  const leftoverRows = [];
+  // what attaching a clock row to a booking means, in one place: the punches,
+  // QSP's original booking, and the full client spelling. Never the schedule
+  // columns as billed hours - the clock export says what was clocked, not what
+  // was billed.
+  const attachRow = (x, row) => Object.assign(x, {
+    // THE FULL CLIENT NAME. The roster abbreviates to "Sherwold, A" and the
+    // clock export spells it out as "Sherwold, Abigail", in the same Last,
+    // First shape the rest of the portal uses. Kept apart from `client`, which
+    // stays the roster's own spelling so the matching that got us here is not
+    // rewritten under it.
+    clientFull: row.client || null,
+    // QSP's "Original End Time" - the booking before anyone touched it
+    originalFrom: row.schedFrom, originalTo: row.schedTo,
+    actualFrom: row.actualFrom, actualTo: row.actualTo,
+    workedMin: row.workedMin,
+    startDelta: row.startDelta, endDelta: row.endDelta,
+    noIn: row.noIn, noOut: row.noOut,
+    gpsIn: row.gpsIn, gpsOut: row.gpsOut,
+    selfCreated: row.selfCreated, reason: row.reason, says: row.says,
+    clocked: true,
+  });
   // WHICH PERIODS HAVE A CLOCK EXPORT AT ALL. "Nobody clocked this shift" and
   // "no clock export was uploaded for this fortnight" look identical on a card
   // and mean opposite things - the first is about a person, the second is about
@@ -277,38 +300,49 @@ export default async function AuditBatchPage({ params }) {
           if (best && best.overlap > 0) {
             // THE CLOCK EXPORT SAYS WHAT WAS CLOCKED. IT DOES NOT SAY WHAT WAS
             // BILLED, and its own schedule columns must never be allowed to.
-            Object.assign(best.x, {
-              // THE FULL CLIENT NAME. The roster abbreviates to "Sherwold, A"
-              // and the clock export spells it out as "Sherwold, Abigail", in
-              // the same Last, First shape the rest of the portal uses. Kept
-              // apart from `client`, which stays the roster's own spelling so
-              // the matching that got us here is not rewritten under it.
-              clientFull: row.client || null,
-              // QSP's "Original End Time" - the booking before anyone touched it
-              originalFrom: row.schedFrom, originalTo: row.schedTo,
-              actualFrom: row.actualFrom, actualTo: row.actualTo,
-              workedMin: row.workedMin,
-              startDelta: row.startDelta, endDelta: row.endDelta,
-              noIn: row.noIn, noOut: row.noOut,
-              gpsIn: row.gpsIn, gpsOut: row.gpsOut,
-              selfCreated: row.selfCreated, reason: row.reason, says: row.says,
-              clocked: true,
-            });
+            attachRow(best.x, row);
           } else {
-            // nothing rostered for that client that day, so the clock row is all
-            // there is and its own schedule columns are the only account of the
-            // booking
-            const key = `${who}|${row.date}|${row.schedFrom}|clock`;
-            shifts.set(key, {
-              ...row, who, clocked: true, rosterMissing: true,
-              originalFrom: row.schedFrom, originalTo: row.schedTo,
-            });
+            // decided AFTER every overlapping row has claimed its booking -
+            // attaching now would let this row take a block that a later,
+            // overlapping row is the real match for
+            leftoverRows.push({ row, who });
           }
         }
       } catch (e) {
         console.error(`audit: clock export unreadable (${f.name}):`, e);
       }
     }
+  }
+
+  // A RESCHEDULED BOOKING KEEPS ITS PUNCHES.
+  //
+  // Urena 08/20: Elder. Morton was booked 7:45a-8a, she clocked exactly that -
+  // GPS at both ends - and the booking was then moved to 10:30a-12:30p. Booking
+  // and punches no longer overlap at all, so the row failed to attach. The
+  // punches became a phantom shift "billing" the 0.25h the timesheet never
+  // billed, the real 2h block read as never clocked, and billed-over-clocked -
+  // two hours billed against fifteen clocked minutes, the comparison this
+  // screen exists to make - fired on neither card.
+  //
+  // So a leftover row still goes to its own client's still-unclocked booking,
+  // overlap or none, nearest start first. Only a row with NO booking for that
+  // client that day becomes a shift of its own, and that is what rosterMissing
+  // has meant all along.
+  for (const { row, who } of leftoverRows) {
+    const cands = ((byPersonDayShift.get(`${who}|${row.date}`) || []))
+      .filter((x) => !x.clocked && sameClient(x.client, row.client))
+      .sort((a, b) =>
+        Math.abs((a.schedFrom ?? 0) - (row.schedFrom ?? 0))
+        - Math.abs((b.schedFrom ?? 0) - (row.schedFrom ?? 0)));
+    if (cands.length) {
+      attachRow(cands[0], row);
+      continue;
+    }
+    const key = `${who}|${row.date}|${row.schedFrom}|clock`;
+    shifts.set(key, {
+      ...row, who, clocked: true, rosterMissing: true,
+      originalFrom: row.schedFrom, originalTo: row.schedTo,
+    });
   }
 
   // ---- what was DOCUMENTED: the notes, one per shift ----
@@ -500,10 +534,12 @@ export default async function AuditBatchPage({ params }) {
       period: periodOf(shift.date),
       clockAvailable: periodsWithClock.has(periodOf(shift.date)),
       // WHETHER THE EXPORT HAS A ROW FOR THIS SHIFT, which is a different fact
-      // from whether the period has an export at all. 23 of the 862 billable
+      // from whether the period has an export at all. 21 of the 862 billable
       // shifts on 08/16-08/27 are booked on the roster and absent from the
       // clock export - B. Rotter's 08/24 9:30a and 10:30a among them - and
-      // without this they read as though no file had been uploaded.
+      // without this they read as though no file had been uploaded. Mánu's own
+      // 08/26 is one of them and he answered what they are: admin-type work,
+      // where QSP requires no clock in or out.
       inClockExport: shift.clocked === true,
       client,
       service: shift.service || null,

@@ -29,7 +29,7 @@ export const hrs = (m) => (m == null ? null : `${(m / 60).toFixed(2)}h`);
 export function clockedFigure(row) {
   if (!row.clockAvailable) return { value: "no clock export", sub: null, tone: "faint" };
   // THE FILE IS HERE AND THIS SHIFT IS NOT IN IT, which is neither "no export"
-  // nor "they did not clock". 23 of the 862 billable shifts on 08/16-08/27 are
+  // nor "they did not clock". 21 of the 862 billable shifts on 08/16-08/27 are
   // on the roster and absent from the clock export. Saying "not clocked" there
   // accuses somebody of something the document never recorded either way.
   if (row.inClockExport === false) {
