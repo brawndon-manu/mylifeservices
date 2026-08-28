@@ -358,6 +358,25 @@ export default function StudyMode({ rows: allRows, onExit }) {
               </ul>
             )}
 
+
+      {/* WHAT STAFF SAID, BESIDE THE FINDING RATHER THAN BEHIND A CLICK.
+          
+          Mánu 2026-08-27 asked whether these words reach the explanations. They
+          do now, as a quote and never as a verdict: 43 of the 442 schedule notes
+          say the session ended early and 34 say somebody forgot to clock, which
+          is the answer to a great many of these findings.
+          
+          NO RULE READS THEM. "Client ended session early" explains why the CLOCK
+          is short; it does not explain why the booking still bills the full
+          time, and that gap is the thing this screen exists to find. A rule that
+          treated the note as an excuse would dismiss exactly the cases it was
+          built for. So the words are shown and the reader decides. */}
+      {row.reasons.length > 0 && row.scheduleNote && (
+        <p className="mt-3 border-l-2 border-border-strong pl-4 text-sm leading-relaxed text-muted">
+          Staff wrote: “{row.scheduleNote.text}”
+        </p>
+      )}
+
             {/* BOTH NOTES, EACH BEHIND ITS OWN TOGGLE. Mánu 2026-08-27: "we
                 need the schdule notes and the service notes included with drop
                 downs."
