@@ -9,6 +9,7 @@ import { clockShifts } from "@/lib/timesheet/clock";
 import { auditRow, shiftKeyOf, sameClient, displayClient } from "@/lib/timesheet/note-audit";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
+import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 
@@ -163,14 +164,45 @@ export default async function AuditBatchPage({ params }) {
   // Their times are the CLOCK times, not the booking's: Adams 08/16 reads
   // "2:45p-5:34p" against a shift rostered 2:45p-6p. So a note is matched to
   // the booking whose window it overlaps most, the same way a clock row is.
+  //
+  // TWO SOURCES OF THE SAME NOTES, and the .xls is preferred where it exists.
+  // The timesheet's printed "Comments Details" block gives a day and a time and
+  // no client; the Employee Schedule Notes export gives the client on 256 of
+  // 290. 31% of person-days carry more than one note and a day holds 3.6 shifts
+  // on average, so without the client a reason lands on the right shift about
+  // as often as the wrong one.
+  //
+  // Read back off Blob rather than stored: 4ms for a fortnight, against the
+  // 1.5 seconds that makes the service notes worth keeping parsed.
   const schedNotes = new Map();
-  for (const t of sheets) {
-    const key = whoKey(t.sourceName);
-    for (const c of parseComments(t.comments)) {
-      const at = blockTimes(`${c.from}-${c.to}`);
-      const k = `${key}|${c.date}`;
-      if (!schedNotes.has(k)) schedNotes.set(k, []);
-      schedNotes.get(k).push({ ...c, start: at?.start ?? null, end: at?.end ?? null });
+  const pushNote = (key, note) => {
+    const k = `${key}|${note.date}`;
+    if (!schedNotes.has(k)) schedNotes.set(k, []);
+    schedNotes.get(k).push(note);
+  };
+  let scheduleNotesLoaded = false;
+  if (batch.scheduleNotesUrl) {
+    try {
+      const res = await fetch(batch.scheduleNotesUrl, { cache: "no-store" });
+      if (!res.ok) throw new Error(`the file came back ${res.status}`);
+      for (const n of parseScheduleNotesXls(Buffer.from(await res.arrayBuffer()))) {
+        if (dateKey(n.date) < notesFrom || dateKey(n.date) > notesTo) continue;
+        pushNote(whoKey(n.employee), n);
+      }
+      scheduleNotesLoaded = true;
+    } catch (e) {
+      // the block on the timesheet below carries the same notes, so a report
+      // that will not come back off Blob costs the client and nothing else
+      console.error("schedule notes export could not be read:", e);
+    }
+  }
+  if (!scheduleNotesLoaded) {
+    for (const t of sheets) {
+      const key = whoKey(t.sourceName);
+      for (const c of parseComments(t.comments)) {
+        const at = blockTimes(`${c.from}-${c.to}`);
+        pushNote(key, { ...c, client: null, start: at?.start ?? null, end: at?.end ?? null });
+      }
     }
   }
 
@@ -356,21 +388,32 @@ export default async function AuditBatchPage({ params }) {
 
   const everyShift = [...shifts.values()];
 
-  // one schedule note per booking, by the same overlap rule
+  // ONE SCHEDULE NOTE PER BOOKING - the client first, then the overlap.
+  //
+  // A note that names a client belongs to that client's booking and to no
+  // other, however well the times line up. Where the note names nobody - 34 of
+  // 290, and every note from the timesheet's printed block - the overlap is all
+  // there is to go on, which is how this worked before the export that names
+  // clients existed.
   const takenNote = new Set();
+  const fitsClient = (c, shift) => (c.client ? sameClient(c.client, shift.client) : true);
   for (const shift of everyShift) {
-    const mine = (schedNotes.get(`${shift.who}|${shift.date}`) || []).filter((c) => !takenNote.has(c));
+    const mine = (schedNotes.get(`${shift.who}|${shift.date}`) || [])
+      .filter((c) => !takenNote.has(c) && fitsClient(c, shift));
     if (!mine.length) continue;
     const from = shift.actualFrom ?? shift.schedFrom;
     const to = shift.actualTo ?? shift.schedTo;
     const best = mine
       .map((c) => ({
         c,
+        named: c.client && shift.client ? 1 : 0,
         overlap: c.start == null || from == null ? 0
           : Math.max(0, Math.min(c.end ?? 0, to ?? 0) - Math.max(c.start, from)),
       }))
-      .sort((a, b) => b.overlap - a.overlap)[0];
-    if (best && best.overlap > 0) {
+      // a named client outranks a better overlap: the times here are the
+      // clock's and a booking either side of this one can overlap further
+      .sort((a, b) => b.named - a.named || b.overlap - a.overlap)[0];
+    if (best && (best.named || best.overlap > 0)) {
       takenNote.add(best.c);
       shift.scheduleNote = best.c;
     }
