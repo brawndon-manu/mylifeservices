@@ -165,10 +165,27 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
   return (
     <>
       <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted">
-        {totals.notes} service notes against {totals.shifts} service shifts billed in the pay
-        periods they cover.
+        {totals.notes} service notes against {totals.shifts} service shifts billed in this pay
+        period.
         {totals.orphans > 0 && ` ${totals.orphans} notes matched no billed shift.`}
       </p>
+      {/* WHICH OF THE TWO REPORTS ARRIVED, and why both are needed.
+          Mánu 2026-08-27: "field supervisors dont do daily service notes. they
+          input their notes in the service notes and schdule notes."
+          So these are not one complete report and one broken one - they are the
+          two places a note gets written, and which one a person uses follows
+          their job. A period holding only one of them reports shifts as
+          undocumented that are documented in the other, and the screen says so
+          rather than let the count be read as a finding. */}
+      {(!totals.fromPdf || !totals.fromXls) && (
+        <p className="mt-3 max-w-3xl rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm leading-relaxed text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">
+          {!totals.fromPdf && !totals.fromXls
+            ? "No service notes export was uploaded with this period, so every billed shift reads as having no note."
+            : !totals.fromXls
+              ? "The Employee Service Notes export was not uploaded with this period. Field Supervisors write their notes there rather than as Daily Service Notes, so their shifts read as having no note."
+              : "The Detailed Daily Service Notes export was not uploaded with this period. Independent Living Instructors write their notes there, so their shifts read as having no note."}
+        </p>
+      )}
       {/* SHORT. Every figure is defined on the card itself, so repeating all
           three here left a paragraph nobody read - Mánu called it what it was.
           What is left is the part the cards cannot say: that a gap is not by

@@ -30,46 +30,46 @@ export default async function AuditBatchPage({ params }) {
   if (!isAdminUp(user?.role)) redirect("/portal");
 
   const { id } = await params;
-  const batch = await prisma.serviceNoteBatch.findUnique({ where: { id } });
+  // THE AUDIT IS A PAY PERIOD NOW, 2026-08-27. Mánu: "i want to be able to
+  // upload all of this info just to the timesheets page. and the audit card and
+  // more to come can just get it from that info ... i also want to do it by
+  // timesheet pay period."
+  //
+  // It used to be its own upload over its own date range, which meant one notes
+  // file spanning two fortnights and a page that had to work out which pay
+  // periods it touched. Every document now arrives together on the batch, so
+  // the period is simply the batch.
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id },
+    select: {
+      id: true, periodFrom: true, periodTo: true,
+      clockUrl: true, clockName: true, clockFindings: true,
+      notesName: true, serviceNotesName: true,
+      scheduleNotesUrl: true, scheduleNotesName: true,
+      serviceNotes: { select: { notes: true, noteCount: true, pdfCount: true, serviceCount: true } },
+    },
+  });
   if (!batch) notFound();
 
-  const notes = batch.notes || [];
+  const notes = batch.serviceNotes?.notes || [];
 
-  // ONLY THE PAY PERIODS THESE NOTES TOUCH, and only the current upload of each.
-  //
-  // Written the obvious way round - every MLS batch with its timesheets - this
-  // page never returned. A sheet's `data` holds its whole analyzed breakdown,
-  // and 29 batches of 60 sheets is hundreds of megabytes to answer a question
-  // about two fortnights. So the periods are chosen from their dates FIRST and
-  // the sheets are fetched only for the batches that survive.
-  //
-  // Newest upload wins per fortnight, the same rule the repeat patterns page
-  // applies: a re-uploaded period is a second row holding the same days, and
-  // counting both would bill every shift in it twice.
   const dateKey = (d) => {
     const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
     return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
   };
+
+  // PINNED TO THE BATCH BEING READ, not to the newest upload of its period.
+  //
+  // A period gets re-uploaded constantly and each upload carries its own
+  // exports. Reading this batch's notes against a different batch's roster
+  // would put two documents on one card that never arrived together.
+  const current = new Map([[`${batch.periodFrom}|${batch.periodTo}`, batch]]);
+
+  // the days this page covers, which is now simply the pay period. It used to
+  // be the range the notes themselves spanned, because the notes were uploaded
+  // over a range somebody picked.
   const notesFrom = dateKey(batch.periodFrom);
   const notesTo = dateKey(batch.periodTo);
-
-  const heads = await prisma.timesheetBatch.findMany({
-    where: { program: "MLS" },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true, periodFrom: true, periodTo: true,
-      clockUrl: true, clockName: true, clockFindings: true,
-    },
-  });
-
-  const current = new Map();
-  for (const p of heads) {
-    const key = `${p.periodFrom}|${p.periodTo}`;
-    if (current.has(key)) continue;                       // an older upload of it
-    // the period has to overlap the range the notes cover at all
-    if (dateKey(p.periodFrom) > notesTo || dateKey(p.periodTo) < notesFrom) continue;
-    current.set(key, p);
-  }
 
   // ONLY THE ROSTER OUT OF EACH SHEET, projected in Postgres rather than here.
   //
@@ -503,7 +503,13 @@ export default async function AuditBatchPage({ params }) {
           shifts: rows.length,
           clocked: clockLoaded,
           orphans: orphans.length,
-          sourceName: batch.sourceName,
+          // which of the two service notes reports this period actually got.
+          // Neither is complete on its own, so a period holding one of them is
+          // a period whose "no service note" count is partly about the file.
+          fromPdf: batch.serviceNotes?.pdfCount || 0,
+          fromXls: batch.serviceNotes?.serviceCount || 0,
+          notesName: batch.notesName || null,
+          serviceNotesName: batch.serviceNotesName || null,
         }}
       />
     </section>
