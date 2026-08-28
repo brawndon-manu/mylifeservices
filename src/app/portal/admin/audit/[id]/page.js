@@ -482,10 +482,23 @@ export default async function AuditBatchPage({ params }) {
   // is how Ashley Cain's duplicate 08/17 note shows up now instead of being
   // dropped onto somebody else's shift.
   //
+  // A NOTE ON A BLOCK THIS SCREEN DOES NOT EXAMINE IS NOT ONE OF THEM. The
+  // Employee Service Notes export carries the note's own service type, and 387
+  // of the 564 unmatched notes on 08/16-08/27 are written against ILS Travel,
+  // Admin, Misc or Training. The audit reads billable service shifts only, so
+  // those were never going to match anything - counting them turned "notes that
+  // matched no billed shift" from 53 into 568 the moment the second report was
+  // attached, and every one of the new ones was a note doing its job.
+  //
+  // The PDF does not record a service type, so its notes carry none and are
+  // kept: nothing here guesses that an unmatched note was about admin.
+  //
   // Trimmed to what the screen prints. The whole note is a paragraph of prose
   // and there can be hundreds of them.
+  const onAService = (n) =>
+    !n.service || isCappedService(n.service);
   const orphans = notes
-    .filter((n) => !taken.has(n))
+    .filter((n) => !taken.has(n) && onAService(n))
     .map((n) => ({
       who: namesSeen.get(whoKey(n.employee)) || n.employee,
       date: n.date,
