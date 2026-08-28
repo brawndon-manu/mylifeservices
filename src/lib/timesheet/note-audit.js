@@ -134,6 +134,22 @@ export const AUDIT_REASONS = {
     weight: 40,
     describe: () => "The shift was billed with no clock-in or no clock-out to check it against.",
   },
+  // THE EXPORT IS HERE AND THIS SHIFT IS NOT IN IT - a different fact from a
+  // missed punch, and it used to raise nothing at all. A shift with a clock row
+  // showing missed punches scored 40; a shift the clock system had no record of
+  // scored zero and ranked as the cleaner of the two.
+  //
+  // 21 of the 862 billable shifts on 08/16-08/27, mostly Field Supervisors.
+  // Mánu, on his own 08/26 among them: "my shift for the day you asked is admin
+  // time so theres no clock in or out needed" - so many of these are likely
+  // admin-type events QSP requires no clock for, printed as ILS Service on the
+  // roster. The sentence states what the document holds and accuses nobody.
+  "not-in-clock": {
+    label: "Not in the clock export",
+    weight: 40,
+    describe: () =>
+      "The shift was billed and the clock export has no row for it, so no punch corroborates the hours.",
+  },
 };
 
 const hrs = (m) => (m == null ? "no time" : `${(m / 60).toFixed(2)} hours`);
@@ -209,6 +225,13 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
   // the clock cannot corroborate a shift it never recorded, which matters most
   // where something else already objected
   if (shift && (shift.noIn || shift.noOut)) out.push({ kind: "never-clocked", billedMin });
+
+  // AND IT CANNOT CORROBORATE A SHIFT IT HAS NO ROW FOR. `noClockRow` is set by
+  // the caller only when the period HAS a clock export - a period uploaded
+  // without one says so once at the top, not 800 times down the queue. Mutually
+  // exclusive with never-clocked by construction: a shift with no row has no
+  // noIn/noOut flags to carry.
+  if (shift?.noClockRow) out.push({ kind: "not-in-clock", billedMin });
 
   // THE SENTENCE, NOT THE FUNCTION THAT WROTE IT. Spreading the whole entry
   // carries `describe` along, and a function cannot cross into a client

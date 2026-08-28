@@ -503,6 +503,10 @@ export default async function AuditBatchPage({ params }) {
 
   for (const shift of everyShift) {
     const note = noteFor.get(shift) || null;
+    // the rule needs the difference between "no export was uploaded" and "the
+    // export has no row for this shift" - only the second is a finding
+    shift.noClockRow =
+      periodsWithClock.has(periodOf(shift.date)) && shift.clocked !== true;
     const read = auditRow(shift, note);
     // FULL WHERE ANYTHING HAS IT. The clock export is preferred over the note
     // because it is already "Last, First" like every other name on these

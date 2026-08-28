@@ -139,6 +139,41 @@ test("a shift nobody clocked is raised even when its note is perfect", () => {
   assert.ok(rs.some((r) => r.kind === "never-clocked"));
 });
 
+// ---- the export with no row for the shift ----
+//
+// A different fact from a missed punch. A shift with a clock row showing missed
+// punches raised "not clocked"; a shift the export had no row for raised
+// nothing at all, and ranked as the cleaner of the two.
+
+test("a billed shift the clock export has no row for is raised", () => {
+  const rs = auditReasons(shift({ noClockRow: true, workedMin: null, actualFrom: null, actualTo: null }), note());
+  const found = rs.find((r) => r.kind === "not-in-clock");
+  assert.ok(found);
+  assert.equal(found.weight, 40);
+});
+
+// the flag is the caller's statement that the period HAS an export - a period
+// uploaded without one says so once at the top, not 800 times down the queue
+test("a period with no clock export raises nothing about clock rows", () => {
+  const rs = auditReasons(shift({ workedMin: null, actualFrom: null, actualTo: null }), note());
+  assert.equal(rs.some((r) => r.kind === "not-in-clock"), false);
+});
+
+// a shift with no row carries no noIn/noOut flags, so the two clock reasons
+// cannot both fire
+test("no row and not clocked are different facts and never stack", () => {
+  const rs = auditReasons(shift({ noClockRow: true, workedMin: null, actualFrom: null, actualTo: null }), null);
+  assert.equal(rs.filter((r) => r.kind === "not-in-clock").length, 1);
+  assert.equal(rs.some((r) => r.kind === "never-clocked"), false);
+});
+
+// 20 of the 21 on 08/16-08/27 have a service note - the note answers the
+// documentation question, not the clock question
+test("a full note does not silence the missing row", () => {
+  const rs = auditReasons(shift({ noClockRow: true, workedMin: null, actualFrom: null, actualTo: null }), note());
+  assert.ok(rs.some((r) => r.kind === "not-in-clock"));
+});
+
 // ---- the row ----
 
 test("a row carries all three records and orders its reasons heaviest first", () => {
