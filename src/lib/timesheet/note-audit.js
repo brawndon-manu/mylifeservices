@@ -254,12 +254,29 @@ export function auditRow(shift, note) {
 // spelling comes from the same export every time. `scheduleKey` is what
 // normalises it; this takes the result rather than doing it again, so there is
 // one definition of "the same person" in the codebase.
+//
+// THE CLIENT GOES IN NORMALISED, and that is the whole of the fourth part.
+//
+// It used to go in as whatever the screen was printing, and the screen prints
+// whichever document supplied the full name - the roster's "Sherwold, A" when
+// nothing else reached the shift, the clock export's "Sherwold, Abigail" when a
+// punch did. So the key changed with the FILES rather than with the shift, and
+// three of Mánu's fifty decisions came unstuck from their shifts the moment a
+// period was uploaded with a different set of exports: an approval keyed
+// `sherwold, a` against a screen now keying `sherwold, abigail`, and two the
+// other way round.
+//
+// `clientKey` is the same surname-and-initial reduction `sameClient` matches
+// on, and it is identical for all three spellings - which is the property this
+// key needed and did not have. A name it cannot reduce keeps its own tidied
+// spelling rather than collapsing to nothing.
 export function shiftKeyOf({ employeeKey, date, startMin, client }) {
+  const named = String(client || "").trim();
   return [
     String(employeeKey || "").trim(),
     String(date || "").trim(),
     startMin == null ? "" : String(startMin),
-    String(client || "").trim().toLowerCase(),
+    named ? clientKey(named) || named.toLowerCase() : "",
   ].join("|");
 }
 

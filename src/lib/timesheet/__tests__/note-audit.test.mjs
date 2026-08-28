@@ -181,7 +181,46 @@ test("the same shift produces the same key every time", () => {
 
 test("the key is built from the documents, so a re-upload cannot move it", () => {
   // nothing in it comes from our own database
-  assert.equal(shiftKeyOf(shiftId), "taylor adams|08/17/26|720|michel, carlos");
+  assert.equal(shiftKeyOf(shiftId), "taylor adams|08/17/26|720|michel|c");
+});
+
+// THE FOURTH PART IS NORMALISED, and this is why.
+//
+// The client is printed as whichever document supplied the full name: the
+// roster's "Sherwold, A" where nothing else reached the shift, the clock
+// export's "Sherwold, Abigail" where a punch did, the note's "Abigail
+// Sherwold". Keyed as printed, the key moved with the FILES rather than with
+// the shift, and three of the first fifty decisions came unstuck from their
+// shifts when a period was uploaded with a different set of exports.
+test("every spelling of one client makes one key", () => {
+  const of = (client) => shiftKeyOf({ ...shiftId, client });
+  const abbreviated = of("Sherwold, A");
+  assert.equal(of("Sherwold, Abigail"), abbreviated);
+  assert.equal(of('Sherwold, Abigail "Abbie"'), abbreviated);
+  assert.equal(of("Abigail Sherwold"), abbreviated);
+});
+
+// a surname of more than one word, which is where guessing goes wrong
+test("a three-word name keys the same abbreviated or written out", () => {
+  assert.equal(
+    shiftKeyOf({ ...shiftId, client: "Garcia, T" }),
+    shiftKeyOf({ ...shiftId, client: "Garcia, Trixi Roa" }),
+  );
+});
+
+// a name that cannot be reduced to a surname and an initial keeps its own
+// spelling rather than collapsing to nothing, which would make every such
+// client the same shift
+test("a name with no surname to find keeps itself", () => {
+  assert.equal(shiftKeyOf({ ...shiftId, client: "Cher" }), "taylor adams|08/17/26|720|cher");
+  assert.notEqual(
+    shiftKeyOf({ ...shiftId, client: "Cher" }),
+    shiftKeyOf({ ...shiftId, client: "Prince" }),
+  );
+});
+
+test("a shift with no client keys with nothing in its place", () => {
+  assert.equal(shiftKeyOf({ ...shiftId, client: null }), "taylor adams|08/17/26|720|");
 });
 
 test("a different shift on the same day is a different key", () => {
