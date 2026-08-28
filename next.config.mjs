@@ -39,6 +39,21 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "50mb",
     },
+    // AND THE PROXY HAS ITS OWN, which is a separate 10MB and the one that
+    // actually bit. `proxy.ts` runs on every request, so the body passes
+    // through it before the action ever sees it, and Next truncates it there:
+    //
+    //   Request body exceeded 10MB for /portal/admin/timesheets/new.
+    //   Only the first 10MB will be available unless configured.
+    //
+    // A truncated multipart body is not a smaller upload, it is a broken one -
+    // the request died with no POST logged and the page showed a bare failure.
+    // Raising serverActions.bodySizeLimit alone does nothing while this stands.
+    //
+    // Same reasoning and the same ceiling: eight QSP exports are 26.9MB and
+    // Vercel caps a request at 4.5mb regardless, so this only helps an upload
+    // run from localhost, which is where the big ones are run.
+    proxyClientMaxBodySize: "50mb",
   },
   // keep the PDF stack out of the bundler - pdfjs/pdf-lib are only used in
   // server code (timesheet parsing + rendering) and bundling them breaks their
