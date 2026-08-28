@@ -641,9 +641,23 @@ export default async function AuditBatchPage({ params }) {
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         {batch.periodFrom} to {batch.periodTo}
       </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Service notes against what was billed
-      </h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          Service notes against what was billed
+        </h1>
+        {/* the findings leave this screen as a document - flags only for now,
+            on Mánu's call. Rendered fresh from the current decisions on every
+            open, so it can never disagree with the cards behind it. */}
+        {rows.some((r) => r.review?.decision === "flagged") && (
+          <a
+            href={`/portal/admin/audit/${batch.id}/report`}
+            target="_blank"
+            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+          >
+            Flagged report (PDF)
+          </a>
+        )}
+      </div>
 
       <AuditCards
         rows={rows}
