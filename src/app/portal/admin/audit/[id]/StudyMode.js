@@ -18,7 +18,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
 import { span, hrs, clockedFigure, punchEnd } from "./figures";
 
-export default function StudyMode({ rows: allRows, onExit }) {
+export default function StudyMode({ rows: dealt, onExit }) {
+  // THE DECK IS DEALT ONCE, when study mode opens.
+  //
+  // Mánu 2026-08-28: "sometimes when i click approve it skips over 2 cards
+  // over and i see the one that gets skipped." Reproduced: approve card 1,
+  // land on card 2, and seconds later the server's re-render arrives - this
+  // page takes several seconds to build - and the approved card leaves the
+  // "Not decided" list the deck was dealt from. Everything shifts left under
+  // an index that already advanced, and the card being READ jumps to the one
+  // after it. The decision was recorded correctly; the deck moved underneath.
+  //
+  // So a run works through the rows as they stood when it began. Decisions
+  // land in `decided` and on the server, and the list view re-reads the world
+  // the moment the run is left. This is also what lets Undo return to the
+  // exact card it is undoing: the card is still where it was.
+  const [allRows] = useState(dealt);
   const [at, setAt] = useState(0);
   // NARROWING THE RUN WITHOUT LEAVING IT. Mánu 2026-08-27: "when youre going by
   // it one by one we should have a way to change to diffferent employee or
