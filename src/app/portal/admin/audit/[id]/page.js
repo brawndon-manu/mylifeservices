@@ -424,6 +424,32 @@ export default async function AuditBatchPage({ params }) {
   for (const shift of everyShift) {
     if (!shift.client) noteFor.set(shift, claim(shift, false));
   }
+  // A NOTE THAT NAMES NOBODY, AGAINST A BOOKING THAT DOES.
+  //
+  // Aaron Jones 08/17, 8a-10a. The timesheet bills it as `Caviar, J - ILS
+  // Service`. QSP now shows the same block as ILS Admin with no client on it -
+  // Mánu opened it on his phone - and the note he wrote for it is filed the
+  // same way, with no client. So the note and the booking describe one shift
+  // and disagree about what it was, which is the disagreement this screen
+  // exists to show. Reported as "no service note" it said the opposite.
+  //
+  // Offered LAST, so every note that names a client has already gone to that
+  // client's booking and every client-less booking has had its pick.
+  //
+  // THE TIMES HAVE TO BE THE SAME MINUTE. A note naming nobody carries nothing
+  // else to tie it to one booking rather than the one after it, and a person
+  // can be booked with four clients in a day. An exact start is the whole of
+  // the evidence, so it is the whole of the test.
+  for (const shift of everyShift) {
+    if (noteFor.get(shift)) continue;
+    const anchor = shift.schedFrom;
+    if (anchor == null) continue;
+    const note = (byPersonDay.get(`${shift.who}|${shift.date}`) || [])
+      .find((n) => !taken.has(n) && !n.client && n.startMin === anchor);
+    if (!note) continue;
+    taken.add(note);
+    noteFor.set(shift, note);
+  }
 
   for (const shift of everyShift) {
     const note = noteFor.get(shift) || null;
