@@ -6,7 +6,7 @@ import { isCappedService } from "@/lib/timesheet/compliance";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
 import { clockShifts } from "@/lib/timesheet/clock";
-import { auditRow, shiftKeyOf, sameClient, displayClient } from "@/lib/timesheet/note-audit";
+import { auditRow, shiftKeyOf, sameClient, displayClient, clientKey } from "@/lib/timesheet/note-audit";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
@@ -386,6 +386,22 @@ export default async function AuditBatchPage({ params }) {
     return note;
   };
 
+  // EVERY SPELLING OF EVERY CLIENT THE PERIOD HOLDS, keyed the way `sameClient`
+  // matches. Built from the documents that write names out in full - the clock
+  // export and the service notes - so a shift neither of them reached can still
+  // print the client's name rather than the roster's abbreviation.
+  const fullClient = new Map();
+  const rememberClient = (name) => {
+    const key = clientKey(name);
+    if (!key || !name || fullClient.has(key)) return;
+    // an abbreviation is not a full name: "Evans, R" must never be remembered
+    // as the answer for "evans|r", or it would beat the real one
+    if (/^[^,]+,\s*[A-Za-z]\.?$/.test(String(name).trim())) return;
+    fullClient.set(key, name);
+  };
+  for (const shift of shifts.values()) rememberClient(shift.clientFull);
+  for (const n of notes) rememberClient(n.client);
+
   const everyShift = [...shifts.values()];
 
   // ONE SCHEDULE NOTE PER BOOKING - the client first, then the overlap.
@@ -458,7 +474,16 @@ export default async function AuditBatchPage({ params }) {
     // because it is already "Last, First" like every other name on these
     // screens; the roster's abbreviation is the last resort, for a shift no
     // clock row and no note ever reached.
-    const client = displayClient(shift.clientFull || note?.client, shift.client) || null;
+    //
+    // AND THE PERIOD IS ASKED BEFORE THAT LAST RESORT. A client's full name is
+    // one fact about the client, not about the shift: where any document names
+    // them anywhere in the fortnight, that spelling is theirs on every card.
+    // Without this a shift the clock export has no row for kept the roster's
+    // "Evans, R" while the rest of the period read "Evans, Rosemary", and one
+    // client appeared twice in the client picker - 23 shifts on 08/16-08/27.
+    const client =
+      displayClient(shift.clientFull || note?.client || fullClient.get(clientKey(shift.client)), shift.client)
+      || null;
     const shiftKey = shiftKeyOf({
       employeeKey: shift.who,
       date: shift.date,
