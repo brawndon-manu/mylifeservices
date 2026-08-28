@@ -36,6 +36,7 @@ export default function StudyMode({ rows: allRows, onExit }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   const [openNote, setOpenNote] = useState(false);
+  const [openSched, setOpenSched] = useState(false);
   const [busy, setBusy] = useState(false);
   // A REF AS WELL AS THE STATE. `busy` is what greys the buttons out, but state
   // does not settle until the next render, so two events in the same tick both
@@ -118,6 +119,7 @@ export default function StudyMode({ rows: allRows, onExit }) {
     setFlagging(false);
     setReason("");
     setOpenNote(false);
+    setOpenSched(false);
     setAt((i) => i + 1);
   }, [row]);
 
@@ -137,6 +139,7 @@ export default function StudyMode({ rows: allRows, onExit }) {
     setFlagging(false);
     setReason("");
     setOpenNote(false);
+    setOpenSched(false);
     setAt((i) => (i + by + rows.length) % rows.length);
   }, [rows.length]);
 
@@ -355,39 +358,72 @@ export default function StudyMode({ rows: allRows, onExit }) {
               </ul>
             )}
 
-            {row.note ? (
-              <div className="mt-6">
-                <button
-                  type="button"
-                  onClick={() => setOpenNote((v) => !v)}
-                  className="text-sm font-semibold text-brand underline underline-offset-4"
-                >
-                  {openNote ? "Hide the note" : `Read the note (${row.note.words} words)`}
-                </button>
-                {openNote && (
-                  <div className="mt-3 rounded-lg border border-border bg-surface p-4">
-                    <p className="text-sm leading-relaxed text-foreground">{row.note.summary}</p>
-                    {row.note.categories.length > 0 && (
-                      <p className="mt-2 text-xs text-faint">{row.note.categories.join(" · ")}</p>
-                    )}
-                    {row.note.comments.map((c, i) => (
-                      <p key={i} className="mt-2 text-sm leading-relaxed text-muted">{c}</p>
-                    ))}
-                    <p className="mt-3 text-xs text-faint">
-                      Signed {row.note.signedDate} {row.note.signedAt}
-                      {row.note.miles ? " · miles claimed" : ""}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="mt-6 text-sm text-faint">No service note was filed against this shift.</p>
-            )}
+            {/* BOTH NOTES, EACH BEHIND ITS OWN TOGGLE. Mánu 2026-08-27: "we
+                need the schdule notes and the service notes included with drop
+                downs."
+                
+                They answer different questions. The schedule note is the reason
+                typed on the shift - usually the explanation for the finding
+                itself, "Client ended early due to being tired". The service note
+                is the account of what was delivered. Neither is opened by
+                default: the figures decide whether a card needs reading, and
+                two paragraphs on every card is how a queue of 1,700 stops being
+                read at all. */}
+            <div className="mt-6 space-y-2">
+              {row.scheduleNote && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setOpenSched((v) => !v)}
+                    className="text-sm font-semibold text-brand underline underline-offset-4"
+                  >
+                    {openSched ? "Hide the schedule note" : "Read the schedule note"}
+                  </button>
+                  {openSched && (
+                    <div className="mt-2 rounded-lg border border-border bg-surface p-4">
+                      {row.scheduleNote.from && (
+                        <p className="text-xs tabular-nums text-faint">
+                          {row.scheduleNote.from}-{row.scheduleNote.to}
+                        </p>
+                      )}
+                      <p className="mt-1 text-sm leading-relaxed text-foreground">
+                        {row.scheduleNote.text}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* WHAT THIS SHIFT ALREADY CARRIES, reading the decision made in
-                this session before the one the page was loaded with. Arrowing
-                back to a shift just approved would otherwise show the state it
-                had before, and say nothing about what was just done to it. */}
+              {row.note ? (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setOpenNote((v) => !v)}
+                    className="text-sm font-semibold text-brand underline underline-offset-4"
+                  >
+                    {openNote ? "Hide the service note" : `Read the service note (${row.note.words} words)`}
+                  </button>
+                  {openNote && (
+                    <div className="mt-2 rounded-lg border border-border bg-surface p-4">
+                      <p className="text-sm leading-relaxed text-foreground">{row.note.summary}</p>
+                      {row.note.categories.length > 0 && (
+                        <p className="mt-2 text-xs text-faint">{row.note.categories.join(" · ")}</p>
+                      )}
+                      {row.note.comments.map((c, i) => (
+                        <p key={i} className="mt-2 text-sm leading-relaxed text-muted">{c}</p>
+                      ))}
+                      <p className="mt-3 text-xs text-faint">
+                        Signed {row.note.signedDate} {row.note.signedAt}
+                        {row.note.miles ? " · miles claimed" : ""}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-faint">No service note was filed against this shift.</p>
+              )}
+            </div>
+
             {(decided[row.shiftKey] || row.review) && (
               <p
                 className={`mt-6 text-xs font-semibold ${

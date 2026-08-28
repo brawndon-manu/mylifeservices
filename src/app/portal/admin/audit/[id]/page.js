@@ -8,6 +8,7 @@ import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/sc
 import { clockShifts } from "@/lib/timesheet/clock";
 import { auditRow, shiftKeyOf, sameClient, displayClient } from "@/lib/timesheet/note-audit";
 import { buildWhoKey } from "@/lib/timesheet/people";
+import { parseComments } from "@/lib/timesheet/comments";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 
@@ -79,10 +80,22 @@ export default async function AuditBatchPage({ params }) {
   // fortnights. The arrow operators do the same reach inside the database and
   // return a fraction of the bytes.
   const ids = [...current.values()].map((p) => p.id);
+  // THE SCHEDULE NOTE, which is the reason staff typed on the shift itself.
+  //
+  // Mánu 2026-08-27: "we need the schdule notes and the service notes included."
+  // Nothing new had to be uploaded - the Simple Timesheet has carried them in
+  // its "Comments Details" block since the first upload, 216 of them across
+  // 08/16-08/31 against the clock export's 66, and every one names its own day
+  // and block: "08/16/26 2:45p-5:34p: Client ended early due to being tired".
+  //
+  // They matter here because they are usually the ANSWER to the finding. Adams
+  // 08/16 bills 2:45p-6p and clocked out at 5:34p, and the explanation was
+  // sitting in the upload the whole time.
   const sheets = ids.length
     ? await prisma.$queryRawUnsafe(
       `SELECT t."sourceName",
               t.data->'scheduleCheck'->'byDate' AS bydate,
+              t.data->'comments' AS comments,
               u."name" AS legal_name,
               u."preferredFirstName" AS preferred_first,
               u."preferredLastName" AS preferred_last
@@ -142,6 +155,22 @@ export default async function AuditBatchPage({ params }) {
           clocked: false,
         });
       }
+    }
+  }
+
+  // THE SCHEDULE NOTES, indexed per person and day.
+  //
+  // Their times are the CLOCK times, not the booking's: Adams 08/16 reads
+  // "2:45p-5:34p" against a shift rostered 2:45p-6p. So a note is matched to
+  // the booking whose window it overlaps most, the same way a clock row is.
+  const schedNotes = new Map();
+  for (const t of sheets) {
+    const key = whoKey(t.sourceName);
+    for (const c of parseComments(t.comments)) {
+      const at = blockTimes(`${c.from}-${c.to}`);
+      const k = `${key}|${c.date}`;
+      if (!schedNotes.has(k)) schedNotes.set(k, []);
+      schedNotes.get(k).push({ ...c, start: at?.start ?? null, end: at?.end ?? null });
     }
   }
 
@@ -326,6 +355,26 @@ export default async function AuditBatchPage({ params }) {
   };
 
   const everyShift = [...shifts.values()];
+
+  // one schedule note per booking, by the same overlap rule
+  const takenNote = new Set();
+  for (const shift of everyShift) {
+    const mine = (schedNotes.get(`${shift.who}|${shift.date}`) || []).filter((c) => !takenNote.has(c));
+    if (!mine.length) continue;
+    const from = shift.actualFrom ?? shift.schedFrom;
+    const to = shift.actualTo ?? shift.schedTo;
+    const best = mine
+      .map((c) => ({
+        c,
+        overlap: c.start == null || from == null ? 0
+          : Math.max(0, Math.min(c.end ?? 0, to ?? 0) - Math.max(c.start, from)),
+      }))
+      .sort((a, b) => b.overlap - a.overlap)[0];
+    if (best && best.overlap > 0) {
+      takenNote.add(best.c);
+      shift.scheduleNote = best.c;
+    }
+  }
   for (const shift of everyShift) {
     if (shift.client) noteFor.set(shift, claim(shift, true));
   }
@@ -365,6 +414,13 @@ export default async function AuditBatchPage({ params }) {
       // read as a shift nobody tried to clock
       noIn: !!shift.noIn, noOut: !!shift.noOut,
       gpsIn: shift.gpsIn ?? null, gpsOut: shift.gpsOut ?? null,
+      // the reason staff typed on the shift, where there is one. The clock
+      // export carries the same text on a third of them and is the fallback.
+      scheduleNote: shift.scheduleNote
+        ? { from: shift.scheduleNote.from, to: shift.scheduleNote.to, text: shift.scheduleNote.text }
+        : shift.reason
+          ? { from: null, to: null, text: String(shift.reason).replace(/^Reason\s+given:\s*/i, "") }
+          : null,
       note: note
         ? {
           start: note.start, end: note.end, words: note.words,

@@ -427,6 +427,7 @@ function Count({ n, tone }) {
 
 function Card({ r }) {
   const [open, setOpen] = useState(false);
+  const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
   return (
     <article
@@ -522,29 +523,60 @@ function Card({ r }) {
         </p>
       )}
 
-      {r.note && (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="text-xs font-semibold text-brand underline underline-offset-4"
-          >
-            {open ? "Hide the note" : `Read the note (${r.note.words} words)`}
-          </button>
-          {open && (
-            <div className="mt-2 rounded-lg border border-border bg-surface-2 p-3">
-              <p className="text-sm leading-relaxed text-foreground">{r.note.summary}</p>
-              {r.note.categories.length > 0 && (
-                <p className="mt-2 text-xs text-faint">{r.note.categories.join(" · ")}</p>
+      {/* both notes, each behind its own toggle - the schedule note is the
+          reason typed on the shift, the service note the account of what was
+          delivered. See StudyMode. */}
+      {(r.scheduleNote || r.note) && (
+        <div className="mt-3 space-y-1.5">
+          {r.scheduleNote && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setOpenSched((v) => !v)}
+                className="text-xs font-semibold text-brand underline underline-offset-4"
+              >
+                {openSched ? "Hide the schedule note" : "Read the schedule note"}
+              </button>
+              {openSched && (
+                <div className="mt-1.5 rounded-lg border border-border bg-surface-2 p-3">
+                  {r.scheduleNote.from && (
+                    <p className="text-[11px] tabular-nums text-faint">
+                      {r.scheduleNote.from}-{r.scheduleNote.to}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-sm leading-relaxed text-foreground">
+                    {r.scheduleNote.text}
+                  </p>
+                </div>
               )}
-              {r.note.comments.map((c, i) => (
-                <p key={i} className="mt-2 text-sm leading-relaxed text-muted">{c}</p>
-              ))}
-              <p className="mt-3 text-xs text-faint">
-                Signed {r.note.signedDate} {r.note.signedAt}
-                {r.note.miles ? " · miles claimed" : ""}
-                {r.note.page ? ` · page ${r.note.page} of the export` : ""}
-              </p>
+            </div>
+          )}
+
+          {r.note && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="text-xs font-semibold text-brand underline underline-offset-4"
+              >
+                {open ? "Hide the service note" : `Read the service note (${r.note.words} words)`}
+              </button>
+              {open && (
+                <div className="mt-1.5 rounded-lg border border-border bg-surface-2 p-3">
+                  <p className="text-sm leading-relaxed text-foreground">{r.note.summary}</p>
+                  {r.note.categories.length > 0 && (
+                    <p className="mt-2 text-xs text-faint">{r.note.categories.join(" · ")}</p>
+                  )}
+                  {r.note.comments.map((c, i) => (
+                    <p key={i} className="mt-2 text-sm leading-relaxed text-muted">{c}</p>
+                  ))}
+                  <p className="mt-3 text-xs text-faint">
+                    Signed {r.note.signedDate} {r.note.signedAt}
+                    {r.note.miles ? " · miles claimed" : ""}
+                    {r.note.page ? ` · page ${r.note.page} of the export` : ""}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
