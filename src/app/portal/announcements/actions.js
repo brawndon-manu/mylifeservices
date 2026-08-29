@@ -12,7 +12,7 @@ import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 import { sendSlotAlert } from "@/lib/slot-alert-email";
 import {
-  addedSessions, canTake } from "@/lib/meeting-slots";
+  addedSessions, canTake, sortSessionOptions } from "@/lib/meeting-slots";
 import { getCurrentUser } from "@/lib/current-user";
 import {
   isModerator,
@@ -254,7 +254,9 @@ function parseMeetingFields(formData, tag) {
             };
           });
         if (opts.length) {
-          meetingOptions = opts;
+          // in the order they happen, not the order they were typed - a week
+          // added later can fall before the ones already there
+          meetingOptions = sortSessionOptions(opts);
           meetingMultiPick = formData.get("meetingMultiPick") === "on";
         }
       }

@@ -86,3 +86,34 @@ export function addedSessions(oldOpts, newOpts) {
   const old = new Set((Array.isArray(oldOpts) ? oldOpts : []).map((o) => o?.id).filter(Boolean));
   return (Array.isArray(newOpts) ? newOpts : []).filter((o) => o?.id && !old.has(o.id));
 }
+
+// SESSIONS IN THE ORDER THEY HAPPEN, whatever order they were typed in.
+//
+// Mánu 2026-08-29, adding a week of training dates to a posted meeting: "it
+// doesnt stay in order cause the additional dates are before the ones already
+// there." The editor appends, so a week added later sat last while happening
+// first, and every picker and email read out of order.
+//
+// Sorted at SAVE, not at render: the stored array's order is presentation and
+// nothing else - picks key on option id - so sorting it once fixes every
+// screen and email that reads it. A series stays together as a block (its
+// days belong to each other), blocks order by their earliest session, days
+// within a block by their own time. A session with no date sorts last rather
+// than first, so an unfinished row cannot shove the real schedule down.
+export function sortSessionOptions(options) {
+  const list = Array.isArray(options) ? options : [];
+  const when = (o) => {
+    const n = Date.parse(o?.at || "");
+    return Number.isFinite(n) ? n : Infinity;
+  };
+  const blocks = new Map();
+  for (const o of list) {
+    const key = o?.seriesId || `solo:${o?.id}`;
+    if (!blocks.has(key)) blocks.set(key, []);
+    blocks.get(key).push(o);
+  }
+  const ordered = [...blocks.values()];
+  for (const b of ordered) b.sort((a, c) => when(a) - when(c));
+  ordered.sort((a, c) => when(a[0]) - when(c[0]));
+  return ordered.flat();
+}
