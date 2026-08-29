@@ -874,10 +874,12 @@ export default function MeetingFields({
 
       {showTimeNotify && (
         <div className="border-t border-border pt-4">
-          <label className={LABEL}>If you change a session time</label>
+          <label className={LABEL}>If you change or add sessions</label>
           <p className="mt-1 text-xs text-muted">
             Anyone who picked a session whose time you change has to RSVP again.
-            Nothing is emailed unless you pick a group here.
+            Nothing is emailed unless you pick a group here. Added sessions are
+            announced only when you email everyone invited, and picks that were
+            already made stay as they are.
           </p>
           <div className="mt-2 space-y-1.5">
             {[

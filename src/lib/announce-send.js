@@ -55,7 +55,10 @@ export async function emailAnnouncement(
   where,
   // `reminder` overrides the has-it-been-sent check for callers that know the
   // answer already, like the "email whoever has not acknowledged" button.
-  { includeDirector = false, reminder = null } = {},
+  // `addedSessions` marks a resend that carries NEW meeting dates: the subject
+  // says so, because "Reminder:" about a meeting somebody already answered is
+  // an email they are entitled to ignore.
+  { includeDirector = false, reminder = null, addedSessions = null } = {},
 ) {
   const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
   const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
@@ -137,16 +140,26 @@ export async function emailAnnouncement(
   const title = post.title || "Announcement";
   // "Reminder: Acknowledgment required: X" reads badly, so the second send gets
   // its own sentence rather than a prefix bolted onto the first one's.
-  const subject = priorSend
-    ? post.requireAck
-      ? `Reminder: ${title} still needs your acknowledgment`
-      : `Reminder: ${title}`
-    : post.requireAck
-      ? `Acknowledgment required: ${title}`
-      : title;
+  const subject = addedSessions?.length
+    ? `New dates added: ${title}`
+    : priorSend
+      ? post.requireAck
+        ? `Reminder: ${title} still needs your acknowledgment`
+        : `Reminder: ${title}`
+      : post.requireAck
+        ? `Acknowledgment required: ${title}`
+        : title;
   // email mode: any picture in the body gets sized inline, since there's no
   // stylesheet on the other end to keep it inside the card.
-  const bodyHtml = renderMarkdown(post.content, { email: true });
+  // the added-dates line sits ABOVE the post body: the body is unchanged, and
+  // what is new about this send is exactly what the reader needs first
+  const addedNote = addedSessions?.length
+    ? `<p style="margin:0 0 14px;padding:10px 12px;background:#f0f6fb;border-radius:8px;">`
+      + `<strong>New session dates have been added.</strong> `
+      + `If you already picked a session, your pick still stands. `
+      + `Choose a different one if a new date works better.</p>`
+    : "";
+  const bodyHtml = addedNote + renderMarkdown(post.content, { email: true });
   const dateStr = new Date(post.createdAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",

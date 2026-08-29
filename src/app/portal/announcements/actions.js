@@ -11,7 +11,8 @@ import { put, del } from "@vercel/blob";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 import { sendSlotAlert } from "@/lib/slot-alert-email";
-import { canTake } from "@/lib/meeting-slots";
+import {
+  addedSessions, canTake } from "@/lib/meeting-slots";
 import { getCurrentUser } from "@/lib/current-user";
 import {
   isModerator,

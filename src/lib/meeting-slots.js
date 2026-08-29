@@ -72,3 +72,17 @@ export function takenByOption(choices) {
   }
   return out;
 }
+
+// THE SESSIONS AN EDIT ADDED to a meeting people may already have picked from.
+// Kristy 2026-08-28, adding two September training dates to a posted
+// announcement: the people who signed up to the existing dates still need to
+// hear about the new ones, and an added session resets nobody - so the
+// time-change reset path never notices it. Compared by option id: a session
+// whose TIME moved is the reset path's business, not an addition.
+//
+// Here rather than in announcements.js because this file stays dependency-free
+// and node --test runs it directly.
+export function addedSessions(oldOpts, newOpts) {
+  const old = new Set((Array.isArray(oldOpts) ? oldOpts : []).map((o) => o?.id).filter(Boolean));
+  return (Array.isArray(newOpts) ? newOpts : []).filter((o) => o?.id && !old.has(o.id));
+}
