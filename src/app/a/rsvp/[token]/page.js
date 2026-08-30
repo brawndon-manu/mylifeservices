@@ -10,10 +10,14 @@ import RsvpForm from "./RsvpForm";
 const TZ = "America/Los_Angeles";
 const optDateLabel = (o) => (o?.at ? formatInstant(o.at, TZ) : o?.label || "This session");
 
-// landing page for the one-click email meeting-RSVP links. lives outside /portal
-// so proxy.js doesn't bounce it to login - the signed token IS the credential.
-// going / a specific date records immediately; "can't make it" shows a short form
-// (a reason, or a per-series decline) that posts back via a no-login action.
+// landing page for the email meeting-RSVP links. lives outside /portal so
+// proxy.js doesn't bounce it to login - the signed token IS the credential.
+//
+// NOTHING RECORDS ON LOAD, deliberately, and it has to stay that way: mail
+// scanners fetch every link in an email, so a GET that writes would mark
+// people going the moment their inbox scanned the message. A tapped date in
+// the email only PRE-SELECTS here; recording happens when a person presses
+// Confirm, which posts through submitRsvpPicks.
 export const dynamic = "force-dynamic";
 
 export const metadata = {
