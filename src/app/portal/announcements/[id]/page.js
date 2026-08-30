@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtSession } from "@/app/portal/admin/meeting-attendance/roster";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -1107,9 +1108,22 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           return (
                             <div key={option.id} className="mt-2">
                               <div className="flex items-center justify-between text-sm">
+                                {/* THE DATE IS PART OF THE NAME. Mánu 2026-08-30,
+                                    after renaming the weeks: the headings read
+                                    the same words as before the edit, so a
+                                    roster that had completely changed looked
+                                    untouched. "Week 1: Session 1" says nothing
+                                    a rename cannot silently move; the date is
+                                    what the heading is FOR. Same format as the
+                                    attendance roster's. */}
                                 <span className="font-medium text-foreground">
                                   {option.seriesLabel ? `${option.seriesLabel}: ` : ""}
                                   {option.label}
+                                  {fmtSession(option) && (
+                                    <span className="ml-2 font-normal text-muted">
+                                      &middot; {fmtSession(option)}
+                                    </span>
+                                  )}
                                 </span>
                                 <span className="text-xs text-muted">
                                   {users.length} going
