@@ -5,7 +5,7 @@
 // response menu for people who never answered. each item is a plain <form> that
 // submits a server action (bound with its ids) and reloads - same pattern as the
 // present/absent roll-call buttons, so it stays simple.
-import { createContext, useContext, useRef, useState } from "react";
+import { createContext, useContext, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
 
@@ -143,13 +143,37 @@ export function PersonKebab({ postId, userId, currentOptionId, moveTargets, move
 
 // "+ Add someone to this session" - a searchable list of audience people not
 // already going to this session (walk-ins). adds them going + marks the ack.
+//
+// EACH CLICK ANSWERS IMMEDIATELY. Mánu 2026-08-30, placing people into the new
+// training week: "it works but it takes so long and so many clcking for it to
+// go through." The row used to be a plain form submit, so a click sat silent
+// through two page re-renders before anything moved, and adding five people
+// meant five open-type-click-wait rounds. Now a click marks the row at once,
+// the search clears and refocuses for the next name, and the server catches up
+// underneath - several adds can be in flight together.
 export function AddToSession({ postId, optionId, candidates, add }) {
   const show = useOverrideShown();
   const [q, setQ] = useState("");
+  // userId -> "adding" | "added", for the people added from THIS popover. The
+  // refreshed candidate list eventually drops them; until it lands they stay
+  // visible with their check so the list does not jump under the pointer.
+  const [state, setState] = useState({});
+  const inputRef = useRef(null);
+  const [, start] = useTransition();
   if (!show) return null;
   const list = q
     ? candidates.filter((c) => c.displayName.toLowerCase().includes(q.toLowerCase()))
     : candidates;
+  const pick = (c) => {
+    if (state[c.id]) return;
+    setState((s) => ({ ...s, [c.id]: "adding" }));
+    setQ("");
+    inputRef.current?.focus();
+    start(async () => {
+      await add(postId, c.id, optionId);
+      setState((s) => ({ ...s, [c.id]: "added" }));
+    });
+  };
   return (
     <Dropdown
       align="left"
@@ -165,6 +189,7 @@ export function AddToSession({ postId, optionId, candidates, add }) {
     >
       <div onClick={(e) => e.stopPropagation()} className="p-1">
         <input
+          ref={inputRef}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search people"
@@ -175,15 +200,17 @@ export function AddToSession({ postId, optionId, candidates, add }) {
             <p className="px-2 py-2 text-xs text-faint">nobody to add</p>
           ) : (
             list.map((c) => (
-              <form key={c.id} action={add.bind(null, postId, c.id, optionId)}>
-                <button type="submit" className={ITEM}>
-                  <Avatar name={c.displayName} image={c.image} size={22} />
-                  <span className="min-w-0">
-                    <span className="block truncate">{c.displayName}</span>
-                    {c.title && <span className="block truncate text-xs text-muted">{c.title}</span>}
-                  </span>
-                </button>
-              </form>
+              <button key={c.id} type="button" onClick={() => pick(c)} disabled={!!state[c.id]} className={ITEM}>
+                <Avatar name={c.displayName} image={c.image} size={22} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{c.displayName}</span>
+                  {c.title && <span className="block truncate text-xs text-muted">{c.title}</span>}
+                </span>
+                {state[c.id] === "adding" && <span className="flex-none text-xs text-faint">Adding&hellip;</span>}
+                {state[c.id] === "added" && (
+                  <span className="flex-none text-xs font-semibold text-emerald-600 dark:text-emerald-400">Added &#10003;</span>
+                )}
+              </button>
             ))
           )}
         </div>
