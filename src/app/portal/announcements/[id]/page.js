@@ -698,6 +698,22 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         </div>
       )}
 
+      {/* the edit chose an email and it went out, with nobody's picks reset -
+          the added-dates case. Without this the save landed in silence. */}
+      {sp?.emailed && !sp?.reset && (
+        <div className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+          Emailed {sp.emailed} {sp.emailed === "1" ? "person" : "people"} about the new dates.
+        </div>
+      )}
+      {/* the edit chose an email and NOTHING went out. This exact silence cost
+          Mánu a send on 2026-08-30: he picked everyone, saved, and had no way
+          to tell nothing had happened. */}
+      {sp?.emailfail && (
+        <div className="mt-4 rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+          You chose to email people about this change, but no email went out. Check the
+          audience on the post and try the edit again.
+        </div>
+      )}
       {sp?.reset && (
         <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
           <p className="text-sm font-medium text-foreground">Session times updated.</p>

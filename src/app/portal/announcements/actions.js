@@ -850,11 +850,27 @@ export async function editPost(postId, formData) {
   // choice, email the affected people or everyone invited about the change.
   let reset = 0;
   let emailed = 0;
+  let emailFailed = false;
   if (isCompanyMeeting(tag) && post.publishedAt) {
     const affected = await resetChangedMeetingSessions(post, meetingFields);
     reset = affected.length;
+    // SESSIONS ADDED TO A POSTED MEETING. An added session resets nobody, so
+    // the reset path never notices it - and Kristy's two new September dates
+    // went out to no one. New dates reach people only through "everyone
+    // invited": there is no smaller group they belong to, and the people who
+    // already picked are exactly the ones who cannot be skipped - Mánu
+    // 2026-08-28: "even those who have singed up to the current".
+    //
+    // REBUILT 2026-08-30. This wiring was described, committed and announced
+    // on 08-29 and never actually landed: the patch that carried it died on an
+    // assert after editing in memory and before writing the file, the commit
+    // took only the import, and the tests cover the helper rather than this
+    // call site. Mánu clicked "email everyone", saved, and nothing went out.
+    const added = addedSessions(post.meetingOptions, meetingFields.meetingOptions);
     const notify = formData.get("timeChangeNotify");
-    if (affected.length && (notify === "affected" || notify === "everyone")) {
+    const wantTimeEmail = affected.length && (notify === "affected" || notify === "everyone");
+    const wantAddedEmail = added.length > 0 && notify === "everyone";
+    if (wantTimeEmail || wantAddedEmail) {
       const emailPost = await prisma.announcement.findUnique({
         where: { id: postId },
         select: {
@@ -878,16 +894,28 @@ export async function editPost(postId, formData) {
         notify === "everyone"
           ? ackAudienceWhere(emailPost)
           : { id: { in: affected } };
-      const res = await emailAnnouncement(emailPost, where);
+      const res = await emailAnnouncement(
+        emailPost,
+        where,
+        // the subject and the line under it say dates were ADDED, so the
+        // resend does not read as a reminder of what they already answered
+        wantAddedEmail ? { addedSessions: added } : {},
+      );
       emailed = res?.sent || 0;
+      // A CHOSEN SEND THAT SENT NOTHING IS SAID OUT LOUD, on the banner.
+      emailFailed = emailed === 0;
     }
   }
 
   revalidatePath("/portal/announcements");
   revalidatePath(`/portal/announcements/${postId}`);
-  const q = reset
-    ? `?reset=${reset}${emailed ? `&emailed=${emailed}` : ""}`
-    : "";
+  // the outcome travels whether or not picks were reset - adding sessions
+  // resets nobody, and that save used to land with no banner either way
+  const parts = [];
+  if (reset) parts.push(`reset=${reset}`);
+  if (emailed) parts.push(`emailed=${emailed}`);
+  if (emailFailed) parts.push("emailfail=1");
+  const q = parts.length ? `?${parts.join("&")}` : "";
   redirect(`/portal/announcements/${postId}${q}`);
 }
 
