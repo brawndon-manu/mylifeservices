@@ -357,9 +357,20 @@ export default function MeetingResponse({
                                 </p>
                               ))}
                           </>
-                        ) : (
+                        ) : myPicks.includes(cantId(g.id)) ? (
                           <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
                             Can&apos;t attend
+                          </p>
+                        ) : (
+                          // A SERIES WITH NO PICK IS NOT A DECLINE. When the
+                          // week of Sept 3 was added to a posted meeting, every
+                          // existing responder's summary showed the new series
+                          // as a red "Can't attend" nobody had chosen - Mánu
+                          // 2026-08-30: "it automatically put me in as cant
+                          // make it when i have never chosen an option." Only
+                          // an actual cant: pick says that; silence says this.
+                          <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                            No date picked yet
                           </p>
                         )}
                       </div>
