@@ -156,8 +156,7 @@ export async function emailAnnouncement(
   const addedNote = addedSessions?.length
     ? `<p style="margin:0 0 14px;padding:10px 12px;background:#f0f6fb;border-radius:8px;">`
       + `<strong>New session dates have been added.</strong> `
-      + `If you already picked a session, your pick still stands. `
-      + `Choose a different one if a new date works better.</p>`
+      + `Your existing picks still stand - pick a day for the added dates as well.</p>`
     : "";
   const bodyHtml = addedNote + renderMarkdown(post.content, { email: true });
   const dateStr = new Date(post.createdAt).toLocaleDateString("en-US", {
