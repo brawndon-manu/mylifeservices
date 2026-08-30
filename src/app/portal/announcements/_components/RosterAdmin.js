@@ -5,7 +5,7 @@
 // response menu for people who never answered. each item is a plain <form> that
 // submits a server action (bound with its ids) and reloads - same pattern as the
 // present/absent roll-call buttons, so it stays simple.
-import { createContext, useContext, useRef, useState, useTransition } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
 
@@ -159,7 +159,6 @@ export function AddToSession({ postId, optionId, candidates, add }) {
   // visible with their check so the list does not jump under the pointer.
   const [state, setState] = useState({});
   const inputRef = useRef(null);
-  const [, start] = useTransition();
   if (!show) return null;
   const list = q
     ? candidates.filter((c) => c.displayName.toLowerCase().includes(q.toLowerCase()))
@@ -169,10 +168,20 @@ export function AddToSession({ postId, optionId, candidates, add }) {
     setState((s) => ({ ...s, [c.id]: "adding" }));
     setQ("");
     inputRef.current?.focus();
-    start(async () => {
-      await add(postId, c.id, optionId);
-      setState((s) => ({ ...s, [c.id]: "added" }));
-    });
+    // A PLAIN CALL, NOT A TRANSITION. Wrapped in startTransition, the action's
+    // route refresh - seconds of server render on this page - became part of
+    // the pending transition, and the SECOND consecutive add's row painted
+    // nothing until the first one's refresh landed. Mánu 2026-08-30: "works
+    // one time then ... it doesnt reproduce the same visual." The row now
+    // updates the moment the server answers, and the refresh arrives whenever
+    // it arrives.
+    add(postId, c.id, optionId)
+      .then(() => setState((s) => ({ ...s, [c.id]: "added" })))
+      .catch(() => setState((s) => {
+        const next = { ...s };
+        delete next[c.id];
+        return next;
+      }));
   };
   return (
     <Dropdown
