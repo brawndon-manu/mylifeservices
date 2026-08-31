@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/current-user";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf } from "@/lib/contacts";
-import { recordAnnouncementAck } from "@/lib/announcement-ack";
+import { acknowledgeFromEmail } from "../actions";
 
-// the landing page for the one-click email ack link. lives outside /portal so
-// proxy.js doesnt bounce it to login - the signed token IS the credential. it
-// records the ack (idempotent) on view and shows a confirmation. force-dynamic
-// since it writes and must never be cached.
+// the landing page for the email ack link. lives outside /portal so proxy.js
+// doesnt bounce it to login - the signed token IS the credential.
+//
+// NOTHING RECORDS ON LOAD ANY MORE, and it has to stay that way: mail scanners
+// fetch every link in a message, so the old record-on-view behavior was
+// acknowledging policies on people's behalf the moment their inbox scanned the
+// email - and HR freezes QSP accounts off these records. Opening this page
+// shows the announcement and a button; pressing the button records, through
+// acknowledgeFromEmail. Same rule as the RSVP landing next door.
 export const dynamic = "force-dynamic";
 
 export const metadata = {
@@ -17,11 +20,14 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function AckPage({ params }) {
+export default async function AckPage({ params, searchParams }) {
   const { token } = await params;
+  const sp = await searchParams;
   const parsed = verifyAckToken(token);
 
-  let ok = false;
+  let valid = false;
+  let acked = false;
+  let needsSign = false;
   let firstName = "there";
   let title = "";
   let announcementId = null;
@@ -38,7 +44,7 @@ export default async function AckPage({ params }) {
           deletedAt: true,
           // a post with a form is finished by SIGNING it, not by a tick
           formId: true,
-          form: { select: { id: true, shareSlug: true, fillable: true } },
+          form: { select: { fillable: true } },
         },
       }),
       prisma.user.findUnique({
@@ -60,47 +66,50 @@ export default async function AckPage({ params }) {
       user &&
       !user.deactivatedAt
     ) {
-      // OPENED IS NOT SIGNED, AND BOTH ARE WORTH KNOWING. Mánu 2026-08-10:
-      // "the reason why I included the acknowledgment for sign forms is so we
-      // can tell if the staff at least opened it then just needs to sign."
-      //
-      // So on a post with a form this records that they opened it - which is
-      // exactly what an acknowledgment is - and then hands them straight to the
-      // document. The roster shows the two states separately, so "read it, has
-      // not signed" is visible rather than passing for done.
-      if (announcement.formId && announcement.form?.fillable) {
-        try {
-          await recordAnnouncementAck({
+      valid = true;
+      firstName = firstNameOf(user) || "there";
+      title = announcement.title || (announcement.content || "").slice(0, 80);
+      announcementId = announcement.id;
+      needsSign = !!(announcement.formId && announcement.form?.fillable);
+      // someone who already acknowledged - through this link, the portal or a
+      // meeting RSVP - goes straight to the thanks screen rather than being
+      // asked to press a button they have already pressed
+      acked = !!(await prisma.announcementAck.findUnique({
+        where: {
+          announcementId_userId: {
             announcementId: announcement.id,
             userId: user.id,
-            viaEmail: true,
-          });
-        } catch (e) {
-          console.error("opened-ack failed:", e);
-        }
-        redirect(`/a/sign/${token}`);
-      }
-
-      try {
-        await recordAnnouncementAck({
-          announcementId: announcement.id,
-          userId: user.id,
-          viaEmail: true,
-        });
-        ok = true;
-        firstName = firstNameOf(user) || "there";
-        title =
-          announcement.title || (announcement.content || "").slice(0, 80);
-        announcementId = announcement.id;
-      } catch (e) {
-        console.error("ack via email failed:", e);
-      }
+          },
+        },
+        select: { userId: true },
+      }));
     }
   }
 
+  const done = acked || sp?.done === "1";
+
   return (
     <section className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
-      {ok ? (
+      {!valid ? (
+        <>
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-3 text-muted">
+            <LinkOffIcon className="h-8 w-8" />
+          </span>
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
+            This link isn&apos;t valid
+          </h1>
+          <p className="mt-2 text-base text-muted">
+            It may have expired or the announcement was removed. Sign in to the
+            portal to read it and acknowledge there.
+          </p>
+          <Link
+            href="/portal/announcements"
+            className="mt-6 text-sm font-medium text-brand transition hover:text-brand-dark"
+          >
+            Go to Announcements →
+          </Link>
+        </>
+      ) : done ? (
         <>
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
             <CheckIcon className="h-8 w-8" />
@@ -125,21 +134,35 @@ export default async function AckPage({ params }) {
         </>
       ) : (
         <>
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-3 text-muted">
-            <LinkOffIcon className="h-8 w-8" />
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-sky-100 text-brand">
+            <CheckIcon className="h-8 w-8" />
           </span>
           <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
-            This link isn&apos;t valid
+            Hi {firstName}.
           </h1>
-          <p className="mt-2 text-base text-muted">
-            It may have expired or the announcement was removed. Sign in to the
-            portal to read it and acknowledge there.
+          <p className="mt-3 text-base text-muted">
+            <span className="font-medium text-foreground">
+              &ldquo;{title}&rdquo;
+            </span>
           </p>
+          <p className="mt-2 text-base text-muted">
+            {needsSign
+              ? "This announcement comes with a document to sign. The button takes you to it and records that you opened it."
+              : "Pressing the button records your acknowledgment."}
+          </p>
+          <form action={acknowledgeFromEmail.bind(null, token)} className="mt-6">
+            <button
+              type="submit"
+              className="rounded-full bg-brand px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-brand-dark"
+            >
+              {needsSign ? "Review and sign" : "I acknowledge"}
+            </button>
+          </form>
           <Link
-            href="/portal/announcements"
+            href={`/portal/announcements/${announcementId}`}
             className="mt-6 text-sm font-medium text-brand transition hover:text-brand-dark"
           >
-            Go to Announcements →
+            Read it in the portal first →
           </Link>
         </>
       )}
