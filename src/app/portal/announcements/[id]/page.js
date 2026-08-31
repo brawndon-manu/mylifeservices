@@ -280,6 +280,17 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   // every announcement renders markdown now (sanitized). non-changelogs get the
   // new hero layout; changelogs keep their "What's New" treatment.
   const bodyHtml = renderMarkdown(post.content);
+  // the portal-only block: reaches the reader here and nowhere else - the
+  // email says it exists, the post shows it
+  const portalOnlyHtml = post.portalOnly ? renderMarkdown(post.portalOnly) : null;
+  const portalOnlyBlock = portalOnlyHtml ? (
+    <div className="mx-auto mt-6 max-w-2xl rounded-xl border border-brand/30 bg-sky-50/60 p-5 dark:bg-sky-950/20">
+      <p className="text-xs font-semibold uppercase tracking-wider text-brand">
+        Only visible in the portal
+      </p>
+      <div className={`mt-2 ${PROSE}`} dangerouslySetInnerHTML={{ __html: portalOnlyHtml }} />
+    </div>
+  ) : null;
   const fullDate = new Date(post.createdAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -772,6 +783,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               className={`mx-auto mt-6 max-w-2xl ${PROSE}`}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
+            {portalOnlyBlock}
           </div>
         ) : (
           /* new announcement layout: hero with faded logo + title block + body */
@@ -854,6 +866,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               className={`mx-auto mt-6 max-w-2xl px-6 sm:px-8 ${PROSE}`}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
+            {portalOnlyBlock && <div className="px-6 sm:px-8">{portalOnlyBlock}</div>}
 
             {event && <EventDetail post={post} myRsvp={myEventRsvp} data={eventData} />}
 

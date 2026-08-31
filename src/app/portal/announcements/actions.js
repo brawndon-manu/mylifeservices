@@ -476,6 +476,10 @@ export async function createPost(formData) {
     redirect("/portal/announcements/new?error=content");
   }
 
+  // the part that never leaves the portal - a training link, a payment code.
+  // Optional, and capped well under the body: it is a footnote, not a post.
+  const portalOnly = cleanBody(formData.get("portalOnly"), 5000);
+
   const expiresAt = parseDateField(formData.get("expiresAt"));
 
   // proxy posting: an IT/admin can post on behalf of another employee.
@@ -545,6 +549,7 @@ export async function createPost(formData) {
       postedById,
       title,
       content,
+      portalOnly,
       tag,
       expiresAt,
       imageUrl,
@@ -798,6 +803,7 @@ export async function editPost(postId, formData) {
   if (!content) {
     redirect(`/portal/announcements/${postId}/edit?error=content`);
   }
+  const portalOnly = cleanBody(formData.get("portalOnly"), 5000);
   const expiresAt = parseDateField(formData.get("expiresAt"));
   const requireAck = formData.get("requireAck") === "on";
   const ackAudience = parseAckAudience(
@@ -827,6 +833,7 @@ export async function editPost(postId, formData) {
     data: {
       title,
       content,
+      portalOnly,
       tag,
       expiresAt,
       attachments,

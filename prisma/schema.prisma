@@ -349,6 +349,12 @@ model Announcement {
   // announcements leave it null and just use content.
   title                       String?
   content                     String
+  // ONLY VISIBLE IN THE PORTAL, 2026-08-31. Britny's CPR re-certification:
+  // "we can have the code only visible through the portal too" - a link and a
+  // payment code that must reach the audience and must not sit in anyone's
+  // inbox. Rendered on the post page under its own heading, never included in
+  // any email. Null on every post that has no such thing to hide.
+  portalOnly                  String?
   imageUrl                    String?
   // proxy posting: authorId is the credited person, postedById is who hit
   // submit (null when posted by themselves). kept for the audit trail.

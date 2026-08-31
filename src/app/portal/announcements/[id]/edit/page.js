@@ -58,6 +58,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       publishedAt: true,
       // meeting fields - so editing a draft/meeting reloads everything the author
       // entered (format, link, sessions/series, reminders, etc.), pre-filled.
+      portalOnly: true,
       meetingKind: true,
       meetingFormat: true,
       meetingMandatory: true,

@@ -100,14 +100,11 @@ export async function emailAnnouncement(
   // subject arrives with its body collapsed. Read from the row rather than from
   // `post`, for the same reason as the form above: the callers pass different
   // selects and only some carry `ackEmailSentAt`.
-  const priorSend =
-    reminder ??
-    !!(
-      await prisma.announcement.findUnique({
-        where: { id: post.id },
-        select: { ackEmailSentAt: true },
-      })
-    )?.ackEmailSentAt;
+  const sendRow = await prisma.announcement.findUnique({
+    where: { id: post.id },
+    select: { ackEmailSentAt: true, portalOnly: true },
+  });
+  const priorSend = reminder ?? !!sendRow?.ackEmailSentAt;
 
   const files = [];
   for (const a of emailAttachmentsOf(post, signForm)) {
@@ -158,7 +155,15 @@ export async function emailAnnouncement(
       + `<strong>New session dates have been added.</strong> `
       + `Your existing picks still stand - pick a day for the added dates as well.</p>`
     : "";
-  const bodyHtml = addedNote + renderMarkdown(post.content, { email: true });
+  // THE PORTAL-ONLY PART STAYS OUT OF EVERY EMAIL. Britny's CPR payment code
+  // is the reason this field exists: the email says the section is there, and
+  // seeing it takes a sign-in. Looked up on sendRow rather than trusted off
+  // `post`, because the callers pass different selects.
+  const portalNote = sendRow?.portalOnly
+    ? `<p style="margin:14px 0 0;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#334155;">`
+      + `Part of this announcement is only visible in the portal. Open it there to see everything.</p>`
+    : "";
+  const bodyHtml = addedNote + renderMarkdown(post.content, { email: true }) + portalNote;
   const dateStr = new Date(post.createdAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",

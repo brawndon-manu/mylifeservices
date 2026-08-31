@@ -496,6 +496,30 @@ export default function AnnouncementForm({
             </p>
           </div>
 
+          {/* THE PART THAT NEVER LEAVES THE PORTAL. Britny's CPR
+              re-certification, 2026-08-31: a training link and a payment code
+              that have to reach the audience and must not sit in anyone's
+              inbox. The email says this section exists; only the post shows
+              it. */}
+          <div>
+            <label htmlFor="portalOnly" className={LABEL}>
+              Only visible in the portal <span className="text-faint">(optional)</span>
+            </label>
+            <textarea
+              id="portalOnly"
+              name="portalOnly"
+              rows={3}
+              maxLength={5000}
+              defaultValue={d.portalOnly || ""}
+              placeholder={"A link, a code, anything that should stay behind a sign-in."}
+              className={`${INPUT} resize-y font-mono text-sm`}
+            />
+            <p className="mt-1 text-xs text-muted">
+              Shown on the post under its own heading. Never included in the
+              email - the email says the portal has more.
+            </p>
+          </div>
+
           {meeting && (
             <MeetingFields
               defaults={d}
