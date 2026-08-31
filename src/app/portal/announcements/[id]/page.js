@@ -993,6 +993,52 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   </p>
                 )}
 
+                {/* EVERY SESSION'S LINK, FOR THE PEOPLE RUNNING THE MEETING.
+                    Mánu 2026-08-30: admin staff host several of the sessions,
+                    "so we need to make it so they can still see the links for
+                    the meetings even if they didnt pick the dates". Attendees
+                    keep seeing only their own pick's link; this block is the
+                    host's view, gated to the elevated tier - the Gabes,
+                    Britnys, Aprils, Kristys and Mánus of the org chart. */}
+                {isElevated(user.role) &&
+                  formatHasOnline(post.meetingFormat) &&
+                  meetingOptions.some((o) => o.zoomLink || post.zoomLink) && (
+                    <div className="mt-5 rounded-xl border border-border bg-surface-2 p-4">
+                      <p className="text-sm font-semibold text-foreground">All session links</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        Visible to admin staff only. Attendees see the link for the session they
+                        picked.
+                      </p>
+                      <div className="mt-2 space-y-1.5">
+                        {meetingOptions.map((o) => {
+                          const link = o.zoomLink || post.zoomLink;
+                          if (!link) return null;
+                          const code = o.zoomCode || post.zoomCode;
+                          return (
+                            <p key={o.id} className="flex flex-wrap items-center gap-x-2 text-sm">
+                              <span className="text-foreground">
+                                {o.seriesLabel ? `${o.seriesLabel}: ` : ""}
+                                {o.label}
+                                {fmtSession(o) && (
+                                  <span className="text-muted"> &middot; {fmtSession(o)}</span>
+                                )}
+                              </span>
+                              <a
+                                href={link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-semibold text-brand hover:underline"
+                              >
+                                Join
+                              </a>
+                              {code && <span className="text-xs text-muted">Passcode {code}</span>}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                 {/* my response: pick / confirm / change (client component) */}
                 {iCanPick && (
                   <MeetingResponse
