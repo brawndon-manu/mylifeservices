@@ -28,7 +28,9 @@ function mmss(s) {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export default function UploadProgress({ uploadId, seconds = 0, files }) {
+// `stages` lets the day program reuse this panel with its own step list - the
+// ring, the ticker and the polling are identical; only the steps differ.
+export default function UploadProgress({ uploadId, seconds = 0, files, stages = STAGES }) {
   const [state, setState] = useState(null);
   const [reachedPoll, setReachedPoll] = useState(false);
   // what the polling itself is doing. shown in one muted line at the bottom:
@@ -78,7 +80,7 @@ export default function UploadProgress({ uploadId, seconds = 0, files }) {
     };
   }, [uploadId]);
 
-  const stageIdx = state ? STAGES.findIndex((s) => s.key === state.stage) : -1;
+  const stageIdx = state ? stages.findIndex((s) => s.key === state.stage) : -1;
   const total = state?.total || null;
   const done = state?.done || 0;
   const generating = state?.stage === "generating" && total;
@@ -127,14 +129,20 @@ export default function UploadProgress({ uploadId, seconds = 0, files }) {
               </>
             ) : (
               <p className="max-w-[124px] text-center text-[13px] leading-snug text-muted">
-                {STAGES[stageIdx]?.label || "Reading the export"}
+                {stages[stageIdx]?.label || "Reading the export"}
               </p>
             )}
           </div>
         </div>
 
         <p className="mt-5 text-[17px] font-semibold text-foreground">
-          {generating ? "Generating corrected timesheets" : "Reading your four exports"}
+          {/* counted off the pickers rather than hardcoded - "four" survived
+              the move to eight files on the MLS side and nobody noticed */}
+          {generating
+            ? "Generating corrected timesheets"
+            : files?.length
+              ? `Reading your ${files.length} exports`
+              : "Reading the exports"}
         </p>
         <p className="mt-0.5 text-[12.5px] text-muted">
           {period?.from ? `${period.from} to ${period.to} · ` : ""}
@@ -177,7 +185,7 @@ export default function UploadProgress({ uploadId, seconds = 0, files }) {
         <div className="mt-6 border-t border-border pt-4">
           <p className="mb-2 text-[10px] uppercase tracking-widest text-faint">Steps</p>
           <ol className="space-y-1">
-            {STAGES.filter((s) => s.key !== "done").map((s, i) => {
+            {stages.filter((s) => s.key !== "done").map((s, i) => {
               const past = stageIdx > i;
               const now = stageIdx === i;
               return (

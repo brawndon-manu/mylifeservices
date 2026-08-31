@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
 import { uploadDayProgramBatch } from "../actions";
-import PartialPick from "./PartialPick";
+import UploadForm from "./UploadForm";
 
 export const metadata = { title: "Upload day program period", robots: { index: false, follow: false } };
 
@@ -57,63 +57,11 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
         </div>
       )}
 
-      <form action={uploadDayProgramBatch} className="mt-8 space-y-4">
-        <FilePick
-          id="timesheet"
-          label="Simple Timesheet (.pdf)"
-          hint="QSP > Reports > Timesheets. Hours, punches and overtime all come from here."
-          accept=".pdf,application/pdf"
-          required
-        />
-        <FilePick
-          id="rests"
-          label="Rest Periods Report (.xls)"
-          hint="Straight from QSP. Both layouts read, so an edited copy with second-break columns filled in still works - but you don't need to fill anything in. Rest breaks, the second breaks named in schedule notes, and the reasons staff give all come from here."
-          accept=".xls,application/vnd.ms-excel"
-          required
-        />
-        <FilePick
-          id="schedule"
-          label="Employee Schedules (.pdf) - optional"
-          hint="The month's schedule export. Gives every sheet the shift cross-check the MLS batches get."
-          accept=".pdf,application/pdf"
-        />
-        <FilePick
-          id="mileage"
-          label="Employee Mileage Tracking Report (.xls) - optional"
-          hint="QSP > Reports > Employee Mileage Tracking. The day program has no payroll report to carry a mileage column, so this is the only place miles come from. Leave it out and the sheet says nothing about mileage, rather than printing a 0.00 nobody should have to attest to."
-          accept=".xls,application/vnd.ms-excel"
-        />
-        {/* deliberately last: the upload refuses a file holding days nobody
-            has worked, and this is the way past that check, so it should read
-            like what it is rather than an ordinary option. */}
-        <PartialPick />
-        <button
-          type="submit"
-          className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-        >
-          Upload and analyze
-        </button>
-      </form>
+      {/* the pickers, the partial box and the live panel live in the client
+          form - the same animation the MLS upload has, fed by the action's own
+          progress writes */}
+      <UploadForm action={uploadDayProgramBatch} />
     </section>
   );
 }
 
-function FilePick({ id, label, hint, accept, required }) {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <label htmlFor={id} className="block text-sm font-medium text-foreground">
-        {label}
-      </label>
-      <p className="mt-0.5 text-xs leading-relaxed text-muted">{hint}</p>
-      <input
-        id={id}
-        name={id}
-        type="file"
-        required={required}
-        accept={accept}
-        className="mt-3 block w-full text-sm text-muted file:mr-4 file:rounded-md file:border-0 file:bg-brand-light file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
-      />
-    </div>
-  );
-}

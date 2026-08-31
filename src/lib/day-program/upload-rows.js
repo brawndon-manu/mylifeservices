@@ -8,7 +8,7 @@ import { renderSheet } from "../timesheet/render-sheet.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
-export async function buildDayProgramSheetRows(result, users, generatedOn) {
+export async function buildDayProgramSheetRows(result, users, generatedOn, onSheet = null) {
   const sheetRows = [];
   for (const p of result.people) {
     const m = matchEmployee(p.sourceName, users);
@@ -139,6 +139,18 @@ export async function buildDayProgramSheetRows(result, users, generatedOn) {
       renderOk,
       data,
     });
+    // the live upload panel's ticker - a name, the hours, and whether the PDF
+    // rendered - reported as each sheet finishes, never allowed to fail the row
+    try {
+      await onSheet?.({
+        name: p.sourceName || "(unknown)",
+        hours: p.totals?.paidHours || 0,
+        premium: p.premiums?.totalHours || 0,
+        failed: !renderOk,
+      });
+    } catch {
+      // progress is a nicety; the sheet is not
+    }
   }
   return sheetRows;
 }

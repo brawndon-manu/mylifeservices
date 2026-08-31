@@ -18,6 +18,18 @@ export const STAGES = [
   { key: "done", label: "Done" },
 ];
 
+// THE DAY PROGRAM'S UPLOAD, same panel, its own steps. Its analyze reads all
+// of its exports in one pass, so there is one reading stage where the MLS list
+// has four, and its sources are stored after the sheets are built rather than
+// as each file is parsed.
+export const DP_STAGES = [
+  { key: "reading", label: "Reading the exports" },
+  { key: "generating", label: "Working out hours and generating each sheet" },
+  { key: "storing", label: "Storing the source files" },
+  { key: "saving", label: "Saving the batch" },
+  { key: "done", label: "Done" },
+];
+
 // how many names to keep in the ticker. enough that it reads as moving, few
 // enough that the payload stays small on a poll every second.
 export const RECENT_MAX = 4;

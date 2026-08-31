@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
+import { progressKey, setProgress } from "@/lib/timesheet-progress";
+import { pushRecent } from "@/lib/timesheet-stages";
 import { unstorableRows } from "@/lib/timesheet/storable";
 import { analyzeDayProgram } from "@/lib/day-program/analyze";
 import { buildDayProgramSheetRows } from "@/lib/day-program/upload-rows";
@@ -55,6 +57,13 @@ const present = (f) => f && typeof f === "object" && "size" in f && f.size > 0;
 // holds real audit data and its premiums were settled against it.
 export async function uploadDayProgramBatch(formData) {
   const user = await requireAccess();
+
+  // the same live panel the MLS upload has. The id was minted in the browser
+  // and is only ever a lookup suffix - progressKey namespaces it under the
+  // uploader, and a null key makes every write a no-op.
+  const prog = progressKey(user.id, formData.get("uploadId"));
+  const P = { stage: "reading", done: 0, total: null, recent: [] };
+  await setProgress(prog, P);
 
   const pdfFile = formData.get("timesheet");
   if (!present(pdfFile)) err("notimesheet");
@@ -147,12 +156,28 @@ export async function uploadDayProgramBatch(formData) {
   // date would put a different "generated on" on the same sheet every open.
   const generatedOn = new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" });
 
-  const sheetRows = await buildDayProgramSheetRows(result, users, generatedOn);
+  P.stage = "generating";
+  P.total = result.people.length;
+  await setProgress(prog, P);
+  const sheetRows = await buildDayProgramSheetRows(result, users, generatedOn, async (row) => {
+    P.done += 1;
+    P.recent = pushRecent(P.recent, {
+      name: row.name,
+      hours: r2(row.hours),
+      premium: r2(row.premium),
+      failed: row.failed,
+    });
+    // throttled: the screen polls once a second, so writing faster than that
+    // buys nothing and costs a round-trip inside the slow loop
+    await setProgress(prog, P, { minGapMs: 300 });
+  });
 
   const refused = unstorableRows(sheetRows.map((s) => ({ sourceName: s.sourceName, data: s.data })));
   if (refused.length) err("save", `${refused[0].name}'s rows contain ${refused[0].what}`);
 
   if (!hasBlobStorage()) err("noblob");
+  P.stage = "storing";
+  await setProgress(prog, P);
   const store = async (key, body, contentType) => {
     const blob = await putBlob(key, body, { access: "public", contentType });
     return blob.url;
@@ -177,6 +202,8 @@ export async function uploadDayProgramBatch(formData) {
     err("blob");
   }
 
+  P.stage = "saving";
+  await setProgress(prog, P);
   let batch;
   try {
     batch = await prisma.$transaction(async (tx) => {
@@ -216,6 +243,8 @@ export async function uploadDayProgramBatch(formData) {
     err("save", e?.message || e);
   }
 
+  P.stage = "done";
+  await setProgress(prog, P);
   revalidatePath("/portal/admin/timesheets");
   revalidatePath("/portal/admin/day-program");
   redirect(`/portal/admin/timesheets/${batch.id}`);
