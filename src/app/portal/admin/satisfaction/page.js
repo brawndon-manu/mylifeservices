@@ -6,6 +6,7 @@ import { canManageClientAttestations } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import SurveyList from "./_components/SurveyList";
+import { markClient } from "./actions";
 import ClearDraft from "./_components/ClearDraft";
 import {
   SATISFACTION_KIND,
@@ -39,7 +40,7 @@ export default async function SatisfactionPage({ searchParams }) {
   const savedClientId = typeof sp?.client === "string" ? sp.client : null;
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
 
-  const [clients, reports] = await Promise.all([
+  const [clients, reports, marks] = await Promise.all([
     prisma.client.findMany({
       orderBy: { name: "asc" },
       select: {
@@ -58,7 +59,12 @@ export default async function SatisfactionPage({ searchParams }) {
       orderBy: { createdAt: "desc" },
       select: { id: true, clientKey: true, conductedByName: true, createdAt: true, answers: true },
     }),
+    // the reviewers' marks - who to prioritize, who is flagged and why
+    prisma.clientMark.findMany({
+      select: { clientKey: true, starred: true, flagged: true, note: true },
+    }),
   ]);
+  const markByClient = new Map(marks.map((m) => [m.clientKey, m]));
 
   // newest first, so the first report seen per client IS the latest. The count
   // rides along because one client is surveyed by different people - the
@@ -82,10 +88,14 @@ export default async function SatisfactionPage({ searchParams }) {
     .filter((c) => !isDayProgram(c.office))
     .map((c) => {
       const latest = latestByClient.get(c.clientKey) || null;
+      const mark = markByClient.get(c.clientKey) || null;
       return {
         id: c.id,
         name: c.name,
         staff: c.staffUser ? preferredName(c.staffUser) : c.caseWorkerName || "",
+        starred: mark?.starred === true,
+        flagged: mark?.flagged === true,
+        note: mark?.note || null,
         latest: latest
           ? {
               id: latest.id,
@@ -139,7 +149,7 @@ export default async function SatisfactionPage({ searchParams }) {
         </div>
       )}
 
-      <SurveyList rows={rows} />
+      <SurveyList rows={rows} mark={markClient} />
     </section>
   );
 }

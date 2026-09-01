@@ -67,3 +67,41 @@ export async function submitSatisfactionSurvey(formData) {
   // only now, with the row confirmed in the database
   redirect(`/portal/admin/satisfaction?saved=${report.id}&client=${clientId}`);
 }
+
+// A REVIEWER'S MARK ON ONE CLIENT: the star that says prioritize this one,
+// the flag with its note. Same desk, same gate as the survey itself. The
+// whole mark arrives on every call - star, flag, note together - so a toggle
+// can never race a note into oblivion; and a mark with nothing left on it is
+// deleted, because an empty row would read as a decision somebody made.
+export async function markClient({ clientId, starred, flagged, note }) {
+  const user = await getCurrentUser();
+  if (!canManageClientAttestations(user?.role)) return { ok: false, error: "auth" };
+
+  const client = await prisma.client.findUnique({
+    where: { id: String(clientId || "") },
+    select: { clientKey: true },
+  });
+  if (!client) return { ok: false, error: "noclient" };
+
+  const star = starred === true;
+  const flag = flagged === true;
+  // the note rides the flag, the way a flag reason rides a flagged shift
+  const text = flag ? String(note || "").trim().slice(0, 500) || null : null;
+
+  if (!star && !flag) {
+    await prisma.clientMark.deleteMany({ where: { clientKey: client.clientKey } });
+  } else {
+    const data = {
+      starred: star, flagged: flag, note: text,
+      byId: user.id, byName: preferredName(user),
+    };
+    await prisma.clientMark.upsert({
+      where: { clientKey: client.clientKey },
+      update: data,
+      create: { clientKey: client.clientKey, ...data },
+    });
+  }
+
+  revalidatePath("/portal/admin/satisfaction");
+  return { ok: true };
+}

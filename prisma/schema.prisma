@@ -1891,6 +1891,27 @@ model Client {
 // filled survey must outlive every re-import. The name is copied in as it
 // stood so the record still reads right even if the roster later spells the
 // person differently.
+// THE SURVEY DESK'S MARKS ON A CLIENT, 2026-09-02: a star for the reviewers
+// to know who to prioritize, a flag with its note - the same shape a flagged
+// shift carries on the timesheet review. Keyed by the durable clientKey, not
+// the roster row, because the roster import replaces the Client table
+// wholesale and a reviewer's marks must outlive that. One row per client; a
+// row with nothing left on it is deleted rather than kept empty.
+model ClientMark {
+  id        String  @id @default(cuid())
+  clientKey String  @unique
+  starred   Boolean @default(false)
+  flagged   Boolean @default(false)
+  note      String?
+
+  // who last touched it, as scalars - a record, not a relation
+  byId   String?
+  byName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model ClientReport {
   id String @id @default(cuid())
 
