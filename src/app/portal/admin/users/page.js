@@ -7,6 +7,7 @@ import {
   isIT,
   isManagerUp,
   isSuper,
+  canEnterAdmin,
   canSeeRoles,
   canManageUser,
   canAssignRole,
@@ -40,9 +41,13 @@ function tenureLabel(hireDate, now) {
 
 export default async function UsersPage({ searchParams }) {
   const current = await getCurrentUser();
-  if (!isElevated(current?.role)) redirect("/portal");
+  // the oversight tier manages people here; a field supervisor gets the same
+  // roster READ-ONLY - no invites, no editors (canManage is false on every
+  // row for them), and no privilege roles anywhere on the page
+  if (!canEnterAdmin(current?.role)) redirect("/portal");
 
   const showRoles = canSeeRoles(current.role);
+  const canInvite = isElevated(current.role);
   const canEditRole = isIT(current.role);
   const canEditHire = isManagerUp(current.role);
 
@@ -73,7 +78,11 @@ export default async function UsersPage({ searchParams }) {
     name: u.name || "",
     preferredFirstName: u.preferredFirstName || "",
     preferredLastName: u.preferredLastName || "",
-    role: u.role,
+    // the privilege role never leaves the server for a viewer who can't see
+    // roles - hiding the badge means nothing if the value still rides the
+    // page payload. `leadership` carries the one bit the filter chip needs.
+    role: showRoles ? u.role : null,
+    leadership: u.role !== "STAFF",
     title: u.title || "",
     offices: u.offices || [],
     phone: u.phone || "",
@@ -102,6 +111,7 @@ export default async function UsersPage({ searchParams }) {
       <PeopleManager
         users={users}
         showRoles={showRoles}
+        canInvite={canInvite}
         canEditRole={canEditRole}
         canEditHire={canEditHire}
         roleOptions={roleOptions}

@@ -146,9 +146,12 @@ const GROUPS = [
 ];
 
 export default function PeopleManager({
-  users, showRoles, canEditRole, canEditHire, roleOptions, activeCount, totalCount, flash,
+  users, showRoles, canInvite, canEditRole, canEditHire, roleOptions, activeCount, totalCount, flash,
 }) {
   const router = useRouter();
+  // a viewer who can't see privilege roles doesn't get a Role grouping either -
+  // the group headers would spell out what the badges hide
+  const groupOptions = GROUPS.filter((g) => g.key !== "role" || showRoles);
   const [query, setQuery] = useState("");
   const [chip, setChip] = useState("all");
   const [groupBy, setGroupBy] = useState("none");
@@ -182,7 +185,7 @@ export default function PeopleManager({
 
   const CHIPS = [
     { key: "all", label: `All ${totalCount}`, test: () => true },
-    { key: "leadership", label: "Leadership", test: (u) => u.role !== "STAFF" },
+    { key: "leadership", label: "Leadership", test: (u) => u.leadership },
     { key: "instructors", label: "Instructors", test: (u) => /independent living instructor/i.test(u.title) },
     { key: "mls", label: "MLS", test: (u) => u.offices.includes("MLS") },
     { key: "dp", label: "DP", test: (u) => u.offices.includes("DP") },
@@ -240,13 +243,15 @@ export default function PeopleManager({
             {totalCount} people · {activeCount} active · sign-in is invite-only
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setInviting(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-light px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-brand"
-        >
-          <PlusIcon /> Invite people
-        </button>
+        {canInvite && (
+          <button
+            type="button"
+            onClick={() => setInviting(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-light px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-brand"
+          >
+            <PlusIcon /> Invite people
+          </button>
+        )}
       </div>
 
       {banner && (
@@ -272,7 +277,7 @@ export default function PeopleManager({
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted">Group by</span>
           <div className="inline-flex overflow-hidden rounded-lg border border-border bg-background">
-            {GROUPS.map((g) => (
+            {groupOptions.map((g) => (
               <button
                 key={g.key}
                 type="button"
@@ -351,7 +356,7 @@ export default function PeopleManager({
           onClose={() => setEditing(null)}
         />
       )}
-      {inviting && (
+      {inviting && canInvite && (
         <InviteModal
           canEditRole={canEditRole}
           canEditHire={canEditHire}

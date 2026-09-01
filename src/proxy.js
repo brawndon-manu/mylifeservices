@@ -16,7 +16,7 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "./auth.config";
-import { isElevated } from "./lib/roles";
+import { canEnterAdmin } from "./lib/roles";
 import { PREVIEW_COOKIE, resolveEffectiveRole } from "./lib/preview";
 import { isMaintenanceOn } from "./lib/maintenance";
 import { BYPASS_COOKIE, verifyBypassToken } from "./lib/maintenance-token";
@@ -93,7 +93,9 @@ export default auth(async (req) => {
       req.auth.user?.role,
       req.cookies.get(PREVIEW_COOKIE)?.value,
     );
-    if (ADMIN_ONLY.test(pathname) && !isElevated(effectiveRole)) {
+    // the admin door: oversight tier plus field supervisors, who get three
+    // cards. every page inside re-checks its own, tighter gate.
+    if (ADMIN_ONLY.test(pathname) && !canEnterAdmin(effectiveRole)) {
       return NextResponse.redirect(new URL("/portal", req.url));
     }
   }

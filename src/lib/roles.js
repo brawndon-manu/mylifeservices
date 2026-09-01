@@ -48,7 +48,7 @@ export const ROLE_DESCRIPTIONS = {
   ADMIN: "Top-level oversight. Owner/Director-style role with full management access.",
   MANAGER: "Program management. Can manage users + post announcements.",
   HR: "Human resources. Standard access for now (will gain HR-specific tools later).",
-  SUPERVISOR: "Field supervisor. Standard access; oversees on-the-ground staff.",
+  SUPERVISOR: "Field supervisor. Client attestations and satisfaction surveys, plus a read-only view of People.",
   STAFF: "Standard staff member. Read announcements + access resources.",
 };
 
@@ -76,6 +76,16 @@ const ELEVATED_ROLES = new Set(["SUPER", "IT_ADMIN", "ADMIN", "MANAGER", "HR"]);
 // the portal. use this anywhere you'd previously check role === "IT_ADMIN".
 export function isElevated(role) {
   return ELEVATED_ROLES.has(role);
+}
+
+// WHO GETS THROUGH THE /portal/admin DOOR AT ALL. The oversight tier, plus
+// field supervisors - Mánu 2026-08-31: supervisors get the admin dashboard
+// with exactly three cards on it (client attestations, the satisfaction
+// survey, and a read-only People). This is only the door: every admin page
+// keeps its own gate, and a supervisor fails all of them except the ones
+// named above.
+export function canEnterAdmin(role) {
+  return isElevated(role) || role === "SUPERVISOR";
 }
 
 // MODERATOR tier - can delete other peoples Hub posts/comments. broader
@@ -212,17 +222,16 @@ export function canManageTimesheets(role) {
 }
 
 // client attestations: upload the monthly QSP client schedule, review the
-// matches, send the forms out and collect the signed ones back.
+// matches, send the forms out and collect the signed ones back. Also the gate
+// on the Annual satisfaction survey desk, which serves the same clients.
 //
-// SAME TIER AS TIMESHEETS, and for the same reason: it is the identical shape of
-// job - a QSP export cut into one document per person, sent for signature - run
-// by the same desk. HR owns the monthly round, Manager and above oversee it.
-//
-// Deliberately NOT extended to SUPERVISOR. A field supervisor signs the forms
-// for their own staff's clients and reaches them through the emailed link,
-// which is a different thing from uploading a batch for the whole agency.
+// SAME TIER AS TIMESHEETS - the identical shape of job, run by the same desk -
+// PLUS FIELD SUPERVISORS since 2026-08-31. The old exclusion ("a supervisor
+// signs through the emailed link, which is a different thing from uploading a
+// batch") was reversed by Mánu: supervisors sit with the clients, collect the
+// signatures and conduct the surveys, so the desk is theirs too.
 export function canManageClientAttestations(role) {
-  return canManageTimesheets(role);
+  return canManageTimesheets(role) || role === "SUPERVISOR";
 }
 
 // returns true if `role` is a valid Role enum value. use for form

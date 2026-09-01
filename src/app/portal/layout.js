@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { signOut } from "@/auth";
 import { getCurrentUser } from "@/lib/current-user";
-import { isElevated, isIT, isAdminUp, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
+import { isElevated, isIT, isAdminUp, canEnterAdmin, roleBadgeClass, ROLE_LABELS } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import PreviewBar from "./_components/PreviewBar";
 import PortalMenu from "./_components/PortalMenu";
@@ -89,7 +89,7 @@ export default async function PortalLayout({ children }) {
               </Link>
             )}
             <PortalMenu
-              elevated={isElevated(role)}
+              elevated={canEnterAdmin(role)}
               email={user?.email}
               roleLabel={isAdminUp(role) ? ROLE_LABELS[role] ?? role : null}
               roleBadgeClass={roleBadgeClass(role)}
@@ -147,7 +147,7 @@ export default async function PortalLayout({ children }) {
             >
               Settings
             </Link>
-            {isElevated(role) && (
+            {canEnterAdmin(role) && (
               <Link
                 href="/portal/admin"
                 className="rounded transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"

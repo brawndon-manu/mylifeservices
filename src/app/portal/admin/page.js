@@ -5,6 +5,7 @@ import {
   isElevated,
   isAdminUp,
   isIT,
+  canEnterAdmin,
   canViewFormRecords,
   canManageTimesheets,
   canManageClientAttestations,
@@ -20,10 +21,12 @@ export const metadata = {
 };
 
 // admin landing - a small dashboard of management tools. gated to the
-// oversight tier (proxy already gates /portal/admin/*; re-checked here).
+// oversight tier plus field supervisors (proxy already gates /portal/admin/*;
+// re-checked here). a supervisor sees exactly three cards: client
+// attestations, the satisfaction survey, and a read-only People.
 export default async function AdminPage() {
   const user = await getCurrentUser();
-  if (!isElevated(user?.role)) {
+  if (!canEnterAdmin(user?.role)) {
     redirect("/portal");
   }
 
@@ -48,13 +51,19 @@ export default async function AdminPage() {
         <LinkCard
           href="/portal/admin/users"
           title="User management"
-          body="Invite, edit, deactivate users; set roles, titles, and hire dates."
+          body={
+            isElevated(user.role)
+              ? "Invite, edit, deactivate users; set roles, titles, and hire dates."
+              : "Everyone on the portal: names, titles, offices, and contact info."
+          }
         />
-        <LinkCard
-          href="/portal/devices"
-          title="Devices"
-          body="Company hardware log: what we own, who has it, and what it cost."
-        />
+        {isElevated(user.role) && (
+          <LinkCard
+            href="/portal/devices"
+            title="Devices"
+            body="Company hardware log: what we own, who has it, and what it cost."
+          />
+        )}
         {isAdminUp(user.role) && (
           <LinkCard
             href="/portal/admin/acknowledgments"
@@ -69,11 +78,13 @@ export default async function AdminPage() {
             body="RSVPs and roll-call across every Company Meeting: who's going, who hasn't responded, and who showed up."
           />
         )}
-        <LinkCard
-          href="/portal/admin/applications"
-          title="Applications"
-          body="Job applications submitted through the website: preview each one, then open the full application and resume."
-        />
+        {isElevated(user.role) && (
+          <LinkCard
+            href="/portal/admin/applications"
+            title="Applications"
+            body="Job applications submitted through the website: preview each one, then open the full application and resume."
+          />
+        )}
         {canViewFormRecords(user.role) && (
           <LinkCard
             href="/portal/admin/forms"
