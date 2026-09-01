@@ -12,7 +12,7 @@ import { useActionState, useEffect, useRef, useState, startTransition } from "re
 // browser-to-Blob uploads, so eight exports never ride one 30MB request -
 // Vercel caps a serverless body at 4.5MB and the big exports blow past it
 import { upload } from "@vercel/blob/client";
-import { slotForFilename } from "@/lib/timesheet/upload-slots";
+import { placeDroppedFiles } from "@/lib/timesheet/upload-slots";
 import DatePicker from "@/components/DatePicker";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
@@ -258,25 +258,10 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
     startTransition(() => formAction(fd));
   }
 
-  // A DROP LANDS EVERY EXPORT AT ONCE. Each file is matched to its picker by
-  // QSP's own filename; one that matches nothing is named rather than
-  // silently ignored. Picking one at a time still works exactly as before.
+  // A DROP LANDS EVERY EXPORT AT ONCE - the shared placer, so this form and
+  // the day program's behave identically. Picking one at a time still works.
   function placeDropped(fileList) {
-    const missed = [];
-    for (const file of fileList) {
-      const slot = slotForFilename(file.name);
-      const input = slot ? formRef.current?.querySelector(`#${slot}`) : null;
-      if (!input) {
-        missed.push(file.name);
-        continue;
-      }
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      input.files = dt.files;
-      // the same event a picker click fires, so the row's own onPick runs
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    setUnplaced(missed);
+    setUnplaced(placeDroppedFiles(formRef.current, fileList));
   }
 
   // One column. A two-column split was tried and Mánu didn't like it - the page

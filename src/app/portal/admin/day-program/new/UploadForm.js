@@ -6,6 +6,9 @@
 // day program uploads." One panel, two stage lists: UploadProgress is shared
 // and takes DP_STAGES here.
 import { useEffect, useRef, useState } from "react";
+// the same drop-everything behavior the MLS upload has, against this form's
+// own four pickers
+import { DP_UPLOAD_SLOTS, placeDroppedFiles } from "@/lib/timesheet/upload-slots";
 import { DP_STAGES } from "@/lib/timesheet-stages";
 import UploadProgress from "@/app/portal/admin/timesheets/new/UploadProgress";
 import PartialPick from "./PartialPick";
@@ -26,6 +29,10 @@ export default function UploadForm({ action }) {
   const [names, setNames] = useState({});
   const [uploadId, setUploadId] = useState("");
   const idFieldRef = useRef(null);
+  const formRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  // what a drop could not place - named, never silently ignored
+  const [unplaced, setUnplaced] = useState([]);
 
   useEffect(() => {
     if (!busy) return;
@@ -51,8 +58,31 @@ export default function UploadForm({ action }) {
   ];
 
   return (
-    <form action={action} onSubmit={onSubmit} className="mt-8 space-y-4">
+    <form
+      ref={formRef}
+      action={action}
+      onSubmit={onSubmit}
+      className={`mt-8 space-y-4 rounded-xl ${dragging ? "outline outline-2 outline-brand" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        if (e.dataTransfer?.files?.length) {
+          setUnplaced(placeDroppedFiles(formRef.current, [...e.dataTransfer.files], DP_UPLOAD_SLOTS));
+        }
+      }}
+    >
       <input ref={idFieldRef} type="hidden" name="uploadId" />
+      <p className="rounded-lg border border-dashed border-border-strong px-3 py-2 text-xs text-muted">
+        Drag the exports onto this form together - each lands in its slot by
+        its filename. Picking them one at a time works the same as before.
+      </p>
+      {unplaced.length > 0 && (
+        <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+          Not one of the four exports, so it was not placed: {unplaced.join(", ")}
+        </p>
+      )}
       <FilePick
         id="timesheet"
         label="Simple Timesheet (.pdf)"

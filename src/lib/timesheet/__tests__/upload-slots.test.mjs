@@ -33,3 +33,20 @@ test("the right name with the wrong extension is not placed", () => {
   assert.equal(slotForFilename("Rest Periods Report.pdf"), null);
   assert.equal(slotForFilename("Simple Timesheet.xls"), null);
 });
+
+// the day program's four, on its own slot list - and the shared names land on
+// DP ids here, not the MLS ones
+import { DP_UPLOAD_SLOTS } from "../upload-slots.js";
+
+test("the day program's exports find their own pickers", () => {
+  const real = [
+    ["08_16_26-08_31_26 Simple Timesheet.pdf", "timesheet"],
+    ["08-16-2026-08-31-2026 Rest Periods Report.xls", "rests"],
+    ["Employee Schedules August 2026-12.pdf", "schedule"],
+    ["08-16-2026-08-31-2026 Employee Mileage Tracking Report.xls", "mileage"],
+  ];
+  for (const [name, slot] of real) {
+    assert.equal(slotForFilename(name, DP_UPLOAD_SLOTS), slot, name);
+  }
+  assert.equal(slotForFilename("08-16-2026-08-31-2026 Simple Payroll Processing Report.xls", DP_UPLOAD_SLOTS), null);
+});
