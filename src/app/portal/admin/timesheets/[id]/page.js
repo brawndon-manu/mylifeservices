@@ -251,8 +251,13 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
   // how many of the source exports this period was uploaded with. tells you at
   // a glance whether a batch is missing a document it should have had.
+  // EVERY document a batch can carry, not the original five: the three notes
+  // exports joined 08-27 and the day program's mileage has been here since it
+  // shipped, and none of them were counted - Mánu 2026-09-01, four DP exports
+  // uploaded and the header said three.
   const sourceDocs = [
     batch.sourceUrl, batch.scheduleUrl, batch.clockUrl, batch.payrollUrl, batch.restsUrl,
+    batch.notesUrl, batch.serviceNotesUrl, batch.scheduleNotesUrl, batch.dpMileageUrl,
   ].filter(Boolean).length;
   // pinned to Pacific rather than the server's zone. this renders on the
   // server, so without a fixed zone it reads "Aug 6" on a dev box in
