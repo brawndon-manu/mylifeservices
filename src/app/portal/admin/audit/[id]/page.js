@@ -7,6 +7,11 @@ import { preferredName } from "@/lib/contacts";
 import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
 import { clockShifts } from "@/lib/timesheet/clock";
 import { auditRow, shiftKeyOf, sameClient, displayClient, clientKey } from "@/lib/timesheet/note-audit";
+// the full-name key the client-anchored tables share (Client, ClientReport,
+// ClientAuthorization) - not the same reduction as note-audit's clientKey,
+// which matches on surname + initial
+import { clientKey as authClientKey } from "@/lib/client-attestations/names";
+import { monthLabelOf } from "@/lib/timesheet/budget-capture";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
@@ -615,7 +620,7 @@ export default async function AuditBatchPage({ params }) {
     ? await prisma.shiftReview.findMany({
       where: { shiftKey: { in: rows.map((r) => r.shiftKey) } },
       select: {
-        shiftKey: true, decision: true, reason: true, createdAt: true,
+        shiftKey: true, decision: true, reason: true, billableMin: true, createdAt: true,
         decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       },
     })
@@ -627,11 +632,39 @@ export default async function AuditBatchPage({ params }) {
       ? {
         decision: d.decision,
         reason: d.reason,
+        billableMin: d.billableMin,
         by: d.decidedBy ? preferredName(d.decidedBy) : null,
         at: d.createdAt.toISOString(),
       }
       : null;
+    // the key the authorization table shares, so the client roll-up can look
+    // this shift's client up in the month's authorized hours
+    r.authKey = r.client ? authClientKey(r.client) : null;
   }
+
+  // THE MONTH'S AUTHORIZED HOURS, where a Budget Capture Report covering this
+  // period's month(s) has been uploaded. Summed over a client's service types;
+  // the roll-up prints billable hours against it.
+  const monthKeyOf = (d) => {
+    const m = /^(\d{2})\/\d{2}\/(\d{2})$/.exec(d || "");
+    return m ? `20${m[2]}-${m[1]}` : null;
+  };
+  const monthKeys = [...new Set([monthKeyOf(batch.periodFrom), monthKeyOf(batch.periodTo)].filter(Boolean))];
+  const authRows = monthKeys.length
+    ? await prisma.clientAuthorization.findMany({
+      where: { monthKey: { in: monthKeys } },
+      select: { monthKey: true, clientKey: true, authorizedHours: true },
+    })
+    : [];
+  const authorized = {};
+  for (const a of authRows) {
+    if (!authorized[a.clientKey]) authorized[a.clientKey] = { hours: 0, months: new Set() };
+    authorized[a.clientKey].hours += a.authorizedHours;
+    authorized[a.clientKey].months.add(a.monthKey);
+  }
+  for (const k of Object.keys(authorized)) authorized[k] = { hours: authorized[k].hours };
+  const authMonthLabel = monthKeys.map(monthLabelOf).join(" + ") || null;
+  const hasAuthorizations = authRows.length > 0;
 
   rows.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
 
@@ -662,6 +695,8 @@ export default async function AuditBatchPage({ params }) {
       <AuditCards
         rows={rows}
         orphans={orphans}
+        authorized={hasAuthorizations ? authorized : null}
+        authMonthLabel={authMonthLabel}
         periods={[...current.values()]
           .map((p) => `${p.periodFrom} to ${p.periodTo}`)
           .sort((a, b) => dateKey(b.slice(0, 8)) - dateKey(a.slice(0, 8)))}

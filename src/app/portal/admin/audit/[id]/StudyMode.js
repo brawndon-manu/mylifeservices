@@ -50,6 +50,9 @@ export default function StudyMode({ rows: dealt, onExit }) {
   });
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
+  // the corrected billable time, in minutes, typed or quick-filled in the flag
+  // panel. Empty string means no adjustment: the billed figure stands.
+  const [billable, setBillable] = useState("");
   const [openNote, setOpenNote] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -94,6 +97,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
     setAt(0);
     setFlagging(false);
     setReason("");
+    setBillable("");
     setOpenNote(false);
   };
 
@@ -109,7 +113,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
   const row = rows[at] || null;
   const done = at >= rows.length;
 
-  const send = useCallback(async (decision, why) => {
+  const send = useCallback(async (decision, why, billableMin = null) => {
     if (!row || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -124,6 +128,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
     body.set("billedMin", row.billedMin ?? "");
     body.set("clockedMin", row.clockedMin ?? "");
     body.set("documentedMin", row.documentedMin ?? "");
+    if (billableMin != null) body.set("billableMin", billableMin);
     if (why) body.set("reason", why);
     const res = await reviewShift(body);
     inFlight.current = false;
@@ -133,6 +138,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
     setHistory((h) => [...h, row.shiftKey]);
     setFlagging(false);
     setReason("");
+    setBillable("");
     setOpenNote(false);
     setOpenSched(false);
     setAt((i) => i + 1);
@@ -153,6 +159,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
     if (!rows.length) return;
     setFlagging(false);
     setReason("");
+    setBillable("");
     setOpenNote(false);
     setOpenSched(false);
     setAt((i) => (i + by + rows.length) % rows.length);
@@ -173,6 +180,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
     setDecided((d) => { const next = { ...d }; delete next[key]; return next; });
     setFlagging(false);
     setReason("");
+    setBillable("");
     setOpenNote(false);
     if (i >= 0) setAt(i);
   }, [rows, history]);
@@ -192,7 +200,7 @@ export default function StudyMode({ rows: dealt, onExit }) {
   const onKey = (e) => {
     if (e.repeat) return;
     if (flagging) {
-      if (e.key === "Escape") { setFlagging(false); setReason(""); }
+      if (e.key === "Escape") { setFlagging(false); setReason(""); setBillable(""); }
       return;
     }
     if (e.key.toLowerCase() === "a") { e.preventDefault(); send("approved"); }
@@ -491,7 +499,10 @@ export default function StudyMode({ rows: dealt, onExit }) {
                   ? "Approved"
                   : "Flagged"}
                 {row.review?.by ? ` by ${row.review.by}` : ""}
-                {row.review?.reason ? ` - ${row.review.reason}` : ""}. Deciding again replaces it.
+                {row.review?.reason ? ` - ${row.review.reason}` : ""}
+                {row.review?.billableMin != null
+                  ? ` · billable set to ${hrs(row.review.billableMin)}`
+                  : ""}. Deciding again replaces it.
               </p>
             )}
           </article>
@@ -509,18 +520,77 @@ export default function StudyMode({ rows: dealt, onExit }) {
                 onChange={(e) => setReason(e.target.value)}
                 className="mt-2 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
               />
+
+              {/* THE CORRECTED BILLABLE TIME. "when i go through every shift i
+                  can adjust how much of the time is actually billable" - Mánu
+                  2026-08-31. Optional: left empty, the billed figure stands.
+                  The chips fill it from the figures already on the card. */}
+              <label htmlFor="billable" className="mt-4 block text-sm font-semibold text-foreground">
+                Actually billable, in minutes
+              </label>
+              <p className="mt-0.5 text-xs text-muted">
+                Left empty, the billed {row.billedMin != null ? hrs(row.billedMin) : "time"} stands.
+                The client report totals this figure.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  id="billable"
+                  type="number"
+                  min={0}
+                  max={1440}
+                  step={1}
+                  value={billable}
+                  onChange={(e) => setBillable(e.target.value)}
+                  className="w-28 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                />
+                {billable !== "" && Number.isFinite(Number(billable)) && (
+                  <span className="text-xs tabular-nums text-muted">= {hrs(Number(billable))}</span>
+                )}
+                {row.clockedMin != null && (
+                  <button
+                    type="button"
+                    onClick={() => setBillable(String(row.clockedMin))}
+                    className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+                  >
+                    Clocked · {hrs(row.clockedMin)}
+                  </button>
+                )}
+                {row.documentedMin != null && row.documentedMin !== row.clockedMin && (
+                  <button
+                    type="button"
+                    onClick={() => setBillable(String(row.documentedMin))}
+                    className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+                  >
+                    Documented · {hrs(row.documentedMin)}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setBillable("0")}
+                  className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+                >
+                  Nothing billable
+                </button>
+              </div>
+
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
                   disabled={!reason.trim() || busy}
-                  onClick={() => send("flagged", reason.trim())}
+                  onClick={() =>
+                    send(
+                      "flagged",
+                      reason.trim(),
+                      billable !== "" && Number.isFinite(Number(billable)) ? Number(billable) : null,
+                    )
+                  }
                   className="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
                 >
                   Flag it
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setFlagging(false); setReason(""); }}
+                  onClick={() => { setFlagging(false); setReason(""); setBillable(""); }}
                   className="rounded-md border border-border-strong px-4 py-2 text-sm font-medium text-muted"
                 >
                   Cancel

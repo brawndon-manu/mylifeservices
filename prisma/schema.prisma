@@ -130,6 +130,7 @@ model User {
   clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
   clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
   clientReportsConducted       ClientReport[]                @relation("ClientReportConductedBy")
+  clientAuthorizationsUploaded ClientAuthorization[]         @relation("ClientAuthorizationUploadedBy")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -1903,6 +1904,46 @@ model ClientReport {
   @@index([kind, createdAt])
 }
 
+// A CLIENT'S AUTHORIZED HOURS FOR ONE MONTH, 2026-08-31.
+//
+// From QSP's Budget Capture Report - one row per client per service type,
+// carrying the monthly authorization ("the amount of hours the clients are
+// given a month", Mánu). The audit's client report reads billable hours
+// against this. Keyed by clientKey like every client-anchored record here,
+// so roster re-imports can't orphan it; a month is replaced wholesale by
+// re-uploading its report.
+model ClientAuthorization {
+  id String @id @default(cuid())
+
+  // "2026-08" - read off the report's own title line, never typed
+  monthKey String
+
+  clientKey  String
+  clientName String
+  office     String?
+  // as the report prints it ("Gutierrez, Joseph")
+  caseManagerName String?
+  // "ILS POS (520 Monthly)" - kept apart so a client with two authorizations
+  // holds two rows; empty string rather than null so the unique key works
+  serviceType String @default("")
+
+  authorizedHours Float
+  // QSP's own scheduled-hours figure at export time, kept for reference
+  scheduledHours Float?
+
+  sourceName String?
+
+  uploadedById String
+  uploadedBy   User   @relation("ClientAuthorizationUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([monthKey, clientKey, serviceType])
+  @@index([monthKey])
+  @@index([clientKey])
+}
+
 // THE SERVICE NOTES AUDIT, 2026-08-26.
 //
 // Mánu: "i need to go through the service notes and see whether or not the time
@@ -1993,6 +2034,12 @@ model ShiftReview {
   billedMin     Int?
   clockedMin    Int?
   documentedMin Int?
+
+  // WHAT THE REVIEWER SAYS IS ACTUALLY BILLABLE, 2026-08-31. Mánu: "when i go
+  // through every shift i can adjust how much of the time is actually
+  // billable." Null means the billed figure stands; a value is the corrected
+  // billable minutes, and the client report sums billableMin ?? billedMin.
+  billableMin Int?
 
   decidedById String
   decidedBy   User   @relation("ShiftReviewDecidedBy", fields: [decidedById], references: [id])

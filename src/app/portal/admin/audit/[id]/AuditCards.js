@@ -46,7 +46,7 @@ const TONE = {
   flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
-export default function AuditCards({ rows, totals, orphans = [], periods = [] }) {
+export default function AuditCards({ rows, totals, orphans = [], periods = [], authorized = null, authMonthLabel = null }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -115,13 +115,19 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
       let g = m.get(name);
       if (!g) {
         g = {
-          name, shifts: 0, billedMin: 0, clockedMin: 0, noted: 0,
-          overMin: 0, approved: 0, flagged: 0, open: 0,
+          name, shifts: 0, billedMin: 0, billableMin: 0, adjusted: 0,
+          clockedMin: 0, noted: 0,
+          overMin: 0, approved: 0, flagged: 0, open: 0, authKey: null,
         };
         m.set(name, g);
       }
       g.shifts++;
       g.billedMin += r.billedMin ?? 0;
+      // WHAT THE REVIEWER SAYS IS ACTUALLY BILLABLE: the adjusted figure where
+      // one was recorded, the billed figure everywhere else
+      g.billableMin += r.review?.billableMin ?? r.billedMin ?? 0;
+      if (r.review?.billableMin != null) g.adjusted++;
+      if (!g.authKey && r.authKey) g.authKey = r.authKey;
       // MEASURED AGAINST THE CLOCK. It used to total billed-above-DOCUMENTED,
       // and the note's time is a copy of the billed time - 494 of 494 - so the
       // column was structurally zero and said a period was clean when nobody had
@@ -330,7 +336,13 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [] })
           ))}
         </div>
       ) : (
-        <RollUp rows={roll} what={view === "employee" ? "Employee" : "Client"} onOpen={drillInto} />
+        <RollUp
+          rows={roll}
+          what={view === "employee" ? "Employee" : "Client"}
+          onOpen={drillInto}
+          authorized={view === "client" ? authorized : null}
+          authLabel={authMonthLabel}
+        />
       )}
     </>
   );
@@ -378,21 +390,32 @@ function Orphans({ rows }) {
   );
 }
 
-function RollUp({ rows, what, onOpen }) {
+function RollUp({ rows, what, onOpen, authorized = null, authLabel = null }) {
+  // authorized hours only exist per client, and only once a Budget Capture
+  // Report for the period's month has been uploaded on the Audit page
+  const withAuth = !!authorized;
   return (
     <>
       <p className="mt-4 text-xs text-faint">
-        Totalled over the shifts showing above. Billed covers every shift; clocked covers only the
-        shifts a clock export holds, so billed above clocked is measured on those alone. A row
-        opens that {what.toLowerCase()}.
+        Totalled over the shifts showing above. Billed covers every shift; billable is the same
+        total with each reviewer&apos;s corrected figure in place of the billed one; clocked covers only
+        the shifts a clock export holds, so billed above clocked is measured on those alone.
+        {withAuth &&
+          ` Authorized is the client's monthly allowance from the ${authLabel} Budget Capture Report, against the billable hours showing.`}{" "}
+        A row opens that {what.toLowerCase()}.
       </p>
       <div className="mt-2 overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[56rem] text-sm">
+        <table className={`w-full ${withAuth ? "min-w-[68rem]" : "min-w-[56rem]"} text-sm`}>
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-faint">
             <tr>
               <th className="px-3 py-2 font-semibold">{what}</th>
               <th className="px-3 py-2 text-right font-semibold">Shifts</th>
               <th className="px-3 py-2 text-right font-semibold">Billed</th>
+              <th className="px-3 py-2 text-right font-semibold">Billable</th>
+              {withAuth && (
+                <th className="px-3 py-2 text-right font-semibold">Authorized / month</th>
+              )}
+              {withAuth && <th className="px-3 py-2 text-right font-semibold">% of authorized</th>}
               <th className="px-3 py-2 text-right font-semibold">Clocked</th>
               <th className="px-3 py-2 text-right font-semibold">Billed above clocked</th>
               <th className="px-3 py-2 text-right font-semibold">With a note</th>
@@ -402,31 +425,60 @@ function RollUp({ rows, what, onOpen }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((g) => (
-              <tr
-                key={g.name}
-                onClick={() => onOpen(g.name)}
-                className="cursor-pointer hover:bg-surface-2"
-              >
-                <td className="px-3 py-2 font-medium text-foreground">{g.name}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.billedMin)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.clockedMin)}</td>
-                <td
-                  className={`px-3 py-2 text-right tabular-nums ${
-                    g.overMin > 0 ? "font-semibold text-orange-600 dark:text-orange-400" : "text-faint"
-                  }`}
+            {rows.map((g) => {
+              const auth = withAuth && g.authKey ? authorized[g.authKey] : null;
+              const pct = auth?.hours ? (g.billableMin / 60 / auth.hours) * 100 : null;
+              return (
+                <tr
+                  key={g.name}
+                  onClick={() => onOpen(g.name)}
+                  className="cursor-pointer hover:bg-surface-2"
                 >
-                  {g.overMin > 0 ? `+${hrs(g.overMin)}` : "-"}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {g.noted}/{g.shifts}
-                </td>
-                <Count n={g.open} tone="text-sky-600 dark:text-sky-400" />
-                <Count n={g.approved} tone="text-emerald-600 dark:text-emerald-400" />
-                <Count n={g.flagged} tone="text-amber-600 dark:text-amber-400" />
-              </tr>
-            ))}
+                  <td className="px-3 py-2 font-medium text-foreground">{g.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.billedMin)}</td>
+                  <td
+                    className={`px-3 py-2 text-right tabular-nums ${
+                      g.billableMin !== g.billedMin
+                        ? "font-semibold text-foreground"
+                        : "text-muted"
+                    }`}
+                    title={
+                      g.adjusted
+                        ? `${g.adjusted} of ${g.shifts} shifts carry an adjusted billable figure`
+                        : undefined
+                    }
+                  >
+                    {hrs(g.billableMin)}
+                    {g.adjusted > 0 && <span className="text-xs text-faint"> ·{g.adjusted} adj</span>}
+                  </td>
+                  {withAuth && (
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {auth ? `${auth.hours}h` : "-"}
+                    </td>
+                  )}
+                  {withAuth && (
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {pct != null ? `${Math.round(pct)}%` : "-"}
+                    </td>
+                  )}
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.clockedMin)}</td>
+                  <td
+                    className={`px-3 py-2 text-right tabular-nums ${
+                      g.overMin > 0 ? "font-semibold text-orange-600 dark:text-orange-400" : "text-faint"
+                    }`}
+                  >
+                    {g.overMin > 0 ? `+${hrs(g.overMin)}` : "-"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">
+                    {g.noted}/{g.shifts}
+                  </td>
+                  <Count n={g.open} tone="text-sky-600 dark:text-sky-400" />
+                  <Count n={g.approved} tone="text-emerald-600 dark:text-emerald-400" />
+                  <Count n={g.flagged} tone="text-amber-600 dark:text-amber-400" />
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -564,6 +616,9 @@ function Card({ r }) {
           {r.review.decision === "approved" ? "Approved" : "Flagged"}
           {r.review.by ? ` by ${r.review.by}` : ""}
           {r.review.reason ? ` - ${r.review.reason}` : ""}
+          {r.review.billableMin != null && (
+            <span className="text-foreground"> · billable set to {hrs(r.review.billableMin)}</span>
+          )}
         </p>
       )}
 
