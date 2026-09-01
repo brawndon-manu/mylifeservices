@@ -37,7 +37,15 @@ export default async function CalendarPage({ params }) {
       id: true, periodFrom: true, periodTo: true, program: true,
       timesheets: {
         orderBy: { sourceName: "asc" },
-        select: { id: true, sourceName: true, userId: true, data: true, paidHours: true },
+        select: {
+          id: true, sourceName: true, userId: true, data: true, paidHours: true,
+          // the day-program review's time-off answer, so a day somebody said
+          // held PTO or sick time shows here as reported until it is accepted
+          corrections: {
+            where: { kind: "time_off" },
+            select: { choice: true, timeOff: true },
+          },
+        },
       },
     },
   });
@@ -60,18 +68,37 @@ export default async function CalendarPage({ params }) {
     })
     : [];
 
+  // WHAT STAFF REPORTED ON THEIR REVIEW, keyed the same way. A claim, not the
+  // record: the cell shows it as reported until someone accepts it, and a day
+  // that already holds a PtoEntry has been handled - the row is the answer.
+  const reportedBy = new Map();
+  for (const t of batch.timesheets) {
+    if (!t.userId) continue;
+    const row = (t.corrections || []).find((c) => c.choice === "yes" && Array.isArray(c.timeOff));
+    for (const e of row?.timeOff || []) {
+      if (e?.date && Number(e.hours) > 0) {
+        reportedBy.set(`${t.userId}|${e.date}`, { kind: e.kind === "sick" ? "sick" : "pto", hours: e.hours });
+      }
+    }
+  }
+
   // the days of the period, taken from the sheets themselves rather than from
   // the printed dates - a date nobody worked and nobody has PTO on still needs
-  // a column, so the union of every day seen is the axis.
+  // a column, so the union of every day seen is the axis. Reported days are in
+  // the union too: a claimed PTO day is exactly a day its person never worked,
+  // and on a quiet date nobody else worked either, so without this the one
+  // column the claim needs would not exist and the claim would never show.
   const dates = [...new Set([
     ...batch.timesheets.flatMap((t) => (t.data?.days || []).map((d) => d.date)),
     ...pto.map((p) => p.date),
+    ...[...reportedBy.keys()].map((k) => k.split("|")[1]),
   ])].filter(Boolean).sort((a, b) => {
     const k = (s) => { const [m, d, y] = String(s).split("/"); return `${y}${m}${d}`; };
     return k(a).localeCompare(k(b));
   });
 
   const ptoBy = new Map(pto.map((p) => [`${p.personKey}|${p.date}`, p]));
+
   const nameOf = (u) => {
     const f = u.preferredFirstName || (u.name || "").split(" ")[0] || "";
     const l = u.preferredLastName || (u.name || "").split(" ").slice(1).join(" ") || "";
@@ -125,7 +152,7 @@ export default async function CalendarPage({ params }) {
                   {d.slice(0, 5)}
                 </th>
               ))}
-              <th className="px-3 py-2 text-right text-xs font-semibold text-muted">PTO</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-muted">Time off</th>
             </tr>
           </thead>
           <tbody>
@@ -154,6 +181,8 @@ export default async function CalendarPage({ params }) {
                         date={d}
                         worked={r.worked.get(d) ? r2(r.worked.get(d)) : null}
                         pto={mine[i]?.hours ?? null}
+                        ptoKind={mine[i]?.kind || "pto"}
+                        reported={mine[i] ? null : reportedBy.get(`${r.userId}|${d}`) || null}
                         back={back}
                       />
                     </td>

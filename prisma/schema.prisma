@@ -1219,6 +1219,13 @@ model TimesheetCorrection {
   // 2026-08-10.
   statedBreaks Json?
 
+  // THE PTO AND SICK DAYS THEY SAY THE SCHEDULE IS MISSING, on the one
+  // "time_off" row a day-program review holds. [{ date, kind: "pto" | "sick",
+  // hours }]. A claim, not the record - the PtoEntry row only exists once
+  // someone with access accepts it on the calendar, the same rule every other
+  // correction follows. Null on a "no" answer and on every other kind.
+  timeOff Json?
+
   // THE QUESTION AS IT WAS ASKED, frozen at the moment it was answered.
   //
   // The review page can only draw a card for a question `buildQuestions` still
@@ -1667,6 +1674,10 @@ model PtoEntry {
   // with `day.date` without parsing on either side.
   date       String
   hours      Float
+  // "pto" or "sick". One row per day either way - the unique key below already
+  // says a day holds one time-off entry, and a day that was both is a day for
+  // a person to sort out, not a schema case.
+  kind       String  @default("pto")
   note       String?
 
   // who recorded it, as scalars - this is a record of an agreement and must not

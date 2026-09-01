@@ -274,6 +274,9 @@ export async function setPto(formData) {
   const periodTo = (formData.get("periodTo") || "").toString();
   const personKey = (formData.get("personKey") || "").toString();
   const date = (formData.get("date") || "").toString();
+  // which of the two a day was. Anything but "sick" is PTO, which also keeps
+  // every existing caller - none of them send the field - meaning what it did.
+  const kind = (formData.get("kind") || "").toString() === "sick" ? "sick" : "pto";
   const raw = (formData.get("hours") || "").toString().trim();
   const note = (formData.get("note") || "").toString().trim().slice(0, 200) || null;
   const back = (formData.get("back") || "").toString();
@@ -295,10 +298,10 @@ export async function setPto(formData) {
       where: {
         program_periodFrom_periodTo_personKey_date: { program, periodFrom, periodTo, personKey, date },
       },
-      update: { hours: capped, note, byId: user.id, byName: preferredNameOf(user) },
+      update: { hours: capped, kind, note, byId: user.id, byName: preferredNameOf(user) },
       create: {
         program, periodFrom, periodTo, personKey, date,
-        hours: capped, note, byId: user.id, byName: preferredNameOf(user),
+        hours: capped, kind, note, byId: user.id, byName: preferredNameOf(user),
       },
     });
   }

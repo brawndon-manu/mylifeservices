@@ -14,8 +14,11 @@ import {
   submitSignedTimesheet,
   submitTimesheetCorrections,
   answerTimesheetQuestion,
+  answerTimeOff,
   acknowledgeSpan,
 } from "@/app/portal/admin/timesheets/actions";
+import TimeOffCard from "./TimeOffCard";
+import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
 import {
   correctionLabel, employeeResolution, resolutionTakesReason, reviewerSettledDates,
 } from "@/lib/timesheet/corrections";
@@ -120,6 +123,9 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           // every restore silently does nothing, and the page looks exactly as
           // it did before the fix - the `restsUrl` failure again.
           question: true,
+          // the day-program time-off answer's entries. Same trap: left out,
+          // the card reloads as if nothing was ever entered.
+          timeOff: true,
         },
         orderBy: { createdAt: "asc" },
       },
@@ -934,6 +940,21 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           {/* WHAT WE STILL NEED FROM THEM. One card per day, and the sheet does
               not generate until every one is answered - see `breakAsks`. */}
 
+
+          {/* THE DAY-PROGRAM TIME-OFF QUESTION. Only that program gets it - the
+              schedule there has no row for a day somebody was off, and the MLS
+              exports are a different conversation. Always on the page, never
+              blocking: the answer is a claim carried to the office with the
+              review, and the sheet's own figures never move on it. */}
+          {(ts.batch.program || "MLS") === "DP" && (
+            <TimeOffCard
+              token={token}
+              days={periodDates(ts.batch.periodFrom, ts.batch.periodTo)}
+              answer={timeOffAnswerOf(ts.corrections)}
+              signed={!!ts.signedAt}
+              submitAction={act(answerTimeOff)}
+            />
+          )}
 
           <TimesheetSigner
             key={`sheet-${answered.length}-${breakAsks.length}`}

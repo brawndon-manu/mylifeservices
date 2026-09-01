@@ -60,6 +60,9 @@ import { sendCorrectionAlert } from "@/lib/timesheet-correction-email";
 // the signed copy going back, and the review record it carries
 import { sendSignedTimesheetCopy } from "@/lib/timesheet-signed-email";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+// the day-program review's time-off question: what a valid answer is, and the
+// lines it adds to both review emails
+import { TIME_OFF_KIND, TIME_OFF_STATUS, cleanTimeOffEntries, timeOffReviewItems } from "@/lib/timesheet/time-off";
 import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
@@ -2748,6 +2751,71 @@ function shortClock(min) {
   return `${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
 }
 
+// THE DAY-PROGRAM REVIEW'S TIME-OFF QUESTION. Token-credentialed like every
+// other answer on that page. One "time_off" correction row per sheet holds the
+// whole answer - the choice and, on a yes, the day-by-day entries - and
+// answering again replaces it, so changing your mind never leaves two claims.
+//
+// IT WRITES NO PtoEntry AND TOUCHES NO FIGURE. The entries are a claim for the
+// office; the record only exists once someone with timesheet access accepts a
+// day on the calendar. Status "noted" on purpose: not "open" (an open
+// correction blocks signing, and this answer never may), and not
+// "accepted"/"declined" (which the review emails read as question answers).
+export async function answerTimeOff({ token, choice, entries }) {
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const tsId = verifyTimesheetToken(token);
+  if (!tsId) return { ok: false, error: "auth" };
+  if (choice != null && !["yes", "no"].includes(choice)) return { ok: false, error: "badchoice" };
+
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: tsId },
+    include: {
+      batch: { select: { id: true, program: true, periodFrom: true, periodTo: true } },
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  // the question only exists on day-program sheets, so only they may answer it
+  if ((ts.batch.program || "MLS") !== "DP") return { ok: false, error: "unknown" };
+  if (ts.signedAt) return { ok: false, error: "already" };
+  if (ts.corrections.length) return { ok: false, error: "reported" };
+
+  const clean = choice === "yes"
+    ? cleanTimeOffEntries(entries, ts.batch.periodFrom, ts.batch.periodTo)
+    : [];
+  // a yes with nothing left after validation is not an answer worth storing -
+  // it would read back as "you said yes" over an empty list
+  if (choice === "yes" && !clean.length) return { ok: false, error: "empty" };
+
+  const prior = await prisma.timesheetCorrection.findFirst({
+    where: { timesheetId: ts.id, kind: TIME_OFF_KIND },
+    select: { id: true },
+  });
+  if (choice == null) {
+    // taking the answer back off the record, the same rule the question cards
+    // follow: an unclicked box with a row still behind it would be a lie
+    if (prior) await prisma.timesheetCorrection.delete({ where: { id: prior.id } });
+  } else {
+    const data = {
+      kind: TIME_OFF_KIND,
+      status: TIME_OFF_STATUS,
+      choice,
+      date: null,
+      timeOff: clean.length ? clean : null,
+    };
+    if (prior) {
+      await prisma.timesheetCorrection.update({ where: { id: prior.id }, data });
+    } else {
+      await prisma.timesheetCorrection.create({ data: { ...data, timesheetId: ts.id } });
+    }
+  }
+
+  revalidatePath(`/t/${token}`);
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batch.id);
+  return { ok: true };
+}
+
 // THE ONE ACTION BEHIND ALL FIVE QUESTIONS.
 //
 // It never trusts what it is handed. The question list is rebuilt from the
@@ -3675,8 +3743,9 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
         where: { status: { not: "open" } },
         // `question` is the frozen card, which employeeResolution reads for
         // the two-lunches wording - left out it arrives undefined and the
-        // sentence quietly loses its shape
-        select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true },
+        // sentence quietly loses its shape. `timeOff` is the day-program
+        // answer's entries, same trap: left out, the emails lose those lines.
+        select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true, timeOff: true },
       },
     },
   });
@@ -3762,7 +3831,11 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // broken" to the person holding the pen. Failure is logged and the action
   // still succeeds; their copy stays one click away on the page.
   let emailed = false;
-  const reviewItems = reviewChoices(ts.corrections);
+  // the time-off days join the review record: the employee's copy states each
+  // as a fact, the office copy carries the add-to-schedule action. Sorted back
+  // together so the office reads one list in day order.
+  const reviewItems = [...reviewChoices(ts.corrections), ...timeOffReviewItems(ts.corrections)]
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const employeeName = (ts.user ? preferredName(ts.user) : null) || ts.sourceName;
   const periodLabel = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
   // one reading of the rehearsal flag drives both sends, so they can never
