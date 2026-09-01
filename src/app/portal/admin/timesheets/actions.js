@@ -21,7 +21,7 @@ import {
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES } from "@/lib/timesheet/questions";
+import { buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES, collidesWithRecorded } from "@/lib/timesheet/questions";
 // the reported-problem card reads times the same loose way the question cards
 // do, and this is the server's own reading of what that box was sent
 import { parseLooseTime } from "@/lib/loose-time";
@@ -3205,6 +3205,16 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
               },
             };
           }
+        }
+        // A TIME ALREADY ON THE RECORD IS NOT AN ANSWER to a question about a
+        // break with no record - see collidesWithRecorded for the case that
+        // taught this. A slot carrying `replaces` is correcting a recorded row
+        // and is the one shape allowed to name a recorded time.
+        if (!need.replaces && collidesWithRecorded(need.known, start, need.minutes)) {
+          return {
+            ok: false, error: "alreadyrecorded", given: raw,
+            at: { id: q.id, date: need.date || q.date, slot: need.slot, label: need.label },
+          };
         }
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
         // client. It only drives the sheet's footnote, but "you typed this" is

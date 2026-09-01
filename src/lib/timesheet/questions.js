@@ -39,6 +39,9 @@ import {
   restKey, restNameFor, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
+// the same loose reading the time boxes run on, for reading a slot's own
+// `known` times back into minutes - see collidesWithRecorded
+import { parseLooseTime } from "../loose-time.js";
 // reading the roster's own blocks, the same two functions every other screen
 // uses to say what a stretch of the day was booked as
 import { blockTimes, serviceOf } from "./schedule.js";
@@ -70,6 +73,26 @@ const r2 = (n) => Math.round((n || 0) * 100) / 100;
 const GROUPED = new Set([
   "shortMealRest",
 ]);
+// A STATED BREAK THAT LANDS ON A TEN ALREADY RECORDED IS NOT AN ANSWER to a
+// question about one with NO record. Romero-Alba 08/21: the card asked for
+// her Second ten, showed the recorded 10:50a beside the box, and she typed
+// 10:50a - the window check passed (10:50 is a lawful second-ten time) and
+// the office email told QuickSolve to log a break it already held. The slot's
+// own `known` list is what the card displayed, so it is what the answer is
+// checked against; a slot that REPLACES a recorded row is the one shape
+// allowed to name a recorded time, and the action skips this check there.
+export function collidesWithRecorded(known, startMin, minutes) {
+  if (startMin == null || !Number.isFinite(minutes) || minutes <= 0) return false;
+  for (const k of known || []) {
+    const hhmm = parseLooseTime(String(k?.from || ""), { assumeWorkday: true });
+    if (!hhmm) continue;
+    const [h, m] = hhmm.split(":").map(Number);
+    const rec = h * 60 + m;
+    if (startMin < rec + minutes && rec < startMin + minutes) return true;
+  }
+  return false;
+}
+
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
 

@@ -956,6 +956,7 @@ const REFUSALS = {
   missingtime: "Every day you answered “took them” needs the time it started.",
   badtime: "That time didn't look right. Pick a time on this day, with at least ten minutes left before midnight.",
   outsideshift: "A rest break has to sit inside a shift you actually worked. Pick a time inside one of the hours shown.",
+  alreadyrecorded: "A break at that time is already on this day's record. Give the time of the one that has no record, or answer that you did not take it.",
   nolunchgap: "There is no half hour gap in that day long enough to hold a lunch, so that time cannot be right.",
   reported: "You have told us something is wrong with this timesheet, so it is with payroll and answers are on hold.",
   // the three below mean the browser sent something the server would not
