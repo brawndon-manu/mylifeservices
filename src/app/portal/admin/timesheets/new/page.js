@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
@@ -189,7 +190,10 @@ export default async function NewTimesheetBatchPage({ searchParams }) {
       )}
 
       <div className="mt-8">
-        <UploadForm action={uploadBatch} aside={aside} into={into?.id || null} />
+        {/* with a blob store the exports go browser-to-Blob and the action
+            receives URLs - the only shape that fits under Vercel's 4.5MB
+            request cap, and what makes uploading from production possible */}
+        <UploadForm action={uploadBatch} aside={aside} into={into?.id || null} blobUpload={hasBlobStorage()} />
       </div>
     </section>
   );

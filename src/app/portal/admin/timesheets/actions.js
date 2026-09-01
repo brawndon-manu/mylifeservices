@@ -106,11 +106,45 @@ export async function uploadBatch(formData) {
   // upload, which carries no `into`.
   const NEW = `/portal/admin/timesheets/new?${intoBatchId ? `into=${intoBatchId}&` : ""}`;
 
-  const file = formData.get("file");
-  if (!file || typeof file !== "object" || !("size" in file) || file.size === 0) {
+  // A FILE ARRIVES ONE OF TWO WAYS NOW. As the picked File riding the form
+  // POST - the way it always has - or as a reference to a blob the browser
+  // already uploaded straight to storage. The second exists because one
+  // request carrying eight exports runs to 30MB+, which Vercel's 4.5MB
+  // serverless body cap refuses in production and the preview pane chokes on
+  // locally - so the big bytes go browser-to-Blob and this request stays tiny.
+  // Only our own blob store is fetched from; anything else is refused.
+  const blobRefs = (() => {
+    try { return JSON.parse((formData.get("blobs") || "null").toString()) || null; }
+    catch { return null; }
+  })();
+  const BLOB_HOST = /\.blob\.vercel-storage\.com$/i;
+  const pickOf = (name) => {
+    const b = blobRefs?.[name];
+    if (b && typeof b.url === "string") {
+      let host = null;
+      try { host = new URL(b.url).hostname; } catch {}
+      if (!host || !BLOB_HOST.test(host)) redirect(`${NEW}error=blob`);
+      return { name: String(b.name || ""), size: Number(b.size) || 0, url: b.url, file: null };
+    }
+    const f = formData.get(name);
+    return f && typeof f === "object" && "size" in f && f.size > 0
+      ? { name: f.name || "", size: f.size, url: null, file: f }
+      : null;
+  };
+  // the bytes, from whichever side the file came in on
+  const bytesOfPick = async (pk) => {
+    if (pk.file) return new Uint8Array(await pk.file.arrayBuffer());
+    const res = await fetch(pk.url);
+    if (!res.ok) throw new Error(`stored file fetch failed: ${res.status}`);
+    return new Uint8Array(await res.arrayBuffer());
+  };
+
+  const file = pickOf("file");
+  if (!file) {
     redirect(`${NEW}error=nofile`);
   }
-  if (file.type && file.type !== "application/pdf") {
+  const pdfNamed = (pk) => !pk.name || /\.pdf$/i.test(pk.name);
+  if (file.file ? (file.file.type && file.file.type !== "application/pdf") : !pdfNamed(file)) {
     redirect(`${NEW}error=notpdf`);
   }
 
@@ -121,8 +155,8 @@ export async function uploadBatch(formData) {
   // person. Without both files that same batch is 622 hours resting on one
   // source. An upload that can't be stood behind isn't worth the time it takes
   // to generate, so it's refused rather than half-done.
-  const schedFile = formData.get("schedule");
-  const hasSched = schedFile && typeof schedFile === "object" && "size" in schedFile && schedFile.size > 0;
+  const schedFile = pickOf("schedule");
+  const hasSched = !!schedFile;
   if (!hasSched) redirect(`${NEW}error=noschedule`);
 
   // The Simple Payroll Processing Report: QSP's OWN regular, overtime and
@@ -130,17 +164,15 @@ export async function uploadBatch(formData) {
   // overtime without anybody re-reading a PDF, and it reconciles with the
   // timesheet exactly - so a mismatch means one of the two files is from a
   // different pull, which is worth knowing before 59 sheets go out.
-  const payFile = formData.get("payroll");
-  const hasPay = payFile && typeof payFile === "object" && "size" in payFile && payFile.size > 0;
-  if (!hasPay) redirect(`${NEW}error=nopayroll`);
+  const payFile = pickOf("payroll");
+  if (!payFile) redirect(`${NEW}error=nopayroll`);
 
   // The Rest Periods Report is back. It was briefly dropped with the move to
   // three reports, and that took every rest premium with it: nothing else
   // records a rest break, so all 549 qualifying days came back unanswerable.
   // It is the only definitive source for the bigger half of the premium total.
-  const restFile = formData.get("rests");
-  const hasRests = restFile && typeof restFile === "object" && "size" in restFile && restFile.size > 0;
-  if (!hasRests) redirect(`${NEW}error=norests`);
+  const restFile = pickOf("rests");
+  if (!restFile) redirect(`${NEW}error=norests`);
 
   // QSClock came back on 2026-08-22, optional. It was held out on 08-06 when the
   // export set was cut to three, and the columns below are why it returned:
@@ -150,11 +182,7 @@ export async function uploadBatch(formData) {
   // OPTIONAL, so every batch uploaded without one still works exactly as it has
   // since August: null means no punch is graded clocked-vs-typed and no
   // attendance finding exists, which every reader below already handles.
-  const clockPick = formData.get("clock");
-  const clockFile =
-    clockPick && typeof clockPick === "object" && "size" in clockPick && clockPick.size > 0
-      ? clockPick
-      : null;
+  const clockFile = pickOf("clock");
 
   // THE THREE NOTES EXPORTS, 2026-08-27. Mánu: "i want to be able to upload all
   // of this info just to the timesheets page. and the audit card and more to
@@ -163,13 +191,9 @@ export async function uploadBatch(formData) {
   // Optional, all three, exactly like the clock export above. A period should
   // still upload when one of them is not ready, and a missing report means
   // nothing was documented ONE WAY - never that nothing was documented.
-  const picked = (name) => {
-    const f = formData.get(name);
-    return f && typeof f === "object" && "size" in f && f.size > 0 ? f : null;
-  };
-  const notesFile = picked("notes");
-  const serviceNotesFile = picked("serviceNotes");
-  const scheduleNotesFile = picked("scheduleNotes");
+  const notesFile = pickOf("notes");
+  const serviceNotesFile = pickOf("serviceNotes");
+  const scheduleNotesFile = pickOf("scheduleNotes");
 
   // the browser made this id up before submitting, so it can poll for progress
   // while this action runs. namespaced under the user inside progressKey - it is
@@ -199,7 +223,13 @@ export async function uploadBatch(formData) {
   const P = { stage: "reading", done: 0, total: null, recent: [] };
   await setProgress(prog, P);
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bytes;
+  try {
+    bytes = await bytesOfPick(file);
+  } catch (e) {
+    console.error("timesheet source read failed:", e);
+    redirect(`${NEW}error=blob`);
+  }
 
   let sheets;
   let parseError = null;
@@ -330,16 +360,21 @@ export async function uploadBatch(formData) {
   if (!hasBlobStorage()) {
     redirect(`${NEW}error=noblob`);
   }
-  try {
-    const key = `timesheets/source/${randomBytes(10).toString("hex")}.pdf`;
-    const blob = await putBlob(key, Buffer.from(bytes), {
-      access: "public",
-      contentType: "application/pdf",
-    });
-    sourceUrl = blob.url;
-  } catch (e) {
-    console.error("timesheet source upload failed:", e);
-    redirect(`${NEW}error=blob`);
+  if (file.url) {
+    // the browser already put it in the store; that copy IS the kept source
+    sourceUrl = file.url;
+  } else {
+    try {
+      const key = `timesheets/source/${randomBytes(10).toString("hex")}.pdf`;
+      const blob = await putBlob(key, Buffer.from(bytes), {
+        access: "public",
+        contentType: "application/pdf",
+      });
+      sourceUrl = blob.url;
+    } catch (e) {
+      console.error("timesheet source upload failed:", e);
+      redirect(`${NEW}error=blob`);
+    }
   }
 
   // the schedule export, if one was given. it's the second record of the same
@@ -361,13 +396,16 @@ export async function uploadBatch(formData) {
   if (hasSched) {
     P.stage = "schedule";
     await setProgress(prog, P);
-    const sbytes = new Uint8Array(await schedFile.arrayBuffer());
+    const sbytes = await bytesOfPick(schedFile);
 
     // keep the file itself, not just what we read out of it. the checks screen
     // quotes this document back at people and asks them to act on it, so they
     // need to be able to open the page it came off. stored before the parse so
-    // a file that FAILED to parse can still be looked at.
-    try {
+    // a file that FAILED to parse can still be looked at. A client-uploaded
+    // blob is already stored - that copy is the kept one.
+    if (schedFile.url) {
+      scheduleUrl = schedFile.url;
+    } else try {
       const key = `timesheets/schedule/${randomBytes(10).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(sbytes), {
         access: "public",
@@ -407,8 +445,10 @@ export async function uploadBatch(formData) {
   if (clockFile) {
     P.stage = "clock";
     await setProgress(prog, P);
-    const cbytes = new Uint8Array(await clockFile.arrayBuffer());
-    try {
+    const cbytes = await bytesOfPick(clockFile);
+    if (clockFile.url) {
+      clockUrl = clockFile.url;
+    } else try {
       const key = `timesheets/clock/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(cbytes), {
         access: "public",
@@ -459,8 +499,10 @@ export async function uploadBatch(formData) {
     await setProgress(prog, P);
   }
   if (notesFile) {
-    const nbytes = new Uint8Array(await notesFile.arrayBuffer());
-    try {
+    const nbytes = await bytesOfPick(notesFile);
+    if (notesFile.url) {
+      notesUrl = notesFile.url;
+    } else try {
       const key = `timesheets/notes/${randomBytes(10).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(nbytes), {
         access: "public",
@@ -480,8 +522,10 @@ export async function uploadBatch(formData) {
     }
   }
   if (serviceNotesFile) {
-    const xbytes = new Uint8Array(await serviceNotesFile.arrayBuffer());
-    try {
+    const xbytes = await bytesOfPick(serviceNotesFile);
+    if (serviceNotesFile.url) {
+      serviceNotesUrl = serviceNotesFile.url;
+    } else try {
       const key = `timesheets/service-notes/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(xbytes), {
         access: "public",
@@ -504,8 +548,10 @@ export async function uploadBatch(formData) {
     }
   }
   if (scheduleNotesFile) {
-    const sbytes2 = new Uint8Array(await scheduleNotesFile.arrayBuffer());
-    try {
+    const sbytes2 = await bytesOfPick(scheduleNotesFile);
+    if (scheduleNotesFile.url) {
+      scheduleNotesUrl = scheduleNotesFile.url;
+    } else try {
       const key = `timesheets/schedule-notes/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(sbytes2), {
         access: "public",
@@ -534,8 +580,10 @@ export async function uploadBatch(formData) {
   {
     P.stage = "rests";
     await setProgress(prog, P);
-    const rbytes = new Uint8Array(await restFile.arrayBuffer());
-    try {
+    const rbytes = await bytesOfPick(restFile);
+    if (restFile.url) {
+      restsUrl = restFile.url;
+    } else try {
       const key = `timesheets/rests/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(rbytes), {
         access: "public",
@@ -577,8 +625,10 @@ export async function uploadBatch(formData) {
   {
     P.stage = "payroll";
     await setProgress(prog, P);
-    const pbytes = new Uint8Array(await payFile.arrayBuffer());
-    try {
+    const pbytes = await bytesOfPick(payFile);
+    if (payFile.url) {
+      payrollUrl = payFile.url;
+    } else try {
       const key = `timesheets/payroll/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(pbytes), {
         access: "public",

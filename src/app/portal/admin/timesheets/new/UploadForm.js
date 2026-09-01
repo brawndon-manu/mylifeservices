@@ -8,7 +8,11 @@
 // timesheet input didn't, and selections on it wouldn't stick - so they are kept
 // structurally identical and the status line is always present rather than
 // appearing and disappearing.
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, startTransition } from "react";
+// browser-to-Blob uploads, so eight exports never ride one 30MB request -
+// Vercel caps a serverless body at 4.5MB and the big exports blow past it
+import { upload } from "@vercel/blob/client";
+import { slotForFilename } from "@/lib/timesheet/upload-slots";
 import DatePicker from "@/components/DatePicker";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
@@ -64,7 +68,7 @@ function mintUploadId() {
 // 2026-08-22 and this row hardcoded both the asterisk and `required` - so an
 // "optional" field silently refused to let the form submit at all. Every other
 // caller is genuinely required and passes nothing.
-function FileRow({ id, label, selected, size, onPick, tone, optional = false, accept = "application/pdf,.pdf" }) {
+function FileRow({ id, label, selected, size, onPick, tone, optional = false, accept = "application/pdf,.pdf", sendingPct = null }) {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-muted">
@@ -88,13 +92,15 @@ function FileRow({ id, label, selected, size, onPick, tone, optional = false, ac
           selected ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"
         }`}
       >
-        {selected ? `Selected: ${selected}${size ? ` (${mb(size)})` : ""}` : "Nothing selected yet."}
+        {sendingPct != null
+          ? `Uploading ${selected}... ${sendingPct}%`
+          : selected ? `Selected: ${selected}${size ? ` (${mb(size)})` : ""}` : "Nothing selected yet."}
       </p>
     </div>
   );
 }
 
-export default function UploadForm({ action, aside, into = null }) {
+export default function UploadForm({ action, aside, into = null, blobUpload = false }) {
   // the action returns instead of redirecting, so the finished screen can be
   // shown before the batch page takes over. errors still redirect back here.
   const [result, formAction] = useActionState(
@@ -130,6 +136,15 @@ export default function UploadForm({ action, aside, into = null }) {
   // on the element before the action reads the form.
   const [uploadId, setUploadId] = useState("");
   const idFieldRef = useRef(null);
+  // browser-to-Blob phase: slot -> percent while the exports are going up,
+  // null when nothing is. The pickers stay on screen through it so each row
+  // can show its own file moving.
+  const [sending, setSending] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [sendError, setSendError] = useState(null);
+  // what a drop could not place - named, because a silently ignored file
+  // reads as an upload that lost it
+  const [unplaced, setUnplaced] = useState([]);
 
   // what to show in place of the pickers once they are hidden
   const sourceFiles = [
@@ -192,7 +207,76 @@ export default function UploadForm({ action, aside, into = null }) {
     const id = mintUploadId();
     if (idFieldRef.current) idFieldRef.current.value = id;
     setUploadId(id);
+
+    // THE BIG BYTES GO BROWSER-TO-BLOB, then a small request carries the URLs.
+    // One POST holding eight exports runs to 30MB+; Vercel refuses a serverless
+    // body over 4.5MB, so the old direct path could only ever work from
+    // localhost. With no blob store configured the direct path still runs.
+    if (blobUpload) {
+      e.preventDefault();
+      sendViaBlob(f, id);
+      return;
+    }
     setBusy(true);
+  }
+
+  async function sendViaBlob(form, id) {
+    setSendError(null);
+    const slots = ["file", "schedule", "payroll", "rests", "clock", "notes", "serviceNotes", "scheduleNotes"];
+    const picked = slots
+      .map((slot) => ({ slot, file: form.querySelector(`#${slot}`)?.files?.[0] || null }))
+      .filter((p) => p.file);
+    setSending(Object.fromEntries(picked.map((p) => [p.slot, 0])));
+    const refs = {};
+    try {
+      for (const { slot, file } of picked) {
+        const blob = await upload(`timesheets/src/${id}/${slot}-${file.name}`, file, {
+          access: "public",
+          handleUploadUrl: "/portal/admin/timesheets/blob-upload",
+          contentType: file.type || undefined,
+          // split-and-retry for the big exports; the service notes alone is 27MB
+          multipart: file.size > 5 * 1024 * 1024,
+          onUploadProgress: ({ percentage }) =>
+            setSending((prev) => ({ ...(prev || {}), [slot]: Math.round(percentage) })),
+        });
+        refs[slot] = { url: blob.url, name: file.name, size: file.size };
+      }
+    } catch (err) {
+      console.error("blob upload failed:", err);
+      setSending(null);
+      setSendError("A file didn't finish uploading. Nothing was generated - try again.");
+      return;
+    }
+
+    // the small request: everything the form holds EXCEPT the files, plus the
+    // references to where their bytes already are
+    const fd = new FormData(form);
+    for (const { slot } of picked) fd.delete(slot);
+    fd.set("blobs", JSON.stringify(refs));
+    setSending(null);
+    setBusy(true);
+    startTransition(() => formAction(fd));
+  }
+
+  // A DROP LANDS EVERY EXPORT AT ONCE. Each file is matched to its picker by
+  // QSP's own filename; one that matches nothing is named rather than
+  // silently ignored. Picking one at a time still works exactly as before.
+  function placeDropped(fileList) {
+    const missed = [];
+    for (const file of fileList) {
+      const slot = slotForFilename(file.name);
+      const input = slot ? formRef.current?.querySelector(`#${slot}`) : null;
+      if (!input) {
+        missed.push(file.name);
+        continue;
+      }
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      // the same event a picker click fires, so the row's own onPick runs
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    setUnplaced(missed);
   }
 
   // One column. A two-column split was tried and Mánu didn't like it - the page
@@ -218,10 +302,29 @@ export default function UploadForm({ action, aside, into = null }) {
           as documents inside the progress panel instead. `hidden` rather than
           unmounted, so the inputs stay in the form and the submission keeps
           its files. */}
-      <div className={busy ? "hidden" : "rounded-xl border border-border bg-surface p-6 sm:p-8"}>
+      <div
+        className={busy ? "hidden" : `rounded-xl border bg-surface p-6 sm:p-8 ${dragging ? "border-brand" : "border-border"}`}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (e.dataTransfer?.files?.length) placeDropped([...e.dataTransfer.files]);
+        }}
+      >
+        <p className="mb-5 rounded-lg border border-dashed border-border-strong px-3 py-2 text-xs text-muted">
+          Drag the exports onto this form together - each lands in its slot by
+          its filename. Picking them one at a time works the same as before.
+        </p>
+        {unplaced.length > 0 && (
+          <p className="mb-4 text-xs font-semibold text-rose-600 dark:text-rose-400">
+            Not one of the eight exports, so it was not placed: {unplaced.join(", ")}
+          </p>
+        )}
         <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
       <FileRow
         id="file"
+        sendingPct={sending ? sending.file ?? null : null}
         label="QSP Simple Timesheet export (PDF)"
         tone="primary"
         selected={name}
@@ -234,6 +337,7 @@ export default function UploadForm({ action, aside, into = null }) {
 
       <FileRow
         id="schedule"
+        sendingPct={sending ? sending.schedule ?? null : null}
         label="Employee Schedules export (PDF)"
         selected={schedName}
         size={sizes.schedule || 0}
@@ -245,6 +349,7 @@ export default function UploadForm({ action, aside, into = null }) {
 
       <FileRow
         id="payroll"
+        sendingPct={sending ? sending.payroll ?? null : null}
         label="Simple Payroll Processing Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
         selected={payrollName}
@@ -257,6 +362,7 @@ export default function UploadForm({ action, aside, into = null }) {
 
       <FileRow
         id="rests"
+        sendingPct={sending ? sending.rests ?? null : null}
         label="Rest Periods Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
         selected={restsName}
@@ -275,6 +381,7 @@ export default function UploadForm({ action, aside, into = null }) {
           and it still changes no hour and no figure. */}
       <FileRow
         id="clock"
+        sendingPct={sending ? sending.clock ?? null : null}
         optional
         label="QSClock Time and Attendance (.xls) - optional"
         accept=".xls,application/vnd.ms-excel"
@@ -297,6 +404,7 @@ export default function UploadForm({ action, aside, into = null }) {
           billable service shifts, the .xls 192, the two together 793. */}
       <FileRow
         id="notes"
+        sendingPct={sending ? sending.notes ?? null : null}
         optional
         label="Employee Detailed Daily Service Notes (.pdf) - optional"
         selected={notesName}
@@ -309,6 +417,7 @@ export default function UploadForm({ action, aside, into = null }) {
 
       <FileRow
         id="serviceNotes"
+        sendingPct={sending ? sending.serviceNotes ?? null : null}
         optional
         label="Employee Service Notes (.xls) - optional"
         accept=".xls,application/vnd.ms-excel"
@@ -322,6 +431,7 @@ export default function UploadForm({ action, aside, into = null }) {
 
       <FileRow
         id="scheduleNotes"
+        sendingPct={sending ? sending.scheduleNotes ?? null : null}
         optional
         label="Employee Schedule Notes (.xls) - optional"
         accept=".xls,application/vnd.ms-excel"
@@ -392,11 +502,15 @@ export default function UploadForm({ action, aside, into = null }) {
               : ` of a ${BODY_LIMIT_MB} MB limit.`}
           </p>
         )}
+        {sendError && (
+          <p className="mt-5 text-sm font-semibold text-rose-600 dark:text-rose-400">{sendError}</p>
+        )}
         <button
           type="submit"
-          className="mt-7 w-full rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+          disabled={!!sending}
+          className="mt-7 w-full rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:opacity-60"
         >
-          Upload and generate
+          {sending ? "Uploading the files..." : "Upload and generate"}
         </button>
       </div>
         {busy && !result?.ok && (
