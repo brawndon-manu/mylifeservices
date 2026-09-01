@@ -925,6 +925,13 @@ model Timesheet {
   // the generated corrected PDF
   pdfUrl String?
 
+  // THE OFFICE'S OWN SIGN-OFF ON A SIGNED REVIEW, 2026-09-02: every QuickSolve
+  // entry the review produced has been marked as added, and somebody put their
+  // name on that. Scalars, not a relation - it is a record of an act.
+  qspSignedOffAt     DateTime?
+  qspSignedOffById   String?
+  qspSignedOffByName String?
+
   // delivery
   sentAt        DateTime?
   // the address it actually went to - in test mode this is the tester, which is
@@ -1272,6 +1279,9 @@ model TimesheetCorrection {
   @@index([timesheetId])
   @@index([status])
   @@index([createdAt])
+
+  // the desk's added-in-QuickSolve marks on this row's entries
+  qspMarks QspEntryMark[]
 }
 
 // a job application submitted through the public careers form. we still email it
@@ -1667,6 +1677,27 @@ model DayProgramSheet {
 // counted in neither the paid total nor the over-40 overtime test - a PTO day
 // is not a shift, owes no rest breaks, and must never push somebody into
 // overtime on time they did not work.
+// ONE QUICKSOLVE ENTRY MARKED AS ADDED, 2026-09-02. The corrections desk
+// derives each signed review's entries from its correction rows (qsp-changes);
+// a mark says a person keyed that one entry into QuickSolve. Keyed by the
+// correction row and the entry's own fact sentence - the derivation is
+// deterministic and the fact is the entry's identity on every surface (both
+// emails print it). Unmarking deletes the row; the mark dies with its
+// correction.
+model QspEntryMark {
+  id           String              @id @default(cuid())
+  correctionId String
+  correction   TimesheetCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)
+  fact         String
+
+  byId   String?
+  byName String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([correctionId, fact])
+}
+
 model PtoEntry {
   id         String  @id @default(cuid())
   program    String  @default("MLS")

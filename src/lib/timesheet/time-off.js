@@ -109,5 +109,7 @@ export function timeOffReviewItems(corrections) {
         fact: `${hoursPhrase(e)} on this day is not on the schedule.`,
         action: "Add it to the schedule.",
       }],
+      // for the corrections desk's marks - see reviewChoices
+      correctionId: row.id,
     }));
 }

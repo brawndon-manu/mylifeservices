@@ -401,7 +401,11 @@ function firstName(name) {
 //
 // LEAVING REPORTS IMMEDIATELY. Arriving can wait out the dwell; going should
 // not, or a face lingers on a card nobody is looking at any more.
-export function PresenceCard({ rowKey, className = "", children }) {
+// `faces` can be turned off where the card carries its own who-is-here chip -
+// the QSP desk does (RowPresence in the card head), and the floating avatar
+// beside it read as a glitch on that card's rounded corner. The ring and the
+// hover border stay either way; they are the WHERE, the chip is the WHO.
+export function PresenceCard({ rowKey, className = "", faces = true, children }) {
   const report = useReportRow();
   const { all: on, open, hovering } = useRowActivity(rowKey);
   const dwell = useRef(null);
@@ -447,7 +451,7 @@ export function PresenceCard({ rowKey, className = "", children }) {
 
       {/* TOP RIGHT, OVER the card rather than inside it, so a face appearing
           never moves the row's own contents. */}
-      {on.length > 0 && (
+      {faces && on.length > 0 && (
         <span className="pointer-events-none absolute -top-2 right-3 z-10 flex items-center">
           {on.slice(0, 4).map((p) => (
             <span

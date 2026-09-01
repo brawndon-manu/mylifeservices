@@ -171,8 +171,11 @@ export function reviewChoices(corrections) {
     }
     if (!said && !changes.length) continue;
     // a grouped answer's stated times can sit on a different date than the
-    // row; the row's own date leads, the way their page groups it
-    out.push({ date: c.date, said: said || null, changes });
+    // row; the row's own date leads, the way their page groups it.
+    // `correctionId` rides along for the corrections desk, which keys its
+    // added-in-QuickSolve marks on (row, fact) - undefined where the caller
+    // did not select ids, and nothing else reads it.
+    out.push({ date: c.date, said: said || null, changes, correctionId: c.id });
   }
   out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   return out;

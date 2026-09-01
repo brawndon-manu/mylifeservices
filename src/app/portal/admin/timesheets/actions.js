@@ -4267,3 +4267,46 @@ export async function recordOfflineSignature(timesheetId, formData) {
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/signed`);
   return { ok: true, signedAt: when.toISOString(), file: !!signedPdfUrl };
 }
+
+// ---------------------------------------------------------------- QSP desk
+
+// the entries one signed review owes QuickSolve, derived the same way both
+// review emails derive theirs - one derivation, three surfaces
+function qspItemsOf(corrections) {
+  return [...reviewChoices(corrections), ...timeOffReviewItems(corrections)];
+}
+
+// MARK ONE QUICKSOLVE ENTRY AS ADDED, or take the mark back off. The fact
+// sentence is the entry's identity - it is what the desk shows and what the
+// office email printed - and it has to be one this row actually derives, so a
+// browser cannot mark an entry nobody owes.
+export async function markQspEntry({ correctionId, fact, done }) {
+  const user = await requireTimesheetAccess();
+
+  const c = await prisma.timesheetCorrection.findUnique({
+    where: { id: String(correctionId || "") },
+    include: {
+      timesheet: { select: { id: true, batchId: true, signedAt: true } },
+    },
+  });
+  if (!c || !c.timesheet.signedAt) return { ok: false, error: "notsigned" };
+
+  const wanted = String(fact || "");
+  const owed = qspItemsOf([c]).flatMap((it) => it.changes.map((ch) => ch.fact));
+  if (!owed.includes(wanted)) return { ok: false, error: "unknown" };
+
+  if (done === false) {
+    await prisma.qspEntryMark.deleteMany({ where: { correctionId: c.id, fact: wanted } });
+  } else {
+    await prisma.qspEntryMark.upsert({
+      where: { correctionId_fact: { correctionId: c.id, fact: wanted } },
+      update: { byId: user.id, byName: preferredName(user) },
+      create: { correctionId: c.id, fact: wanted, byId: user.id, byName: preferredName(user) },
+    });
+  }
+
+  revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}/qsp`);
+  await bumpBatchVersion(c.timesheet.batchId);
+  return { ok: true };
+}
+

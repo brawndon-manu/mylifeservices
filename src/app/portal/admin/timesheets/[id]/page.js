@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+import { timeOffReviewItems } from "@/lib/timesheet/time-off";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -274,6 +276,38 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const approved = rows.filter((r) => r.approvedAt).length;
   const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
   const disputed = rows.filter((r) => r.disputed).length;
+
+  // THE QUICKSOLVE DESK'S HEADLINE: how many entries the signed reviews have
+  // left to key in, and how many reviews are signed off as fully entered.
+  // Derived the same way the desk and both emails derive it - one derivation.
+  const qspCorrections = await prisma.timesheetCorrection.findMany({
+    where: { timesheet: { batchId: batch.id, signedAt: { not: null } }, status: { not: "open" } },
+    select: {
+      id: true, timesheetId: true, kind: true, date: true, status: true,
+      choice: true, statedBreaks: true, question: true, timeOff: true,
+      qspMarks: { select: { fact: true } },
+    },
+  });
+  const qsp = { owed: 0, marked: 0, reviews: 0 };
+  {
+    const bySheet = new Map();
+    for (const c of qspCorrections) {
+      if (!bySheet.has(c.timesheetId)) bySheet.set(c.timesheetId, []);
+      bySheet.get(c.timesheetId).push(c);
+    }
+    for (const cs of bySheet.values()) {
+      const items = [...reviewChoices(cs), ...timeOffReviewItems(cs)];
+      const owed = items.reduce((n, it) => n + it.changes.length, 0);
+      if (!owed) continue;
+      qsp.reviews += 1;
+      qsp.owed += owed;
+      const marked = new Set(cs.flatMap((c) => c.qspMarks.map((m) => `${c.id}|${m.fact}`)));
+      qsp.marked += items.reduce(
+        (n, it) => n + it.changes.filter((ch) => marked.has(`${it.correctionId}|${ch.fact}`)).length,
+        0,
+      );
+    }
+  }
   const punchIssueRows = rows.filter((r) => r.punchIssues > 0).length;
   const punchOpenRows = rows.filter((r) => r.punchOpen > 0).length;
   const punchOpenDays = rows.reduce((n, r) => n + r.punchOpen, 0);
@@ -793,6 +827,25 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
         >
           QSClock Time and Attendance →
+        </Link>
+      </div>
+
+      {/* THE QUICKSOLVE CORRECTIONS DESK. What the signed reviews have left to
+          key into QuickSolve, worked entry by entry and signed off per review.
+          Its own card because it is the office's follow-through on every
+          signature above. */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+        <p className="text-xs text-muted">
+          {qsp.reviews === 0
+            ? "No signed review has left entries to change in QuickSolve yet."
+            : `${qsp.owed - qsp.marked} of ${qsp.owed} entries still to add in QuickSolve, ` +
+              `across ${qsp.reviews} signed ${qsp.reviews === 1 ? "review" : "reviews"}.`}
+        </p>
+        <Link
+          href={`/portal/admin/timesheets/${batch.id}/qsp`}
+          className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
+        >
+          Corrections to make in QuickSolve →
         </Link>
       </div>
 
