@@ -55,6 +55,12 @@ export default function CorrectionRow({ correction: c, day }) {
           <span className="font-semibold">{fmt(c.claimedHours)} hrs</span>.
         </p>
       )}
+      {(c.statedTimes || []).length > 0 && (
+        <p className="mt-1 text-sm text-foreground">
+          They say they took it at{" "}
+          <span className="font-semibold">{c.statedTimes.join(" and ")}</span>.
+        </p>
+      )}
       {c.note && <p className="mt-1 text-sm italic text-muted">&ldquo;{c.note}&rdquo;</p>}
 
       {day && (

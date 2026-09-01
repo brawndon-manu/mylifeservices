@@ -11,6 +11,8 @@
 // happens to pay more without noticing it doesn't describe their day.
 import { useState } from "react";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
+// the same loose reading the question cards use, so "331" means 3:31 here too
+import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 
 function kindsForDay(day) {
   if (!day) return ["other"];
@@ -34,6 +36,7 @@ export default function ReportProblem({ token, days, submitAction }) {
   const [date, setDate] = useState(days[0]?.date || "");
   const [kind, setKind] = useState("hours");
   const [hours, setHours] = useState("");
+  const [times, setTimes] = useState([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -48,11 +51,31 @@ export default function ReportProblem({ token, days, submitAction }) {
   const activeKind = available.includes(kind) ? kind : available[0];
   const meta = CORRECTION_KINDS[activeKind];
 
+  // AN UNPUNCHED BREAK NEEDS ITS TIME. One box for a lunch; for rests, one per
+  // ten the punches are short (capped at the two a day can owe). The email the
+  // office works from prints exactly these times.
+  const timeSlots = !meta?.asksTimes
+    ? 0
+    : meta.asksTimes === "meal"
+      ? 1
+      : Math.min(2, Math.max(1, (day?.restRequired || 0) - (day?.restCount || 0)));
+  // "HH:MM" on a readable time, null otherwise - parseLooseTime says "" for
+  // unreadable, and "" slips straight through a `== null` check
+  const timeMin = (i) => parseLooseTime(times[i] || "", { assumeWorkday: true }) || null;
+
   function add() {
     setError(null);
     if (meta?.asksHours && !hours) {
       setError("Let us know how many hours, so payroll knows what to check.");
       return;
+    }
+    if (timeSlots > 0) {
+      for (let i = 0; i < timeSlots; i += 1) {
+        if (timeMin(i) == null) {
+          setError("Enter the time it started.");
+          return;
+        }
+      }
     }
     if (meta?.needsNote && !note.trim()) {
       setError("Tell us briefly what's wrong.");
@@ -68,10 +91,13 @@ export default function ReportProblem({ token, days, submitAction }) {
         date: date === NO_DAY || date === NEW_DAY ? null : date,
         kind: activeKind,
         claimedHours: meta?.asksHours && hours ? Number(hours) : null,
+        // raw as typed; the server reads them the same way the box did
+        times: timeSlots > 0 ? times.slice(0, timeSlots) : null,
         note: note.trim() || null,
       },
     ]);
     setHours("");
+    setTimes([]);
     setNote("");
   }
 
@@ -86,7 +112,7 @@ export default function ReportProblem({ token, days, submitAction }) {
     try {
       const res = await submitAction({ token, items: payload });
       if (res?.ok) setDone(true);
-      else setError(messageFor(res?.error));
+      else setError(messageFor(res));
     } catch {
       setError("Something went wrong sending that. Please try again.");
     } finally {
@@ -155,6 +181,12 @@ export default function ReportProblem({ token, days, submitAction }) {
                 {" - "}
                 {CORRECTION_KINDS[it.kind]?.label}
                 {it.claimedHours != null && ` (${fmt(it.claimedHours)} hrs)`}
+                {(it.times || []).some((t) => parseLooseTime(t || "", { assumeWorkday: true })) &&
+                  ` (at ${it.times
+                    .map((t) => parseLooseTime(t || "", { assumeWorkday: true }))
+                    .filter(Boolean)
+                    .map((m) => formatTimeDisplay(m))
+                    .join(" and ")})`}
                 {it.note && (
                   <span className="block text-xs text-muted">{it.note}</span>
                 )}
@@ -222,6 +254,51 @@ export default function ReportProblem({ token, days, submitAction }) {
             </label>
           ))}
         </fieldset>
+
+        {timeSlots > 0 && (
+          <div className="grid gap-2">
+            <span className="text-sm font-semibold text-foreground">
+              {meta.asksTimes === "meal"
+                ? "What time did your lunch start?"
+                : timeSlots === 1
+                  ? "What time did your rest break start?"
+                  : "What time did each rest break start?"}
+            </span>
+            {Array.from({ length: timeSlots }, (_, i) => {
+              const raw = times[i] || "";
+              const mins = timeMin(i);
+              return (
+                <div key={i} className="flex flex-wrap items-center gap-2.5">
+                  {timeSlots > 1 && (
+                    <span className="w-14 text-sm text-muted">{i === 0 ? "First" : "Second"}</span>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={raw}
+                    onChange={(e) =>
+                      setTimes((t) => {
+                        const next = [...t];
+                        next[i] = e.target.value;
+                        return next;
+                      })
+                    }
+                    placeholder="e.g. 331 for 3:31"
+                    className={`w-36 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
+                      mins != null ? "border-emerald-500" : raw.trim() ? "border-rose-500" : "border-border"
+                    }`}
+                  />
+                  {mins != null && (
+                    <span className="text-sm text-muted">
+                      reads as <b className="text-foreground">{formatTimeDisplay(mins)}</b>
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {meta?.asksHours && (
           <label className="grid gap-1">
@@ -315,14 +392,17 @@ export default function ReportProblem({ token, days, submitAction }) {
   );
 }
 
-function messageFor(code) {
-  switch (code) {
+function messageFor(res) {
+  switch (res?.error) {
     case "already":
       return "This timesheet has already been signed, so it can't be changed here. Reply to the email that brought you here.";
     case "reported":
       return "You've already reported something on this timesheet - payroll is looking at it.";
     case "empty":
       return "Add what's wrong first.";
+    case "badtime":
+      // where and what, quoted back - a bare verdict points at nothing
+      return `${res?.at?.date ? `${res.at.date}: ` : ""}the time${res?.given ? ` "${res.given}"` : ""} doesn't line up with the punches for that day.`;
     default:
       return "Something went wrong sending that. Please try again.";
   }

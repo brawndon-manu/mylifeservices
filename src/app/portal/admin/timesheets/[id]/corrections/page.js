@@ -126,6 +126,13 @@ export default async function CorrectionsPage({ params }) {
                           kind: c.kind,
                           label: CORRECTION_KINDS[c.kind]?.label || c.kind,
                           claimedHours: c.claimedHours,
+                          // the times an unpunched-break claim named - whoever
+                          // decides this row is deciding those
+                          statedTimes: Array.isArray(c.statedBreaks)
+                            ? c.statedBreaks
+                              .filter((b) => b?.from && b?.to)
+                              .map((b) => `${b.from} to ${b.to}`)
+                            : [],
                           note: c.note,
                           status: c.status,
                           resolutionNote: c.resolutionNote,

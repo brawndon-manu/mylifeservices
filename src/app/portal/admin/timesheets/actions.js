@@ -21,7 +21,10 @@ import {
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildQuestions, patchesFor, restTimeFits, mealTimeFits } from "@/lib/timesheet/questions";
+import { buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES } from "@/lib/timesheet/questions";
+// the reported-problem card reads times the same loose way the question cards
+// do, and this is the server's own reading of what that box was sent
+import { parseLooseTime } from "@/lib/loose-time";
 // the one spelling of a break answer's key, shared with the admin day-by-day so
 // a reason taken on a call and a reason they typed land on the same row
 import {
@@ -73,6 +76,7 @@ import {
   CORRECTION_KINDS,
   patchFor,
   mergeOverride,
+  claimedTimesPatch,
   reviewerSettledDates,
   MISC_PATCH_FIELDS,
   recomputeSheet,
@@ -1805,7 +1809,51 @@ export async function submitTimesheetCorrections({ token, items }) {
     const note = raw?.note ? String(raw.note).trim().slice(0, 1000) : null;
     if (spec.needsNote && !note) continue;
 
-    clean.push({ date, kind, claimedHours, note });
+    // AN UNPUNCHED BREAK CLAIM CARRIES ITS TIME, stored in the same
+    // `statedBreaks` shape the question answers use - which is what puts the
+    // times on the review emails and, once accepted, on the sheet. Checked
+    // against the day the same way the question action checks: a rest inside
+    // its own half of a shift, a lunch refused only where the punches show a
+    // half-hour gap it ignores. A claim whose time cannot be read is refused
+    // rather than stored timeless - the time is the record this exists for.
+    let statedBreaks = null;
+    if (spec.asksTimes) {
+      const kindOf = spec.asksTimes;
+      const minutes = kindOf === "meal" ? MEAL_MIN_MINUTES : FULL_REST_MIN;
+      const day = (ts.data?.days || []).find((x) => x.date === date) || null;
+      const list = [];
+      const raws = (Array.isArray(raw?.times) ? raw.times : []).slice(0, 4);
+      for (const [i, r] of raws.entries()) {
+        // parseLooseTime hands back "HH:MM" or "" - the MINUTES come from
+        // hhmmToMin, exactly the pair the question action runs on
+        const start = hhmmToMin(parseLooseTime(String(r || ""), { assumeWorkday: true }));
+        if (start == null) continue;
+        // where and what: a refusal points at the day and quotes the typed
+        // time, the same contract every question-card refusal honours
+        const where = { date, slot: `${kindOf}${i + 1}` };
+        if (start + minutes > 1439) {
+          return { ok: false, error: "badtime", given: String(r || ""), at: where };
+        }
+        if (kindOf === "rest" && day
+          && !restTimeFits(day, (day.restCount || 0) + i + 1, start, minutes).ok) {
+          return { ok: false, error: "badtime", given: String(r || ""), at: where };
+        }
+        if (kindOf === "meal" && day && mealTimeFits(day, start, minutes).why === "window") {
+          return { ok: false, error: "badtime", given: String(r || ""), at: where };
+        }
+        list.push({
+          kindOf, minutes,
+          from: shortClock(start), to: shortClock(start + minutes),
+          source: "typed",
+        });
+      }
+      if (!list.length) continue;
+      statedBreaks = list;
+    }
+
+    // spread rather than a null field: Prisma's Json columns take JsonNull,
+    // not a JS null, so an absent claim simply leaves the column alone
+    clean.push({ date, kind, claimedHours, note, ...(statedBreaks ? { statedBreaks } : {}) });
   }
   if (!clean.length) return { ok: false, error: "empty" };
 
@@ -1907,6 +1955,10 @@ export async function resolveCorrection(correctionId, decision, formData) {
     const stamped = { ...patch, _answeredBy: "admin" };
     if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
     if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
+    // THE TIMES THE REPORT CLAIMED, accepted onto the day - so the sheet shows
+    // the break where the person said it was, the same way an answered
+    // question's stated times reach it. See claimedTimesPatch.
+    Object.assign(stamped, claimedTimesPatch(overrides, c.date, c.statedBreaks) || {});
     if (c.date) overrides = mergeOverride(overrides, c.date, stamped);
   }
 

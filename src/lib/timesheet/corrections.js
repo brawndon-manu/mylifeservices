@@ -45,6 +45,10 @@ export const CORRECTION_KINDS = {
       "This day has no meal break in the punches. Tell us if you took one and forgot to clock out, and we will correct the record.",
     scope: "day",
     asksHours: false,
+    // an unpunched break exists only in the person's memory, so the claim has
+    // to say WHEN - the same rule the question cards enforce ("we need a
+    // record of this"), and the time is what the office keys into QuickSolve.
+    asksTimes: "meal",
   },
   meal_ontime: {
     label: "I took my lunch on time, the punch is wrong",
@@ -66,6 +70,8 @@ export const CORRECTION_KINDS = {
       "This day is short on rest breaks in the punches. Tell us if you took them without clocking out.",
     scope: "day",
     asksHours: false,
+    // same rule as the lunch: an unpunched ten needs its time on the record
+    asksTimes: "rest",
   },
   day_missing: {
     label: "I worked a day that isn't listed",
@@ -213,6 +219,22 @@ export function reviewerSettledDates(overrides) {
       .filter(([, ov]) => ov?._source === MISC_CLASSIFY_SOURCE)
       .map(([date]) => date),
   );
+}
+
+// THE TIMES AN ACCEPTED REPORT CLAIMED, as the day-override patch field.
+// Joined to whatever an earlier answer already put on that date rather than
+// replacing it, so accepting a lunch claim cannot erase a stated rest.
+// Returns null when the row carries nothing usable - spreading null into a
+// patch adds no key, which is what an absent claim should do.
+export function claimedTimesPatch(overrides, date, statedBreaks) {
+  const claimed = Array.isArray(statedBreaks)
+    ? statedBreaks.filter((b) => b?.from && b?.to)
+    : [];
+  if (!claimed.length || !date) return null;
+  const prev = Array.isArray(overrides?.[date]?.statedBreaks)
+    ? overrides[date].statedBreaks
+    : [];
+  return { statedBreaks: [...prev, ...claimed] };
 }
 
 export function mergeOverride(overrides, date, patch) {

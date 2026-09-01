@@ -47,10 +47,17 @@ function changesForRow(c) {
   const out = [];
   const kind = String(c.kind || "");
 
+  // A REPORTED PROBLEM IS A CLAIM UNTIL MANAGEMENT ACCEPTS IT. The question
+  // rows (q_) and the acknowledged fixes carry their own answer, but a report
+  // row's times may only become an edit instruction once somebody accepted
+  // the report - a declined lunch claim must not tell the office to log it.
+  const reportKinds = new Set(["meal_taken", "rest_taken"]);
+  const unacceptedReport = reportKinds.has(kind) && c.status !== "accepted";
+
   // THE TIMES THEY GAVE US. A stated break with `replaces` supersedes a
   // recorded row - the entry exists and holds the wrong times. Without it,
   // nothing is recorded at all and the break needs logging from scratch.
-  for (const b of Array.isArray(c.statedBreaks) ? c.statedBreaks : []) {
+  for (const b of unacceptedReport ? [] : Array.isArray(c.statedBreaks) ? c.statedBreaks : []) {
     if (!b?.from || !b?.to) continue;
     const onDate = b.date || c.date;
     if (b.replaces?.from && b.replaces?.to) {
@@ -93,10 +100,15 @@ function changesForRow(c) {
   // gets its line; the ones that agree with the record do not - a missed
   // break or a mistaken entry leaves QuickSolve already right.
   if (c.status === "accepted") {
-    if (kind === "meal_taken") {
+    // ONLY WHEN THE ROW CARRIES NO TIMES. A report filed since the card began
+    // asking for them already produced its timed line from `statedBreaks`
+    // above, and this sentence would say the same thing again without the one
+    // detail the office needs. Rows filed before the times existed keep it.
+    const hasTimes = Array.isArray(c.statedBreaks) && c.statedBreaks.some((b) => b?.from && b?.to);
+    if (kind === "meal_taken" && !hasTimes) {
       out.push({ date: c.date, fact: "The lunch taken that day was never punched.", action: "Punch it in." });
     }
-    if (kind === "rest_taken") {
+    if (kind === "rest_taken" && !hasTimes) {
       out.push({ date: c.date, fact: "The rest break taken that day is not recorded.", action: "Log it." });
     }
     if (kind === "day_missing") {
