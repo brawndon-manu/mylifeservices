@@ -1824,14 +1824,15 @@ export async function submitTimesheetCorrections({ token, items }) {
   const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
   const reviewUrl = `${base}/portal/admin/timesheets/${ts.batchId}/corrections`;
 
-  // who hears about it: the same four people the review corrections email
-  // reaches, resolved by name (Mánu 2026-08-25). TIMESHEET_ALERT_TO and the
-  // batch uploader are only the fallback for the day none of them resolve.
+  // who hears about it: the same five people the review corrections email
+  // reaches, resolved by name (Mánu 2026-08-25; himself onto the TO line
+  // 2026-09-01). TIMESHEET_ALERT_TO and the batch uploader are only the
+  // fallback for the day none of them resolve.
   let to = [];
   let cc = [];
   const office = await resolveReviewRecipients();
-  if (office.to) {
-    to = [office.to];
+  if (office.to.length) {
+    to = office.to;
     cc = office.cc;
   } else {
     to = (process.env.TIMESHEET_ALERT_TO || "")

@@ -24,8 +24,10 @@ import { buildTimesheetShell } from "@/lib/announcement-email";
 import { resolveRecipients } from "@/lib/timesheet-mode";
 import { reviewCorrectionsSubject } from "@/lib/timesheet-subjects";
 
-// the four people, TO first. Names, not addresses - see above.
-const TO_NAME = "Gabriel Miranda";
+// the five people, TO first. Names, not addresses - see above. Mánu joined
+// the TO line 2026-09-01: "me and gabe have to make their corrctions in qsp",
+// so the two people making the edits are the two the mail is addressed to.
+const TO_NAMES = ["Brandon Uribe", "Gabriel Miranda"];
 const CC_NAMES = ["Kristy Hatt", "April Martinez", "David Zermeno"];
 
 // PRISMA COMES IN WHEN A SEND ASKS FOR IT, not when this file is imported.
@@ -41,18 +43,25 @@ async function emailByName(name) {
   return u?.email || null;
 }
 
-// -> { to, cc } as addresses, with the fallback promotion described above.
+// -> { to: [addresses], cc: [addresses] }, with the fallback promotion
+// described above. `to` is a list now that two people make the edits; a TO
+// name that cannot be resolved is skipped and logged, and only when NEITHER
+// resolves does the first resolvable CC take the TO line.
 export async function resolveReviewRecipients() {
-  const to = await emailByName(TO_NAME);
+  const to = [];
+  for (const name of TO_NAMES) {
+    const email = await emailByName(name);
+    if (email) to.push(email);
+    else console.error(`review corrections recipient unresolved: ${name}`);
+  }
   const cc = [];
   for (const name of CC_NAMES) {
     const email = await emailByName(name);
     if (email) cc.push(email);
     else console.error(`review corrections cc unresolved: ${name}`);
   }
-  if (to) return { to, cc };
-  console.error(`review corrections recipient unresolved: ${TO_NAME}`);
-  return cc.length ? { to: cc[0], cc: cc.slice(1) } : { to: null, cc: [] };
+  if (to.length) return { to, cc };
+  return cc.length ? { to: [cc[0]], cc: cc.slice(1) } : { to: [], cc: [] };
 }
 
 function esc(s) {
@@ -157,18 +166,21 @@ export async function sendReviewCorrections({
   if (!from || !process.env.RESEND_API_KEY) return { ok: false, error: "config" };
 
   const intended = await resolveReviewRecipients();
-  if (!intended.to) return { ok: false, error: "norecipient" };
+  if (!intended.to.length) return { ok: false, error: "norecipient" };
 
-  // the TO drives the guard; the CC rides on the same decision and is dropped
-  // on a redirect, so a test run cannot half-reach real management.
-  const { to, redirected } = resolveRecipients(intended.to, process.env, { forceTo });
-  if (!to.length) return { ok: false, error: "norecipient" };
+  // the first TO drives the guard; the second TO and the CC ride on the same
+  // decision and are dropped on a redirect, so a test run cannot half-reach
+  // real management.
+  const { to: guardTo, redirected } = resolveRecipients(intended.to[0], process.env, { forceTo });
+  if (!guardTo.length) return { ok: false, error: "norecipient" };
+  const to = redirected ? guardTo : intended.to;
   const cc = redirected ? [] : intended.cc;
+  const intendedLabel = intended.to.join(", ");
 
   const subject = reviewCorrectionsSubject({
     employeeName,
     periodLabel,
-    redirectedFrom: redirected ? intended.to : null,
+    redirectedFrom: redirected ? intendedLabel : null,
   });
   const html = buildReviewCorrectionsEmailHtml({
     employeeName,
@@ -176,7 +188,7 @@ export async function sendReviewCorrections({
     items,
     batchUrl,
     attached: !!pdfBytes,
-    redirectedFrom: redirected ? intended.to : null,
+    redirectedFrom: redirected ? intendedLabel : null,
   });
 
   const fixCount = items.reduce((n, it) => n + (it.changes?.length || 0), 0);
@@ -186,7 +198,7 @@ export async function sendReviewCorrections({
     ...(it.changes || []).map((ch) => `    Change in QuickSolve: ${ch.fact} ${ch.action}`),
   ].filter(Boolean).join("\n");
   const text = [
-    redirected ? `*** TEST SEND - this was meant for ${intended.to} ***\n` : "",
+    redirected ? `*** TEST SEND - this was meant for ${intendedLabel} ***\n` : "",
     `${employeeName} signed their timesheet for ${periodLabel}.`,
     fixCount === 0
       ? "Their review changes nothing in QuickSolve; their answers are below."
