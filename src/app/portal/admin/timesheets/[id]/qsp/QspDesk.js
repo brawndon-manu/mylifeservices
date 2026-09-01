@@ -162,7 +162,7 @@ function PersonCard({ row, toggle, alreadyDone, busyAll }) {
     <PresenceCard
       rowKey={`person-${row.timesheetId}`}
       faces={false}
-      className={`mt-4 overflow-hidden rounded-xl border bg-surface ${
+      className={`card-lift mt-4 overflow-hidden rounded-xl border bg-surface ${
         settled ? "border-emerald-300/70 dark:border-emerald-800"
           : row.none ? "border-dashed border-border" : "border-border"
       }`}
