@@ -100,9 +100,42 @@ const ITEM =
 const SUBHEAD =
   "px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint";
 
+// EVERY MENU ROW ANSWERS ITS CLICK AT ONCE - the add-picker treatment
+// (2026-08-30), extended to the kebab and Record response on Mánu's yes,
+// 2026-09-02. A row marks itself the moment it is pressed and the server
+// catches up underneath; a plain call, not a transition, for the reason the
+// add picker documents above its own `pick`.
+function useRowActs() {
+  const [state, setState] = useState({});
+  const run = (key, fn) => {
+    if (state[key]) return;
+    setState((s) => ({ ...s, [key]: "busy" }));
+    Promise.resolve()
+      .then(fn)
+      .then(() => setState((s) => ({ ...s, [key]: "done" })))
+      .catch(() => setState((s) => {
+        const next = { ...s };
+        delete next[key];
+        return next;
+      }));
+  };
+  return [state, run];
+}
+
+// the status the row wears while its action runs and once it lands
+function RowStatus({ state, busy, done }) {
+  if (state === "busy") return <span className="ml-auto flex-none text-xs text-faint">{busy}&hellip;</span>;
+  if (state === "done") {
+    return <span className="ml-auto flex-none text-xs font-semibold text-emerald-600 dark:text-emerald-400">{done} &#10003;</span>;
+  }
+  return null;
+}
+
 // kebab for a going person: move their pick to another session, or remove them.
 export function PersonKebab({ postId, userId, currentOptionId, moveTargets, move, remove }) {
-  if (!useOverrideShown()) return null;
+  const shown = useOverrideShown();
+  const [acts, run] = useRowActs();
+  if (!shown) return null;
   return (
     <Dropdown
       trigger={
@@ -115,28 +148,40 @@ export function PersonKebab({ postId, userId, currentOptionId, moveTargets, move
         </button>
       }
     >
-      {moveTargets.length > 0 && (
-        <>
-          <p className={SUBHEAD}>Move to another session</p>
-          {moveTargets.map((t) => (
-            <form key={t.id} action={move.bind(null, postId, userId, currentOptionId, t.id)}>
-              <button type="submit" className={ITEM}>
+      {/* stays open through the click, so the row can say what it is doing */}
+      <div onClick={(e) => e.stopPropagation()}>
+        {moveTargets.length > 0 && (
+          <>
+            <p className={SUBHEAD}>Move to another session</p>
+            {moveTargets.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                disabled={!!acts[t.id]}
+                onClick={() => run(t.id, () => move(postId, userId, currentOptionId, t.id))}
+                className={ITEM}
+              >
                 <span className="text-muted">&#8646;</span>
                 <span className="truncate">
                   {t.seriesLabel ? `${t.seriesLabel}: ` : ""}
                   {t.label}
                 </span>
+                <RowStatus state={acts[t.id]} busy="Moving" done="Moved" />
               </button>
-            </form>
-          ))}
-          <div className="my-1 h-px bg-border" />
-        </>
-      )}
-      <form action={remove.bind(null, postId, userId)}>
-        <button type="submit" className={`${ITEM} text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40`}>
+            ))}
+            <div className="my-1 h-px bg-border" />
+          </>
+        )}
+        <button
+          type="button"
+          disabled={!!acts.remove}
+          onClick={() => run("remove", () => remove(postId, userId))}
+          className={`${ITEM} text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40`}
+        >
           <span>&times;</span> Remove from meeting
+          <RowStatus state={acts.remove} busy="Removing" done="Removed" />
         </button>
-      </form>
+      </div>
     </Dropdown>
   );
 }
@@ -243,13 +288,19 @@ export function RecordResponse({
   cantMake,
   record,
 }) {
-  if (!useOverrideShown()) return null;
-  const cantForm = (label) => (
-    <form action={cantMake.bind(null, postId, userId)}>
-      <button type="submit" className={`${ITEM} text-rose-600 dark:text-rose-400`}>
-        <span>&times;</span> {label}
-      </button>
-    </form>
+  const shown = useOverrideShown();
+  const [acts, run] = useRowActs();
+  if (!shown) return null;
+  const cantRow = (label) => (
+    <button
+      type="button"
+      disabled={!!acts.cant}
+      onClick={() => run("cant", () => cantMake(postId, userId))}
+      className={`${ITEM} text-rose-600 dark:text-rose-400`}
+    >
+      <span>&times;</span> {label}
+      <RowStatus state={acts.cant} busy="Recording" done="Recorded" />
+    </button>
   );
   return (
     <span className="flex flex-none items-center gap-1.5">
@@ -273,29 +324,38 @@ export function RecordResponse({
             cantMake={cantMake}
           />
         ) : (
-          <>
+          <div onClick={(e) => e.stopPropagation()}>
             <p className={SUBHEAD}>{hasSessions ? "Mark going to" : "Response"}</p>
             {hasSessions ? (
               sessions.map((s) => (
-                <form key={s.id} action={addToSession.bind(null, postId, userId, s.id)}>
-                  <button type="submit" className={ITEM}>
-                    <span className="truncate">
-                      {s.seriesLabel ? `${s.seriesLabel}: ` : ""}
-                      {s.label}
-                    </span>
-                  </button>
-                </form>
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={!!acts[s.id]}
+                  onClick={() => run(s.id, () => addToSession(postId, userId, s.id))}
+                  className={ITEM}
+                >
+                  <span className="truncate">
+                    {s.seriesLabel ? `${s.seriesLabel}: ` : ""}
+                    {s.label}
+                  </span>
+                  <RowStatus state={acts[s.id]} busy="Recording" done="Recorded" />
+                </button>
               ))
             ) : (
-              <form action={setGoing.bind(null, postId, userId)}>
-                <button type="submit" className={ITEM}>
-                  Going
-                </button>
-              </form>
+              <button
+                type="button"
+                disabled={!!acts.going}
+                onClick={() => run("going", () => setGoing(postId, userId))}
+                className={ITEM}
+              >
+                Going
+                <RowStatus state={acts.going} busy="Recording" done="Recorded" />
+              </button>
             )}
             <div className="my-1 h-px bg-border" />
-            {cantForm("Can't make it")}
-          </>
+            {cantRow("Can't make it")}
+          </div>
         )}
       </Dropdown>
     </span>
@@ -306,14 +366,19 @@ export function RecordResponse({
 // so interacting doesn't close the dropdown.
 function SeriesRecord({ postId, userId, seriesGroups, record, cantMake }) {
   const [picks, setPicks] = useState({});
+  const [acts, run] = useRowActs();
   const done = seriesGroups.filter((g) => picks[g.id]).length;
   const allPicked = done === seriesGroups.length;
+  // the whole-response action reads its optionIds off a FormData, so the
+  // instant path hands it the same shape the old hidden inputs carried
+  const confirm = () => run("confirm", () => {
+    const fd = new FormData();
+    for (const g of seriesGroups) fd.append("optionId", picks[g.id] || "");
+    return record(postId, userId, fd);
+  });
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <form action={record.bind(null, postId, userId)}>
-        {seriesGroups.map((g) => (
-          <input key={g.id} type="hidden" name="optionId" value={picks[g.id] || ""} />
-        ))}
+      <div>
         {seriesGroups.map((g) => (
           <div key={g.id} className="mb-1">
             <p className={SUBHEAD}>{g.label}</p>
@@ -334,19 +399,28 @@ function SeriesRecord({ postId, userId, seriesGroups, record, cantMake }) {
           </div>
         ))}
         <button
-          type="submit"
-          disabled={!allPicked}
+          type="button"
+          disabled={!allPicked || !!acts.confirm}
+          onClick={confirm}
           className="mt-1 w-full rounded-md bg-brand-light px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand disabled:opacity-40"
         >
-          Confirm going ({done}/{seriesGroups.length})
+          {acts.confirm === "busy"
+            ? "Recording..."
+            : acts.confirm === "done"
+              ? "Recorded \u2713"
+              : `Confirm going (${done}/${seriesGroups.length})`}
         </button>
-      </form>
+      </div>
       <div className="my-1 h-px bg-border" />
-      <form action={cantMake.bind(null, postId, userId)}>
-        <button type="submit" className={`${ITEM} text-rose-600 dark:text-rose-400`}>
-          <span>&times;</span> Can&apos;t make any
-        </button>
-      </form>
+      <button
+        type="button"
+        disabled={!!acts.cant}
+        onClick={() => run("cant", () => cantMake(postId, userId))}
+        className={`${ITEM} text-rose-600 dark:text-rose-400`}
+      >
+        <span>&times;</span> Can&apos;t make any
+        <RowStatus state={acts.cant} busy="Recording" done="Recorded" />
+      </button>
     </div>
   );
 }
