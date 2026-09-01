@@ -215,7 +215,7 @@ export default async function PortalLayout({ children }) {
       <div className="pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:pb-0">
         <PortalPushNav>{children}</PortalPushNav>
       </div>
-      <PortalTabBar elevated={isElevated(role)} />
+      <PortalTabBar elevated={canEnterAdmin(role)} />
     </div>
   );
 }
