@@ -1357,6 +1357,11 @@ enum NotificationType {
   FEEDBACK_NEW
   NEWSLETTER_PENDING
   USER_ADDED
+  // an employee reported a timesheet problem. The display side had this from
+  // day one (notifications.js, the rose "Timesheet" chip); the enum did not,
+  // so every insert threw and notifyOversight's catch ate it - the bell never
+  // rang for a dispute until 2026-09-02.
+  TIMESHEET_DISPUTED
 }
 
 model Notification {
