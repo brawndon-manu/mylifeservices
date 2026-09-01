@@ -31,13 +31,13 @@ test("staff outside the audience do not, and segments protect near-titles", () =
   assert.equal(see({ id: "d", role: "STAFF", title: "Assistant Field Supervisor" }), false);
 });
 
-test("admin and up always see it; HR, Manager and untargeted Supervisors do not", () => {
-  for (const role of ["ADMIN", "IT_ADMIN", "SUPER"]) {
+test("the elevated tier always sees it - HR and Manager included, Mánu 2026-09-02", () => {
+  for (const role of ["ADMIN", "IT_ADMIN", "SUPER", "HR", "MANAGER"]) {
     assert.equal(see({ id: "e", role, title: "Whatever" }), true, role);
   }
-  for (const role of ["HR", "MANAGER", "SUPERVISOR"]) {
-    assert.equal(see({ id: "f", role, title: "Office" }), false, role);
-  }
+  // an untargeted field supervisor still does not - their admin slice is not
+  // oversight of every targeted post
+  assert.equal(see({ id: "f", role: "SUPERVISOR", title: "Office" }), false);
 });
 
 test("the author sees their own post whatever the audience", () => {

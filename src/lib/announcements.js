@@ -3,7 +3,7 @@
 // no db / no prisma calls).
 
 import { ACK_EXEMPT_TITLE, POSITION_SEP, titleHasSegment } from "./positions.js";
-import { isAdminUp } from "./roles.js";
+import { isElevated } from "./roles.js";
 
 // the Owner/Director doesn't acknowledge - everyone else does.
 export function isAckExempt(user) {
@@ -51,12 +51,15 @@ export function ackAudienceWhere(post) {
 
 // who can SEE an announcement (feed + detail page). Company Meetings and
 // acknowledgment-required announcements are private to their invited audience;
-// every other announcement is visible to all staff. admins and the author always
-// see everything, and a post whose audience is "Everyone" is visible to everyone.
+// every other announcement is visible to all staff. the elevated tier - HR and
+// Manager included, per Mánu 2026-09-02 - and the author always see
+// everything; a post whose audience is "Everyone" is visible to everyone.
+// SUPERVISOR stays outside the bypass on purpose: their admin slice is client
+// attestations and surveys, not oversight of every targeted post.
 // mirrors ackAudienceWhere's membership rules but runs per-user in JS.
 export function canSeeAnnouncement(post, user) {
   if (!user) return false;
-  if (isAdminUp(user.role)) return true;
+  if (isElevated(user.role)) return true;
   if (post.authorId && post.authorId === user.id) return true;
   // only meetings + ack-required posts are gated; anything else is public.
   const restricted = isCompanyMeeting(post.tag) || post.requireAck;
