@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canManageClientAttestations, isAdminUp } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import {
   SATISFACTION_KIND,
@@ -102,6 +102,25 @@ export async function markClient({ clientId, starred, flagged, note }) {
     });
   }
 
+  revalidatePath("/portal/admin/satisfaction");
+  return { ok: true };
+}
+
+// RESET ONE SUBMITTED SURVEY - it is deleted, so the completing person's slot
+// opens again and the survey can be refilled. Admin and up ONLY, on Mánu's
+// ruling 2026-09-02: the desk itself is shared with the field supervisors,
+// but taking a filed survey off the record is not theirs to do.
+export async function resetSatisfactionSurvey(reportId) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) return { ok: false, error: "auth" };
+
+  const r = await prisma.clientReport.findUnique({
+    where: { id: String(reportId || "") },
+    select: { id: true, kind: true },
+  });
+  if (!r || r.kind !== SATISFACTION_KIND) return { ok: false, error: "notfound" };
+
+  await prisma.clientReport.delete({ where: { id: r.id } });
   revalidatePath("/portal/admin/satisfaction");
   return { ok: true };
 }

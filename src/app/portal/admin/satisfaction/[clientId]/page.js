@@ -2,11 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canManageClientAttestations, isAdminUp } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import SurveyForm from "../_components/SurveyForm";
-import { submitSatisfactionSurvey } from "../actions";
+import ResetSurvey from "../_components/ResetSurvey";
+import { submitSatisfactionSurvey, resetSatisfactionSurvey } from "../actions";
 import {
   SATISFACTION_KIND,
   TITLE,
@@ -117,6 +118,15 @@ export default async function FillSurveyPage({ params, searchParams }) {
                 >
                   PDF
                 </Link>
+                {/* admin and up only - the server refuses everyone else too */}
+                {isAdminUp(user?.role) && (
+                  <ResetSurvey
+                    reportId={r.id}
+                    who={r.conductedByName}
+                    when={fmtDay(r.createdAt)}
+                    action={resetSatisfactionSurvey}
+                  />
+                )}
               </li>
             ))}
           </ul>

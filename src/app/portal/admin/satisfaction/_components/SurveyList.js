@@ -197,9 +197,29 @@ export default function SurveyList({ rows, mark }) {
                   <td className="px-4 py-3 font-medium text-foreground">
                     {r.name}
                     {cur.flagged && cur.note && noteFor !== r.id && (
-                      <span className="mt-0.5 block max-w-xs whitespace-normal border-l-2 border-rose-300 pl-2 text-xs font-normal italic text-muted">
+                      <button
+                        type="button"
+                        title="Edit note"
+                        onClick={() => {
+                          setNoteFor(r.id);
+                          setNoteDraft(cur.note || "");
+                        }}
+                        className="mt-0.5 block max-w-xs whitespace-normal border-l-2 border-rose-300 pl-2 text-left text-xs font-normal italic text-muted transition hover:text-foreground"
+                      >
                         {cur.note}
-                      </span>
+                      </button>
+                    )}
+                    {cur.flagged && !cur.note && noteFor !== r.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNoteFor(r.id);
+                          setNoteDraft("");
+                        }}
+                        className="mt-0.5 block text-left text-xs font-normal text-faint underline transition hover:text-foreground"
+                      >
+                        Add a note
+                      </button>
                     )}
                     {noteFor === r.id && (
                       <span className="mt-1.5 block max-w-xs whitespace-normal font-normal">
@@ -221,7 +241,7 @@ export default function SurveyList({ rows, mark }) {
                             onClick={() => saveFlag(r)}
                             className="rounded bg-brand px-2.5 py-1 text-[11px] font-semibold text-white"
                           >
-                            Flag
+                            {cur.flagged ? "Save" : "Flag"}
                           </button>
                           <button
                             type="button"
