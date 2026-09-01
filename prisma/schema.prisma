@@ -129,6 +129,7 @@ model User {
   clientAttestationsAsStaff    ClientAttestation[]           @relation("ClientAttestationStaff")
   clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
   clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
+  clientReportsConducted       ClientReport[]                @relation("ClientReportConductedBy")
 }
 
 // company device / asset log. viewable by the oversight tier; editing is
@@ -1857,6 +1858,49 @@ model Client {
   updatedAt DateTime @updatedAt
 
   @@index([staffUserId])
+}
+
+// A REPORT FILLED OUT ABOUT ONE CLIENT, 2026-08-31.
+//
+// Mánu: "we will eventually have multiple reports that we will be filling out
+// per client and we will eventually be able to generate reports per client
+// across all the reports we make through the portal." So one table for all of
+// them, discriminated by `kind` - the first kind is "annual-satisfaction", the
+// Annual Client / Parent Satisfaction Survey conducted over the phone or in
+// person and rendered to PDF on demand from the stored answers.
+//
+// KEYED BY clientKey, NOT Client.id, for the same reason ShiftReview is keyed
+// to the shift: the roster import replaces the Client table wholesale, and a
+// filled survey must outlive every re-import. The name is copied in as it
+// stood so the record still reads right even if the roster later spells the
+// person differently.
+model ClientReport {
+  id String @id @default(cuid())
+
+  // which report this is - "annual-satisfaction" for now, more kinds to come
+  kind String
+
+  // the client, as sorted name tokens (src/lib/client-attestations/names.js)
+  // plus the roster spelling at the moment of filling
+  clientKey  String
+  clientName String
+
+  // the answers, shaped by the report's own definition module under
+  // src/lib/client-reports/. The PDF is rendered from this on demand - the
+  // answers are the record, the document is a view of them.
+  answers Json
+
+  // who conducted it - the signed-in person asking the questions. Name copied
+  // as scalars so the record keeps saying who it was at the time.
+  conductedById   String
+  conductedBy     User   @relation("ClientReportConductedBy", fields: [conductedById], references: [id])
+  conductedByName String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientKey])
+  @@index([kind, createdAt])
 }
 
 // THE SERVICE NOTES AUDIT, 2026-08-26.

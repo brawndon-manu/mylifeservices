@@ -103,6 +103,14 @@ export default async function AdminPage() {
             isNew
           />
         )}
+        {canManageClientAttestations(user.role) && (
+          <LinkCard
+            href="/portal/admin/satisfaction"
+            title="Annual satisfaction survey"
+            body="Every MLS client with their assigned staff. Fill out the satisfaction survey with them - over the phone or in person - and the answers come out as the printed form, stored here and ready to download."
+            isNew
+          />
+        )}
         {isAdminUp(user.role) && (
           <LinkCard
             href="/portal/admin/audit"
