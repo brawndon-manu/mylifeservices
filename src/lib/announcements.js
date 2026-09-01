@@ -2,8 +2,8 @@
 // (src/lib/hub.js) so the two boards can diverge. pure (builds plain objects,
 // no db / no prisma calls).
 
-import { ACK_EXEMPT_TITLE, POSITION_SEP, titleHasSegment } from "./positions";
-import { isAdminUp } from "./roles";
+import { ACK_EXEMPT_TITLE, POSITION_SEP, titleHasSegment } from "./positions.js";
+import { isAdminUp } from "./roles.js";
 
 // the Owner/Director doesn't acknowledge - everyone else does.
 export function isAckExempt(user) {
