@@ -35,6 +35,9 @@ import {
 import { answerActorId, actorKindFor } from "@/lib/timesheet/answer-actor";
 import { batchForceTo } from "@/lib/timesheet-mode";
 import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
+// the approval stamp's placement, read off the signed bytes themselves - see
+// the note in approval-anchor.js for why the stored rect cannot be trusted
+import { findApprovalAnchor } from "@/lib/timesheet/approval-anchor";
 import { questionNoun } from "@/lib/timesheet/question-nouns";
 // asked before the upload writes anything, because the database's own answer to
 // this arrives as an error code with no person attached
@@ -1724,11 +1727,6 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
 
   const sourceUrl = ts.signedPdfUrl || ts.pdfUrl;
   if (!sourceUrl) return { ok: false, error: "nofile" };
-  const rect = ts.data?.approvalRect;
-  // batches generated before the approval work don't carry the coordinates, so
-  // there's nowhere to place the signature - say so plainly instead of silently
-  // approving a document with no visible sign-off on it.
-  if (!rect) return { ok: false, error: "norect" };
 
   // stamp the signature onto the employee-signed copy
   let pdfBase64;
@@ -1736,6 +1734,14 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
     const res = await fetch(sourceUrl);
     if (!res.ok) return { ok: false, error: "nofile" };
     const doc = await PDFDocument.load(await res.arrayBuffer());
+    // the block's real position, read off the signed bytes. The stored rect
+    // comes from the rebuild render, which is not the render the employee
+    // signed - on 08/16-08/31 the gap put every approval 22.5pt above the
+    // label. The stored rect stays as the fallback for a copy so old its
+    // label can't be found; a sheet with neither has nowhere to put a
+    // signature, so say that plainly instead of approving without one.
+    const rect = findApprovalAnchor(doc) || ts.data?.approvalRect;
+    if (!rect) return { ok: false, error: "norect" };
     const page = doc.getPages()[rect.pageIndex] || doc.getPages()[0];
     const png = await doc.embedPng(signatureDataUrl);
     // fit inside the line without distorting the drawing
