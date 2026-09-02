@@ -7,6 +7,7 @@ import { useState } from "react";
 import Avatar from "@/components/Avatar";
 import EmployeePicker from "./EmployeePicker";
 import RowDocuments from "./RowDocuments";
+import SheetMenu from "./SheetMenu";
 import { companyDate } from "@/lib/company-time";
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
@@ -107,6 +108,27 @@ export default function ReviewTable({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">{r.sourceName}</span>
+                    {/* the office's per-sheet controls, beside the name on
+                        Mánu's call 2026-09-02 - the right edge belongs to the
+                        status chip and the document links, and the bottom row
+                        to delivery. Opens rightward from here. */}
+                    <SheetMenu
+                      timesheetId={r.id}
+                      held={r.held}
+                      miles={r.miles}
+                      milesRemoved={r.milesRemoved}
+                      signed={!!r.signedAt}
+                      align="left"
+                    />
+                    {r.held && (
+                      <span
+                        title={[r.heldByName && `Held by ${r.heldByName}`, r.heldReason]
+                          .filter(Boolean).join(" - ") || undefined}
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                      >
+                        Signing held
+                      </span>
+                    )}
                     {/* ONLY WHEN THE MATCH IS NOT CLEAN. Mánu 2026-08-17: 99% of
                         people are an exact match, so an "Exact" pill on 58 of 59
                         rows is a badge that says nothing and hides the two that

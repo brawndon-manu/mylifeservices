@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   holdTimesheetSigning, releaseTimesheetSigning,
   removeTimesheetMileage, restoreTimesheetMileage,
-} from "../../actions";
+} from "../actions";
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
@@ -26,7 +26,11 @@ const WORDS = {
   superseded: "A newer upload holds this period.",
 };
 
-export default function SheetMenu({ timesheetId, held, miles, milesRemoved, signed }) {
+// `align` says which edge the dropdown hangs from. Anchored at the card's
+// right edge (All employees) it opens leftward as before; beside the NAME on
+// the pay period rows it opens rightward, or a 240px menu would hang off the
+// card's left edge.
+export default function SheetMenu({ timesheetId, held, miles, milesRemoved, signed, align = "right" }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(null);
   const [message, setMessage] = useState(null);
@@ -77,7 +81,7 @@ export default function SheetMenu({ timesheetId, held, miles, milesRemoved, sign
         &#8942;
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-60 rounded-lg border border-border bg-surface p-1 shadow-lg">
+        <div className={`absolute z-20 mt-1 w-60 rounded-lg border border-border bg-surface p-1 shadow-lg ${align === "left" ? "left-0" : "right-0"}`}>
           {held ? (
             <button
               type="button"

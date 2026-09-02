@@ -20,7 +20,7 @@ import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
 import { PresenceBar, PresenceCard } from "../Presence";
-import SheetMenu from "./SheetMenu";
+import SheetMenu from "../../_components/SheetMenu";
 
 export const metadata = { title: "All employees", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";

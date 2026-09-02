@@ -200,6 +200,13 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     signedAt: t.signedAt ? t.signedAt.toISOString() : null,
     approvedAt: t.approvedAt ? t.approvedAt.toISOString() : null,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    // the sheet menu's slice: the hold beside the name, the mileage either
+    // side of a removal, and whether a signature would come off with it
+    held: !!t.heldAt,
+    heldByName: t.heldByName,
+    heldReason: t.heldReason,
+    miles: t.data?.qspMiles ?? null,
+    milesRemoved: t.data?.qspMilesRemoved?.was ?? null,
     // ONLY the open ones. The query now also returns the `q_` answers, and
     // counting those here would have marked all 59 as having reported a problem
     // the moment anybody confirmed anything.
