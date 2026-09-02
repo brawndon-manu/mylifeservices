@@ -19,6 +19,10 @@ import {
 } from "@/app/portal/admin/timesheets/actions";
 import TimeOffCard from "./TimeOffCard";
 import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
+// the day program's Comments Details, shown back on the review. Their own
+// typed words - the second tens live in there, and if the reader ever misses
+// a spelling again, the record is still on the page they sign from.
+import { parseComments } from "@/lib/timesheet/comments";
 import {
   correctionLabel, employeeResolution, resolutionTakesReason, reviewerSettledDates,
 } from "@/lib/timesheet/corrections";
@@ -940,6 +944,33 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           {/* WHAT WE STILL NEED FROM THEM. One card per day, and the sheet does
               not generate until every one is answered - see `breakAsks`. */}
 
+
+          {/* THE DAY PROGRAM'S OWN NOTES, on the page they review from. QSP
+              gives DP one break slot, so second tens and everything else live
+              in these notes - and the engine reads them, but a spelling it has
+              not met yet would read as a missing break. The words themselves
+              are the person's own, so nothing here breaks the no-figures rule.
+              DP only; the MLS comments stay admin-side per 2026-08-26. */}
+          {(ts.batch.program || "MLS") === "DP" && (() => {
+            const notes = parseComments(ts.data?.comments);
+            if (!notes.length) return null;
+            return (
+              <div className="mt-5 rounded-xl border border-border bg-surface-2 p-5">
+                <p className="text-sm font-semibold text-foreground">Your QuickSolve notes</p>
+                <p className="mt-1 text-xs text-muted">Straight off the export, split by day.</p>
+                <ul className="mt-2.5 space-y-1.5">
+                  {notes.map((c, i) => (
+                    <li key={i} className="text-sm text-muted">
+                      <span className="font-semibold text-foreground">{c.date}</span>
+                      <span className="text-faint"> {c.from}-{c.to}</span>
+                      {" "}
+                      {c.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
 
           {/* THE DAY-PROGRAM TIME-OFF QUESTION. Only that program gets it - the
               schedule there has no row for a day somebody was off, and the MLS
