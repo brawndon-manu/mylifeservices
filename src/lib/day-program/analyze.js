@@ -65,7 +65,11 @@ import { parseMileageReport, anyMilesDriven } from "./mileage.js";
 // constrain everything else, same as always.
 const NOTE_LABEL = /(?:break\s*#?\s*2|2nd\s+break|second\s+break|break\s+taken|break)\s*(?:at\s*)?[:\-]?\s*/i;
 const NEGATED = /(?:\bno|\bnot|\bnever|\bmiss(?:ed|ing)?|\bskip(?:ped)?|\bunable[^.]{0,20}|\bwithout|\bdidn.?t(?:\s+\w+)?)\s*$/i;
-const NOTE_RANGE = /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i;
+// `[:;]` because ; is : one shift-key slip away, and "12;20" between digits
+// is a colon typo every time - Matias 08/25, the one day of her fortnight
+// the reader refused. Normalised back to : before the clock reads it; a ;
+// used as an actual separator has no digit on both sides and stays one.
+const NOTE_RANGE = /(\d{1,2}(?:[:;]\d{2})?\s*(?:am|pm)?)\s*[-–—]\s*(\d{1,2}(?:[:;]\d{2})?\s*(?:am|pm)?)/i;
 
 export function noteBreak(scheduleNotes) {
   const notes = String(scheduleNotes || "");
@@ -75,7 +79,7 @@ export function noteBreak(scheduleNotes) {
   const after = notes.slice(label.index + label[0].length, label.index + label[0].length + 40);
   const range = NOTE_RANGE.exec(after);
   if (!range) return null;
-  const r = resolveRange(range[1].trim(), range[2].trim());
+  const r = resolveRange(range[1].trim().replace(";", ":"), range[2].trim().replace(";", ":"));
   if (!r || r.minutes < 2 || r.minutes > 20) return null;
   return { out: r.from, in: r.to };
 }

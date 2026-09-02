@@ -45,6 +45,7 @@ test("a negated break stays a note", () => {
   assert.equal(noteBreak("didn't take break 12:30-12:40"), null);
 });
 
-test("a typo'd range no clock can read stays a note", () => {
-  assert.equal(noteBreak("Break 12:10-12;20"), null);
+test("a semicolon between digits is a colon typo and reads", () => {
+  // Matias 08/25 - the one day of her fortnight the reader refused
+  assert.deepEqual(noteBreak("Break 12:10-12;20"), { out: 730, in: 740 });
 });
