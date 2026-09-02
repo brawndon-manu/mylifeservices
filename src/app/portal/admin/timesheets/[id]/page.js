@@ -428,10 +428,15 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           )}
           {/* CORRECT A FEW PEOPLE WITHOUT REPLACING THE PERIOD. Only on a batch
               that is still the current one: a superseded upload refuses the
-              write anyway, and offering the door is worse than not having it. */}
+              write anyway, and offering the door is worse than not having it.
+              EACH PROGRAM'S OWN FORM - this used to send a day program batch
+              to the agency's eight-export page, which cannot read the four DP
+              reports and had no partial path to write anyway. */}
           {state.key !== "superseded" && (
             <Link
-              href={`/portal/admin/timesheets/new?into=${batch.id}`}
+              href={batch.program === "DP"
+                ? `/portal/admin/day-program/new?into=${batch.id}`
+                : `/portal/admin/timesheets/new?into=${batch.id}`}
               className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
             >
               Re-upload some people →

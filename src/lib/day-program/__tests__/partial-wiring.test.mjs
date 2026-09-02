@@ -30,6 +30,20 @@ test("the day program upload records a partial batch the way the MLS one does", 
       `${field} must be written to the batch - nothing else says the record is cut short`,
     );
   }
-  // the refusal has its own error, not a generic parse failure
-  assert.match(actions, /err\("future"/);
+  // the refusal has its own error, not a generic parse failure. `fail` is the
+  // into-aware spelling of the old `err` - it threads the correcting batch
+  // through every refusal so a bounced correction never lands on a fresh
+  // upload page one click from replacing the whole period.
+  assert.match(actions, /fail\("future"/);
+});
+
+test("a correction lands only on its own program's batch", () => {
+  // both programs can share a fortnight AND a name (Colon, Lori is on both
+  // live batches as this is written), so each partial path refuses the other
+  // program's batch by rule rather than by luck of the parsers.
+  const dp = read("src/app/portal/admin/day-program/actions.js");
+  assert.match(dp, /target\.program !== "DP"/, "the day program partial refuses non-DP batches");
+  assert.match(dp, /not on that batch/, "strangers are refused by name, never appended");
+  const mls = read("src/app/portal/admin/timesheets/actions.js");
+  assert.match(mls, /!== "MLS"/, "the agency partial refuses day program batches");
 });

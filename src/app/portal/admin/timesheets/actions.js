@@ -1299,6 +1299,13 @@ export async function uploadBatch(formData) {
       `/portal/admin/timesheets/new?into=${intoBatchId}&error=partial&why=${encodeURIComponent(why)}`,
     );
     if (!target) back("that batch is gone");
+    // THE AGENCY'S OWN BATCHES ONLY. Both programs can share a fortnight AND a
+    // name - Colon, Lori is on both live batches today - so a period-matched
+    // write at the wrong program would replace a real person's sheet. The day
+    // program's upload page holds the same guard the other way round.
+    if ((target.program || "MLS") !== "MLS") {
+      back("that batch is a day program upload - correct it from the day program's own upload page");
+    }
     // THE SAME FORTNIGHT OR NOTHING. A file pulled for a different period would
     // otherwise overwrite four people's hours with somebody else's dates.
     if (target.periodFrom !== batchData.periodFrom || target.periodTo !== batchData.periodTo) {

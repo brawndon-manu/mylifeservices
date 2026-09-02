@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { prisma } from "@/lib/prisma";
 import BackLink from "@/components/BackLink";
 import { uploadDayProgramBatch } from "../actions";
 import UploadForm from "./UploadForm";
@@ -24,6 +25,8 @@ const ERRORS = {
   future:
     "That export contains days that haven't happened yet. QSP prints scheduled shifts exactly like worked ones, so those would become sheets asking people to sign for time they haven't worked. Pull the period again once it has ended - or tick \"partial pay period\" below to drop the unworked days and keep what has been worked.",
   range: "That date range doesn't work: the start is after the end.",
+  partial:
+    "That correction was refused and nothing was written. The batch it was meant to land on is unchanged, and so is everybody on it - this is checked before any sheet is touched, so a refusal here never leaves half the people replaced. The reason is below.",
 };
 
 export default async function NewDayProgramBatchPage({ searchParams }) {
@@ -32,6 +35,19 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
   const sp = await searchParams;
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
   const why = typeof sp?.why === "string" ? sp.why : null;
+
+  // a correction into the batch already out - loaded rather than trusted, so
+  // the period is printed back before any file is picked, and an id that is
+  // gone drops the screen back to an ordinary upload. Only a day program
+  // batch may be corrected from here; the action refuses anything else too.
+  const intoId = typeof sp?.into === "string" ? sp.into : null;
+  const intoRow = intoId
+    ? await prisma.timesheetBatch.findUnique({
+      where: { id: intoId },
+      select: { id: true, periodFrom: true, periodTo: true, program: true },
+    })
+    : null;
+  const into = intoRow?.program === "DP" ? intoRow : null;
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
@@ -57,10 +73,27 @@ export default async function NewDayProgramBatchPage({ searchParams }) {
         </div>
       )}
 
+      {/* WHAT A CORRECTION IS ABOUT TO DO, before the files are picked - the
+          same words the MLS correcting screen carries, because the rule is
+          the same rule. The people it replaces are the people in the export. */}
+      {into && (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">
+            Correcting {into.periodFrom} to {into.periodTo}, not creating a new upload.
+          </p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            Only the people in these exports are replaced. Everyone else keeps their sheet,
+            their signature and the link already in their inbox. The people you do replace
+            lose their signature and their answers, because their figures are changing, and
+            go back out to be signed again.
+          </p>
+        </div>
+      )}
+
       {/* the pickers, the partial box and the live panel live in the client
           form - the same animation the MLS upload has, fed by the action's own
           progress writes */}
-      <UploadForm action={uploadDayProgramBatch} />
+      <UploadForm action={uploadDayProgramBatch} into={into?.id || null} />
     </section>
   );
 }

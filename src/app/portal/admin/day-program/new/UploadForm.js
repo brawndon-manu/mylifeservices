@@ -23,7 +23,7 @@ function mintUploadId() {
   );
 }
 
-export default function UploadForm({ action }) {
+export default function UploadForm({ action, into = null }) {
   const [busy, setBusy] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [names, setNames] = useState({});
@@ -74,6 +74,9 @@ export default function UploadForm({ action }) {
       }}
     >
       <input ref={idFieldRef} type="hidden" name="uploadId" />
+      {/* a correction into the batch already out - see the banner on the page
+          and the into branch in the action */}
+      {into && <input type="hidden" name="into" value={into} />}
       <p className="rounded-lg border border-dashed border-border-strong px-3 py-2 text-xs text-muted">
         Drag the exports onto this form together - each lands in its slot by
         its filename. Picking them one at a time works the same as before.

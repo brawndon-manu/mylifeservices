@@ -14,6 +14,10 @@ import { analyzeDayProgram } from "@/lib/day-program/analyze";
 import { buildDayProgramSheetRows } from "@/lib/day-program/upload-rows";
 import { liveSendConfigured } from "@/lib/timesheet-send";
 import { isoDate } from "@/lib/timesheet/partial";
+// the partial re-upload's own pieces, the same three the MLS twin leans on
+import { supersededBy } from "@/lib/timesheet/superseded";
+import { restKey } from "@/lib/timesheet/rests";
+import { bumpSheetVersion, bumpBatchVersion } from "@/lib/timesheet-presence";
 
 // same tier as the timesheets card. this whole area is that feature's sibling,
 // so it answers to the same gate.
@@ -24,11 +28,6 @@ async function requireAccess() {
 }
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
-
-const err = (code, why) =>
-  redirect(
-    `/portal/admin/day-program/new?error=${code}${why ? `&why=${encodeURIComponent(String(why).slice(0, 160))}` : ""}`,
-  );
 
 const present = (f) => f && typeof f === "object" && "size" in f && f.size > 0;
 
@@ -58,6 +57,18 @@ const present = (f) => f && typeof f === "object" && "size" in f && f.size > 0;
 export async function uploadDayProgramBatch(formData) {
   const user = await requireAccess();
 
+  // a correction INTO the batch already out, not a new upload - the MLS
+  // partial's twin. Read first so every refusal below can send the person
+  // back to the correcting form rather than dropping them on a fresh upload
+  // page one wrong click from replacing the whole period.
+  const intoBatchId = (formData.get("into") || "").toString() || null;
+  const fail = (code, why) =>
+    redirect(
+      `/portal/admin/day-program/new?${intoBatchId ? `into=${intoBatchId}&` : ""}error=${code}${
+        why ? `&why=${encodeURIComponent(String(why).slice(0, 160))}` : ""
+      }`,
+    );
+
   // the same live panel the MLS upload has. The id was minted in the browser
   // and is only ever a lookup suffix - progressKey namespaces it under the
   // uploader, and a null key makes every write a no-op.
@@ -66,11 +77,11 @@ export async function uploadDayProgramBatch(formData) {
   await setProgress(prog, P);
 
   const pdfFile = formData.get("timesheet");
-  if (!present(pdfFile)) err("notimesheet");
-  if (pdfFile.type && pdfFile.type !== "application/pdf") err("notpdf");
+  if (!present(pdfFile)) fail("notimesheet");
+  if (pdfFile.type && pdfFile.type !== "application/pdf") fail("notpdf");
 
   const restsFile = formData.get("rests");
-  if (!present(restsFile)) err("norests");
+  if (!present(restsFile)) fail("norests");
 
   // the Employee Schedules PDF, optional: the second opinion on shift shape,
   // same cross-check the MLS upload runs.
@@ -91,7 +102,7 @@ export async function uploadDayProgramBatch(formData) {
   const partialFromInput = isoDate((formData.get("partialFrom") || "").toString());
   const partialToInput = isoDate((formData.get("partialTo") || "").toString());
   if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {
-    err("range", "the start of the range is after its end");
+    fail("range", "the start of the range is after its end");
   }
 
   const timesheetBytes = new Uint8Array(await pdfFile.arrayBuffer());
@@ -110,9 +121,9 @@ export async function uploadDayProgramBatch(formData) {
     });
   } catch (e) {
     // a mid-period export refused whole is its own message, not a parse failure
-    if (e?.code === "future") err("future", e.message);
+    if (e?.code === "future") fail("future", e.message);
     console.error("day program analyze failed:", e);
-    err("parse", e?.message || e);
+    fail("parse", e?.message || e);
   }
   if (result.partial) {
     console.log(
@@ -120,7 +131,7 @@ export async function uploadDayProgramBatch(formData) {
         `dropped ${result.partial.dropped.length}${result.partial.clamped ? " (end clamped to today)" : ""}`,
     );
   }
-  if (!result.people.length) err("empty", "the timesheet read fine but held no employee hours");
+  if (!result.people.length) fail("empty", "the timesheet read fine but held no employee hours");
 
   // A MILEAGE FILE THAT MATCHES NOBODY, OR SAYS NOBODY DROVE.
   //
@@ -131,11 +142,11 @@ export async function uploadDayProgramBatch(formData) {
   // wrong file than the truth.
   if (hasMileage) {
     if (!result.mileage?.anyMiles) {
-      err("mileage", "every row of that mileage report reads 0.00 miles - is it the right period?");
+      fail("mileage", "every row of that mileage report reads 0.00 miles - is it the right period?");
     }
     const unmatched = result.mileage.unmatched || [];
     if (unmatched.length >= result.mileage.people) {
-      err(
+      fail(
         "mileage",
         `none of the ${result.mileage.people} people in that mileage report match anyone on the timesheet`,
       );
@@ -173,9 +184,126 @@ export async function uploadDayProgramBatch(formData) {
   });
 
   const refused = unstorableRows(sheetRows.map((s) => ({ sourceName: s.sourceName, data: s.data })));
-  if (refused.length) err("save", `${refused[0].name}'s rows contain ${refused[0].what}`);
+  if (refused.length) fail("save", `${refused[0].name}'s rows contain ${refused[0].what}`);
 
-  if (!hasBlobStorage()) err("noblob");
+  // ---- A RE-UPLOAD OF SOME PEOPLE, INTO THE DAY PROGRAM BATCH ALREADY OUT --
+  //
+  // The MLS partial's twin - see uploadBatch, whose rules this holds exactly:
+  // the files decide who, the same fortnight or nothing, strangers refused,
+  // replaced people updated IN PLACE so the link already in their inbox keeps
+  // working, their answers and signature cleared because their figures are
+  // changing, and everyone else untouched. Built for one person's QSP fix
+  // landing after the batch went out (Bustamante's 08/28 entered post-upload,
+  // Matias's 08/25 semicolon day) without costing the re-signs the rest of
+  // the batch has already given back.
+  //
+  // No blobs are stored on this path: the batch's file pointers are the
+  // provenance of the upload the other people came from and stay pointing at
+  // it, the same rule the MLS twin holds. Everything a sheet renders from
+  // rides in its own data.
+  if (intoBatchId) {
+    const target = await prisma.timesheetBatch.findUnique({
+      where: { id: intoBatchId },
+      select: { id: true, program: true, periodFrom: true, periodTo: true, restsByDate: true },
+    });
+    const back = (why) => redirect(
+      `/portal/admin/day-program/new?into=${intoBatchId}&error=partial&why=${encodeURIComponent(why)}`,
+    );
+    if (!target) back("that batch is gone");
+    // this form corrects day program uploads only. The agency form holds the
+    // same guard the other way round, because both batches can share a
+    // fortnight AND a name - Colon, Lori is on both live batches today, and a
+    // period-matched write at the wrong program would replace her sheet.
+    if (target.program !== "DP") back("that batch is not a day program upload");
+    const from = result.payPeriod?.from || "";
+    const to = result.payPeriod?.to || "";
+    if (target.periodFrom !== from || target.periodTo !== to) {
+      back(`this export is ${from} to ${to}, that batch is ${target.periodFrom} to ${target.periodTo}`);
+    }
+    // A REPLACED UPLOAD IS READ ONLY, the same rule every other write holds.
+    const newer = await supersededBy(intoBatchId);
+    if (newer) back("that upload has been replaced - re-upload into the current one");
+
+    const existing = await prisma.timesheet.findMany({
+      where: { batchId: intoBatchId },
+      select: { id: true, sourceName: true },
+    });
+    const byName = new Map(existing.map((r) => [restKey(r.sourceName || ""), r]));
+    // ONLY PEOPLE ALREADY ON IT. Someone in the file who is not on the batch
+    // is an ADDITION, not a correction - refused by name, never appended.
+    const strangers = sheetRows
+      .filter((r) => !byName.has(restKey(r.sourceName || "")))
+      .map((r) => r.sourceName);
+    if (strangers.length) back(`not on that batch: ${strangers.join(", ")}`);
+
+    // THE REST ROWS MERGE BY NAME, THEY DO NOT REPLACE - restsByDate is one
+    // array for the whole batch, and writing this upload's rows over it would
+    // change what every untouched person rebuilds from.
+    const incoming = result.restRows || [];
+    const covered = new Set(incoming.map((r) => restKey(r?.name || "")));
+    const mergedRests = [
+      ...(target.restsByDate || []).filter((r) => !covered.has(restKey(r?.name || ""))),
+      ...incoming,
+    ];
+
+    const ids = sheetRows.map((r) => byName.get(restKey(r.sourceName || "")).id);
+    P.stage = "saving";
+    await setProgress(prog, P);
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.timesheetBatch.update({
+          where: { id: intoBatchId },
+          data: { restsByDate: mergedRests.length ? mergedRests : null },
+        });
+        // their answers go with their figures - an answer explains a finding
+        // on the document that raised it, and that document is being replaced.
+        // Break reasons and PtoEntry rows are keyed on the period, not the
+        // sheet, so those carry across untouched.
+        await tx.timesheetCorrection.deleteMany({
+          where: {
+            timesheetId: { in: ids },
+            OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }],
+          },
+        });
+        for (const row of sheetRows) {
+          const hit = byName.get(restKey(row.sourceName || ""));
+          await tx.timesheet.update({
+            where: { id: hit.id },
+            // UPDATED IN PLACE, NEVER REPLACED - keeping the row keeps the
+            // signing link in their inbox working.
+            data: {
+              ...row,
+              overrides: {},
+              // the corrected sheet is a different document, so the signature
+              // and the sign-off cannot carry over to it
+              signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null,
+              approvedAt: null, approvedById: null, approvedPdfUrl: null,
+              disputedAt: null, pdfUrl: null,
+              // back onto the chase list: it has to go out again
+              sentAt: null,
+              recomputedAt: new Date(),
+            },
+          });
+        }
+      }, { timeout: 120_000, maxWait: 20_000 });
+    } catch (e) {
+      console.error("day program partial re-upload failed:", e);
+      back((e?.message || String(e)).slice(0, 200));
+    }
+    for (const id of ids) await bumpSheetVersion(id);
+    await bumpBatchVersion(intoBatchId);
+    P.stage = "done";
+    await setProgress(prog, P);
+    revalidatePath(`/portal/admin/timesheets/${intoBatchId}`);
+    revalidatePath("/portal/admin/timesheets");
+    console.log(
+      `day program partial re-upload by ${user.id} into ${intoBatchId}: `
+      + sheetRows.map((r) => r.sourceName).join(", "),
+    );
+    redirect(`/portal/admin/timesheets/${intoBatchId}?replaced=${ids.length}`);
+  }
+
+  if (!hasBlobStorage()) fail("noblob");
   P.stage = "storing";
   await setProgress(prog, P);
   const store = async (key, body, contentType) => {
@@ -199,7 +327,7 @@ export async function uploadDayProgramBatch(formData) {
     }
   } catch (e) {
     console.error("day program source upload failed:", e);
-    err("blob");
+    fail("blob");
   }
 
   P.stage = "saving";
@@ -240,7 +368,7 @@ export async function uploadDayProgramBatch(formData) {
     }, { timeout: 120_000, maxWait: 20_000 });
   } catch (e) {
     console.error("day program batch write failed:", e);
-    err("save", e?.message || e);
+    fail("save", e?.message || e);
   }
 
   P.stage = "done";
