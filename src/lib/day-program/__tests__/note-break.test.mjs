@@ -29,3 +29,22 @@ test("a label with no range, a missed break, a meeting - none become a rest", ()
 test("a range no ten fits stays a note", () => {
   assert.equal(noteBreak("Break taken: 10:00-11:30"), null);
 });
+
+// bare "Break", the loosest spelling (Matias 08/16-08/31), with its own
+// negation guard - a stated missed break must never become a credited one
+test("bare Break with a range reads", () => {
+  assert.deepEqual(noteBreak("Break 12:30-12:40"), { out: 750, in: 760 });
+  assert.ok(noteBreak("Break : 1:10-1:20"));
+  assert.ok(noteBreak("Reason given: Testing QSP error\nStarted at 8:30am\nBreak 12:30-12:40"));
+});
+
+test("a negated break stays a note", () => {
+  assert.equal(noteBreak("no break 12:30-12:40"), null);
+  assert.equal(noteBreak("missed break 12:30-12:40"), null);
+  assert.equal(noteBreak("was unable to take my break 12:30-12:40"), null);
+  assert.equal(noteBreak("didn't take break 12:30-12:40"), null);
+});
+
+test("a typo'd range no clock can read stays a note", () => {
+  assert.equal(noteBreak("Break 12:10-12;20"), null);
+});

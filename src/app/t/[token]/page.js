@@ -160,6 +160,20 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // unlabelled page where every click is live, the one thing this replaces.
   // The answer action already resolves the actor the same way.
   const reviewing = isSuper(viewer?.realRole || viewer?.role) && !ownSheet;
+
+  // THE DAY PROGRAM'S OWN NOTES, per day - Mánu 2026-09-02, "i want the
+  // comment details to be per day displayed". Their own typed words; the
+  // second tens live in there, so a spelling the reader has not met yet is
+  // still on the page they answer from. DP only; MLS comments stay
+  // admin-side per 2026-08-26.
+  let dpNotes = null;
+  if ((ts.batch.program || "MLS") === "DP") {
+    dpNotes = {};
+    for (const n of parseComments(ts.data?.comments)) {
+      (dpNotes[n.date] ||= []).push(n);
+    }
+    if (!Object.keys(dpNotes).length) dpNotes = null;
+  }
   const live = reviewing && !!sp?.live;
   const preview = reviewing && !live;
 
@@ -797,6 +811,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <TimesheetViews
             simple={
               <DayByDay
+                dpNotes={dpNotes}
                 days={ts.data.days}
                 groups={byKind}
                 scheduled={scheduledByDate}
@@ -944,33 +959,6 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           {/* WHAT WE STILL NEED FROM THEM. One card per day, and the sheet does
               not generate until every one is answered - see `breakAsks`. */}
 
-
-          {/* THE DAY PROGRAM'S OWN NOTES, on the page they review from. QSP
-              gives DP one break slot, so second tens and everything else live
-              in these notes - and the engine reads them, but a spelling it has
-              not met yet would read as a missing break. The words themselves
-              are the person's own, so nothing here breaks the no-figures rule.
-              DP only; the MLS comments stay admin-side per 2026-08-26. */}
-          {(ts.batch.program || "MLS") === "DP" && (() => {
-            const notes = parseComments(ts.data?.comments);
-            if (!notes.length) return null;
-            return (
-              <div className="mt-5 rounded-xl border border-border bg-surface-2 p-5">
-                <p className="text-sm font-semibold text-foreground">Your QuickSolve notes</p>
-                <p className="mt-1 text-xs text-muted">Straight off the export, split by day.</p>
-                <ul className="mt-2.5 space-y-1.5">
-                  {notes.map((c, i) => (
-                    <li key={i} className="text-sm text-muted">
-                      <span className="font-semibold text-foreground">{c.date}</span>
-                      <span className="text-faint"> {c.from}-{c.to}</span>
-                      {" "}
-                      {c.text}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })()}
 
           {/* THE DAY-PROGRAM TIME-OFF QUESTION. Only that program gets it - the
               schedule there has no row for a day somebody was off, and the MLS

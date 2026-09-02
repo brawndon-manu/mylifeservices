@@ -124,6 +124,11 @@ export default function DayByDay({
   // report gives these rows no id, so the date and the minute they draw at is
   // what identifies one. See `acknowledgeSpan`.
   ackOn = null, ackAction = null,
+  // THE DAY PROGRAM'S OWN NOTES, date -> [{from,to,text}], drawn on the day
+  // they are about. Null on MLS sheets - those comments stay admin-side.
+  // Above the question cards on purpose: "Break 12:30-12:40" is the evidence
+  // somebody checks right before answering a rest question.
+  dpNotes = null,
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -503,6 +508,21 @@ export default function DayByDay({
                   ackOn={ackOn}
                   ackAction={ackAction}
                 />
+                {(dpNotes?.[day.date] || []).length > 0 && (
+                  <div className="mb-3 rounded-lg border border-border bg-surface-2 px-3.5 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      Your QuickSolve notes
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {dpNotes[day.date].map((n, i) => (
+                        <li key={i} className="text-sm text-muted">
+                          {n.from && <span className="text-faint">{n.from}-{n.to} </span>}
+                          {n.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {mine.map(card)}
                 {/* THE DOMINO. A day's breaks row only exists because the ten
                     above it pushed the day past six hours - which owes a lunch

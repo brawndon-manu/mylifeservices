@@ -33,7 +33,11 @@ const PREFIX = /^Reason\s+given:\s*/i;
 export function parseComments(lines) {
   const out = [];
   for (const raw of lines || []) {
-    const line = String(raw ?? "").trim();
+    // the array can carry appended footnote OBJECTS after the raw lines (the
+    // engine's own "credited from the notes" explanations ride there);
+    // stringifying one printed [object Object] on Matias's review card
+    if (typeof raw !== "string") continue;
+    const line = raw.trim();
     if (!line) continue;
     const m = HEAD.exec(line);
     if (m) {

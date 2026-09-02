@@ -56,13 +56,22 @@ import { parseMileageReport, anyMilesDriven } from "./mileage.js";
 // any noted window that overlaps the ten the report already recorded, so a
 // "Break taken" note that merely restates the recorded break credits nothing
 // - measured, exactly one of the 28 readable rows was that duplicate.
-const NOTE_LABEL = /(?:break\s*#?\s*2|2nd\s+break|second\s+break|break\s+taken)\s*(?:at\s*)?[:\-]?\s*/i;
+// BARE "Break" JOINED the same day, off Matias's fortnight: nine days wrote
+// "Break 12:30-12:40" - no #2, no "taken" - and read as one of two missing.
+// The bare word is the loosest spelling yet, so it carries its own guard: a
+// negated phrase right before it ("no break", "missed break", "unable to
+// take my break 12-12:10") is a STATED MISSED BREAK and stays a note. The
+// range, the 2-20 minute length and the overlap-with-recorded filter
+// constrain everything else, same as always.
+const NOTE_LABEL = /(?:break\s*#?\s*2|2nd\s+break|second\s+break|break\s+taken|break)\s*(?:at\s*)?[:\-]?\s*/i;
+const NEGATED = /(?:\bno|\bnot|\bnever|\bmiss(?:ed|ing)?|\bskip(?:ped)?|\bunable[^.]{0,20}|\bwithout|\bdidn.?t(?:\s+\w+)?)\s*$/i;
 const NOTE_RANGE = /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i;
 
 export function noteBreak(scheduleNotes) {
   const notes = String(scheduleNotes || "");
   const label = NOTE_LABEL.exec(notes);
   if (!label) return null;
+  if (NEGATED.test(notes.slice(0, label.index))) return null;
   const after = notes.slice(label.index + label[0].length, label.index + label[0].length + 40);
   const range = NOTE_RANGE.exec(after);
   if (!range) return null;
