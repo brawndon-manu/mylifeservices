@@ -765,6 +765,21 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             . Payroll has your copy - nothing else to do.
           </p>
         </div>
+      ) : ts.heldAt ? (
+        // THE OFFICE HOLD. Somebody on the admin side pressed Hold signing on
+        // this sheet, so there is nothing to do here until it is released -
+        // the same shape as an open report below, and the server refuses a
+        // signature behind it either way. The reason is the office's own note
+        // and is deliberately not printed.
+        <div className="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            The office is working on this timesheet.
+          </p>
+          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
+            Signing is closed while they do. You will get an updated timesheet
+            to review and sign when it is ready.
+          </p>
+        </div>
       ) : openCorrections.length > 0 ? (
         // they've told us something is wrong, so there's nothing to sign until
         // it's sorted. show what we have on record so they can see it landed.

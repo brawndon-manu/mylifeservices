@@ -1803,6 +1803,131 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   return { ok: true };
 }
 
+// THE OFFICE HOLD ON SIGNING, 2026-09-02. Mánu: an issue is noticed on a
+// sheet and the person must not sign it until the office is done - Allan's
+// mileage was the first. The employee's page states the hold and drops the
+// signer; submitSignedTimesheet refuses behind it, because hiding a control
+// is a suggestion and this has to be a rule. The reason is the office's own
+// note on the card menu and never reaches the employee.
+export async function holdTimesheetSigning({ timesheetId, reason }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, batchId: true, heldAt: true, signedAt: true },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  if (ts.heldAt) return { ok: false, error: "already" };
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: {
+      heldAt: new Date(),
+      heldById: user.id,
+      heldByName: preferredName(user) || user.name || null,
+      heldReason: String(reason ?? "").trim().slice(0, 300) || null,
+    },
+  });
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
+  return { ok: true };
+}
+
+export async function releaseTimesheetSigning({ timesheetId }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: { id: true, batchId: true, heldAt: true },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  if (!ts.heldAt) return { ok: false, error: "already" };
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: { heldAt: null, heldById: null, heldByName: null, heldReason: null },
+  });
+  await bumpSheetVersion(ts.id);
+  await bumpBatchVersion(ts.batchId);
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/people`);
+  return { ok: true };
+}
+
+// MILEAGE OFF THE SHEET, 2026-09-02. Allan's case: the reported miles are not
+// standing, so the record must carry none. `data.qspMiles` is what every
+// surface reads - the sheet's miles line and its attestation sentence, the
+// payout report page, its CSV and its PDF - so nulling the stored figure is
+// the whole removal, with the original stashed for the audit trail and for
+// putting back. The rebuild is the same one the Recompute button runs: the
+// sheet regenerates without the figure, and a signature already taken comes
+// off, because the miles are ON the signed document and a copy stripped of
+// them is a different document nobody has signed.
+//
+// A RE-UPLOAD RESTORES THE FIGURE - a new batch reads the payroll export
+// afresh and knows nothing of this row. The removal is per-sheet, per-batch.
+export async function removeTimesheetMileage({ timesheetId }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true, data: true,
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  const stored = ts.data || {};
+  if (stored.qspMiles == null) return { ok: false, error: "nomiles" };
+  // checked here as well as inside the recompute, so the refusal lands BEFORE
+  // the figure is nulled rather than leaving the flag set and the rebuild
+  // refused halfway
+  if (ts.corrections.length) return { ok: false, error: "openitems" };
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: {
+      data: {
+        ...stored,
+        qspMiles: null,
+        qspMilesRemoved: {
+          was: stored.qspMiles,
+          at: new Date().toISOString(),
+          byName: preferredName(user) || user.name || null,
+        },
+      },
+    },
+  });
+  return recomputeTimesheet(ts.id);
+}
+
+export async function restoreTimesheetMileage({ timesheetId }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true, data: true,
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  const stored = ts.data || {};
+  if (stored.qspMilesRemoved?.was == null) return { ok: false, error: "nomiles" };
+  if (ts.corrections.length) return { ok: false, error: "openitems" };
+  const { qspMilesRemoved, ...rest } = stored;
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: { data: { ...rest, qspMiles: qspMilesRemoved.was } },
+  });
+  return recomputeTimesheet(ts.id);
+}
+
 // employee-side: report that something on the timesheet is wrong. takes the
 // token, like signing does - the person reporting has no portal login.
 //
@@ -3877,7 +4002,7 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     // was sent to, the batch's period and rehearsal flags, and the answer
     // rows the QuickSolve changes list derives from.
     select: {
-      id: true, batchId: true, signedAt: true, disputedAt: true, sourceName: true,
+      id: true, batchId: true, signedAt: true, disputedAt: true, heldAt: true, sourceName: true,
       intendedEmail: true,
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
       batch: { select: { periodFrom: true, periodTo: true, testOnly: true, testEmail: true } },
@@ -3896,6 +4021,9 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // you shouldn't attest to a document you've told us is wrong. the page hides
   // the signer while a report is open; this is the server-side half of that.
   if (ts.disputedAt) return { ok: false, error: "disputed" };
+  // the office hold - same shape: the page states it and drops the signer,
+  // and this is the rule behind the suggestion. See holdTimesheetSigning.
+  if (ts.heldAt) return { ok: false, error: "held" };
   if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
   if (pdfBase64.length > 8_000_000) return { ok: false, error: "toobig" };
 

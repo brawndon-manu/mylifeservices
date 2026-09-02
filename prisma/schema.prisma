@@ -963,6 +963,15 @@ model Timesheet {
   // signed - you shouldn't attest to a document you're contesting - so this
   // holds the signature until management resolves every open correction.
   disputedAt   DateTime?
+  // the office's own hold on signing, 2026-09-02: somebody noticed an issue
+  // and the sheet must not be signed until it is released. The employee's page
+  // states the hold; the reason is the office's note to itself and never
+  // reaches them. Scalars, not a relation - a record of an act, like the QSP
+  // sign-off above.
+  heldAt     DateTime?
+  heldById   String?
+  heldByName String?
+  heldReason String?
   // per-day adjustments accepted by management, keyed by the date as QSP prints
   // it: { "07/20/26": { mealViolation, restViolation, paidHours, removed } }.
   // kept separate from `data` so the original computation is never overwritten

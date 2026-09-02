@@ -20,6 +20,7 @@ import FlagButton from "../checks/FlagButton";
 import RowFlagButton from "../checks/RowFlagButton";
 import RowComments from "../checks/RowComments";
 import { PresenceBar, PresenceCard } from "../Presence";
+import SheetMenu from "./SheetMenu";
 
 export const metadata = { title: "All employees", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -98,6 +99,8 @@ export default async function AllPeoplePage({ params, searchParams }) {
           userId: true,
           otHours: true, doubleHours: true,
           signedAt: true, sentAt: true, data: true,
+          // the office hold - the kebab toggles it and the card wears the chip
+          heldAt: true, heldByName: true, heldReason: true,
           // HOW TO REACH THEM, which is the whole job of this screen.
           //
           // `sharePhonePublicly` is NOT consulted, and that is deliberate: its
@@ -256,6 +259,14 @@ export default async function AllPeoplePage({ params, searchParams }) {
       tags,
       clean: isClean(tags),
       userId: t.userId,
+      // the sheet menu's slice: the hold, the mileage either side of a
+      // removal, and whether a signature would come off with it
+      held: !!t.heldAt,
+      heldByName: t.heldByName,
+      heldReason: t.heldReason,
+      miles: t.data?.qspMiles ?? null,
+      milesRemoved: t.data?.qspMilesRemoved?.was ?? null,
+      signed: !!t.signedAt,
       flag: flags.get(markKey(t.userId, "person")) || null,
       // normalised on the way in, so the summary strip below can group on the
       // current key without every legacy row falling out of its heading
@@ -622,6 +633,27 @@ export default async function AllPeoplePage({ params, searchParams }) {
                   column rather than its own, so the two screens lined up
                   differently once the row wrapped on a phone. */}
               <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
+                {/* the office's per-sheet controls, and the hold's chip when
+                    one stands. The chip is admin-side words - the employee's
+                    page carries its own, approved separately. */}
+                <div className="flex items-center gap-1.5">
+                  {p.held && (
+                    <span
+                      title={[p.heldByName && `Held by ${p.heldByName}`, p.heldReason]
+                        .filter(Boolean).join(" - ") || undefined}
+                      className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/40 dark:text-amber-300"
+                    >
+                      Signing held
+                    </span>
+                  )}
+                  <SheetMenu
+                    timesheetId={p.id}
+                    held={p.held}
+                    miles={p.miles}
+                    milesRemoved={p.milesRemoved}
+                    signed={p.signed}
+                  />
+                </div>
                 {/* `from=people` so their page knows to send Back here rather
                     than to Data checks, which is where it always went and is
                     not where you were. */}
