@@ -666,6 +666,13 @@ export async function renderCorrected(sheet, opts = {}) {
         if (d.isPto) {
           good(`Misc PTO${d.ptoHours ? ` ${f2(d.ptoHours)} hrs` : ""}`);
         }
+        // THE MLS TWIN, off the person's own Misc answer. Malacova's eleven
+        // PTO days printed bare "compliant" - true, and saying nothing about
+        // WHY a full day owes no breaks. The day says what it was now. Only
+        // the two classifications Mánu named (2026-09-02); a cancelled or
+        // worked block keeps reading through the ordinary notes.
+        if (d.miscKind === "pto") good("PTO");
+        else if (d.miscKind === "sick") good("Sick pay");
         // NOTED, NOT CHARGED - the tone this sheet already uses for "+0.17
         // added" and "overlap *". A premium an assumption took away keeps its
         // words and loses its colour, which is the whole difference between the
