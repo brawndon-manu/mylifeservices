@@ -9,6 +9,10 @@ import ApproveSigner from "./ApproveSigner";
 import { approveTimesheet } from "../../../actions";
 import { companyDate } from "@/lib/company-time";
 import { premiumStanding } from "@/lib/timesheet/premium-split";
+// their answers, read back in their own direction - Mánu 2026-09-02, off
+// Malacova's fortnight: eleven PTO days read "compliant" on this page with
+// nothing saying why, because the choices behind the sheet were nowhere on it
+import { employeeResolution } from "@/lib/timesheet/corrections";
 
 export const metadata = { title: "Approve timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -26,7 +30,12 @@ export default async function ApproveTimesheetPage({ params }) {
       approvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       corrections: {
         where: { kind: { startsWith: "q_" }, status: { not: "open" } },
-        select: { kind: true, date: true, status: true },
+        orderBy: { date: "asc" },
+        // choice / statedBreaks / question feed the receipt sentences below -
+        // the same fields every other reader of an answer selects, and the
+        // same trap if they are left out: undefined, and the sentence loses
+        // its shape silently
+        select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true },
       },
     },
   });
@@ -64,6 +73,31 @@ export default async function ApproveTimesheetPage({ params }) {
           <Fig label="Comes off if they confirm they took them" value={standing.assumptions} />
         )}
       </div>
+
+      {/* WHAT THEY TOLD US ON THEIR REVIEW, on the page where somebody signs
+          off on the result. A sheet can read compliant BECAUSE of an answer -
+          a fortnight of Misc time answered as PTO owes no breaks at all - and
+          approving that without the answer in view is approving blind. */}
+      {ts.corrections.length > 0 && (
+        <div className="mt-4 rounded-xl border border-border bg-surface p-4">
+          <p className="text-sm font-semibold text-foreground">
+            What {who} told us on their review
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {ts.corrections.map((c, i) => {
+              const said = employeeResolution(c, c.question || null);
+              if (!said) return null;
+              return (
+                <li key={i} className="text-sm text-muted">
+                  <span className="font-semibold text-foreground">{c.date}</span>
+                  {" "}
+                  {said}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {!ts.signedAt ? (
         <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-900/60 dark:bg-amber-950/30">

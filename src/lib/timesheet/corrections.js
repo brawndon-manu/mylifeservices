@@ -547,6 +547,20 @@ export function employeeResolution(correction, question = null) {
         ? "You said the short meal block was your rest break."
         : "You said it was not your rest break.";
 
+    // THE ONE ANSWER THAT HAD NO RECEIPT, found on Malacova's fortnight
+    // 2026-09-02: eleven 8-hour days she answered as PTO read "compliant"
+    // with nothing anywhere saying why. The card's own vocabulary: yes = paid
+    // time off, no = sick pay - see kindFor in questions.js.
+    case "miscTime": {
+      const what =
+        pick === "yes" ? "paid time off"
+          : pick === "no" ? "sick pay"
+            : pick === "worked" ? "worked time"
+              : pick === "cancelled" ? "a client cancellation"
+                : null;
+      return what ? `You said this time was ${what}.` : null;
+    }
+
     case "mealShort":
       return yes
         ? "You said you took a full thirty minutes for lunch anyway."
