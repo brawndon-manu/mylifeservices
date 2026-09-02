@@ -19,6 +19,8 @@
 import { violationsFor, VIOLATION_KINDS } from "./violations.js";
 import { overlapInfo } from "./schedule-overlap.js";
 import { overCapBookings, overlappingDays, complianceCounts, CAP_MINUTES } from "./compliance.js";
+// the one definition of a duplicated shift, shared with the employee's card
+import { duplicateSegments } from "./questions.js";
 
 // what a schedule flag is called in front of a person. `compareToSchedule`
 // produces these three and they are all ZERO on both live batches as of
@@ -120,6 +122,22 @@ export function tagsForPerson(t, { restRowCount = 0, attendance = null } = {}) {
   for (const [kind, one, many] of CLOCK_TAGS) {
     if (!clockCounts[kind]) continue;
     tags.push({ key: kind, label: one, plural: many, n: clockCounts[kind], tone: "scheduling" });
+  }
+
+  // THE SAME SHIFT ENTERED TWICE - a record error of the schedule's own
+  // making, so it wears the office tone; blaming the person for a doubled
+  // booking is exactly what the tone note above warns against. The employee's
+  // card asks the question; this chip is what keeps the day visible to the
+  // office whatever they answer, or if they never answer at all.
+  const dupDays = (data.days || []).filter((d) => duplicateSegments(d).length).length;
+  if (dupDays) {
+    tags.push({
+      key: "duplicate-shift",
+      label: "day with the same shift entered twice",
+      plural: "days with the same shift entered twice",
+      n: dupDays,
+      tone: "scheduling",
+    });
   }
 
   const overCap = overCapBookings(byDate);

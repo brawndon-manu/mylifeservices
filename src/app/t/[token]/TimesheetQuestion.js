@@ -236,6 +236,35 @@ function copyFor(q, standing) {
         noEffect: <>The record stays as it is, with no meal break on that day.</>,
       };
 
+    case "duplicateDay": {
+      // "twice" for the common case, a count for the day that ever exceeds it
+      const times = q.row.copies === 2 ? "twice" : `${q.row.copies} times`;
+      return {
+        title: "Did you work this shift twice?",
+        short: "The same shift is entered twice",
+        body: (
+          <>
+            On <b>{q.date}</b> the schedule has the same <b>{q.row.from} to {q.row.to}</b> shift
+            entered <b>{times}</b>, and the day counts <b>{q.row.hours} hours</b>. Worked once,
+            it is <b>{q.row.single} hours</b>.
+          </>
+        ),
+        evidence: [
+          `Entered: ${q.row.from} to ${q.row.to}, ${times}`,
+          `The day counts ${q.row.hours} hours · worked once it is ${q.row.single}`,
+        ],
+        facts: [
+          { label: "Entered", value: `${q.row.from} to ${q.row.to}, ${times}` },
+          { label: "The day counts", value: `${q.row.hours} hrs` },
+          { label: "Worked once", value: `${q.row.single} hrs`, ours: true },
+        ],
+        yes: { label: "Yes, I worked it twice", why: "Both entries are shifts you worked." },
+        no: { label: "No, I worked it once", why: "One of the entries is a duplicate." },
+        yesEffect: <>The record stays as it is.</>,
+        noEffect: <>The duplicate is recorded as an entry to remove in QuickSolve.</>,
+      };
+    }
+
     case "restNoTimes":
       return {
         title: "Did you take this break?",

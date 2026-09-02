@@ -615,6 +615,42 @@ export function mealBookedInside(entry) {
 // See the misc loop below: it decides whether a settled day is still asked
 // about. Callers that cannot tell get the old behaviour, which is why it is an
 // option and not a required argument.
+// A day's segments that repeat an earlier one exactly - same start minute,
+// same end minute. Exact duplicates only, on purpose: overlapping DIFFERENT
+// windows is the audit's double-booking territory, and a near-match here
+// would drag real back-to-back bookings in. Shared with person-tags.js, so
+// the admin chip and the employee card cannot disagree about what counts.
+export function duplicateSegments(day) {
+  const seen = new Set();
+  const dups = [];
+  for (const s of day?.segments || []) {
+    const a = s?.start?.min;
+    const b = s?.end?.min;
+    if (a == null || b == null) continue;
+    const key = `${a}-${b}`;
+    if (seen.has(key)) dups.push(s);
+    else seen.add(key);
+  }
+  return dups;
+}
+
+// what the day comes to with every duplicated window counted once - the
+// figure the card quotes beside the doubled one
+export function singleCountHours(day) {
+  const seen = new Set();
+  let min = 0;
+  for (const s of day?.segments || []) {
+    const a = s?.start?.min;
+    const b = s?.end?.min;
+    if (a == null || b == null) continue;
+    const key = `${a}-${b}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    min += s.min ?? Math.max(0, b - a);
+  }
+  return r2(min / 60);
+}
+
 export function buildQuestions(data, { restRows, sourceName, reviewerSettled } = {}) {
   if (!data) return [];
   const days = data.days || [];
@@ -773,6 +809,41 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
         blocks: d.miscBlocks.map((b) => ({ from: b.from, to: b.to, minutes: b.min })),
         minutes: d.miscMin || 0,
         hours: Math.round(((d.miscMin || 0) / 60) * 100) / 100,
+      },
+    });
+  }
+
+  // THE SAME SHIFT ENTERED TWICE. Matias 08/28: the export printed her
+  // 8:30a-3p Day Program shift twice on one page, QSP's own daily column said
+  // 13.00, and every count downstream doubled with it - hours, rests owed,
+  // rests taken (her one recorded ten counted twice). The duplicate is
+  // QuickSolve's to remove; what this side owes is the ask, because the next
+  // person may not report it the way she did. Measured 2026-09-02: exactly 1
+  // of 946 days across both live batches.
+  //
+  // NEVER SUPPRESSED BY SILENCE and never patched by the answer - see
+  // patchesFor. The one thing that stops the ask is the doubled figure
+  // already being off the day (an accepted hours claim), because then the
+  // sheet no longer carries the fault the card would point at.
+  for (const d of days) {
+    const dups = duplicateSegments(d);
+    if (!dups.length) continue;
+    const single = singleCountHours(d);
+    if ((d.paidHours || 0) <= single + 0.01) continue;
+    const s = dups[0];
+    const copies = (d.segments || []).filter(
+      (x) => x?.start?.min === s.start?.min && x?.end?.min === s.end?.min,
+    ).length;
+    out.push({
+      kind: "duplicateDay",
+      date: d.date,
+      at: s.start?.raw || "",
+      moves: 0,
+      row: {
+        from: s.start?.raw || "", to: s.end?.raw || "",
+        copies,
+        hours: r2(d.paidHours || 0),
+        single,
       },
     });
   }
@@ -1665,6 +1736,13 @@ export function patchesFor(question, choice, day) {
       // kind somebody forgot - and forgetting one is silent, because the default
       // patches nothing and nothing errors. Spelled out so "no case" can only
       // ever mean "nobody wrote one".
+      return {};
+    case "duplicateDay":
+      // NEITHER ANSWER MOVES A FIGURE HERE EITHER, on purpose. The doubled
+      // hours are QuickSolve's own record - its printed daily column carries
+      // them - and pay only moves once the office removes the duplicate there
+      // and the period re-uploads. A "no" grows the office's edit line
+      // instead; see qsp-changes.js.
       return {};
     default:
       return {};

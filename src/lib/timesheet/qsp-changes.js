@@ -96,6 +96,17 @@ function changesForRow(c) {
       action: "Swap them so it reads the right way round." });
   }
 
+  // THE SHIFT ENTERED TWICE, answered "worked once". The record holds a
+  // duplicate and removing it is the office's edit - the frozen card carries
+  // the window, and a row written without one still reads as a sentence.
+  if (kind === "q_duplicateDay" && (c.choice === "no" || c.status === "declined")) {
+    const r = c.question?.row || {};
+    const win = r.from && r.to ? `${r.from} to ${r.to} shift` : "shift";
+    out.push({ date: c.date,
+      fact: `The ${win} is entered twice and was worked once.`,
+      action: "Remove the duplicate entry." });
+  }
+
   // REPORTS MANAGEMENT ACCEPTED. Each accepted kind that implies an edit
   // gets its line; the ones that agree with the record do not - a missed
   // break or a mistaken entry leaves QuickSolve already right.

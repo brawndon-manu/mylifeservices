@@ -566,6 +566,11 @@ export function employeeResolution(correction, question = null) {
         ? "You said you took a full thirty minutes for lunch anyway."
         : "You said you did not get a meal break that day.";
 
+    case "duplicateDay":
+      return yes
+        ? "You said you worked both of the listed shifts."
+        : "You said the shift is entered twice and you worked it once.";
+
     default:
       return null;
   }
