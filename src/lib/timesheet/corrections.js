@@ -79,8 +79,7 @@ export const CORRECTION_KINDS = {
     scope: "newDay",
     asksHours: true,
     hint: "How many hours did you work that day?",
-    hoursHelp:
-      "Total time on the clock, not counting an unpaid lunch. Put the date in the box below so payroll knows which day.",
+    hoursHelp: "Total time on the clock, not counting an unpaid lunch.",
   },
   day_extra: {
     label: "There's a day here I didn't work",

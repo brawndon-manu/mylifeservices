@@ -1048,9 +1048,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             </div>
           )}
 
+          {/* `period` feeds the missing-day date list - a missing day is one
+              of the period's dates the sheet has no row for */}
           <ReportProblem
             token={token}
             days={ts.data?.days || []}
+            period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
             submitAction={act(submitTimesheetCorrections)}
           />
         </>

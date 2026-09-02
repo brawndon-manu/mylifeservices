@@ -68,7 +68,7 @@ import { sendSignedTimesheetCopy } from "@/lib/timesheet-signed-email";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
 // the day-program review's time-off question: what a valid answer is, and the
 // lines it adds to both review emails
-import { TIME_OFF_KIND, TIME_OFF_STATUS, cleanTimeOffEntries, timeOffReviewItems } from "@/lib/timesheet/time-off";
+import { TIME_OFF_KIND, TIME_OFF_STATUS, cleanTimeOffEntries, timeOffReviewItems, periodDates } from "@/lib/timesheet/time-off";
 import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
@@ -1982,11 +1982,21 @@ export async function submitTimesheetCorrections({ token, items }) {
     const spec = CORRECTION_KINDS[kind];
 
     // a date has to be one this sheet actually lists, otherwise an accepted
-    // correction would patch a day that doesn't exist. "a day that isn't
-    // listed" carries its date in the note instead, for a human to read.
+    // correction would patch a day that doesn't exist.
+    //
+    // "A day that isn't listed" is the one INVERTED case: its date has to be a
+    // period date the sheet does NOT list, and it is required - the date used
+    // to ride the note in prose, and accepting the claim then wrote nothing,
+    // silently, because the override is keyed on the row's date. Bustamante
+    // 08/28 is why this is a real field now.
     let date = raw?.date ? String(raw.date).slice(0, 12) : null;
-    if (date && !knownDates.has(date)) date = null;
-    if (spec.scope === "day" && !date) continue;
+    if (spec.scope === "newDay") {
+      const inPeriod = periodDates(ts.batch.periodFrom, ts.batch.periodTo);
+      if (!date || !inPeriod.includes(date) || knownDates.has(date)) continue;
+    } else {
+      if (date && !knownDates.has(date)) date = null;
+      if (spec.scope === "day" && !date) continue;
+    }
 
     let claimedHours = null;
     if (spec.asksHours && raw?.claimedHours != null) {

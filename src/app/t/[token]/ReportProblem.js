@@ -13,6 +13,9 @@ import { useState } from "react";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
 // the same loose reading the question cards use, so "331" means 3:31 here too
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
+// the period's own day list, the same one the time-off card offers - a
+// missing day is by definition one of the period's dates the sheet lacks
+import { periodDates } from "@/lib/timesheet/time-off";
 
 function kindsForDay(day) {
   if (!day) return ["other"];
@@ -30,10 +33,15 @@ function kindsForDay(day) {
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
-export default function ReportProblem({ token, days, submitAction }) {
+export default function ReportProblem({ token, days, submitAction, period = null }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [date, setDate] = useState(days[0]?.date || "");
+  // WHICH date the missing day was. It used to ride the note in prose, and an
+  // accepted claim then patched nothing - the override write is keyed on the
+  // row's date, and a null date was dropped without a word. Bustamante 08/28,
+  // 2026-09-02: accepted, "Adds a 8.00 hr day", and 88 stayed 88.
+  const [newDayDate, setNewDayDate] = useState("");
   const [kind, setKind] = useState("hours");
   const [hours, setHours] = useState("");
   const [times, setTimes] = useState([]);
@@ -81,14 +89,14 @@ export default function ReportProblem({ token, days, submitAction }) {
       setError("Tell us briefly what's wrong.");
       return;
     }
-    if (date === NEW_DAY && !note.trim()) {
-      setError("Tell us which date you worked.");
+    if (date === NEW_DAY && !newDayDate) {
+      setError("Pick the day you worked.");
       return;
     }
     setItems((prev) => [
       ...prev,
       {
-        date: date === NO_DAY || date === NEW_DAY ? null : date,
+        date: date === NO_DAY ? null : date === NEW_DAY ? newDayDate : date,
         kind: activeKind,
         claimedHours: meta?.asksHours && hours ? Number(hours) : null,
         // raw as typed; the server reads them the same way the box did
@@ -221,6 +229,28 @@ export default function ReportProblem({ token, days, submitAction }) {
             <option value={NO_DAY}>Not about one specific day</option>
           </select>
         </label>
+
+        {/* THE MISSING DAY'S OWN DATE, a real field rather than prose in the
+            note. The choices are exactly the period's dates the sheet has no
+            row for, so a date that exists cannot be claimed missing and a
+            date outside the period cannot be picked at all. */}
+        {date === NEW_DAY && (
+          <label className="grid gap-1">
+            <span className="text-sm font-semibold text-foreground">Which day was it?</span>
+            <select
+              value={newDayDate}
+              onChange={(e) => setNewDayDate(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+            >
+              <option value="">Pick the day</option>
+              {(period ? periodDates(period.from, period.to) : [])
+                .filter((d) => !days.some((x) => x.date === d))
+                .map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+            </select>
+          </label>
+        )}
 
         <fieldset className="grid gap-2">
           <legend className="text-sm font-semibold text-foreground">
