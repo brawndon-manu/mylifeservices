@@ -48,10 +48,18 @@ import { parseMileageReport, anyMilesDriven } from "./mileage.js";
 // notes carry Zoom meetings, drop-off addresses and sick notes, and none of
 // those may become a break - which is also why "Break2: Unable due to..."
 // yields nothing: a stated missed break stays a note.
-const NOTE_LABEL = /(?:break\s*#?\s*2|2nd\s+break|second\s+break)\s*(?:at\s*)?[:\-]?\s*/i;
+// "Break taken:" JOINED 2026-09-02, off the 08/16-08/31 batch: 30 rows wrote
+// the second ten that way - "Break taken: 10:00-10:10am" - and none of them
+// were read, so four people's documented tens sat uncounted (Rodriguez
+// Ardila alone had nine). It does not declare itself second the way the
+// spellings above do, and it does not need to: the stitch downstream drops
+// any noted window that overlaps the ten the report already recorded, so a
+// "Break taken" note that merely restates the recorded break credits nothing
+// - measured, exactly one of the 28 readable rows was that duplicate.
+const NOTE_LABEL = /(?:break\s*#?\s*2|2nd\s+break|second\s+break|break\s+taken)\s*(?:at\s*)?[:\-]?\s*/i;
 const NOTE_RANGE = /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i;
 
-function noteBreak(scheduleNotes) {
+export function noteBreak(scheduleNotes) {
   const notes = String(scheduleNotes || "");
   const label = NOTE_LABEL.exec(notes);
   if (!label) return null;
