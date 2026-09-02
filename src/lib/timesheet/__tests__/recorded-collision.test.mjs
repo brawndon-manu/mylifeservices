@@ -33,3 +33,30 @@ test("nothing recorded, nothing readable, nothing stated - no collision", () => 
   assert.equal(collidesWithRecorded(KNOWN, null, 10), false);
   assert.equal(collidesWithRecorded(KNOWN, at(10, 50), 0), false);
 });
+
+// ONE TEN PER SHIFT - QuickSolve holds one 10-minute rest per shift (Mánu
+// 2026-09-02), so a stated ten inside a shift already holding one is refused
+// even at a different time. Two punch-pair shifts: 9a-11a and 1p-3p.
+import { shiftAlreadyHasTen } from "../questions.js";
+
+const DAY = { punches: [{ min: 540 }, { min: 660 }, { min: 780 }, { min: 900 }] };
+
+test("a second ten in the same shift is refused even at a new time", () => {
+  // recorded ten at 10:50 in the 9-11 shift; 9:15 is a different time, same shift
+  assert.equal(shiftAlreadyHasTen(DAY, [650], at(9, 15), 10), true);
+});
+
+test("a ten in the other shift is fine", () => {
+  assert.equal(shiftAlreadyHasTen(DAY, [650], at(13, 30), 10), false);
+});
+
+test("no recorded tens, no punches, no time - nothing refused", () => {
+  assert.equal(shiftAlreadyHasTen(DAY, [], at(9, 15), 10), false);
+  assert.equal(shiftAlreadyHasTen({ punches: [] }, [650], at(9, 15), 10), false);
+  assert.equal(shiftAlreadyHasTen(DAY, [650], null, 10), false);
+});
+
+test("a stated ten outside every shift is another rule's problem", () => {
+  // restTimeFits already refuses it as outside; this one stays quiet
+  assert.equal(shiftAlreadyHasTen(DAY, [650], at(12, 0), 10), false);
+});

@@ -21,7 +21,7 @@ import {
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES, collidesWithRecorded } from "@/lib/timesheet/questions";
+import { buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES, collidesWithRecorded, shiftAlreadyHasTen } from "@/lib/timesheet/questions";
 // the reported-problem card reads times the same loose way the question cards
 // do, and this is the server's own reading of what that box was sent
 import { parseLooseTime } from "@/lib/loose-time";
@@ -3215,6 +3215,29 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
             ok: false, error: "alreadyrecorded", given: raw,
             at: { id: q.id, date: need.date || q.date, slot: need.slot, label: need.label },
           };
+        }
+        // AND ONE TEN PER SHIFT - QuickSolve holds one 10-minute rest per
+        // shift, so a second ten stated into a shift that already has one
+        // (recorded, or stated a slot earlier on this same card) is a record
+        // the office could never enter. See shiftAlreadyHasTen.
+        if (!need.replaces && need.kindOf === "rest") {
+          const dayRow = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
+          const occupied = [
+            ...(need.known || []).map((k) =>
+              hhmmToMin(parseLooseTime(String(k?.from || ""), { assumeWorkday: true }))),
+            ...list
+              .filter((b) => b.kindOf === "rest" && !b.replaces && (b.date ?? null) === (need.date ?? null))
+              .map((b) => hhmmToMin(parseLooseTime(String(b.from || ""), { assumeWorkday: true }))),
+          ];
+          if (dayRow && shiftAlreadyHasTen(dayRow, occupied, start, need.minutes)) {
+            return {
+              ok: false, error: "shifthasten", given: raw,
+              at: {
+                id: q.id, date: need.date || q.date, slot: need.slot, label: need.label,
+                shifts: need.shifts || null,
+              },
+            };
+          }
         }
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
         // client. It only drives the sheet's footnote, but "you typed this" is

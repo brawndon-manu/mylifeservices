@@ -93,6 +93,25 @@ export function collidesWithRecorded(known, startMin, minutes) {
   return false;
 }
 
+// ONE TEN PER SHIFT, because QuickSolve holds one 10-minute rest per shift
+// and a stated time the office cannot enter is not a record - Mánu
+// 2026-09-02: "on qsp we can only add one 10 minute rest break per shift."
+// `occupied` is every ten already on the day - recorded (the slot's own
+// `known`) or stated earlier in the same submission - as start minutes; a
+// stated ten landing inside a punch-pair shift that already holds one is
+// refused. A replaces-slot is exempt at the call site: correcting a recorded
+// ten keeps it as that shift's one ten.
+export function shiftAlreadyHasTen(day, occupied, startMin, minutes = FULL_REST_MIN) {
+  if (startMin == null || !Number.isFinite(startMin)) return false;
+  const shifts = shiftsOf(day);
+  if (!shifts.length) return false;
+  const mine = shifts.find((sh) => startMin >= sh.from && startMin + minutes <= sh.to);
+  if (!mine) return false;
+  return (occupied || []).some(
+    (k) => k != null && Number.isFinite(k) && k >= mine.from && k + minutes <= mine.to,
+  );
+}
+
 export const questionId = (q) =>
   GROUPED.has(q.kind) ? q.kind : `${q.kind}:${q.date}:${q.at || ""}`;
 
