@@ -38,6 +38,9 @@ export default function ReviewTable({
     all: rows.length,
     needsMatch: rows.filter((r) => !r.user).length,
     unsent: rows.filter((r) => r.user && !r.sentAt).length,
+    // the chase list - sent, still unsigned. Not-sent-yet rows have their own
+    // chip, so this one is exactly the people to ring or resend.
+    notSigned: rows.filter((r) => r.sentAt && !r.signedAt).length,
     signed: rows.filter((r) => r.signedAt).length,
     toApprove: rows.filter((r) => r.signedAt && !r.approvedAt).length,
     disputed: rows.filter((r) => r.disputed).length,
@@ -52,6 +55,7 @@ export default function ReviewTable({
   const shown = rows.filter((r) => {
     if (filter === "needsMatch") return !r.user;
     if (filter === "unsent") return r.user && !r.sentAt;
+    if (filter === "notSigned") return r.sentAt && !r.signedAt;
     if (filter === "signed") return !!r.signedAt;
     if (filter === "toApprove") return r.signedAt && !r.approvedAt;
     if (filter === "disputed") return !!r.disputed;
@@ -64,6 +68,7 @@ export default function ReviewTable({
     ["all", "All"],
     ["needsMatch", "Needs a match"],
     ["unsent", "Not sent yet"],
+    ["notSigned", "Not signed"],
     ["waiting", "Waiting on an answer"],
     ["argued", "Corrected us"],
     ["disputed", "Reported a problem"],
