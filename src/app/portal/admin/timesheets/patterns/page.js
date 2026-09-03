@@ -36,7 +36,9 @@ export default async function PatternsPage({ searchParams }) {
   const program = sp?.program === "DP" ? "DP" : "MLS";
 
   const allBatches = await prisma.timesheetBatch.findMany({
-    where: { program },
+    // never audit copies: a period would otherwise count twice in every
+    // repeat-pattern figure the moment its audit copy is uploaded
+    where: { program, auditOnly: false },
     orderBy: { createdAt: "asc" },
     include: {
       timesheets: {

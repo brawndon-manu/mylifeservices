@@ -102,12 +102,21 @@ export async function uploadBatch(formData) {
   // WHICH BATCH THIS IS A CORRECTION TO, when it is one. Empty for an ordinary
   // upload, which is every path below until the write itself.
   const intoBatchId = (formData.get("into") || "").toString().trim() || null;
+  // THE AUDIT LANE, 2026-09-03. An audit copy runs this whole action - same
+  // parsers, same matcher, same generation - and differs in what it needs and
+  // what it becomes: no payroll report, no rest report (both feed payroll
+  // surfaces the audit never reads), the batch lands flagged auditOnly, and
+  // the finished screen goes to the Audit page. A correction upload is never
+  // an audit copy - the target batch already says what it is.
+  const auditOnly = !intoBatchId && (formData.get("audit") || "").toString() === "1";
   // EVERY REFUSAL COMES BACK TO THE FORM IT WAS SENT FROM. Eighteen of these
   // named the plain upload page, so a correction that tripped any early check -
   // wrong file, unreadable export - came back as a fresh full upload with the
   // batch it was meant to land on silently dropped. Identical for an ordinary
   // upload, which carries no `into`.
-  const NEW = `/portal/admin/timesheets/new?${intoBatchId ? `into=${intoBatchId}&` : ""}`;
+  const NEW = auditOnly
+    ? "/portal/admin/audit/new?"
+    : `/portal/admin/timesheets/new?${intoBatchId ? `into=${intoBatchId}&` : ""}`;
 
   // A FILE ARRIVES ONE OF TWO WAYS NOW. As the picked File riding the form
   // POST - the way it always has - or as a reference to a blob the browser
@@ -168,14 +177,17 @@ export async function uploadBatch(formData) {
   // timesheet exactly - so a mismatch means one of the two files is from a
   // different pull, which is worth knowing before 59 sheets go out.
   const payFile = pickOf("payroll");
-  if (!payFile) redirect(`${NEW}error=nopayroll`);
+  // an audit copy carries no payroll report - reconciliation and mileage are
+  // payroll surfaces, and the audit reads neither
+  if (!payFile && !auditOnly) redirect(`${NEW}error=nopayroll`);
 
   // The Rest Periods Report is back. It was briefly dropped with the move to
   // three reports, and that took every rest premium with it: nothing else
   // records a rest break, so all 549 qualifying days came back unanswerable.
   // It is the only definitive source for the bigger half of the premium total.
   const restFile = pickOf("rests");
-  if (!restFile) redirect(`${NEW}error=norests`);
+  // nor a rest report - premiums are the other payroll surface
+  if (!restFile && !auditOnly) redirect(`${NEW}error=norests`);
 
   // QSClock came back on 2026-08-22, optional. It was held out on 08-06 when the
   // export set was cut to three, and the columns below are why it returned:
@@ -580,7 +592,7 @@ export async function uploadBatch(formData) {
   let restsUrl = null;
   let restsMalformed = [];
   let restsByDate = [];
-  {
+  if (restFile) {
     P.stage = "rests";
     await setProgress(prog, P);
     const rbytes = await bytesOfPick(restFile);
@@ -625,7 +637,7 @@ export async function uploadBatch(formData) {
   let payroll = null;
   let payrollUrl = null;
   let payrollSummary = null;
-  {
+  if (payFile) {
     P.stage = "payroll";
     await setProgress(prog, P);
     const pbytes = await bytesOfPick(payFile);
@@ -729,6 +741,8 @@ export async function uploadBatch(formData) {
     restsByDate: restsByDate.length ? restsByDate : null,
     payrollUrl,
     payrollName: payrollUrl ? payFile?.name || null : null,
+    // the audit lane: this batch feeds the Audit page and nothing else
+    auditOnly,
     notesUrl,
     notesName: notesUrl ? notesFile?.name || null : null,
     serviceNotesUrl,
@@ -1477,9 +1491,13 @@ export async function uploadBatch(formData) {
   // screen to click.
   return {
     ok: true,
-    href: `/portal/admin/timesheets/${batch.id}${
-      scheduleError ? `?schedfail=${encodeURIComponent(scheduleError)}` : ""
-    }`,
+    // an audit copy's home is the Audit page - never the batch page, whose
+    // main button is Send all
+    href: auditOnly
+      ? `/portal/admin/audit/${batch.id}`
+      : `/portal/admin/timesheets/${batch.id}${
+          scheduleError ? `?schedfail=${encodeURIComponent(scheduleError)}` : ""
+        }`,
     summary,
   };
 }
@@ -1619,10 +1637,14 @@ export async function sendTimesheets(batchId, formData) {
     // in the file where getting it wrong is not a rendering bug.
     select: {
       id: true, periodFrom: true, periodTo: true, restsByDate: true,
-      testOnly: true, testEmail: true,
+      testOnly: true, testEmail: true, auditOnly: true,
     },
   });
   if (!batch) redirect("/portal/admin/timesheets");
+  // an audit copy exists to be read, never sent. It is absent from every
+  // screen with a send button, so reaching this is URL surgery - refused the
+  // same way a superseded batch is.
+  if (batch.auditOnly) redirect(`/portal/admin/audit/${batch.id}`);
 
   // a row with no generated PDF would email someone a link to a 404, so it is
   // never sendable - the review screen flags those separately. a sheet with an
@@ -4080,7 +4102,7 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
       id: true, batchId: true, signedAt: true, disputedAt: true, heldAt: true, sourceName: true,
       intendedEmail: true,
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
-      batch: { select: { periodFrom: true, periodTo: true, testOnly: true, testEmail: true } },
+      batch: { select: { periodFrom: true, periodTo: true, testOnly: true, testEmail: true, auditOnly: true } },
       corrections: {
         where: { status: { not: "open" } },
         // `question` is the frozen card, which employeeResolution reads for
@@ -4092,6 +4114,9 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     },
   });
   if (!ts) return { ok: false, error: "auth" };
+  // the /t page 404s an audit copy's sheet; a token posted straight at the
+  // action gets the same nothing
+  if (ts.batch?.auditOnly) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
   // you shouldn't attest to a document you've told us is wrong. the page hides
   // the signer while a report is open; this is the server-side half of that.

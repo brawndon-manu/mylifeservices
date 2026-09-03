@@ -87,6 +87,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     },
   });
   if (!batch) notFound();
+  // an audit copy has no business on this screen - its home is the Audit page,
+  // and the buttons here (Send all first among them) must never see it
+  if (batch.auditOnly) redirect(`/portal/admin/audit/${batch.id}`);
 
   const staff = await prisma.user.findMany({
     where: { deactivatedAt: null },

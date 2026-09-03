@@ -21,8 +21,9 @@ export default async function TimesheetBatchesPage() {
     // THIS LIST IS THE AGENCY'S. The day program's batches live under their
     // own card at /portal/admin/day-program - Mánu 2026-08-18: "it needs to
     // be its own seperate entity ... they cant mix." Same tables, same
-    // machinery, never the same screen.
-    where: { program: "MLS" },
+    // machinery, never the same screen. Audit copies live on the Audit page
+    // the same way - never here, where the main button is Send all.
+    where: { program: "MLS", auditOnly: false },
     orderBy: { createdAt: "desc" },
     include: {
       uploadedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },

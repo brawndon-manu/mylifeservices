@@ -49,10 +49,16 @@ export default async function AuditPage({ searchParams }) {
   // twenty-six megabytes to print twenty-six dates. The schema says so beside
   // the field.
   const batches = await prisma.timesheetBatch.findMany({
-    where: { program: "MLS", serviceNotes: { isNot: null } },
+    // a period appears here through its payroll upload's service notes, or as
+    // an audit copy - fresh exports uploaded for this page alone, superseding
+    // nothing on the payroll side
+    where: {
+      program: "MLS",
+      OR: [{ serviceNotes: { isNot: null } }, { auditOnly: true }],
+    },
     orderBy: { createdAt: "desc" },
     select: {
-      id: true, periodFrom: true, periodTo: true,
+      id: true, periodFrom: true, periodTo: true, auditOnly: true,
       notesName: true, serviceNotesName: true, createdAt: true,
       serviceNotes: { select: { noteCount: true, pdfCount: true, serviceCount: true } },
       uploadedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -66,10 +72,10 @@ export default async function AuditPage({ searchParams }) {
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Audit</h1>
         <Link
-          href="/portal/admin/timesheets/new"
+          href="/portal/admin/audit/new"
           className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
         >
-          Upload a pay period
+          Upload an audit copy
         </Link>
       </div>
 
@@ -162,8 +168,13 @@ export default async function AuditPage({ searchParams }) {
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 transition hover:border-brand"
               >
                 <span>
-                  <span className="block text-lg font-semibold text-foreground">
+                  <span className="flex flex-wrap items-center gap-2 text-lg font-semibold text-foreground">
                     {b.periodFrom} to {b.periodTo}
+                    {b.auditOnly && (
+                      <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
+                        Audit copy
+                      </span>
+                    )}
                   </span>
                   <span className="mt-0.5 block text-xs text-muted">
                     {b.serviceNotes?.noteCount || 0} notes
@@ -173,7 +184,9 @@ export default async function AuditPage({ searchParams }) {
                       ? ` · ${b.serviceNotes.pdfCount} from the PDF, ${b.serviceNotes.serviceCount} from the .xls`
                       : b.serviceNotes?.serviceCount
                         ? " · the .xls only"
-                        : " · the PDF only"}
+                        : b.serviceNotes
+                          ? " · the PDF only"
+                          : " · no service notes uploaded"}
                     {b.uploadedBy ? ` · uploaded by ${preferredName(b.uploadedBy)}` : ""}
                   </span>
                 </span>

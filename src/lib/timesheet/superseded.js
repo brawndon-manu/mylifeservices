@@ -26,7 +26,10 @@ export async function supersededBy(batchId) {
   if (!batchId) return null;
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
-    select: { id: true, periodFrom: true, periodTo: true, createdAt: true, program: true },
+    select: {
+      id: true, periodFrom: true, periodTo: true, createdAt: true,
+      program: true, auditOnly: true,
+    },
   });
   if (!batch) return null;
   return prisma.timesheetBatch.findFirst({
@@ -38,6 +41,12 @@ export async function supersededBy(batchId) {
       // replaced - sixty sheets out for signature going read-only because a
       // different payroll arrived.
       program: batch.program,
+      // AND SAME KIND. An audit copy exists to be read against fresh QSP
+      // exports without touching the payroll batch - Mánu 2026-09-03: "the
+      // newer data doesnt override the exisiting signed off sheets." So a
+      // payroll batch is only ever superseded by a newer payroll batch, and
+      // an audit copy only by a newer audit copy.
+      auditOnly: batch.auditOnly,
       createdAt: { gt: batch.createdAt },
     },
     orderBy: { createdAt: "desc" },

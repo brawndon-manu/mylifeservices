@@ -24,7 +24,7 @@ export async function buildAudit(id) {
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     select: {
-      id: true, periodFrom: true, periodTo: true,
+      id: true, periodFrom: true, periodTo: true, auditOnly: true,
       clockUrl: true, clockName: true, clockFindings: true,
       notesName: true, serviceNotesName: true,
       scheduleNotesUrl: true, scheduleNotesName: true,

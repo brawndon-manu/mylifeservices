@@ -685,6 +685,14 @@ model TimesheetBatch {
   // `markKey` exists.
   testOnly       Boolean   @default(false)
   testEmail      String?
+  // THE AUDIT LANE, 2026-09-03. Mánu: "the audit card and the timesheets will
+  // be its own seperate data so the newer data doesnt override the exisiting
+  // signed off sheets." An audit copy is a full upload of fresh QSP exports
+  // that exists for the Audit page only: it never supersedes a payroll batch
+  // (and is never superseded by one - supersede runs within a kind), it is
+  // absent from every payroll surface, and nothing sends or signs from it.
+  // Shift decisions ride over anyway because ShiftReview keys on the shift.
+  auditOnly      Boolean   @default(false)
   // WHICH PROGRAM'S PAYROLL THIS IS. "MLS" for the agency, "DP" for the day
   // program, and the default makes every batch that predates the column an
   // explicit MLS one. The group key on the timesheets screen and supersededBy

@@ -107,7 +107,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       batch: {
         select: {
           id: true, periodFrom: true, periodTo: true, restsByDate: true,
-          testOnly: true, program: true,
+          testOnly: true, program: true, auditOnly: true,
         },
       },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
@@ -140,6 +140,10 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     },
   });
   if (!ts) notFound();
+  // an audit copy's sheets are parsed data for the Audit page, never a review
+  // anybody is asked to sign - their links are never sent, and one that leaks
+  // anyway opens nothing
+  if (ts.batch?.auditOnly) notFound();
 
   // WHETHER PREVIEW ACTUALLY REFUSES, which is not the same question as whether
   // this IS a preview.

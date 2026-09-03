@@ -100,7 +100,10 @@ function FileRow({ id, label, selected, size, onPick, tone, optional = false, ac
   );
 }
 
-export default function UploadForm({ action, aside, into = null, blobUpload = false }) {
+// `audit` is the Audit page's lane: same form, same action, minus the payroll
+// and rest-break pickers - those two feed payroll surfaces the audit never
+// reads. The action sees audit=1 and lands the batch flagged auditOnly.
+export default function UploadForm({ action, aside, into = null, blobUpload = false, audit = false }) {
   // the action returns instead of redirecting, so the finished screen can be
   // shown before the batch page takes over. errors still redirect back here.
   const [result, formAction] = useActionState(
@@ -150,8 +153,12 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
   const sourceFiles = [
     { role: "Timesheet", kind: "pdf", name },
     { role: "Schedule", kind: "pdf", name: schedName },
-    { role: "Payroll", kind: "xls", name: payrollName },
-    { role: "Rest breaks", kind: "xls", name: restsName },
+    ...(audit
+      ? []
+      : [
+          { role: "Payroll", kind: "xls", name: payrollName },
+          { role: "Rest breaks", kind: "xls", name: restsName },
+        ]),
     { role: "Clocking", kind: "xls", name: clockName },
     { role: "Service notes", kind: "pdf", name: notesName },
     { role: "Service notes", kind: "xls", name: serviceNotesName },
@@ -169,11 +176,18 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
   // again, this is what will disagree and show it
   function onSubmit(e) {
     const f = formRef.current;
-    for (const [id, what] of [["schedule", "Employee Schedules"], ["payroll", "Simple Payroll Processing Report"], ["rests", "Rest Periods Report"]]) {
+    const requiredRows = audit
+      ? [["schedule", "Employee Schedules"]]
+      : [["schedule", "Employee Schedules"], ["payroll", "Simple Payroll Processing Report"], ["rests", "Rest Periods Report"]];
+    for (const [id, what] of requiredRows) {
       const el = f?.querySelector(`#${id}`);
       if (el && el.files.length === 0) {
         e.preventDefault();
-        window.alert(`The ${what} export is required. Without all four, the premium hours can't be evidenced.`);
+        window.alert(
+          audit
+            ? `The ${what} export is required. Without it, no shift can be lined up against its booking.`
+            : `The ${what} export is required. Without all four, the premium hours can't be evidenced.`,
+        );
         return;
       }
     }
@@ -281,6 +295,10 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
             `uploadBatch`, which runs every parse and check the same way and
             differs only in the write. */}
         {into ? <input type="hidden" name="into" value={into} /> : null}
+        {/* the audit lane. Read by `uploadBatch`: payroll and rests optional,
+            the batch lands flagged auditOnly, the finished screen is the
+            Audit page. */}
+        {audit ? <input type="hidden" name="audit" value="1" /> : null}
 
       {/* the pickers go away once it starts. four "Browse…" buttons that can't
           be used are noise on a screen you are waiting on - the files reappear
@@ -303,7 +321,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         </p>
         {unplaced.length > 0 && (
           <p className="mb-4 text-xs font-semibold text-rose-600 dark:text-rose-400">
-            Not one of the eight exports, so it was not placed: {unplaced.join(", ")}
+            Not one of the {audit ? "six" : "eight"} exports, so it was not placed: {unplaced.join(", ")}
           </p>
         )}
         <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
@@ -332,6 +350,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         }}
       />
 
+      {!audit && (<>
       <FileRow
         id="payroll"
         sendingPct={sending ? sending.payroll ?? null : null}
@@ -357,6 +376,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
           setSizes((p) => ({ ...p, rests: e.target.files?.[0]?.size || 0 }));
         }}
       />
+      </>)}
 
       {/* BACK AFTER 2026-08-06, and optional, 2026-08-22. It was dropped when
           the export set was cut to three; it returns for monitoring only -
