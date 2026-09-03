@@ -140,12 +140,20 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
     <section className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin/meeting-attendance">Back to meeting attendance</BackLink>
-        <Link
-          href={`/portal/announcements/${m.id}?from=meetingDetail`}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-        >
-          View announcement →
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={`/portal/admin/meeting-attendance/${m.id}/pdf${office ? `?office=${office}` : ""}`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download PDF
+          </a>
+          <Link
+            href={`/portal/announcements/${m.id}?from=meetingDetail`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            View announcement →
+          </Link>
+        </div>
       </div>
 
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
