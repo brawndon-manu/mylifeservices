@@ -6,6 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { payrollName } from "@/lib/contacts";
 import { renderPayoutReport } from "@/lib/timesheet/payout-pdf";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
+import { miscTimeOffHours } from "@/lib/timesheet/time-off";
 
 // same figures as the payout page and its CSV, as a document. built on demand so
 // it can never disagree with the screen.
@@ -66,15 +67,20 @@ export async function GET(_req, { params }) {
       {
         periodFrom: batch.periodFrom,
         periodTo: batch.periodTo,
-        rows: batch.timesheets.map((t) => ({
+        rows: batch.timesheets.map((t) => {
+          // Misc-classified PTO/sick moves out of worked and into Time off -
+          // payable is untouched: (paid - misc) + premium + (calendar + misc)
+          // equals what it always was.
+          const misc = miscTimeOffHours(t.data?.days);
+          return {
           who: payrollName(t.user, t.sourceName),
           matched: !!t.userId,
-          regularHours: t.regularHours,
+          regularHours: Math.max(0, (t.regularHours || 0) - misc.total),
           otHours: t.otHours,
           doubleHours: t.doubleHours,
-          paidHours: t.paidHours,
+          paidHours: Math.max(0, (t.paidHours || 0) - misc.total),
           premiumHours: standing.byId[t.id]?.charged ?? 0,
-          timeOffHours: (t.userId && timeOffBy.get(t.userId)) || 0,
+          timeOffHours: ((t.userId && timeOffBy.get(t.userId)) || 0) + misc.total,
           // mileage off the payroll report, and whether the sheet has been
           // signed - Mánu 2026-08-17. Both read at request time, so a download
           // taken after somebody signs shows it.
@@ -85,7 +91,8 @@ export async function GET(_req, { params }) {
           // ONLY the open ones. The query now also returns the `q_` answers, and
           // counting those would mark everybody as having reported a problem.
           disputed: t.corrections.some((c) => c.status === "open"),
-        })),
+          };
+        }),
         standing,
       },
       {

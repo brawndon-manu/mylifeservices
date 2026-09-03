@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
+import { miscTimeOffHours } from "@/lib/timesheet/time-off";
 
 // the payout figures as data. payroll keys these in somewhere else, and typing
 // them off a PDF is how a digit goes missing.
@@ -94,16 +95,24 @@ export async function GET(_req, { params }) {
   for (const ts of batch.timesheets) {
     const charged = standing.byId[ts.id]?.charged ?? 0;
     const assumptions = standing.byId[ts.id]?.assumptions ?? 0;
-    const off = (ts.userId && timeOffBy.get(ts.userId)) || { pto: 0, sick: 0 };
-    const payable = (ts.paidHours || 0) + charged + off.pto + off.sick;
-    t.reg += ts.regularHours || 0;
+    const cal = (ts.userId && timeOffBy.get(ts.userId)) || { pto: 0, sick: 0 };
+    // Misc time classified as PTO/sick moves columns rather than adding -
+    // it is already inside the QSP-paid figures, so worked shrinks by what
+    // the PTO/Sick columns gain and payable is untouched by construction.
+    const misc = miscTimeOffHours(ts.data?.days);
+    const workedReg = Math.max(0, (ts.regularHours || 0) - misc.total);
+    const worked = Math.max(0, (ts.paidHours || 0) - misc.total);
+    const pto = cal.pto + misc.pto;
+    const sick = cal.sick + misc.sick;
+    const payable = (ts.paidHours || 0) + charged + cal.pto + cal.sick;
+    t.reg += workedReg;
     t.ot += ts.otHours || 0;
     t.dbl += ts.doubleHours || 0;
-    t.paid += ts.paidHours || 0;
+    t.paid += worked;
     t.prem += charged;
     t.assumptions += assumptions;
-    t.pto += off.pto;
-    t.sick += off.sick;
+    t.pto += pto;
+    t.sick += sick;
     t.payable += payable;
     // reimbursed per mile rather than paid as hours, so it is summed on its own
     // and never folded into payable
@@ -114,14 +123,14 @@ export async function GET(_req, { params }) {
         ts.user ? preferredName(ts.user) : ts.sourceName,
         ts.sourceName,
         ts.userId ? "yes" : "no",
-        r2(ts.regularHours),
+        r2(workedReg),
         r2(ts.otHours),
         r2(ts.doubleHours),
-        r2(ts.paidHours),
+        r2(worked),
         r2(charged),
         r2(assumptions),
-        r2(off.pto),
-        r2(off.sick),
+        r2(pto),
+        r2(sick),
         r2(payable),
         r2(ts.data?.qspMiles),
         ts.partialWeek ? "yes" : "no",

@@ -37,6 +37,26 @@ export function timeOffLine(entries) {
   return parts.length ? parts.join(" · ") : null;
 }
 
+// THE MISC-CLASSIFIED TIME OFF INSIDE A SHEET'S OWN HOURS. An MLS Misc block
+// answered or classified as PTO or sick is already paid time in QSP's
+// printed figures - Malacova's 88 holds her eleven PTO days - so on the
+// payout surfaces those hours MOVE columns (out of worked, into PTO/Sick)
+// rather than adding: payroll keys each bucket under its own code and sick
+// balances track, and Total payable cannot change by construction. The day
+// program's nominal-punch PTO days (isPto/ptoHours) ride the same way.
+// Mánu 2026-09-03: "does ILS show the sick pay and PTO in the reports based
+// off of what chosen for misc?" - it did not, and now it does.
+export function miscTimeOffHours(days) {
+  let pto = 0;
+  let sick = 0;
+  for (const d of days || []) {
+    if (d?.miscKind === "pto") pto += (d.miscMin || 0) / 60;
+    else if (d?.miscKind === "sick") sick += (d.miscMin || 0) / 60;
+    if (d?.isPto) pto += d.ptoHours || 0;
+  }
+  return { pto: r2(pto), sick: r2(sick), total: r2(pto + sick) };
+}
+
 // the payout report's split: PTO and Sick summed apart, because payroll keys
 // each under its own code, plus the total that joins Total payable.
 export function timeOffTotals(entries) {

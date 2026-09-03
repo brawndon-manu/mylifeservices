@@ -6,6 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
+import { miscTimeOffHours } from "@/lib/timesheet/time-off";
 
 export const metadata = { title: "Payout report", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -65,19 +66,24 @@ export default async function PayoutReportPage({ params }) {
     timeOffBy.set(p.personKey, cur);
   }
 
-  const rows = batch.timesheets.map((t) => ({
+  const rows = batch.timesheets.map((t) => {
+    // Misc time classified as PTO/sick sits INSIDE the QSP-paid figures, so
+    // it moves columns here rather than adding - worked shrinks by exactly
+    // what PTO/Sick gain, and payable is untouched by construction.
+    const misc = miscTimeOffHours(t.data?.days);
+    return {
     id: t.id,
     who: t.user ? preferredName(t.user) : t.sourceName,
     sourceName: t.sourceName,
     matched: !!t.userId,
-    regularHours: t.regularHours,
+    regularHours: Math.max(0, (t.regularHours || 0) - misc.total),
     otHours: t.otHours,
     doubleHours: t.doubleHours,
-    paidHours: t.paidHours,
+    paidHours: Math.max(0, (t.paidHours || 0) - misc.total),
     premiumHours: standing.byId[t.id]?.charged ?? 0,
     assumptionHours: standing.byId[t.id]?.assumptions ?? 0,
-    ptoHours: (t.userId && timeOffBy.get(t.userId)?.pto) || 0,
-    sickHours: (t.userId && timeOffBy.get(t.userId)?.sick) || 0,
+    ptoHours: ((t.userId && timeOffBy.get(t.userId)?.pto) || 0) + misc.pto,
+    sickHours: ((t.userId && timeOffBy.get(t.userId)?.sick) || 0) + misc.sick,
     payable:
       (t.paidHours || 0)
       + (standing.byId[t.id]?.charged ?? 0)
@@ -94,7 +100,8 @@ export default async function PayoutReportPage({ params }) {
     // ONLY the open ones - a `q_` row is an ANSWER, not a reported problem
     disputed: t.corrections.some((c) => c.status === "open"),
     recomputed: !!t.recomputedAt,
-  }));
+    };
+  });
 
   const sum = (k) => rows.reduce((n, r) => n + (r[k] || 0), 0);
   const totals = {

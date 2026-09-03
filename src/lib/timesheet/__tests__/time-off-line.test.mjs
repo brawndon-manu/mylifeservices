@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PDFDocument, PDFArray, decodePDFRawStream } from "pdf-lib";
-import { timeOffLine, timeOffTotals } from "../time-off.js";
+import { timeOffLine, timeOffTotals, miscTimeOffHours } from "../time-off.js";
 import { renderSheet } from "../render-sheet.js";
 
 // Recorded time off on the sheet and in the payout - Mánu's ruling 2026-09-02
@@ -130,4 +130,19 @@ test("an accepted missing day names itself instead of claiming rounding", async 
     "the added day is named",
   );
   assert.ok(!text.includes(hex("The difference is rounding")), "rounding is not claimed");
+});
+
+test("misc-classified time off splits by kind and ignores worked misc", () => {
+  const t = miscTimeOffHours([
+    { miscKind: "pto", miscMin: 480 },
+    { miscKind: "sick", miscMin: 240 },
+    // answered as worked - stays worked time
+    { miscKind: "worked", miscWorked: true, miscMin: 60 },
+    // unclassified misc - nobody has said what it was, so it moves nothing
+    { miscMin: 120 },
+    // the day program's nominal-punch PTO day
+    { isPto: true, ptoHours: 8 },
+  ]);
+  assert.deepEqual(t, { pto: 16, sick: 4, total: 20 });
+  assert.deepEqual(miscTimeOffHours([]), { pto: 0, sick: 0, total: 0 });
 });
