@@ -183,6 +183,16 @@ export async function renderSheet(ts, {
         ...qspComments,
         ...formatBreakComments(breakReasons, qspComments.length)
           .map((text) => ({ text, italic: true })),
+        // THE SECOND TEN THE STATEMENT ALONE RECORDS - Mánu 2026-09-02: "them
+        // telling us then thats enough, we add it to the comments below the
+        // timesheet and call it a day." A day program shift holds one ten in
+        // QuickSolve, so the accepted answer is the record and this document
+        // is where it lives. Upright, not italic: it is our sentence about
+        // their answer, not their typed words.
+        ...days.flatMap((day) =>
+          (day.statedBreaks || [])
+            .filter((b) => b.statementOnly && b.from && b.to)
+            .map((b) => `${day.date} Rest break taken ${b.from} to ${b.to}, reported on this review.`)),
       ],
       // MILES DRIVEN, off the payroll report and stored on the sheet at upload.
       // Null where that report predates the mileage column, which is not zero

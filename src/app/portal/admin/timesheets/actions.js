@@ -3368,6 +3368,18 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         // shift, so a second ten stated into a shift that already has one
         // (recorded, or stated a slot earlier on this same card) is a record
         // the office could never enter. See shiftAlreadyHasTen.
+        //
+        // EXCEPT THE DAY PROGRAM, Mánu 2026-09-02 off a live refusal: a DP day
+        // is ONE shift, so refusing here made a truthful second ten
+        // unanswerable - "Pick a time inside a shift that does not" names a
+        // shift that does not exist, and the only doors left were lying or
+        // never finishing the day. His ruling, refined the same night: "them
+        // telling us then thats enough, we add it to the comments below the
+        // timesheet and call it a day." So the time is TAKEN and stamped
+        // `statementOnly`: the accepted answer IS the record, the sheet's own
+        // Comments print it (see render-sheet.js), and no edit line grows -
+        // QuickSolve has no slot for it and nobody is asked to invent one.
+        let statementOnly = false;
         if (!need.replaces && need.kindOf === "rest") {
           const dayRow = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
           const occupied = [
@@ -3378,13 +3390,17 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
               .map((b) => hhmmToMin(parseLooseTime(String(b.from || ""), { assumeWorkday: true }))),
           ];
           if (dayRow && shiftAlreadyHasTen(dayRow, occupied, start, need.minutes)) {
-            return {
-              ok: false, error: "shifthasten", given: raw,
-              at: {
-                id: q.id, date: need.date || q.date, slot: need.slot, label: need.label,
-                shifts: need.shifts || null,
-              },
-            };
+            if (ts.batch.program === "DP") {
+              statementOnly = true;
+            } else {
+              return {
+                ok: false, error: "shifthasten", given: raw,
+                at: {
+                  id: q.id, date: need.date || q.date, slot: need.slot, label: need.label,
+                  shifts: need.shifts || null,
+                },
+              };
+            }
           }
         }
         // WHICH KIND OF TIME THIS IS, decided here rather than taken from the
@@ -3404,6 +3420,11 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
           // leaves them undefined and nothing downstream looks for them.
           date: need.date ?? null,
           replaces: need.replaces ?? null,
+          // the day program's second ten: QuickSolve cannot hold it, so the
+          // statement is the record - see the ruling above. Undefined
+          // everywhere else; qsp-changes.js skips it and render-sheet.js
+          // prints it in the Comments.
+          ...(statementOnly ? { statementOnly: true } : {}),
         });
       }
       // A PARTIAL WITH NOTHING FILLED IN. It is about the whole card rather than

@@ -189,3 +189,25 @@ test("the office corrections subject names the person and the period", () => {
     "[TEST -> a@b.c] Timesheet corrections from Mira, Gabriela - 07/16/26 to 07/31/26",
   );
 });
+
+test("a statement-only ten grows no edit line at all", () => {
+  // the day program's second ten: QuickSolve holds one rest per shift and a
+  // DP day is one shift, so there is no entry anyone could make. Mánu
+  // 2026-09-02: "them telling us then thats enough, we add it to the
+  // comments below the timesheet and call it a day." The sheet's Comments
+  // carry the statement (see render-sheet.js); this list stays silent.
+  const row = {
+    kind: "q_nothingDocumentedRest", date: "08/27/26", status: "accepted", choice: "yes",
+    statedBreaks: [
+      { kindOf: "rest", minutes: 10, from: "3p", to: "3:10p", statementOnly: true },
+      { kindOf: "rest", minutes: 10, from: "10a", to: "10:10a" },
+    ],
+  };
+  const out = qspChanges([row]);
+  assert.equal(out.length, 1);
+  // the first ten still has a QSP home, so its line still says to log it
+  assert.equal(
+    out[0].text,
+    "The rest break taken from 10a to 10:10a has nothing recorded for it. Log it.",
+  );
+});

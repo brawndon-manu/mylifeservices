@@ -65,6 +65,14 @@ function changesForRow(c) {
         fact: `The ${kindWord(b.kindOf)} recorded ${b.replaces.from} to ${b.replaces.to} actually `
           + `happened ${b.from} to ${b.to}.`,
         action: "Change the entry to match." });
+    } else if (b.statementOnly) {
+      // THE DAY PROGRAM'S SECOND TEN GROWS NO EDIT LINE. QuickSolve holds one
+      // rest entry per shift and a DP day is one shift, so there is no entry
+      // anyone could make. Mánu 2026-09-02: "them telling us then thats
+      // enough, we add it to the comments below the timesheet and call it a
+      // day." The receipt still rides both emails; the sheet's Comments
+      // carry the statement - see render-sheet.js.
+      continue;
     } else {
       out.push({ date: onDate,
         fact: `The ${kindWord(b.kindOf)} taken from ${b.from} to ${b.to} has nothing recorded for it.`,
