@@ -388,6 +388,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
 
   const sentCount = sp?.sent ? Number(sp.sent) : null;
   const failedCount = sp?.failed ? Number(sp.failed) : null;
+  const unconfirmedCount = sp?.unconfirmed ? Number(sp.unconfirmed) : null;
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
@@ -890,6 +891,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           Sent {sentCount} timesheet{sentCount === 1 ? "" : "s"}
           {mode.live ? "" : ` (redirected to ${mode.recipients.join(", ")})`}.
           {failedCount ? ` ${failedCount} failed - check the rows below.` : ""}
+          {unconfirmedCount
+            ? ` ${unconfirmedCount} not sent: the match is a guess nobody has confirmed. Pick the person on the row to send.`
+            : ""}
         </div>
       )}
 

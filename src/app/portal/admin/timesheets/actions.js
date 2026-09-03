@@ -1664,6 +1664,13 @@ export async function sendTimesheets(batchId, formData) {
   };
   if (onlyId) where.id = onlyId.toString();
   else if (!resend) where.sentAt = null;
+  // A GUESS NEVER SENDS - see match-confirm.js: "Lines, Megan" reached Megan
+  // McAlpine's inbox on a 50% first-name guess. A fuzzy match sends only
+  // after somebody picks the person on the row, which records it manual.
+  where.matchMethod = { not: "fuzzy" };
+  const unconfirmed = await prisma.timesheet.count({
+    where: { ...where, matchMethod: "fuzzy" },
+  });
 
   const rows = await prisma.timesheet.findMany({
     where,
@@ -1735,8 +1742,12 @@ export async function sendTimesheets(batchId, formData) {
   }
 
   revalidatePath(`/portal/admin/timesheets/${batchId}`);
-  if (inline) return { ok: sent > 0 && !failed, sent, failed };
-  redirect(`/portal/admin/timesheets/${batchId}?sent=${sent}${failed ? `&failed=${failed}` : ""}`);
+  if (inline) return { ok: sent > 0 && !failed, sent, failed, unconfirmed };
+  redirect(
+    `/portal/admin/timesheets/${batchId}?sent=${sent}${failed ? `&failed=${failed}` : ""}${
+      unconfirmed ? `&unconfirmed=${unconfirmed}` : ""
+    }`,
+  );
 }
 
 // management sign-off, after the employee has signed. stores the approved copy

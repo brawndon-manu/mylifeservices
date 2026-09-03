@@ -9,6 +9,7 @@ import EmployeePicker from "./EmployeePicker";
 import RowDocuments from "./RowDocuments";
 import SheetMenu from "./SheetMenu";
 import { companyDate } from "@/lib/company-time";
+import { unconfirmedMatch } from "@/lib/timesheet/match-confirm";
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 const dt = (iso) =>
@@ -362,7 +363,17 @@ export default function ReviewTable({
                     </form>
                   )}
                   {r.user &&
-                    (r.hasPdf ? (
+                    (unconfirmedMatch(r) ? (
+                      // A GUESS NEVER SENDS - see match-confirm.js. Picking the
+                      // person (Change, the guessed account included) records
+                      // the match manual and the button comes back.
+                      <span
+                        title="The match is the portal's guess. Press Change and pick the person - picking confirms it - and the sheet can send."
+                        className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-300"
+                      >
+                        Confirm the match to send
+                      </span>
+                    ) : r.hasPdf ? (
                       <SendOneButton send={send} batchId={batchId} row={r} />
                     ) : (
                       <span
