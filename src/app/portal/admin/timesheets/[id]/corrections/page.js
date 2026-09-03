@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { CORRECTION_KINDS, correctionEffect } from "@/lib/timesheet/corrections";
+import { TIME_OFF_KIND } from "@/lib/timesheet/time-off";
 import CorrectionRow from "./CorrectionRow";
 import RecomputeButton from "./RecomputeButton";
 
@@ -33,7 +34,20 @@ export default async function CorrectionsPage({ params }) {
   // accept or reject. Left in, they would list every confirmation on this
   // screen under a raw "q_repair" label and bury the reports that do need a
   // decision. They surface on the batch list and on the employee's own page.
-  const NOT_A_QUESTION = { kind: { not: { startsWith: "q_" } } };
+  //
+  // AND NOT THE TIME-OFF ANSWER. The day program's card writes its answer as
+  // a correction row so it survives and rides the emails - status "noted", a
+  // vocabulary this desk does not speak, so every "No time off" answer was
+  // rendering here as a raw time_off tag under a Declined chip (Mánu
+  // 2026-09-03: "why is this showing up in the issues reported"). A claim's
+  // actionable surface is the batch calendar's amber cell and its Accept,
+  // and a "no" needs nothing from anyone.
+  const NOT_A_QUESTION = {
+    AND: [
+      { kind: { not: { startsWith: "q_" } } },
+      { kind: { not: TIME_OFF_KIND } },
+    ],
+  };
   const sheets = await prisma.timesheet.findMany({
     where: { batchId: id, corrections: { some: NOT_A_QUESTION } },
     include: {
