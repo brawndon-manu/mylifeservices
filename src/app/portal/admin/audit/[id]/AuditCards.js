@@ -22,6 +22,7 @@
 // Nothing here computes an hour. See the page beside it.
 import { useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
+import { reviewShift, resetAllReviews, auditResetImpact } from "../actions";
 import { span, hrs, clockedFigure, punchEnd } from "./figures";
 
 const DECISIONS = [
@@ -46,7 +47,7 @@ const TONE = {
   flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
-export default function AuditCards({ rows, totals, orphans = [], periods = [], authorized = null, authMonthLabel = null }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], periods = [], authorized = null, authMonthLabel = null, batchId = null }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -56,6 +57,20 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [], a
   const [only, setOnly] = useState(null);
   const [q, setQ] = useState("");
   const [studying, setStudying] = useState(false);
+  // DECIDING FROM THE CARDS, 2026-09-03. Mánu: "i should be able to add the
+  // correct hours in the main menu not just in the one by one view." A card's
+  // decision lands here so the counts and the piles move without re-running
+  // the whole audit build; the server row is the durable record.
+  const [localReviews, setLocalReviews] = useState({});
+  const rows = useMemo(
+    () => rowsProp.map((r) => {
+      const l = localReviews[r.shiftKey];
+      return l === undefined ? r : { ...r, review: l };
+    }),
+    [rowsProp, localReviews],
+  );
+  const noteReview = (shiftKey, review) =>
+    setLocalReviews((v) => ({ ...v, [shiftKey]: review }));
 
   const inPeriod = useMemo(
     () => (period === "all" ? rows : rows.filter((r) => r.period === period)),
@@ -307,6 +322,14 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [], a
           {shown.length} of {inPeriod.length} shifts
           {period === "all" ? "" : ` in ${period}`}.
         </span>
+        {batchId && (
+          <ResetAll
+            batchId={batchId}
+            onReset={() =>
+              setLocalReviews(Object.fromEntries(rowsProp.map((r) => [r.shiftKey, null])))
+            }
+          />
+        )}
       </div>
 
       {view === "orphans" ? (
@@ -330,7 +353,7 @@ export default function AuditCards({ rows, totals, orphans = [], periods = [], a
                 </span>
               </h2>
               <div className="mt-2 space-y-3">
-                {list.map((r) => <Card key={r.key} r={r} />)}
+                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} />)}
               </div>
             </div>
           ))}
@@ -494,7 +517,7 @@ function Count({ n, tone }) {
   );
 }
 
-function Card({ r }) {
+function Card({ r, onReview }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
@@ -622,6 +645,8 @@ function Card({ r }) {
         </p>
       )}
 
+      <DecideBar r={r} onReview={onReview} />
+
       {/* both notes, each behind its own toggle - the schedule note is the
           reason typed on the shift, the service note the account of what was
           delivered. See StudyMode. */}
@@ -732,4 +757,222 @@ function Mark({ v }) {
   if (v === "yes") return <span className="font-bold text-emerald-600 dark:text-emerald-400">&#10003;</span>;
   if (v === "no") return <span className="font-bold text-rose-600 dark:text-rose-400">&#10007;</span>;
   return <span className="text-faint">-</span>;
+}
+
+
+// DECIDING WITHOUT LEAVING THE LIST - Mánu 2026-09-03: "i should be able to
+// add the correct hours in the main menu not just in the one by one view".
+// The same action, the same optional note, the same three chips as the deck's
+// flag panel; deciding again replaces the decision, exactly as it does there.
+function DecideBar({ r, onReview }) {
+  const [flagging, setFlagging] = useState(false);
+  const [reason, setReason] = useState("");
+  const [billable, setBillable] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const send = async (decision) => {
+    if (busy) return;
+    setBusy(true);
+    const body = new FormData();
+    body.set("decision", decision);
+    body.set("shiftKey", r.shiftKey);
+    body.set("employeeKey", r.employeeKey || "");
+    body.set("date", r.date || "");
+    body.set("startMin", r.startMin ?? "");
+    body.set("client", r.client || "");
+    body.set("service", r.service || "");
+    body.set("billedMin", r.billedMin ?? "");
+    body.set("clockedMin", r.clockedMin ?? "");
+    body.set("documentedMin", r.documentedMin ?? "");
+    const bm =
+      decision === "flagged" && billable !== "" && Number.isFinite(Number(billable))
+        ? Number(billable)
+        : null;
+    if (bm != null) body.set("billableMin", bm);
+    const why = decision === "flagged" ? reason.trim() : "";
+    if (why) body.set("reason", why);
+    const res = await reviewShift(body);
+    setBusy(false);
+    if (!res?.ok) return;
+    onReview?.(r.shiftKey, {
+      decision,
+      by: "you",
+      reason: why || null,
+      billableMin: bm,
+    });
+    setFlagging(false);
+    setReason("");
+    setBillable("");
+  };
+
+  return (
+    <div className="mt-3">
+      {flagging ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+          <label className="block text-xs font-semibold text-foreground">
+            What should be looked at?{" "}
+            <span className="font-normal text-muted">Optional.</span>
+          </label>
+          <textarea
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+          />
+          <label className="mt-3 block text-xs font-semibold text-foreground">
+            Actually billable, in minutes
+          </label>
+          <p className="mt-0.5 text-[11px] text-muted">
+            Left empty, the billed {r.billedMin != null ? hrs(r.billedMin) : "time"} stands.
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={1440}
+              step={1}
+              value={billable}
+              onChange={(e) => setBillable(e.target.value)}
+              className="w-24 rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-sm text-foreground focus:border-brand focus:outline-none"
+            />
+            {billable !== "" && Number.isFinite(Number(billable)) && (
+              <span className="text-xs tabular-nums text-muted">= {hrs(Number(billable))}</span>
+            )}
+            {r.clockedMin != null && (
+              <button
+                type="button"
+                onClick={() => setBillable(String(r.clockedMin))}
+                className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                Clocked · {hrs(r.clockedMin)}
+              </button>
+            )}
+            {r.documentedMin != null && r.documentedMin !== r.clockedMin && (
+              <button
+                type="button"
+                onClick={() => setBillable(String(r.documentedMin))}
+                className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+              >
+                Documented · {hrs(r.documentedMin)}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setBillable("0")}
+              className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+            >
+              Nothing billable
+            </button>
+          </div>
+          <div className="mt-2.5 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => send("flagged")}
+              className="rounded-md bg-amber-500 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+            >
+              Flag it
+            </button>
+            <button
+              type="button"
+              onClick={() => { setFlagging(false); setReason(""); setBillable(""); }}
+              className="rounded-md border border-border-strong px-3.5 py-1.5 text-sm font-medium text-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => send("approved")}
+            className="rounded-md border-2 border-emerald-400 px-3.5 py-1.5 text-sm font-bold text-emerald-500 transition hover:bg-emerald-50 disabled:opacity-50 dark:hover:bg-emerald-950/30"
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setFlagging(true)}
+            className="rounded-md border-2 border-amber-400 px-3.5 py-1.5 text-sm font-bold text-amber-500 transition hover:bg-amber-50 disabled:opacity-50 dark:hover:bg-amber-950/30"
+          >
+            Flag
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// EVERY DECISION ON THE PERIOD, WIPED BEHIND AN ARE-YOU-SURE - Mánu
+// 2026-09-03. The count is read when the dialog opens, so the sentence names
+// what the click destroys, and nothing happens without the second press.
+function ResetAll({ batchId, onReset }) {
+  const [impact, setImpact] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          const res = await auditResetImpact(batchId);
+          setBusy(false);
+          if (res?.ok) setImpact(res.count);
+        }}
+        className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/30"
+      >
+        Reset all decisions
+      </button>
+      {done != null && (
+        <span className="text-xs font-medium text-rose-600 dark:text-rose-400">
+          {done} decisions removed.
+        </span>
+      )}
+      {impact != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl">
+            <p className="text-base font-semibold text-foreground">
+              Reset every decision on this pay period?
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              This removes all {impact} of them - approvals, flags, notes and
+              corrected billable times together. There is no undo.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setImpact(null)}
+                className="rounded-md border border-border-strong px-4 py-2 text-sm font-medium text-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  const res = await resetAllReviews(batchId);
+                  setBusy(false);
+                  setImpact(null);
+                  if (res?.ok) {
+                    setDone(res.deleted);
+                    onReset?.();
+                  }
+                }}
+                className="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+              >
+                Reset all decisions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }

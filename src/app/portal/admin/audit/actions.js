@@ -38,10 +38,9 @@ export async function reviewShift(formData) {
   if (!shiftKey) return { ok: false, error: "noshift" };
 
   const reason = String(formData.get("reason") || "").trim();
-  // a flag routes to somebody, and a flag with no reason gives them nothing to
-  // act on. An approval needs none: it says the reading in front of the
-  // reviewer looked right.
-  if (decision === "flagged" && !reason) return { ok: false, error: "noreason" };
+  // A FLAG NEEDS NO WORDS - Mánu 2026-09-03: "i should be able to flag
+  // without leaving comments." The flagged pile routes attention on its own;
+  // words help whoever picks it up and stay optional.
 
   const num = (k) => {
     const v = formData.get(k);
@@ -66,7 +65,7 @@ export async function reviewShift(formData) {
     client: String(formData.get("client") || "") || null,
     service: String(formData.get("service") || "") || null,
     decision,
-    reason: decision === "flagged" ? reason : null,
+    reason: decision === "flagged" ? reason || null : null,
     // THE READING AS IT STOOD. A later upload can move these figures; what was
     // signed off should not move with them.
     billedMin: num("billedMin"),
@@ -155,4 +154,42 @@ export async function undoReview(formData) {
   await prisma.shiftReview.deleteMany({ where: { shiftKey } });
   revalidatePath("/portal/admin/audit");
   return { ok: true };
+}
+
+// EVERYTHING DECIDED ON ONE PAY PERIOD, WIPED - Mánu 2026-09-03: "there
+// should be a reset all button with are you sure buttons". The impact is
+// read at click time so the dialog names the real count, the same contract
+// the recompute dialog keeps.
+export async function auditResetImpact(batchId) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) return { ok: false, error: "auth" };
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: { periodFrom: true, periodTo: true },
+  });
+  if (!batch) return { ok: false, error: "nobatch" };
+  const { periodDates } = await import("@/lib/timesheet/period-of");
+  const count = await prisma.shiftReview.count({
+    where: { date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
+  });
+  return { ok: true, count };
+}
+
+export async function resetAllReviews(batchId) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) return { ok: false, error: "auth" };
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: { periodFrom: true, periodTo: true },
+  });
+  if (!batch) return { ok: false, error: "nobatch" };
+  const { periodDates } = await import("@/lib/timesheet/period-of");
+  // scoped by the period's own dates: ShiftReview keys on the shift, not the
+  // batch, so this is every decision the fortnight holds - which is what
+  // "reset all" means - and nothing from any other fortnight.
+  const gone = await prisma.shiftReview.deleteMany({
+    where: { date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
+  });
+  revalidatePath("/portal/admin/audit");
+  return { ok: true, deleted: gone.count };
 }

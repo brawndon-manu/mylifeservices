@@ -510,7 +510,8 @@ export default function StudyMode({ rows: dealt, onExit }) {
           {flagging ? (
             <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
               <label htmlFor="reason" className="block text-sm font-semibold text-foreground">
-                What should be looked at?
+                What should be looked at?{" "}
+                <span className="font-normal text-muted">Optional.</span>
               </label>
               <textarea
                 id="reason"
@@ -576,11 +577,11 @@ export default function StudyMode({ rows: dealt, onExit }) {
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  disabled={!reason.trim() || busy}
+                  disabled={busy}
                   onClick={() =>
                     send(
                       "flagged",
-                      reason.trim(),
+                      reason.trim() || null,
                       billable !== "" && Number.isFinite(Number(billable)) ? Number(billable) : null,
                     )
                   }

@@ -75,6 +75,7 @@ export default async function AuditBatchPage({ params }) {
       </div>
 
       <AuditCards
+        batchId={batch.id}
         rows={rows}
         orphans={orphans}
         authorized={hasAuthorizations ? authorized : null}
