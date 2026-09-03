@@ -363,15 +363,7 @@ export default function ReviewTable({
                   )}
                   {r.user &&
                     (r.hasPdf ? (
-                      <form action={send.bind(null, batchId)}>
-                        <input type="hidden" name="timesheetId" value={r.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md bg-brand-light px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand"
-                        >
-                          {r.sentAt ? "Resend" : "Send"}
-                        </button>
-                      </form>
+                      <SendOneButton send={send} batchId={batchId} row={r} />
                     ) : (
                       <span
                         title="The PDF for this timesheet was never stored, so there's nothing to link to. Re-upload the export."
@@ -473,5 +465,66 @@ function SheetLinks({ r }) {
       {link(base, r.approvedAt ? "Approved (final)" : "Final - signed")}
       {link(`${base}?basis=projected&original=1`, `projected ${f2(r.premiumProjected)}`, true)}
     </div>
+  );
+}
+
+// THE PER-ROW SEND, IN PLACE - Mánu 2026-09-03. The old form's action ended in
+// a redirect: every click reloaded the page, scrolled to the top and reset the
+// filter tabs, on a list he works top to bottom. This calls the same action
+// with `inline` and shows the outcome on the button itself.
+//
+// A SIGNED SHEET ASKS FIRST. Resending an already-signed review is nearly
+// always a misclick, and the person on the other end gets an email asking for
+// a signature they already gave.
+function SendOneButton({ send, batchId, row }) {
+  const [state, setState] = useState("idle");
+  // pinned when the click happens - the revalidate stamps sentAt onto the row,
+  // and the receipt must keep saying what the click did
+  const [doneLabel, setDoneLabel] = useState("Sent");
+  const label =
+    state === "busy"
+      ? "Sending..."
+      : state === "done"
+        ? doneLabel
+        : state === "fail"
+          ? "Didn't send"
+          : row.sentAt
+            ? "Resend"
+            : "Send";
+  const cls =
+    state === "done"
+      ? "bg-emerald-600 text-white"
+      : state === "fail"
+        ? "bg-rose-600 text-white hover:bg-rose-700"
+        : "bg-brand-light text-white hover:bg-brand";
+  return (
+    <button
+      type="button"
+      disabled={state === "busy"}
+      onClick={async () => {
+        if (
+          row.signedAt &&
+          !window.confirm(
+            `This sheet was signed ${dt(row.signedAt)}. Resending emails them the review link again. Resend it?`,
+          )
+        ) {
+          return;
+        }
+        setState("busy");
+        setDoneLabel(row.sentAt ? "Resent" : "Sent");
+        try {
+          const fd = new FormData();
+          fd.set("timesheetId", row.id);
+          fd.set("inline", "1");
+          const res = await send(batchId, fd);
+          setState(res?.ok ? "done" : "fail");
+        } catch {
+          setState("fail");
+        }
+      }}
+      className={`rounded-md px-3 py-1 text-xs font-semibold transition disabled:opacity-60 ${cls}`}
+    >
+      {label}
+    </button>
   );
 }

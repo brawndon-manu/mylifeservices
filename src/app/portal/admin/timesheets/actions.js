@@ -1625,6 +1625,12 @@ export async function sendTimesheets(batchId, formData) {
   const dueRaw = (formData.get("dueAt") || "").toString();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
   const resend = formData.get("resend") === "on";
+  // THE ONE-ROW SEND ANSWERS IN PLACE, 2026-09-03. Mánu works the list top to
+  // bottom resending one person at a time, and the redirect below scrolled him
+  // back to the top and reset the filter tabs on every click. An inline call
+  // returns the outcome instead; the revalidate before it refreshes the rows
+  // where they stand.
+  const inline = formData.get("inline") === "1";
 
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id: batchId },
@@ -1729,6 +1735,7 @@ export async function sendTimesheets(batchId, formData) {
   }
 
   revalidatePath(`/portal/admin/timesheets/${batchId}`);
+  if (inline) return { ok: sent > 0 && !failed, sent, failed };
   redirect(`/portal/admin/timesheets/${batchId}?sent=${sent}${failed ? `&failed=${failed}` : ""}`);
 }
 
