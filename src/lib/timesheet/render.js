@@ -1409,14 +1409,22 @@ export async function renderCorrected(sheet, opts = {}) {
   // So each cause says its own name, and where nothing was added the line says
   // so outright rather than leaving a difference for somebody to read as pay.
   const shortMealDays = (sheet.days || []).filter((d) => (d.restsFromShortMeals || 0) > 0).length;
+  // A WHOLE DAY ACCEPTED FROM THE REVIEW. It fell through to the rounding
+  // sentence, which then claimed eight hours of difference were rounding - on
+  // the document the person signs. Unreachable until 2026-09-02, because a
+  // missing-day claim carried no date and its accept patched nothing;
+  // Bustamante's 08/28 is the day that made this branch real.
+  const addedDays = (sheet.days || []).filter((d) => d.addedByHand).map((d) => d.date);
   text(
     !moved
       ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export.`
       : added > 0
         ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs: ${f2(added)} hrs of rest breaks you told us you took while clocked out have been added.`
-        : shortMealDays > 0
-          ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. On ${shortMealDays} ${shortMealDays === 1 ? "day" : "days"} the roster booked a meal break only ten minutes long - that is a rest period, not a meal, and a rest period is paid - so those minutes are in your hours. No other break time has been added.`
-          : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. The difference is rounding: each day is worked out from its own punch times, and QSP rounds each segment separately. No break time has been added.`,
+        : addedDays.length > 0
+          ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. The ${addedDays.join(", ")} ${addedDays.length === 1 ? "day was" : "days were"} added from your review, accepted by the office.`
+          : shortMealDays > 0
+            ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. On ${shortMealDays} ${shortMealDays === 1 ? "day" : "days"} the roster booked a meal break only ten minutes long - that is a rest period, not a meal, and a rest period is paid - so those minutes are in your hours. No other break time has been added.`
+            : `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs. The difference is rounding: each day is worked out from its own punch times, and QSP rounds each segment separately. No break time has been added.`,
     L, y, { size: 6.5, color: MUTED, f: italic },
   );
 

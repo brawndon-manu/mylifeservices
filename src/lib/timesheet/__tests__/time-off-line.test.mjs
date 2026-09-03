@@ -91,3 +91,32 @@ test("the sheet prints the line only when time off is recorded, and totals stand
   // same 8.00 day on both documents
   assert.ok(a.includes(hex("Totals:")) && b.includes(hex("Totals:")));
 });
+
+test("a statement-only ten prints in the Comments below the timesheet", async () => {
+  const ts = sheetFixture();
+  ts.data.days[0].statedBreaks = [
+    { kindOf: "rest", minutes: 10, from: "3p", to: "3:10p", slot: "rest1", statementOnly: true },
+  ];
+  const r = await renderSheet(ts);
+  const text = pageText(await PDFDocument.load(r.bytes));
+  assert.ok(
+    text.includes(hex("08/17/26 Rest break taken 3p to 3:10p, reported on this review.")),
+    "the statement rides the Comments",
+  );
+});
+
+test("an accepted missing day names itself instead of claiming rounding", async () => {
+  const ts = sheetFixture();
+  ts.data.days.push({
+    date: "08/18/26", paidHours: 8, rawHours: 0, regularHours: 8, otHours: 0, doubleHours: 0,
+    mealViolation: false, restViolation: false, mealCount: 0, restCount: 0, restRequired: 0,
+    punches: [], breaks: [], corrected: true, addedByHand: true,
+  });
+  const r = await renderSheet(ts);
+  const text = pageText(await PDFDocument.load(r.bytes));
+  assert.ok(
+    text.includes(hex("The 08/18/26 day was added from your review, accepted by the office.")),
+    "the added day is named",
+  );
+  assert.ok(!text.includes(hex("The difference is rounding")), "rounding is not claimed");
+});
