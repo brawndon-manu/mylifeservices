@@ -3715,6 +3715,43 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // landed back on 6.00 and his hours stayed down. It reads as "I cannot change
   // my answer once I confirm it", which is what he reported.
   const pristine = ts.data?.daysOriginal || ts.data?.days || [];
+  // AND EVERY ACCEPTED REPORT, RE-DERIVED FROM ITS OWN ROW.
+  //
+  // The same failure as the misc classifications above, one writer later:
+  // resolveCorrection merges an accepted report's patch into the blob, this
+  // rebuild started over without it, and the patch died the next time the
+  // employee answered anything at all. Bustamante 08/28 is the case: the
+  // accepted missing day's `added` patch lived only in the blob, he answered
+  // the ten ON that very day, and paid fell 96 -> 88 with the desk still
+  // reading Accepted by Mánu Uribe.
+  //
+  // Re-derived from the rows rather than carried over from the old blob, the
+  // way the answers below drive their own loop: the accepted rows are the
+  // current record, so a report somebody has since re-resolved cannot leave a
+  // stale patch behind. Runs BEFORE the answers so an answer about the same
+  // date merges on top, which is exactly the 08/28 shape - the accepted day
+  // brings the hours, the answer brings its breaks.
+  const acceptedReports = await prisma.timesheetCorrection.findMany({
+    where: {
+      timesheetId: ts.id,
+      status: "accepted",
+      NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
+    },
+    select: { kind: true, date: true, claimedHours: true, statedBreaks: true },
+  });
+  for (const c of acceptedReports) {
+    // the dateless legacy rows patch nothing, exactly as their accept did
+    if (!c.date) continue;
+    const day = pristine.find((d) => d.date === c.date) || null;
+    const patch = patchFor(c.kind, day, c.claimedHours);
+    const stamped = { ...patch, _answeredBy: "admin" };
+    if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
+    if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
+    Object.assign(stamped, claimedTimesPatch(overrides, c.date, c.statedBreaks) || {});
+    if (Object.keys(patch).length || stamped.statedBreaks) {
+      overrides[c.date] = { ...(overrides[c.date] || {}), ...stamped };
+    }
+  }
   // EVERY ANSWER ON RECORD, NOT EVERY QUESTION STILL BEING ASKED.
   //
   // This walked the live question set, and several kinds DELETE their own
