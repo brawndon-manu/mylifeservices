@@ -45,6 +45,21 @@ export async function GET(_req, { params }) {
     restRows: batch.restsByDate || [],
   });
 
+  // recorded time off, the same rows the page and the CSV read - the print
+  // carries one combined column, so only the sum rides per person
+  const ptoRows = await prisma.ptoEntry.findMany({
+    where: {
+      program: batch.program || "MLS",
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+    },
+    select: { personKey: true, hours: true },
+  });
+  const timeOffBy = new Map();
+  for (const p of ptoRows) {
+    timeOffBy.set(p.personKey, (timeOffBy.get(p.personKey) || 0) + (p.hours || 0));
+  }
+
   let bytes;
   try {
     const out = await renderPayoutReport(
@@ -59,6 +74,7 @@ export async function GET(_req, { params }) {
           doubleHours: t.doubleHours,
           paidHours: t.paidHours,
           premiumHours: standing.byId[t.id]?.charged ?? 0,
+          timeOffHours: (t.userId && timeOffBy.get(t.userId)) || 0,
           // mileage off the payroll report, and whether the sheet has been
           // signed - Mánu 2026-08-17. Both read at request time, so a download
           // taken after somebody signs shows it.

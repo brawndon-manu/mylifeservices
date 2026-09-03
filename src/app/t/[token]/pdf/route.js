@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { renderSheet, RENDER_SELECT } from "@/lib/timesheet/render-sheet";
-import { loadBreakReasons } from "@/lib/timesheet/load-break-reasons";
+import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 
 // serve one employee their own timesheet PDF, authorised purely by the signed
 // token in the url. the token only ever unlocks this single document.
@@ -55,6 +55,7 @@ export async function GET(_req, { params }) {
     const rendered = await renderSheet(ts, {
       basis: "projected",
       breakReasons: await loadBreakReasons(ts),
+      timeOff: await loadTimeOffFor(ts),
     });
     if (!rendered) return new NextResponse("Not found", { status: 404 });
     buf = rendered.bytes;

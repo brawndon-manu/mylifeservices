@@ -25,6 +25,32 @@ export const TIME_OFF_STATUS = "noted";
 // what a day of time off can be. The label is what every surface prints.
 export const TIME_OFF_TYPES = { pto: "PTO", sick: "Sick" };
 
+// THE SHEET'S OWN SENTENCE for recorded time off, matching the mileage line
+// it sits beside: "8.00 hrs PTO (08/18/26) - 8.00 hrs Sick (08/21/26)".
+// Approved off the mock 2026-09-02. One entry per PtoEntry row, dot-joined -
+// a person rarely holds more than a day or two in a fortnight.
+const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
+export function timeOffLine(entries) {
+  const parts = (entries || [])
+    .filter((e) => e && Number(e.hours) > 0 && e.date)
+    .map((e) => `${f2(e.hours)} hrs ${TIME_OFF_TYPES[e.kind] || "PTO"} (${e.date})`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+// the payout report's split: PTO and Sick summed apart, because payroll keys
+// each under its own code, plus the total that joins Total payable.
+export function timeOffTotals(entries) {
+  let pto = 0;
+  let sick = 0;
+  for (const e of entries || []) {
+    const h = Number(e?.hours);
+    if (!Number.isFinite(h) || h <= 0) continue;
+    if (e.kind === "sick") sick += h;
+    else pto += h;
+  }
+  return { pto: r2(pto), sick: r2(sick), total: r2(pto + sick) };
+}
+
 export const isTimeOffType = (k) =>
   Object.prototype.hasOwnProperty.call(TIME_OFF_TYPES, k);
 

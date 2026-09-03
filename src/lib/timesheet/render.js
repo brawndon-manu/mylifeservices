@@ -13,6 +13,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { recordedBreaksFor, insertRecordedBreaks, withStatedRest, withStatedBreaks } from "./recorded-breaks.js";
+// the time-off line's one wording - shared with nothing else on purpose, so
+// the sheet and the tests read the same sentence
+import { timeOffLine } from "./time-off.js";
 
 // read straight off disk - this only ever runs server-side.
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
@@ -898,6 +901,26 @@ export async function renderCorrected(sheet, opts = {}) {
       size: 8, f: bold,
     });
     y -= 14;
+  }
+
+  // ---------- recorded time off ----------
+  //
+  // The calendar's PtoEntry rows, stated the same way the mileage is: a line
+  // under the totals, drawn only when a record exists. These hours are PAY and
+  // never worked time - they join no total on this sheet and no overtime test,
+  // which is exactly why they need their own sentence: a PTO day is otherwise
+  // a day this document simply does not mention. Approved off the mock
+  // 2026-09-02, Bustamante's 18th being the day that exposed the gap.
+  {
+    const timeOffText = timeOffLine(sheet.timeOff);
+    if (timeOffText) {
+      const timeOffLabel = "Time off this pay period:";
+      text(timeOffLabel, L, y, { size: 8, f: bold });
+      text(timeOffText, L + bold.widthOfTextAtSize(timeOffLabel, 8) + 6, y, {
+        size: 8, f: bold,
+      });
+      y -= 14;
+    }
   }
 
   // ---------- color key ----------

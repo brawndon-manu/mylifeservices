@@ -101,6 +101,9 @@ export async function renderSheet(ts, {
   // rather than fetched: this file is a pure function of what the database
   // already holds and it stays that way.
   breakReasons = [],
+  // recorded time off (PtoEntry rows), the other thing no export carries -
+  // same rule, same loader file: loadTimeOffFor beside loadBreakReasons.
+  timeOff = [],
 } = {}) {
   const d = ts.data || {};
   const stored = d.days || [];
@@ -186,6 +189,10 @@ export async function renderSheet(ts, {
       // miles - see the note where it is drawn, and the attestation that now
       // covers it.
       milesDriven: d.qspMiles ?? null,
+      // RECORDED TIME OFF, printed as its own line beside the miles - the
+      // hours are pay, never worked time, so they join no total on this
+      // document. See the line where it is drawn.
+      timeOff,
       punchCorrections: d.punchCorrections || null,
       // the Breaks column: what the two reports RECORDED, never derived from
       // the punches

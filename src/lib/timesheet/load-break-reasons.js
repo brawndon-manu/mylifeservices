@@ -29,3 +29,22 @@ export async function loadBreakReasons(ts) {
     orderBy: { date: "asc" },
   });
 }
+
+// THE RECORDED TIME OFF FOR ONE SHEET, the same one-fetch rule as the reasons
+// above and for the same reason: every route that renders a sheet hands these
+// to `renderSheet`, and a route that forgets prints a sheet silently missing
+// its time-off line. Keyed (program, period, person) like the PtoEntry rows
+// themselves, so the record survives every re-upload.
+export async function loadTimeOffFor(ts) {
+  if (!ts?.userId || !ts?.batch?.periodFrom) return [];
+  return prisma.ptoEntry.findMany({
+    where: {
+      program: ts.batch.program || "MLS",
+      periodFrom: ts.batch.periodFrom,
+      periodTo: ts.batch.periodTo,
+      personKey: ts.userId,
+    },
+    select: { date: true, hours: true, kind: true },
+    orderBy: { date: "asc" },
+  });
+}

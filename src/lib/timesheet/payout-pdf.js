@@ -44,21 +44,28 @@ const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 // Miles is NOT a payable column and never enters `Total payable`: mileage is
 // reimbursed per mile, not paid as hours.
 const COLS = [
-  ["Employee", 118, false],
-  ["Regular", 54, true],
-  ["OT", 42, true],
-  ["Double", 48, true],
-  ["Hours worked", 64, true],
-  ["Penalty", 52, true],
-  ["Total payable", 68, true],
-  ["Miles", 50, true],
+  ["Employee", 104, false],
+  ["Regular", 50, true],
+  ["OT", 40, true],
+  ["Double", 46, true],
+  ["Hours worked", 60, true],
+  ["Penalty", 46, true],
+  // RECORDED TIME OFF, one column on the print where the page and the CSV
+  // split PTO from Sick - 532 points hold ten columns, not eleven, and the
+  // split lives where payroll keys it in. Pay, never worked hours; joins
+  // Total payable and nothing else. Room came from trimming every hour
+  // column, the same way Miles and Signed made theirs in August.
+  ["Time off", 44, true],
+  ["Total payable", 64, true],
+  ["Miles", 42, true],
   ["Signed", 36, false],
 ];
 // which index is which, so the row loop and the totals row cannot drift apart
 const I_PREMIUM = 5;
-const I_PAYABLE = 6;
-const I_MILES = 7;
-const I_SIGNED = 8;
+const I_TIMEOFF = 6;
+const I_PAYABLE = 7;
+const I_MILES = 8;
+const I_SIGNED = 9;
 
 // greedy wrap: the notice is a sentence, and a sentence running through the
 // right rule on a payroll document reads as a broken form.
@@ -94,7 +101,11 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     doubleHours: sum("doubleHours"),
     paidHours: sum("paidHours"),
     premiumHours: sum("premiumHours"),
-    payable: rows.reduce((n, r) => n + (r.paidHours || 0) + (r.premiumHours || 0), 0),
+    timeOffHours: sum("timeOffHours"),
+    payable: rows.reduce(
+      (n, r) => n + (r.paidHours || 0) + (r.premiumHours || 0) + (r.timeOffHours || 0),
+      0,
+    ),
     // reimbursed, not payable - deliberately absent from `payable` above
     miles: sum("miles"),
   };
@@ -196,7 +207,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     }
     alt = !alt;
 
-    const payable = (r.paidHours || 0) + (r.premiumHours || 0);
+    const payable = (r.paidHours || 0) + (r.premiumHours || 0) + (r.timeOffHours || 0);
     const cells = [
       r.who,
       f2(r.regularHours),
@@ -204,6 +215,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       f2(r.doubleHours),
       f2(r.paidHours),
       f2(r.premiumHours),
+      f2(r.timeOffHours),
       f2(payable),
       f2(r.miles),
       // APPROVED IS ALSO SIGNED. A sheet management has signed off was signed
@@ -245,6 +257,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     f2(totals.doubleHours),
     f2(totals.paidHours),
     f2(totals.premiumHours),
+    f2(totals.timeOffHours),
     f2(totals.payable),
     f2(totals.miles),
     // how many of them are signed, which is the question this column exists to
@@ -266,7 +279,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
   // ---------- notes ----------
   const notes = [];
   notes.push(
-    "Total payable = hours worked (with paid rest break time added back) plus penalty hours. Penalty hours are paid at the employee's regular rate of pay under Labor Code 226.7.",
+    "Total payable = hours worked (with paid rest break time added back) plus penalty hours plus recorded time off. Penalty hours are paid at the employee's regular rate of pay under Labor Code 226.7. Time off is PTO and sick hours recorded on the pay period calendar; they are pay, not worked time, and never enter overtime.",
   );
   if (disputed) {
     notes.push(

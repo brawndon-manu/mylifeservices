@@ -44,6 +44,27 @@ export default async function PayoutReportPage({ params }) {
     restRows: batch.restsByDate || [],
   });
 
+  // RECORDED TIME OFF JOINS THE PAYOUT, Mánu's ruling 2026-09-02 off the mock:
+  // the calendar's PtoEntry rows are hours of PAY, and a payout report that
+  // omits them under-keys payroll until QSP catches up. Split PTO from Sick
+  // because payroll keys each under its own code. They stay out of worked
+  // hours and overtime entirely - pay yes, work no.
+  const ptoRows = await prisma.ptoEntry.findMany({
+    where: {
+      program: batch.program || "MLS",
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+    },
+    select: { personKey: true, hours: true, kind: true },
+  });
+  const timeOffBy = new Map();
+  for (const p of ptoRows) {
+    const cur = timeOffBy.get(p.personKey) || { pto: 0, sick: 0 };
+    if (p.kind === "sick") cur.sick += p.hours || 0;
+    else cur.pto += p.hours || 0;
+    timeOffBy.set(p.personKey, cur);
+  }
+
   const rows = batch.timesheets.map((t) => ({
     id: t.id,
     who: t.user ? preferredName(t.user) : t.sourceName,
@@ -55,7 +76,13 @@ export default async function PayoutReportPage({ params }) {
     paidHours: t.paidHours,
     premiumHours: standing.byId[t.id]?.charged ?? 0,
     assumptionHours: standing.byId[t.id]?.assumptions ?? 0,
-    payable: (t.paidHours || 0) + (standing.byId[t.id]?.charged ?? 0),
+    ptoHours: (t.userId && timeOffBy.get(t.userId)?.pto) || 0,
+    sickHours: (t.userId && timeOffBy.get(t.userId)?.sick) || 0,
+    payable:
+      (t.paidHours || 0)
+      + (standing.byId[t.id]?.charged ?? 0)
+      + ((t.userId && timeOffBy.get(t.userId)?.pto) || 0)
+      + ((t.userId && timeOffBy.get(t.userId)?.sick) || 0),
     // MILES DRIVEN, from the payroll report's own column, stored on the sheet
     // at upload. Null where that report was not uploaded or predates the
     // column - which is not zero miles, so the cell says nothing rather than
@@ -76,6 +103,9 @@ export default async function PayoutReportPage({ params }) {
     doubleHours: sum("doubleHours"),
     paidHours: sum("paidHours"),
     premiumHours: sum("premiumHours"),
+    ptoHours: sum("ptoHours"),
+    sickHours: sum("sickHours"),
+    timeOff: sum("ptoHours") + sum("sickHours"),
     payable: sum("payable"),
     miles: Math.round(rows.reduce((n, r) => n + (r.miles || 0), 0) * 100) / 100,
   };
@@ -129,6 +159,9 @@ export default async function PayoutReportPage({ params }) {
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <Big label="Hours worked" value={fmt(totals.paidHours)} />
         <Big label="Premium hours" value={fmt(totals.premiumHours)} tone="prem" />
+        {/* the calendar's recorded time off - pay, never worked time, so it
+            has its own tile and joins only the payable figure */}
+        <Big label="Time off hours" value={fmt(totals.timeOff)} />
         <Big label="Total hours payable" value={fmt(totals.payable)} strong />
         {/* mileage is reimbursed rather than paid as hours, so it sits beside
             the hour figures and is never added into them */}
@@ -203,7 +236,7 @@ export default async function PayoutReportPage({ params }) {
       )}
 
       <div className="mt-8 overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[940px] text-sm">
           <thead className="bg-surface-2 text-xs uppercase tracking-wider text-muted">
             <tr>
               <Th align="left">Employee</Th>
@@ -212,6 +245,8 @@ export default async function PayoutReportPage({ params }) {
               <Th>Double</Th>
               <Th>Hours worked</Th>
               <Th>Premium</Th>
+              <Th>PTO</Th>
+              <Th>Sick</Th>
               <Th>Total payable</Th>
               <Th>Miles driven</Th>
               <Th align="left">Status</Th>
@@ -238,6 +273,8 @@ export default async function PayoutReportPage({ params }) {
                 <Td tone={r.premiumHours > 0 ? "prem" : undefined}>
                   {fmt(r.premiumHours)}
                 </Td>
+                <Td strong={r.ptoHours > 0}>{fmt(r.ptoHours)}</Td>
+                <Td strong={r.sickHours > 0}>{fmt(r.sickHours)}</Td>
                 <Td strong>{fmt(r.payable)}</Td>
                 <Td>{fmt(r.miles || 0)}</Td>
                 <td className="px-3 py-2 text-xs text-muted">
@@ -263,6 +300,8 @@ export default async function PayoutReportPage({ params }) {
               <Td>{fmt(totals.doubleHours)}</Td>
               <Td strong>{fmt(totals.paidHours)}</Td>
               <Td tone="prem">{fmt(totals.premiumHours)}</Td>
+              <Td>{fmt(totals.ptoHours)}</Td>
+              <Td>{fmt(totals.sickHours)}</Td>
               <Td strong>{fmt(totals.payable)}</Td>
               <Td strong>{fmt(totals.miles)}</Td>
               <td />

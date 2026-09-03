@@ -51,6 +51,24 @@ export async function GET(_req, { params }) {
     restRows: batch.restsByDate || [],
   });
 
+  // RECORDED TIME OFF, under its own two codes - same rows and same split as
+  // the payout page. Pay, never worked hours; joins only the payable column.
+  const ptoRows = await prisma.ptoEntry.findMany({
+    where: {
+      program: batch.program || "MLS",
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+    },
+    select: { personKey: true, hours: true, kind: true },
+  });
+  const timeOffBy = new Map();
+  for (const p of ptoRows) {
+    const cur = timeOffBy.get(p.personKey) || { pto: 0, sick: 0 };
+    if (p.kind === "sick") cur.sick += p.hours || 0;
+    else cur.pto += p.hours || 0;
+    timeOffBy.set(p.personKey, cur);
+  }
+
   const header = [
     "Employee",
     "As printed by QSP",
@@ -61,6 +79,8 @@ export async function GET(_req, { params }) {
     "Hours worked",
     "Premium hours",
     "Premium hours that come off if assumptions confirmed",
+    "PTO hours",
+    "Sick hours",
     "Total hours payable",
     "Miles driven",
     "Partial week",
@@ -69,18 +89,21 @@ export async function GET(_req, { params }) {
   ];
 
   const lines = [header.map(cell).join(",")];
-  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumptions: 0, payable: 0, miles: 0 };
+  const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumptions: 0, pto: 0, sick: 0, payable: 0, miles: 0 };
 
   for (const ts of batch.timesheets) {
     const charged = standing.byId[ts.id]?.charged ?? 0;
     const assumptions = standing.byId[ts.id]?.assumptions ?? 0;
-    const payable = (ts.paidHours || 0) + charged;
+    const off = (ts.userId && timeOffBy.get(ts.userId)) || { pto: 0, sick: 0 };
+    const payable = (ts.paidHours || 0) + charged + off.pto + off.sick;
     t.reg += ts.regularHours || 0;
     t.ot += ts.otHours || 0;
     t.dbl += ts.doubleHours || 0;
     t.paid += ts.paidHours || 0;
     t.prem += charged;
     t.assumptions += assumptions;
+    t.pto += off.pto;
+    t.sick += off.sick;
     t.payable += payable;
     // reimbursed per mile rather than paid as hours, so it is summed on its own
     // and never folded into payable
@@ -97,6 +120,8 @@ export async function GET(_req, { params }) {
         r2(ts.paidHours),
         r2(charged),
         r2(assumptions),
+        r2(off.pto),
+        r2(off.sick),
         r2(payable),
         r2(ts.data?.qspMiles),
         ts.partialWeek ? "yes" : "no",
@@ -125,6 +150,8 @@ export async function GET(_req, { params }) {
       r2(t.paid),
       r2(t.prem),
       r2(t.assumptions),
+      r2(t.pto),
+      r2(t.sick),
       r2(t.payable),
       r2(t.miles),
       "",
