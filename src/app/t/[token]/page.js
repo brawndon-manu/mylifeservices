@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
+import { supersededBy } from "@/lib/timesheet/superseded";
 import { preferredName } from "@/lib/contacts";
 import { sheetDisplayName } from "@/lib/timesheet/display-name";
 import TimesheetSigner from "./TimesheetSigner";
@@ -144,6 +145,35 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // anybody is asked to sign - their links are never sent, and one that leaks
   // anyway opens nothing
   if (ts.batch?.auditOnly) notFound();
+
+  // A REPLACED SHEET IS CLOSED, 2026-09-03. Rosa's case: two send emails
+  // twenty minutes apart, she opened the older one, and days of answers plus
+  // a signature landed on a superseded batch no portal screen reads. The
+  // office side has refused superseded writes since August; the employee side
+  // never checked, so an old inbox link quietly produced records on a dead
+  // batch. A sheet SIGNED before its batch was replaced stays viewable - that
+  // is their archive - but an unsigned one on a dead batch has nothing real
+  // to offer, so the page says so instead of taking answers it cannot keep.
+  if (!ts.signedAt) {
+    const newer = await supersededBy(ts.batch.id);
+    if (newer) {
+      return (
+        <section className="mx-auto max-w-2xl px-6 py-16">
+          <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-6 dark:border-amber-900/50 dark:bg-amber-950/30">
+            <p className="text-base font-semibold text-amber-900 dark:text-amber-200">
+              This timesheet was replaced.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-amber-800 dark:text-amber-200/80">
+              A newer copy of this pay period&apos;s timesheet exists, and this
+              link opens the old one. Answers and signatures only count on the
+              newest copy. Use the most recent email from the office, or ask
+              them to resend your link.
+            </p>
+          </div>
+        </section>
+      );
+    }
+  }
 
   // WHETHER PREVIEW ACTUALLY REFUSES, which is not the same question as whether
   // this IS a preview.

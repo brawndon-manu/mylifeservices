@@ -2033,6 +2033,10 @@ export async function submitTimesheetCorrections({ token, items }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  // a replaced sheet takes no employee writes - Rosa's answers and signature
+  // landed on a superseded batch no screen reads. Same read-only rule the
+  // office side has had since August; the /t page says why in words.
+  if (await supersededByForTimesheet(id)) return { ok: false, error: "superseded" };
 
   if (!Array.isArray(items) || !items.length) return { ok: false, error: "empty" };
   // a generous cap - a fortnight has at most ~14 days and a couple of issues
@@ -3104,6 +3108,10 @@ export async function answerTimeOff({ token, choice, entries }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
+  // a replaced sheet takes no employee writes - Rosa's answers and signature
+  // landed on a superseded batch no screen reads. Same read-only rule the
+  // office side has had since August; the /t page says why in words.
+  if (await supersededByForTimesheet(tsId)) return { ok: false, error: "superseded" };
   if (choice != null && !["yes", "no"].includes(choice)) return { ok: false, error: "badchoice" };
 
   const ts = await prisma.timesheet.findUnique({
@@ -3186,6 +3194,10 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
+  // a replaced sheet takes no employee writes - Rosa's answers and signature
+  // landed on a superseded batch no screen reads. Same read-only rule the
+  // office side has had since August; the /t page says why in words.
+  if (await supersededByForTimesheet(tsId)) return { ok: false, error: "superseded" };
 
   const asked = Array.isArray(batch) && batch.length
     ? batch.map((b) => ({
@@ -4106,6 +4118,10 @@ export async function acknowledgeSpan({ token, date, min, undo = false }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  // a replaced sheet takes no employee writes - Rosa's answers and signature
+  // landed on a superseded batch no screen reads. Same read-only rule the
+  // office side has had since August; the /t page says why in words.
+  if (await supersededByForTimesheet(id)) return { ok: false, error: "superseded" };
   if (!date || !Number.isFinite(Number(min))) return { ok: false, error: "missing" };
 
   const ts = await prisma.timesheet.findUnique({
@@ -4153,6 +4169,10 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  // a replaced sheet takes no employee writes - Rosa's answers and signature
+  // landed on a superseded batch no screen reads. Same read-only rule the
+  // office side has had since August; the /t page says why in words.
+  if (await supersededByForTimesheet(id)) return { ok: false, error: "superseded" };
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },
@@ -4395,6 +4415,10 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
+  // a replaced sheet takes no employee writes - Rosa's answers and signature
+  // landed on a superseded batch no screen reads. Same read-only rule the
+  // office side has had since August; the /t page says why in words.
+  if (await supersededByForTimesheet(tsId)) return { ok: false, error: "superseded" };
   if (!findingKey) return { ok: false, error: "missing" };
 
   const ts = await prisma.timesheet.findUnique({
