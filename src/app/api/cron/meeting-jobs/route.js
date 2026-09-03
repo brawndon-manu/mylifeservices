@@ -16,7 +16,6 @@ import {
   EMAIL_MEETING_SELECT,
 } from "@/lib/announce-send";
 import { firstNameOf } from "@/lib/contacts";
-import { renderMarkdown } from "@/lib/markdown";
 import { instantToZoned, zonedToInstant } from "@/lib/meeting-time";
 import { resolveAnnouncementRecipients } from "@/lib/timesheet-mode";
 import {
@@ -230,12 +229,17 @@ export async function GET(request) {
   // one reminder email to a session's going attendees. `session` is the option
   // that person chose (null for a single-session meeting), so the email shows
   // only their session's time. carries a "See original post" button.
-  const sendSessionReminder = async (m, optionId, hasOptions, subject, eyebrow, session) => {
+  const sendSessionReminder = async (m, optionId, hasOptions, subject, eyebrow, session, line) => {
     const recipients = await goingRecipients(m, optionId, hasOptions);
     // nobody is going, so there is nothing to send and nothing to wait for.
     // stamp it and stop asking on every tick.
     if (!recipients.length) return true;
-    const bodyHtml = renderMarkdown(m.content, { email: true });
+    // ONE LINE, THEN THE LINK. This carried the whole announcement body, so
+    // the reminder read as the original post sent again with the join block
+    // buried under twelve hundred characters - Mánu 2026-09-03, off the 8pm
+    // send: "i thought it was supposed to be an email saying heres the link
+    // for tomorrow." The See-original button below carries the full post.
+    const bodyHtml = `<p style="font-size:15px;color:#1f2937;margin:0 0 8px;">${line}</p>`;
     const meetingHtml = buildMeetingBlockHtml(m, session);
     const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${m.id}`);
     // header date = the meeting date, always shown in Pacific (emails pin one zone).
@@ -305,10 +309,13 @@ export async function GET(request) {
         if (now.getTime() >= remindAt && now.getTime() <= s.at.getTime() + GRACE_MS) {
           const ok = await sendSessionReminder(
             m, s.optionId, opts.length > 0,
+            // "meeting today it should say" - Mánu 2026-09-03, naming the pair
+            // with the night-before's "Meeting tomorrow:"
             signing
-              ? `Your visit is coming up: ${title}`
-              : `Coming up - you're confirmed: ${title}`,
-            "Reminder", s.opt,
+              ? `Your visit is today: ${title}`
+              : `Meeting today: ${title}`,
+            "Today", s.opt,
+            signing ? "Your visit starts soon." : "Your session starts soon.",
           );
           if (ok) {
             await prisma.announcementMeetingReminder
@@ -328,6 +335,7 @@ export async function GET(request) {
             m, s.optionId, opts.length > 0,
             signing ? `Your visit is tomorrow: ${title}` : `Meeting tomorrow: ${title}`,
             "Tomorrow", s.opt,
+            signing ? "Your visit is tomorrow." : "Your session is tomorrow.",
           );
           if (ok) {
             await prisma.announcementMeetingReminder

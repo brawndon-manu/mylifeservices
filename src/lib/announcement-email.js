@@ -191,12 +191,30 @@ export function buildMeetingBlockHtml(post, session = null) {
   } else {
     const sessions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
     const isSeries = sessions.some((o) => o && o.seriesId);
+    // A SESSION'S OWN LINK RIDES ITS ROW. Every session can carry its own
+    // Zoom (setMeetingZoomLinks), and a full-list email - the reach-out to
+    // people who have not picked - has to show each one the way the portal
+    // card does: button, link, passcode. A session with no link yet just
+    // shows its time. Mánu 2026-09-03, off the Session 1 morning.
+    const linkFor = (o) => {
+      if (!o?.zoomLink || !formatHasOnline(post.meetingFormat)) return "";
+      const parts2 = [
+        `<div style="margin:4px 0 6px;"><a href="${o.zoomLink}" style="${BTN}">Join meeting</a></div>`,
+        `<div style="font-size:12px;color:#4b5563;word-break:break-all;">Link: <a href="${o.zoomLink}" style="color:#2f6feb;">${esc(o.zoomLink)}</a></div>`,
+      ];
+      if (o.zoomCode) {
+        parts2.push(
+          `<div style="font-size:12px;color:#4b5563;">Passcode: <strong style="font-family:monospace;letter-spacing:1px;">${esc(o.zoomCode)}</strong></div>`,
+        );
+      }
+      return `<div style="margin:0 0 10px 12px;">${parts2.join("")}</div>`;
+    };
     const rowFor = (o, bullet) => {
       const t = o.at ? esc(formatInstant(o.at, EMAIL_TZ)) : "";
       const dur = esc(formatDuration(o.durationFromMin, o.durationToMin) || "");
       const meta = [t, dur].filter(Boolean).join(" &middot; ");
       const label = bullet ? `&bull; ${esc(o.label)}` : `<strong>${esc(o.label)}</strong>`;
-      return `<div style="font-size:14px;color:#1f2937;margin:${bullet ? "2px 0 2px 12px" : "0 0 4px"};">${label}${meta ? ` &mdash; ${meta}` : ""}</div>`;
+      return `<div style="font-size:14px;color:#1f2937;margin:${bullet ? "2px 0 2px 12px" : "0 0 4px"};">${label}${meta ? ` &mdash; ${meta}` : ""}</div>${linkFor(o)}`;
     };
     if (sessions.length && isSeries) {
       // grouped by series; the reader picks one date from each.

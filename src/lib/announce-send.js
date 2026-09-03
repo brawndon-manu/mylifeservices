@@ -179,8 +179,14 @@ export async function emailAnnouncement(
   const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
   // a meeting with sessions to pick lists every date in the RSVP buttons already,
   // so skip the redundant date block; a single-session meeting keeps its time +
-  // Join block.
-  const meetingHtml = isMeeting && opts.length === 0 ? buildMeetingBlockHtml(post) : "";
+  // Join block. ONCE ANY SESSION CARRIES ITS OWN ZOOM LINK the block comes
+  // back: the dates repeat, but the join buttons and passcodes live nowhere
+  // else, and the person this email chases has not picked and still needs the
+  // door. Mánu 2026-09-03, the Session 1 morning.
+  const meetingHtml =
+    isMeeting && (opts.length === 0 || opts.some((o) => o?.zoomLink))
+      ? buildMeetingBlockHtml(post)
+      : "";
 
   const messages = recipients.map((r) => {
     // a meeting gets one-click RSVP buttons (responding also records the ack, so

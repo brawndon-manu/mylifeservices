@@ -2120,7 +2120,9 @@ export async function emailMeetingNoResponse(postId) {
   if (!post || post.deletedAt || !isCompanyMeeting(post.tag)) {
     redirect(`/portal/announcements/${postId}`);
   }
-  // invited people minus anyone who already responded.
+  // invited people minus anyone who already responded - and on a meeting with
+  // sessions, a PICK is the response and lives in the choices table, so
+  // without this the chase-up also mailed everyone who had already picked.
   const audience = await prisma.user.findMany({
     where: ackAudienceWhere(post),
     select: { id: true },
@@ -2129,7 +2131,14 @@ export async function emailMeetingNoResponse(postId) {
     where: { announcementId: postId },
     select: { userId: true },
   });
-  const responded = new Set(responders.map((r) => r.userId));
+  const pickers = await prisma.announcementMeetingChoice.findMany({
+    where: { announcementId: postId },
+    select: { userId: true },
+  });
+  const responded = new Set([
+    ...responders.map((r) => r.userId),
+    ...pickers.map((c) => c.userId),
+  ]);
   const noRespIds = audience.map((u) => u.id).filter((id) => !responded.has(id));
   if (!noRespIds.length) {
     redirect(`/portal/announcements/${postId}?sent=0`);
