@@ -2268,7 +2268,45 @@ export async function resolveCorrection(correctionId, decision, formData) {
     }),
   ]);
 
+  // THE SHEET CATCHES UP WITH THE DECISION, 2026-09-03. Lopez's case: two
+  // hours reports accepted, overrides written - and nothing rebuilt, so the
+  // screen kept the old total, the dispute flag stayed set, and the row read
+  // as still waiting. Once the LAST open report is decided: if anything was
+  // accepted since the sheet last rebuilt, the same recompute the button
+  // runs applies it (which also clears the dispute flag and puts the
+  // corrected sheet back on the to-send list); a round of pure declines
+  // changes no figure, so only the dispute flag lifts and the sheet stands.
+  const stillOpen = await prisma.timesheetCorrection.count({
+    where: { timesheetId: c.timesheet.id, status: "open" },
+  });
+  if (stillOpen === 0) {
+    const sheet = await prisma.timesheet.findUnique({
+      where: { id: c.timesheet.id },
+      select: {
+        recomputedAt: true,
+        corrections: {
+          where: {
+            status: "accepted",
+            NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
+          },
+          select: { resolvedAt: true },
+        },
+      },
+    });
+    const since = sheet.recomputedAt?.getTime() ?? 0;
+    const pending = sheet.corrections.some((x) => (x.resolvedAt?.getTime() ?? 0) > since);
+    if (pending) {
+      await recomputeTimesheet(c.timesheet.id);
+    } else {
+      await prisma.timesheet.update({
+        where: { id: c.timesheet.id },
+        data: { disputedAt: null },
+      });
+    }
+  }
+
   revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}/corrections`);
+  revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}`);
 }
 
 // correct a single day by hand, from the data-checks screen.
