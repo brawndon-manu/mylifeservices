@@ -365,20 +365,21 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <label className="grid gap-1">
           <span className="text-sm font-semibold text-foreground">
             Anything else about it?{" "}
-            {!meta?.needsNote && date !== NEW_DAY && (
+            {!meta?.needsNote && (
               <span className="font-normal text-muted">(optional)</span>
             )}
           </span>
+          {/* the missing day's date has its own picker now - the note asking
+              for it in prose is the wording that produced a dateless claim
+              whose accept patched nothing. The generic prompt serves every
+              kind, and the note went back to optional with the date field
+              carrying the requirement. */}
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
             maxLength={1000}
-            placeholder={
-              date === NEW_DAY
-                ? "Which date did you work?"
-                : "Anything that helps payroll check it"
-            }
+            placeholder="Anything that helps payroll check it"
             className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
           />
         </label>
