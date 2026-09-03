@@ -21,6 +21,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import {
   buildAnnouncementEmailHtml,
   buildMeetingBlockHtml,
+  buildZoomBlockHtml,
   buildRsvpButtons,
   postButton,
   EMAIL_TZ,
@@ -183,10 +184,13 @@ export async function emailAnnouncement(
   // back: the dates repeat, but the join buttons and passcodes live nowhere
   // else, and the person this email chases has not picked and still needs the
   // door. Mánu 2026-09-03, the Session 1 morning.
-  const meetingHtml =
-    isMeeting && (opts.length === 0 || opts.some((o) => o?.zoomLink))
+  const meetingHtml = isMeeting
+    ? (opts.length === 0 || opts.some((o) => o?.zoomLink)
       ? buildMeetingBlockHtml(post)
-      : "";
+      : "")
+    // an ordinary announcement carrying a Zoom link prints the same Join
+    // card - see buildZoomBlockHtml
+    : buildZoomBlockHtml(post);
 
   const messages = recipients.map((r) => {
     // a meeting gets one-click RSVP buttons (responding also records the ack, so

@@ -291,6 +291,42 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       <div className={`mt-2 ${PROSE}`} dangerouslySetInnerHTML={{ __html: portalOnlyHtml }} />
     </div>
   ) : null;
+  // AN ORDINARY POST'S ZOOM DOOR - the same Join card the meetings show, for
+  // a post that is not a meeting but carries a link. The meeting tags render
+  // theirs inside the meeting section; this is exactly for everything else.
+  // Mánu 2026-09-03.
+  const zoomCard = !isCompanyMeeting(post.tag) && post.zoomLink ? (
+    <div className="mx-auto mt-6 max-w-2xl">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-4">
+        <a
+          href={post.zoomLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+        >
+          <VideoIcon className="h-4 w-4" /> Join meeting
+        </a>
+        <CopyButton
+          text={post.zoomLink}
+          label="Copy link"
+          className="rounded-md border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:text-foreground"
+        />
+        {post.zoomCode && (
+          <span className="ml-auto flex items-center gap-2">
+            <span className="text-sm text-muted">Passcode</span>
+            <span className="rounded bg-surface-2 px-2.5 py-1 font-mono text-sm tracking-widest text-foreground">
+              {post.zoomCode}
+            </span>
+            <CopyButton
+              text={post.zoomCode}
+              label="Copy"
+              className="rounded-md border border-border-strong px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-foreground"
+            />
+          </span>
+        )}
+      </div>
+    </div>
+  ) : null;
   const fullDate = new Date(post.createdAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -783,6 +819,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               className={`mx-auto mt-6 max-w-2xl ${PROSE}`}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
+            {zoomCard}
             {portalOnlyBlock}
           </div>
         ) : (
@@ -866,6 +903,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               className={`mx-auto mt-6 max-w-2xl px-6 sm:px-8 ${PROSE}`}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
+            {zoomCard && <div className="px-6 sm:px-8">{zoomCard}</div>}
             {portalOnlyBlock && <div className="px-6 sm:px-8">{portalOnlyBlock}</div>}
 
             {event && <EventDetail post={post} myRsvp={myEventRsvp} data={eventData} />}

@@ -368,6 +368,9 @@ export default function AnnouncementForm({
   // uploaded PDF exists only here, so dropping it silently would lose the file.
   const [kept, setKept] = useState(() => attachmentsOf(d));
   const [tag, setTag] = useState(d.tag || tags[0] || "Announcement");
+  // the ordinary post's optional Zoom link - controlled so the passcode box
+  // can appear the moment a link is typed
+  const [plainZoomLink, setPlainZoomLink] = useState(d.zoomLink || "");
   const changelog = isChangelog(tag);
   const meeting = isCompanyMeeting(tag);
   const event = isEvent(tag);
@@ -519,6 +522,47 @@ export default function AnnouncementForm({
               email - the email says the portal has more.
             </p>
           </div>
+
+          {/* AN ORDINARY POST CAN CARRY A ZOOM LINK, Mánu 2026-09-03. The
+              meeting tags have their own link fields inside MeetingFields, so
+              this block is exactly for everything else. The passcode box only
+              appears once a link is typed - a passcode with no link is
+              nothing. */}
+          {!meeting && (
+            <div>
+              <label htmlFor="zoomLink" className={LABEL}>
+                Zoom link <span className="text-faint">(optional)</span>
+              </label>
+              <input
+                id="zoomLink"
+                name="zoomLink"
+                type="url"
+                maxLength={500}
+                value={plainZoomLink}
+                onChange={(e) => setPlainZoomLink(e.target.value)}
+                placeholder="https://zoom.us/j/..."
+                className={INPUT}
+              />
+              <p className="mt-1 text-xs text-muted">
+                Shown as a Join meeting button on the post and in the email.
+              </p>
+              {plainZoomLink.trim() && (
+                <div className="mt-3">
+                  <label htmlFor="zoomCode" className={LABEL}>
+                    Passcode <span className="text-faint">(optional)</span>
+                  </label>
+                  <input
+                    id="zoomCode"
+                    name="zoomCode"
+                    type="text"
+                    maxLength={60}
+                    defaultValue={d.zoomCode || ""}
+                    className={`${INPUT} font-mono`}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {meeting && (
             <MeetingFields

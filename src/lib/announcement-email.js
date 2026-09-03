@@ -264,6 +264,24 @@ export function buildMeetingBlockHtml(post, session = null) {
 
 // pre-meeting email to the author: add the link + passcode if missing, or confirm
 // they're still correct if already set.
+// THE JOIN CARD ON AN ORDINARY ANNOUNCEMENT. Same button, link line and
+// passcode the meeting block prints, without any of the meeting shape -
+// an announcement that carries a Zoom link is not a meeting, it just has a
+// door. Mánu 2026-09-03.
+export function buildZoomBlockHtml(post) {
+  if (!post?.zoomLink) return "";
+  const parts = [
+    `<div style="margin:6px 0 10px;"><a href="${post.zoomLink}" style="${BTN}">Join meeting</a></div>`,
+    `<div style="font-size:13px;color:#4b5563;word-break:break-all;">Link: <a href="${post.zoomLink}" style="color:#2f6feb;">${esc(post.zoomLink)}</a></div>`,
+  ];
+  if (post.zoomCode) {
+    parts.push(
+      `<div style="font-size:13px;color:#4b5563;">Passcode: <strong style="font-family:monospace;letter-spacing:1px;">${esc(post.zoomCode)}</strong></div>`,
+    );
+  }
+  return `<div style="margin:16px 0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">${parts.join("")}</div>`;
+}
+
 export function buildAuthorNudgeHtml({ logoUrl, title, editUrl, zoomLink, zoomCode }) {
   let body;
   if (zoomLink) {

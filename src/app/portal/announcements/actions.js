@@ -185,12 +185,19 @@ function parseMeetingFields(formData, tag) {
     meetingAttestationSubject: null,
     meetingAttestationBody: null,
   };
-  if (!isCompanyMeeting(tag)) return blank;
-
   const trim = (s, max) => {
     const v = typeof s === "string" ? s.trim() : "";
     return v ? v.slice(0, max) : null;
   };
+  if (!isCompanyMeeting(tag)) {
+    // AN ORDINARY ANNOUNCEMENT CAN CARRY A ZOOM LINK TOO, Mánu 2026-09-03:
+    // "maybe just have option to add zoom link and it has option for passcode."
+    // Same columns the meetings use, nothing else from the meeting shape - the
+    // link renders as the same Join card on the post and in the email, and the
+    // passcode only means anything once a link exists.
+    const link = trim(formData.get("zoomLink"), 500);
+    return { ...blank, zoomLink: link, zoomCode: link ? trim(formData.get("zoomCode"), 60) : null };
+  }
   const kind = formData.get("meetingKind");
   const format = formData.get("meetingFormat");
   const online = formatHasOnline(format);
