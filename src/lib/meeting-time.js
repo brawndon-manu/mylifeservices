@@ -120,3 +120,19 @@ export function formatDuration(fromMin, toMin) {
   if (toMin && toMin > fromMin) return `${fmtMin(fromMin)} – ${fmtMin(toMin)}`;
   return fmtMin(fromMin);
 }
+
+// how many attending seats have no roll-call mark, counting only sessions that
+// have already started - Mánu 2026-09-03: a September series read "Unmarked 79"
+// on day one because five future sessions cannot be marked yet. A seat is
+// unmarked when roll call could have been taken and was not, so a session still
+// to come contributes nothing. rows: [{ at, people: [{ attended }] }] - a
+// single-session meeting passes one row with the meeting's own start.
+export function unmarkedRollCall(rows, now = Date.now()) {
+  let n = 0;
+  for (const r of rows || []) {
+    const t = r?.at ? new Date(r.at).getTime() : NaN;
+    if (Number.isNaN(t) || t > now) continue;
+    for (const p of r.people || []) if (!p.attended) n++;
+  }
+  return n;
+}

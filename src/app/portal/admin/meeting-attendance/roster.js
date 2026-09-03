@@ -3,7 +3,7 @@
 // imports. mirrors the meeting detail page's roster.
 import { preferredName } from "@/lib/contacts";
 import { MEETING_FORMAT_LABELS } from "@/lib/announcements";
-import { formatInstant } from "@/lib/meeting-time";
+import { formatInstant, unmarkedRollCall } from "@/lib/meeting-time";
 
 // server-rendered, so it can't know each viewer's zone like the portal does.
 // pin it to Pacific - ~all staff are in CA (same call the emails make).
@@ -193,7 +193,17 @@ export function buildRoster(m, audienceUsers, choices, responses) {
     attendingSessions,
     present,
     absent,
-    unmarked: Math.max(0, attendingSessions - present - absent),
+    // only sessions that have started count - a future session cannot have a
+    // roll call yet, so its seats are not "unmarked". On the bar the missing
+    // stretch after present + absent + unmarked is what is still to come.
+    unmarked: unmarkedRollCall(
+      opts.length
+        ? bySession.map((s) => ({
+            at: opts.find((o) => o.id === s.id)?.at || null,
+            people: s.going,
+          }))
+        : [{ at: m.meetingAt || null, people: singleGoing }],
+    ),
     noResponseCount: noResponse.length,
     noResponsePeople: noResponse.map(slim),
     cantLabel: isSeries ? "Can't attend a series" : "Can't make it",
