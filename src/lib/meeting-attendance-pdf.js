@@ -191,10 +191,22 @@ export async function renderAttendanceReport(
       let x = L;
       cells.forEach((cell, i) => {
         const [, w, right] = cols[i];
-        const { s, f = font, color = INK } = typeof cell === "string" ? { s: cell } : cell;
+        const { s, f = font, color = INK, extra = null } =
+          typeof cell === "string" ? { s: cell } : cell;
         const t = fit(safe(s, f), w - 10, f, 8.5);
         const cx = right ? x + w - 5 - f.widthOfTextAtSize(t, 8.5) : x + 5;
         text(t, cx, y, { size: 8.5, f, color });
+        // a second run in lighter type - the preferred name beside the legal
+        // one. Skipped when the room left in the cell could only fit noise.
+        if (extra) {
+          const ex = cx + f.widthOfTextAtSize(t, 8.5) + 6;
+          const room = x + w - 5 - ex;
+          if (room > 24) {
+            text(fit(safe(extra, font), room, font, 8), ex, y, {
+              size: 8, color: MUTED,
+            });
+          }
+        }
         x += w;
       });
       y -= rowH;
@@ -206,15 +218,23 @@ export async function renderAttendanceReport(
     people.map((p) => {
       const [label, color] = rollCall[p.attended] || ["Unmarked", MUTED];
       return [
-        { s: p.name, f: bold },
+        { s: p.name, f: bold, extra: p.preferred },
         { s: p.title || "", color: MUTED },
         { s: label, f: p.attended ? bold : font, color },
       ];
     });
 
-  const session = (s) => {
+  // every section starts on its own page - Mánu 2026-09-03 - except the first,
+  // which rides under the summary header on page 1
+  let sections = 0;
+  const sectionBreak = () => {
+    if (sections++) newPage();
+  };
+
+  const session = (s, prefix) => {
+    sectionBreak();
     heading(
-      [s.label, s.dateLabel].filter(Boolean).join(" · ") || "Session",
+      [prefix, s.label, s.dateLabel].filter(Boolean).join(" · ") || "Session",
       s.people.length,
     );
     if (!s.people.length) {
@@ -226,23 +246,22 @@ export async function renderAttendanceReport(
   };
 
   if (single) {
+    sectionBreak();
     heading("Attending", single.length);
     if (single.length) peopleTable(GOING_COLS, goingRows(single));
     else { text("No one has said they are attending.", L, y, { size: 8.5, color: MUTED }); y -= 18; }
   }
   for (const g of groups || []) {
-    if (g.heading) {
-      need(40);
-      text(g.heading, L, y, { size: 11.5, f: bold });
-      y -= 16;
-    }
-    for (const s of g.sessions) session(s);
+    // one session per page, so the series label rides each session's heading
+    // instead of standing alone above the first one
+    for (const s of g.sessions) session(s, g.heading);
     if (g.cant?.length) {
-      heading(`Can't attend this series`, g.cant.length);
+      sectionBreak();
+      heading([g.heading, "Can't attend this series"].filter(Boolean).join(" · "), g.cant.length);
       peopleTable(
         CANT_COLS,
         g.cant.map((p) => [
-          { s: p.name, f: bold },
+          { s: p.name, f: bold, extra: p.preferred },
           { s: p.title || "", color: MUTED },
           { s: p.reason || "", color: MUTED },
         ]),
@@ -251,23 +270,25 @@ export async function renderAttendanceReport(
   }
 
   if (cantAll?.length) {
+    sectionBreak();
     heading("Can't make it", cantAll.length);
     peopleTable(
       CANT_COLS,
       cantAll.map((p) => [
-        { s: p.name, f: bold },
+        { s: p.name, f: bold, extra: p.preferred },
         { s: p.title || "", color: MUTED },
         { s: p.reason || "", color: MUTED },
       ]),
     );
   }
 
+  sectionBreak();
   heading("No response", noResponse.length);
   if (noResponse.length) {
     peopleTable(
       NONE_COLS,
       noResponse.map((p) => [
-        { s: p.name, f: bold },
+        { s: p.name, f: bold, extra: p.preferred },
         { s: p.title || "", color: MUTED },
       ]),
     );

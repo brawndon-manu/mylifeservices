@@ -3,6 +3,8 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { ackAudienceWhere, isCompanyMeeting } from "@/lib/announcements";
+// LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
+import { payrollName } from "@/lib/contacts";
 import { officeFromSearch } from "@/lib/positions";
 import { buildRoster, meetingMeta } from "../../roster";
 import { renderAttendanceReport } from "@/lib/meeting-attendance-pdf";
@@ -75,7 +77,19 @@ export async function GET(req, { params }) {
 
   const r = buildRoster(m, audienceUsers, choices, responses);
   const meta = meetingMeta(m, r);
-  const slimP = (p) => ({ name: p.displayName, title: p.title, attended: p.attended, reason: p.reason });
+  // legal name leads, the preferred name rides beside it in lighter type when
+  // the two differ - Mánu 2026-09-03, same rule as the payout documents
+  const uById = new Map(audienceUsers.map((u) => [u.id, u]));
+  const slimP = (p) => {
+    const legal = payrollName(uById.get(p.id)) || p.displayName;
+    return {
+      name: legal,
+      preferred: p.displayName && p.displayName !== legal ? p.displayName : null,
+      title: p.title,
+      attended: p.attended,
+      reason: p.reason,
+    };
+  };
 
   let bytes;
   try {
