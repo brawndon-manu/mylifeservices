@@ -86,7 +86,18 @@ test("the sheet prints the line only when time off is recorded, and totals stand
   const b = pageText(await PDFDocument.load(without.bytes));
   assert.ok(a.includes(hex("Time off this pay period:")), "label printed");
   assert.ok(a.includes(hex("8.00 hrs PTO (08/18/26)")), "the record printed");
+  // THE ROW IN THE GRID, Mánu 2026-09-03: the time-off day prints like any
+  // other row - hours in Reg, PTO in Comments - and the Totals row carries
+  // the combined figure (8 worked + 8 off = 16.00)
+  assert.ok(a.includes(hex("16.00")), "the totals row reads the combined figure");
+  assert.ok(a.includes(hex("PTO")), "the day's Comments cell says PTO");
+  // and the reconciliation sentence splits it back out against QSP's export
+  assert.ok(
+    a.includes(hex("hrs: 8.00 hrs worked and 8.00 hrs recorded time off.")),
+    "the reconciliation names both parts",
+  );
   assert.ok(!b.includes(hex("Time off this pay period:")), "no record, no line");
+  assert.ok(!b.includes(hex("16.00")), "no record, worked total stands");
   // the worked figure is untouched by the record - the totals row prints the
   // same 8.00 day on both documents
   assert.ok(a.includes(hex("Totals:")) && b.includes(hex("Totals:")));

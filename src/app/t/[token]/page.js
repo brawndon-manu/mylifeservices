@@ -6,6 +6,10 @@ import { sheetDisplayName } from "@/lib/timesheet/display-name";
 import TimesheetSigner from "./TimesheetSigner";
 import BreakReason from "./BreakReason";
 import { employeeAsk, breakFindingKey, resetAction } from "@/lib/timesheet/break-answers";
+// the calendar's accepted time off, for the header's Time off and Paid hours
+// rows - same one-fetch rule as the sheet render routes
+import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
+import { timeOffTotals } from "@/lib/timesheet/time-off";
 import ReportProblem from "./ReportProblem";
 import TimesheetQuestion from "./TimesheetQuestion";
 import TimesheetViews from "./TimesheetViews";
@@ -323,6 +327,9 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // drops out, which is right for the cards asking a question and wrong for the
   // panel reading their answers back. That panel needs exactly the rows this one
   // throws away.
+  // recorded time off - the ACCEPTED calendar entries, never the claim
+  const timeOffHours = timeOffTotals(await loadTimeOffFor(ts)).total;
+
   const breakAnswers = ts.userId
     ? (await prisma.timesheetBreakAnswer.findMany({
       where: {
@@ -708,6 +715,16 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             hours worked, not penalty pay, and they are what the sheet below
             prints. `standing` is still computed - the policy line and the
             questions read it. */}
+        {/* RECORDED TIME OFF AND THE COMBINED FIGURE, 2026-09-03 - Mánu, three
+            times: "why doesnt it say 104." Time off is hours of pay the grid
+            never held, so it shows as its own line with the one number the
+            page kept refusing to say. Only once an entry is ACCEPTED on the
+            calendar - a claim is not a record - and never inside worked hours
+            or overtime, which is what keeps a PTO day from inventing OT. */}
+        {timeOffHours > 0 && <Figure label="Time off" value={timeOffHours} />}
+        {timeOffHours > 0 && (
+          <Figure label="Paid hours" value={ts.paidHours + timeOffHours} strong />
+        )}
       </div>
       {standing.assumptions > 0 && (
         /* THE POLICY, NAMED AND LINKED, AND NOTHING ELSE. Mánu 2026-08-12 cut

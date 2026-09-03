@@ -15,7 +15,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { recordedBreaksFor, insertRecordedBreaks, withStatedRest, withStatedBreaks } from "./recorded-breaks.js";
 // the time-off line's one wording - shared with nothing else on purpose, so
 // the sheet and the tests read the same sentence
-import { timeOffLine } from "./time-off.js";
+import { timeOffLine, timeOffTotals } from "./time-off.js";
 
 // read straight off disk - this only ever runs server-side.
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
@@ -1415,8 +1415,20 @@ export async function renderCorrected(sheet, opts = {}) {
   // missing-day claim carried no date and its accept patched nothing;
   // Bustamante's 08/28 is the day that made this branch real.
   const addedDays = (sheet.days || []).filter((d) => d.addedByHand).map((d) => d.date);
+  // RECORDED TIME OFF RIDES THE GRID NOW - Mánu 2026-09-03: "just add the row
+  // for the 18th and in the comments put PTO and have 8 for the reg hours so
+  // it also shows for daily total." The totals row therefore reads the
+  // combined figure, and this sentence has to split it back out or the
+  // comparison to QSP's export is unexplainable.
+  const offHours = timeOffTotals(sheet.timeOff).total;
   text(
-    !moved
+    offHours > 0
+      ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs: ${f2(sheet.totals.paidHours - offHours)} hrs worked and ${f2(offHours)} hrs recorded time off.${
+        addedDays.length > 0
+          ? ` The ${addedDays.join(", ")} ${addedDays.length === 1 ? "day was" : "days were"} added from your review, accepted by the office.`
+          : ""
+      }`
+      : !moved
       ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. Hours are unchanged; rest breaks are already paid in the export.`
       : added > 0
         ? `As exported by QSP: ${f2(sheet.totals.rawHours)} hrs. This sheet totals ${f2(sheet.totals.paidHours)} hrs: ${f2(added)} hrs of rest breaks you told us you took while clocked out have been added.`

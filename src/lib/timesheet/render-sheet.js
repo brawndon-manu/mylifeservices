@@ -121,10 +121,46 @@ export async function renderSheet(ts, {
   // `projected` is the stored days untouched, which is the whole point of it.
   // An unknown basis lands here too, which is the safe way round: the default
   // is the document payroll actually pays.
-  const days =
+  const workedDays =
     basis === "corrected"
       ? applyAssumptions(stored, { confirmed, answers, pastDue })
       : stored;
+
+  // RECORDED TIME OFF AS ITS OWN ROWS IN THE GRID, Mánu 2026-09-03: "just add
+  // the row for the 18th and in the comments put PTO and have 8 for the reg
+  // hours so it also shows for daily total." Display rows built from the
+  // ACCEPTED calendar entries: hours in the Reg column, no punches (like an
+  // accepted missing day), miscKind so the Comments cell prints the approved
+  // PTO / Sick pay words, and no breaks owed - a day off earns none. They
+  // join the totals sum below, so the Totals row reads the combined figure;
+  // the engine's stored paid hours stay worked-only, which is what keeps a
+  // PTO day out of the overtime tests forever.
+  const timeOffDays = (timeOff || [])
+    .filter((e) => e && e.date && Number(e.hours) > 0)
+    .map((e) => ({
+      date: e.date,
+      paidHours: Math.round(Number(e.hours) * 100) / 100,
+      rawHours: 0,
+      regularHours: Math.round(Number(e.hours) * 100) / 100,
+      otHours: 0,
+      doubleHours: 0,
+      punches: [],
+      breaks: [],
+      mealViolation: false,
+      restViolation: false,
+      mealCount: 0,
+      restCount: 0,
+      restRequired: 0,
+      mealRequired: false,
+      miscKind: e.kind === "sick" ? "sick" : "pto",
+      miscWorked: false,
+    }));
+  const days = timeOffDays.length
+    ? [...workedDays, ...timeOffDays].sort((a, b) => {
+      const k = (s) => { const [m, d2, y] = String(s.date).split("/"); return `${y}${m}${d2}`; };
+      return k(a).localeCompare(k(b));
+    })
+    : workedDays;
 
   // QSP prints its own numbered notes under the same heading. Normalised to an
   // array here so the block below is one concatenation rather than a
