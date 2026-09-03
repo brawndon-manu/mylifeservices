@@ -1975,6 +1975,54 @@ export async function restoreTimesheetMileage({ timesheetId }) {
   return recomputeTimesheet(ts.id);
 }
 
+// MILEAGE SET BY HAND, 2026-09-03. Valdez's case: QSP's mileage tracking
+// report summed the same trips entered in two places, and the export carries
+// one pre-summed row - so the corrected figure has nowhere to come from but a
+// person typing it. Same contract as the removal above: `data.qspMiles` is
+// what every surface reads, the figure it replaces rides the receipt, the
+// rebuild is the Recompute one (a signature already taken comes off, because
+// the miles print on the signed document), and a re-upload reads the export
+// afresh and knows nothing of this row.
+export async function setTimesheetMileage({ timesheetId, miles }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+  {
+    const newer = await supersededByForTimesheet(timesheetId);
+    if (newer) return refusal(newer);
+  }
+  const m = Math.round(Number(miles) * 100) / 100;
+  if (!Number.isFinite(m) || m < 0 || m > 9999) return { ok: false, error: "badmiles" };
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true, data: true,
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!ts) return { ok: false, error: "auth" };
+  if (ts.corrections.length) return { ok: false, error: "openitems" };
+  const stored = ts.data || {};
+  if (stored.qspMiles === m) return { ok: false, error: "samemiles" };
+  // a removal receipt in place would offer to "restore" over the hand-set
+  // figure, so setting clears it - the set's own receipt says what stood
+  const { qspMilesRemoved, ...rest } = stored;
+  await prisma.timesheet.update({
+    where: { id: ts.id },
+    data: {
+      data: {
+        ...rest,
+        qspMiles: m,
+        qspMilesSet: {
+          was: stored.qspMiles ?? null,
+          at: new Date().toISOString(),
+          byName: preferredName(user) || user.name || null,
+        },
+      },
+    },
+  });
+  return recomputeTimesheet(ts.id);
+}
+
 // employee-side: report that something on the timesheet is wrong. takes the
 // token, like signing does - the person reporting has no portal login.
 //

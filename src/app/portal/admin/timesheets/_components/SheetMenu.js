@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   holdTimesheetSigning, releaseTimesheetSigning,
-  removeTimesheetMileage, restoreTimesheetMileage,
+  removeTimesheetMileage, restoreTimesheetMileage, setTimesheetMileage,
 } from "../actions";
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
@@ -22,6 +22,8 @@ const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 const WORDS = {
   openitems: "Resolve their open report first.",
   nomiles: "No mileage on this sheet.",
+  badmiles: "That is not a mileage figure.",
+  samemiles: "The sheet already says that.",
   already: "Already done. Reload to see it.",
   superseded: "A newer upload holds this period.",
 };
@@ -104,6 +106,27 @@ export default function SheetMenu({ timesheetId, held, miles, milesRemoved, sign
               {busy === "hold" ? "Holding..." : "Hold signing"}
             </button>
           )}
+          {/* the corrected figure typed by hand - Valdez's doubled QSP entry
+              is the case. Rides the hold's prompt pattern; the signed warning
+              rides the prompt because the number is not known until typed. */}
+          <button
+            type="button"
+            disabled={busy === "setmiles"}
+            onClick={() =>
+              run("setmiles", (raw) => {
+                if (!/\d/.test(String(raw))) return { ok: false, error: "badmiles" };
+                return setTimesheetMileage({ timesheetId, miles: Number(String(raw).replace(/[^\d.]/g, "")) });
+              }, {
+                prompt:
+                  (miles != null
+                    ? `Miles driven this pay period. The sheet says ${f2(miles)}.`
+                    : "Miles driven this pay period.")
+                  + (signed ? " Their signature comes off and the sheet goes back out to be signed again." : ""),
+              })}
+            className={item}
+          >
+            {busy === "setmiles" ? "Saving..." : "Set the mileage by hand"}
+          </button>
           {miles != null && (
             <button
               type="button"
