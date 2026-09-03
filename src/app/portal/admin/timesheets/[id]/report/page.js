@@ -142,6 +142,14 @@ export default async function PayoutReportPage({ params }) {
           >
             Download PDF
           </a>
+          {/* one workbook with tabs - Summary, Payout, Penalty hours - which
+              is what payroll actually opens. Mánu 2026-09-03, off David's ask. */}
+          <a
+            href={`/portal/admin/timesheets/${batch.id}/report/xlsx`}
+            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
+          >
+            Download Excel
+          </a>
           <a
             href={`/portal/admin/timesheets/${batch.id}/report/csv`}
             className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
