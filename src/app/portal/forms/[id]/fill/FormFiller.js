@@ -137,16 +137,19 @@ export default function FormFiller({
   const [sendBusy, setSendBusy] = useState(false);
   const [sendErr, setSendErr] = useState(null);
   const [sent, setSent] = useState(false);
+  const recipients = reviewTeam?.recipients || [];
+  const recipientLabel = reviewTeam?.recipientLabel || "reviewer";
   // who this goes to (a picked holder of the form's recipientTitle) + on the
   // public share link the submitter's own name/email (we don't know them).
-  const [recipientId, setRecipientId] = useState("");
+  // exactly one holder means there is nothing to pick - the document can only
+  // go to them - so the choice is preset and the dropdown never renders.
+  const [recipientId, setRecipientId] = useState(
+    recipients.length === 1 ? recipients[0].id : ""
+  );
   const [empName, setEmpName] = useState("");
   const [empEmail, setEmpEmail] = useState("");
   const bytesRef = useRef(null);
   const wrapRef = useRef(null);
-
-  const recipients = reviewTeam?.recipients || [];
-  const recipientLabel = reviewTeam?.recipientLabel || "reviewer";
   const chosenRecipient = recipients.find((r) => r.id === recipientId) || null;
 
   // THE TYPED SIGNATURE IS NOT A SECOND KIND OF ANSWER. It is written into the
@@ -927,8 +930,20 @@ export default function FormFiller({
               >
                 <h2 className="text-base font-semibold text-foreground">Submit this form</h2>
                 <p className="mt-1 text-sm text-muted">
-                  Pick the {recipientLabel} this goes to. The completed PDF is
-                  attached.
+                  {recipients.length === 1 ? (
+                    <>
+                      This goes to{" "}
+                      <span className="font-medium text-foreground">
+                        {recipients[0].name}
+                      </span>{" "}
+                      ({recipientLabel}). The completed PDF is attached.
+                    </>
+                  ) : (
+                    <>
+                      Pick the {recipientLabel} this goes to. The completed PDF is
+                      attached.
+                    </>
+                  )}
                 </p>
 
                 {recipients.length === 0 ? (
@@ -936,24 +951,28 @@ export default function FormFiller({
                     No {recipientLabel} is set up to receive this yet. Let IT know
                     so they can assign one.
                   </p>
-                ) : (
+                ) : recipients.length === 1 && !reviewTeam?.ccNames?.length ? null : (
                   <div className="mt-4">
-                    <label htmlFor="recipient" className="block text-sm font-medium text-foreground">
-                      Send to ({recipientLabel}) <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      id="recipient"
-                      value={recipientId}
-                      onChange={(e) => setRecipientId(e.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-border-strong bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
-                    >
-                      <option value="">Select a {recipientLabel}…</option>
-                      {recipients.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
+                    {recipients.length > 1 && (
+                      <>
+                        <label htmlFor="recipient" className="block text-sm font-medium text-foreground">
+                          Send to ({recipientLabel}) <span className="text-rose-500">*</span>
+                        </label>
+                        <select
+                          id="recipient"
+                          value={recipientId}
+                          onChange={(e) => setRecipientId(e.target.value)}
+                          className="mt-1.5 w-full rounded-lg border border-border-strong bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                        >
+                          <option value="">Select a {recipientLabel}…</option>
+                          {recipients.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
                     {reviewTeam?.ccNames?.length > 0 && (
                       <p className="mt-1.5 text-sm text-muted">
                         CC: <span className="font-medium text-foreground">{reviewTeam.ccNames.join(", ")}</span> and you
