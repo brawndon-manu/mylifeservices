@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { isFull, slotLabel, remainingFor } from "@/lib/meeting-slots";
+import { isFull, slotLabel, remainingFor, sessionStarted } from "@/lib/meeting-slots";
 import { verifyRsvpToken } from "@/lib/rsvp-token";
 import { firstNameOf } from "@/lib/contacts";
 import { isCompanyMeeting, computeMeetingLocks } from "@/lib/announcements";
@@ -138,7 +138,15 @@ export default async function RsvpPage({ params, searchParams }) {
           g = { id: o.seriesId, label: o.seriesLabel || "Series", options: [] };
           groups.push(g);
         }
-        g.options.push({ id: o.id, dateLabel: optDateLabel(o) });
+        g.options.push({
+          id: o.id,
+          dateLabel: optDateLabel(o),
+          // same two states the flat build carries - a slot they are already
+          // in is never shown as full or past to them
+          full: !mineAlready.has(o.id) && isFull(o, takenByOption[o.id] || 0),
+          past: !mineAlready.has(o.id) && sessionStarted(o),
+          note: slotLabel(o, takenByOption[o.id] || 0),
+        });
       }
       series = groups.map((g) => ({ ...g, locked: locks.lockedSeriesIds.includes(g.id) }));
 
@@ -184,6 +192,9 @@ export default async function RsvpPage({ params, searchParams }) {
             time: (parts[1] || "").replace(/ [A-Z]{2,4}$/, "") || null,
             // a slot they are already in is never shown as full to them
             full: !mineAlready.has(o.id) && isFull(o, takenByOption[o.id] || 0),
+            // a session already underway is offered to nobody new - shown
+            // greyed with its own words, and the server refuses it regardless
+            past: !mineAlready.has(o.id) && sessionStarted(o),
             note: slotLabel(o, takenByOption[o.id] || 0),
             left: remainingFor(o, takenByOption[o.id] || 0),
           };

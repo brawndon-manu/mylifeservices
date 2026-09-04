@@ -117,3 +117,10 @@ export function sortSessionOptions(options) {
   ordered.sort((a, c) => when(a[0]) - when(c[0]));
   return ordered.flat();
 }
+
+// A SESSION THAT HAS STARTED CANNOT BE NEWLY PICKED - Mánu 2026-09-04: "lets
+// make sure people cant pick meetings that have already passed." One
+// definition for both pickers and every server gate. A pick somebody already
+// holds is theirs; this only closes the door on choosing the past.
+export const sessionStarted = (o, now = Date.now()) =>
+  Boolean(o?.at && new Date(o.at).getTime() <= now);

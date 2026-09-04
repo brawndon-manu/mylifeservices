@@ -12,7 +12,7 @@ import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 import { sendSlotAlert } from "@/lib/slot-alert-email";
 import {
-  addedSessions, canTake, sortSessionOptions } from "@/lib/meeting-slots";
+  addedSessions, canTake, sortSessionOptions, sessionStarted } from "@/lib/meeting-slots";
 import { getCurrentUser } from "@/lib/current-user";
 import {
   isModerator,
@@ -1246,6 +1246,11 @@ export async function chooseMeetingOption(postId, optionId) {
   // new pick can be refused, which is why `existing` is passed in.
   const chosen = opts.find((o) => o && o.id === optionId);
   if (!existing) {
+    // a session already underway or over takes no new picks - Mánu
+    // 2026-09-04. A pick somebody holds is theirs to keep or drop.
+    if (sessionStarted(chosen)) {
+      return { ok: false, error: "past", say: "That session has already happened. Please pick another time." };
+    }
     const taken = await prisma.announcementMeetingChoice.count({
       where: { announcementId: postId, optionId },
     });
@@ -1350,6 +1355,22 @@ export async function setMeetingChoices(postId, formData) {
   {
     const mine = new Set(myChoices.map((c) => c.optionId));
     const wanted = ids.filter((id) => !isCant(id) && !mine.has(id));
+    // the past is refused before the cap: a stale tab can offer a session
+    // that has since started, and the whole submission bounces with its name
+    // rather than quietly dropping it - the full-slot rule's own reasoning.
+    {
+      const past = wanted.filter((id) => sessionStarted(optById.get(id)));
+      if (past.length) {
+        const names = past.map((id) => optById.get(id)?.label).filter(Boolean).join(", ");
+        return {
+          ok: false,
+          error: "past",
+          say: names
+            ? `${names} ${past.length === 1 ? "has" : "have"} already happened. Please pick another time.`
+            : "That session has already happened. Please pick another time.",
+        };
+      }
+    }
     if (wanted.length) {
       const counts = await prisma.announcementMeetingChoice.groupBy({
         by: ["optionId"],

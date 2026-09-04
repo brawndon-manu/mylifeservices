@@ -39,11 +39,12 @@ function Marker({ tone, on, box }) {
 }
 
 // a clickable selection row (not a form input - state is posted via hidden inputs).
-function Choice({ label, tone, on, box, onClick, full = false, note = null }) {
+function Choice({ label, tone, on, box, onClick, full = false, past = false, note = null }) {
+  const blocked = full || past;
   // A FULL SLOT IS SHOWN, NOT HIDDEN. Somebody who was told to pick Tuesday
   // 10:00 needs to see that it went rather than wonder where it is - and a slot
   // they are already in never arrives here as full.
-  const state = full
+  const state = blocked
     ? "cursor-not-allowed border-border bg-background text-muted opacity-60"
     : on
     ? tone === "cant"
@@ -58,14 +59,18 @@ function Choice({ label, tone, on, box, onClick, full = false, note = null }) {
   return (
     <button
       type="button"
-      disabled={full}
+      disabled={blocked}
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm font-semibold transition ${state}`}
     >
       <Marker tone={tone} on={on} box={box} />
       <span>
         {label}
-        {note && <span className="ml-2 text-xs font-normal opacity-80">{note}</span>}
+        {past ? (
+          <span className="ml-2 text-xs font-normal opacity-80">Already happened</span>
+        ) : (
+          note && <span className="ml-2 text-xs font-normal opacity-80">{note}</span>
+        )}
       </span>
     </button>
   );
@@ -260,6 +265,7 @@ export default function RsvpForm({
                     key={o.id}
                     label={o.dateLabel}
                     full={o.full}
+                    past={o.past}
                     note={o.note}
                     on={seriesPick[s.id] === o.id && !cantSeries.has(s.id)}
                     onClick={() => pickSeriesDate(s.id, o.id)}
@@ -334,6 +340,7 @@ export default function RsvpForm({
                     key={o.id}
                     label={o.dateLabel}
                     full={o.full}
+                    past={o.past}
                     note={o.note}
                     box
                     on={flatChecks.has(o.id) && !fullCant}
@@ -344,6 +351,7 @@ export default function RsvpForm({
                     key={o.id}
                     label={o.dateLabel}
                     full={o.full}
+                    past={o.past}
                     note={o.note}
                     on={flatVal === o.id && !fullCant}
                     onClick={() => pickFlat(o.id)}

@@ -7,7 +7,7 @@
 // version of the same confirmed/change pattern.
 import { useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
-import { isFull, slotLabel, remainingFor } from "@/lib/meeting-slots";
+import { isFull, slotLabel, remainingFor, sessionStarted } from "@/lib/meeting-slots";
 import MeetingTime from "./MeetingTime";
 import CopyButton from "./CopyButton";
 import { formatDuration } from "@/lib/meeting-time";
@@ -215,7 +215,8 @@ export default function MeetingResponse({
   const slotCell = (opt) => {
     const on = selected.has(opt.id);
     const count = taken[opt.id] || 0;
-    const full = !on && isFull(opt, count);
+    const past = !on && sessionStarted(opt);
+    const full = past || (!on && isFull(opt, count));
     const left = remainingFor(opt, count);
     const time = String(opt.label || "").replace(/^\S+\s+/, "");
     return (
@@ -235,7 +236,7 @@ export default function MeetingResponse({
       >
         <span className="block">{time}</span>
         {full ? (
-          <span className="block text-[10px] font-normal">Full</span>
+          <span className="block text-[10px] font-normal">{past ? "Already happened" : "Full"}</span>
         ) : left != null ? (
           <span className="block text-[10px] font-normal text-muted">{left} left</span>
         ) : null}
@@ -253,8 +254,11 @@ export default function MeetingResponse({
     // they hold that seat. The server refuses new picks either way; this only
     // saves people from choosing something that will be refused.
     const count = taken[opt.id] || 0;
-    const full = !on && isFull(opt, count);
-    const note = slotLabel(opt, count);
+    // the past is greyed the way a full slot is - the server refuses it
+    // anyway; this only saves choosing something that will bounce
+    const past = !on && sessionStarted(opt);
+    const full = past || (!on && isFull(opt, count));
+    const note = past ? "Already happened" : slotLabel(opt, count);
     return (
       <button
         key={opt.id}

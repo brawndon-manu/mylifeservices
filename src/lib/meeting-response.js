@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { computeMeetingLocks, isAckExempt } from "@/lib/announcements";
 import { titleHasSegment } from "@/lib/positions";
 import { formatInstant } from "@/lib/meeting-time";
+import { sessionStarted } from "@/lib/meeting-slots";
 
 const TZ = "America/Los_Angeles";
 
@@ -85,6 +86,8 @@ export async function recordEmailRsvp(post, user, choice) {
     if (opt.seriesId ? locks.lockedSeriesIds.includes(opt.seriesId) : locks.lockedAll) {
       return { status: "locked" };
     }
+    // a session already underway or over cannot be newly picked from an email
+    if (sessionStarted(opt)) return { status: "locked" };
   }
 
   const respKey = { announcementId_userId: { announcementId: post.id, userId: user.id } };
@@ -212,7 +215,13 @@ export async function recordEmailPicks(post, user, sel = {}) {
           update: {},
         });
         touched++;
-      } else if (pick[sid] && sameSeries.includes(pick[sid])) {
+      } else if (
+        pick[sid] &&
+        sameSeries.includes(pick[sid]) &&
+        // a stale form can still post a session that has since started -
+        // leave that series exactly as it stands rather than record the past
+        !sessionStarted(opts.find((o) => o.id === pick[sid]))
+      ) {
         await prisma.announcementMeetingChoice.deleteMany({
           where: {
             announcementId: post.id,
@@ -286,8 +295,9 @@ export async function recordEmailPicks(post, user, sel = {}) {
     await markAck(post, user);
     return { status: "cant" };
   }
-  const picks = [...new Set((sel.flatPicks || []).filter((id) => validIds.has(id)))];
-  if (!picks.length) return { status: "invalid" };
+  const wantedFlat = [...new Set((sel.flatPicks || []).filter((id) => validIds.has(id)))];
+  const picks = wantedFlat.filter((id) => !sessionStarted(opts.find((o) => o.id === id)));
+  if (!picks.length) return { status: wantedFlat.length ? "locked" : "invalid" };
   if (locks.lockedAll) return { status: "locked" };
   await prisma.announcementMeetingChoice.deleteMany({
     where: { announcementId: post.id, userId: user.id },
