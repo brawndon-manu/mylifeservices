@@ -374,7 +374,13 @@ export default function AnnouncementForm({
   const changelog = isChangelog(tag);
   const meeting = isCompanyMeeting(tag);
   const event = isEvent(tag);
-  const [requireAck, setRequireAck] = useState(!!d.requireAck);
+  // acknowledging and signing are two different records - acknowledgment only
+  // says they read it - so the box offers them as siblings, not a form nested
+  // under the ack. one mode, mapped back onto the same requireAck + formId
+  // columns the server already stores.
+  const [ackMode, setAckMode] = useState(
+    d.requireAck ? (d.formId ? "attest" : "ack") : "none"
+  );
   const [formId, setFormId] = useState(d.formId || "");
   const [content, setContent] = useState(d.content || "");
 
@@ -691,35 +697,91 @@ export default function AnnouncementForm({
         </>
       )}
 
-      {/* acknowledgment - non-meeting types only. a meeting uses its RSVP response
-          as the record, so there's no separate acknowledgment step for meetings. */}
+      {/* what staff must do - non-meeting types only. a meeting uses its RSVP
+          response as the record, so there's no separate step for meetings.
+          acknowledging and signing share the deadline + audience + roster
+          underneath, which is why they live in one box. */}
       {!meeting && (
         <div className="rounded-md border border-border bg-surface-2 p-4">
-          <label className="flex items-start gap-3">
-            <input
-              type="checkbox"
-              name="requireAck"
-              checked={requireAck}
-              onChange={(e) => setRequireAck(e.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-brand"
-            />
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                Require staff to acknowledge they&apos;ve read this
-              </span>
-              <span className="mt-0.5 block text-xs text-muted">
-                Adds an &quot;Acknowledge that I&apos;ve read this&quot; box and a
-                who-has / who-hasn&apos;t roster. You can also email it for one-click
-                acknowledgment.
-              </span>
-            </span>
-          </label>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+            What staff must do
+          </p>
+          {ackMode !== "none" && <input type="hidden" name="requireAck" value="on" />}
+          <div className="space-y-2">
+            {[
+              {
+                value: "none",
+                label: "Nothing",
+                hint: "Just a post.",
+              },
+              {
+                value: "ack",
+                label: "Acknowledge they've read this",
+                hint:
+                  'Adds an "Acknowledge that I\'ve read this" box and a who-has / who-hasn\'t roster. You can also email it for one-click acknowledgment.',
+              },
+              ...(forms.length > 0
+                ? [
+                    {
+                      value: "attest",
+                      label: "Sign an attestation",
+                      hint:
+                        "Pick a form from the library. Staff open it from the post, fill it, and submit. Submitting the signed form is what completes it. The roster tracks opened and signed.",
+                    },
+                  ]
+                : []),
+            ].map((opt) => (
+              <label key={opt.value} className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  checked={ackMode === opt.value}
+                  onChange={() => setAckMode(opt.value)}
+                  className="mt-0.5 h-4 w-4 accent-brand"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-foreground">
+                    {opt.label}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted">{opt.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
 
-          {requireAck && (
+          {ackMode !== "none" && (
             <div className="mt-3 space-y-4 border-t border-border pt-3">
+              {ackMode === "attest" && (
+                <div>
+                  <label htmlFor="formId" className={LABEL}>
+                    Attestation <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    id="formId"
+                    name="formId"
+                    value={formId}
+                    onChange={(e) => setFormId(e.target.value)}
+                    className={INPUT}
+                    required
+                  >
+                    <option value="">Pick a form</option>
+                    {forms.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.title}
+                      </option>
+                    ))}
+                  </select>
+                  {/* OPENED AND SIGNED ARE TWO STATES, and the person choosing
+                      the form has to know that before they choose it. */}
+                  <p className="mt-1 text-xs text-muted">
+                    Acknowledging records that they opened it. Submitting the
+                    signed form is what finishes it. The roster tracks both.
+                  </p>
+                </div>
+              )}
               <div>
                 <label htmlFor="expiresAt" className={LABEL}>
-                  Acknowledge by <span className="text-faint">(optional)</span>
+                  {ackMode === "attest" ? "Sign by" : "Acknowledge by"}{" "}
+                  <span className="text-faint">(optional)</span>
                 </label>
                 <DatePicker
                   id="expiresAt"
@@ -728,13 +790,14 @@ export default function AnnouncementForm({
                   inputClassName={`${INPUT} pr-10`}
                 />
                 <p className="mt-1 text-xs text-muted">
-                  The date staff should acknowledge by. Anyone who hasn&apos;t by
-                  then gets a reminder.
+                  {ackMode === "attest"
+                    ? "The date staff should sign by. Anyone who hasn't signed by then gets a reminder."
+                    : "The date staff should acknowledge by. Anyone who hasn't by then gets a reminder."}
                 </p>
               </div>
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
-                  Who needs to acknowledge?
+                  {ackMode === "attest" ? "Who needs to sign?" : "Who needs to acknowledge?"}
                 </p>
                 <AudiencePicker
                   everyoneName="ackEveryone"
@@ -748,35 +811,6 @@ export default function AnnouncementForm({
                   showAllRoles
                 />
               </div>
-
-              {forms.length > 0 && (
-                <div>
-                  <label htmlFor="formId" className={LABEL}>
-                    Attach a form <span className="text-faint">(optional)</span>
-                  </label>
-                  <select
-                    id="formId"
-                    name="formId"
-                    value={formId}
-                    onChange={(e) => setFormId(e.target.value)}
-                    className={INPUT}
-                  >
-                    <option value="">None - just the checkbox</option>
-                    {forms.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.title}
-                      </option>
-                    ))}
-                  </select>
-                  {/* OPENED AND SIGNED ARE TWO STATES, and the person choosing
-                      the form has to know that before they choose it. */}
-                  <p className="mt-1 text-xs text-muted">
-                    When set, acknowledging only records that they opened it -
-                    submitting the form is what finishes it. The roster tracks
-                    both.
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>
