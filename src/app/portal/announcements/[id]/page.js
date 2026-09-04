@@ -1223,8 +1223,6 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                             return <p className="py-1 text-xs text-faint">No responses yet.</p>;
                           }
                           return shown.map(({ option, users }) => {
-                          const present = users.filter((u) => u.attended === "present").length;
-                          const absent = users.filter((u) => u.attended === "absent").length;
                           return (
                             <RollCallProvider key={option.id}>
                             <div className="mt-2">
@@ -1247,7 +1245,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                   )}
                                 </span>
                                 <span className="text-xs text-muted">
-                                  <RollCallCounts going={users.length} present={present} absent={absent} />
+                                  <RollCallCounts
+                                    users={users.map((u) => ({ id: u.id, attended: u.attended }))}
+                                  />
                                 </span>
                               </div>
                               {users.length === 0 ? (

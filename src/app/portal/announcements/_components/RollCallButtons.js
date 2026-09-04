@@ -12,42 +12,45 @@ const BTN =
   "rounded-md border px-2 py-0.5 text-[11px] font-semibold transition";
 
 // THE COUNT LINE MOVES WITH THE CLICKS - Mánu 2026-09-04: "why does it say 6
-// present when ive clicked them all but one." The header was server text from
-// page load; it only ever looked live because every click used to reload the
-// page. Each session's block now shares this context: buttons report their
-// delta, the counts component adds it to the server-rendered starting point.
+// present when ive clicked them all but one." And NOT as a running delta on
+// top of the server figure - his next find: "29 going and 30 present". A
+// roster action refreshes the page's baseline in place, the baseline then
+// already contains the clicks, and a delta stacked on top counts them twice.
+// So the context holds each person's OWN mark, and the counts are computed
+// from the people: local mark where one exists, the server's otherwise. A
+// refresh landing the same values changes nothing - it cannot double.
 const RollCtx = createContext(null);
 
 export function RollCallProvider({ children }) {
-  const [d, setD] = useState({ p: 0, a: 0 });
-  const adjust = (prev, next) =>
-    setD((v) => ({
-      p: v.p - (prev === "present" ? 1 : 0) + (next === "present" ? 1 : 0),
-      a: v.a - (prev === "absent" ? 1 : 0) + (next === "absent" ? 1 : 0),
-    }));
-  return <RollCtx.Provider value={{ d, adjust }}>{children}</RollCtx.Provider>;
+  const [marks, setMarks] = useState({});
+  const set = (userId, value) => setMarks((m) => ({ ...m, [userId]: value }));
+  return <RollCtx.Provider value={{ marks, set }}>{children}</RollCtx.Provider>;
 }
 
-export function RollCallCounts({ going, present, absent }) {
+export function RollCallCounts({ users }) {
   const ctx = useContext(RollCtx);
-  const p = present + (ctx?.d.p || 0);
-  const a = absent + (ctx?.d.a || 0);
+  const of = (u) => (ctx && u.id in (ctx.marks || {}) ? ctx.marks[u.id] : u.attended || null);
+  const p = users.filter((u) => of(u) === "present").length;
+  const a = users.filter((u) => of(u) === "absent").length;
   return (
     <>
-      {going} going
+      {users.length} going
       {p || a ? ` · ${p} present · ${a} absent` : ""}
     </>
   );
 }
 
 export default function RollCallButtons({ postId, userId, optionId = null, attended = null }) {
-  const [att, setAtt] = useState(attended);
+  const [localAtt, setLocalAtt] = useState(attended);
   const ctx = useContext(RollCtx);
+  // one source of truth per person: the shared map when a provider is above,
+  // so the buttons and the count line can never disagree
+  const att = ctx && userId in (ctx.marks || {}) ? ctx.marks[userId] : ctx ? attended : localAtt;
   const [, start] = useTransition();
   const press = (status) => {
     const next = att === status ? "" : status;
-    ctx?.adjust(att, next || null);
-    setAtt(next || null);
+    if (ctx) ctx.set(userId, next || null);
+    else setLocalAtt(next || null);
     start(async () => {
       try { await markAttendance(postId, userId, next, optionId); } catch {}
     });
