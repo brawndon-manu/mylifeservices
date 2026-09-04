@@ -2302,6 +2302,11 @@ export async function concludeMeeting(postId, formData) {
   }
 
   const hasOptions = Array.isArray(post.meetingOptions) && post.meetingOptions.length > 0;
+  // a meeting with sessions concludes one session at a time - Mánu 2026-09-04.
+  // Concluding it whole marked every future session's pickers absent.
+  if (hasOptions) {
+    redirect(`/portal/admin/meeting-attendance/${postId}?error=perSession`);
+  }
 
   // 1. THE ROLL CALL. per-session for multi/series meetings, meeting-level for
   //    single ones - the same split writeAttendance uses.
@@ -2360,10 +2365,203 @@ export async function concludeMeeting(postId, formData) {
   redirect(`/portal/announcements/${postId}?${q}`);
 }
 
+// ONE SESSION CONCLUDES - Mánu 2026-09-04: "for the meetings that concluded
+// button. dont we need one per session?" A three-week series concluded as one
+// meeting marked every future session's pickers absent; now each session
+// closes on its own from the attendance page. The whole-meeting button stays
+// for single-session meetings only.
+//
+// Per session it: marks that session's unmarked picks absent, emails the
+// attestation to its present people who have not already signed one, emails
+// an attendance confirmation to the present who get no attestation, emails
+// the absent that they were marked absent (reply goes to the author), and
+// records the conclude. When the last session concludes, the meeting itself
+// is stamped concluded.
+export async function concludeSession(postId, optionId, formData) {
+  const user = await requireUser();
+  if (!isAdminUp(user.role)) {
+    redirect(`/portal/admin/meeting-attendance/${postId}?error=forbidden`);
+  }
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: {
+      id: true, title: true, tag: true, deletedAt: true,
+      attachments: true, meetingOptions: true,
+      meetingAttestationSubject: true, meetingAttestationBody: true,
+      meetingAttestationForm: {
+        select: { id: true, title: true, fileUrl: true, fillable: true },
+      },
+      author: { select: { email: true } },
+    },
+  });
+  if (!post || post.deletedAt || !isCompanyMeeting(post.tag)) {
+    redirect("/portal/admin/meeting-attendance");
+  }
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  const option = opts.find((o) => o && o.id === optionId);
+  if (!option) redirect(`/portal/admin/meeting-attendance/${postId}?error=nosession`);
+
+  // idempotent by refusal, the same rule the whole-meeting button keeps
+  const doneKey = {
+    announcementId_optionId_kind: { announcementId: postId, optionId, kind: "concluded" },
+  };
+  if (await prisma.announcementMeetingReminder.findUnique({ where: doneKey })) {
+    redirect(`/portal/admin/meeting-attendance/${postId}?error=alreadyConcluded`);
+  }
+
+  // roll call closes for THIS session only
+  const marked = await prisma.announcementMeetingChoice.updateMany({
+    where: { announcementId: postId, optionId, attended: null },
+    data: { attended: "absent" },
+  });
+  const [presentRows, absentRows] = await Promise.all([
+    prisma.announcementMeetingChoice.findMany({
+      where: { announcementId: postId, optionId, attended: "present" },
+      select: { userId: true },
+    }),
+    prisma.announcementMeetingChoice.findMany({
+      where: { announcementId: postId, optionId, attended: "absent" },
+      select: { userId: true },
+    }),
+  ]);
+  const presentIds = [...new Set(presentRows.map((r) => r.userId))];
+  const absentIds = [...new Set(absentRows.map((r) => r.userId))];
+
+  const sessionLabel = [option.seriesLabel, option.label].filter(Boolean).join(" ");
+  const sessionLine = `Your attendance at ${sessionLabel} was recorded.`;
+
+  const form = post.meetingAttestationForm;
+  let sent = 0;
+  let mailError = null;
+  // the attestation goes to this session's present people who have not signed
+  // it already - a second session must not re-ask the first session's signers
+  let attestIds = [];
+  if (form?.fillable && presentIds.length) {
+    const signed = new Set(
+      (await prisma.formSubmission.findMany({
+        where: { announcementId: postId, formId: form.id, userId: { in: presentIds } },
+        select: { userId: true },
+      })).map((r) => r.userId),
+    );
+    attestIds = presentIds.filter((id) => !signed.has(id));
+    if (attestIds.length) {
+      const result = await sendAttestation({ post, form, presentIds: attestIds, formData, sessionLine });
+      sent += result.sent;
+      mailError = result.error || mailError;
+    }
+  }
+  // everyone else present gets the plain confirmation; everyone absent gets
+  // the mistake-catcher, with replies going to the author
+  const confirmIds = presentIds.filter((id) => !attestIds.includes(id));
+  const result = await sendSessionResultEmails({
+    post, sessionLabel, confirmIds, absentIds,
+    replyTo: post.author?.email || null,
+  });
+  sent += result.sent;
+  mailError = result.error || mailError;
+
+  await prisma.announcementMeetingReminder.create({
+    data: { announcementId: postId, optionId, kind: "concluded" },
+  });
+  // the meeting is concluded once every real session is
+  const realIds = opts.filter((o) => o && o.id && !String(o.id).startsWith("cant:")).map((o) => o.id);
+  const done = await prisma.announcementMeetingReminder.count({
+    where: { announcementId: postId, kind: "concluded", optionId: { in: realIds } },
+  });
+  if (done >= realIds.length) {
+    await prisma.announcement.update({
+      where: { id: postId },
+      data: { meetingConcludedAt: new Date(), ...(sent > 0 ? { meetingAttestationSentAt: new Date() } : {}) },
+    });
+  }
+
+  revalidatePath(`/portal/announcements/${postId}`);
+  revalidatePath("/portal/admin/meeting-attendance");
+  const q = new URLSearchParams({ sessionConcluded: optionId, marked: String(marked.count), sent: String(sent) });
+  if (mailError) q.set("mailError", "1");
+  redirect(`/portal/admin/meeting-attendance/${postId}?${q}`);
+}
+
+// the two result mails of a concluded session: present people not owed an
+// attestation hear their attendance is on record; absent people hear they
+// were marked absent and where to argue. Same recipient lock as every
+// announcement mail.
+async function sendSessionResultEmails({ post, sessionLabel, confirmIds, absentIds, replyTo }) {
+  const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
+  const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
+  if (!from || !base || !process.env.RESEND_API_KEY) return { sent: 0, error: "config" };
+  if (!confirmIds.length && !absentIds.length) return { sent: 0, error: null };
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...confirmIds, ...absentIds] }, deactivatedAt: null },
+    select: { id: true, email: true, name: true, preferredFirstName: true, preferredLastName: true },
+  });
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
+  const title = post.title || "Company meeting";
+
+  const build = (r, { subject, eyebrow, body }) => {
+    const route = resolveAnnouncementRecipients(r.email);
+    const greeting = `Hi ${firstNameOf(r) || "there"},`;
+    return {
+      from,
+      to: route.to,
+      ...(replyTo ? { replyTo } : {}),
+      subject: route.redirected
+        ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}`
+        : subject,
+      html: buildAnnouncementEmailHtml({
+        logoUrl, title, authorName: "My Life Services", authorTitle: null,
+        dateStr: "", eyebrow, requireAck: false,
+        bodyHtml: renderMarkdown(`${greeting}\n\n${body}`, { email: true }),
+        ackUrl: null, meetingHtml: "", ctaHtml: "",
+      }),
+      text: `${greeting}\n\n${body}`,
+    };
+  };
+
+  const messages = [];
+  for (const id of confirmIds) {
+    const r = byId.get(id);
+    if (!r?.email) continue;
+    messages.push(build(r, {
+      subject: `Attendance confirmed: ${title}`,
+      eyebrow: "Attendance",
+      body: `Your attendance at ${sessionLabel} was recorded. Thank you for attending.`,
+    }));
+  }
+  for (const id of absentIds) {
+    const r = byId.get(id);
+    if (!r?.email) continue;
+    messages.push(build(r, {
+      subject: `Marked absent: ${title}`,
+      eyebrow: "Attendance",
+      body: `You were marked absent for ${sessionLabel}. If you think this is a mistake, reply to this email and we will take a look.`,
+    }));
+  }
+  if (!messages.length) return { sent: 0, error: null };
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  let sent = 0;
+  let error = null;
+  try {
+    for (let i = 0; i < messages.length; i += 100) {
+      const chunk = messages.slice(i, i + 100);
+      const { error: e } = await resend.batch.send(chunk);
+      if (e) { console.error("session result batch error:", e); error = "send"; }
+      else sent += chunk.length;
+    }
+  } catch (e) {
+    console.error("session result send threw:", e);
+    error = "send";
+  }
+  return { sent, error };
+}
+
 // the attestation mail itself. Wording comes from the meeting, overridden by
 // whatever was typed on the confirm step - that override applies to this send
 // only and is never written back.
-async function sendAttestation({ post, form, presentIds, formData }) {
+async function sendAttestation({ post, form, presentIds, formData, sessionLine = null }) {
   const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
   const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
   if (!from || !base || !process.env.RESEND_API_KEY) {
@@ -2381,10 +2579,13 @@ async function sendAttestation({ post, form, presentIds, formData }) {
     (typeof formData?.get("subject") === "string" && formData.get("subject").trim()) ||
     post.meetingAttestationSubject ||
     `Please sign: ${title}`;
-  const message =
+  let message =
     (typeof formData?.get("message") === "string" && formData.get("message").trim()) ||
     post.meetingAttestationBody ||
     "Thanks for attending. Please review and sign the attestation so we have your record on file.";
+  // per-session concludes lead with the fact the email exists to confirm -
+  // Mánu 2026-09-04: "emails that get sent out confirming their attendance"
+  if (sessionLine) message = `${sessionLine}\n\n${message}`;
 
   // the attestation goes first, then whatever the post already carried - the
   // guides people were taken through ride along without being picked twice.

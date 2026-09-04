@@ -61,6 +61,11 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      meetingAttestationForm: { select: { title: true, fillable: true } },
+      meetingReminders: {
+        where: { kind: "concluded" },
+        select: { optionId: true },
+      },
     },
   });
   if (!m || m.deletedAt || !m.publishedAt || !isCompanyMeeting(m.tag)) notFound();
@@ -123,6 +128,8 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
 
   const breakdown = {
     id: m.id,
+    concludedOptionIds: (m.meetingReminders || []).map((r) => r.optionId),
+    attestationTitle: m.meetingAttestationForm?.fillable ? m.meetingAttestationForm.title : null,
     isSeries: r.isSeries,
     seriesGroups: r.seriesGroups,
     sessions: r.sessions,

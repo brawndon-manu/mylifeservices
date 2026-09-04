@@ -20,6 +20,7 @@ import {
   adminAddInvitee,
   adminRemoveInvitee,
 } from "@/app/portal/announcements/actions";
+import ConcludeSession from "./ConcludeSession";
 import {
   PersonKebab,
   AddToSession,
@@ -84,6 +85,9 @@ export default function MeetingBreakdown({ m }) {
   const tools = {
     postId: m.id,
     toolSessions: m.toolSessions || [],
+    // per-session conclude state + what a conclude sends
+    concludedOptionIds: m.concludedOptionIds || [],
+    attestationTitle: m.attestationTitle || null,
     hasSessions: m.hasSessions,
     isSeries: m.isSeries,
     audience: m.audience || [],
@@ -487,6 +491,7 @@ function SessionDisc({ session, view, postId }) {
       <div className="mt-2 border-t border-border pt-2 pl-5">
         <SessionPeople going={session.going} view={view} postId={postId} />
         <SessionAdd session={session} />
+        <SessionConclude session={session} postId={postId} />
       </div>
     </details>
   );
@@ -551,5 +556,26 @@ function PeopleDisc({ label, users, tone, record }) {
         ))}
       </div>
     </details>
+  );
+}
+
+
+// the per-session conclude, fed live counts the same way the header line is
+function SessionConclude({ session, postId }) {
+  const t = useTools();
+  const { attendedOf } = useAttendance();
+  if (!t) return null;
+  const unmarked = session.going.filter((u) => !attendedOf(postId, u)).length;
+  const present = session.going.filter((u) => attendedOf(postId, u) === "present").length;
+  return (
+    <ConcludeSession
+      postId={postId}
+      optionId={session.id}
+      sessionName={[session.label, session.dateLabel].filter(Boolean).join(" · ") || "this session"}
+      present={present}
+      unmarked={unmarked}
+      concluded={!!(t.concludedOptionIds || []).includes(session.id)}
+      attestationTitle={t.attestationTitle || null}
+    />
   );
 }

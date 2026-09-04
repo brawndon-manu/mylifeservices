@@ -1163,7 +1163,24 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                       />
                     </div>
 
-                    {isAdmin && (
+                    {isAdmin && meetingOptions.length > 0 && !isDraft && (
+                      <div className="mt-4 rounded-xl border border-border bg-surface-2 p-3">
+                        <p className="text-sm font-medium text-foreground">
+                          Sessions conclude one at a time.
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          Each session has its own conclude on the attendance
+                          page, beside its roll call.{" "}
+                          <Link
+                            href={`/portal/admin/meeting-attendance/${post.id}`}
+                            className="font-semibold text-brand underline underline-offset-2"
+                          >
+                            Meeting attendance
+                          </Link>
+                        </p>
+                      </div>
+                    )}
+                    {isAdmin && meetingOptions.length === 0 && (
                       <ConcludeMeeting
                         isDraft={isDraft}
                         action={concludeMeeting.bind(null, post.id)}
