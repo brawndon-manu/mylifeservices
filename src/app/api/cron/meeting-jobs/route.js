@@ -203,7 +203,23 @@ export async function GET(request) {
   // (base is localhost in dev); falls back to the on-site logo.
   const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
 
-  // going recipients for a session (optionId "" = single-session meeting).
+  // UPPER MANAGEMENT RIDES EVERY SESSION REMINDER - Mánu 2026-09-04: "always
+  // get the emails ... even if they pick no dates for the meetings or if they
+  // pick only one. these upper managment always attend anyway." By NAME, the
+  // way the corrections email's TO line is - an id in code stops meaning
+  // anything the day an account is recreated. A name that no longer resolves
+  // to an active account is skipped rather than failing the send.
+  const ALWAYS_REMINDED = [
+    "Brandon Uribe",
+    "Gabriel Miranda",
+    "Britny Arevalo",
+    "April Martinez",
+    "David Zermeno",
+    "Kristy Hatt",
+  ];
+
+  // going recipients for a session (optionId "" = single-session meeting),
+  // plus the standing management roster, deduped.
   const goingRecipients = async (m, optionId, hasOptions) => {
     let ids;
     if (hasOptions) {
@@ -219,10 +235,26 @@ export async function GET(request) {
       });
       ids = resps.map((r) => r.userId);
     }
-    if (!ids.length) return [];
-    return prisma.user.findMany({
-      where: { id: { in: ids }, deactivatedAt: null },
-      select: RECIP_SELECT,
+    const [picked, always] = await Promise.all([
+      ids.length
+        ? prisma.user.findMany({
+            where: { id: { in: ids }, deactivatedAt: null },
+            select: RECIP_SELECT,
+          })
+        : [],
+      prisma.user.findMany({
+        where: {
+          deactivatedAt: null,
+          OR: ALWAYS_REMINDED.map((n) => ({ name: { equals: n, mode: "insensitive" } })),
+        },
+        select: RECIP_SELECT,
+      }),
+    ]);
+    const seen = new Set();
+    return [...picked, ...always].filter((r) => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
     });
   };
 
