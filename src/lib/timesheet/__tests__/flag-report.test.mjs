@@ -118,3 +118,40 @@ test("two accounts and a span of days are both spelled out", () => {
   ]);
   assert.equal(m.footer, "Flags recorded by Brandon Uribe and Mánu Uribe between 08/26/26 and 08/28/26.");
 });
+
+// ---- the detail line ----
+
+test("a joined flag prints punches, GPS and the set billable on one line", () => {
+  const m = model([flag({
+    punchIn: "10:30a", punchOut: "10:45a", noIn: false, noOut: false,
+    gpsIn: "yes", gpsOut: "no", clockAvailable: true, inClockExport: true,
+    billableMin: 60,
+  })]);
+  assert.equal(
+    m.groups[0].entries[0].detail,
+    "in 10:30a GPS yes · out 10:45a GPS no · billable set 1.00h",
+  );
+});
+
+test("a missed punch says so and a blank GPS says nothing", () => {
+  const m = model([flag({
+    punchIn: null, punchOut: "10:45a", noIn: true, noOut: false,
+    gpsIn: null, gpsOut: null, clockAvailable: true, inClockExport: true,
+    billableMin: null,
+  })]);
+  assert.equal(m.groups[0].entries[0].detail, "no clock-in · out 10:45a");
+});
+
+test("a shift the clock export has no row for states that instead of punches", () => {
+  const m = model([flag({
+    punchIn: null, punchOut: null, noIn: false, noOut: false,
+    gpsIn: null, gpsOut: null, clockAvailable: true, inClockExport: false,
+    billableMin: null,
+  })]);
+  assert.equal(m.groups[0].entries[0].detail, "no clock row for this shift");
+});
+
+test("a flag with no joined row prints no detail line at all", () => {
+  const m = model([flag()]);
+  assert.equal(m.groups[0].entries[0].detail, null);
+});

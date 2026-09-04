@@ -5,6 +5,8 @@ import { isAdminUp } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey } from "@/lib/timesheet/schedule";
 import { flagReportModel, renderFlagReport } from "@/lib/timesheet/flag-report";
+import { buildAudit } from "../build";
+import { clock } from "../figures";
 
 // The flagged shifts of this pay period, as a PDF. Gated and generated on
 // request like the other document routes - nothing is stored, because the
@@ -18,11 +20,13 @@ export async function GET(req, { params }) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const batch = await prisma.timesheetBatch.findUnique({
-    where: { id },
-    select: { periodFrom: true, periodTo: true },
-  });
-  if (!batch) return new NextResponse("Not found", { status: 404 });
+  // the whole build, not just the batch row: the flags print the punch facts
+  // (clock times, GPS at each end) off the same rows the screen reads, joined
+  // by the shift's own key.
+  const audit = await buildAudit(id);
+  if (!audit) return new NextResponse("Not found", { status: 404 });
+  const batch = audit.batch;
+  const rowByKey = new Map(audit.rows.map((r) => [r.shiftKey, r]));
 
   // THE DECISIONS ARE KEYED TO SHIFTS, NOT TO THIS BATCH, so the period's
   // flags are the flagged rows whose day falls inside it - the same rule the
@@ -64,18 +68,37 @@ export async function GET(req, { params }) {
       who: nameOf.get(r.employeeKey) || r.employeeKey,
       billedMin: r.billedMin,
     })),
-    flags: flagged.map((r) => ({
-      who: nameOf.get(r.employeeKey) || r.employeeKey,
-      date: r.date,
-      startMin: r.startMin,
-      client: r.client,
-      service: r.service,
-      billedMin: r.billedMin,
-      clockedMin: r.clockedMin,
-      reason: r.reason,
-      decidedByName: r.decidedBy ? preferredName(r.decidedBy) : null,
-      decidedOn: day(r.updatedAt),
-    })),
+    flags: flagged.map((r) => {
+      const row = rowByKey.get(r.shiftKey);
+      return {
+        who: nameOf.get(r.employeeKey) || r.employeeKey,
+        date: r.date,
+        startMin: r.startMin,
+        client: r.client,
+        service: r.service,
+        billedMin: r.billedMin,
+        clockedMin: r.clockedMin,
+        reason: r.reason,
+        decidedByName: r.decidedBy ? preferredName(r.decidedBy) : null,
+        decidedOn: day(r.updatedAt),
+        // the punch facts for the detail line, where this upload still holds
+        // the shift - a flag whose shift a later upload no longer carries
+        // simply prints without the line.
+        ...(row
+          ? {
+            punchIn: clock(row.actualFrom),
+            punchOut: clock(row.actualTo),
+            noIn: row.noIn,
+            noOut: row.noOut,
+            gpsIn: row.gpsIn,
+            gpsOut: row.gpsOut,
+            clockAvailable: row.clockAvailable,
+            inClockExport: row.inClockExport,
+            billableMin: r.billableMin,
+          }
+          : {}),
+      };
+    }),
   });
 
   const bytes = await renderFlagReport(model);

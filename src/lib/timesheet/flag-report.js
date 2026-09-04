@@ -16,6 +16,33 @@ import { clockLabel } from "./schedule-notes.js";
 
 const hrs = (m) => `${(m / 60).toFixed(2)}h`;
 
+// THE DETAIL LINE - the facts the one-by-one deck shows, on one small line
+// per flag so the document carries them without the clutter of a table.
+// Mánu 2026-09-04: "drop downs showing the clients hours billable clocked gps
+// geofence similar to the way the one by one has it" - a PDF cannot fold, so
+// the detail prints compact instead. QSP records one location fact per punch
+// (GPS captured yes/no); that is the same fact the screen's geofence ticks
+// read, so the line prints it once as GPS.
+function detailLine(f) {
+  if (f.punchIn === undefined && f.punchOut === undefined) return null;
+  const parts = [];
+  if (f.clockAvailable === false) parts.push("no clock export");
+  else if (f.inClockExport === false) parts.push("no clock row for this shift");
+  else {
+    const end = (label, time, missed, gps) => {
+      if (time == null && missed) return `no clock-${label}`;
+      if (time == null) return null;
+      return `${label} ${time}${gps === "yes" ? " GPS yes" : gps === "no" ? " GPS no" : ""}`;
+    };
+    const a = end("in", f.punchIn, f.noIn, f.gpsIn);
+    const b = end("out", f.punchOut, f.noOut, f.gpsOut);
+    if (a) parts.push(a);
+    if (b) parts.push(b);
+  }
+  if (f.billableMin != null) parts.push(`billable set ${hrs(f.billableMin)}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 const dayKey = (d) => {
   const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
   return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
@@ -26,7 +53,10 @@ const dayKey = (d) => {
 // Everything the document will say, computed here so a test can read it
 // without parsing a PDF. `flags` carry the stored decision figures plus the
 // display name the caller resolved: { who, date, startMin, client, service,
-// billedMin, clockedMin, reason, decidedByName, decidedOn }.
+// billedMin, clockedMin, reason, decidedByName, decidedOn } - and, where the
+// caller joined the audit build, the punch facts for the detail line:
+// { punchIn, punchOut, noIn, noOut, gpsIn, gpsOut, clockAvailable,
+//   inClockExport, billableMin }.
 export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [], generatedOn }) {
   // over, under, level and unclocked are different findings and the summary
   // counts them apart - his flags include under-billing, and folding those
@@ -70,7 +100,7 @@ export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [
             figures = `billed ${hrs(f.billedMin)} · clocked ${hrs(f.clockedMin)}`
               + (d > 0 ? ` · ${hrs(d)} above the clock` : d < 0 ? ` · ${hrs(-d)} below the clock` : "");
           }
-          return { when, figures, quote: (f.reason || "").trim() };
+          return { when, figures, detail: detailLine(f), quote: (f.reason || "").trim() };
         }),
     }))
     .sort((a, b) => a.who.localeCompare(b.who));
@@ -209,11 +239,16 @@ export async function renderFlagReport(model) {
     y -= 15;
     for (const e of g.entries) {
       const quoteLines = e.quote ? wrapAt(`"${e.quote}"`, R - L - 24, italic, 9) : [];
-      need(26 + quoteLines.length * 12);
+      const detailLines = e.detail ? wrapAt(e.detail, R - L - 24, font, 8) : [];
+      need(26 + (quoteLines.length + detailLines.length) * 12);
       text(e.when, L + 12, y, { size: 9, f: bold });
       y -= 12;
       text(e.figures, L + 12, y, { size: 9 });
       y -= 12;
+      for (const d of detailLines) {
+        text(d, L + 12, y, { size: 8, color: MUTED });
+        y -= 11;
+      }
       for (const q of quoteLines) {
         text(q, L + 24, y, { size: 9, f: italic, color: FLAG });
         y -= 12;
