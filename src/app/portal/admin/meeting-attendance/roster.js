@@ -72,6 +72,8 @@ export function buildRoster(m, audienceUsers, choices, responses) {
     viaEmail: respByUser.get(uid)?.viaEmail || false,
   });
 
+  // alphabetical by first name everywhere a roll is read - Mánu 2026-09-04
+  const byFirst = (a, b) => (a.displayName || "").localeCompare(b.displayName || "");
   const bySession = opts.map((o) => ({
     id: o.id,
     label: o.label,
@@ -87,12 +89,13 @@ export function buildRoster(m, audienceUsers, choices, responses) {
         viaEmail: respByUser.get(c.userId)?.viaEmail || false,
       }))
       .filter((u) => u.id)
-      .map(toPerson),
+      .map(toPerson)
+      .sort(byFirst),
   }));
   const singleGoing = opts.length
     ? []
-    : audienceUsers.filter((u) => isGoing(u.id)).map((u) => toPerson(goingUser(u.id)));
-  const noResponse = audienceUsers.filter((u) => !respByUser.has(u.id)).map(toPerson);
+    : audienceUsers.filter((u) => isGoing(u.id)).map((u) => toPerson(goingUser(u.id))).sort(byFirst);
+  const noResponse = audienceUsers.filter((u) => !respByUser.has(u.id)).map(toPerson).sort(byFirst);
   const cantAll = audienceUsers
     .filter((u) => respByUser.get(u.id)?.cantMakeIt)
     .map((u) =>

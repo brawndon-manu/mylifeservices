@@ -1734,14 +1734,17 @@ async function ensureGoingChoice(post, userId, optionId, adminId) {
   const target = opts.find((o) => o && o.id === optionId);
   if (!target) return false;
   if (target.seriesId) {
-    const sameSeries = opts
-      .filter((o) => o.seriesId === target.seriesId)
-      .map((o) => o.id);
+    // AN ADMIN ADD KEEPS THE PERSON'S OTHER SESSIONS - Mánu 2026-09-04: "if i
+    // add people to a session that already attented another session for the
+    // same series let it show for both cause im going to manual override
+    // attendance for the upper management." Pick-one is the ATTENDEE'S rule;
+    // the roster tools only clear the series' can't-attend marker, so someone
+    // can stand (and be marked) on every session they actually sat in.
     await prisma.announcementMeetingChoice.deleteMany({
       where: {
         announcementId: post.id,
         userId,
-        optionId: { in: [...sameSeries, `cant:${target.seriesId}`] },
+        optionId: `cant:${target.seriesId}`,
       },
     });
   } else if (!post.meetingMultiPick) {

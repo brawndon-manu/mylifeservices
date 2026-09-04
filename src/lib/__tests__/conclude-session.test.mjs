@@ -46,3 +46,17 @@ test("the attendance page carries the per-session conclude", () => {
   assert.match(cs, /Conclude this session/);
   assert.match(cs, /their replies go to\s*\n?\s*the meeting author/);
 });
+
+test("roster rules 2026-09-04: first-name order, kept series picks, add always shown", () => {
+  const ACT2 = read("src/app/portal/announcements/actions.js");
+  // an admin add clears only the series can't-marker - other sessions stay,
+  // so upper management can be marked present on every session they sat in
+  assert.match(ACT2, /optionId: `cant:\$\{target\.seriesId\}`,\n\s*\},\n\s*\}\);\n\s*\} else if \(!post\.meetingMultiPick\)/);
+  const page = read("src/app/portal/announcements/[id]/page.js");
+  assert.match(page, /const byFirst = \(a, b\) => preferredName\(a\)\.localeCompare\(preferredName\(b\)\)/);
+  assert.match(page, /repeat\(var\(--roster-cols,2\),minmax\(0,1fr\)\)/, "the grid obeys the column toggle");
+  const roster = read("src/app/portal/admin/meeting-attendance/roster.js");
+  assert.match(roster, /\.sort\(byFirst\)/);
+  const admin = read("src/app/portal/announcements/_components/RosterAdmin.js");
+  assert.doesNotMatch(admin.slice(admin.indexOf("Add someone to this session") - 3000, admin.indexOf("Add someone to this session")), /if \(!show\) return null/);
+});

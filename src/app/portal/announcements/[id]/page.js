@@ -43,7 +43,7 @@ import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
 import ConcludeMeeting from "../_components/ConcludeMeeting";
-import RollCallButtons, { RollCallProvider, RollCallCounts } from "../_components/RollCallButtons";
+import RollCallButtons, { RollCallProvider, RollCallCounts, RosterColumns } from "../_components/RollCallButtons";
 import SlotAlertsToggle from "../_components/SlotAlertsToggle";
 import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
@@ -558,16 +558,21 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     // Going, grouped by session (multi-session); single-session has no options.
     // attendance is now per session, so it reads from the choice row, not the
     // meeting-level response.
+    // ALPHABETICAL BY FIRST NAME - Mánu 2026-09-04: "its eaier to go over
+    // rollcall with that." preferredName leads with the first name, so it is
+    // the sort key on every roster list here.
+    const byFirst = (a, b) => preferredName(a).localeCompare(preferredName(b));
     const bySession = meetingOptions.map((o) => ({
       option: o,
       users: choices
         .filter((c) => c.optionId === o.id && audIds.has(c.userId) && isGoing(c.userId))
         .map((c) => ({ ...userById.get(c.userId), attended: c.attended || null }))
-        .filter((u) => u.id),
+        .filter((u) => u.id)
+        .sort(byFirst),
     }));
     const singleGoing = meetingOptions.length
       ? []
-      : audienceUsers.filter((u) => isGoing(u.id)).map((u) => goingUser(u.id));
+      : audienceUsers.filter((u) => isGoing(u.id)).map((u) => goingUser(u.id)).sort(byFirst);
     const cantUsers = audienceUsers
       .filter((u) => respByUser.get(u.id)?.cantMakeIt)
       .map((u) => ({ ...u, reason: respByUser.get(u.id).reason }));
@@ -890,7 +895,10 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
             {event && <EventDetail post={post} myRsvp={myEventRsvp} data={eventData} />}
 
             {meeting && (
-              <div className="mx-auto mt-6 max-w-2xl px-6 sm:px-8">
+              /* max-w-4xl, not the prose column's 2xl - two roster columns of
+                 name + Present/Absent need the room; Mánu 2026-09-04: "lets
+                 stretch the card cause it doesnt fit in properly" */
+              <div className="mx-auto mt-6 max-w-4xl px-6 sm:px-8">
                 <div className="flex flex-wrap items-center gap-2">
                   {post.meetingKind && (
                     <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
@@ -1196,6 +1204,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           {meetingRoster.goingCount}
                         </span>
                       </p>
+                      <RosterColumns>
                       {meetingOptions.length > 0 ? (
                         (() => {
                           // A SIGNING LISTS ONLY THE SLOTS SOMEBODY TOOK. A
@@ -1244,7 +1253,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                               {users.length === 0 ? (
                                 <p className="py-1 text-xs text-faint">nobody yet</p>
                               ) : (
-                                users.map((u) => (
+                                <div className="sm:grid sm:gap-x-6 sm:[grid-template-columns:repeat(var(--roster-cols,2),minmax(0,1fr))]">
+                                {users.map((u) => (
                                   <PersonRow
                                     key={u.id}
                                     user={u}
@@ -1261,7 +1271,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                       />
                                     }
                                   />
-                                ))
+                                ))}
+                                </div>
                               )}
                               <div className="pt-1">
                                 <AddToSession
@@ -1299,6 +1310,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           />
                         ))
                       )}
+                      </RosterColumns>
                     </div>
 
                     {/* Can't make it */}

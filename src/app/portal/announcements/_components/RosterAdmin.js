@@ -197,7 +197,9 @@ export function PersonKebab({ postId, userId, currentOptionId, moveTargets, move
 // the search clears and refocuses for the next name, and the server catches up
 // underneath - several adds can be in flight together.
 export function AddToSession({ postId, optionId, candidates, add }) {
-  const show = useOverrideShown();
+  // ALWAYS SHOWN - Mánu 2026-09-04: "lets always leave add person to session
+  // the way it looks when manual override is on." The other override tools
+  // stay behind the toggle; adding someone is everyday roll-call work.
   const [q, setQ] = useState("");
   // userId -> "adding" | "added", for the people added from THIS popover. The
   // refreshed candidate list eventually drops them; until it lands they stay
@@ -212,7 +214,6 @@ export function AddToSession({ postId, optionId, candidates, add }) {
   // as the popover lives.
   const [pinned, setPinned] = useState([]);
   const inputRef = useRef(null);
-  if (!show) return null;
   const ids = new Set(candidates.map((c) => c.id));
   const all = [...candidates, ...pinned.filter((c) => !ids.has(c.id))];
   const list = q

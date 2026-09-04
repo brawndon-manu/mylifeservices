@@ -79,3 +79,44 @@ export default function RollCallButtons({ postId, userId, optionId = null, atten
     </>
   );
 }
+
+// ONE COLUMN OR TWO, THE READER'S CALL - Mánu 2026-09-04: "give me the option
+// to have one or 2 columns." The choice drives a CSS variable the session
+// grids read, and it sticks in this browser like the board's view pick does.
+export function RosterColumns({ children }) {
+  const [cols, setCols] = useState(2);
+  const [loaded, setLoaded] = useState(false);
+  if (!loaded && typeof window !== "undefined") {
+    try {
+      const saved = window.localStorage.getItem("meeting-roster-cols");
+      if (saved === "1" || saved === "2") setCols(Number(saved));
+    } catch {}
+    setLoaded(true);
+  }
+  const pick = (n) => {
+    setCols(n);
+    try { window.localStorage.setItem("meeting-roster-cols", String(n)); } catch {}
+  };
+  const chip = (n, label) => (
+    <button
+      type="button"
+      onClick={() => pick(n)}
+      className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+        cols === n ? "bg-brand-light text-white" : "text-muted hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div style={{ "--roster-cols": cols }}>
+      <div className="mt-2 hidden justify-end sm:flex">
+        <span className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+          {chip(1, "1 column")}
+          {chip(2, "2 columns")}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
