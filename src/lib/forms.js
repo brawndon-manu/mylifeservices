@@ -63,6 +63,14 @@ export const FORM_EMAIL_ROUTES = [
     // always cc'd, so whoever sends it keeps a copy - no fixed cc needed.
     recipientTitle: "HR Administrator",
   },
+  {
+    key: "ils-attestation",
+    // "ILS Service Note Documentation Training Attestation" - the September
+    // ILS documentation training. April asked for the signed forms back and
+    // holds Program Manager, so this follows the title rather than her name.
+    match: (title) => /ils service note.*attestation/i.test(title || ""),
+    recipientTitle: "Program Manager",
+  },
 ];
 
 // the review route for a form title, or null if it can't be submitted by email.
