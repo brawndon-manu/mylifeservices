@@ -43,7 +43,7 @@ import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
 import ConcludeMeeting from "../_components/ConcludeMeeting";
-import RollCallButtons from "../_components/RollCallButtons";
+import RollCallButtons, { RollCallProvider, RollCallCounts } from "../_components/RollCallButtons";
 import SlotAlertsToggle from "../_components/SlotAlertsToggle";
 import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
@@ -1217,7 +1217,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           const present = users.filter((u) => u.attended === "present").length;
                           const absent = users.filter((u) => u.attended === "absent").length;
                           return (
-                            <div key={option.id} className="mt-2">
+                            <RollCallProvider key={option.id}>
+                            <div className="mt-2">
                               <div className="flex items-center justify-between text-sm">
                                 {/* THE DATE IS PART OF THE NAME. Mánu 2026-08-30,
                                     after renaming the weeks: the headings read
@@ -1237,8 +1238,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                   )}
                                 </span>
                                 <span className="text-xs text-muted">
-                                  {users.length} going
-                                  {present || absent ? ` · ${present} present · ${absent} absent` : ""}
+                                  <RollCallCounts going={users.length} present={present} absent={absent} />
                                 </span>
                               </div>
                               {users.length === 0 ? (
@@ -1274,6 +1274,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                                 />
                               </div>
                             </div>
+                            </RollCallProvider>
                           );
                           });
                         })()

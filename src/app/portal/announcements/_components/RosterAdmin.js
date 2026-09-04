@@ -203,14 +203,25 @@ export function AddToSession({ postId, optionId, candidates, add }) {
   // refreshed candidate list eventually drops them; until it lands they stay
   // visible with their check so the list does not jump under the pointer.
   const [state, setState] = useState({});
+  // THE ADDED ROWS ARE PINNED, 2026-09-04. The comment below always promised
+  // "they stay visible with their check", but the list rendered purely from
+  // the candidates prop - so when the page refresh landed and dropped the
+  // now-invited person from candidates, their row VANISHED mid-check. Mánu:
+  // "this check doesnt work consistently." The people added from this
+  // popover are kept here and unioned in, so the check stays put for as long
+  // as the popover lives.
+  const [pinned, setPinned] = useState([]);
   const inputRef = useRef(null);
   if (!show) return null;
+  const ids = new Set(candidates.map((c) => c.id));
+  const all = [...candidates, ...pinned.filter((c) => !ids.has(c.id))];
   const list = q
-    ? candidates.filter((c) => c.displayName.toLowerCase().includes(q.toLowerCase()))
-    : candidates;
+    ? all.filter((c) => c.displayName.toLowerCase().includes(q.toLowerCase()))
+    : all;
   const pick = (c) => {
-    if (state[c.id]) return;
+    if (state[c.id] === "adding" || state[c.id] === "added") return;
     setState((s) => ({ ...s, [c.id]: "adding" }));
+    setPinned((p) => (p.some((x) => x.id === c.id) ? p : [...p, c]));
     setQ("");
     inputRef.current?.focus();
     // A PLAIN CALL, NOT A TRANSITION. Wrapped in startTransition, the action's
@@ -222,11 +233,9 @@ export function AddToSession({ postId, optionId, candidates, add }) {
     // it arrives.
     add(postId, c.id, optionId)
       .then(() => setState((s) => ({ ...s, [c.id]: "added" })))
-      .catch(() => setState((s) => {
-        const next = { ...s };
-        delete next[c.id];
-        return next;
-      }));
+      // a refusal used to wipe the row silently, which read as the check
+      // simply not working - now it says so and the row can be pressed again
+      .catch(() => setState((s) => ({ ...s, [c.id]: "failed" })));
   };
   return (
     <Dropdown
@@ -254,7 +263,7 @@ export function AddToSession({ postId, optionId, candidates, add }) {
             <p className="px-2 py-2 text-xs text-faint">nobody to add</p>
           ) : (
             list.map((c) => (
-              <button key={c.id} type="button" onClick={() => pick(c)} disabled={!!state[c.id]} className={ITEM}>
+              <button key={c.id} type="button" onClick={() => pick(c)} disabled={state[c.id] === "adding" || state[c.id] === "added"} className={ITEM}>
                 <Avatar name={c.displayName} image={c.image} size={22} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{c.displayName}</span>
@@ -263,6 +272,9 @@ export function AddToSession({ postId, optionId, candidates, add }) {
                 {state[c.id] === "adding" && <span className="flex-none text-xs text-faint">Adding&hellip;</span>}
                 {state[c.id] === "added" && (
                   <span className="flex-none text-xs font-semibold text-emerald-600 dark:text-emerald-400">Added &#10003;</span>
+                )}
+                {state[c.id] === "failed" && (
+                  <span className="flex-none text-xs font-semibold text-rose-600 dark:text-rose-400">Didn&apos;t save - tap to retry</span>
                 )}
               </button>
             ))
