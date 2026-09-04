@@ -21,6 +21,8 @@ import { blobToken, hasBlobStorage } from "@/lib/blob";
 import {
   INLINE_IMAGE_ACCEPT,
   INLINE_IMAGE_MAX_BYTES,
+  INLINE_VIDEO_ACCEPT,
+  INLINE_VIDEO_MAX_BYTES,
   isInlineImageKey,
 } from "@/lib/announcement-images";
 
@@ -62,9 +64,13 @@ export async function POST(req) {
         if (!isInlineImageKey(pathname)) {
           throw new Error("That isnt a name an announcement image may have.");
         }
+        // the key's own extension says which terms apply - a video gets the
+        // video ceiling, a picture the picture one, and neither can borrow
+        // the other's
+        const video = /\.(mp4|mov)$/i.test(pathname);
         return {
-          allowedContentTypes: INLINE_IMAGE_ACCEPT,
-          maximumSizeInBytes: INLINE_IMAGE_MAX_BYTES,
+          allowedContentTypes: video ? INLINE_VIDEO_ACCEPT : INLINE_IMAGE_ACCEPT,
+          maximumSizeInBytes: video ? INLINE_VIDEO_MAX_BYTES : INLINE_IMAGE_MAX_BYTES,
           // the key already carries a timestamp and a random tail
           addRandomSuffix: false,
         };

@@ -29,6 +29,23 @@ export const INLINE_IMAGE_ACCEPT = IMAGE_ACCEPT;
 // is a generous reaction GIF and still nowhere near a video.
 export const INLINE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
 
+// VIDEO IN THE BODY, 2026-09-04. Mánu: "can we make the announcemtns be able
+// to have .mov and .mp4 files." Same lane as the pictures - browser straight
+// to the blob store, our bucket, our key - because the attachment lane is
+// deliberately closed to video: attachments ride ON the email, once per
+// recipient, and Resend caps a message at 40MB. A video reaches the email as
+// a link instead (see markdown.js).
+export const INLINE_VIDEO_ACCEPT = ["video/mp4", "video/quicktime"];
+export const INLINE_MEDIA_ACCEPT = [...INLINE_IMAGE_ACCEPT, ...INLINE_VIDEO_ACCEPT];
+// half a gigabyte: a few minutes of phone video. The file streams from the
+// blob store when somebody presses play - it never rides a request or an
+// email, so the ceiling is about storage and the viewer's patience.
+export const INLINE_VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+
+export const isVideoType = (t) => INLINE_VIDEO_ACCEPT.includes(String(t || "").toLowerCase());
+// how every renderer tells a video url from a picture url - one definition
+export const isVideoUrl = (u) => /\.(mp4|mov)(?:[?#]|$)/i.test(String(u || ""));
+
 // inline images live under their own prefix so they're tellable apart in the
 // bucket from the hero image and the attached PDFs.
 export const INLINE_IMAGE_PREFIX = "announcements/inline";
@@ -38,6 +55,8 @@ const EXT_BY_TYPE = {
   "image/png": "png",
   "image/webp": "webp",
   "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
 };
 
 function mb(bytes) {
@@ -50,13 +69,19 @@ function mb(bytes) {
 // posting straight at it.
 export function imageFileProblem(file) {
   if (!file || typeof file !== "object" || typeof file.size !== "number") {
-    return "Pick an image file.";
+    return "Pick an image or video file.";
   }
   const type = typeof file.type === "string" ? file.type.toLowerCase() : "";
-  if (!INLINE_IMAGE_ACCEPT.includes(type)) {
-    return "Images have to be a JPG, PNG, WebP, or GIF.";
+  if (!INLINE_MEDIA_ACCEPT.includes(type)) {
+    return "That has to be a JPG, PNG, WebP, GIF, MP4, or MOV.";
   }
   if (!(file.size > 0)) return "That file is empty.";
+  if (isVideoType(type)) {
+    if (file.size > INLINE_VIDEO_MAX_BYTES) {
+      return `Videos have to be under ${mb(INLINE_VIDEO_MAX_BYTES)} MB. That one is ${mb(file.size)} MB.`;
+    }
+    return null;
+  }
   if (file.size > INLINE_IMAGE_MAX_BYTES) {
     return `Images have to be under ${mb(INLINE_IMAGE_MAX_BYTES)} MB. That one is ${mb(file.size)} MB.`;
   }

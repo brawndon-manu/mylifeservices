@@ -85,7 +85,8 @@ test("only the file types the picker offers get through, under the size cap", ()
   assert.ok(INLINE_IMAGE_ACCEPT.includes("image/gif"), "the whole point");
 
   const pdf = imageFileProblem({ type: "application/pdf", size: 900 });
-  assert.match(pdf, /JPG, PNG, WebP, or GIF/, "a PDF is an attachment, not an image");
+  // the sentence grew MP4 and MOV on 2026-09-04 - video rides this lane now
+  assert.match(pdf, /JPG, PNG, WebP, GIF, MP4, or MOV/, "a PDF is an attachment, not media");
 
   const fat = imageFileProblem({ type: "image/png", size: INLINE_IMAGE_MAX_BYTES + 1 });
   assert.match(fat, /under/, "and it says how big it may be");

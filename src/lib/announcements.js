@@ -282,6 +282,7 @@ export {
 export {
   INLINE_IMAGE_ACCEPT,
   INLINE_IMAGE_MAX_BYTES,
+  INLINE_MEDIA_ACCEPT,
   imageFileProblem,
   imageMarkdown,
   insertImageMarkdown,

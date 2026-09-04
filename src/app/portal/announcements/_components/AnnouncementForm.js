@@ -19,7 +19,7 @@ import {
 import { IMAGE_MAX_BYTES, IMAGE_ACCEPT } from "@/lib/hub";
 import { upload } from "@vercel/blob/client";
 import {
-  INLINE_IMAGE_ACCEPT,
+  INLINE_MEDIA_ACCEPT,
   INLINE_IMAGE_MAX_BYTES,
   altFromFilename,
   imageFileProblem,
@@ -281,13 +281,13 @@ function MarkdownField({ value, onChange, rows, maxLength, placeholder }) {
             <circle cx="7" cy="8" r="1.4" fill="currentColor" />
             <path d="M3.5 14l3.8-3.8a1.5 1.5 0 012.1 0l2.3 2.3m0 0l1.4-1.4a1.5 1.5 0 012.1 0l1.3 1.3m-4.8.1l2.6 2.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          {uploading ? `Uploading ${percent}%${ofLabel}` : "Add image / GIF"}
+          {uploading ? `Uploading ${percent}%${ofLabel}` : "Add image / GIF / video"}
         </button>
         <input
           ref={fileRef}
           type="file"
           multiple
-          accept={INLINE_IMAGE_ACCEPT.join(",")}
+          accept={INLINE_MEDIA_ACCEPT.join(",")}
           onChange={pickImage}
           className="hidden"
         />
