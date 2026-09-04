@@ -1689,8 +1689,11 @@ export async function markAttendance(postId, userId, status, optionId = null) {
   });
   if (!post || post.deletedAt) return { ok: false };
   await writeAttendance(postId, userId, status, optionId);
-  revalidatePath("/portal/admin/meeting-attendance");
-  revalidatePath(`/portal/announcements/${postId}`);
+  // NO REVALIDATE, 2026-09-04. Mánu: marking people "is so damn slow" - every
+  // click was shipping a full rebuild of the attendance page (and the
+  // announcement page) down the wire, and clicks queue behind each other.
+  // The board already marks optimistically in client state, both pages render
+  // per-request anyway, so the revalidates bought nothing and cost the lag.
   return { ok: true };
 }
 

@@ -43,6 +43,7 @@ import CopyButton from "../_components/CopyButton";
 import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
 import ConcludeMeeting from "../_components/ConcludeMeeting";
+import RollCallButtons from "../_components/RollCallButtons";
 import SlotAlertsToggle from "../_components/SlotAlertsToggle";
 import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
@@ -79,7 +80,6 @@ import {
   setMeetingChoices,
   attendMeeting,
   cantMakeMeeting,
-  setAttendance,
   setMeetingZoomLinks,
   adminAddToSession,
   adminMoveSession,
@@ -126,8 +126,6 @@ const PROSE =
 // toggles (Phase B) reading user.attended.
 function PersonRow({ user, reason, rollPostId, optionId = null, extra = null }) {
   const att = user.attended || null;
-  const rollBtn =
-    "rounded-md border px-2 py-0.5 text-xs font-medium transition";
   return (
     <div className="flex items-center gap-2.5 py-1">
       <Avatar name={preferredName(user)} image={user.image} size={30} />
@@ -146,30 +144,13 @@ function PersonRow({ user, reason, rollPostId, optionId = null, extra = null }) 
         <span className="ml-auto flex flex-none items-center gap-1.5">
           {rollPostId && (
             <>
-              <form action={setAttendance.bind(null, rollPostId, user.id, att === "present" ? "" : "present", optionId)}>
-                <button
-                  type="submit"
-                  className={`${rollBtn} ${
-                    att === "present"
-                      ? "border-green-500 bg-green-500 text-white"
-                      : "border-border-strong text-muted hover:border-green-500 hover:text-green-600"
-                  }`}
-                >
-                  Present
-                </button>
-              </form>
-              <form action={setAttendance.bind(null, rollPostId, user.id, att === "absent" ? "" : "absent", optionId)}>
-                <button
-                  type="submit"
-                  className={`${rollBtn} ${
-                    att === "absent"
-                      ? "border-rose-500 bg-rose-500 text-white"
-                      : "border-border-strong text-muted hover:border-rose-500 hover:text-rose-600"
-                  }`}
-                >
-                  Absent
-                </button>
-              </form>
+              {/* optimistic, no page reload - "its so damn slow" 2026-09-04 */}
+              <RollCallButtons
+                postId={rollPostId}
+                userId={user.id}
+                optionId={optionId}
+                attended={att}
+              />
             </>
           )}
           {extra}
