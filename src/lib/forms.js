@@ -66,10 +66,11 @@ export const FORM_EMAIL_ROUTES = [
   {
     key: "ils-attestation",
     // "ILS Service Note Documentation Training Attestation" - the September
-    // ILS documentation training. April asked for the signed forms back and
-    // holds Program Manager, so this follows the title rather than her name.
+    // ILS documentation training. signed copies go to Britny, who keeps the
+    // HR record and holds HR Administrator (Mánu 2026-09-04: "it just goes
+    // to britny"), so this follows the title rather than her name.
     match: (title) => /ils service note.*attestation/i.test(title || ""),
-    recipientTitle: "Program Manager",
+    recipientTitle: "HR Administrator",
   },
 ];
 
