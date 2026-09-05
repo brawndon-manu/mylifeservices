@@ -203,12 +203,6 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
         minDay: Math.min(...list.map((r) => rollDayKey(r.date))),
         flagged: list.filter((r) => r.review?.decision === "flagged").length,
         shifts: list.length,
-        open: list.filter((r) => !r.review?.decision).length,
-        billedMin: list.reduce((n, r) => n + (r.billedMin ?? 0), 0),
-        overMin: list.reduce(
-          (n, r) => n + (r.billedMin != null && r.clockedMin != null ? Math.max(0, r.billedMin - r.clockedMin) : 0),
-          0,
-        ),
       });
       sections = sections
         .map((e) => [e, agg(e)])
@@ -566,9 +560,6 @@ const ROLL_SORTS = {
   last: { label: "Last name", cmp: (a, b) => nameParts(a.name).last.localeCompare(nameParts(b.name).last) },
   flags: { label: "Flags", cmp: (a, b) => b.flagged - a.flagged },
   shifts: { label: "Shifts", cmp: (a, b) => b.shifts - a.shifts },
-  open: { label: "Not decided", cmp: (a, b) => (b.open ?? 0) - (a.open ?? 0) },
-  billed: { label: "Billed", cmp: (a, b) => (b.billedMin ?? 0) - (a.billedMin ?? 0) },
-  over: { label: "Above the clock", cmp: (a, b) => (b.overMin ?? 0) - (a.overMin ?? 0) },
 };
 
 // keys that answer the same question cancel each other - Mánu 2026-09-05:
