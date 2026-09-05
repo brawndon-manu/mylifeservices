@@ -21,6 +21,12 @@ const BUDGET_ERRORS = {
   unreadable: "That file couldn't be read as a QSP .xls export.",
 };
 
+// 09/04/26 - the same date shape every list on the admin side speaks
+const mdy = (dt) => {
+  const d = new Date(dt);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
+};
+
 export default async function AuditPage({ searchParams }) {
   const user = await getCurrentUser();
   if (!isAdminUp(user?.role)) redirect("/portal");
@@ -188,6 +194,7 @@ export default async function AuditPage({ searchParams }) {
                           ? " · the PDF only"
                           : " · no service notes uploaded"}
                     {b.uploadedBy ? ` · uploaded by ${preferredName(b.uploadedBy)}` : ""}
+                    {b.createdAt ? ` on ${mdy(b.createdAt)}` : ""}
                   </span>
                 </span>
                 <span className="text-sm font-semibold text-brand">Open →</span>
