@@ -37,7 +37,7 @@ export default async function NewAuditCopyPage({ searchParams }) {
       <p className="mt-4 font-medium text-foreground">The six exports</p>
       <p className="mt-1 text-xs">
         Simple Timesheet (PDF), Employee Schedules (PDF), QSClock Time and
-        Attendance (.xls), Employee Detailed Daily Service Notes (PDF),
+        Attendance (.xls), DSN (Employee Detailed Daily Service Notes) (PDF),
         Employee Service Notes (.xls), Employee Schedule Notes (.xls). The
         payroll and rest period reports are not needed here - they feed the
         payroll surfaces, which an audit copy never reaches.

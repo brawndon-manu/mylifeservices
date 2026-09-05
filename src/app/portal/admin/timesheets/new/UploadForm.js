@@ -404,14 +404,14 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
 
           BOTH SERVICE NOTES REPORTS, because they are two places a note gets
           written and which one a person uses follows their job. Field
-          Supervisors do not file Daily Service Notes; Independent Living
+          Supervisors do not file DSNs; Independent Living
           Instructors mostly do. On 08/16-08/27 the PDF documents 660 of 862
           billable service shifts, the .xls 192, the two together 793. */}
       <FileRow
         id="notes"
         sendingPct={sending ? sending.notes ?? null : null}
         optional
-        label="Employee Detailed Daily Service Notes (.pdf) - optional"
+        label="DSN (Employee Detailed Daily Service Notes) (.pdf) - optional"
         selected={notesName}
         size={sizes.notes || 0}
         onPick={(e) => {

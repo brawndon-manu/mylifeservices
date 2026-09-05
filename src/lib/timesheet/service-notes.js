@@ -231,6 +231,6 @@ export async function parseServiceNotesPdf(bytes) {
     pages.push(linesOf(content.items));
   }
   const notes = readNotePages(pages);
-  if (!notes.length) throw new Error("no daily service notes found in that PDF");
+  if (!notes.length) throw new Error("no DSNs found in that PDF");
   return notes;
 }

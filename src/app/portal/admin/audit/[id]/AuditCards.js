@@ -204,8 +204,8 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
           {!totals.fromPdf && !totals.fromXls
             ? "No service notes export was uploaded with this period, so every billed shift reads as having no note."
             : !totals.fromXls
-              ? "The Employee Service Notes export was not uploaded with this period. Field Supervisors write their notes there rather than as Daily Service Notes, so their shifts read as having no note."
-              : "The Detailed Daily Service Notes export was not uploaded with this period. Independent Living Instructors write their notes there, so their shifts read as having no note."}
+              ? "The Employee Service Notes export was not uploaded with this period. Field Supervisors write their notes there rather than as DSNs, so their shifts read as having no note."
+              : "The DSN export (Detailed Daily Service Notes) was not uploaded with this period. Independent Living Instructors write their notes there, so their shifts read as having no note."}
         </p>
       )}
       {/* SHORT. Every figure is defined on the card itself, so repeating all

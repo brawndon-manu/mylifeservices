@@ -154,7 +154,7 @@ export default async function AuditPage({ searchParams }) {
         <div className="mt-10 rounded-xl border border-dashed border-border-strong bg-surface-2 p-10 text-center">
           <p className="text-sm font-medium text-foreground">No pay period has service notes yet.</p>
           <p className="mt-1 text-sm text-muted">
-            Upload a period under Timesheets with the Employee Detailed Daily Service Notes and
+            Upload a period under Timesheets with the DSN export (Employee Detailed Daily Service Notes) and
             Employee Service Notes exports. Both are needed: Field Supervisors write into one
             and Independent Living Instructors into the other.
           </p>
