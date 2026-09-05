@@ -37,7 +37,13 @@ function score(qspTokens, userTokens) {
 //   method "unmatched" = nothing convincing; operator picks by hand.
 export function matchEmployee(sourceName, users) {
   const qspTokens = tokens(sourceName);
+  // an exempt account (somebody's second login) is invisible here - never
+  // matched, never suggested, whatever it scores. Mánu 2026-09-04: his
+  // brawndonu admin account "is never used for the timesheets"; renamed to
+  // "Mánu Uribe" it would score 50 on the surname, the exact score that sent
+  // McAlpine a sheet that was not hers.
   const scored = users
+    .filter((u) => !u.timesheetExempt)
     .map((u) => ({ user: u, s: score(qspTokens, candidateTokens(u)) }))
     .filter((r) => r.s > 0)
     .sort((a, b) => b.s - a.s);

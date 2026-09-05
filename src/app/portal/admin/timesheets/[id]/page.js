@@ -92,7 +92,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   if (batch.auditOnly) redirect(`/portal/admin/audit/${batch.id}`);
 
   const staff = await prisma.user.findMany({
-    where: { deactivatedAt: null },
+    // an exempt account (a second login) can never be picked for a sheet
+    where: { deactivatedAt: null, timesheetExempt: false },
     select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, title: true, image: true, email: true },
     orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
   });

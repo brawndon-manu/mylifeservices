@@ -37,6 +37,11 @@ model User {
   // or legal last), e.g. "Manu" + legal last "Uribe" -> "Manu Uribe".
   preferredFirstName           String?
   preferredLastName            String?
+  // THIS ACCOUNT NEVER HOLDS A TIMESHEET. A person's second login (Mánu's
+  // brawndonu admin account) must never be matched, suggested, or picked for a
+  // QSP sheet - their sheets live on their staff account. matchEmployee drops
+  // exempt accounts from every pool; the batch page's picker excludes them.
+  timesheetExempt              Boolean                       @default(false)
   email                        String                        @unique
   emailVerified                DateTime?
   image                        String?

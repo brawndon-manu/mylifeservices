@@ -673,7 +673,8 @@ export async function uploadBatch(formData) {
 
   const staff = await prisma.user.findMany({
     where: { deactivatedAt: null },
-    select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
+    // timesheetExempt rides along so matchEmployee can drop those accounts
+    select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, timesheetExempt: true },
   });
 
   // ---- does this schedule actually cover the people on the timesheet? ----

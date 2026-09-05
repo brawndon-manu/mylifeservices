@@ -160,7 +160,8 @@ export async function uploadDayProgramBatch(formData) {
   // timesheets: only a unique full-coverage match auto-assigns.
   const users = await prisma.user.findMany({
     where: { deactivatedAt: null },
-    select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
+    // timesheetExempt rides along so matchEmployee can drop those accounts
+    select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, timesheetExempt: true },
   });
 
   // frozen at upload, same as uploadBatch - rendering on demand with today's
