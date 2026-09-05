@@ -56,7 +56,21 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
   const [period, setPeriod] = useState(periods.length === 1 ? periods[0] : "all");
   const [decision, setDecision] = useState("open");
   const [view, setView] = useState("shifts");
-  const [only, setOnly] = useState(null);
+  // the findings chips stack like Order by - press to add, press again to
+  // drop - and kinds that cannot both be true of one shift undo each other
+  // (a shift billed above its clock cannot also be below it, unclocked, or
+  // absent from the export). Mánu 2026-09-05: "same for the ones up top."
+  const KIND_CONFLICTS = [
+    ["billed-over-clocked", "billed-under-clocked", "never-clocked", "not-in-clock"],
+  ];
+  const [onlyKinds, setOnlyKinds] = useState([]);
+  const toggleKind = (k) =>
+    setOnlyKinds((prev) => {
+      if (prev.includes(k)) return prev.filter((x) => x !== k);
+      const rivals = KIND_CONFLICTS.find((g) => g.includes(k)) || [];
+      return [...prev.filter((x) => !rivals.includes(x)), k];
+    });
+  const kindOn = (r, k) => (k === "changed" ? !!r.changed : r.reasons.some((x) => x.kind === k));
   // the Order by stack, shared by every view
   const [sortKeys, setSortKeys] = useState([]);
   const toggleSort = (k) =>
@@ -122,13 +136,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
     const byDecision = DECISIONS.find((d) => d.key === decision).match;
     return inPeriod.filter((r) => {
       if (!byDecision(r)) return false;
-      if (only === "changed") {
-        if (!r.changed) return false;
-      } else if (only && !r.reasons.some((x) => x.kind === only)) return false;
+      if (onlyKinds.length && !onlyKinds.every((k) => kindOn(r, k))) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [inPeriod, decision, only, q]);
+  }, [inPeriod, decision, onlyKinds, q]);
 
   // ONE LINE PER PERSON OR PER CLIENT, over whatever is showing.
   //
@@ -316,10 +328,10 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
           <button
             key={kind}
             type="button"
-            aria-pressed={only === kind}
-            onClick={() => setOnly(only === kind ? null : kind)}
+            aria-pressed={onlyKinds.includes(kind)}
+            onClick={() => toggleKind(kind)}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-              only === kind
+              onlyKinds.includes(kind)
                 ? "bg-brand text-white"
                 : "border border-border-strong text-muted hover:border-brand hover:text-brand"
             }`}
