@@ -35,7 +35,11 @@ import UploadDone from "./UploadDone";
 // mistake is a PDF, so the three PDF pickers keep a ceiling of their own. The
 // QSP timesheet is around 0.9MB, the schedule 0.6MB and a fortnight of service
 // notes 2.7MB; a corrected timesheet is twenty.
-const BODY_LIMIT_MB = 40;
+// 48, not 50: the config's two 50mb layers need a little multipart headroom.
+// A full MONTH of exports (Mánu's August audit copy, 2026-09-04) is 42.5MB -
+// the fortnightly eight were 26.9MB - and anything this size only ever
+// uploads from localhost, where the 4.5MB Vercel request cap does not apply.
+const BODY_LIMIT_MB = 48;
 const PDF_LIMIT_MB = 10;
 const PDF_PICKERS = ["file", "schedule", "notes"];
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
