@@ -46,7 +46,13 @@ export function placeDroppedFiles(root, files, slots = UPLOAD_SLOTS) {
   const unplaced = [];
   for (const file of files) {
     const slot = slotForFilename(file.name, slots);
-    const input = slot ? root?.querySelector(`#${slot}`) : null;
+    let input = slot ? root?.querySelector(`#${slot}`) : null;
+    // two files matching one slot: the overflow goes to the slot's "2" twin
+    // where the form has one - the audit lane's second Simple Timesheet
+    if (input && input.files?.length > 0) {
+      const twin = root?.querySelector(`#${slot}2`);
+      if (twin && twin.files?.length === 0) input = twin;
+    }
     if (!input) {
       unplaced.push(file.name);
       continue;

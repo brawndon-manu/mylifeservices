@@ -7,6 +7,10 @@ export const ERRORS = {
   parse: "Couldn't read that PDF. Make sure it's the Simple Timesheet export, not a scan.",
   future:
     "That export contains days that haven't happened yet. QSP prints scheduled shifts exactly like worked ones, so those would become timesheets asking people to sign for time they haven't worked. Pull the period again once it has ended - or tick \"partial pay period\" below to drop the unworked days and keep what has been worked.",
+  secondfile:
+    "A payroll upload takes one timesheet. Two timesheet exports are for audit copies only.",
+  sameperiod:
+    "The two timesheet exports cover the same pay period. The second slot takes the other half of the month.",
   twoperiods:
     "That export covers more than one pay period, so every employee appears twice. QSP snaps to whole pay periods - asking for a range that crosses a boundary returns both of them. Request a single period.",
   empty: "No employee hours found in that file. Is it the right export?",

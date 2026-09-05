@@ -41,7 +41,7 @@ import UploadDone from "./UploadDone";
 // uploads from localhost, where the 4.5MB Vercel request cap does not apply.
 const BODY_LIMIT_MB = 48;
 const PDF_LIMIT_MB = 10;
-const PDF_PICKERS = ["file", "schedule", "notes"];
+const PDF_PICKERS = ["file", "file2", "schedule", "notes"];
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 // what each picker is called when an alert has to name one
@@ -115,6 +115,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
     null,
   );
   const [name, setName] = useState("");
+  const [name2, setName2] = useState("");
   const [schedName, setSchedName] = useState("");
   const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
@@ -156,6 +157,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
   // what to show in place of the pickers once they are hidden
   const sourceFiles = [
     { role: "Timesheet", kind: "pdf", name },
+    ...(audit && name2 ? [{ role: "Timesheet 2", kind: "pdf", name: name2 }] : []),
     { role: "Schedule", kind: "pdf", name: schedName },
     ...(audit
       ? []
@@ -325,7 +327,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         </p>
         {unplaced.length > 0 && (
           <p className="mb-4 text-xs font-semibold text-rose-600 dark:text-rose-400">
-            Not one of the {audit ? "six" : "eight"} exports, so it was not placed: {unplaced.join(", ")}
+            Not one of the {audit ? "seven" : "eight"} exports, so it was not placed: {unplaced.join(", ")}
           </p>
         )}
         <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
@@ -341,6 +343,21 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
           setSizes((p) => ({ ...p, file: e.target.files?.[0]?.size || 0 }));
         }}
       />
+
+      {audit && (
+        <FileRow
+          id="file2"
+          sendingPct={sending ? sending.file2 ?? null : null}
+          label="Second Simple Timesheet (PDF) - optional. A month audit takes two, one per pay period"
+          optional
+          selected={name2}
+          size={sizes.file2 || 0}
+          onPick={(e) => {
+            setName2(e.target.files?.[0]?.name || "");
+            setSizes((p) => ({ ...p, file2: e.target.files?.[0]?.size || 0 }));
+          }}
+        />
+      )}
 
       <FileRow
         id="schedule"
