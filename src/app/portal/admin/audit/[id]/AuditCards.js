@@ -25,7 +25,7 @@ import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
-import { span, hrs, clockedFigure, punchEnd } from "./figures";
+import { span, hrs, clockedFigure, punchEnd, ampmLabel } from "./figures";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -765,6 +765,12 @@ function Punches({ row }) {
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Clock</dt>
       <PunchLine row={row} end="in" />
       <PunchLine row={row} end="out" />
+      {row.sharedSession && (
+        <dd className="mt-0.5 text-[11px] leading-snug text-muted">
+          one session {ampmLabel(row.sharedSession.from)} - {ampmLabel(row.sharedSession.to)} across{" "}
+          {row.sharedSession.parts} bookings
+        </dd>
+      )}
     </div>
   );
 }

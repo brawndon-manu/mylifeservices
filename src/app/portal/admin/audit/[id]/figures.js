@@ -73,8 +73,11 @@ export function punchEnd(row, end) {
   if (row.inClockExport === false) {
     return { mark: null, time: null, gps: null, why: "not in the clock export" };
   }
+  // an inherited boundary of a shared session is a time, never a tick - the
+  // real punches live on the session's first and last booking
+  const inherited = end === "in" ? row.inheritedIn : row.inheritedOut;
   return {
-    mark: clocked != null ? "yes" : missed ? "no" : null,
+    mark: inherited ? null : clocked != null ? "yes" : missed ? "no" : null,
     time: clock(clocked),
     gps: gps === "yes" ? "yes" : gps === "no" ? "no" : null,
     why: null,

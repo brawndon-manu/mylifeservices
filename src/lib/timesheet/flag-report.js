@@ -212,13 +212,18 @@ export function flagReportDetailModel({ periodFrom, periodTo, flags = [], genera
                   const t = end === "in" ? f.punchIn : f.punchOut;
                   const missed = end === "in" ? f.noIn : f.noOut;
                   const gps = end === "in" ? f.gpsIn : f.gpsOut;
+                  const inherited = end === "in" ? f.inheritedIn : f.inheritedOut;
                   return {
                     end,
-                    mark: t != null ? "yes" : missed ? "no" : null,
+                    // a shared session's boundary is a time, never a tick
+                    mark: inherited ? null : t != null ? "yes" : missed ? "no" : null,
                     time: t != null ? ampmLabel(t) : null,
                     gps: gps === "yes" ? "yes" : gps === "no" ? "no" : null,
                   };
                 }),
+                session: f.sharedSession
+                  ? `one session ${ampmLabel(f.sharedSession.from)} - ${ampmLabel(f.sharedSession.to)} across ${f.sharedSession.parts} bookings`
+                  : null,
               };
             }
           }
@@ -504,6 +509,10 @@ export async function renderFlagReportDetail(model) {
           text("GPS", X.gpsLabel, y, { size: 8, color: MUTED });
           mark(r.gps, X.gps, y);
           y -= 11;
+        }
+        if (e.clock.session) {
+          text(e.clock.session, L + 52, y, { size: 7, f: italic, color: MUTED });
+          y -= 10;
         }
       }
       y -= 3;

@@ -12,6 +12,7 @@ import { monthLabelOf } from "@/lib/timesheet/budget-capture";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
+import { splitSharedSessions } from "@/lib/timesheet/session-split";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -326,6 +327,11 @@ export async function buildAudit(id) {
     });
   }
 
+  // ONE PUNCH SESSION ACROSS SEVERAL BOOKINGS - see session-split.js. Runs
+  // after every row has claimed a booking, so only truly-unclocked siblings
+  // can take a slice.
+  splitSharedSessions(byPersonDayShift, sameClient);
+
   // ---- what was DOCUMENTED: the notes, one per shift ----
   //
   // MATCHED ON THE CLIENT FIRST, and this is not a refinement - it is the
@@ -535,6 +541,9 @@ export async function buildAudit(id) {
       // read as a shift nobody tried to clock
       noIn: !!shift.noIn, noOut: !!shift.noOut,
       gpsIn: shift.gpsIn ?? null, gpsOut: shift.gpsOut ?? null,
+      // one punch session shared across sibling bookings - see session-split.js
+      sharedSession: shift.sharedSession || null,
+      inheritedIn: !!shift.inheritedIn, inheritedOut: !!shift.inheritedOut,
       // the reason staff typed on the shift, where there is one. The clock
       // export carries the same text on a third of them and is the fallback.
       scheduleNote: shift.scheduleNote
