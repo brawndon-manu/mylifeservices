@@ -96,6 +96,21 @@ export const AUTO_FLAG_RULES = [
     phrase: "GPS missing at clock out",
     test: (r) => r.gpsOut === "no",
   },
+  // the double bookings ride the rows' own findings, stamped by
+  // audit-overlaps.js at build - Mánu 2026-09-05: "we need a flag for double
+  // booking when it comes to client and staff"
+  {
+    key: "double-staff",
+    label: "booked in two places at once",
+    phrase: "booked in two places at once",
+    test: (r) => (r.reasons || []).some((x) => x.kind === "double-booked-staff"),
+  },
+  {
+    key: "double-client",
+    label: "the client is double booked",
+    phrase: "the client is double booked",
+    test: (r) => (r.reasons || []).some((x) => x.kind === "double-booked-client"),
+  },
 ];
 
 // the rules' verdict on one row: null when nothing fires or the shift is

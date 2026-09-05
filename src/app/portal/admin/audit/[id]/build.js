@@ -13,6 +13,8 @@ import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import { splitSharedSessions } from "@/lib/timesheet/session-split";
+import { stampOverlaps } from "@/lib/timesheet/audit-overlaps";
+import { ampmLabel } from "@/lib/timesheet/hours-label";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -677,6 +679,11 @@ export async function buildAudit(id) {
       if (alias) r.authKey = alias;
     }
   }
+
+  // DOUBLE BOOKINGS - staff in two places, or a client with two staff, at
+  // overlapping calendar times. Stamped as ordinary findings so every
+  // surface carries them. See audit-overlaps.js.
+  stampOverlaps(rows, ampmLabel);
 
   // WHAT MOVED SINCE THE PREVIOUS COPY, stamped per row off the diff the
   // upload stored - see audit-changes.js. Rows a fresh single upload has no
