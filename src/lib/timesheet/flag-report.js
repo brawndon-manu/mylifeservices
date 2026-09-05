@@ -245,6 +245,8 @@ export function flagReportDetailModel({ periodFrom, periodTo, flags = [], genera
                 ? { set: hrs(f.billableMin), mins: minsWords(f.billableMin), was: f.billedMin == null ? null : hrs(f.billedMin) }
                 : { tbd: true },
             serviceNote: f.serviceNote || null,
+            // the DSN speaks under its own name - Mánu 2026-09-05
+            serviceNoteLabel: f.serviceNoteSource === "dsn" ? "DSN" : "Service note",
             scheduleNote: f.scheduleNote || null,
             flagNote: f.reason
               ? { text: `"${(f.reason || "").trim()}" - ${f.decidedByName || "unknown"}` }
@@ -535,7 +537,7 @@ export async function renderFlagReportDetail(model) {
           y -= 10;
         }
       };
-      noteBlock("Service note", e.serviceNote, 8);
+      noteBlock(e.serviceNoteLabel || "Service note", e.serviceNote, 8);
       noteBlock("Schedule note", e.scheduleNote, 4);
       if (e.flagNote) {
         y -= 2;

@@ -714,7 +714,9 @@ function Card({ r, onReview }) {
                 onClick={() => setOpen((v) => !v)}
                 className="text-xs font-semibold text-brand underline underline-offset-4"
               >
-                {open ? "Hide the service note" : `Read the service note (${r.note.words} words)`}
+                {open
+                  ? `Hide the ${r.note.source === "dsn" ? "DSN" : "service note"}`
+                  : `Read the ${r.note.source === "dsn" ? "DSN" : "service note"} (${r.note.words} words)`}
               </button>
               {open && (
                 <div className="mt-1.5 rounded-lg border border-border bg-surface-2 p-3">

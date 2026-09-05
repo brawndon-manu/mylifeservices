@@ -225,3 +225,9 @@ test("a flag with no joined shift prints heading and billing but no clock block"
   assert.equal(e.clock, null);
   assert.deepEqual(e.billing, { tbd: true });
 });
+
+test("a DSN-sourced note is labeled DSN on the detailed report", () => {
+  assert.equal(dmodel([dflag({ serviceNoteSource: "dsn" })]).groups[0].entries[0].serviceNoteLabel, "DSN");
+  assert.equal(dmodel([dflag({ serviceNoteSource: "xls" })]).groups[0].entries[0].serviceNoteLabel, "Service note");
+  assert.equal(dmodel([dflag()]).groups[0].entries[0].serviceNoteLabel, "Service note");
+});

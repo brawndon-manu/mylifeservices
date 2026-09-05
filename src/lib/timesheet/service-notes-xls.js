@@ -174,12 +174,14 @@ export function mergeNotes(fromPdf = [], fromXls = []) {
   const keyOf = (n) =>
     `${who(n.employee)}|${n.date}|${noteMinute(n.start)}|${who(n.client)}`;
   const seen = new Set(fromPdf.map(keyOf));
-  const out = [...fromPdf];
+  // each note remembers which report it came from - Mánu 2026-09-05: "i cant
+  // differentiate the 2" - so the audit can say DSN where the DSN spoke
+  const out = fromPdf.map((n) => ({ ...n, source: "dsn" }));
   for (const note of fromXls) {
     const key = keyOf(note);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(note);
+    out.push({ ...note, source: "xls" });
   }
   return out;
 }

@@ -494,7 +494,9 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                     onClick={() => setOpenNote((v) => !v)}
                     className="text-sm font-semibold text-brand underline underline-offset-4"
                   >
-                    {openNote ? "Hide the service note" : `Read the service note (${row.note.words} words)`}
+                    {openNote
+                      ? `Hide the ${row.note.source === "dsn" ? "DSN" : "service note"}`
+                      : `Read the ${row.note.source === "dsn" ? "DSN" : "service note"} (${row.note.words} words)`}
                   </button>
                   {openNote && (
                     <div className="mt-2 rounded-lg border border-border bg-surface p-4">

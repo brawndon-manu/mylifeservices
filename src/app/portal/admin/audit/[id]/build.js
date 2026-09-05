@@ -548,6 +548,9 @@ export async function buildAudit(id) {
           summary: note.summary, comments: note.comments, categories: note.categories,
           signedAt: note.signedAt, signedDate: note.signedDate, signedAfterMin: note.signedAfterMin,
           miles: note.miles, page: note.page,
+          // which report spoke: stamped at the merge on new uploads, derived
+          // for stored batches - only the DSN PDF gives a note a page number
+          source: note.source || (note.page != null ? "dsn" : "xls"),
         }
         : null,
       ...read,

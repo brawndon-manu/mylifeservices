@@ -108,6 +108,7 @@ export async function GET(req, { params }) {
               ? [row.note.summary, ...(Array.isArray(row.note.comments) ? row.note.comments.filter((x) => typeof x === "string") : [])]
                 .filter(Boolean).join(" ") || null
               : null,
+            serviceNoteSource: row.note?.source || null,
             scheduleNote: row.scheduleNote?.text || null,
           }
           : {}),
