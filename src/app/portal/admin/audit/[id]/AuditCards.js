@@ -377,7 +377,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
                 </span>
               </h2>
               <div className="mt-2 space-y-3">
-                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} />)}
+                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} />)}
               </div>
             </div>
           ))}
@@ -541,7 +541,7 @@ function Count({ n, tone }) {
   );
 }
 
-function Card({ r, onReview }) {
+function Card({ r, onReview, title }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
@@ -558,7 +558,10 @@ function Card({ r, onReview }) {
       }`}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="text-base font-semibold text-foreground">{r.who}</span>
+        <span className="text-base font-semibold text-foreground">
+          {r.who}
+          {title && <span className="ml-2 text-xs font-medium text-muted">{title}</span>}
+        </span>
         <span className="text-sm tabular-nums text-muted">{r.date}</span>
       </div>
       <p className="mt-0.5 text-sm text-muted">
@@ -748,8 +751,9 @@ function Figure({ label, value, sub, tone }) {
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">{label}</dt>
       <dd className={`text-sm font-semibold tabular-nums ${tone || "text-foreground"}`}>
         {value || "-"}
-        {sub && <span className="ml-1.5 font-normal text-muted">{sub}</span>}
       </dd>
+      {/* the span under the figure, not beside it - Mánu 2026-09-05 */}
+      {sub && <dd className="text-xs tabular-nums text-muted">{sub}</dd>}
     </div>
   );
 }
