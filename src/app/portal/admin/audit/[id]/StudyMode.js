@@ -16,9 +16,10 @@
 // surfaced, and never tells the reviewer what to conclude.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
-import { span, hrs, clockedFigure, punchEnd } from "./figures";
+import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
+import BillableAdjust from "./BillableAdjust";
 
-export default function StudyMode({ rows: dealt, onExit }) {
+export default function StudyMode({ rows: dealt, onExit, titles = null }) {
   // THE DECK IS DEALT ONCE, when study mode opens.
   //
   // Mánu 2026-08-28: "sometimes when i click approve it skips over 2 cards
@@ -294,14 +295,29 @@ export default function StudyMode({ rows: dealt, onExit }) {
           >
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <span>
-                <span className="block text-xl font-semibold text-foreground sm:text-2xl">{row.who}</span>
-                <span className="mt-0.5 block text-sm text-muted">
-                  {row.service}
-                  {row.client ? ` · ${row.client}` : ""}
+                <span className="block text-xl font-semibold text-foreground sm:text-2xl">
+                  {row.who}
+                  {titles?.[row.employeeKey] && (
+                    <span className="ml-2.5 text-sm font-medium text-muted">
+                      {titles[row.employeeKey]}
+                    </span>
+                  )}
+                </span>
+                {/* client first, then the service, no dots - the flagged
+                    report's heading, Mánu 2026-09-04 */}
+                <span className="mt-0.5 block text-base text-foreground">
+                  <span className="font-semibold">{row.client || "no client on the booking"}</span>
+                  {row.service && <span className="ml-3 text-muted">{row.service}</span>}
+                </span>
+                <span className="mt-0.5 block text-sm tabular-nums text-muted">
+                  {row.date}
+                  {row.schedFrom != null && row.schedTo != null
+                    ? `\u00A0\u00A0\u00A0${ampmLabel(row.schedFrom)} - ${ampmLabel(row.schedTo)}`
+                    : ""}
                 </span>
               </span>
               <span className="text-sm tabular-nums text-muted">
-                {row.date} · {at + 1} of {rows.length}
+                {at + 1} of {rows.length}
               </span>
             </div>
 
@@ -341,13 +357,20 @@ export default function StudyMode({ rows: dealt, onExit }) {
                   <Figure
                     label="Scheduled"
                     value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
+                    mins={row.originalFrom != null ? minsWords(row.originalTo - row.originalFrom) : null}
                     sub={span(row.originalFrom, row.originalTo)}
                     tone="text-muted"
                   />
-                  <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+                  <Figure
+                    label="Billed"
+                    value={hrs(row.billedMin)}
+                    mins={minsWords(row.billedMin)}
+                    sub={span(row.schedFrom, row.schedTo)}
+                  />
                   <Figure
                     label="Clocked"
                     value={clockedFigure(row).value}
+                    mins={row.actualFrom != null && row.actualTo != null ? minsWords(row.clockedMin) : null}
                     sub={clockedFigure(row).sub}
                     tone={
                       clockedFigure(row).tone === "bad"
@@ -522,57 +545,18 @@ export default function StudyMode({ rows: dealt, onExit }) {
                 className="mt-2 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
               />
 
-              {/* THE CORRECTED BILLABLE TIME. "when i go through every shift i
-                  can adjust how much of the time is actually billable" - Mánu
-                  2026-08-31. Optional: left empty, the billed figure stands.
-                  The chips fill it from the figures already on the card. */}
-              <label htmlFor="billable" className="mt-4 block text-sm font-semibold text-foreground">
-                Actually billable, in minutes
-              </label>
-              <p className="mt-0.5 text-xs text-muted">
-                Left empty, the billed {row.billedMin != null ? hrs(row.billedMin) : "time"} stands.
-                The client report totals this figure.
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <input
-                  id="billable"
-                  type="number"
-                  min={0}
-                  max={1440}
-                  step={1}
-                  value={billable}
-                  onChange={(e) => setBillable(e.target.value)}
-                  className="w-28 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
-                />
-                {billable !== "" && Number.isFinite(Number(billable)) && (
-                  <span className="text-xs tabular-nums text-muted">= {hrs(Number(billable))}</span>
-                )}
-                {row.clockedMin != null && (
-                  <button
-                    type="button"
-                    onClick={() => setBillable(String(row.clockedMin))}
-                    className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
-                  >
-                    Clocked · {hrs(row.clockedMin)}
-                  </button>
-                )}
-                {row.documentedMin != null && row.documentedMin !== row.clockedMin && (
-                  <button
-                    type="button"
-                    onClick={() => setBillable(String(row.documentedMin))}
-                    className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
-                  >
-                    Documented · {hrs(row.documentedMin)}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setBillable("0")}
-                  className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
-                >
-                  Nothing billable
-                </button>
-              </div>
+              {/* THE CORRECTED BILLABLE TIME, BEHIND ITS OWN BUTTON - Mánu
+                  2026-09-04: an untouched flag must look untouched, so the
+                  inputs exist only after "Adjust the billable time" and stay
+                  TBD on the reports otherwise. Shared with the card
+                  DecideBar via BillableAdjust. */}
+              <BillableAdjust
+                billedMin={row.billedMin}
+                clockedMin={row.clockedMin}
+                documentedMin={row.documentedMin}
+                value={billable}
+                onChange={setBillable}
+              />
 
               <div className="mt-3 flex gap-2">
                 <button
@@ -664,12 +648,13 @@ export default function StudyMode({ rows: dealt, onExit }) {
   );
 }
 
-function Figure({ label, value, sub, tone }) {
+function Figure({ label, value, mins, sub, tone }) {
   return (
     <div>
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">{label}</dt>
       <dd className={`mt-0.5 text-xl font-bold tabular-nums ${tone || "text-foreground"}`}>
         {value || "-"}
+        {mins && <span className="ml-1.5 text-xs font-normal italic text-muted">({mins})</span>}
       </dd>
       {sub && <dd className="text-xs tabular-nums text-muted">{sub}</dd>}
     </div>
@@ -693,9 +678,11 @@ function PunchLine({ row, end }) {
   // two reasons there is nothing to draw, and they are not the same fact: the
   // export was never uploaded, or it was and this shift is not in it
   if (p.why) return <dd className="text-xs text-faint">{end}: {p.why}</dd>;
+  // FIXED COLUMNS - Mánu 2026-09-04: "i want the checks and x's to be aligned
+  // up... make it set place across." A wide time must not push the marks.
   return (
-    <dd className="mt-0.5 flex items-center gap-1.5 text-sm">
-      <span className="w-7 text-xs text-faint">{end}</span>
+    <dd className="mt-0.5 grid grid-cols-[1.75rem_1.5rem_5.5rem_2rem_1.5rem] items-center text-sm">
+      <span className="text-xs text-faint">{end}</span>
       <Mark v={p.mark} />
       <span className="tabular-nums text-foreground">{p.time || "-"}</span>
       <span className="text-xs text-faint">GPS</span>

@@ -4,6 +4,8 @@ import { isAdminUp } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
 import AuditCards from "./AuditCards";
 import { buildAudit } from "./build";
+import { prisma } from "@/lib/prisma";
+import { scheduleKey } from "@/lib/timesheet/schedule";
 
 export const metadata = { title: "Audit", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -28,6 +30,18 @@ export default async function AuditBatchPage({ params }) {
   const data = await buildAudit(id);
   if (!data) notFound();
   const { batch, rows, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations } = data;
+
+  // the deck prints the employee's role beside the name - resolved by the
+  // schedule key the rows already carry, exactly like the flagged report
+  const staff = await prisma.user.findMany({
+    where: { deactivatedAt: null },
+    select: { name: true, title: true },
+  });
+  const titles = {};
+  for (const u of staff) {
+    const k = scheduleKey(u.name || "");
+    if (k && u.title) titles[k] = u.title;
+  }
 
   return (
     <section className="mx-auto max-w-[90rem] px-6 py-12 sm:py-16">
@@ -86,6 +100,7 @@ export default async function AuditBatchPage({ params }) {
       <AuditCards
         batchId={batch.id}
         rows={rows}
+        titles={titles}
         orphans={orphans}
         authorized={hasAuthorizations ? authorized : null}
         authMonthLabel={authMonthLabel}

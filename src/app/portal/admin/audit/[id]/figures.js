@@ -10,7 +10,12 @@ export const clock = (min) => {
   return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "a" : "p"}`;
 };
 
-export const span = (a, b) => (a == null || b == null ? null : `${clock(a)}-${clock(b)}`);
+export { ampmLabel, minsWords } from "@/lib/timesheet/hours-label";
+import { ampmLabel as ampm } from "@/lib/timesheet/hours-label";
+
+// spans read "11:00 AM - 1:00 PM" everywhere - Mánu 2026-09-04, matching the
+// flagged report's dateLine
+export const span = (a, b) => (a == null || b == null ? null : `${ampm(a)} - ${ampm(b)}`);
 
 export const hrs = (m) => (m == null ? null : `${(m / 60).toFixed(2)}h`);
 
@@ -41,8 +46,8 @@ export function clockedFigure(row) {
   if (from != null && to != null) {
     return { value: hrs(row.clockedMin), sub: span(from, to), tone: null };
   }
-  if (from != null) return { value: "no clock-out", sub: `in ${clock(from)}`, tone: "bad" };
-  if (to != null) return { value: "no clock-in", sub: `out ${clock(to)}`, tone: "bad" };
+  if (from != null) return { value: "no clock-out", sub: `in ${ampm(from)}`, tone: "bad" };
+  if (to != null) return { value: "no clock-in", sub: `out ${ampm(to)}`, tone: "bad" };
   return { value: "not clocked", sub: null, tone: "bad" };
 }
 

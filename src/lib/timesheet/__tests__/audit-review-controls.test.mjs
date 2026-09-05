@@ -25,12 +25,19 @@ test("reset-all is period-scoped and counted before it deletes", () => {
   assert.equal(scoped?.length, 2, "impact and delete share the period scope");
 });
 
-test("the cards decide with the same action and the same chips as the deck", () => {
+test("the cards decide with the same action and the same adjustment as the deck", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
   assert.match(cards, /import \{ reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts \} from "\.\.\/actions"/);
   assert.match(cards, /function DecideBar/);
-  for (const label of ["Nothing billable", "Actually billable, in minutes", "Flag it"]) {
-    assert.ok(cards.includes(label), `card panel carries "${label}"`);
-  }
+  assert.ok(cards.includes("Flag it"), "card panel carries Flag it");
   assert.match(cards, /There is no undo\./, "the reset dialog says what it destroys");
+  // ONE adjustment component on both surfaces - the corrected time lives
+  // behind its button so an untouched flag looks untouched (Mánu 2026-09-04)
+  const deck = read("src/app/portal/admin/audit/[id]/StudyMode.js");
+  assert.match(cards, /import BillableAdjust from "\.\/BillableAdjust"/);
+  assert.match(deck, /import BillableAdjust from "\.\/BillableAdjust"/);
+  const adjust = read("src/app/portal/admin/audit/[id]/BillableAdjust.js");
+  for (const label of ["Adjust the billable time", "Clear the adjustment", "Nothing billable"]) {
+    assert.ok(adjust.includes(label), `the adjustment carries "${label}"`);
+  }
 });

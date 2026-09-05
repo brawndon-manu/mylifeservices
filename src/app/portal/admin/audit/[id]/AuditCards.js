@@ -23,6 +23,7 @@
 import { useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
+import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
 import { span, hrs, clockedFigure, punchEnd } from "./figures";
 
@@ -48,7 +49,7 @@ const TONE = {
   flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
-export default function AuditCards({ rows: rowsProp, totals, orphans = [], periods = [], authorized = null, authMonthLabel = null, batchId = null }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -176,7 +177,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
     [shown],
   );
 
-  if (studying) return <StudyMode rows={queue} onExit={() => setStudying(false)} />;
+  if (studying) return <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} />;
 
   // a row in the roll-up is a way into that person or client, not a dead end
   const drillInto = (name) => {
@@ -758,9 +759,10 @@ function PunchLine({ row, end }) {
   // two reasons there is nothing to draw, and they are not the same fact: the
   // export was never uploaded, or it was and this shift is not in it
   if (p.why) return <dd className="text-xs text-faint">{end}: {p.why}</dd>;
+  // FIXED COLUMNS - a wide time must not push the marks (Mánu 2026-09-04)
   return (
-    <dd className="flex items-center gap-1.5 text-xs">
-      <span className="w-6 text-faint">{end}</span>
+    <dd className="grid grid-cols-[1.5rem_1.25rem_5rem_1.75rem_1.25rem] items-center text-xs">
+      <span className="text-faint">{end}</span>
       <Mark v={p.mark} />
       <span className="tabular-nums text-muted">{p.time || "-"}</span>
       <span className="text-faint">GPS</span>
@@ -836,51 +838,15 @@ function DecideBar({ r, onReview }) {
             onChange={(e) => setReason(e.target.value)}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
           />
-          <label className="mt-3 block text-xs font-semibold text-foreground">
-            Actually billable, in minutes
-          </label>
-          <p className="mt-0.5 text-[11px] text-muted">
-            Left empty, the billed {r.billedMin != null ? hrs(r.billedMin) : "time"} stands.
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              max={1440}
-              step={1}
-              value={billable}
-              onChange={(e) => setBillable(e.target.value)}
-              className="w-24 rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-sm text-foreground focus:border-brand focus:outline-none"
-            />
-            {billable !== "" && Number.isFinite(Number(billable)) && (
-              <span className="text-xs tabular-nums text-muted">= {hrs(Number(billable))}</span>
-            )}
-            {r.clockedMin != null && (
-              <button
-                type="button"
-                onClick={() => setBillable(String(r.clockedMin))}
-                className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
-              >
-                Clocked · {hrs(r.clockedMin)}
-              </button>
-            )}
-            {r.documentedMin != null && r.documentedMin !== r.clockedMin && (
-              <button
-                type="button"
-                onClick={() => setBillable(String(r.documentedMin))}
-                className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
-              >
-                Documented · {hrs(r.documentedMin)}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setBillable("0")}
-              className="rounded-full border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
-            >
-              Nothing billable
-            </button>
-          </div>
+          {/* the corrected time lives behind its own button so an untouched
+              flag looks untouched - see BillableAdjust */}
+          <BillableAdjust
+            billedMin={r.billedMin}
+            clockedMin={r.clockedMin}
+            documentedMin={r.documentedMin}
+            value={billable}
+            onChange={setBillable}
+          />
           <div className="mt-2.5 flex gap-2">
             <button
               type="button"
