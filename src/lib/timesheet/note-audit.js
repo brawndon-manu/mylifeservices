@@ -123,6 +123,12 @@ export const AUDIT_REASONS = {
         ? " The booking still ends where it was originally scheduled, so it was not trimmed to the clock."
         : ""),
   },
+  "billed-under-clocked": {
+    label: "Billed below what was clocked",
+    weight: 35,
+    describe: (f) =>
+      `The roster bills ${hrs(f.billedMin)} and the clock records ${hrs(f.clockedMin)}.`,
+  },
   "thin-note": {
     label: "Short for the time billed",
     weight: 30,
@@ -220,6 +226,16 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
         shift.originalFrom != null && shift.originalTo != null
         && shift.schedFrom === shift.originalFrom && shift.schedTo === shift.originalTo,
     });
+  }
+
+  // AND THE MIRROR - billed BELOW what the clock recorded. Less damning (the
+  // company under-bills rather than over-bills) but Mánu 2026-09-05 wants it
+  // filterable "just in case"; same both-punches requirement as the over case.
+  if (
+    billedMin != null && clockedMin != null
+    && clockedMin - billedMin >= rules.billedOverClockMin
+  ) {
+    out.push({ kind: "billed-under-clocked", billedMin, clockedMin });
   }
 
   // the clock cannot corroborate a shift it never recorded, which matters most

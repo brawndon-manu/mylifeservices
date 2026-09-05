@@ -129,7 +129,16 @@ test("one word against a two hour shift is raised", () => {
 // forty words is a full account of twenty minutes and no account of four hours,
 // which is why the rule is rated per hour rather than per note
 test("a short note on a short shift is not thin", () => {
-  assert.deepEqual(auditReasons(shift({ scheduledMin: 20 }), note({ words: 20, minutes: 20 })), []);
+  // workedMin pinned to the bill: this test is about the note, and the new
+  // billed-under-clocked reason would fire on the fixture's default clock
+  assert.deepEqual(auditReasons(shift({ scheduledMin: 20, workedMin: 20 }), note({ words: 20, minutes: 20 })), []);
+});
+
+test("billed below what was clocked is its own finding", () => {
+  const rs = auditReasons(shift({ scheduledMin: 60, workedMin: 120 }), note());
+  const f = rs.find((r) => r.kind === "billed-under-clocked");
+  assert.ok(f);
+  assert.match(f.text, /bills 1\.00 hours and the clock records 2\.00 hours/);
 });
 
 // ---- the clock ----
