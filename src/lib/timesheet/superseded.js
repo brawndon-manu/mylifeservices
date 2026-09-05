@@ -32,10 +32,22 @@ export async function supersededBy(batchId) {
     },
   });
   if (!batch) return null;
+  // AN AUDIT COPY IS REPLACED MONTHLY, not per fortnight - Mánu 2026-09-05:
+  // "similar to the timesheets where it gets superceded but its monthly for
+  // these." His flow is a fresh month-to-date copy every day, and each pull's
+  // periodTo grows - an exact-period match would never replace anything. The
+  // month is read off periodFrom's MM/.../YY, which the QSP date format fixes.
+  const periodMatch = batch.auditOnly
+    ? {
+      periodFrom: {
+        startsWith: batch.periodFrom.slice(0, 3),
+        endsWith: batch.periodFrom.slice(-3),
+      },
+    }
+    : { periodFrom: batch.periodFrom, periodTo: batch.periodTo };
   return prisma.timesheetBatch.findFirst({
     where: {
-      periodFrom: batch.periodFrom,
-      periodTo: batch.periodTo,
+      ...periodMatch,
       // SAME PROGRAM ONLY. The day program and the agency run the same
       // fortnights, so without this a DP upload would mark the live MLS batch
       // replaced - sixty sheets out for signature going read-only because a
