@@ -60,7 +60,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
   // the Order by stack, shared by every view
   const [sortKeys, setSortKeys] = useState([]);
   const toggleSort = (k) =>
-    setSortKeys((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+    setSortKeys((prev) => {
+      if (prev.includes(k)) return prev.filter((x) => x !== k);
+      const rivals = SORT_CONFLICTS.find((g) => g.includes(k)) || [];
+      return [...prev.filter((x) => !rivals.includes(x)), k];
+    });
   const [q, setQ] = useState("");
   const [studying, setStudying] = useState(false);
   // DECIDING FROM THE CARDS, 2026-09-03. Mánu: "i should be able to add the
@@ -187,6 +191,12 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
         minDay: Math.min(...list.map((r) => rollDayKey(r.date))),
         flagged: list.filter((r) => r.review?.decision === "flagged").length,
         shifts: list.length,
+        open: list.filter((r) => !r.review?.decision).length,
+        billedMin: list.reduce((n, r) => n + (r.billedMin ?? 0), 0),
+        overMin: list.reduce(
+          (n, r) => n + (r.billedMin != null && r.clockedMin != null ? Math.max(0, r.billedMin - r.clockedMin) : 0),
+          0,
+        ),
       });
       sections = sections
         .map((e) => [e, agg(e)])
@@ -544,7 +554,15 @@ const ROLL_SORTS = {
   last: { label: "Last name", cmp: (a, b) => nameParts(a.name).last.localeCompare(nameParts(b.name).last) },
   flags: { label: "Flags", cmp: (a, b) => b.flagged - a.flagged },
   shifts: { label: "Shifts", cmp: (a, b) => b.shifts - a.shifts },
+  open: { label: "Not decided", cmp: (a, b) => (b.open ?? 0) - (a.open ?? 0) },
+  billed: { label: "Billed", cmp: (a, b) => (b.billedMin ?? 0) - (a.billedMin ?? 0) },
+  over: { label: "Above the clock", cmp: (a, b) => (b.overMin ?? 0) - (a.overMin ?? 0) },
 };
+
+// keys that answer the same question cancel each other - Mánu 2026-09-05:
+// "you shouldnt be able to click first name and last name at the same time.
+// it should undo the ones that contradict each other."
+const SORT_CONFLICTS = [["first", "last"]];
 
 function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [] }) {
   const ordered = useMemo(() => {
