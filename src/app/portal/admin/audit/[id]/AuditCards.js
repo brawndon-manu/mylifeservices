@@ -20,7 +20,7 @@
 // period does not throw away reviewing that has already been done.
 //
 // Nothing here computes an hour. See the page beside it.
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
 import BillableAdjust from "./BillableAdjust";
@@ -387,6 +387,12 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
           rows={roll}
           what={view === "employee" ? "Employee" : "Client"}
           onOpen={drillInto}
+          rowsFor={(name) => {
+            const of = VIEWS.find((v) => v.key === view)?.of;
+            return of ? shown.filter((r) => of(r) === name) : [];
+          }}
+          onReview={noteReview}
+          titles={titles}
           authorized={view === "client" ? authorized : null}
           authLabel={authMonthLabel}
         />
@@ -437,7 +443,19 @@ function Orphans({ rows }) {
   );
 }
 
-function RollUp({ rows, what, onOpen, authorized = null, authLabel = null }) {
+function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null }) {
+  // WHICH GROUPS ARE UNFOLDED - Mánu 2026-09-05: "an option for a toggle
+  // under by the employee and [client] for every shift." The chevron opens the
+  // group's shifts as ordinary cards right under its row; the row itself
+  // still drills through to the filtered list, as it always has.
+  const [openGroups, setOpenGroups] = useState(() => new Set());
+  const toggle = (name) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   // authorized hours only exist per client, and only once a Budget Capture
   // Report for the period's month has been uploaded on the Audit page
   const withAuth = !!authorized;
@@ -476,12 +494,25 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null }) {
               const auth = withAuth && g.authKey ? authorized[g.authKey] : null;
               const pct = auth?.hours ? (g.billableMin / 60 / auth.hours) * 100 : null;
               return (
+                <Fragment key={g.name}>
                 <tr
-                  key={g.name}
                   onClick={() => onOpen(g.name)}
                   className="cursor-pointer hover:bg-surface-2"
                 >
-                  <td className="px-3 py-2 font-medium text-foreground">{g.name}</td>
+                  <td className="px-3 py-2 font-medium text-foreground">
+                    {rowsFor && (
+                      <button
+                        type="button"
+                        aria-label={openGroups.has(g.name) ? "Hide the shifts" : "Show every shift"}
+                        title={openGroups.has(g.name) ? "Hide the shifts" : "Show every shift"}
+                        onClick={(e) => { e.stopPropagation(); toggle(g.name); }}
+                        className="mr-2 inline-block w-4 text-muted transition hover:text-brand"
+                      >
+                        {openGroups.has(g.name) ? "\u25be" : "\u25b8"}
+                      </button>
+                    )}
+                    {g.name}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.billedMin)}</td>
                   <td
@@ -524,6 +555,18 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null }) {
                   <Count n={g.approved} tone="text-emerald-600 dark:text-emerald-400" />
                   <Count n={g.flagged} tone="text-amber-600 dark:text-amber-400" />
                 </tr>
+                {openGroups.has(g.name) && rowsFor && (
+                  <tr>
+                    <td colSpan={withAuth ? 12 : 10} className="bg-surface-2/50 px-3 py-3">
+                      <div className="space-y-3">
+                        {rowsFor(g.name).map((r) => (
+                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} />
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
