@@ -57,6 +57,10 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
   const [decision, setDecision] = useState("open");
   const [view, setView] = useState("shifts");
   const [only, setOnly] = useState(null);
+  // the Order by stack, shared by every view
+  const [sortKeys, setSortKeys] = useState([]);
+  const toggleSort = (k) =>
+    setSortKeys((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
   const [q, setQ] = useState("");
   const [studying, setStudying] = useState(false);
   // DECIDING FROM THE CARDS, 2026-09-03. Mánu: "i should be able to add the
@@ -176,9 +180,35 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
       if (!m.has(r.who)) m.set(r.who, []);
       m.get(r.who).push(r);
     }
-    return [...m.entries()].sort((a, b) =>
+    let sections = [...m.entries()];
+    if (sortKeys.length) {
+      const agg = ([name, list]) => ({
+        name,
+        minDay: Math.min(...list.map((r) => rollDayKey(r.date))),
+        flagged: list.filter((r) => r.review?.decision === "flagged").length,
+        shifts: list.length,
+      });
+      sections = sections
+        .map((e) => [e, agg(e)])
+        .sort(([, a], [, b]) => {
+          for (const k of sortKeys) {
+            const d = ROLL_SORTS[k].cmp(a, b);
+            if (d) return d;
+          }
+          return 0;
+        })
+        .map(([e]) => e);
+      if (sortKeys.includes("date")) {
+        sections = sections.map(([name, list]) => [
+          name,
+          [...list].sort((a, b) => rollDayKey(a.date) - rollDayKey(b.date)),
+        ]);
+      }
+      return sections;
+    }
+    return sections.sort((a, b) =>
       b[1].reduce((n, r) => n + r.score, 0) - a[1].reduce((n, r) => n + r.score, 0));
-  }, [shown, view]);
+  }, [shown, view, sortKeys]);
 
   const queue = useMemo(
     () => [...shown].sort((a, b) => (a.review ? 1 : 0) - (b.review ? 1 : 0)),
@@ -358,8 +388,31 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
         )}
       </div>
 
+      {/* ORDER BY, ON EVERY VIEW - Mánu 2026-09-05. Press to stack, press
+          again to drop; nothing pressed keeps each view's own default order. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Order by</span>
+        {Object.entries(ROLL_SORTS)
+          .filter(([k]) => view !== "orphans" || ["date", "first", "last"].includes(k))
+          .map(([k, v]) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={sortKeys.includes(k)}
+              onClick={() => toggleSort(k)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                sortKeys.includes(k)
+                  ? "bg-brand text-white"
+                  : "border border-border-strong text-muted hover:border-brand hover:text-brand"
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+      </div>
+
       {view === "orphans" ? (
-        <Orphans rows={period === "all" ? orphans : orphans.filter((n) => n.period === period)} />
+        <Orphans rows={sortOrphans(period === "all" ? orphans : orphans.filter((n) => n.period === period), sortKeys)} />
       ) : shown.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
           {decision === "flagged"
@@ -395,6 +448,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
           }}
           onReview={noteReview}
           titles={titles}
+          sortKeys={sortKeys}
           authorized={view === "client" ? authorized : null}
           authLabel={authMonthLabel}
         />
@@ -462,6 +516,24 @@ const nameParts = (name) => {
   return { first: bits[0] || "", last: bits[bits.length - 1] || "" };
 };
 
+// orphans sort on the same pressed keys where they apply
+function sortOrphans(list, sortKeys) {
+  const keys = sortKeys.filter((k) => ["date", "first", "last"].includes(k));
+  if (!keys.length) return list;
+  const cmpOf = {
+    date: (a, b) => rollDayKey(a.date) - rollDayKey(b.date),
+    first: (a, b) => nameParts(a.who).first.localeCompare(nameParts(b.who).first),
+    last: (a, b) => nameParts(a.who).last.localeCompare(nameParts(b.who).last),
+  };
+  return [...list].sort((a, b) => {
+    for (const k of keys) {
+      const d = cmpOf[k](a, b);
+      if (d) return d;
+    }
+    return 0;
+  });
+}
+
 // the stackable orderings - Mánu 2026-09-05: "toggle any of these filters
 // overlapping each other by pressing and pressing again to toggle off."
 // Pressed keys compose in press order; none pressed keeps the audit's own
@@ -474,10 +546,7 @@ const ROLL_SORTS = {
   shifts: { label: "Shifts", cmp: (a, b) => b.shifts - a.shifts },
 };
 
-function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null }) {
-  const [sortKeys, setSortKeys] = useState([]);
-  const toggleSort = (k) =>
-    setSortKeys((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [] }) {
   const ordered = useMemo(() => {
     if (!sortKeys.length) return rows;
     return [...rows].sort((a, b) => {
@@ -513,24 +582,6 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
           ` Authorized is the client's monthly allowance from the ${authLabel} Budget Capture Report, against the billable hours showing.`}{" "}
         A row opens that {what.toLowerCase()}.
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Order by</span>
-        {Object.entries(ROLL_SORTS).map(([k, v]) => (
-          <button
-            key={k}
-            type="button"
-            aria-pressed={sortKeys.includes(k)}
-            onClick={() => toggleSort(k)}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-              sortKeys.includes(k)
-                ? "bg-brand text-white"
-                : "border border-border-strong text-muted hover:border-brand hover:text-brand"
-            }`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
       <div className="mt-2 overflow-x-auto rounded-xl border border-border">
         <table className={`w-full ${withAuth ? "min-w-[68rem]" : "min-w-[56rem]"} text-sm`}>
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-faint">
