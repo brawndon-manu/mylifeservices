@@ -577,6 +577,14 @@ function Card({ r, onReview, title }) {
             has one. Scheduled and Clocked both come out of that row. */}
         {r.clockAvailable && r.inClockExport === false ? (
           <>
+            {/* the calendar still says when it was booked - Mánu 2026-09-05:
+                "everyone should be on the schedule" */}
+            <Figure
+              label="Scheduled"
+              value={r.schedFrom != null && r.schedTo != null ? hrs(r.schedTo - r.schedFrom) : "-"}
+              sub={r.schedFrom != null && r.schedTo != null ? `${span(r.schedFrom, r.schedTo)} · from the calendar` : null}
+              tone="text-muted"
+            />
             <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
             <Figure label="Clock" value="no row for this shift" tone="text-faint" />
           </>
@@ -584,8 +592,20 @@ function Card({ r, onReview, title }) {
           <>
             <Figure
               label="Scheduled"
-              value={r.originalFrom != null ? hrs(r.originalTo - r.originalFrom) : "-"}
-              sub={span(r.originalFrom, r.originalTo)}
+              value={
+                r.originalFrom != null
+                  ? hrs(r.originalTo - r.originalFrom)
+                  : r.schedFrom != null && r.schedTo != null
+                    ? hrs(r.schedTo - r.schedFrom)
+                    : "-"
+              }
+              sub={
+                r.originalFrom != null
+                  ? span(r.originalFrom, r.originalTo)
+                  : r.schedFrom != null && r.schedTo != null
+                    ? `${span(r.schedFrom, r.schedTo)} · from the calendar`
+                    : null
+              }
               tone="text-muted"
             />
             <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
@@ -665,7 +685,7 @@ function Card({ r, onReview, title }) {
         >
           {r.review.decision === "approved" ? "Approved" : "Flagged"}
           {r.review.by ? ` by ${r.review.by}` : ""}
-          {r.review.reason ? ` - ${r.review.reason}` : ""}
+          {r.review.reason ? ` - ${r.review.reason.replace(/\.$/, "")}` : ""}
           {r.review.billableMin != null && (
             <span className="text-foreground"> · billable set to {hrs(r.review.billableMin)}</span>
           )}

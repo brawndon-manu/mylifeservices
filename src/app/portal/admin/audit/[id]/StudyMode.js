@@ -341,6 +341,14 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                   say nothing for schdueled if there is". */}
               {row.clockAvailable && row.inClockExport === false ? (
                 <>
+                  {/* the calendar still says when it was booked */}
+                  <Figure
+                    label="Scheduled"
+                    value={row.schedFrom != null && row.schedTo != null ? hrs(row.schedTo - row.schedFrom) : "-"}
+                    mins={row.schedFrom != null && row.schedTo != null ? minsWords(row.schedTo - row.schedFrom) : null}
+                    sub={row.schedFrom != null && row.schedTo != null ? `${span(row.schedFrom, row.schedTo)} · from the calendar` : null}
+                    tone="text-muted"
+                  />
                   <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
                   <div className="col-span-1 sm:col-span-3">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
@@ -356,9 +364,27 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 <>
                   <Figure
                     label="Scheduled"
-                    value={row.originalFrom != null ? hrs(row.originalTo - row.originalFrom) : "-"}
-                    mins={row.originalFrom != null ? minsWords(row.originalTo - row.originalFrom) : null}
-                    sub={span(row.originalFrom, row.originalTo)}
+                    value={
+                      row.originalFrom != null
+                        ? hrs(row.originalTo - row.originalFrom)
+                        : row.schedFrom != null && row.schedTo != null
+                          ? hrs(row.schedTo - row.schedFrom)
+                          : "-"
+                    }
+                    mins={
+                      row.originalFrom != null
+                        ? minsWords(row.originalTo - row.originalFrom)
+                        : row.schedFrom != null && row.schedTo != null
+                          ? minsWords(row.schedTo - row.schedFrom)
+                          : null
+                    }
+                    sub={
+                      row.originalFrom != null
+                        ? span(row.originalFrom, row.originalTo)
+                        : row.schedFrom != null && row.schedTo != null
+                          ? `${span(row.schedFrom, row.schedTo)} · from the calendar`
+                          : null
+                    }
                     tone="text-muted"
                   />
                   <Figure
@@ -531,7 +557,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                   ? "Approved"
                   : "Flagged"}
                 {row.review?.by ? ` by ${row.review.by}` : ""}
-                {row.review?.reason ? ` - ${row.review.reason}` : ""}
+                {row.review?.reason ? ` - ${row.review.reason.replace(/\.$/, "")}` : ""}
                 {row.review?.billableMin != null
                   ? ` · billable set to ${hrs(row.review.billableMin)}`
                   : ""}. Deciding again replaces it.
