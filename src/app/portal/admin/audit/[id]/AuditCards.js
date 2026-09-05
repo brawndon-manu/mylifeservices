@@ -141,10 +141,12 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
           name, shifts: 0, billedMin: 0, billableMin: 0, adjusted: 0,
           clockedMin: 0, noted: 0,
           overMin: 0, approved: 0, flagged: 0, open: 0, authKey: null,
+          minDay: Infinity,
         };
         m.set(name, g);
       }
       g.shifts++;
+      g.minDay = Math.min(g.minDay, rollDayKey(r.date));
       g.billedMin += r.billedMin ?? 0;
       // WHAT THE REVIEWER SAYS IS ACTUALLY BILLABLE: the adjusted figure where
       // one was recorded, the billed figure everywhere else
@@ -443,7 +445,49 @@ function Orphans({ rows }) {
   );
 }
 
+const rollDayKey = (d) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
+  return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
+};
+
+// "Last, First" (clients) and "First Last" (employees) both answer for the
+// name sorts
+const nameParts = (name) => {
+  const n = String(name || "").trim();
+  if (n.includes(",")) {
+    const [last, first] = n.split(",").map((x) => x.trim());
+    return { first: first || "", last: last || "" };
+  }
+  const bits = n.split(/\s+/);
+  return { first: bits[0] || "", last: bits[bits.length - 1] || "" };
+};
+
+// the stackable orderings - Mánu 2026-09-05: "toggle any of these filters
+// overlapping each other by pressing and pressing again to toggle off."
+// Pressed keys compose in press order; none pressed keeps the audit's own
+// order, billed-above-the-clock first.
+const ROLL_SORTS = {
+  date: { label: "Date", cmp: (a, b) => a.minDay - b.minDay },
+  first: { label: "First name", cmp: (a, b) => nameParts(a.name).first.localeCompare(nameParts(b.name).first) },
+  last: { label: "Last name", cmp: (a, b) => nameParts(a.name).last.localeCompare(nameParts(b.name).last) },
+  flags: { label: "Flags", cmp: (a, b) => b.flagged - a.flagged },
+  shifts: { label: "Shifts", cmp: (a, b) => b.shifts - a.shifts },
+};
+
 function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null }) {
+  const [sortKeys, setSortKeys] = useState([]);
+  const toggleSort = (k) =>
+    setSortKeys((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+  const ordered = useMemo(() => {
+    if (!sortKeys.length) return rows;
+    return [...rows].sort((a, b) => {
+      for (const k of sortKeys) {
+        const d = ROLL_SORTS[k].cmp(a, b);
+        if (d) return d;
+      }
+      return 0;
+    });
+  }, [rows, sortKeys]);
   // WHICH GROUPS ARE UNFOLDED - Mánu 2026-09-05: "an option for a toggle
   // under by the employee and [client] for every shift." The chevron opens the
   // group's shifts as ordinary cards right under its row; the row itself
@@ -469,6 +513,24 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
           ` Authorized is the client's monthly allowance from the ${authLabel} Budget Capture Report, against the billable hours showing.`}{" "}
         A row opens that {what.toLowerCase()}.
       </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Order by</span>
+        {Object.entries(ROLL_SORTS).map(([k, v]) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={sortKeys.includes(k)}
+            onClick={() => toggleSort(k)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              sortKeys.includes(k)
+                ? "bg-brand text-white"
+                : "border border-border-strong text-muted hover:border-brand hover:text-brand"
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
       <div className="mt-2 overflow-x-auto rounded-xl border border-border">
         <table className={`w-full ${withAuth ? "min-w-[68rem]" : "min-w-[56rem]"} text-sm`}>
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-faint">
@@ -490,7 +552,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((g) => {
+            {ordered.map((g) => {
               const auth = withAuth && g.authKey ? authorized[g.authKey] : null;
               const pct = auth?.hours ? (g.billableMin / 60 / auth.hours) * 100 : null;
               return (
