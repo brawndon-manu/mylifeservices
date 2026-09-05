@@ -22,7 +22,8 @@
 // Nothing here computes an hour. See the page beside it.
 import { useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
-import { reviewShift, resetAllReviews, auditResetImpact } from "../actions";
+import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
+import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
 import { span, hrs, clockedFigure, punchEnd } from "./figures";
 
 const DECISIONS = [
@@ -322,6 +323,22 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
           {shown.length} of {inPeriod.length} shifts
           {period === "all" ? "" : ` in ${period}`}.
         </span>
+        {batchId && (
+          <AutoFlag
+            batchId={batchId}
+            onFlagged={(applied) =>
+              setLocalReviews((v) => ({
+                ...v,
+                ...Object.fromEntries(
+                  applied.map((a) => [
+                    a.shiftKey,
+                    { decision: "flagged", reason: a.reason, billableMin: null, by: null, at: null },
+                  ]),
+                ),
+              }))
+            }
+          />
+        )}
         {batchId && (
           <ResetAll
             batchId={batchId}
@@ -903,6 +920,88 @@ function DecideBar({ r, onReview }) {
         </div>
       )}
     </div>
+  );
+}
+
+// THE ENGINE'S PASS OVER THE UNDECIDED PILE - Mánu 2026-09-04: "itll auto
+// flag them and we can review them." The dialog names what each rule would
+// hit before anything writes; decided shifts are never touched, and the
+// flags land as ordinary flags whose reason starts "Auto:".
+function AutoFlag({ batchId, onFlagged }) {
+  const [impact, setImpact] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          const res = await autoFlagImpact(batchId);
+          setBusy(false);
+          if (res?.ok) setImpact(res);
+        }}
+        className="rounded-md border border-amber-400 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/30"
+      >
+        Auto flag
+      </button>
+      {done != null && (
+        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+          {done} shifts flagged.
+        </span>
+      )}
+      {impact != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl">
+            <p className="text-base font-semibold text-foreground">
+              Auto flag the undecided shifts?
+            </p>
+            <ul className="mt-3 space-y-1 text-sm text-muted">
+              {AUTO_FLAG_RULES.map((r) => (
+                <li key={r.key} className="flex justify-between gap-4">
+                  <span>{r.label}</span>
+                  <span className="tabular-nums font-medium text-foreground">
+                    {impact.counts?.[r.key] ?? 0}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm leading-relaxed text-muted">
+              {impact.total} shifts get a flag. Several rules on one shift make
+              one flag. Shifts already decided are not touched.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setImpact(null)}
+                className="rounded-md border border-border-strong px-4 py-2 text-sm font-medium text-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy || impact.total === 0}
+                onClick={async () => {
+                  setBusy(true);
+                  const res = await autoFlagShifts(batchId);
+                  setBusy(false);
+                  setImpact(null);
+                  if (res?.ok) {
+                    setDone(res.flagged);
+                    onFlagged?.(res.applied || []);
+                  }
+                }}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+              >
+                Auto flag {impact.total} shifts
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

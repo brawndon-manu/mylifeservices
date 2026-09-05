@@ -27,7 +27,7 @@ test("reset-all is period-scoped and counted before it deletes", () => {
 
 test("the cards decide with the same action and the same chips as the deck", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
-  assert.match(cards, /import \{ reviewShift, resetAllReviews, auditResetImpact \} from "\.\.\/actions"/);
+  assert.match(cards, /import \{ reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts \} from "\.\.\/actions"/);
   assert.match(cards, /function DecideBar/);
   for (const label of ["Nothing billable", "Actually billable, in minutes", "Flag it"]) {
     assert.ok(cards.includes(label), `card panel carries "${label}"`);

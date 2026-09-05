@@ -156,6 +156,60 @@ export async function undoReview(formData) {
   return { ok: true };
 }
 
+// THE AUTO FLAGGER - Mánu 2026-09-04: "itll auto flag them and we can review
+// them and we can approve them or leave the flag and add comments and change
+// time as usual." The rules live in @/lib/timesheet/auto-flag; this pair is
+// the same contract as reset-all: impact read at click time so the dialog
+// names real counts, and the write only lands on the second press.
+export async function autoFlagImpact(batchId) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) return { ok: false, error: "auth" };
+  const { buildAudit } = await import("./[id]/build");
+  const { autoFlagPlan } = await import("@/lib/timesheet/auto-flag");
+  const data = await buildAudit(batchId);
+  if (!data) return { ok: false, error: "nobatch" };
+  const { counts, flags } = autoFlagPlan(data.rows);
+  return { ok: true, counts, total: flags.length };
+}
+
+export async function autoFlagShifts(batchId) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) return { ok: false, error: "auth" };
+  const { buildAudit } = await import("./[id]/build");
+  const { autoFlagPlan } = await import("@/lib/timesheet/auto-flag");
+  const data = await buildAudit(batchId);
+  if (!data) return { ok: false, error: "nobatch" };
+  const { flags } = autoFlagPlan(data.rows);
+  if (!flags.length) return { ok: true, flagged: 0, applied: [] };
+  // skipDuplicates: a decision that appeared between the dialog and the click
+  // wins - the engine never overwrites anybody, itself included
+  const made = await prisma.shiftReview.createMany({
+    data: flags.map(({ row, reason }) => ({
+      shiftKey: row.shiftKey,
+      employeeKey: row.employeeKey,
+      date: row.date,
+      startMin: row.startMin,
+      client: row.client,
+      service: row.service,
+      decision: "flagged",
+      reason,
+      billedMin: row.billedMin,
+      clockedMin: row.clockedMin,
+      documentedMin: row.documentedMin,
+      billableMin: null,
+      decidedById: user.id,
+    })),
+    skipDuplicates: true,
+  });
+  revalidatePath("/portal/admin/audit");
+  return {
+    ok: true,
+    flagged: made.count,
+    applied: flags.map(({ row, reason }) => ({ shiftKey: row.shiftKey, reason })),
+    byName: user.name || null,
+  };
+}
+
 // EVERYTHING DECIDED ON ONE PAY PERIOD, WIPED - Mánu 2026-09-03: "there
 // should be a reset all button with are you sure buttons". The impact is
 // read at click time so the dialog names the real count, the same contract
