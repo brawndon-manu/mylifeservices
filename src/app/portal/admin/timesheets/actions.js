@@ -1541,6 +1541,56 @@ export async function uploadBatch(formData) {
     scheduleError: scheduleError || null,
   };
 
+  // WHAT MOVED SINCE THE PREVIOUS COPY - audit copies only, computed once at
+  // upload and stored on the batch (Mánu 2026-09-05: the daily-upload rhythm
+  // reviews the delta, not the pile). Baseline = the newest OLDER audit copy
+  // of the same month; no baseline, no diff. Two full builds, so this runs
+  // after the save and adds its own progress stage.
+  if (auditOnly) {
+    P.stage = "comparing";
+    await setProgress(prog, P);
+    try {
+      const prev = await prisma.timesheetBatch.findFirst({
+        where: {
+          auditOnly: true,
+          program: batch.program,
+          id: { not: batch.id },
+          createdAt: { lt: batch.createdAt },
+          periodFrom: { startsWith: batch.periodFrom.slice(0, 3), endsWith: batch.periodFrom.slice(-3) },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, periodFrom: true, periodTo: true },
+      });
+      if (prev) {
+        const { buildAudit } = await import("../audit/[id]/build");
+        const { diffAuditRows, periodOverlap } = await import("@/lib/timesheet/audit-changes");
+        const [oldData, newData] = [await buildAudit(prev.id), await buildAudit(batch.id)];
+        const overlap = periodOverlap(
+          { from: prev.periodFrom, to: prev.periodTo },
+          { from: batch.periodFrom, to: batch.periodTo },
+        );
+        if (oldData && newData && overlap) {
+          const { changed, gone } = diffAuditRows(oldData.rows, newData.rows, overlap);
+          await prisma.timesheetBatch.update({
+            where: { id: batch.id },
+            data: {
+              auditChanges: {
+                fromBatchId: prev.id,
+                computedAt: new Date().toISOString(),
+                overlap,
+                gone,
+                changed,
+              },
+            },
+          });
+        }
+      }
+    } catch (e) {
+      // the diff is a convenience over the batch, never a reason to fail it
+      console.error("audit changes diff failed:", e);
+    }
+  }
+
   P.stage = "done";
   P.batchId = batch.id;
   P.summary = summary;

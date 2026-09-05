@@ -698,6 +698,11 @@ model TimesheetBatch {
   // absent from every payroll surface, and nothing sends or signs from it.
   // Shift decisions ride over anyway because ShiftReview keys on the shift.
   auditOnly      Boolean   @default(false)
+  // WHAT MOVED SINCE THE PREVIOUS COPY - audit copies only. Written once at
+  // upload when a newer copy supersedes an older one of the same month:
+  // { fromBatchId, computedAt, changed: { [shiftKey]: ["hours"|"note"|"new"] } }
+  // scoped to the dates BOTH copies cover. The screen's "Changed" chip reads it.
+  auditChanges   Json?
   // WHICH PROGRAM'S PAYROLL THIS IS. "MLS" for the agency, "DP" for the day
   // program, and the default makes every batch that predates the column an
   // explicit MLS one. The group key on the timesheets screen and supersededBy

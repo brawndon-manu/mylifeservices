@@ -82,11 +82,15 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
   const kinds = useMemo(() => {
     const c = {};
     for (const r of inPeriod) for (const reason of r.reasons) c[reason.kind] = (c[reason.kind] || 0) + 1;
+    // the delta against the previous copy rides the same chip row - "changed"
+    // is not a finding, so it lives beside the reasons rather than inside them
+    const changed = inPeriod.filter((r) => r.changed).length;
+    if (changed) c.changed = changed;
     return c;
   }, [inPeriod]);
 
   const labelOf = useMemo(() => {
-    const m = {};
+    const m = { changed: "Changed since the previous copy" };
     for (const r of rows) for (const reason of r.reasons) m[reason.kind] = reason.label;
     return m;
   }, [rows]);
@@ -110,7 +114,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
     const byDecision = DECISIONS.find((d) => d.key === decision).match;
     return inPeriod.filter((r) => {
       if (!byDecision(r)) return false;
-      if (only && !r.reasons.some((x) => x.kind === only)) return false;
+      if (only === "changed") {
+        if (!r.changed) return false;
+      } else if (only && !r.reasons.some((x) => x.kind === only)) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
@@ -660,6 +666,13 @@ function Card({ r, onReview }) {
           {r.review.billableMin != null && (
             <span className="text-foreground"> · billable set to {hrs(r.review.billableMin)}</span>
           )}
+        </p>
+      )}
+
+      {r.changed && (
+        <p className="mt-2 text-xs font-semibold text-sky-700 dark:text-sky-300">
+          Changed since the previous copy:{" "}
+          {r.changed.map((k) => ({ new: "new shift", hours: "hours moved", note: "note added" })[k] || k).join(", ")}.
         </p>
       )}
 

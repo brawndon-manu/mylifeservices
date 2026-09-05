@@ -415,6 +415,13 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
               )}
             </p>
 
+            {row.changed && (
+              <p className="mt-4 text-sm font-semibold text-sky-700 dark:text-sky-300">
+                Changed since the previous copy:{" "}
+                {row.changed.map((k) => ({ new: "new shift", hours: "hours moved", note: "note added" })[k] || k).join(", ")}.
+              </p>
+            )}
+
             {row.reasons.length > 0 && (
               <ul className="mt-6 space-y-1 border-l-2 border-amber-400 pl-4">
                 {row.reasons.map((x, i) => (

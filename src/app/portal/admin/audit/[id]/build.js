@@ -24,7 +24,7 @@ export async function buildAudit(id) {
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     select: {
-      id: true, periodFrom: true, periodTo: true, auditOnly: true,
+      id: true, periodFrom: true, periodTo: true, auditOnly: true, auditChanges: true,
       clockUrl: true, clockName: true, clockFindings: true,
       notesName: true, serviceNotesName: true,
       scheduleNotesUrl: true, scheduleNotesName: true,
@@ -665,6 +665,12 @@ export async function buildAudit(id) {
       if (alias) r.authKey = alias;
     }
   }
+
+  // WHAT MOVED SINCE THE PREVIOUS COPY, stamped per row off the diff the
+  // upload stored - see audit-changes.js. Rows a fresh single upload has no
+  // baseline for carry null and the screen shows no chip.
+  const changedMap = batch.auditChanges?.changed || null;
+  for (const r of rows) r.changed = changedMap ? changedMap[r.shiftKey] || null : null;
 
   rows.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
   return {
