@@ -4,7 +4,12 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey } from "@/lib/timesheet/schedule";
-import { flagReportModel, renderFlagReport } from "@/lib/timesheet/flag-report";
+import {
+  flagReportModel,
+  renderFlagReport,
+  flagReportDetailModel,
+  renderFlagReportDetail,
+} from "@/lib/timesheet/flag-report";
 import { buildAudit } from "../build";
 import { clock } from "../figures";
 
@@ -14,6 +19,9 @@ import { clock } from "../figures";
 // one changed.
 export async function GET(req, { params }) {
   const { id } = await params;
+  // ?detailed=1 renders the grouped full-block companion - same data, same
+  // gate, a second shape, exactly like the client report's pair of buttons
+  const detailed = new URL(req.url).searchParams.get("detailed") === "1";
 
   const user = await getCurrentUser();
   if (!isAdminUp(user?.role)) {
@@ -46,12 +54,15 @@ export async function GET(req, { params }) {
   // the stored employeeKey is the normalised legal spelling; the report prints
   // the name the portal calls them
   const staff = await prisma.user.findMany({
-    select: { name: true, preferredFirstName: true, preferredLastName: true },
+    select: { name: true, title: true, preferredFirstName: true, preferredLastName: true },
   });
   const nameOf = new Map();
+  const titleOf = new Map();
   for (const u of staff) {
     const k = scheduleKey(u.name || "");
-    if (k) nameOf.set(k, preferredName(u));
+    if (!k) continue;
+    nameOf.set(k, preferredName(u));
+    if (u.title) titleOf.set(k, u.title);
   }
 
   const day = (dt) => {
@@ -59,16 +70,8 @@ export async function GET(req, { params }) {
     return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
   };
 
-  const model = flagReportModel({
-    periodFrom: batch.periodFrom,
-    periodTo: batch.periodTo,
-    generatedOn: day(new Date()),
-    // the approved carry only what their compact section prints
-    approved: approved.map((r) => ({
-      who: nameOf.get(r.employeeKey) || r.employeeKey,
-      billedMin: r.billedMin,
-    })),
-    flags: flagged.map((r) => {
+  // one assembly feeds both shapes, so the pair cannot disagree about a flag
+  const flagRows = flagged.map((r) => {
       const row = rowByKey.get(r.shiftKey);
       return {
         who: nameOf.get(r.employeeKey) || r.employeeKey,
@@ -83,26 +86,57 @@ export async function GET(req, { params }) {
         decidedOn: day(r.updatedAt),
         // the punch facts for the detail line, where this upload still holds
         // the shift - a flag whose shift a later upload no longer carries
-        // simply prints without the line.
+        // simply prints without the line. The detailed report reads the same
+        // join plus the role, the booking spans and both notes' full text.
+        title: titleOf.get(r.employeeKey) || null,
+        billableMin: r.billableMin,
         ...(row
           ? {
-            punchIn: clock(row.actualFrom),
-            punchOut: clock(row.actualTo),
+            punchIn: detailed ? row.actualFrom : clock(row.actualFrom),
+            punchOut: detailed ? row.actualTo : clock(row.actualTo),
             noIn: row.noIn,
             noOut: row.noOut,
             gpsIn: row.gpsIn,
             gpsOut: row.gpsOut,
             clockAvailable: row.clockAvailable,
             inClockExport: row.inClockExport,
-            billableMin: r.billableMin,
+            schedFrom: row.schedFrom,
+            schedTo: row.schedTo,
+            originalFrom: row.originalFrom,
+            originalTo: row.originalTo,
+            serviceNote: row.note
+              ? [row.note.summary, ...(Array.isArray(row.note.comments) ? row.note.comments.filter((x) => typeof x === "string") : [])]
+                .filter(Boolean).join(" ") || null
+              : null,
+            scheduleNote: row.scheduleNote?.text || null,
           }
           : {}),
       };
-    }),
-  });
+    });
 
-  const bytes = await renderFlagReport(model);
-  const filename = `flagged-shifts-${batch.periodFrom.replaceAll("/", "-")}-to-${batch.periodTo.replaceAll("/", "-")}.pdf`;
+  const bytes = detailed
+    ? await renderFlagReportDetail(
+      flagReportDetailModel({
+        periodFrom: batch.periodFrom,
+        periodTo: batch.periodTo,
+        generatedOn: day(new Date()),
+        flags: flagRows,
+      }),
+    )
+    : await renderFlagReport(
+      flagReportModel({
+        periodFrom: batch.periodFrom,
+        periodTo: batch.periodTo,
+        generatedOn: day(new Date()),
+        // the approved carry only what their compact section prints
+        approved: approved.map((r) => ({
+          who: nameOf.get(r.employeeKey) || r.employeeKey,
+          billedMin: r.billedMin,
+        })),
+        flags: flagRows,
+      }),
+    );
+  const filename = `flagged-shifts${detailed ? "-detailed" : ""}-${batch.periodFrom.replaceAll("/", "-")}-to-${batch.periodTo.replaceAll("/", "-")}.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",

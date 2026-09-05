@@ -71,6 +71,15 @@ export default async function AuditBatchPage({ params }) {
               Flagged report (PDF)
             </a>
           )}
+          {rows.some((r) => r.review?.decision === "flagged") && (
+            <a
+              href={`/portal/admin/audit/${batch.id}/report?detailed=1`}
+              target="_blank"
+              className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+            >
+              Flagged report, detailed (PDF)
+            </a>
+          )}
         </div>
       </div>
 

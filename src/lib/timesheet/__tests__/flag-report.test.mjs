@@ -155,3 +155,73 @@ test("a flag with no joined row prints no detail line at all", () => {
   const m = model([flag()]);
   assert.equal(m.groups[0].entries[0].detail, null);
 });
+
+// ---- the detailed model ----
+
+import { flagReportDetailModel, ampmLabel, minsWords } from "../flag-report.js";
+
+const dflag = (over = {}) => ({
+  who: "Allyson Beall", title: "Independent Living Instructor",
+  date: "08/21/26", startMin: 600, client: "Antoine, Tremayne", service: "ILS Service",
+  billedMin: 240, clockedMin: 220, billableMin: null,
+  reason: "Over billed", decidedByName: "Mánu Uribe",
+  punchIn: 620, punchOut: 840, noIn: false, noOut: false, gpsIn: "yes", gpsOut: "yes",
+  clockAvailable: true, inClockExport: true,
+  schedFrom: 600, schedTo: 840, originalFrom: 600, originalTo: 840,
+  serviceNote: "Staff assisted the client.", scheduleNote: null,
+  ...over,
+});
+
+const dmodel = (flags) =>
+  flagReportDetailModel({ periodFrom: "08/16/26", periodTo: "08/31/26", generatedOn: "09/04/26", flags });
+
+test("round hours carry no minutes wording and uneven ones spell it out", () => {
+  assert.equal(minsWords(240), null);
+  assert.equal(minsWords(220), "3 hr 40 min");
+  assert.equal(minsWords(20), "20 min");
+});
+
+test("times print as full clock labels", () => {
+  assert.equal(ampmLabel(600), "10:00 AM");
+  assert.equal(ampmLabel(872), "2:32 PM");
+});
+
+test("an entry carries the scheduled range, stacked figures and the delta", () => {
+  const e = dmodel([dflag()]).groups[0].entries[0];
+  assert.equal(e.dateLine, "08/21/26   10:00 AM - 2:00 PM");
+  assert.deepEqual(e.figures[0], { label: "Billed", h: "4.00h", mins: null });
+  assert.deepEqual(e.figures[1], { label: "Scheduled", h: "4.00h", mins: null });
+  assert.deepEqual(e.figures[2], { label: "Clocked", h: "3.67h", mins: "3 hr 40 min" });
+  assert.deepEqual(e.delta, { h: "0.33h", mins: "20 min", word: "above the clock", over: true });
+  assert.deepEqual(e.clock.rows[0], { end: "in", mark: "yes", time: "10:20 AM", gps: "yes" });
+});
+
+test("the group header holds the role and the count", () => {
+  const g = dmodel([dflag(), dflag({ date: "08/22/26" })]).groups[0];
+  assert.equal(g.who, "Allyson Beall");
+  assert.equal(g.title, "Independent Living Instructor");
+  assert.equal(g.count, "2 shifts");
+});
+
+test("no corrected figure reads TBD and a set one reads before and after", () => {
+  assert.deepEqual(dmodel([dflag()]).groups[0].entries[0].billing, { tbd: true });
+  assert.deepEqual(
+    dmodel([dflag({ billableMin: 220 })]).groups[0].entries[0].billing,
+    { set: "3.67h", mins: "3 hr 40 min", was: "4.00h" },
+  );
+});
+
+test("the flag note signs off with who said it", () => {
+  const e = dmodel([dflag()]).groups[0].entries[0];
+  assert.equal(e.flagNote.text, '"Over billed" - Mánu Uribe');
+});
+
+test("a flag with no joined shift prints heading and billing but no clock block", () => {
+  const e = dmodel([dflag({
+    punchIn: undefined, punchOut: undefined, schedFrom: undefined, schedTo: undefined,
+    serviceNote: undefined, scheduleNote: undefined,
+  })]).groups[0].entries[0];
+  assert.equal(e.dateLine, "08/21/26   10:00 AM");
+  assert.equal(e.clock, null);
+  assert.deepEqual(e.billing, { tbd: true });
+});

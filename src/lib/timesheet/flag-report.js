@@ -155,6 +155,128 @@ export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [
   };
 }
 
+// ------------------------------------------------- the detailed model
+//
+// The second document: every flag as a full block - the facts the one-by-one
+// deck shows - grouped by employee with their role. Mánu picked this shape
+// off four mock rounds on 2026-09-04; the layout rulings live in the helpers:
+// round hours carry no minutes wording, times print "4:05 PM", the heading
+// carries the scheduled range, the billing line prints on EVERY flag (TBD
+// when no corrected figure was set), and the reason is a labeled "Flag note"
+// signed by whoever said it.
+
+// "10:20 AM" - the full clock label the detailed report uses everywhere
+export function ampmLabel(min) {
+  if (min == null) return null;
+  const h = Math.floor(min / 60) % 24;
+  const m = min % 60;
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
+// "1 hr 30 min" beside 1.50h - and null on round hours, his rule: "if its
+// round number like 1.00h 2.00h 3.00h etc lets NOT include the 1 hr label"
+export function minsWords(m) {
+  if (m == null || m % 60 === 0) return null;
+  const h = Math.floor(m / 60);
+  const r = Math.round(m % 60);
+  return h ? `${h} hr ${r} min` : `${r} min`;
+}
+
+// `flags` carry the stored decision plus what the caller joined off the audit
+// build: title (role), schedFrom/schedTo, originalFrom/originalTo, punches,
+// gps, note texts. Everything the document says is computed here so tests
+// read the model, never the PDF.
+export function flagReportDetailModel({ periodFrom, periodTo, flags = [], generatedOn }) {
+  const byWho = new Map();
+  for (const f of flags) {
+    if (!byWho.has(f.who)) byWho.set(f.who, { who: f.who, title: f.title || null, list: [] });
+    byWho.get(f.who).list.push(f);
+  }
+
+  const figure = (label, m) => ({ label, h: m == null ? null : hrs(m), mins: minsWords(m) });
+
+  const groups = [...byWho.values()]
+    .map((g) => ({
+      who: g.who,
+      title: g.title,
+      count: `${g.list.length} shift${g.list.length === 1 ? "" : "s"}`,
+      entries: g.list
+        .sort((a, b) => dayKey(a.date) - dayKey(b.date) || (a.startMin ?? 0) - (b.startMin ?? 0))
+        .map((f) => {
+          const joined = f.punchIn !== undefined || f.punchOut !== undefined;
+          const span =
+            f.schedFrom != null && f.schedTo != null
+              ? `${ampmLabel(f.schedFrom)} - ${ampmLabel(f.schedTo)}`
+              : f.startMin != null
+                ? ampmLabel(f.startMin)
+                : null;
+          const schedMin =
+            f.originalFrom != null && f.originalTo != null ? f.originalTo - f.originalFrom : null;
+          const d =
+            f.billedMin != null && f.clockedMin != null ? f.billedMin - f.clockedMin : null;
+          let clock = null;
+          if (joined) {
+            if (f.clockAvailable === false) clock = { note: "no clock export for this period" };
+            else if (f.inClockExport === false) clock = { note: "no clock row for this shift" };
+            else {
+              clock = {
+                rows: ["in", "out"].map((end) => {
+                  const t = end === "in" ? f.punchIn : f.punchOut;
+                  const missed = end === "in" ? f.noIn : f.noOut;
+                  const gps = end === "in" ? f.gpsIn : f.gpsOut;
+                  return {
+                    end,
+                    mark: t != null ? "yes" : missed ? "no" : null,
+                    time: t != null ? ampmLabel(t) : null,
+                    gps: gps === "yes" ? "yes" : gps === "no" ? "no" : null,
+                  };
+                }),
+              };
+            }
+          }
+          return {
+            client: f.client || "no client on the booking",
+            service: f.service || null,
+            dateLine: [f.date, span].filter(Boolean).join("   "),
+            figures: [
+              figure("Billed", f.billedMin),
+              figure("Scheduled", schedMin),
+              figure("Clocked", f.clockedMin),
+            ],
+            delta: d
+              ? {
+                h: hrs(Math.abs(d)),
+                mins: minsWords(Math.abs(d)),
+                word: d > 0 ? "above the clock" : "below the clock",
+                over: d > 0,
+              }
+              : null,
+            clock,
+            billing:
+              f.billableMin != null
+                ? { set: hrs(f.billableMin), mins: minsWords(f.billableMin), was: f.billedMin == null ? null : hrs(f.billedMin) }
+                : { tbd: true },
+            serviceNote: f.serviceNote || null,
+            scheduleNote: f.scheduleNote || null,
+            flagNote: f.reason
+              ? { text: `"${(f.reason || "").trim()}" - ${f.decidedByName || "unknown"}` }
+              : null,
+          };
+        }),
+    }))
+    .sort((a, b) => a.who.localeCompare(b.who));
+
+  return {
+    title: "Service audit - flagged shifts, detailed",
+    period: `Pay period ${periodFrom} to ${periodTo}`,
+    generated: `Generated ${generatedOn}`,
+    summary: flags.length
+      ? [`${flags.length} shift${flags.length === 1 ? "" : "s"} flagged on review, grouped by employee.`]
+      : ["No shifts are flagged in this period."],
+    groups,
+  };
+}
+
 // ---------------------------------------------------------------- the PDF
 //
 // The payout report's page, margins and palette, so the two documents read as
@@ -278,5 +400,174 @@ export async function renderFlagReport(model) {
     text(model.footer, L, y, { size: 8.5, color: MUTED });
   }
 
+  return doc.save();
+}
+
+// the detailed document. Same page, margins and palette; ZapfDingbats is one
+// of the standard fourteen, so the checks and crosses embed without a font
+// file. The clock table's columns are FIXED x positions - his ruling off the
+// screenshot where 12:30p pushed the GPS marks out of line.
+const AMBER = rgb(0.65, 0.42, 0.02);
+const GREEN = rgb(0.13, 0.55, 0.3);
+
+export async function renderFlagReportDetail(model) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const italic = await doc.embedFont(StandardFonts.HelveticaOblique);
+  const dings = await doc.embedFont(StandardFonts.ZapfDingbats);
+
+  let logo = null;
+  try {
+    logo = await doc.embedPng(fs.readFileSync(LOGO_PATH));
+  } catch {
+    // decorative
+  }
+
+  let page = null;
+  let y = 0;
+  const text = (s, x, yy, { size = 9, f = font, color = INK } = {}) =>
+    page.drawText(String(s), { x, y: yy, size, font: f, color });
+  const mark = (v, x, yy) => {
+    if (v === "yes") text("✔", x, yy, { size: 8, f: dings, color: GREEN });
+    else if (v === "no") text("✘", x, yy, { size: 8, f: dings, color: FLAG });
+    else text("-", x, yy, { size: 8, color: MUTED });
+  };
+  // a run of differently-styled pieces on one baseline
+  const pieces = (segs, x, yy, size) => {
+    let cx = x;
+    for (const [s, f, c] of segs) {
+      if (!s) continue;
+      text(s, cx, yy, { size, f, color: c });
+      cx += f.widthOfTextAtSize(s, size);
+    }
+  };
+
+  const newPage = (first = false) => {
+    page = doc.addPage([PAGE_W, PAGE_H]);
+    y = PAGE_H - 48;
+    if (!first) return;
+    const logoH = 42;
+    let tx = L;
+    if (logo) {
+      const lw = (logo.width / logo.height) * logoH;
+      page.drawImage(logo, { x: L, y: y - logoH, width: lw, height: logoH });
+      tx = L + lw + 14;
+    }
+    text("My Life Services, Inc.", tx, y - 12, { size: 8.5, f: bold, color: MUTED });
+    text(model.title, tx, y - 35, { size: 17, f: bold, color: BRAND });
+    y -= logoH + 15;
+    text(model.period, L, y, { size: 11, f: bold });
+    text(model.generated, R - font.widthOfTextAtSize(model.generated, 9), y, { size: 9, color: MUTED });
+    y -= 16;
+    for (const line of model.summary) {
+      text(line, L, y, { size: 9.5 });
+      y -= 13;
+    }
+    y -= 6;
+  };
+  const need = (h) => { if (y - h < 48) newPage(); };
+
+  newPage(true);
+
+  const VAL_X = L + 70;
+  for (const g of model.groups) {
+    need(50);
+    page.drawLine({ start: { x: L, y: y + 3 }, end: { x: R, y: y + 3 }, thickness: 0.5, color: GRID });
+    y -= 13;
+    text(g.who, L, y, { size: 10.5, f: bold });
+    if (g.title) text(g.title, L + bold.widthOfTextAtSize(g.who, 10.5) + 10, y, { size: 8, color: MUTED });
+    text(g.count, R - font.widthOfTextAtSize(g.count, 9), y, { size: 9, color: MUTED });
+    y -= 16;
+    for (const e of g.entries) {
+      need(70);
+      pieces([[e.client, bold, INK], [e.service ? `   ${e.service}` : "", font, MUTED]], L + 12, y, 9);
+      y -= 11;
+      text(e.dateLine, L + 12, y, { size: 8.5, color: MUTED });
+      y -= 13;
+      for (const fig of e.figures) {
+        text(fig.label, L + 12, y, { size: 8.5, color: MUTED });
+        const segs = fig.h == null
+          ? [["-", font, MUTED]]
+          : [[fig.h, font, INK], [fig.mins ? ` (${fig.mins})` : "", italic, MUTED]];
+        if (fig.label === "Clocked" && e.delta) {
+          const dColor = e.delta.over ? FLAG : INK;
+          segs.push(["   ·   ", font, MUTED]);
+          segs.push([e.delta.h, font, dColor]);
+          segs.push([e.delta.mins ? ` (${e.delta.mins})` : "", italic, MUTED]);
+          segs.push([` ${e.delta.word}`, font, dColor]);
+        }
+        pieces(segs, VAL_X, y, 8.5);
+        y -= 11;
+      }
+      y -= 2;
+      if (e.clock?.note) {
+        text(`CLOCK  ${e.clock.note}`, L + 12, y, { size: 8, color: MUTED });
+        y -= 11;
+      } else if (e.clock?.rows) {
+        text("CLOCK", L + 12, y, { size: 7, f: bold, color: MUTED });
+        const X = { label: L + 52, punch: L + 74, time: L + 88, gpsLabel: L + 148, gps: L + 168 };
+        for (const r of e.clock.rows) {
+          text(r.end, X.label, y, { size: 8, color: MUTED });
+          mark(r.mark, X.punch, y);
+          text(r.time || "-", X.time, y, { size: 8 });
+          text("GPS", X.gpsLabel, y, { size: 8, color: MUTED });
+          mark(r.gps, X.gps, y);
+          y -= 11;
+        }
+      }
+      y -= 3;
+      if (e.billing.tbd) {
+        text("CORRECTED BILLING TBD", L + 12, y, { size: 8.5, f: bold, color: AMBER });
+      } else {
+        pieces(
+          [
+            [`CORRECTED BILLING SET ${e.billing.set}`, bold, AMBER],
+            [e.billing.mins ? ` (${e.billing.mins})` : "", italic, AMBER],
+            [e.billing.was ? `   was billed ${e.billing.was}` : "", font, MUTED],
+          ],
+          L + 12, y, 8.5,
+        );
+      }
+      y -= 12;
+      const noteBlock = (label, txt, cap) => {
+        if (!txt) return;
+        y -= 2;
+        need(24);
+        text(label, L + 12, y, { size: 7.5, f: bold, color: MUTED });
+        y -= 10;
+        const lines = wrapAt(txt, R - L - 24, font, 7.5);
+        for (const line of lines.slice(0, cap)) {
+          need(10);
+          text(line, L + 12, y, { size: 7.5, color: MUTED });
+          y -= 9.5;
+        }
+        if (lines.length > cap) {
+          text("(the full note is on the audit screen)", L + 12, y, { size: 7, f: italic, color: MUTED });
+          y -= 10;
+        }
+      };
+      noteBlock("Service note", e.serviceNote, 8);
+      noteBlock("Schedule note", e.scheduleNote, 4);
+      if (e.flagNote) {
+        y -= 2;
+        need(24);
+        text("Flag note", L + 12, y, { size: 7.5, f: bold, color: FLAG });
+        y -= 10;
+        for (const q of wrapAt(e.flagNote.text, R - L - 36, italic, 9)) {
+          need(11);
+          text(q, L + 24, y, { size: 9, f: italic, color: FLAG });
+          y -= 11.5;
+        }
+        y -= 2;
+      }
+      y -= 8;
+    }
+  }
+
+  const pages = doc.getPages();
+  pages.forEach((pg, i) =>
+    pg.drawText(`Page ${i + 1} of ${pages.length}`, { x: R - 70, y: 30, size: 7.5, font, color: MUTED }),
+  );
   return doc.save();
 }
