@@ -32,6 +32,16 @@ const AMBER = "FFB45309";
 const RED = "FFB91C1C";
 const GREEN = "FF166534";
 
+// SPREADSHEET ORDER IS BORING ON PURPOSE - Mánu 2026-09-05: "seems so
+// random." The screen ranks by findings for triage; a workbook is reference
+// material, so people go A-Z and their rows run chronologically.
+const dayKey = (d) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
+  return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
+};
+const byWhoThenDate = (a, b) =>
+  a.who.localeCompare(b.who) || dayKey(a.date) - dayKey(b.date) || (a.schedFrom ?? 0) - (b.schedFrom ?? 0);
+
 const firstLast = (c) => {
   const v = String(c || "");
   const i = v.indexOf(",");
@@ -194,7 +204,7 @@ export async function buildAuditWorkbook(id) {
     { header: "Reason", key: "reason", width: 44 },
   ];
   styleHeader(ev.getRow(1), 5);
-  for (const r of rows) {
+  for (const r of [...rows].sort(byWhoThenDate)) {
     const row = ev.addRow({
       who: r.who,
       role: titleOf.get(r.employeeKey) || "",
@@ -240,7 +250,7 @@ export async function buildAuditWorkbook(id) {
     { header: "Flagged by", key: "by", width: 18 },
   ];
   styleHeader(fl.getRow(1), 4);
-  for (const r of flagged) {
+  for (const r of [...flagged].sort(byWhoThenDate)) {
     const row = fl.addRow({
       who: r.who,
       client: firstLast(r.client),
@@ -299,7 +309,7 @@ export async function buildAuditWorkbook(id) {
       { header: "Flagged", key: "flagged", width: 9 },
     ];
     styleHeader(t.getRow(1), name === "By employee" ? 2 : 1);
-    const groups = [...m.values()].sort((a, b) => b.overMin - a.overMin || b.shifts - a.shifts);
+    const groups = [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
     for (const g of groups) {
       const auth = withAuth && g.authKey ? authorized[g.authKey] : null;
       const row = t.addRow({
