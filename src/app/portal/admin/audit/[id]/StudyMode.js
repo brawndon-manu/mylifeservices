@@ -16,10 +16,12 @@
 // surfaced, and never tells the reviewer what to conclude.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
-import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords, clientFirstLast } from "./figures";
+import { ampmLabel, clientFirstLast } from "./figures";
+import ShiftEvidence from "./ShiftEvidence";
+import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
 
-export default function StudyMode({ rows: dealt, onExit, titles = null }) {
+export default function StudyMode({ rows: dealt, onExit, titles = null, onReview }) {
   // THE DECK IS DEALT ONCE, when study mode opens.
   //
   // Mánu 2026-08-28: "sometimes when i click approve it skips over 2 cards
@@ -49,6 +51,8 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
     for (const r of allRows) if (r.review) m[r.shiftKey] = r.review.decision;
     return m;
   });
+  const [reviewOverrides, setReviewOverrides] = useState({});
+  const [error, setError] = useState("");
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   // the corrected billable time, in minutes, typed or quick-filled in the flag
@@ -111,7 +115,13 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
     return { approved, flagged };
   }, [decided]);
 
-  const row = rows[at] || null;
+  const baseRow = rows[at] || null;
+  const row = useMemo(
+    () => baseRow && reviewOverrides[baseRow.shiftKey] !== undefined
+      ? { ...baseRow, review: reviewOverrides[baseRow.shiftKey] }
+      : baseRow,
+    [baseRow, reviewOverrides],
+  );
   const done = at >= rows.length;
 
   const send = useCallback(async (decision, why, billableMin = null) => {
@@ -131,10 +141,15 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
     body.set("documentedMin", row.documentedMin ?? "");
     if (billableMin != null) body.set("billableMin", billableMin);
     if (why) body.set("reason", why);
-    const res = await reviewShift(body);
-    inFlight.current = false;
-    setBusy(false);
-    if (!res?.ok) return;
+    setError("");
+    let res;
+    try { res = await reviewShift(body); }
+    catch { setError("Could not save the decision. Please try again."); return; }
+    finally { inFlight.current = false; setBusy(false); }
+    if (!res?.ok) { setError("Could not save the decision. Please try again."); return; }
+    const review = { decision, reason: why || "", billableMin: billableMin == null ? null : Number(billableMin), by: "you" };
+    setReviewOverrides((v) => ({ ...v, [row.shiftKey]: review }));
+    onReview?.(row.shiftKey, review);
     setDecided((d) => ({ ...d, [row.shiftKey]: decision }));
     setHistory((h) => [...h, row.shiftKey]);
     setFlagging(false);
@@ -143,7 +158,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
     setOpenNote(false);
     setOpenSched(false);
     setAt((i) => i + 1);
-  }, [row]);
+  }, [row, onReview]);
 
   // MOVING WITHOUT DECIDING. Mánu 2026-08-26: "give me option to cycle through
   // these without picking a choice."
@@ -170,21 +185,26 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
     if (inFlight.current || !history.length) return;
     inFlight.current = true;
     const key = history[history.length - 1];
-    setHistory((h) => h.slice(0, -1));
     const i = rows.findIndex((r) => r.shiftKey === key);
     setBusy(true);
     const body = new FormData();
     body.set("shiftKey", key);
-    await undoReview(body);
-    inFlight.current = false;
-    setBusy(false);
+    setError("");
+    let res;
+    try { res = await undoReview(body); }
+    catch { setError("Could not undo the decision. Please try again."); return; }
+    finally { inFlight.current = false; setBusy(false); }
+    if (!res?.ok) { setError("Could not undo the decision. Please try again."); return; }
+    setHistory((h) => h.slice(0, -1));
+    setReviewOverrides((v) => ({ ...v, [key]: null }));
+    onReview?.(key, null);
     setDecided((d) => { const next = { ...d }; delete next[key]; return next; });
     setFlagging(false);
     setReason("");
     setBillable("");
     setOpenNote(false);
     if (i >= 0) setAt(i);
-  }, [rows, history]);
+  }, [rows, history, onReview]);
 
   // THE SHORTCUTS BELONG TO THE CARD, NOT TO THE WINDOW.
   //
@@ -199,7 +219,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
   // anything, auto-repeat is dropped, and a keystroke that lands while a send is
   // still in flight is dropped with it.
   const onKey = (e) => {
-    if (e.repeat) return;
+    if (e.repeat || inFlight.current || e.target !== e.currentTarget) return;
     if (flagging) {
       if (e.key === "Escape") { setFlagging(false); setReason(""); setBillable(""); }
       return;
@@ -221,6 +241,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
 
   return (
     <div className="mt-6">
+      {error && <p role="alert" className={styles.notice}>{error}</p>}
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2 text-sm font-bold text-amber-500">
           <span className="rounded-full border-2 border-amber-500 px-3 py-0.5 tabular-nums">
@@ -237,7 +258,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
         </button>
         <span className="flex items-center gap-2 text-sm font-bold text-emerald-500">
           Approved
-          <span className="rounded-full border-2 border-emerald-500 px-3 py-0.5 tabular-nums">
+          <span className="rounded-full border border-border px-3 py-0.5 tabular-nums">
             {counts.approved}
           </span>
         </span>
@@ -291,7 +312,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
             ref={cardBox}
             tabIndex={-1}
             onKeyDown={onKey}
-            className="mt-4 rounded-2xl border border-border bg-surface-2 p-4 outline-none focus-visible:ring-2 focus-visible:ring-brand sm:min-h-[26rem] sm:p-8"
+            className={`${styles.card} ${styles.focusCard}`}
           >
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <span>
@@ -323,121 +344,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
               </span>
             </div>
 
-            {/* WHEN THE FILE IS NOT THERE, SAY SO ONCE.
-                
-                Scheduled, clocked and both punch lines all come out of the
-                clock export, so a period with none said "no clock export" three
-                times over and a dash beside it - four ways of reporting one
-                missing upload. Mánu asked why they were not just crosses: a
-                cross says the person did not clock, and this says we never
-                loaded the file. Those are different facts and only one of them
-                is about the person. */}
-            <dl className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-4 sm:gap-4">
-              {/* THREE SHAPES, BECAUSE THERE ARE THREE FACTS.
-                  
-                  The export is missing, the export is here and has no row for
-                  this shift, or it has one. Scheduled and Clocked both come out
-                  of that row, so the middle case has neither - and saying so
-                  once beats a dash and three repetitions of the same sentence.
-                  Mánu, with the QSP calendar open beside the card: "why does it
-                  say nothing for schdueled if there is". */}
-              {row.clockAvailable && row.inClockExport === false ? (
-                <>
-                  {/* the calendar still says when it was booked */}
-                  <Figure
-                    label="Scheduled"
-                    value={row.schedFrom != null && row.schedTo != null ? hrs(row.schedTo - row.schedFrom) : "-"}
-                    mins={row.schedFrom != null && row.schedTo != null ? minsWords(row.schedTo - row.schedFrom) : null}
-                    sub={row.schedFrom != null && row.schedTo != null ? `${span(row.schedFrom, row.schedTo)} · from the calendar` : null}
-                    tone="text-muted"
-                  />
-                  <BilledFigure r={row} />
-                  <div className="col-span-1 sm:col-span-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
-                      Clock
-                    </dt>
-                    <dd className="text-sm text-faint">
-                      The clock export for {row.period} has no row for this shift, so there is no
-                      original booking and no punch to check these hours against.
-                    </dd>
-                  </div>
-                </>
-              ) : row.clockAvailable ? (
-                <>
-                  <Figure
-                    label="Scheduled"
-                    value={
-                      row.originalFrom != null
-                        ? hrs(row.originalTo - row.originalFrom)
-                        : row.schedFrom != null && row.schedTo != null
-                          ? hrs(row.schedTo - row.schedFrom)
-                          : "-"
-                    }
-                    mins={
-                      row.originalFrom != null
-                        ? minsWords(row.originalTo - row.originalFrom)
-                        : row.schedFrom != null && row.schedTo != null
-                          ? minsWords(row.schedTo - row.schedFrom)
-                          : null
-                    }
-                    sub={
-                      row.originalFrom != null
-                        ? span(row.originalFrom, row.originalTo)
-                        : row.schedFrom != null && row.schedTo != null
-                          ? `${span(row.schedFrom, row.schedTo)} · from the calendar`
-                          : null
-                    }
-                    tone="text-muted"
-                  />
-                  <BilledFigure r={row} />
-                  <Figure
-                    label="Clocked"
-                    value={clockedFigure(row).value}
-                    mins={row.actualFrom != null && row.actualTo != null ? minsWords(row.clockedMin) : null}
-                    sub={clockedFigure(row).sub}
-                    tone={
-                      clockedFigure(row).tone === "bad"
-                        ? "text-rose-500"
-                        : clockedFigure(row).tone === "faint" ? "text-faint" : null
-                    }
-                  />
-                  <Punches row={row} />
-                </>
-              ) : (
-                <>
-                  <BilledFigure r={row} />
-                  <div className="col-span-1 sm:col-span-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
-                      Clock
-                    </dt>
-                    <dd className="text-sm text-faint">
-                      No clock export was uploaded for {row.period}, so there is nothing to check
-                      these hours against.
-                    </dd>
-                  </div>
-                </>
-              )}
-              <NoteFigure note={row.note} scheduleNote={row.scheduleNote} />
-            </dl>
-
-            {/* WHAT EACH FIGURE IS, on every card. Four times sitting in a row
-                with one-word labels do not explain themselves - Mánu read a card
-                and asked what they meant, which is the right question and the
-                card should have answered it. */}
-            {/* the legend names only what is on the card - a period with no
-                clock export shows neither Scheduled nor Clocked */}
-            <p className="mt-3 text-[11px] leading-relaxed text-faint">
-              {row.clockAvailable && row.inClockExport !== false ? (
-                <>
-                  <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
-                  <b>Clocked</b> the punch in and out
-                </>
-              ) : (
-                <>
-                  <b>Billed</b> what the timesheet pays
-                </>
-              )}
-            </p>
+            <ShiftEvidence row={row} />
 
             {row.changed && (
               <p className="mt-4 text-sm font-semibold text-sky-700 dark:text-sky-300">
@@ -498,6 +405,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 <div>
                   <button
                     type="button"
+                    aria-expanded={openSched}
                     onClick={() => setOpenSched((v) => !v)}
                     className="text-sm font-semibold text-brand underline underline-offset-4"
                   >
@@ -522,6 +430,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 <div>
                   <button
                     type="button"
+                    aria-expanded={openNote}
                     onClick={() => setOpenNote((v) => !v)}
                     className="text-sm font-semibold text-brand underline underline-offset-4"
                   >
@@ -640,7 +549,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 disabled={busy}
                 onClick={() => setFlagging(true)}
                 title="Flag for review (F)"
-                className="order-1 rounded-xl border-2 border-amber-400 px-6 py-3.5 text-base font-bold text-amber-500 transition hover:bg-amber-50 disabled:opacity-50 sm:order-2 sm:px-10 sm:py-4 sm:text-lg dark:hover:bg-amber-950/30"
+                className={`${styles.secondary} order-1 sm:order-2`}
               >
                 Flag
               </button>
@@ -649,7 +558,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 disabled={busy}
                 onClick={() => send("approved")}
                 title="Approve (A)"
-                className="order-2 rounded-xl border-2 border-emerald-400 px-6 py-3.5 text-base font-bold text-emerald-500 transition hover:bg-emerald-50 disabled:opacity-50 sm:order-3 sm:px-10 sm:py-4 sm:text-lg dark:hover:bg-emerald-950/30"
+                className={`${styles.primary} order-2 sm:order-3`}
               >
                 Approve
               </button>
@@ -687,123 +596,6 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
 }
 
 
-// THE NOTE COLUMN UNDER THE DSN MANDATE - Mánu 2026-09-05: the DSN is
-// required at clock out, so its absence is loud and red and lists every
-// missing note type; a present DSN wears its tag and the optional absences
-// stay one faint line. See the mock this shipped from.
-function NoteFigure({ note, scheduleNote }) {
-  if (note?.source === "dsn") {
-    return (
-      <div>
-        <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Note</dt>
-        <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-          <span className="mr-1.5 text-[10px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400">DSN</span>
-          {note.words} words
-        </dd>
-        {!scheduleNote && <dd className="text-[11px] text-faint">no schedule note</dd>}
-      </div>
-    );
-  }
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Note</dt>
-      <dd className="mt-0.5 text-sm font-bold text-rose-600 dark:text-rose-400">No DSN</dd>
-      {!note && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No service note</dd>}
-      {!scheduleNote && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No schedule note</dd>}
-      {note && <dd className="text-xs tabular-nums text-muted">{note.words} words · service note</dd>}
-      {scheduleNote && !note && <dd className="text-[11px] text-faint">schedule note only</dd>}
-    </div>
-  );
-}
-
-
-// VARIANT 2, his pick off the mock: a corrected billable lives IN the Billed
-// column - old figure struck, corrected amber with its minutes wording, who
-// set it underneath. Shows only when a corrected figure exists.
-function BilledFigure({ r }) {
-  const c = r.review?.billableMin;
-  if (c == null) {
-    return <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />;
-  }
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Billed</dt>
-      <dd className="mt-0.5 text-xl font-bold tabular-nums">
-        <span className="font-medium text-faint line-through">{hrs(r.billedMin)}</span>
-        <span className="ml-2 text-amber-600 dark:text-amber-400">
-          {hrs(c)}
-          {minsWords(c) && <span className="ml-1 text-xs font-normal italic">({minsWords(c)})</span>}
-        </span>
-      </dd>
-      <dd className="text-xs text-amber-700 dark:text-amber-500">
-        corrected{r.review?.by ? ` by ${r.review.by}` : ""}
-      </dd>
-    </div>
-  );
-}
-
-function Figure({ label, value, mins, sub, tone }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">{label}</dt>
-      <dd className={`mt-0.5 text-xl font-bold tabular-nums ${tone || "text-foreground"}`}>
-        {value || "-"}
-        {mins && <span className="ml-1.5 text-xs font-normal italic text-muted">({mins})</span>}
-      </dd>
-      {sub && <dd className="text-xs tabular-nums text-muted">{sub}</dd>}
-    </div>
-  );
-}
-
-// THE TWO ENDS OF THE CLOCK, laid out like QSP's own attendance table: the
-// punch and its location, each a tick or a cross, on a line of its own.
-function Punches({ row }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Clock</dt>
-      <PunchLine row={row} end="in" />
-      <PunchLine row={row} end="out" />
-      {row.sharedSession && (
-        <dd className="mt-0.5 text-[11px] leading-snug text-muted">
-          one session {ampmLabel(row.sharedSession.from)} - {ampmLabel(row.sharedSession.to)} across{" "}
-          {row.sharedSession.parts} bookings
-        </dd>
-      )}
-    </div>
-  );
-}
-
-function PunchLine({ row, end }) {
-  const p = punchEnd(row, end);
-  // two reasons there is nothing to draw, and they are not the same fact: the
-  // export was never uploaded, or it was and this shift is not in it
-  if (p.why) return <dd className="text-xs text-faint">{end}: {p.why}</dd>;
-  // FIXED COLUMNS - Mánu 2026-09-04: "i want the checks and x's to be aligned
-  // up... make it set place across." A wide time must not push the marks.
-  return (
-    <dd className="mt-0.5 grid grid-cols-[1.75rem_1.5rem_5.5rem_2rem_1.5rem] items-center text-sm">
-      <span className="text-xs text-faint">{end}</span>
-      <Mark v={p.mark} />
-      <span className="tabular-nums text-foreground">{p.time || "-"}</span>
-      <span className="text-xs text-faint">GPS</span>
-      <Mark v={p.gps} />
-    </dd>
-  );
-}
-
-// a tick, a cross, or nothing to say
-function Mark({ v }) {
-  if (v === "yes") return <span className="font-bold text-emerald-500">&#10003;</span>;
-  if (v === "no") return <span className="font-bold text-rose-500">&#10007;</span>;
-  return <span className="text-faint">-</span>;
-}
-
-// A NARROWING CONTROL. Native select on purpose: on a phone it opens the
-// system picker, which scrolls a few hundred names far better than anything
-// built here would, and it is reachable by keyboard for free.
-//
-// The empty option carries the name of the control, so the row needs no labels
-// above it and costs one line instead of six.
 function Picker({ value, all, options, onPick }) {
   return (
     <select

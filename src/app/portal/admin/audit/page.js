@@ -2,11 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isAdminUp } from "@/lib/roles";
+import { isAdminUp, canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { monthLabelOf } from "@/lib/timesheet/budget-capture";
-import BackLink from "@/components/BackLink";
-import { uploadBudgetCapture, deleteBudgetMonth } from "./actions";
+import AuditWorkspace from "./AuditWorkspace";
+import BudgetManager from "./BudgetManager";
+import styles from "./audit.module.css";
 
 export const metadata = { title: "Audit", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -71,135 +72,37 @@ export default async function AuditPage({ searchParams }) {
     },
   });
 
+  const months = budgetMonths.map((m) => ({ key: m.monthKey, label: monthLabelOf(m.monthKey), count: m._count }));
+  const canUpload = canManageTimesheets(user?.role);
   return (
-    <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
-      <BackLink href="/portal/admin">Back to Admin</BackLink>
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Admin</p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Audit</h1>
-        <Link
-          href="/portal/admin/audit/new"
-          className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-        >
-          Upload an audit copy
-        </Link>
-      </div>
-
-      <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted">
-        What was billed for a shift, against what the clock recorded and what the service note
-        documents. Every document arrives together on the pay period, so a period appears here
-        once its service notes have been uploaded under Timesheets.
-      </p>
-
-      {budgetError && (
-        <div className="mt-6 rounded-xl border border-rose-300 bg-rose-50 p-4 dark:border-rose-500/40 dark:bg-rose-950/30">
-          <p className="text-sm font-medium text-rose-900 dark:text-rose-200">{budgetError}</p>
-        </div>
-      )}
-      {budgetSaved && (
-        <div className="mt-6 rounded-xl border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-500/40 dark:bg-emerald-950/30">
-          <p className="text-sm font-medium text-emerald-900 dark:text-emerald-200">
-            Authorized hours for {budgetSaved.month} are on file: {budgetSaved.clients} clients.
-            {budgetSaved.skipped > 0 &&
-              ` ${budgetSaved.skipped} rows carried no readable hours and were left out.`}
-          </p>
-        </div>
-      )}
-
-      {/* THE MONTH'S AUTHORIZED HOURS. One figure per client per month, read
-          off the Budget Capture Report - the client report on each period
-          measures billable hours against this. */}
-      <div className="mt-8 rounded-xl border border-border bg-surface p-5">
-        <form action={uploadBudgetCapture} className="flex flex-wrap items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <label htmlFor="budget-file" className="block text-sm font-semibold text-foreground">
-              Client authorized hours (Budget Capture Report .xls)
-            </label>
-            <p className="mt-1 text-xs text-muted">
-              QSP &gt; Reports &gt; Budget Capture Report, exported for one calendar month. The
-              month is read off the document; uploading a month again replaces it.
-            </p>
-            <input
-              id="budget-file"
-              name="file"
-              type="file"
-              accept=".xls,application/vnd.ms-excel"
-              required
-              className="mt-3 block w-full text-sm text-muted file:mr-4 file:rounded-md file:border-0 file:bg-brand-light file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded-md bg-brand-light px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-          >
-            Upload
-          </button>
-        </form>
-        {budgetMonths.length > 0 && (
-          <ul className="mt-4 space-y-1.5 border-t border-border pt-3">
-            {budgetMonths.map((m) => (
-              <li key={m.monthKey} className="flex flex-wrap items-baseline gap-x-3 text-sm">
-                <span className="font-medium text-foreground">{monthLabelOf(m.monthKey)}</span>
-                <span className="text-muted">{m._count} clients with authorized hours</span>
-                <form action={deleteBudgetMonth}>
-                  <input type="hidden" name="monthKey" value={m.monthKey} />
-                  <button
-                    type="submit"
-                    className="text-xs font-medium text-muted underline decoration-border-strong underline-offset-2 transition hover:text-rose-600"
-                  >
-                    Remove
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {batches.length === 0 ? (
-        <div className="mt-10 rounded-xl border border-dashed border-border-strong bg-surface-2 p-10 text-center">
-          <p className="text-sm font-medium text-foreground">No pay period has service notes yet.</p>
-          <p className="mt-1 text-sm text-muted">
-            Upload a period under Timesheets with the DSN export (Employee Detailed Daily Service Notes) and
-            Employee Service Notes exports. Both are needed: Field Supervisors write into one
-            and Independent Living Instructors into the other.
-          </p>
-        </div>
-      ) : (
-        <ul className="mt-8 space-y-3">
-          {batches.map((b) => (
-            <li key={b.id}>
-              <Link
-                href={`/portal/admin/audit/${b.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 transition hover:border-brand"
-              >
-                <span>
-                  {/* the "Audit copy" chip is gone - Mánu 2026-09-06: every
-                      batch this page lists is one, so the label said nothing */}
-                  <span className="text-lg font-semibold text-foreground">
-                    {b.periodFrom} to {b.periodTo}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-muted">
-                    {b.serviceNotes?.noteCount || 0} notes
-                    {/* which reports they came off, because a period holding
-                        only one of the two under-reports what was documented */}
-                    {b.serviceNotes?.pdfCount && b.serviceNotes?.serviceCount
-                      ? ` · ${b.serviceNotes.pdfCount} from the PDF, ${b.serviceNotes.serviceCount} from the .xls`
-                      : b.serviceNotes?.serviceCount
-                        ? " · the .xls only"
-                        : b.serviceNotes
-                          ? " · the PDF only"
-                          : " · no service notes uploaded"}
-                    {b.uploadedBy ? ` · uploaded by ${preferredName(b.uploadedBy)}` : ""}
-                    {b.createdAt ? ` on ${mdy(b.createdAt)}` : ""}
-                  </span>
-                </span>
-                <span className="text-sm font-semibold text-brand">Open →</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <AuditWorkspace canUpload={canUpload}>
+      <header className={styles.heading}>
+        <div><h1>Audit</h1><p className={styles.subtitle}>A clearer view of every shift.</p></div>
+        {canUpload && <Link href="/portal/admin/audit/new" className={styles.primary}>New audit copy</Link>}
+      </header>
+      {budgetError && <p role="alert" className={styles.notice}>{budgetError}</p>}
+      {budgetSaved && <p role="status" className={styles.notice}>Authorized hours saved for {budgetSaved.month}: {budgetSaved.clients} clients.{budgetSaved.skipped > 0 && ` ${budgetSaved.skipped} rows had no readable hours.`}</p>}
+      <div className={styles.sectionHeading}><h2>Pay periods</h2><span>{batches.length} {batches.length === 1 ? "period" : "periods"}</span></div>
+      {batches.length === 0 ? <div className={styles.empty}><p>No audit periods yet.</p><p className={styles.subtitle}>Upload the timesheet, schedule, clock and service note exports to begin.</p></div> : <ul className={styles.periodList}>
+        {batches.map((b) => {
+          const [month, day] = (b.periodFrom || "").split("/");
+          const monthName = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][Number(month) - 1] || "—";
+          return <li key={b.id}><Link href={`/portal/admin/audit/${b.id}`} className={styles.periodRow}>
+            <span className={styles.calendar} aria-hidden="true"><small>{monthName}</small><strong>{Number(day) || "—"}</strong></span>
+            <span><span className={styles.periodTitle}>{b.periodFrom} to {b.periodTo}</span>
+              <span className={styles.periodMeta}>{b.serviceNotes?.noteCount || 0} notes
+                {b.serviceNotes?.pdfCount && b.serviceNotes?.serviceCount ? ` · ${b.serviceNotes.pdfCount} PDF, ${b.serviceNotes.serviceCount} XLS` : b.serviceNotes?.serviceCount ? " · XLS only" : b.serviceNotes ? " · PDF only" : " · no service notes uploaded"}
+                {b.uploadedBy ? ` · ${preferredName(b.uploadedBy)}` : ""}{b.createdAt ? ` · uploaded ${mdy(b.createdAt)}` : ""}
+              </span>
+            </span><span className={styles.periodArrow} aria-hidden="true">›</span>
+          </Link></li>;
+        })}
+      </ul>}
+      <section className={styles.authorizations} aria-label="Monthly authorizations">
+        <div className={styles.sectionHeading}><h2>Monthly authorizations</h2><BudgetManager months={months} /></div>
+        <p className={styles.subtitle}>Client allowances from the monthly Budget Capture Report.</p>
+        {months.length ? months.map((m) => <div className={styles.budgetRow} key={m.key}><strong>{m.label}</strong><span>{m.count} clients</span></div>) : <p className={styles.resultCount}>No monthly authorizations on file.</p>}
+      </section>
+    </AuditWorkspace>
   );
 }

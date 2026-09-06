@@ -15,11 +15,12 @@
 // Shared by the deck's flag panel and the card DecideBar, so the two places
 // cannot drift. `value` is the parent's billable state: minutes as a string,
 // "" meaning nothing recorded - exactly what the actions already send.
-import { useState } from "react";
+import { useId, useState } from "react";
 import { hrs } from "./figures";
 import { minsWords } from "@/lib/timesheet/hours-label";
 
 export default function BillableAdjust({ billedMin, clockedMin, documentedMin, value, onChange }) {
+  const fieldId = useId();
   const [open, setOpen] = useState(value !== "" && value != null);
   const [dec, setDec] = useState("");
   const [hh, setHh] = useState("");
@@ -95,9 +96,9 @@ export default function BillableAdjust({ billedMin, clockedMin, documentedMin, v
         </button>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2.5">
-        <label className="text-xs text-muted" htmlFor="billable-dec">Billable</label>
+        <label className="text-xs text-muted" htmlFor={fieldId}>Billable</label>
         <input
-          id="billable-dec"
+          id={fieldId}
           inputMode="decimal"
           value={dec}
           onChange={(e) => fromDec(e.target.value)}

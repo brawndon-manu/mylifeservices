@@ -1,7 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
-import { isAdminUp } from "@/lib/roles";
-import BackLink from "@/components/BackLink";
+import { isAdminUp, canManageTimesheets } from "@/lib/roles";
 import AuditCards from "./AuditCards";
 import { buildAudit } from "./build";
 import { prisma } from "@/lib/prisma";
@@ -44,72 +43,10 @@ export default async function AuditBatchPage({ params }) {
   }
 
   return (
-    <section className="mx-auto max-w-[90rem] px-6 py-12 sm:py-16">
-      <BackLink href="/portal/admin/audit">Back to Audit</BackLink>
-      {/* the "Audit copy" chip used to sit here - Mánu 2026-09-06: everything
-          on these pages is an audit copy now that the lane is walled off from
-          the timesheets, so the label said nothing */}
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
-        {batch.periodFrom} to {batch.periodTo}
-      </p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Service notes against what was billed
-        </h1>
-        {/* the findings leave this screen as documents - each rendered fresh
-            from the current decisions on every open, so none of them can
-            disagree with the cards behind them. */}
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={`/portal/admin/audit/${batch.id}/workbook`}
-            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-          >
-            Download Excel
-          </a>
-          <a
-            href={`/portal/admin/audit/${batch.id}/client-report`}
-            target="_blank"
-            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-          >
-            Client hours (PDF)
-          </a>
-          <a
-            href={`/portal/admin/audit/${batch.id}/client-report?detailed=1`}
-            target="_blank"
-            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-          >
-            Client hours, detailed (PDF)
-          </a>
-          <a
-            href={`/portal/admin/audit/${batch.id}/client-calendar`}
-            target="_blank"
-            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-          >
-            Client calendars (PDF)
-          </a>
-          {rows.some((r) => r.review?.decision === "flagged") && (
-            <a
-              href={`/portal/admin/audit/${batch.id}/report`}
-              target="_blank"
-              className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-            >
-              Flagged report (PDF)
-            </a>
-          )}
-          {rows.some((r) => r.review?.decision === "flagged") && (
-            <a
-              href={`/portal/admin/audit/${batch.id}/report?detailed=1`}
-              target="_blank"
-              className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-            >
-              Flagged report, detailed (PDF)
-            </a>
-          )}
-        </div>
-      </div>
-
       <AuditCards
         batchId={batch.id}
+        periodLabel={`${batch.periodFrom} to ${batch.periodTo}`}
+        canUpload={canManageTimesheets(user?.role)}
         rows={rows}
         titles={titles}
         orphans={orphans}
@@ -131,7 +68,6 @@ export default async function AuditBatchPage({ params }) {
           serviceNotesName: batch.serviceNotesName || null,
         }}
       />
-    </section>
   );
 }
 

@@ -20,12 +20,17 @@
 // period does not throw away reviewing that has already been done.
 //
 // Nothing here computes an hour. See the page beside it.
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
-import { span, hrs, clockedFigure, punchEnd, ampmLabel, clientFirstLast, minsWords } from "./figures";
+import { hrs, clientFirstLast } from "./figures";
+import AuditWorkspace from "../AuditWorkspace";
+import AuditDownloads from "../AuditDownloads";
+import AuditMenu from "../AuditMenu";
+import ShiftEvidence from "./ShiftEvidence";
+import styles from "../audit.module.css";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -42,15 +47,7 @@ const VIEWS = [
   { key: "client", label: "By client", of: (r) => r.client || "No client on the booking" },
 ];
 
-// full literal strings - tailwind cannot see a class it has to assemble
-const TONE = {
-  all: "border-2 border-brand bg-brand/10 text-brand",
-  open: "border-2 border-sky-400 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-  approved: "border-2 border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-};
-
-export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null, periodLabel = "", canUpload = true }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -232,7 +229,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     [shown],
   );
 
-  if (studying) return <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} />;
+
 
   // a row in the roll-up is a way into that person or client, not a dead end
   const drillInto = (name) => {
@@ -240,194 +237,60 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     setView("shifts");
   };
 
+  const changeView = (next) => {
+    setStudying(next === "focus");
+    if (next !== "focus") setView(next);
+  };
+  const title = studying ? "Focused review" : ({ shifts: "Shifts", employee: "Employees", client: "Clients", orphans: "Unmatched notes", lost: "Disappeared shifts", reports: "Reports" })[view];
+  const recordView = !["orphans", "lost", "reports"].includes(view);
+
   return (
-    <>
-      <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted">
-        {totals.notes} service notes against {totals.shifts} service shifts billed in this pay
-        period.
-        {totals.orphans > 0 && ` ${totals.orphans} notes matched no billed shift.`}
-      </p>
-      {/* WHICH OF THE TWO REPORTS ARRIVED, and why both are needed.
-          Mánu 2026-08-27: "field supervisors dont do daily service notes. they
-          input their notes in the service notes and schdule notes."
-          So these are not one complete report and one broken one - they are the
-          two places a note gets written, and which one a person uses follows
-          their job. A period holding only one of them reports shifts as
-          undocumented that are documented in the other, and the screen says so
-          rather than let the count be read as a finding. */}
-      {(!totals.fromPdf || !totals.fromXls) && (
-        <p className="mt-3 max-w-3xl rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm leading-relaxed text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">
-          {!totals.fromPdf && !totals.fromXls
-            ? "No service notes export was uploaded with this period, so every billed shift reads as having no note."
-            : !totals.fromXls
-              ? "The Employee Service Notes export was not uploaded with this period. Field Supervisors write their notes there rather than as DSNs, so their shifts read as having no note."
-              : "The DSN export (Detailed Daily Service Notes) was not uploaded with this period. Independent Living Instructors write their notes there, so their shifts read as having no note."}
-        </p>
-      )}
-      {/* SHORT. Every figure is defined on the card itself, so repeating all
-          three here left a paragraph nobody read - Mánu called it what it was.
-          What is left is the part the cards cannot say: that a gap is not by
-          itself a finding, and that none of this moves money. */}
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-faint">
-        A session ending early is ordinary, so nothing here is a finding on its own. The note is
-        read for what it says: QSP fills its times in from the booking. Approving says the shift
-        looks right to bill, and nothing on this page changes pay.
-      </p>
-
-      {periods.length > 1 && (
-        <div className="mt-6">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Pay period</p>
-          <div className="mt-1.5 flex flex-wrap gap-2">
-            {["all", ...periods].map((p) => (
-              <button
-                key={p}
-                type="button"
-                aria-pressed={period === p}
-                onClick={() => setPeriod(p)}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                  period === p
-                    ? "border-2 border-brand bg-brand/10 text-brand"
-                    : "border border-border-strong text-muted hover:border-brand hover:text-brand"
-                }`}
-              >
-                {p === "all" ? "Every period" : p}{" "}
-                <span className="tabular-nums">{periodCounts[p] ?? 0}</span>
-              </button>
-            ))}
-          </div>
+    <AuditWorkspace page="batch" view={studying ? "focus" : view} onView={changeView} hasLost={lost.length > 0} canUpload={canUpload}>
+      <header className={styles.heading}>
+        <div><p className={styles.eyebrow}>{periodLabel}</p><h1>{title}</h1><p className={styles.subtitle}>{totals.shifts} billed shifts · {totals.notes} service notes</p></div>
+        <div className={styles.actions}>
+          <AuditDownloads batchId={batchId} periodLabel={periodLabel} />
+          {!studying && recordView && <button type="button" className={styles.primary} disabled={!shown.length} onClick={() => setStudying(true)}>Start focused review</button>}
         </div>
-      )}
-
-      {/* THE DECISION SECOND. "What is still open" and "what did we flag" are
-          the two questions somebody opens this screen already holding. */}
-      <div className="mt-6 flex flex-wrap gap-2">
-        {DECISIONS.map((d) => (
-          <button
-            key={d.key}
-            type="button"
-            aria-pressed={decision === d.key}
-            onClick={() => setDecision(d.key)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-              decision === d.key
-                ? TONE[d.key]
-                : "border border-border-strong text-muted hover:border-brand hover:text-brand"
-            }`}
-          >
-            {d.label} <span className="tabular-nums">{decisionCounts[d.key]}</span>
-          </button>
-        ))}
+      </header>
+      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} /> : view === "reports" ? <>
+        <p className={styles.notice}>Reports include the entire uploaded period and current saved decisions. Filters used while reviewing do not limit these downloads.</p>
+        <AuditDownloads batchId={batchId} periodLabel={periodLabel} reportsPage />
+      </> : <>
+      {(!totals.fromPdf || !totals.fromXls) && <p className={styles.notice}>
+        {!totals.fromPdf && !totals.fromXls
+          ? "No service notes export was uploaded. Missing-note counts reflect the missing files."
+          : !totals.fromXls
+            ? "Employee Service Notes was not uploaded. Field Supervisors’ notes may be missing from this view."
+            : "The DSN export was not uploaded. Independent Living Instructors’ notes may be missing from this view."}
+      </p>}
+      {periods.length > 1 && <label className={styles.eyebrow}>Pay period <select className={styles.secondary} value={period} onChange={(e) => setPeriod(e.target.value)}>
+        {["all", ...periods].map((p) => <option key={p} value={p}>{p === "all" ? "Every period" : p} ({periodCounts[p] ?? 0})</option>)}
+      </select></label>}
+      {recordView && <div className={styles.decisionTabs} aria-label="Review status">
+        {["open", "flagged", "approved", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
+      </div>}
+      <div className={styles.toolbar}>
+        {recordView && <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employee, client or service" aria-label="Search shifts" className={styles.search} />}
+        {recordView && <AuditMenu label={`Filter${onlyKinds.length ? ` · ${onlyKinds.length}` : ""}`}>
+          <p className={styles.menuHeading}>Match every selected finding</p>
+          {Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([kind, n]) => <button key={kind} type="button" aria-pressed={onlyKinds.includes(kind)} onClick={() => toggleKind(kind)}><span>{onlyKinds.includes(kind) ? "✓ " : ""}{labelOf[kind]}</span><small>{n}</small></button>)}
+          {onlyKinds.length > 0 && <button type="button" onClick={() => setOnlyKinds([])}>Clear findings</button>}
+        </AuditMenu>}
+        <AuditMenu label={`Sort${sortKeys.length ? ` · ${sortKeys.length}` : ""}`}>
+          <p className={styles.menuHeading}>Applied in selection order</p>
+          {Object.entries(ROLL_SORTS).filter(([k]) => recordView || ["date", "first", "last"].includes(k)).map(([k, v]) => <button key={k} type="button" aria-pressed={sortKeys.includes(k)} onClick={() => toggleSort(k)}>{v.label}<small>{sortKeys.includes(k) ? sortKeys.indexOf(k) + 1 : ""}</small></button>)}
+          {sortKeys.length > 0 && <button type="button" onClick={() => setSortKeys([])}>Default order</button>}
+        </AuditMenu>
+        {recordView && (q || onlyKinds.length > 0) && <button type="button" className={styles.secondary} onClick={() => { setQ(""); setOnlyKinds([]); }}>Clear filters</button>}
       </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([kind, n]) => (
-          <button
-            key={kind}
-            type="button"
-            aria-pressed={onlyKinds.includes(kind)}
-            onClick={() => toggleKind(kind)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-              onlyKinds.includes(kind)
-                ? "bg-brand text-white"
-                : "border border-border-strong text-muted hover:border-brand hover:text-brand"
-            }`}
-          >
-            {labelOf[kind]} <span className="tabular-nums">{n}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <div className="flex rounded-md border border-border-strong p-0.5">
-          {VIEWS.filter((v) => v.key !== "lost" || lost.length > 0).map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              onClick={() => setView(v.key)}
-              className={`rounded px-3 py-1.5 text-sm font-medium transition ${
-                view === v.key ? "bg-brand text-white" : "text-muted hover:text-brand"
-              }`}
-            >
-              {v.label}
-            </button>
-          ))}
+      {recordView && <p className={styles.resultCount}>{shown.length} of {inPeriod.length} shifts{period === "all" ? "" : ` in ${period}`}</p>}
+      {batchId && recordView && <details className={styles.tools}><summary>Review tools</summary>
+        <div className={styles.tools}>
+          <AutoFlag batchId={batchId} onFlagged={(applied) => setLocalReviews((v) => ({ ...v, ...Object.fromEntries(applied.map((a) => [a.shiftKey, { decision: "flagged", reason: a.reason, billableMin: null, by: null, at: null }])) }))} />
+          <ResetAll batchId={batchId} onReset={() => setLocalReviews(Object.fromEntries(rowsProp.map((r) => [r.shiftKey, null])))} />
         </div>
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Filter by employee, client or service"
-          className="w-72 rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none"
-        />
-        {q && (
-          <button
-            type="button"
-            onClick={() => setQ("")}
-            className="text-xs font-medium text-muted underline underline-offset-4 hover:text-brand"
-          >
-            Clear
-          </button>
-        )}
-        <button
-          type="button"
-          disabled={shown.length === 0}
-          onClick={() => setStudying(true)}
-          className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand disabled:opacity-50"
-        >
-          Go through these one by one
-        </button>
-        <span className="text-xs text-faint">
-          {shown.length} of {inPeriod.length} shifts
-          {period === "all" ? "" : ` in ${period}`}.
-        </span>
-        {batchId && (
-          <AutoFlag
-            batchId={batchId}
-            onFlagged={(applied) =>
-              setLocalReviews((v) => ({
-                ...v,
-                ...Object.fromEntries(
-                  applied.map((a) => [
-                    a.shiftKey,
-                    { decision: "flagged", reason: a.reason, billableMin: null, by: null, at: null },
-                  ]),
-                ),
-              }))
-            }
-          />
-        )}
-        {batchId && (
-          <ResetAll
-            batchId={batchId}
-            onReset={() =>
-              setLocalReviews(Object.fromEntries(rowsProp.map((r) => [r.shiftKey, null])))
-            }
-          />
-        )}
-      </div>
-
-      {/* ORDER BY, ON EVERY VIEW - Mánu 2026-09-05. Press to stack, press
-          again to drop; nothing pressed keeps each view's own default order. */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Order by</span>
-        {Object.entries(ROLL_SORTS)
-          .filter(([k]) => !["orphans", "lost"].includes(view) || ["date", "first", "last"].includes(k))
-          .map(([k, v]) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={sortKeys.includes(k)}
-              onClick={() => toggleSort(k)}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                sortKeys.includes(k)
-                  ? "bg-brand text-white"
-                  : "border border-border-strong text-muted hover:border-brand hover:text-brand"
-              }`}
-            >
-              {v.label}
-            </button>
-          ))}
-      </div>
-
+      </details>}
       {view === "orphans" ? (
         <Orphans rows={sortOrphans(period === "all" ? orphans : orphans.filter((n) => n.period === period), sortKeys)} />
       ) : view === "lost" ? (
@@ -472,7 +335,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           authLabel={authMonthLabel}
         />
       )}
-    </>
+      <p className={styles.legend}>A time gap alone is not a finding. Read the notes before deciding. Audit decisions do not change pay.</p>
+      </>}
+    </AuditWorkspace>
   );
 }
 
@@ -703,7 +568,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                         {openGroups.has(g.name) ? "\u25be" : "\u25b8"}
                       </button>
                     )}
-                    {g.name}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(g.name); }}>{g.name}</button>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">
@@ -783,17 +648,7 @@ function Card({ r, onReview, title }) {
   const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
   return (
-    <article
-      className={`rounded-xl border p-4 ${
-        r.review?.decision === "approved"
-          ? "border-emerald-300 bg-emerald-50/30 dark:border-emerald-900/60 dark:bg-emerald-950/10"
-          : r.review?.decision === "flagged"
-            ? "border-amber-400 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20"
-            : surfaced
-              ? "border-amber-300 bg-amber-50/40 dark:border-amber-900/60 dark:bg-amber-950/10"
-              : "border-border bg-surface"
-      }`}
-    >
+    <article className={styles.card} data-decision={r.review?.decision || "open"}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className="text-base font-semibold text-foreground">
           {r.who}
@@ -810,78 +665,7 @@ function Card({ r, onReview, title }) {
         {r.service && <span className="ml-3 text-muted">{r.service}</span>}
       </p>
 
-      {/* one line where the clock export is missing, rather than four ways of
-          saying the same upload never happened. See StudyMode. */}
-      <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
-        {/* three shapes, three facts - see the same block in StudyMode. The
-            export is missing, it is here and has no row for this shift, or it
-            has one. Scheduled and Clocked both come out of that row. */}
-        {r.clockAvailable && r.inClockExport === false ? (
-          <>
-            {/* the calendar still says when it was booked - Mánu 2026-09-05:
-                "everyone should be on the schedule" */}
-            <Figure
-              label="Scheduled"
-              value={r.schedFrom != null && r.schedTo != null ? hrs(r.schedTo - r.schedFrom) : "-"}
-              sub={r.schedFrom != null && r.schedTo != null ? `${span(r.schedFrom, r.schedTo)} · from the calendar` : null}
-              tone="text-muted"
-            />
-            <BilledFigure r={r} />
-            <Figure label="Clock" value="no row for this shift" tone="text-faint" />
-          </>
-        ) : r.clockAvailable ? (
-          <>
-            <Figure
-              label="Scheduled"
-              value={
-                r.originalFrom != null
-                  ? hrs(r.originalTo - r.originalFrom)
-                  : r.schedFrom != null && r.schedTo != null
-                    ? hrs(r.schedTo - r.schedFrom)
-                    : "-"
-              }
-              sub={
-                r.originalFrom != null
-                  ? span(r.originalFrom, r.originalTo)
-                  : r.schedFrom != null && r.schedTo != null
-                    ? `${span(r.schedFrom, r.schedTo)} · from the calendar`
-                    : null
-              }
-              tone="text-muted"
-            />
-            <BilledFigure r={r} />
-            <Figure
-              label="Clocked"
-              value={clockedFigure(r).value}
-              sub={clockedFigure(r).sub}
-              tone={
-                clockedFigure(r).tone === "bad"
-                  ? "text-rose-600 dark:text-rose-400"
-                  : clockedFigure(r).tone === "faint" ? "text-faint" : undefined
-              }
-            />
-            <Punches row={r} />
-          </>
-        ) : (
-          <>
-            <BilledFigure r={r} />
-            <Figure label="Clock" value="no export for this period" tone="text-faint" />
-          </>
-        )}
-        <NoteFigure note={r.note} scheduleNote={r.scheduleNote} />
-      </dl>
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        {r.clockAvailable && r.inClockExport !== false ? (
-          <>
-            <b>Scheduled</b> what QSP booked · <b>Billed</b> what the timesheet pays ·{" "}
-            <b>Clocked</b> the punch in and out
-          </>
-        ) : (
-          <>
-            <b>Billed</b> what the timesheet pays
-          </>
-        )}
-      </p>
+      <ShiftEvidence row={r} />
 
       {surfaced && (
         <ul className="mt-3 space-y-1">
@@ -942,7 +726,6 @@ function Card({ r, onReview, title }) {
         </p>
       )}
 
-      <DecideBar r={r} onReview={onReview} />
 
       {/* both notes, each behind its own toggle - the schedule note is the
           reason typed on the shift, the service note the account of what was
@@ -953,6 +736,7 @@ function Card({ r, onReview, title }) {
             <div>
               <button
                 type="button"
+                aria-expanded={openSched}
                 onClick={() => setOpenSched((v) => !v)}
                 className="text-xs font-semibold text-brand underline underline-offset-4"
               >
@@ -977,6 +761,7 @@ function Card({ r, onReview, title }) {
             <div>
               <button
                 type="button"
+                aria-expanded={open}
                 onClick={() => setOpen((v) => !v)}
                 className="text-xs font-semibold text-brand underline underline-offset-4"
               >
@@ -1004,138 +789,24 @@ function Card({ r, onReview, title }) {
           )}
         </div>
       )}
+      <DecideBar r={r} onReview={onReview} />
     </article>
   );
 }
 
 
-// THE NOTE COLUMN UNDER THE DSN MANDATE - Mánu 2026-09-05: the DSN is
-// required at clock out, so its absence is loud and red and lists every
-// missing note type; a present DSN wears its tag and the optional absences
-// stay one faint line. See the mock this shipped from.
-function NoteFigure({ note, scheduleNote }) {
-  if (note?.source === "dsn") {
-    return (
-      <div>
-        <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Note</dt>
-        <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-          <span className="mr-1.5 text-[10px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400">DSN</span>
-          {note.words} words
-        </dd>
-        {!scheduleNote && <dd className="text-[11px] text-faint">no schedule note</dd>}
-      </div>
-    );
-  }
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Note</dt>
-      <dd className="mt-0.5 text-sm font-bold text-rose-600 dark:text-rose-400">No DSN</dd>
-      {!note && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No service note</dd>}
-      {!scheduleNote && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No schedule note</dd>}
-      {note && <dd className="text-xs tabular-nums text-muted">{note.words} words · service note</dd>}
-      {scheduleNote && !note && <dd className="text-[11px] text-faint">schedule note only</dd>}
-    </div>
-  );
-}
-
-
-// VARIANT 2, his pick off the mock: a corrected billable lives IN the Billed
-// column - old figure struck, corrected amber with its minutes wording, who
-// set it underneath. Shows only when a corrected figure exists.
-function BilledFigure({ r }) {
-  const c = r.review?.billableMin;
-  if (c == null) {
-    return <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />;
-  }
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Billed</dt>
-      <dd className="mt-0.5 text-sm font-semibold tabular-nums">
-        <span className="font-medium text-faint line-through">{hrs(r.billedMin)}</span>
-        <span className="ml-2 text-amber-600 dark:text-amber-400">
-          {hrs(c)}
-          {minsWords(c) && <span className="ml-1 text-xs font-normal italic">({minsWords(c)})</span>}
-        </span>
-      </dd>
-      <dd className="text-xs text-amber-700 dark:text-amber-500">
-        corrected{r.review?.by ? ` by ${r.review.by}` : ""}
-      </dd>
-    </div>
-  );
-}
-
-function Figure({ label, value, sub, tone }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">{label}</dt>
-      <dd className={`text-sm font-semibold tabular-nums ${tone || "text-foreground"}`}>
-        {value || "-"}
-      </dd>
-      {/* the span under the figure, not beside it - Mánu 2026-09-05 */}
-      {sub && <dd className="text-xs tabular-nums text-muted">{sub}</dd>}
-    </div>
-  );
-}
-
-// THE TWO ENDS OF THE CLOCK, laid out like QSP's own attendance table: the
-// punch and its location, each a tick or a cross, on a line of its own.
-//
-// A single "Location: captured" line said nothing about WHICH end and nothing
-// about the punch itself. Mánu 2026-08-27 sent QSP's table as the shape to copy.
-function Punches({ row }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Clock</dt>
-      <PunchLine row={row} end="in" />
-      <PunchLine row={row} end="out" />
-      {row.sharedSession && (
-        <dd className="mt-0.5 text-[11px] leading-snug text-muted">
-          one session {ampmLabel(row.sharedSession.from)} - {ampmLabel(row.sharedSession.to)} across{" "}
-          {row.sharedSession.parts} bookings
-        </dd>
-      )}
-    </div>
-  );
-}
-
-function PunchLine({ row, end }) {
-  const p = punchEnd(row, end);
-  // two reasons there is nothing to draw, and they are not the same fact: the
-  // export was never uploaded, or it was and this shift is not in it
-  if (p.why) return <dd className="text-xs text-faint">{end}: {p.why}</dd>;
-  // FIXED COLUMNS - a wide time must not push the marks (Mánu 2026-09-04)
-  return (
-    <dd className="grid grid-cols-[1.5rem_1.25rem_5rem_1.75rem_1.25rem] items-center text-xs">
-      <span className="text-faint">{end}</span>
-      <Mark v={p.mark} />
-      <span className="tabular-nums text-muted">{p.time || "-"}</span>
-      <span className="text-faint">GPS</span>
-      <Mark v={p.gps} />
-    </dd>
-  );
-}
-
-// a tick, a cross, or nothing to say
-function Mark({ v }) {
-  if (v === "yes") return <span className="font-bold text-emerald-600 dark:text-emerald-400">&#10003;</span>;
-  if (v === "no") return <span className="font-bold text-rose-600 dark:text-rose-400">&#10007;</span>;
-  return <span className="text-faint">-</span>;
-}
-
-
-// DECIDING WITHOUT LEAVING THE LIST - Mánu 2026-09-03: "i should be able to
-// add the correct hours in the main menu not just in the one by one view".
-// The same action, the same optional note, the same three chips as the deck's
-// flag panel; deciding again replaces the decision, exactly as it does there.
 function DecideBar({ r, onReview }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   const [billable, setBillable] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const reasonId = useId();
 
   const send = async (decision) => {
     if (busy) return;
     setBusy(true);
+    setError("");
     const body = new FormData();
     body.set("decision", decision);
     body.set("shiftKey", r.shiftKey);
@@ -1154,9 +825,11 @@ function DecideBar({ r, onReview }) {
     if (bm != null) body.set("billableMin", bm);
     const why = decision === "flagged" ? reason.trim() : "";
     if (why) body.set("reason", why);
-    const res = await reviewShift(body);
-    setBusy(false);
-    if (!res?.ok) return;
+    let res;
+    try { res = await reviewShift(body); }
+    catch { setError("Could not save the decision. Please try again."); return; }
+    finally { setBusy(false); }
+    if (!res?.ok) { setError("Could not save the decision. Please try again."); return; }
     onReview?.(r.shiftKey, {
       decision,
       by: "you",
@@ -1169,14 +842,16 @@ function DecideBar({ r, onReview }) {
   };
 
   return (
-    <div className="mt-3">
+    <div className={styles.cardFooter}>
+      {error && <p role="alert" className={styles.bad}>{error}</p>}
       {flagging ? (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-          <label className="block text-xs font-semibold text-foreground">
+          <label htmlFor={reasonId} className="block text-xs font-semibold text-foreground">
             What should be looked at?{" "}
             <span className="font-normal text-muted">Optional.</span>
           </label>
           <textarea
+            id={reasonId}
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -1210,23 +885,9 @@ function DecideBar({ r, onReview }) {
           </div>
         </div>
       ) : (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => send("approved")}
-            className="rounded-md border-2 border-emerald-400 px-3.5 py-1.5 text-sm font-bold text-emerald-500 transition hover:bg-emerald-50 disabled:opacity-50 dark:hover:bg-emerald-950/30"
-          >
-            Approve
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => setFlagging(true)}
-            className="rounded-md border-2 border-amber-400 px-3.5 py-1.5 text-sm font-bold text-amber-500 transition hover:bg-amber-50 disabled:opacity-50 dark:hover:bg-amber-950/30"
-          >
-            Flag
-          </button>
+        <div className={styles.cardActions}>
+          <button type="button" disabled={busy} onClick={() => setFlagging(true)} className={styles.secondary}>Flag</button>
+          <button type="button" disabled={busy} onClick={() => send("approved")} className={styles.primary}>{busy ? "Saving…" : "Approve"}</button>
         </div>
       )}
     </div>

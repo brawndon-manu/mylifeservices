@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { hasBlobStorage } from "@/lib/blob";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import BackLink from "@/components/BackLink";
+import AuditWorkspace from "../AuditWorkspace";
+import styles from "../audit.module.css";
 import { uploadBatch } from "../../timesheets/actions";
 import UploadForm from "../../timesheets/new/UploadForm";
 import { ERRORS } from "../../timesheets/new/upload-errors";
@@ -26,37 +27,16 @@ export default async function NewAuditCopyPage({ searchParams }) {
   const why = typeof sp?.why === "string" ? sp.why : null;
 
   const aside = (
-    <div className="rounded-xl border border-border bg-surface-2 p-5 text-sm leading-relaxed text-muted">
-      <p className="font-medium text-foreground">What an audit copy is</p>
-      <p className="mt-1 text-xs">
-        Fresh QSP exports of a pay period, uploaded to be read against the
-        service notes and your shift decisions. It appears on the Audit page
-        only. Nothing is sent, nothing can be signed, and the pay period&apos;s
-        timesheets are not touched.
-      </p>
-      <p className="mt-4 font-medium text-foreground">The six exports</p>
-      <p className="mt-1 text-xs">
-        Simple Timesheet (PDF), Employee Schedules (PDF), QSClock Time and
-        Attendance (.xls), DSN (Employee Detailed Daily Service Notes) (PDF),
-        Employee Service Notes (.xls), Employee Schedule Notes (.xls). A month audit adds a second Simple Timesheet, one export per pay period. The
-        payroll and rest period reports are not needed here - they feed the
-        payroll surfaces, which an audit copy never reaches.
-      </p>
-      <p className="mt-4 text-xs">
-        Shift decisions and billable adjustments already made for the period
-        carry over on their own: they are keyed to the shift, not the upload.
-      </p>
-    </div>
+    <details className={styles.uploadGuide}>
+      <summary>Which exports do I need?</summary>
+      <p>Simple Timesheet (PDF), Employee Schedules (PDF), QSClock Time and Attendance (.xls), DSN (PDF), Employee Service Notes (.xls), and Employee Schedule Notes (.xls). A full month can include a second Simple Timesheet for its other pay period.</p>
+      <p>An audit copy keeps payroll and signed timesheets unchanged. Existing shift decisions and corrected billable hours carry over.</p>
+    </details>
   );
 
   return (
-    <section className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-      <BackLink href="/portal/admin/audit">Back to Audit</BackLink>
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">Audit</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Upload an audit copy
-      </h1>
-
+    <AuditWorkspace page="new">
+      <header className={styles.heading}><div><h1>New audit copy</h1><p className={styles.subtitle}>Bring the records together for one pay period or month.</p></div></header>
       {error && (
         <div role="alert" className="mt-6 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
           <p>{error}</p>
@@ -66,9 +46,9 @@ export default async function NewAuditCopyPage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-8">
+      <div className={styles.upload}>
         <UploadForm action={uploadBatch} aside={aside} blobUpload={hasBlobStorage()} audit />
       </div>
-    </section>
+    </AuditWorkspace>
   );
 }
