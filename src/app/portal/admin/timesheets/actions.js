@@ -352,6 +352,25 @@ export async function uploadBatch(formData) {
   let partialDropped = [];
   let partialFrom = null;
   let partialThrough = null;
+  // AN AUDIT COPY IS ALLOWED TO BE MONTH-TO-DATE - Mánu 2026-09-06, opening
+  // the September rhythm: the daily pull covers a period that is still
+  // running, and QSP prints the roster's future days as if they were worked.
+  // An audit upload trims every day after today on its own - no box, nothing
+  // typed - because an audit copy reads what has happened, never asks anyone
+  // to sign it. Payroll batches keep the refusal below unchanged.
+  if (auditOnly) {
+    const t = trimDays(withHours, {});
+    if (t.dropped.length) {
+      partialDropped = t.dropped;
+      partialFrom = t.from;
+      partialThrough = t.through;
+      withHours.length = 0;
+      withHours.push(...t.sheets);
+      console.log(
+        `audit copy month-to-date: kept ${t.from} to ${t.through}, dropped ${t.dropped.length} future date(s)`,
+      );
+    }
+  }
   const future = futureDates(withHours);
   if (future.size && !wantPartial) {
     const sample = [...future].sort().slice(0, 3).join(", ");
