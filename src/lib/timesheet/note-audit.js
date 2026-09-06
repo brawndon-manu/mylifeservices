@@ -84,14 +84,17 @@ export const AUDIT_RULES = {
 // sentences are the whole user interface of the rule, so they live beside it.
 export const AUDIT_REASONS = {
   "no-note": {
-    label: "No DSN or service note",
-    // the sentence counts what is actually absent: with no schedule note
-    // either, all three are named; with one, it is named as the only record
+    // THE DSN IS MANDATORY - Mánu 2026-09-05: "for all staff we HAVE to
+    // input DSN when clocking out with GPS. it wont let you otherwise." So
+    // the finding is about the DSN, and it fires even when an xls service
+    // note matched; the sentence names whatever record still explains the
+    // service, because without the DSN there has to be at least one.
+    label: "No DSN",
     weight: 100,
     describe: (f) =>
-      f.schedNote
-        ? "The shift was billed with no DSN or service note. The schedule note is the only record."
-        : "The shift was billed and no DSN, service note, or schedule note was filed against it.",
+      f.fallback
+        ? `The DSN is required at clock out. The ${f.fallback} is the only record of the service.`
+        : "The DSN is required at clock out. No service or schedule note explains the service either.",
   },
   "session-called-off": {
     label: "The note says the session was called off",
@@ -180,9 +183,16 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
 
   if (!note) {
     // silence on a shift that was never going to have one, rather than a finding
-    if (NOTE_EXPECTED(shift?.service)) out.push({ kind: "no-note", billedMin, schedNote: !!shift?.scheduleNote });
+    if (NOTE_EXPECTED(shift?.service)) {
+      out.push({ kind: "no-note", billedMin, fallback: shift?.scheduleNote ? "schedule note" : null });
+    }
   } else {
     if (sessionCalledOff(note)) out.push({ kind: "session-called-off", billedMin });
+    // a matched note that is not the DSN still means the mandatory DSN is
+    // missing; the xls note (or the schedule note) is the fallback record
+    if (NOTE_EXPECTED(shift?.service) && note.source !== "dsn" && note.source !== undefined) {
+      out.push({ kind: "no-note", billedMin, fallback: "service note" });
+    }
 
     // THERE IS NO RULE HERE COMPARING BILLED TO THE NOTE'S OWN TIMES, and there
     // must not be. The note does not carry an independent account of when the

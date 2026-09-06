@@ -22,7 +22,7 @@ const note = (over = {}) => ({
   employee: "Test Person", client: "Client A", date: "08/17/26",
   start: "12:00 PM", end: "3:00 PM", startMin: 720, endMin: 900, minutes: 180,
   summary: "Staff supported the client with cooking and budgeting through the afternoon session.",
-  comments: [], categories: [], words: 60,
+  comments: [], categories: [], words: 60, source: "dsn",
   signedAt: "3:04 PM", signedDate: "08/17/26", signedAfterMin: 4, ...over,
 });
 
@@ -132,6 +132,31 @@ test("a short note on a short shift is not thin", () => {
   // workedMin pinned to the bill: this test is about the note, and the new
   // billed-under-clocked reason would fire on the fixture's default clock
   assert.deepEqual(auditReasons(shift({ scheduledMin: 20, workedMin: 20 }), note({ words: 20, minutes: 20 })), []);
+});
+
+// ---- the mandatory DSN ----
+
+test("an xls service note without a DSN raises the finding with its fallback named", () => {
+  const rs = auditReasons(shift(), note({ source: "xls" }));
+  const f = rs.find((r) => r.kind === "no-note");
+  assert.ok(f);
+  assert.match(f.text, /The service note is the only record of the service\./);
+});
+
+test("no note but a schedule note names the schedule note as the fallback", () => {
+  const rs = auditReasons(shift({ scheduleNote: { text: "ended early" } }), null);
+  const f = rs.find((r) => r.kind === "no-note");
+  assert.match(f.text, /The schedule note is the only record of the service\./);
+});
+
+test("nothing at all says no record explains the service", () => {
+  const rs = auditReasons(shift(), null);
+  const f = rs.find((r) => r.kind === "no-note");
+  assert.match(f.text, /No service or schedule note explains the service either\./);
+});
+
+test("a DSN satisfies the mandate however the optional notes stand", () => {
+  assert.equal(auditReasons(shift(), note({ source: "dsn" })).some((r) => r.kind === "no-note"), false);
 });
 
 test("billed below what was clocked is its own finding", () => {

@@ -52,12 +52,12 @@ test("supervisor phone notes fire and in-person calls together do not", () => {
   );
 });
 
-test("no note in any source fires; a schedule note alone is a note", () => {
+test("the missing DSN fires off the screen's own finding", () => {
   assert.equal(
-    autoFlagRow(row({ note: null, scheduleNote: null })).reason,
-    "Auto: no service note, schedule note, or DSN.",
+    autoFlagRow(row({ reasons: [{ kind: "no-note" }] })).reason,
+    "Auto: no DSN.",
   );
-  assert.equal(autoFlagRow(row({ note: null, scheduleNote: { text: "ended early" } })), null);
+  assert.equal(autoFlagRow(row({ reasons: [] })), null);
 });
 
 test("missed punches fire only where the export holds the shift", () => {

@@ -62,10 +62,13 @@ export const AUTO_FLAG_RULES = [
     test: (r, t) => REMOTE_RX.test(t),
   },
   {
-    key: "no-notes",
-    label: "no service note, schedule note, or DSN",
-    phrase: "no service note, schedule note, or DSN",
-    test: (r) => !r.note && !r.scheduleNote,
+    // THE DSN IS MANDATORY at clock out (Mánu 2026-09-05), so its absence is
+    // a rule of its own - it fires off the same finding the screen shows,
+    // xls-fallback shifts included
+    key: "no-dsn",
+    label: "no DSN",
+    phrase: "no DSN",
+    test: (r) => (r.reasons || []).some((x) => x.kind === "no-note"),
   },
   {
     key: "no-clock-out",

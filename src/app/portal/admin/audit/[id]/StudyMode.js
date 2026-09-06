@@ -420,6 +420,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                   </div>
                 </>
               )}
+              <NoteFigure note={row.note} scheduleNote={row.scheduleNote} />
             </dl>
 
             {/* WHAT EACH FIGURE IS, on every card. Four times sitting in a row
@@ -451,7 +452,14 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
             {row.reasons.length > 0 && (
               <ul className="mt-6 space-y-1 border-l-2 border-amber-400 pl-4">
                 {row.reasons.map((x, i) => (
-                  <li key={i} className="text-sm leading-snug text-amber-700 dark:text-amber-300">
+                  <li
+                    key={i}
+                    className={`text-sm leading-snug ${
+                      x.kind === "no-note"
+                        ? "font-medium text-rose-600 dark:text-rose-400"
+                        : "text-amber-700 dark:text-amber-300"
+                    }`}
+                  >
                     <span className="font-semibold">{x.label}.</span> {x.text}
                   </li>
                 ))}
@@ -679,6 +687,36 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+
+// THE NOTE COLUMN UNDER THE DSN MANDATE - Mánu 2026-09-05: the DSN is
+// required at clock out, so its absence is loud and red and lists every
+// missing note type; a present DSN wears its tag and the optional absences
+// stay one faint line. See the mock this shipped from.
+function NoteFigure({ note, scheduleNote }) {
+  if (note?.source === "dsn") {
+    return (
+      <div>
+        <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Note</dt>
+        <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+          <span className="mr-1.5 text-[10px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400">DSN</span>
+          {note.words} words
+        </dd>
+        {!scheduleNote && <dd className="text-[11px] text-faint">no schedule note</dd>}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Note</dt>
+      <dd className="mt-0.5 text-sm font-bold text-rose-600 dark:text-rose-400">No DSN</dd>
+      {!note && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No service note</dd>}
+      {!scheduleNote && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No schedule note</dd>}
+      {note && <dd className="text-xs tabular-nums text-muted">{note.words} words · service note</dd>}
+      {scheduleNote && !note && <dd className="text-[11px] text-faint">schedule note only</dd>}
     </div>
   );
 }

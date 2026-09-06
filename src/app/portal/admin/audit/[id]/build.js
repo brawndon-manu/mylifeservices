@@ -496,6 +496,10 @@ export async function buildAudit(id) {
     // export has no row for this shift" - only the second is a finding
     shift.noClockRow =
       periodsWithClock.has(periodOf(shift.date)) && shift.clocked !== true;
+    // which report the note came from, decided BEFORE the reasons run - the
+    // mandatory-DSN finding needs it (stamped at merge on new uploads,
+    // derived for stored batches: only the DSN PDF gives a note a page)
+    if (note && note.source === undefined) note.source = note.page != null ? "dsn" : "xls";
     const read = auditRow(shift, note);
     // FULL WHERE ANYTHING HAS IT. The clock export is preferred over the note
     // because it is already "Last, First" like every other name on these
@@ -559,9 +563,7 @@ export async function buildAudit(id) {
           summary: note.summary, comments: note.comments, categories: note.categories,
           signedAt: note.signedAt, signedDate: note.signedDate, signedAfterMin: note.signedAfterMin,
           miles: note.miles, page: note.page,
-          // which report spoke: stamped at the merge on new uploads, derived
-          // for stored batches - only the DSN PDF gives a note a page number
-          source: note.source || (note.page != null ? "dsn" : "xls"),
+          source: note.source,
         }
         : null,
       ...read,
