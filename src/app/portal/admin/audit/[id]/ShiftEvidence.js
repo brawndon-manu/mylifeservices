@@ -1,6 +1,14 @@
 import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
 import styles from "../audit.module.css";
 
+// "3.00" big with a small quiet "h" beside it - Mánu 2026-09-06, off his
+// mock: "have the h small like this next to the hours." Prose figures
+// ("not clocked", "no clock export") pass through whole.
+function FigureHours({ value }) {
+  const m = /^(\d+\.\d{2})h$/.exec(String(value ?? ""));
+  return m ? <>{m[1]}<span className={styles.unit}>h</span></> : value;
+}
+
 export default function ShiftEvidence({ row }) {
   const original = row.clockAvailable && row.inClockExport !== false && row.originalFrom != null && row.originalTo != null;
   const from = original ? row.originalFrom : row.schedFrom;
@@ -11,13 +19,13 @@ export default function ShiftEvidence({ row }) {
   const note = row.note;
   return <div className={styles.evidence}>
     <dl className={styles.times}>
-      <div><dt>Scheduled</dt><dd className={styles.figureValue}>{scheduled ? hrs(to - from) : "—"}</dd>
+      <div><dt>Scheduled</dt><dd className={styles.figureValue}>{scheduled ? <FigureHours value={hrs(to - from)} /> : "—"}</dd>
         {scheduled && <dd className={styles.figureSub}>{span(from, to)}{!original && " · calendar"}</dd>}
       </div>
       <div><dt>Billed</dt><dd className={styles.figureValue}>
-        {correction != null ? <><span className={styles.original}>{hrs(row.billedMin)}</span><span className={styles.corrected}>{hrs(correction)}</span></> : hrs(row.billedMin)}
+        {correction != null ? <><span className={styles.original}><FigureHours value={hrs(row.billedMin)} /></span><span className={styles.corrected}><FigureHours value={hrs(correction)} /></span></> : <FigureHours value={hrs(row.billedMin)} />}
       </dd><dd className={styles.figureSub}>{correction != null ? `${minsWords(correction)} · corrected${row.review?.by ? ` by ${row.review.by}` : ""}` : span(row.schedFrom, row.schedTo)}</dd></div>
-      <div><dt>Clocked</dt><dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}>{clocked.value}</dd>
+      <div><dt>Clocked</dt><dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}><FigureHours value={clocked.value} /></dd>
         {clocked.sub && <dd className={styles.figureSub}>{clocked.sub}</dd>}
       </div>
     </dl>
