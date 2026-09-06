@@ -207,7 +207,13 @@ test("no corrected figure reads TBD and a set one reads before and after", () =>
   assert.deepEqual(dmodel([dflag()]).groups[0].entries[0].billing, { tbd: true });
   assert.deepEqual(
     dmodel([dflag({ billableMin: 220 })]).groups[0].entries[0].billing,
-    { set: "3.67h", mins: "3 hr 40 min", was: "4.00h" },
+    { set: "3.67h", mins: "3 hr 40 min", win: null, was: "4.00h" },
+  );
+  // the typed window rides the billing line - "the new adjusted time should
+  // reflect anywhere in all reports of corrected time"
+  assert.deepEqual(
+    dmodel([dflag({ billableMin: 220, billableFromMin: 870, billableToMin: 1090 })]).groups[0].entries[0].billing,
+    { set: "3.67h", mins: "3 hr 40 min", win: "2:30 PM - 6:10 PM", was: "4.00h" },
   );
 });
 
@@ -234,7 +240,9 @@ test("a DSN-sourced note is labeled DSN on the detailed report", () => {
 
 test("a corrected figure rides the Billed row of the detailed model", () => {
   const e = dmodel([dflag({ billableMin: 220 })]).groups[0].entries[0];
-  assert.deepEqual(e.figures[0].corrected, { h: "3.67h", mins: "3 hr 40 min" });
+  assert.deepEqual(e.figures[0].corrected, { h: "3.67h", mins: "3 hr 40 min", win: null });
+  const w = dmodel([dflag({ billableMin: 220, billableFromMin: 870, billableToMin: 1090 })]).groups[0].entries[0];
+  assert.deepEqual(w.figures[0].corrected, { h: "3.67h", mins: "3 hr 40 min", win: "2:30 PM - 6:10 PM" });
   assert.equal(dmodel([dflag()]).groups[0].entries[0].figures[0].corrected, undefined);
 });
 

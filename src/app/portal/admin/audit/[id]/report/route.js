@@ -91,6 +91,8 @@ export async function GET(req, { params }) {
         // join plus the role, the booking spans and both notes' full text.
         title: titleOf.get(r.employeeKey) || null,
         billableMin: r.billableMin,
+        billableFromMin: r.billableFromMin,
+        billableToMin: r.billableToMin,
         ...(row
           ? {
             punchIn: detailed ? row.actualFrom : clock(row.actualFrom),

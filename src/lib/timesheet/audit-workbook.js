@@ -247,6 +247,7 @@ export async function buildAuditWorkbook(id) {
     { header: "Scheduled", key: "sched", width: 19 },
     { header: "Billed", key: "billed", width: 9 },
     { header: "Corrected billable", key: "corr", width: 16 },
+    { header: "Corrected times", key: "corrTimes", width: 19 },
     { header: "Clocked", key: "clocked", width: 9 },
     { header: "Reason", key: "reason", width: 60 },
     { header: "Flagged by", key: "by", width: 18 },
@@ -260,6 +261,10 @@ export async function buildAuditWorkbook(id) {
       sched: r.schedFrom != null && r.schedTo != null ? `${ampmLabel(r.schedFrom)} - ${ampmLabel(r.schedTo)}` : "",
       billed: h(r.billedMin),
       corr: h(r.review?.billableMin),
+      // the window the correction was typed as, when the time entry made it
+      corrTimes: r.review?.billableFrom != null && r.review?.billableTo != null
+        ? `${ampmLabel(r.review.billableFrom)} - ${ampmLabel(r.review.billableTo)}`
+        : "",
       clocked: h(r.clockedMin),
       reason: r.review?.reason || "",
       by: r.review?.byLegal || "",

@@ -625,6 +625,7 @@ export async function buildAudit(id) {
       where: { shiftKey: { in: rows.map((r) => r.shiftKey) } },
       select: {
         shiftKey: true, decision: true, reason: true, billableMin: true, createdAt: true,
+        billableFromMin: true, billableToMin: true,
         decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       },
     })
@@ -637,6 +638,10 @@ export async function buildAudit(id) {
         decision: d.decision,
         reason: d.reason,
         billableMin: d.billableMin,
+        // the window the correction was typed as, when the time boxes made
+        // it - shown wherever the corrected figure shows
+        billableFrom: d.billableFromMin,
+        billableTo: d.billableToMin,
         by: d.decidedBy ? preferredName(d.decidedBy) : null,
         // the DOWNLOADABLE-DOCUMENT rule: legal name leads on paper, so the
         // reports carry it alongside the screen's preferred name

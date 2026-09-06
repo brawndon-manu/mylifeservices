@@ -39,7 +39,15 @@ function detailLine(f) {
     if (a) parts.push(a);
     if (b) parts.push(b);
   }
-  if (f.billableMin != null) parts.push(`billable set ${hrs(f.billableMin)}`);
+  if (f.billableMin != null) {
+    // the window the correction was typed as rides beside the figure -
+    // "the new adjusted time should reflect anywhere in all reports of
+    // corrected time" (Mánu 2026-09-06)
+    const win = f.billableFromMin != null && f.billableToMin != null
+      ? ` (${ampmLabel(f.billableFromMin)} - ${ampmLabel(f.billableToMin)})`
+      : "";
+    parts.push(`billable set ${hrs(f.billableMin)}${win}`);
+  }
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -231,7 +239,13 @@ export function flagReportDetailModel({ periodFrom, periodTo, flags = [], genera
           // old struck, amber beside - the CORRECTED BILLING line below stays
           const billedFig = figure("Billed", f.billedMin);
           if (f.billableMin != null) {
-            billedFig.corrected = { h: hrs(f.billableMin), mins: minsWords(f.billableMin) };
+            billedFig.corrected = {
+              h: hrs(f.billableMin),
+              mins: minsWords(f.billableMin),
+              win: f.billableFromMin != null && f.billableToMin != null
+                ? `${ampmLabel(f.billableFromMin)} - ${ampmLabel(f.billableToMin)}`
+                : null,
+            };
           }
           return {
             client: f.client || "no client on the booking",
@@ -253,7 +267,14 @@ export function flagReportDetailModel({ periodFrom, periodTo, flags = [], genera
             clock,
             billing:
               f.billableMin != null
-                ? { set: hrs(f.billableMin), mins: minsWords(f.billableMin), was: f.billedMin == null ? null : hrs(f.billedMin) }
+                ? {
+                  set: hrs(f.billableMin),
+                  mins: minsWords(f.billableMin),
+                  win: f.billableFromMin != null && f.billableToMin != null
+                    ? `${ampmLabel(f.billableFromMin)} - ${ampmLabel(f.billableToMin)}`
+                    : null,
+                  was: f.billedMin == null ? null : hrs(f.billedMin),
+                }
                 : { tbd: true },
             serviceNote: f.serviceNote || null,
             // the DSN speaks under its own name - Mánu 2026-09-05
@@ -523,6 +544,7 @@ export async function renderFlagReportDetail(model) {
             [
               [`  ${fig.corrected.h}`, bold, AMBER],
               [fig.corrected.mins ? ` (${fig.corrected.mins})` : "", italic, AMBER],
+              [fig.corrected.win ? `  ${fig.corrected.win}` : "", font, MUTED],
               ["  corrected", font, MUTED],
             ],
             VAL_X + oldW, y, 8.5,
@@ -571,6 +593,7 @@ export async function renderFlagReportDetail(model) {
           [
             [`CORRECTED BILLING SET ${e.billing.set}`, bold, AMBER],
             [e.billing.mins ? ` (${e.billing.mins})` : "", italic, AMBER],
+            [e.billing.win ? `  ${e.billing.win}` : "", font, MUTED],
             [e.billing.was ? `   was billed ${e.billing.was}` : "", font, MUTED],
           ],
           L + 12, y, 8.5,

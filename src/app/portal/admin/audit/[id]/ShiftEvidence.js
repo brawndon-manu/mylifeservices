@@ -25,7 +25,13 @@ export default function ShiftEvidence({ row }) {
       </div>
       <div><dt>Billed</dt><dd className={styles.figureValue}>
         {correction != null ? <><span className={styles.original}><FigureHours value={hrs(row.billedMin)} /></span><span className={styles.corrected}><FigureHours value={hrs(correction)} /></span></> : <FigureHours value={hrs(row.billedMin)} />}
-      </dd><dd className={styles.figureSub}>{correction != null ? `${minsWords(correction)} · corrected${row.review?.by ? ` by ${row.review.by}` : ""}` : span(row.schedFrom, row.schedTo)}</dd></div>
+      </dd><dd className={styles.figureSub}>{correction != null
+        // the typed window leads when the review carries one; otherwise the
+        // figure in words, and never the word "null" on a round figure
+        ? `${row.review?.billableFrom != null && row.review?.billableTo != null
+          ? span(row.review.billableFrom, row.review.billableTo)
+          : minsWords(correction) || hrs(correction)} · corrected${row.review?.by ? ` by ${row.review.by}` : ""}`
+        : span(row.schedFrom, row.schedTo)}</dd></div>
       <div><dt>Clocked</dt><dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}><FigureHours value={clocked.value} /></dd>
         {clocked.sub && <dd className={styles.figureSub}>{clocked.sub}</dd>}
       </div>

@@ -57,6 +57,20 @@ export async function reviewShift(formData) {
       ? Math.min(Math.round(rawBillable), 24 * 60)
       : null;
 
+  // THE WINDOW THE CORRECTION WAS TYPED AS - Mánu 2026-09-06: "the time i
+  // input needs to be part of the system now." Both ends or neither, running
+  // forward inside one day, and only ever beside a figure - a window with no
+  // billableMin is noise and is dropped, same as a half-typed one.
+  const rawFrom = num("billableFromMin");
+  const rawTo = num("billableToMin");
+  const windowOk =
+    billableMin != null
+    && rawFrom != null && rawTo != null
+    && Number.isFinite(rawFrom) && Number.isFinite(rawTo)
+    && rawFrom >= 0 && rawTo > rawFrom && rawTo <= 24 * 60;
+  const billableFromMin = windowOk ? Math.round(rawFrom) : null;
+  const billableToMin = windowOk ? Math.round(rawTo) : null;
+
   const row = {
     shiftKey,
     employeeKey: String(formData.get("employeeKey") || ""),
@@ -72,6 +86,8 @@ export async function reviewShift(formData) {
     clockedMin: num("clockedMin"),
     documentedMin: num("documentedMin"),
     billableMin,
+    billableFromMin,
+    billableToMin,
     decidedById: user.id,
   };
 
@@ -84,6 +100,7 @@ export async function reviewShift(formData) {
       decision: row.decision, reason: row.reason, decidedById: user.id,
       billedMin: row.billedMin, clockedMin: row.clockedMin, documentedMin: row.documentedMin,
       billableMin: row.billableMin,
+      billableFromMin: row.billableFromMin, billableToMin: row.billableToMin,
       service: row.service, client: row.client,
     },
   });

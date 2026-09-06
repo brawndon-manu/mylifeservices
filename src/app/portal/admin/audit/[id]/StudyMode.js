@@ -58,6 +58,9 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
   // the corrected billable time, in minutes, typed or quick-filled in the flag
   // panel. Empty string means no adjustment: the billed figure stands.
   const [billable, setBillable] = useState("");
+  // the clock window the figure was typed as - rides beside billable and
+  // lands on the review as billableFrom/ToMin
+  const [billableWin, setBillableWin] = useState(null);
   const [openNote, setOpenNote] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -124,7 +127,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
   );
   const done = at >= rows.length;
 
-  const send = useCallback(async (decision, why, billableMin = null) => {
+  const send = useCallback(async (decision, why, billableMin = null, win = null) => {
     if (!row || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -140,6 +143,10 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     body.set("clockedMin", row.clockedMin ?? "");
     body.set("documentedMin", row.documentedMin ?? "");
     if (billableMin != null) body.set("billableMin", billableMin);
+    if (billableMin != null && win) {
+      body.set("billableFromMin", win.from);
+      body.set("billableToMin", win.to);
+    }
     if (why) body.set("reason", why);
     setError("");
     let res;
@@ -147,7 +154,13 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     catch { setError("Could not save the decision. Please try again."); return; }
     finally { inFlight.current = false; setBusy(false); }
     if (!res?.ok) { setError("Could not save the decision. Please try again."); return; }
-    const review = { decision, reason: why || "", billableMin: billableMin == null ? null : Number(billableMin), by: "you" };
+    const review = {
+      decision, reason: why || "",
+      billableMin: billableMin == null ? null : Number(billableMin),
+      billableFrom: billableMin != null && win ? win.from : null,
+      billableTo: billableMin != null && win ? win.to : null,
+      by: "you",
+    };
     setReviewOverrides((v) => ({ ...v, [row.shiftKey]: review }));
     onReview?.(row.shiftKey, review);
     setDecided((d) => ({ ...d, [row.shiftKey]: decision }));
@@ -502,7 +515,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                 clockedMin={row.clockedMin}
                 documentedMin={row.documentedMin}
                 value={billable}
-                onChange={setBillable}
+                onChange={(v, w) => { setBillable(v); setBillableWin(w || null); }}
               />
 
               <div className="mt-3 flex gap-2">
@@ -514,6 +527,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                       "flagged",
                       reason.trim() || null,
                       billable !== "" && Number.isFinite(Number(billable)) ? Number(billable) : null,
+                      billableWin,
                     )
                   }
                   className="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"

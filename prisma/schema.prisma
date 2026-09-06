@@ -2136,6 +2136,14 @@ model ShiftReview {
   // billable minutes, and the client report sums billableMin ?? billedMin.
   billableMin Int?
 
+  // THE WINDOW THE CORRECTION WAS TYPED AS, 2026-09-06. Mánu: "the time i
+  // input needs to be part of the system now... the new adjusted time should
+  // reflect anywhere in all reports of corrected time." Minutes since
+  // midnight, both or neither, and only ever alongside billableMin - the
+  // figure stays the record, the window says which stretch of the day it is.
+  billableFromMin Int?
+  billableToMin   Int?
+
   decidedById String
   decidedBy   User   @relation("ShiftReviewDecidedBy", fields: [decidedById], references: [id])
 

@@ -22,6 +22,9 @@
 // Shared by the deck's flag panel and the card DecideBar, so the two places
 // cannot drift. `value` is the parent's billable state: minutes as a string,
 // "" meaning nothing recorded - exactly what the actions already send.
+// `onChange(minutes, window)` carries the typed window beside the figure -
+// "the time i input needs to be part of the system now" (2026-09-06) - as
+// {from, to} minutes when the figure came from the boxes, null otherwise.
 import { useState } from "react";
 import { hrs } from "./figures";
 import { minsWords } from "@/lib/timesheet/hours-label";
@@ -33,12 +36,12 @@ export default function BillableAdjust({ billedMin, clockedMin, documentedMin, v
   const [tTo, setTTo] = useState({ text: "", hhmm: "" });
   const clearTimes = () => { setTFrom({ text: "", hhmm: "" }); setTTo({ text: "", hhmm: "" }); };
 
-  const setAll = (min) => {
+  const setAll = (min, window = null) => {
     if (min == null || !Number.isFinite(min)) {
-      onChange("");
+      onChange("", null);
       return;
     }
-    onChange(String(Math.max(0, Math.min(Math.round(min), 1440))));
+    onChange(String(Math.max(0, Math.min(Math.round(min), 1440))), window);
   };
   // a time commits on blur or Enter, the timesheet way: loose entry
   // normalises to "03:00 PM", and once both ends read and run forward the
@@ -53,7 +56,7 @@ export default function BillableAdjust({ billedMin, clockedMin, documentedMin, v
     else setTTo(next);
     if (f.hhmm && t.hhmm) {
       const span = toMin(t.hhmm) - toMin(f.hhmm);
-      if (span > 0) setAll(span);
+      if (span > 0) setAll(span, { from: toMin(f.hhmm), to: toMin(t.hhmm) });
     }
   };
 

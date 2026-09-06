@@ -877,6 +877,9 @@ function DecideBar({ r, onReview }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   const [billable, setBillable] = useState("");
+  // the clock window the figure was typed as, when the time boxes made it -
+  // rides beside billable and lands on the review as billableFrom/ToMin
+  const [billableWin, setBillableWin] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const reasonId = useId();
@@ -901,6 +904,10 @@ function DecideBar({ r, onReview }) {
         ? Number(billable)
         : null;
     if (bm != null) body.set("billableMin", bm);
+    if (bm != null && billableWin) {
+      body.set("billableFromMin", billableWin.from);
+      body.set("billableToMin", billableWin.to);
+    }
     const why = decision === "flagged" ? reason.trim() : "";
     if (why) body.set("reason", why);
     let res;
@@ -913,10 +920,13 @@ function DecideBar({ r, onReview }) {
       by: "you",
       reason: why || null,
       billableMin: bm,
+      billableFrom: bm != null && billableWin ? billableWin.from : null,
+      billableTo: bm != null && billableWin ? billableWin.to : null,
     });
     setFlagging(false);
     setReason("");
     setBillable("");
+    setBillableWin(null);
   };
 
   return (
@@ -942,7 +952,7 @@ function DecideBar({ r, onReview }) {
             clockedMin={r.clockedMin}
             documentedMin={r.documentedMin}
             value={billable}
-            onChange={setBillable}
+            onChange={(v, w) => { setBillable(v); setBillableWin(w || null); }}
           />
           <div className="mt-2.5 flex gap-2">
             <button
@@ -955,7 +965,7 @@ function DecideBar({ r, onReview }) {
             </button>
             <button
               type="button"
-              onClick={() => { setFlagging(false); setReason(""); setBillable(""); }}
+              onClick={() => { setFlagging(false); setReason(""); setBillable(""); setBillableWin(null); }}
               className="rounded-md border border-border-strong px-3.5 py-1.5 text-sm font-medium text-muted"
             >
               Cancel

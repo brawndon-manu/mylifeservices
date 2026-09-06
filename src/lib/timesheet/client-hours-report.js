@@ -60,6 +60,10 @@ export function clientHoursModel({
       billableMin: billable,
       adjusted: r.review?.billableMin != null,
       adjustedBy: r.review?.billableMin != null ? r.review?.byLegal || null : null,
+      // the window the correction was typed as, when the reviewer used the
+      // time entry - printed beside the adjusted figure
+      adjustedFrom: r.review?.billableMin != null ? r.review?.billableFrom ?? null : null,
+      adjustedTo: r.review?.billableMin != null ? r.review?.billableTo ?? null : null,
     });
   }
 
@@ -98,7 +102,11 @@ export function clientHoursModel({
                     .join(" · "),
                   figure:
                     hrs(e.billableMin)
-                    + (e.adjusted ? ` (adjusted by ${e.adjustedBy || "the reviewer"})` : ""),
+                    + (e.adjusted
+                      ? e.adjustedFrom != null && e.adjustedTo != null
+                        ? ` (adjusted to ${clockLabel(e.adjustedFrom)}-${clockLabel(e.adjustedTo)} by ${e.adjustedBy || "the reviewer"})`
+                        : ` (adjusted by ${e.adjustedBy || "the reviewer"})`
+                      : ""),
                 })),
             }))
             .sort((a, b) => a.who.localeCompare(b.who))

@@ -62,6 +62,8 @@ export function clientDayModel(rows) {
       billableMin: billable,
       billedMin: r.billedMin ?? 0,
       corrected: r.review?.billableMin != null,
+      corrFrom: r.review?.billableMin != null ? r.review?.billableFrom ?? null : null,
+      corrTo: r.review?.billableMin != null ? r.review?.billableTo ?? null : null,
       decision: r.review?.decision || null,
     });
   }
@@ -228,7 +230,10 @@ export async function renderClientCalendars({ periodFrom, generatedOn, clients, 
         const span = s.from != null && s.to != null ? `${clockLabel(s.from)}-${clockLabel(s.to)}` : "no booked span";
         text(span, L + 12, y, { size: 8.5, color: MUTED });
         text(s.who, L + 110, y, { size: 8.5 });
-        const fig = s.corrected ? `${hrs(s.billableMin)} corrected from ${hrs(s.billedMin)}` : hrs(s.billableMin);
+        const fig = s.corrected
+          ? `${hrs(s.billableMin)} corrected from ${hrs(s.billedMin)}${
+            s.corrFrom != null && s.corrTo != null ? ` (${clockLabel(s.corrFrom)}-${clockLabel(s.corrTo)})` : ""}`
+          : hrs(s.billableMin);
         text(fig, L + 300, y, { size: 8.5, f: s.corrected ? bold : font, color: s.corrected ? AMBER : INK });
         if (s.decision === "flagged") right("FLAGGED", y, 8, bold, AMBER);
         else if (s.decision === "approved") right("approved", y, 8, font, GREEN);
