@@ -63,6 +63,12 @@ export default async function AuditBatchPage({ params }) {
             disagree with the cards behind them. */}
         <div className="flex flex-wrap gap-2">
           <a
+            href={`/portal/admin/audit/${batch.id}/workbook`}
+            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+          >
+            Download Excel
+          </a>
+          <a
             href={`/portal/admin/audit/${batch.id}/client-report`}
             target="_blank"
             className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
