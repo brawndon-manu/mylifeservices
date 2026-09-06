@@ -174,13 +174,10 @@ export default async function AuditPage({ searchParams }) {
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 transition hover:border-brand"
               >
                 <span>
-                  <span className="flex flex-wrap items-center gap-2 text-lg font-semibold text-foreground">
+                  {/* the "Audit copy" chip is gone - Mánu 2026-09-06: every
+                      batch this page lists is one, so the label said nothing */}
+                  <span className="text-lg font-semibold text-foreground">
                     {b.periodFrom} to {b.periodTo}
-                    {b.auditOnly && (
-                      <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
-                        Audit copy
-                      </span>
-                    )}
                   </span>
                   <span className="mt-0.5 block text-xs text-muted">
                     {b.serviceNotes?.noteCount || 0} notes

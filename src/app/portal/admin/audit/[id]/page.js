@@ -46,13 +46,11 @@ export default async function AuditBatchPage({ params }) {
   return (
     <section className="mx-auto max-w-[90rem] px-6 py-12 sm:py-16">
       <BackLink href="/portal/admin/audit">Back to Audit</BackLink>
-      <p className="mt-3 flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wider text-brand-dark">
+      {/* the "Audit copy" chip used to sit here - Mánu 2026-09-06: everything
+          on these pages is an audit copy now that the lane is walled off from
+          the timesheets, so the label said nothing */}
+      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
         {batch.periodFrom} to {batch.periodTo}
-        {batch.auditOnly && (
-          <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
-            Audit copy
-          </span>
-        )}
       </p>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
