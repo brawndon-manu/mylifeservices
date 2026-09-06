@@ -6,79 +6,55 @@
 // flag records nothing, and the reports keep saying CORRECTED BILLING TBD -
 // untouched looks untouched.
 //
-// Once open, the two sides of one figure: decimal hours and hr + min.
-// Typing in either side rewrites the other; minutes clamp to 0-59 and the
-// whole figure to a day, the same cap the server enforces. The chips fill
-// both sides from the figures already on the card. Clear wipes the figure
-// and collapses back to the button - a cleared adjustment is NOT a zero.
-//
-// A THIRD WAY IN, 2026-09-06 - Mánu: "the option to include the time when
-// adjusting the billable hours so it just shows the amount of time that
-// way." He reads spans off the card ("2:30p-4:45p"), so he can answer in
-// the same language: type the from and to clock times and the amount
-// derives itself into the same figure. The times are how the figure was
-// reached, not part of it - the review still stores minutes, and touching
-// the amount directly empties the time boxes so they never describe a
-// figure they no longer produce.
+// THE TIME IS THE ENTRY - Mánu 2026-09-06, in three steps: "the option to
+// include the time when adjusting the billable hours"; "when i press 3 it
+// auto goes to 3:00 PM etc. just how it is in the timesheets"; "remove the
+// billable entry and the hr and min entry... whateer time we unput it
+// should auto show the hr and minutes next the time entry of it." So the
+// panel is the chips, a from and to time, and the figure those times make,
+// shown right beside them. Both boxes run the timesheets' own
+// parseLooseTime with his workday rule and normalise on blur or Enter; the
+// review still stores minutes, exactly as before. The chips answer without
+// times and empty the boxes so they never describe a figure they did not
+// produce. Clear wipes the figure and collapses back to the button - a
+// cleared adjustment is NOT a zero.
 //
 // Shared by the deck's flag panel and the card DecideBar, so the two places
 // cannot drift. `value` is the parent's billable state: minutes as a string,
 // "" meaning nothing recorded - exactly what the actions already send.
-import { useId, useState } from "react";
+import { useState } from "react";
 import { hrs } from "./figures";
 import { minsWords } from "@/lib/timesheet/hours-label";
-import { spanMinutes } from "@/lib/timesheet/clock-input";
+import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 
 export default function BillableAdjust({ billedMin, clockedMin, documentedMin, value, onChange }) {
-  const fieldId = useId();
   const [open, setOpen] = useState(value !== "" && value != null);
-  const [dec, setDec] = useState("");
-  const [hh, setHh] = useState("");
-  const [mm, setMm] = useState("");
-  const [tFrom, setTFrom] = useState("");
-  const [tTo, setTTo] = useState("");
+  const [tFrom, setTFrom] = useState({ text: "", hhmm: "" });
+  const [tTo, setTTo] = useState({ text: "", hhmm: "" });
+  const clearTimes = () => { setTFrom({ text: "", hhmm: "" }); setTTo({ text: "", hhmm: "" }); };
 
   const setAll = (min) => {
     if (min == null || !Number.isFinite(min)) {
-      setDec(""); setHh(""); setMm("");
       onChange("");
       return;
     }
-    const m = Math.max(0, Math.min(Math.round(min), 1440));
-    setDec((m / 60).toFixed(2));
-    setHh(String(Math.floor(m / 60)));
-    setMm(String(m % 60));
-    onChange(String(m));
+    onChange(String(Math.max(0, Math.min(Math.round(min), 1440))));
   };
-  // typing a time recomputes the figure once both ends read; an amount typed
-  // directly empties the boxes instead of letting them go stale beside it
-  const fromTimes = (f, t) => {
-    setTFrom(f); setTTo(t);
-    const span = spanMinutes(f, t);
-    if (span != null) setAll(span);
-  };
-  const fromDec = (t) => {
-    setTFrom(""); setTTo("");
-    setDec(t);
-    const v = parseFloat(t);
-    if (t.trim() === "" || !Number.isFinite(v) || v < 0) { setHh(""); setMm(""); onChange(""); return; }
-    const m = Math.min(Math.round(v * 60), 1440);
-    setHh(String(Math.floor(m / 60)));
-    setMm(String(m % 60));
-    onChange(String(m));
-  };
-  const fromParts = (h, m) => {
-    setTFrom(""); setTTo("");
-    setHh(h); setMm(m);
-    if (h.trim() === "" && m.trim() === "") { setDec(""); onChange(""); return; }
-    let hn = parseInt(h, 10);
-    let mn = parseInt(m, 10);
-    if (!Number.isFinite(hn) || hn < 0) hn = 0;
-    if (!Number.isFinite(mn) || mn < 0) mn = 0;
-    if (mn > 59) { mn = 59; setMm("59"); }
-    const total = Math.min(hn * 60 + mn, 1440);
-    setDec((total / 60).toFixed(2));
-    onChange(String(total));
+  // a time commits on blur or Enter, the timesheet way: loose entry
+  // normalises to "03:00 PM", and once both ends read and run forward the
+  // figure recomputes
+  const toMin = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+  const commitTime = (side, text) => {
+    const hhmm = parseLooseTime(text, { assumeWorkday: true });
+    const next = hhmm ? { text: formatTimeDisplay(hhmm), hhmm } : { text, hhmm: "" };
+    const f = side === "from" ? next : tFrom;
+    const t = side === "to" ? next : tTo;
+    if (side === "from") setTFrom(next);
+    else setTTo(next);
+    if (f.hhmm && t.hhmm) {
+      const span = toMin(t.hhmm) - toMin(f.hhmm);
+      if (span > 0) setAll(span);
+    }
   };
 
   const min = value !== "" && value != null && Number.isFinite(Number(value)) ? Number(value) : null;
@@ -103,82 +79,57 @@ export default function BillableAdjust({ billedMin, clockedMin, documentedMin, v
     <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
         {clockedMin != null && (
-          <button type="button" onClick={() => { setTFrom(""); setTTo(""); setAll(clockedMin); }} className={chip}>
+          <button type="button" onClick={() => { clearTimes(); setAll(clockedMin); }} className={chip}>
             Clocked · {hrs(clockedMin)}
           </button>
         )}
         {documentedMin != null && documentedMin !== clockedMin && (
-          <button type="button" onClick={() => { setTFrom(""); setTTo(""); setAll(documentedMin); }} className={chip}>
+          <button type="button" onClick={() => { clearTimes(); setAll(documentedMin); }} className={chip}>
             Documented · {hrs(documentedMin)}
           </button>
         )}
-        <button type="button" onClick={() => { setTFrom(""); setTTo(""); setAll(0); }} className={chip}>
+        <button type="button" onClick={() => { clearTimes(); setAll(0); }} className={chip}>
           Nothing billable
         </button>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2.5">
-        <label className="text-xs text-muted" htmlFor={fieldId}>Billable</label>
+        <span className="text-xs text-muted">Time</span>
         <input
-          id={fieldId}
-          inputMode="decimal"
-          value={dec}
-          onChange={(e) => fromDec(e.target.value)}
-          placeholder={billedMin != null ? (billedMin / 60).toFixed(2) : "0.00"}
-          className={`${box} w-20`}
+          aria-label="billable from time"
+          value={tFrom.text}
+          onChange={(e) => setTFrom({ text: e.target.value, hhmm: "" })}
+          onBlur={(e) => commitTime("from", e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+          placeholder="3:00 PM"
+          className={`${box} w-24`}
         />
-        <span className="text-xs text-muted">h</span>
-        <span className="text-sm text-faint">=</span>
+        <span className="text-xs text-muted">to</span>
         <input
-          aria-label="hours"
-          inputMode="numeric"
-          value={hh}
-          onChange={(e) => fromParts(e.target.value, mm)}
-          className={`${box} w-14`}
+          aria-label="billable to time"
+          value={tTo.text}
+          onChange={(e) => setTTo({ text: e.target.value, hhmm: "" })}
+          onBlur={(e) => commitTime("to", e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+          placeholder="4:45 PM"
+          className={`${box} w-24`}
         />
-        <span className="text-xs text-muted">hr</span>
-        <input
-          aria-label="minutes"
-          inputMode="numeric"
-          value={mm}
-          onChange={(e) => fromParts(hh, e.target.value)}
-          className={`${box} w-14`}
-        />
-        <span className="text-xs text-muted">min</span>
+        {min != null && (
+          <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+            {hrs(min)}
+            {minsWords(min) ? ` (${minsWords(min)})` : ""}
+            {billedMin != null && (
+              <span className="font-normal text-muted"> · was billed {hrs(billedMin)}</span>
+            )}
+          </span>
+        )}
         <button
           type="button"
-          onClick={() => { setAll(null); setTFrom(""); setTTo(""); setOpen(false); }}
+          onClick={() => { setAll(null); clearTimes(); setOpen(false); }}
           className="text-xs font-medium text-muted underline underline-offset-4 hover:text-foreground"
         >
           Clear the adjustment
         </button>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2.5">
-        <span className="text-xs text-muted">or the time</span>
-        <input
-          aria-label="billable from time"
-          value={tFrom}
-          onChange={(e) => fromTimes(e.target.value, tTo)}
-          placeholder="2:30p"
-          className={`${box} w-20`}
-        />
-        <span className="text-xs text-muted">to</span>
-        <input
-          aria-label="billable to time"
-          value={tTo}
-          onChange={(e) => fromTimes(tFrom, e.target.value)}
-          placeholder="4:45p"
-          className={`${box} w-20`}
-        />
-      </div>
-      {min != null && (
-        <p className="mt-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
-          Billable set {hrs(min)}
-          {minsWords(min) ? ` (${minsWords(min)})` : ""}
-          {billedMin != null && (
-            <span className="font-normal text-muted"> · was billed {hrs(billedMin)}</span>
-          )}
-        </p>
-      )}
     </div>
   );
 }
