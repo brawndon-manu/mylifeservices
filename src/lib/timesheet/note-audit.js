@@ -84,9 +84,9 @@ export const AUDIT_RULES = {
 // sentences are the whole user interface of the rule, so they live beside it.
 export const AUDIT_REASONS = {
   "no-note": {
-    label: "No service note",
+    label: "No DSN or service note",
     weight: 100,
-    describe: () => "The shift was billed and no service note was filed against it.",
+    describe: () => "The shift was billed and no DSN or service note was filed against it.",
   },
   "session-called-off": {
     label: "The note says the session was called off",

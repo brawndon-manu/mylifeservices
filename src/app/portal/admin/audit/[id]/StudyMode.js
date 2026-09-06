@@ -541,7 +541,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-faint">No service note was filed against this shift.</p>
+                <p className="text-sm text-faint">No DSN or service note was filed against this shift.</p>
               )}
             </div>
 
