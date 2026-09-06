@@ -157,7 +157,9 @@
   .sidebar { border-radius: 16px 16px 0 0; border-right: 0; border-bottom: 1px solid var(--border); padding: 12px; }
   .brand { display: inline-block; font-size: 18px; padding: 0 10px 10px; }
   .back { font-size: 11px; }
-  .sidebar nav { display: flex; overflow-x: auto; padding-bottom: 2px; gap: 3px; }
+  /* wrap rather than scroll: a hidden horizontal scrollbar was eating the
+     last entries (Reports sat off-screen with nothing saying so) */
+  .sidebar nav { display: flex; flex-wrap: wrap; gap: 3px; }
   .sidebar nav :is(a, button) { width: auto; flex-shrink: 0; padding: 7px 10px; font-size: 12px; }
   .navLabel, .sidebarNote { display: none; }
   .content { padding: 22px 14px 32px; }
