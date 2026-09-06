@@ -58,6 +58,7 @@ export function clientHoursModel({
       end: r.schedTo ?? null,
       billableMin: billable,
       adjusted: r.review?.billableMin != null,
+      adjustedBy: r.review?.billableMin != null ? r.review?.byLegal || null : null,
     });
   }
 
@@ -94,7 +95,9 @@ export function clientHoursModel({
                   ]
                     .filter(Boolean)
                     .join(" · "),
-                  figure: hrs(e.billableMin) + (e.adjusted ? " (adjusted by the reviewer)" : ""),
+                  figure:
+                    hrs(e.billableMin)
+                    + (e.adjusted ? ` (adjusted by ${e.adjustedBy || "the reviewer"})` : ""),
                 })),
             }))
             .sort((a, b) => a.who.localeCompare(b.who))

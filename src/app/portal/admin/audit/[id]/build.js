@@ -626,6 +626,9 @@ export async function buildAudit(id) {
         reason: d.reason,
         billableMin: d.billableMin,
         by: d.decidedBy ? preferredName(d.decidedBy) : null,
+        // the DOWNLOADABLE-DOCUMENT rule: legal name leads on paper, so the
+        // reports carry it alongside the screen's preferred name
+        byLegal: d.decidedBy?.name || null,
         at: d.createdAt.toISOString(),
       }
       : null;
