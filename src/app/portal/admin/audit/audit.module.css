@@ -25,6 +25,7 @@
   font-size: 14px;
   line-height: 1.5;
   isolation: isolate;
+  color-scheme: light;
 }
 .workspace :is(button, summary, a, input, select, textarea):focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .workspace button:not(:disabled), .workspace summary { cursor: pointer; }
@@ -41,7 +42,6 @@
 .main { min-width: 0; }
 .topbar { min-height: 58px; padding: 12px 28px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; color: var(--faint); font-size: 11px; }
 .topbar > span > span { margin: 0 9px; }
-.appearance { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 11px; }
 .content { padding: 32px clamp(18px, 3vw, 40px) 48px; }
 .heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 24px; }
 .heading h1 { font-size: clamp(26px, 3vw, 32px); line-height: 1.15; letter-spacing: -.8px; font-weight: 650; }
@@ -161,9 +161,9 @@
   .sidebar nav :is(a, button) { width: auto; flex-shrink: 0; padding: 7px 10px; font-size: 12px; }
   .navLabel, .sidebarNote { display: none; }
   .content { padding: 22px 14px 32px; }
-  .topbar { padding: 10px 14px; }
-  .topbar > span { display: none; }
-  .topbar { justify-content: flex-end; }
+  /* nothing left to show up here on a phone since the appearance button
+     moved out - the breadcrumb alone is not worth the strip of space */
+  .topbar { display: none; }
   .heading { align-items: flex-start; }
   .times { gap: 10px; }
   .figureValue { font-size: 20px; }
@@ -175,7 +175,14 @@
   .sectionHeading { flex-wrap: wrap; }
 }
 
-.workspace[data-appearance="dark"] {
+/* THE PORTAL'S APPEARANCE GOVERNS. The accessibility menu at the bottom
+   right sets .dark on <html> for Dim and Night, and .night on top for pure
+   OLED black - the same classes globals.css keys the site tokens off. The
+   workspace restates its own palette under those classes instead of running
+   a private appearance, so the one control at the bottom right moves this
+   screen with every other page. */
+:global(.dark) .workspace {
+  color-scheme: dark;
   --background: #171719;
   --surface: #202023;
   --surface-2: #28282b;
@@ -190,22 +197,15 @@
   --green: #55d692;
   --amber: #e9b453;
 }
-@media (prefers-color-scheme: dark) {
-  .workspace[data-appearance="system"] {
-  --background: #171719;
-  --surface: #202023;
-  --surface-2: #28282b;
-  --surface-3: #333337;
-  --border: #36363a;
-  --border-strong: #505057;
-  --foreground: #f5f5f7;
-  --muted: #b5b5bd;
-  --faint: #a0a0aa;
-  --accent: #65afff;
-  --red: #ff6962;
-  --green: #55d692;
-  --amber: #e9b453;
-  }
+/* Night layers on Dim exactly as the site does: backgrounds and borders to
+   true black and near-black, text and status hues unchanged. */
+:global(.dark.night) .workspace {
+  --background: #000000;
+  --surface: #0b0b0d;
+  --surface-2: #131316;
+  --surface-3: #1a1a1f;
+  --border: #232327;
+  --border-strong: #303036;
 }
 
 .workspace button[class*="bg-amber-"] { background: var(--amber); color: var(--background); }

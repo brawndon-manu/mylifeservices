@@ -1,42 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
 import styles from "./audit.module.css";
 
-const APPEARANCES = ["System", "Light", "Dark"];
-const storageKey = "audit-appearance";
-let fallbackAppearance = "System";
-function subscribe(callback) {
-  window.addEventListener("storage", callback);
-  window.addEventListener("audit-appearance", callback);
-  return () => {
-    window.removeEventListener("storage", callback);
-    window.removeEventListener("audit-appearance", callback);
-  };
-}
-function readAppearance() {
-  try {
-    const saved = localStorage.getItem(storageKey);
-    return APPEARANCES.includes(saved) ? saved : "System";
-  } catch { return fallbackAppearance; }
-}
-
+// THE PORTAL'S APPEARANCE GOVERNS THIS WORKSPACE. The accessibility menu at
+// the bottom right sets .dark / .night on <html>, restored by the no-flash
+// script like every other page; the module's :global(.dark) blocks restate
+// the workspace palette for each. The workspace used to carry its own
+// appearance button and storage, which meant the audit could disagree with
+// the rest of the portal - one control now.
 export default function AuditWorkspace({ children, page = "home", view = "shifts", onView, hasLost = false, canUpload = true }) {
-  const appearance = useSyncExternalStore(subscribe, readAppearance, () => "System");
-  const cycle = () => {
-    const next = APPEARANCES[(APPEARANCES.indexOf(appearance) + 1) % APPEARANCES.length];
-    fallbackAppearance = next;
-    try { localStorage.setItem(storageKey, next); } catch { /* Keep cycling when storage is unavailable. */ }
-    window.dispatchEvent(new Event("audit-appearance"));
-  };
   const views = [
     ["shifts", "Shifts"], ["focus", "Focused review"], ["employee", "Employees"],
     ["client", "Clients"], ["orphans", "Unmatched notes"],
     ...(hasLost ? [["lost", "Disappeared shifts"]] : []), ["reports", "Reports"],
   ];
   return (
-    <section className={styles.workspace} style={{ colorScheme: appearance === "System" ? "light dark" : appearance.toLowerCase() }} data-appearance={appearance.toLowerCase()}>
+    <section className={styles.workspace}>
       <aside className={styles.sidebar}>
         <Link href="/portal/admin" className={styles.back}>‹ Admin</Link>
         <p className={styles.brand}>Audit</p>
@@ -53,7 +33,6 @@ export default function AuditWorkspace({ children, page = "home", view = "shifts
       <div className={styles.main}>
         <div className={styles.topbar}>
           <span>My Life Services <span aria-hidden="true">/</span> Audit</span>
-          <button type="button" className={styles.appearance} onClick={cycle} title="Cycle between System, Light and Dark">◐ <span>Appearance: {appearance}</span></button>
         </div>
         <div className={styles.content}>{children}</div>
       </div>
