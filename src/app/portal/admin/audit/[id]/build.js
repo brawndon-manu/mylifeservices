@@ -760,6 +760,31 @@ export async function buildAudit(id) {
     .map((e) => ({ ...e, period: periodOf(e.date) }))
     .sort((a, b) => a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
 
+  // STAFF NAMES ALWAYS READ FIRST NAME FIRST - Mánu 2026-09-06: "make every
+  // staff always first name then last name." The roster and the portal
+  // already spell everyone that way; this catches the fallbacks, where a
+  // person QSP knows and the roster does not would otherwise surface in the
+  // export's own "Last, First". Every screen and document reads these
+  // fields, so the rule holds everywhere at once. Client names keep the
+  // roster's comma form and each surface chooses; keys are untouched.
+  const unComma = (s) => {
+    const v = String(s || "");
+    const i = v.indexOf(",");
+    return i < 0 ? v : `${v.slice(i + 1).trim()} ${v.slice(0, i).trim()}`;
+  };
+  for (const r of rows) {
+    r.who = unComma(r.who);
+    if (r.whoLegal) r.whoLegal = unComma(r.whoLegal);
+  }
+  for (const o of orphans) {
+    o.who = unComma(o.who);
+    if (o.whoLegal) o.whoLegal = unComma(o.whoLegal);
+  }
+  for (const l of lost) {
+    l.who = unComma(l.who);
+    if (l.whoLegal) l.whoLegal = unComma(l.whoLegal);
+  }
+
   rows.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
   return {
     batch,

@@ -79,6 +79,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     });
   const [q, setQ] = useState("");
   const [studying, setStudying] = useState(false);
+  // staff names flip to "Last, First" only while the Last name sort is
+  // pressed; grouping, search and drill-through keep the plain name
+  const staffName = sortKeys.includes("last") ? lastFirst : (n) => n;
   // DECIDING FROM THE CARDS, 2026-09-03. Mánu: "i should be able to add the
   // correct hours in the main menu not just in the one by one view." A card's
   // decision lands here so the counts and the piles move without re-running
@@ -292,9 +295,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
         </div>
       </details>}
       {view === "orphans" ? (
-        <Orphans rows={sortOrphans(period === "all" ? orphans : orphans.filter((n) => n.period === period), sortKeys)} />
+        <Orphans rows={sortOrphans(period === "all" ? orphans : orphans.filter((n) => n.period === period), sortKeys)} staffName={staffName} />
       ) : view === "lost" ? (
-        <LostShifts rows={sortOrphans(period === "all" ? lost : lost.filter((n) => n.period === period), sortKeys)} />
+        <LostShifts rows={sortOrphans(period === "all" ? lost : lost.filter((n) => n.period === period), sortKeys)} staffName={staffName} />
       ) : shown.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
           {decision === "flagged"
@@ -308,13 +311,13 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           {grouped.map(([name, list]) => (
             <div key={name}>
               <h2 className="flex items-baseline gap-2 text-sm font-bold uppercase tracking-wide text-faint">
-                {name}
+                {staffName(name)}
                 <span className="text-[11px] font-semibold normal-case tracking-normal tabular-nums">
                   {list.length} {list.length === 1 ? "shift" : "shifts"}
                 </span>
               </h2>
               <div className="mt-2 space-y-3">
-                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} />)}
+                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} />)}
               </div>
             </div>
           ))}
@@ -347,7 +350,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
 // for it, or it is a SECOND note for a client whose booking already has one -
 // a visit written up twice. Both are worth a look and neither belongs on
 // somebody else's shift, which is where they used to end up.
-function Orphans({ rows }) {
+function Orphans({ rows, staffName = (n) => n }) {
   if (!rows.length) {
     return (
       <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
@@ -365,7 +368,7 @@ function Orphans({ rows }) {
         {rows.map((n, i) => (
           <li key={i} className="rounded-xl border border-border bg-surface p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <span className="text-base font-semibold text-foreground">{n.who}</span>
+              <span className="text-base font-semibold text-foreground">{staffName(n.who)}</span>
               <span className="text-sm tabular-nums text-muted">{n.date}</span>
             </div>
             <p className="mt-0.5 text-sm text-muted">
@@ -389,7 +392,7 @@ function Orphans({ rows }) {
 // view is where a person reads which shifts those were, with the reading as
 // it stood when the decision was made - the shift itself is gone, so that
 // snapshot is the only record left.
-function LostShifts({ rows }) {
+function LostShifts({ rows, staffName = (n) => n }) {
   if (!rows.length) {
     return (
       <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
@@ -408,7 +411,7 @@ function LostShifts({ rows }) {
         {rows.map((n, i) => (
           <li key={n.shiftKey || i} className="rounded-xl border border-border bg-surface p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <span className="text-base font-semibold text-foreground">{n.who}</span>
+              <span className="text-base font-semibold text-foreground">{staffName(n.who)}</span>
               <span className="text-sm tabular-nums text-muted">{n.date}</span>
             </div>
             <p className="mt-0.5 text-sm text-muted">
@@ -455,6 +458,15 @@ const nameParts = (name) => {
   return { first: bits[0] || "", last: bits[bits.length - 1] || "" };
 };
 
+// STAFF READ FIRST NAME FIRST, EVERYWHERE - Mánu 2026-09-06: "make every
+// staff always first name then last name. only if we sort by last name
+// should it be last name, first." So this flip belongs to that one sort
+// alone, where it shows the surname the list is ordered by.
+const lastFirst = (name) => {
+  const { first, last } = nameParts(name);
+  return first && last && first !== last ? `${last}, ${first}` : name;
+};
+
 // orphans sort on the same pressed keys where they apply
 function sortOrphans(list, sortKeys) {
   const keys = sortKeys.filter((k) => ["date", "first", "last"].includes(k));
@@ -491,6 +503,9 @@ const ROLL_SORTS = {
 const SORT_CONFLICTS = [["first", "last"]];
 
 function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [] }) {
+  // the Last name sort flips STAFF names to "Last, First" - the employee
+  // roll and the staff on its unfolded cards; clients keep the roster form
+  const staffName = sortKeys.includes("last") && what === "Employee" ? lastFirst : (n) => n;
   const ordered = useMemo(() => {
     if (!sortKeys.length) return rows;
     return [...rows].sort((a, b) => {
@@ -568,7 +583,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                         {openGroups.has(g.name) ? "\u25be" : "\u25b8"}
                       </button>
                     )}
-                    <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(g.name); }}>{g.name}</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(g.name); }}>{staffName(g.name)}</button>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">
@@ -619,7 +634,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                     <td colSpan={withAuth ? 12 : 10} className="bg-surface-2/50 px-3 py-3">
                       <div className="space-y-3">
                         {rowsFor(g.name).map((r) => (
-                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} />
+                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} />
                         ))}
                       </div>
                     </td>
@@ -643,7 +658,7 @@ function Count({ n, tone }) {
   );
 }
 
-function Card({ r, onReview, title }) {
+function Card({ r, onReview, title, staffName = (n) => n }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
@@ -651,7 +666,7 @@ function Card({ r, onReview, title }) {
     <article className={styles.card} data-decision={r.review?.decision || "open"}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className="text-base font-semibold text-foreground">
-          {r.who}
+          {staffName(r.who)}
           {title && <span className="ml-2 text-xs font-medium text-muted">{title}</span>}
         </span>
         <span className="text-sm tabular-nums text-muted">{r.date}</span>
