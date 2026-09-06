@@ -37,6 +37,7 @@ const DECISIONS = [
 const VIEWS = [
   { key: "shifts", label: "Every shift" },
   { key: "orphans", label: "Notes with no shift" },
+  { key: "lost", label: "Gone from the upload" },
   { key: "employee", label: "By employee", of: (r) => r.who },
   { key: "client", label: "By client", of: (r) => r.client || "No client on the booking" },
 ];
@@ -49,7 +50,7 @@ const TONE = {
   flagged: "border-2 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
-export default function AuditCards({ rows: rowsProp, totals, orphans = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -337,7 +338,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <div className="flex rounded-md border border-border-strong p-0.5">
-          {VIEWS.map((v) => (
+          {VIEWS.filter((v) => v.key !== "lost" || lost.length > 0).map((v) => (
             <button
               key={v.key}
               type="button"
@@ -409,7 +410,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Order by</span>
         {Object.entries(ROLL_SORTS)
-          .filter(([k]) => view !== "orphans" || ["date", "first", "last"].includes(k))
+          .filter(([k]) => !["orphans", "lost"].includes(view) || ["date", "first", "last"].includes(k))
           .map(([k, v]) => (
             <button
               key={k}
@@ -429,6 +430,8 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], perio
 
       {view === "orphans" ? (
         <Orphans rows={sortOrphans(period === "all" ? orphans : orphans.filter((n) => n.period === period), sortKeys)} />
+      ) : view === "lost" ? (
+        <LostShifts rows={sortOrphans(period === "all" ? lost : lost.filter((n) => n.period === period), sortKeys)} />
       ) : shown.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
           {decision === "flagged"
@@ -507,6 +510,61 @@ function Orphans({ rows }) {
             </p>
             {n.summary && (
               <p className="mt-2 text-sm leading-relaxed text-faint">{n.summary}…</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// SHIFTS AN EARLIER COPY HELD THAT THE LATEST UPLOAD DOES NOT - Mánu
+// 2026-09-06: "flag as well... if entire shifts have disapeared." Reviewed
+// ones were already pulled back to Flagged when the upload noticed; this
+// view is where a person reads which shifts those were, with the reading as
+// it stood when the decision was made - the shift itself is gone, so that
+// snapshot is the only record left.
+function LostShifts({ rows }) {
+  if (!rows.length) {
+    return (
+      <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
+        Every shift from the earlier copies is still in the latest upload.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="mt-4 text-xs text-faint">
+        {rows.length} {rows.length === 1 ? "shift" : "shifts"} from an earlier copy of this period
+        {rows.length === 1 ? " is" : " are"} not in the latest upload. Reviewed ones were flagged
+        when it happened.
+      </p>
+      <ul className="mt-2 space-y-3">
+        {rows.map((n, i) => (
+          <li key={n.shiftKey || i} className="rounded-xl border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span className="text-base font-semibold text-foreground">{n.who}</span>
+              <span className="text-sm tabular-nums text-muted">{n.date}</span>
+            </div>
+            <p className="mt-0.5 text-sm text-muted">
+              {n.client || "no client on the booking"}
+              {n.billedMin != null ? ` · ${(n.billedMin / 60).toFixed(2)}h billed` : ""}
+              {n.service ? ` · ${n.service}` : ""}
+            </p>
+            {n.review ? (
+              <p
+                className={`mt-2 text-xs font-semibold ${
+                  n.review.decision === "approved"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-amber-600 dark:text-amber-400"
+                }`}
+              >
+                {n.review.decision === "approved" ? "Approved" : "Flagged"}
+                {n.review.by ? ` by ${n.review.by}` : ""}
+                {n.review.reason ? ` - ${n.review.reason.replace(/\.$/, "")}` : ""}
+              </p>
+            ) : (
+              <p className="mt-2 text-xs font-semibold text-faint">Nobody had ruled on it.</p>
             )}
           </li>
         ))}
@@ -879,7 +937,8 @@ function Card({ r, onReview, title }) {
       {r.changed && (
         <p className="mt-2 text-xs font-semibold text-sky-700 dark:text-sky-300">
           Changed since the previous copy:{" "}
-          {r.changed.map((k) => ({ new: "new shift", hours: "hours moved", note: "note added" })[k] || k).join(", ")}.
+          {r.changedDetail
+            || r.changed.map((k) => ({ new: "new shift", hours: "hours moved", note: "note changed", "note-gone": "note gone" })[k] || k).join(", ")}.
         </p>
       )}
 

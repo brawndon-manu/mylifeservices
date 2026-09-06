@@ -15,6 +15,7 @@ import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import { splitSharedSessions } from "@/lib/timesheet/session-split";
 import { stampOverlaps } from "@/lib/timesheet/audit-overlaps";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
+import { periodDates } from "@/lib/timesheet/period-of";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -703,14 +704,67 @@ export async function buildAudit(id) {
 
   // WHAT MOVED SINCE THE PREVIOUS COPY, stamped per row off the diff the
   // upload stored - see audit-changes.js. Rows a fresh single upload has no
-  // baseline for carry null and the screen shows no chip.
+  // baseline for carry null and the screen shows no chip; the detail sentence
+  // rides beside the kinds so the card can say what moved in words.
   const changedMap = batch.auditChanges?.changed || null;
-  for (const r of rows) r.changed = changedMap ? changedMap[r.shiftKey] || null : null;
+  const detailMap = batch.auditChanges?.details || null;
+  for (const r of rows) {
+    r.changed = changedMap ? changedMap[r.shiftKey] || null : null;
+    r.changedDetail = r.changed && detailMap ? detailMap[r.shiftKey] || null : null;
+  }
+
+  // SHIFTS THE UPLOAD NO LONGER CARRIES - Mánu 2026-09-06: "flag as well...
+  // if entire shifts have disapeared." Two sources, united by key: every
+  // decision standing on a day of this period whose shift has no row (found
+  // whenever it vanished - ShiftReview is only ever written from this audit
+  // lane), and the last diff's gone list, which also knows the shifts nobody
+  // had ruled on yet. The re-flagging itself happened at upload; this is the
+  // screen's copy of the fact.
+  const rowKeys = new Set(rows.map((r) => r.shiftKey));
+  const lostByKey = new Map();
+  const lostDecisions = await prisma.shiftReview.findMany({
+    where: { date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
+    select: {
+      shiftKey: true, employeeKey: true, date: true, client: true, service: true,
+      decision: true, reason: true, billedMin: true, billableMin: true,
+      decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+    },
+  });
+  for (const d of lostDecisions) {
+    if (rowKeys.has(d.shiftKey)) continue;
+    lostByKey.set(d.shiftKey, {
+      shiftKey: d.shiftKey,
+      who: namesSeen.get(d.employeeKey) || d.employeeKey,
+      whoLegal: legalOf.get(d.employeeKey) || namesSeen.get(d.employeeKey) || d.employeeKey,
+      date: d.date,
+      client: d.client,
+      service: d.service,
+      // the figures as they stood when the decision was made - the shift
+      // itself is gone, so these are the only reading left
+      billedMin: d.billedMin,
+      review: {
+        decision: d.decision,
+        reason: d.reason,
+        billableMin: d.billableMin,
+        by: d.decidedBy ? preferredName(d.decidedBy) : null,
+        byLegal: d.decidedBy?.name || null,
+      },
+    });
+  }
+  const goneList = Array.isArray(batch.auditChanges?.gone) ? batch.auditChanges.gone : [];
+  for (const g of goneList) {
+    if (rowKeys.has(g.shiftKey) || lostByKey.has(g.shiftKey)) continue;
+    lostByKey.set(g.shiftKey, { ...g, review: null });
+  }
+  const lost = [...lostByKey.values()]
+    .map((e) => ({ ...e, period: periodOf(e.date) }))
+    .sort((a, b) => a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
 
   rows.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
   return {
     batch,
     rows,
+    lost,
     orphans,
     notesCount: notes.length,
     clockLoaded,

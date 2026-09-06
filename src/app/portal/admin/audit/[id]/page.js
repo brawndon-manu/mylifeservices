@@ -29,7 +29,7 @@ export default async function AuditBatchPage({ params }) {
   const { id } = await params;
   const data = await buildAudit(id);
   if (!data) notFound();
-  const { batch, rows, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations } = data;
+  const { batch, rows, lost, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations } = data;
 
   // the deck prints the employee's role beside the name - resolved by the
   // schedule key the rows already carry, exactly like the flagged report
@@ -113,6 +113,7 @@ export default async function AuditBatchPage({ params }) {
         rows={rows}
         titles={titles}
         orphans={orphans}
+        lost={lost}
         authorized={hasAuthorizations ? authorized : null}
         authMonthLabel={authMonthLabel}
         periods={periodLabels}

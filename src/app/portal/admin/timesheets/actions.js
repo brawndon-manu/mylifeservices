@@ -1589,7 +1589,7 @@ export async function uploadBatch(formData) {
           { from: batch.periodFrom, to: batch.periodTo },
         );
         if (oldData && newData && overlap) {
-          const { changed, gone } = diffAuditRows(oldData.rows, newData.rows, overlap);
+          const { changed, details, gone } = diffAuditRows(oldData.rows, newData.rows, overlap);
           await prisma.timesheetBatch.update({
             where: { id: batch.id },
             data: {
@@ -1599,9 +1599,37 @@ export async function uploadBatch(formData) {
                 overlap,
                 gone,
                 changed,
+                details,
               },
             },
           });
+          // A SHIFT SOMEBODY ALREADY RULED ON DOES NOT GET TO CHANGE QUIETLY -
+          // Mánu 2026-09-06: "if new service, schedule, or DSN changes and
+          // there was already a flag or approval or edited time then flag
+          // those for adjusted after already reviewed and say what changed...
+          // flag as well if note has disapeared! or if entire shifts have
+          // disapeared." The plan is pure and tested; this only writes it.
+          const touched = [...Object.keys(changed), ...gone.map((g) => g.shiftKey)];
+          if (touched.length) {
+            const { adjustedAfterReviewPlan } = await import("@/lib/timesheet/audit-changes");
+            const reviews = await prisma.shiftReview.findMany({
+              where: { shiftKey: { in: touched } },
+              select: {
+                shiftKey: true, decision: true, reason: true,
+                decidedBy: { select: { name: true } },
+              },
+            });
+            const flips = adjustedAfterReviewPlan({ changed, details, gone }, reviews);
+            for (const f of flips) {
+              await prisma.shiftReview.update({
+                where: { shiftKey: f.shiftKey },
+                data: { decision: "flagged", reason: f.reason },
+              });
+            }
+            if (flips.length) {
+              console.log(`audit re-upload: ${flips.length} reviewed shift(s) pulled back to flagged for changes`);
+            }
+          }
         }
       }
     } catch (e) {
