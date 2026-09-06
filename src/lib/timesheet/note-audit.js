@@ -85,8 +85,13 @@ export const AUDIT_RULES = {
 export const AUDIT_REASONS = {
   "no-note": {
     label: "No DSN or service note",
+    // the sentence counts what is actually absent: with no schedule note
+    // either, all three are named; with one, it is named as the only record
     weight: 100,
-    describe: () => "The shift was billed and no DSN or service note was filed against it.",
+    describe: (f) =>
+      f.schedNote
+        ? "The shift was billed with no DSN or service note. The schedule note is the only record."
+        : "The shift was billed and no DSN, service note, or schedule note was filed against it.",
   },
   "session-called-off": {
     label: "The note says the session was called off",
@@ -175,7 +180,7 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
 
   if (!note) {
     // silence on a shift that was never going to have one, rather than a finding
-    if (NOTE_EXPECTED(shift?.service)) out.push({ kind: "no-note", billedMin });
+    if (NOTE_EXPECTED(shift?.service)) out.push({ kind: "no-note", billedMin, schedNote: !!shift?.scheduleNote });
   } else {
     if (sessionCalledOff(note)) out.push({ kind: "session-called-off", billedMin });
 
