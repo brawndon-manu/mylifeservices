@@ -293,7 +293,25 @@ const BRAND = rgb(0.086, 0.325, 0.529);
 const FLAG = rgb(0.7, 0.11, 0.11);
 const GRID = rgb(0.75, 0.79, 0.83);
 
+// STAFF PROSE MEETS A 1985 CHARACTER SET. The notes ride in from phones -
+// zero-width spaces, soft hyphens, the odd emoji - and WinAnsi (the
+// standard-font encoding) throws on anything it cannot hold, which took the
+// whole detailed report down on one invisible character (0x200B, found by
+// Mánu clicking the button). Invisible characters vanish, line separators
+// become spaces, and anything else beyond the encoding becomes "?" rather
+// than a 500.
+const WINANSI_EXTRA = new Set(
+  "\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178",
+);
+export function pdfText(s) {
+  return String(s ?? "")
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")
+    .replace(/[\u2028\u2029]/g, " ")
+    .replace(/./gu, (ch) => (ch.charCodeAt(0) <= 0xff || WINANSI_EXTRA.has(ch) ? ch : "?"));
+}
+
 function wrapAt(str, maxW, font, size) {
+  str = pdfText(str);
   const out = [];
   let line = "";
   for (const w of String(str).split(/\s+/)) {
@@ -321,7 +339,7 @@ export async function renderFlagReport(model) {
   let page = null;
   let y = 0;
   const text = (s, x, yy, { size = 9, f = font, color = INK } = {}) =>
-    page.drawText(String(s), { x, y: yy, size, font: f, color });
+    page.drawText(pdfText(s), { x, y: yy, size, font: f, color });
 
   const newPage = (first = false) => {
     page = doc.addPage([PAGE_W, PAGE_H]);
@@ -428,7 +446,9 @@ export async function renderFlagReportDetail(model) {
   let page = null;
   let y = 0;
   const text = (s, x, yy, { size = 9, f = font, color = INK } = {}) =>
-    page.drawText(String(s), { x, y: yy, size, font: f, color });
+    // the dingbats font draws its own glyphs (the checks and crosses) and
+    // they sit above WinAnsi on purpose - never run them through pdfText
+    page.drawText(f === dings ? String(s) : pdfText(s), { x, y: yy, size, font: f, color });
   const mark = (v, x, yy) => {
     if (v === "yes") text("✔", x, yy, { size: 8, f: dings, color: GREEN });
     else if (v === "no") text("✘", x, yy, { size: 8, f: dings, color: FLAG });
@@ -437,10 +457,11 @@ export async function renderFlagReportDetail(model) {
   // a run of differently-styled pieces on one baseline
   const pieces = (segs, x, yy, size) => {
     let cx = x;
-    for (const [s, f, c] of segs) {
-      if (!s) continue;
-      text(s, cx, yy, { size, f, color: c });
-      cx += f.widthOfTextAtSize(s, size);
+    for (const [raw, f, c] of segs) {
+      if (!raw) continue;
+      const safe = pdfText(raw);
+      text(safe, cx, yy, { size, f, color: c });
+      cx += f.widthOfTextAtSize(safe, size);
     }
   };
 

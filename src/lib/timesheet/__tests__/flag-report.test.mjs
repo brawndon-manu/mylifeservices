@@ -237,3 +237,12 @@ test("a corrected figure rides the Billed row of the detailed model", () => {
   assert.deepEqual(e.figures[0].corrected, { h: "3.67h", mins: "3 hr 40 min" });
   assert.equal(dmodel([dflag()]).groups[0].entries[0].figures[0].corrected, undefined);
 });
+
+import { pdfText } from "../flag-report.js";
+
+test("staff prose is made WinAnsi-safe instead of crashing the report", () => {
+  assert.equal(pdfText("staff​helped­client"), "staffhelpedclient");
+  assert.equal(pdfText("cooking  budgeting"), "cooking  budgeting");
+  assert.equal(pdfText("did great \u{1F44D} today"), "did great ? today");
+  assert.equal(pdfText("kept “quotes” and – dashes"), "kept “quotes” and – dashes");
+});
