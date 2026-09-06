@@ -83,3 +83,11 @@ export function punchEnd(row, end) {
     why: null,
   };
 }
+
+// "Christensen, Bradley" reads "Bradley Christensen" on the card headings -
+// Mánu 2026-09-05. QSP spelling stays everywhere data is matched or listed.
+export const clientFirstLast = (c) => {
+  const v = String(c || "");
+  const i = v.indexOf(",");
+  return i < 0 ? v : `${v.slice(i + 1).trim()} ${v.slice(0, i).trim()}`;
+};

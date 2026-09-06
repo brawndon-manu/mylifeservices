@@ -25,7 +25,7 @@ import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
-import { span, hrs, clockedFigure, punchEnd, ampmLabel } from "./figures";
+import { span, hrs, clockedFigure, punchEnd, ampmLabel, clientFirstLast } from "./figures";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -741,9 +741,13 @@ function Card({ r, onReview, title }) {
         </span>
         <span className="text-sm tabular-nums text-muted">{r.date}</span>
       </div>
-      <p className="mt-0.5 text-sm text-muted">
-        {r.service || "no service named"}
-        {r.client ? ` · ${r.client}` : ""}
+      {/* client first, first name first, then the service, no dots - the
+          deck's heading, Mánu 2026-09-05 */}
+      <p className="mt-0.5 text-sm">
+        <span className="font-semibold text-foreground">
+          {r.client ? clientFirstLast(r.client) : "no client on the booking"}
+        </span>
+        {r.service && <span className="ml-3 text-muted">{r.service}</span>}
       </p>
 
       {/* one line where the clock export is missing, rather than four ways of

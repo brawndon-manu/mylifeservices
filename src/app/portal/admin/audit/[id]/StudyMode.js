@@ -16,7 +16,7 @@
 // surfaced, and never tells the reviewer what to conclude.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
-import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
+import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords, clientFirstLast } from "./figures";
 import BillableAdjust from "./BillableAdjust";
 
 export default function StudyMode({ rows: dealt, onExit, titles = null }) {
@@ -306,7 +306,9 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 {/* client first, then the service, no dots - the flagged
                     report's heading, Mánu 2026-09-04 */}
                 <span className="mt-0.5 block text-base text-foreground">
-                  <span className="font-semibold">{row.client || "no client on the booking"}</span>
+                  <span className="font-semibold">
+                    {row.client ? clientFirstLast(row.client) : "no client on the booking"}
+                  </span>
                   {row.service && <span className="ml-3 text-muted">{row.service}</span>}
                 </span>
                 <span className="mt-0.5 block text-sm tabular-nums text-muted">
