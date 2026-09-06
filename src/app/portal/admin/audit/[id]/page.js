@@ -82,6 +82,13 @@ export default async function AuditBatchPage({ params }) {
           >
             Client hours, detailed (PDF)
           </a>
+          <a
+            href={`/portal/admin/audit/${batch.id}/client-calendar`}
+            target="_blank"
+            className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+          >
+            Client calendars (PDF)
+          </a>
           {rows.some((r) => r.review?.decision === "flagged") && (
             <a
               href={`/portal/admin/audit/${batch.id}/report`}

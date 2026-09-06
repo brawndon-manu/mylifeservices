@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { scheduleKey } from "@/lib/timesheet/schedule";
 import { buildAudit } from "@/app/portal/admin/audit/[id]/build";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
+import { clientDayModel } from "@/lib/timesheet/client-calendar-report";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 const h = (min) => (min == null ? null : r2(min / 60));
@@ -355,6 +356,60 @@ export async function buildAuditWorkbook(id) {
   };
   groupTab("By employee", (r) => legal(r), false);
   groupTab("By client", (r) => r.client || "No client on the booking", hasAuthorizations);
+
+  // ---------- Daily billable ----------
+  // David bills by client, so this is his cross-reference against the DDS
+  // eBilling calendar: one row per client, one column per day of the period,
+  // each cell that day's total billable hours with the reviewer's corrections
+  // in place. A shaded cell holds a flagged shift; an amber figure carries a
+  // corrected billing figure.
+  const dayClients = clientDayModel(rows);
+  const pf = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(batch.periodFrom);
+  const pt = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(batch.periodTo);
+  const days = [];
+  if (pf && pt) {
+    const end = new Date(2000 + Number(pt[3]), Number(pt[1]) - 1, Number(pt[2]));
+    for (
+      let d = new Date(2000 + Number(pf[3]), Number(pf[1]) - 1, Number(pf[2]));
+      d <= end && days.length < 62;
+      d.setDate(d.getDate() + 1)
+    ) {
+      days.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, n: d.getDate() });
+    }
+  }
+  const dv = wb.addWorksheet("Daily billable", { views: [{ state: "frozen", xSplit: 1, ySplit: 1 }] });
+  dv.columns = [
+    { header: "Client", key: "name", width: 26 },
+    ...days.map((d) => ({ header: d.label, key: `d${d.n}`, width: 6.5 })),
+    { header: "Total", key: "total", width: 9 },
+  ];
+  styleHeader(dv.getRow(1), 1);
+  for (const c of dayClients) {
+    const rec = { name: firstLast(c.name), total: h(c.totalMin) };
+    for (const [n, d] of c.days) rec[`d${n}`] = h(d.billableMin);
+    const row = dv.addRow(rec);
+    zebra(row);
+    num(row.getCell("total"));
+    row.getCell("total").font = { bold: true, color: { argb: INK } };
+    for (const [n, d] of c.days) {
+      const cell = row.getCell(`d${n}`);
+      num(cell);
+      if (d.flagged) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: WAITBG } };
+        cell.font = { bold: true, color: { argb: AMBER } };
+      } else if (d.corrected) {
+        cell.font = { bold: true, color: { argb: AMBER } };
+      }
+    }
+  }
+  const dayTotals = { name: `TOTAL (${dayClients.length} clients)`, total: h(billableMin) };
+  for (const d of days) {
+    const sum = dayClients.reduce((n, c) => n + (c.days.get(d.n)?.billableMin || 0), 0);
+    if (sum) dayTotals[`d${d.n}`] = h(sum);
+  }
+  const dtot = dv.addRow(dayTotals);
+  totalStyle(dtot);
+  dtot.eachCell((cell) => { if (typeof cell.value === "number") num(cell); });
 
   // ---------- Notes with no shift ----------
   const orp = wb.addWorksheet("Notes with no shift", { views: [{ state: "frozen", ySplit: 1 }] });
