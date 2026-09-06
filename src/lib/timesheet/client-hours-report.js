@@ -48,11 +48,12 @@ export function clientHoursModel({
     g.billableMin += billable;
     if (r.review?.billableMin != null) g.adjusted++;
     if (!g.authKey && r.authKey) g.authKey = r.authKey;
-    if (!g.byWho.has(r.who)) g.byWho.set(r.who, []);
+    const staffName = r.whoLegal || r.who; // legal names on documents
+    if (!g.byWho.has(staffName)) g.byWho.set(staffName, []);
     // the billed window, whole - "12:30p-3p", not just where it starts. Mánu
     // 2026-08-31: "i want the timeframe of when is worked not just the start
     // time." The roster's booking is what the billed figure covers.
-    g.byWho.get(r.who).push({
+    g.byWho.get(staffName).push({
       date: r.date,
       start: r.schedFrom ?? r.startMin ?? null,
       end: r.schedTo ?? null,

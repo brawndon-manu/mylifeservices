@@ -39,8 +39,9 @@ const dayKey = (d) => {
   const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
   return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
 };
+const legal = (r) => r.whoLegal || r.who;
 const byWhoThenDate = (a, b) =>
-  a.who.localeCompare(b.who) || dayKey(a.date) - dayKey(b.date) || (a.schedFrom ?? 0) - (b.schedFrom ?? 0);
+  legal(a).localeCompare(legal(b)) || dayKey(a.date) - dayKey(b.date) || (a.schedFrom ?? 0) - (b.schedFrom ?? 0);
 
 const firstLast = (c) => {
   const v = String(c || "");
@@ -206,7 +207,7 @@ export async function buildAuditWorkbook(id) {
   styleHeader(ev.getRow(1), 5);
   for (const r of [...rows].sort(byWhoThenDate)) {
     const row = ev.addRow({
-      who: r.who,
+      who: legal(r),
       role: titleOf.get(r.employeeKey) || "",
       client: firstLast(r.client),
       date: r.date,
@@ -252,7 +253,7 @@ export async function buildAuditWorkbook(id) {
   styleHeader(fl.getRow(1), 4);
   for (const r of [...flagged].sort(byWhoThenDate)) {
     const row = fl.addRow({
-      who: r.who,
+      who: legal(r),
       client: firstLast(r.client),
       date: r.date,
       sched: r.schedFrom != null && r.schedTo != null ? `${ampmLabel(r.schedFrom)} - ${ampmLabel(r.schedTo)}` : "",
@@ -314,7 +315,7 @@ export async function buildAuditWorkbook(id) {
       const auth = withAuth && g.authKey ? authorized[g.authKey] : null;
       const row = t.addRow({
         name: name === "By client" ? firstLast(g.name) : g.name,
-        ...(name === "By employee" ? { role: titleOf.get(rows.find((r) => r.who === g.name)?.employeeKey) || "" } : {}),
+        ...(name === "By employee" ? { role: titleOf.get(rows.find((r) => legal(r) === g.name)?.employeeKey) || "" } : {}),
         shifts: g.shifts,
         billed: h(g.billedMin),
         billable: h(g.billableMin),
@@ -352,7 +353,7 @@ export async function buildAuditWorkbook(id) {
     totalStyle(tot);
     for (const k of ["billed", "billable", "clocked"]) num(tot.getCell(k));
   };
-  groupTab("By employee", (r) => r.who, false);
+  groupTab("By employee", (r) => legal(r), false);
   groupTab("By client", (r) => r.client || "No client on the booking", hasAuthorizations);
 
   // ---------- Notes with no shift ----------
@@ -369,7 +370,7 @@ export async function buildAuditWorkbook(id) {
   styleHeader(orp.getRow(1), 4);
   for (const n of orphans) {
     const row = orp.addRow({
-      who: n.who,
+      who: n.whoLegal || n.who,
       date: n.date,
       client: firstLast(n.client),
       times: [n.start, n.end].filter(Boolean).join("-"),

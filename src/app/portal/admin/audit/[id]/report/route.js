@@ -56,12 +56,13 @@ export async function GET(req, { params }) {
   const staff = await prisma.user.findMany({
     select: { name: true, title: true, preferredFirstName: true, preferredLastName: true },
   });
+  // LEGAL NAMES on the documents - Mánu 2026-09-06, across the board
   const nameOf = new Map();
   const titleOf = new Map();
   for (const u of staff) {
     const k = scheduleKey(u.name || "");
     if (!k) continue;
-    nameOf.set(k, preferredName(u));
+    nameOf.set(k, u.name);
     if (u.title) titleOf.set(k, u.title);
   }
 
@@ -82,7 +83,7 @@ export async function GET(req, { params }) {
         billedMin: r.billedMin,
         clockedMin: r.clockedMin,
         reason: r.reason,
-        decidedByName: r.decidedBy ? preferredName(r.decidedBy) : null,
+        decidedByName: r.decidedBy?.name || null,
         decidedOn: day(r.updatedAt),
         // the punch facts for the detail line, where this upload still holds
         // the shift - a flag whose shift a later upload no longer carries

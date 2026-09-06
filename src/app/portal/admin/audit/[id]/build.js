@@ -98,6 +98,15 @@ export async function buildAudit(id) {
     select: { name: true, preferredFirstName: true, preferredLastName: true },
   });
   const whoKey = buildWhoKey(staff);
+  // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - Mánu 2026-09-06: "all pdfs
+  // and exel sheet needs legal names usage across the board for all staff."
+  // The key IS the legal spelling's schedule key, so the map is direct; the
+  // screens keep the display name, the documents read whoLegal.
+  const legalOf = new Map();
+  for (const u of staff) {
+    const k = scheduleKey(u.name || "");
+    if (k && u.name) legalOf.set(k, u.name);
+  }
 
   // ---- what was BILLED: every rostered block, off the sheets themselves ----
   const shifts = new Map();          // person|date|startMin -> shift
@@ -527,6 +536,7 @@ export async function buildAudit(id) {
       employeeKey: shift.who,
       startMin: shift.schedFrom ?? shift.actualFrom ?? null,
       who: namesSeen.get(shift.who) || shift.name,
+      whoLegal: legalOf.get(shift.who) || namesSeen.get(shift.who) || shift.name,
       date: shift.date,
       period: periodOf(shift.date),
       clockAvailable: periodsWithClock.has(periodOf(shift.date)),
@@ -595,6 +605,7 @@ export async function buildAudit(id) {
     .filter((n) => !taken.has(n) && onAService(n))
     .map((n) => ({
       who: namesSeen.get(whoKey(n.employee)) || n.employee,
+      whoLegal: legalOf.get(whoKey(n.employee)) || namesSeen.get(whoKey(n.employee)) || n.employee,
       date: n.date,
       period: periodOf(n.date),
       client: n.client,
