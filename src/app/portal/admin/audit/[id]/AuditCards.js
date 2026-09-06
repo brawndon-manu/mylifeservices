@@ -20,7 +20,7 @@
 // period does not throw away reviewing that has already been done.
 //
 // Nothing here computes an hour. See the page beside it.
-import { Fragment, useId, useMemo, useState } from "react";
+import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
 import BillableAdjust from "./BillableAdjust";
@@ -675,31 +675,62 @@ function Card({ r, onReview, title, staffName = (n) => n }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
+  // ON A PHONE THE STATUS RIDES THE NAME ROW - Mánu 2026-09-06: "put not
+  // decided on the same row as the name af it the name interfered then drop
+  // the status string and leave only the status color marking." The name
+  // never yields: if showing the word would wrap it, the word goes and the
+  // dot stays. Measured once per card while the word is showing - a wrapped
+  // name means the word interfered - and latched, since a phone's width
+  // only ever changes on rotation.
+  const nameRef = useRef(null);
+  const [dotOnly, setDotOnly] = useState(false);
+  useLayoutEffect(() => {
+    if (dotOnly) return undefined;
+    const measure = () => {
+      const el = nameRef.current;
+      if (!el || window.innerWidth >= 640) return;
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 24;
+      if (el.getBoundingClientRect().height > lineHeight * 1.4) setDotOnly(true);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [dotOnly]);
+  const decisionTone =
+    r.review?.decision === "approved"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : r.review?.decision === "flagged"
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-muted";
+  const decisionWord =
+    r.review?.decision === "approved" ? "Approved" : r.review?.decision === "flagged" ? "Flagged" : "Not decided";
   return (
     <article className={styles.card} data-decision={r.review?.decision || "open"}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="text-base font-semibold text-foreground">
-          {staffName(r.who)}
-          {title && <span className="ml-2 text-xs font-medium text-muted">{title}</span>}
+      {/* the corner answers the two questions at a glance: which day, and
+          where the review stands - his mock, 2026-09-06 - and keeps its
+          shape on desktop. */}
+      <div className="flex items-start justify-between gap-x-3">
+        <span className="min-w-0 text-base font-semibold text-foreground">
+          <span ref={nameRef}>{staffName(r.who)}</span>
+          {title && <span className="mt-0.5 block text-xs font-medium text-muted sm:ml-2 sm:mt-0 sm:inline">{title}</span>}
         </span>
-        {/* the corner answers the two questions at a glance: which day, and
-            where the review stands - his mock, 2026-09-06 */}
-        <span className="text-right">
+        <span
+          className={`flex shrink-0 items-center gap-1.5 pt-1 text-sm font-medium sm:hidden ${decisionTone}`}
+          aria-label={dotOnly ? decisionWord : undefined}
+          title={dotOnly ? decisionWord : undefined}
+        >
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+          {!dotOnly && decisionWord}
+        </span>
+        <span className="hidden shrink-0 text-right sm:block">
           <span className="block text-sm tabular-nums text-muted">{r.date}</span>
-          <span
-            className={`mt-0.5 flex items-center justify-end gap-1.5 text-sm font-medium ${
-              r.review?.decision === "approved"
-                ? "text-emerald-600 dark:text-emerald-400"
-                : r.review?.decision === "flagged"
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-muted"
-            }`}
-          >
+          <span className={`mt-0.5 flex items-center justify-end gap-1.5 text-sm font-medium ${decisionTone}`}>
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-            {r.review?.decision === "approved" ? "Approved" : r.review?.decision === "flagged" ? "Flagged" : "Not decided"}
+            {decisionWord}
           </span>
         </span>
       </div>
+      <p className="mt-0.5 text-sm tabular-nums text-muted sm:hidden">{r.date}</p>
       {/* client first, first name first, then the service, no dots - the
           deck's heading, Mánu 2026-09-05 */}
       <p className="mt-0.5 text-sm">
