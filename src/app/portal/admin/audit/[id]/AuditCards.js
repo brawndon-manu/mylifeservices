@@ -25,7 +25,7 @@ import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
-import { span, hrs, clockedFigure, punchEnd, ampmLabel, clientFirstLast } from "./figures";
+import { span, hrs, clockedFigure, punchEnd, ampmLabel, clientFirstLast, minsWords } from "./figures";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -648,11 +648,13 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                     {g.name}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">{g.shifts}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted">{hrs(g.billedMin)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">
+                    {g.adjusted > 0 ? <span className="line-through text-faint">{hrs(g.billedMin)}</span> : hrs(g.billedMin)}
+                  </td>
                   <td
                     className={`px-3 py-2 text-right tabular-nums ${
                       g.billableMin !== g.billedMin
-                        ? "font-semibold text-foreground"
+                        ? "font-semibold text-amber-600 dark:text-amber-400"
                         : "text-muted"
                     }`}
                     title={
@@ -766,7 +768,7 @@ function Card({ r, onReview, title }) {
               sub={r.schedFrom != null && r.schedTo != null ? `${span(r.schedFrom, r.schedTo)} · from the calendar` : null}
               tone="text-muted"
             />
-            <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
+            <BilledFigure r={r} />
             <Figure label="Clock" value="no row for this shift" tone="text-faint" />
           </>
         ) : r.clockAvailable ? (
@@ -789,7 +791,7 @@ function Card({ r, onReview, title }) {
               }
               tone="text-muted"
             />
-            <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
+            <BilledFigure r={r} />
             <Figure
               label="Clocked"
               value={clockedFigure(r).value}
@@ -804,7 +806,7 @@ function Card({ r, onReview, title }) {
           </>
         ) : (
           <>
-            <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />
+            <BilledFigure r={r} />
             <Figure label="Clock" value="no export for this period" tone="text-faint" />
           </>
         )}
@@ -870,9 +872,7 @@ function Card({ r, onReview, title }) {
           {r.review.decision === "approved" ? "Approved" : "Flagged"}
           {r.review.by ? ` by ${r.review.by}` : ""}
           {r.review.reason ? ` - ${r.review.reason.replace(/\.$/, "")}` : ""}
-          {r.review.billableMin != null && (
-            <span className="text-foreground"> · billable set to {hrs(r.review.billableMin)}</span>
-          )}
+
         </p>
       )}
 
@@ -975,6 +975,32 @@ function NoteFigure({ note, scheduleNote }) {
       {!scheduleNote && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No schedule note</dd>}
       {note && <dd className="text-xs tabular-nums text-muted">{note.words} words · service note</dd>}
       {scheduleNote && !note && <dd className="text-[11px] text-faint">schedule note only</dd>}
+    </div>
+  );
+}
+
+
+// VARIANT 2, his pick off the mock: a corrected billable lives IN the Billed
+// column - old figure struck, corrected amber with its minutes wording, who
+// set it underneath. Shows only when a corrected figure exists.
+function BilledFigure({ r }) {
+  const c = r.review?.billableMin;
+  if (c == null) {
+    return <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />;
+  }
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Billed</dt>
+      <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+        <span className="font-medium text-faint line-through">{hrs(r.billedMin)}</span>
+        <span className="ml-2 text-amber-600 dark:text-amber-400">
+          {hrs(c)}
+          {minsWords(c) && <span className="ml-1 text-xs font-normal italic">({minsWords(c)})</span>}
+        </span>
+      </dd>
+      <dd className="text-xs text-amber-700 dark:text-amber-500">
+        corrected{r.review?.by ? ` by ${r.review.by}` : ""}
+      </dd>
     </div>
   );
 }

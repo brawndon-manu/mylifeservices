@@ -227,12 +227,18 @@ export function flagReportDetailModel({ periodFrom, periodTo, flags = [], genera
               };
             }
           }
+          // variant 2 on paper too: the corrected figure rides the Billed row,
+          // old struck, amber beside - the CORRECTED BILLING line below stays
+          const billedFig = figure("Billed", f.billedMin);
+          if (f.billableMin != null) {
+            billedFig.corrected = { h: hrs(f.billableMin), mins: minsWords(f.billableMin) };
+          }
           return {
             client: f.client || "no client on the booking",
             service: f.service || null,
             dateLine: [f.date, span].filter(Boolean).join("   "),
             figures: [
-              figure("Billed", f.billedMin),
+              billedFig,
               figure("Scheduled", schedMin),
               figure("Clocked", f.clockedMin),
             ],
@@ -482,6 +488,27 @@ export async function renderFlagReportDetail(model) {
       y -= 13;
       for (const fig of e.figures) {
         text(fig.label, L + 12, y, { size: 8.5, color: MUTED });
+        if (fig.corrected) {
+          // the old figure struck through, the corrected one amber beside it
+          const oldW = font.widthOfTextAtSize(fig.h, 8.5);
+          text(fig.h, VAL_X, y, { size: 8.5, color: MUTED });
+          page.drawLine({
+            start: { x: VAL_X, y: y + 2.6 },
+            end: { x: VAL_X + oldW, y: y + 2.6 },
+            thickness: 0.7,
+            color: MUTED,
+          });
+          pieces(
+            [
+              [`  ${fig.corrected.h}`, bold, AMBER],
+              [fig.corrected.mins ? ` (${fig.corrected.mins})` : "", italic, AMBER],
+              ["  corrected", font, MUTED],
+            ],
+            VAL_X + oldW, y, 8.5,
+          );
+          y -= 11;
+          continue;
+        }
         const segs = fig.h == null
           ? [["-", font, MUTED]]
           : [[fig.h, font, INK], [fig.mins ? ` (${fig.mins})` : "", italic, MUTED]];

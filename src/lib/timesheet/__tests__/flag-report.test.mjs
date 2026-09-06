@@ -231,3 +231,9 @@ test("a DSN-sourced note is labeled DSN on the detailed report", () => {
   assert.equal(dmodel([dflag({ serviceNoteSource: "xls" })]).groups[0].entries[0].serviceNoteLabel, "Service note");
   assert.equal(dmodel([dflag()]).groups[0].entries[0].serviceNoteLabel, "Service note");
 });
+
+test("a corrected figure rides the Billed row of the detailed model", () => {
+  const e = dmodel([dflag({ billableMin: 220 })]).groups[0].entries[0];
+  assert.deepEqual(e.figures[0].corrected, { h: "3.67h", mins: "3 hr 40 min" });
+  assert.equal(dmodel([dflag()]).groups[0].entries[0].figures[0].corrected, undefined);
+});

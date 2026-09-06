@@ -351,7 +351,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                     sub={row.schedFrom != null && row.schedTo != null ? `${span(row.schedFrom, row.schedTo)} · from the calendar` : null}
                     tone="text-muted"
                   />
-                  <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+                  <BilledFigure r={row} />
                   <div className="col-span-1 sm:col-span-3">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
                       Clock
@@ -389,12 +389,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                     }
                     tone="text-muted"
                   />
-                  <Figure
-                    label="Billed"
-                    value={hrs(row.billedMin)}
-                    mins={minsWords(row.billedMin)}
-                    sub={span(row.schedFrom, row.schedTo)}
-                  />
+                  <BilledFigure r={row} />
                   <Figure
                     label="Clocked"
                     value={clockedFigure(row).value}
@@ -410,7 +405,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                 </>
               ) : (
                 <>
-                  <Figure label="Billed" value={hrs(row.billedMin)} sub={span(row.schedFrom, row.schedTo)} />
+                  <BilledFigure r={row} />
                   <div className="col-span-1 sm:col-span-3">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
                       Clock
@@ -568,9 +563,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null }) {
                   : "Flagged"}
                 {row.review?.by ? ` by ${row.review.by}` : ""}
                 {row.review?.reason ? ` - ${row.review.reason.replace(/\.$/, "")}` : ""}
-                {row.review?.billableMin != null
-                  ? ` · billable set to ${hrs(row.review.billableMin)}`
-                  : ""}. Deciding again replaces it.
+. Deciding again replaces it.
               </p>
             )}
           </article>
@@ -719,6 +712,32 @@ function NoteFigure({ note, scheduleNote }) {
       {!scheduleNote && <dd className="text-sm font-bold text-rose-600 dark:text-rose-400">No schedule note</dd>}
       {note && <dd className="text-xs tabular-nums text-muted">{note.words} words · service note</dd>}
       {scheduleNote && !note && <dd className="text-[11px] text-faint">schedule note only</dd>}
+    </div>
+  );
+}
+
+
+// VARIANT 2, his pick off the mock: a corrected billable lives IN the Billed
+// column - old figure struck, corrected amber with its minutes wording, who
+// set it underneath. Shows only when a corrected figure exists.
+function BilledFigure({ r }) {
+  const c = r.review?.billableMin;
+  if (c == null) {
+    return <Figure label="Billed" value={hrs(r.billedMin)} sub={span(r.schedFrom, r.schedTo)} />;
+  }
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">Billed</dt>
+      <dd className="mt-0.5 text-xl font-bold tabular-nums">
+        <span className="font-medium text-faint line-through">{hrs(r.billedMin)}</span>
+        <span className="ml-2 text-amber-600 dark:text-amber-400">
+          {hrs(c)}
+          {minsWords(c) && <span className="ml-1 text-xs font-normal italic">({minsWords(c)})</span>}
+        </span>
+      </dd>
+      <dd className="text-xs text-amber-700 dark:text-amber-500">
+        corrected{r.review?.by ? ` by ${r.review.by}` : ""}
+      </dd>
     </div>
   );
 }
