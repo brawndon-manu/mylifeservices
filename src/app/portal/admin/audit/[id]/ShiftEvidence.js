@@ -1,3 +1,4 @@
+import { CircleAlert } from "lucide-react";
 import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
 import styles from "../audit.module.css";
 
@@ -41,7 +42,7 @@ export default function ShiftEvidence({ row }) {
           <dd className={styles.noteValue}><span className={styles.noteTag}>DSN</span>{note.words} words</dd>
           {!row.scheduleNote && <dd className={styles.figureSub}>No schedule note</dd>}
         </> : <>
-          <dd className={styles.bad}><strong>No DSN</strong></dd>
+          <dd className={styles.bad}><strong className="inline-flex items-center gap-1.5"><CircleAlert size={14} aria-hidden="true" /> No DSN</strong></dd>
           {!note && <dd className={styles.bad}>No service note</dd>}
           {!row.scheduleNote && <dd className={styles.bad}>No schedule note</dd>}
           {note && <dd className={styles.figureSub}>{note.words} words · service note</dd>}

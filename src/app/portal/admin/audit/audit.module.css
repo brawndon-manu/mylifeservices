@@ -34,7 +34,7 @@
 .back { padding: 0 12px; font-size: 12px; color: var(--muted); }
 .brand { padding: 18px 12px 22px; font-size: 25px; font-weight: 650; letter-spacing: -.7px; }
 .sidebar nav { display: grid; gap: 4px; }
-.sidebar nav :is(a, button) { display: block; width: 100%; padding: 9px 12px; border-radius: 7px; text-align: left; font-size: 13px; color: var(--muted); }
+.sidebar nav :is(a, button) { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px; border-radius: 7px; text-align: left; font-size: 13px; color: var(--muted); }
 .sidebar nav :is(a, button):hover { background: var(--surface-3); color: var(--foreground); }
 .sidebar nav [aria-current="page"] { background: var(--surface-3); color: var(--foreground); font-weight: 600; }
 .navLabel { margin: 24px 12px 4px; color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
@@ -90,6 +90,7 @@
 .menuPanel > button[aria-pressed="true"] { background: var(--surface-2); color: var(--accent); }
 .menuPanel small { color: var(--faint); font-size: 10px; }
 .menuHeading { padding: 5px 10px; color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.menuLead { display: inline-flex; align-items: center; gap: 8px; }
 .dialog { margin: auto; padding: 0; width: min(480px, calc(100vw - 32px)); max-height: 85vh; border: 1px solid var(--border); border-radius: 15px; color: var(--foreground); background: var(--surface); box-shadow: 0 20px 80px #0004; }
 .dialog::backdrop { background: #0005; backdrop-filter: blur(3px); }
 .dialogBody { padding: 25px; }

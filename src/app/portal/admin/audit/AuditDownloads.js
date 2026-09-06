@@ -1,14 +1,16 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
+import { Table2, FileChartColumn, Flag, CalendarDays, Download } from "lucide-react";
 import AuditMenu from "./AuditMenu";
 import styles from "./audit.module.css";
 
+// each report wears its own Lucide icon - his mockup mapping, 2026-09-06
 const REPORTS = [
-  { key: "workbook", title: "Audit workbook", format: "Excel", description: "All seven worksheets in one workbook." },
-  { key: "client-report", title: "Client hours", format: "PDF", description: "Billable hours and monthly authorizations.", detailed: true },
-  { key: "report", title: "Flagged shifts", format: "PDF", description: "Saved flags, reviewer notes and corrected hours.", detailed: true },
-  { key: "client-calendar", title: "Client calendars", format: "PDF", description: "A calendar of services for each client." },
+  { key: "workbook", title: "Audit workbook", format: "Excel", Icon: Table2, description: "All seven worksheets in one workbook." },
+  { key: "client-report", title: "Client hours", format: "PDF", Icon: FileChartColumn, description: "Billable hours and monthly authorizations.", detailed: true },
+  { key: "report", title: "Flagged shifts", format: "PDF", Icon: Flag, description: "Saved flags, reviewer notes and corrected hours.", detailed: true },
+  { key: "client-calendar", title: "Client calendars", format: "PDF", Icon: CalendarDays, description: "A calendar of services for each client." },
 ];
 
 export default function AuditDownloads({ batchId, periodLabel, reportsPage = false }) {
@@ -26,12 +28,12 @@ export default function AuditDownloads({ batchId, periodLabel, reportsPage = fal
   return <>
     {reportsPage ? <div className={styles.reportList}>
       {REPORTS.map((item) => <button type="button" key={item.key} onClick={(e) => open(item, e)}>
-        <span className={styles.fileIcon}>{item.format === "Excel" ? "XLSX" : "PDF"}</span>
-        <span><strong>{item.title}</strong><small>{item.description}</small></span><span aria-hidden="true">↓</span>
+        <span className={styles.fileIcon}><item.Icon size={19} aria-hidden="true" /></span>
+        <span><strong>{item.title}</strong><small>{item.description}</small></span><Download size={15} aria-hidden="true" />
       </button>)}
-    </div> : <AuditMenu label="Download">
+    </div> : <AuditMenu label={<><Download size={14} aria-hidden="true" /> Download</>}>
       <p className={styles.menuHeading}>Entire period</p>
-      {REPORTS.map((item) => <button type="button" key={item.key} onClick={(e) => open(item, e)}>{item.title}<small>{item.format}</small></button>)}
+      {REPORTS.map((item) => <button type="button" key={item.key} onClick={(e) => open(item, e)}><span className={styles.menuLead}><item.Icon size={14} aria-hidden="true" /> {item.title}</span><small>{item.format}</small></button>)}
     </AuditMenu>}
     <dialog ref={dialog} className={styles.dialog} aria-labelledby={titleId} onClick={(e) => { if (e.target === e.currentTarget) dialog.current.close(); }}>
       <div className={styles.dialogBody}>
@@ -44,7 +46,7 @@ export default function AuditDownloads({ batchId, periodLabel, reportsPage = fal
         </fieldset>}
         <div className={styles.dialogActions}>
           {report.format === "PDF" && <a className={styles.secondary} href={href} target="_blank" rel="noopener noreferrer">Preview PDF ↗</a>}
-          <a className={styles.primary} href={href} download>Download {report.format === "Excel" ? "Excel" : "PDF"}</a>
+          <a className={styles.primary} href={href} download><Download size={14} aria-hidden="true" /> Download {report.format === "Excel" ? "Excel" : "PDF"}</a>
         </div>
       </div>
     </dialog>

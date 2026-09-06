@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  SquareStack, Plus, ListChecks, PanelTop, Users, UserRound,
+  FileQuestion, FileX, FileDown,
+} from "lucide-react";
 import styles from "./audit.module.css";
 
 // THE PORTAL'S APPEARANCE GOVERNS THIS WORKSPACE. The accessibility menu at
@@ -10,7 +14,7 @@ import styles from "./audit.module.css";
 // the workspace palette for each. The workspace used to carry its own
 // appearance button and storage, which meant the audit could disagree with
 // the rest of the portal - one control now.
-export default function AuditWorkspace({ children, page = "home", view = "shifts", onView, hasLost = false, canUpload = true }) {
+export default function AuditWorkspace({ children, page = "home", view = "shifts", onView, hasLost = false, canUpload = true, periodLabel = null }) {
   // THE SIDEBAR FOLDS AWAY - Mánu 2026-09-06, pointing at the same button in
   // Claude: room for the cards when the nav is not needed. The choice sticks
   // per browser; on a phone the nav is already a slim strip and stays put,
@@ -25,10 +29,12 @@ export default function AuditWorkspace({ children, page = "home", view = "shifts
       try { localStorage.setItem("audit-sidebar", next ? "collapsed" : "open"); } catch { /* not remembered */ }
       return next;
     });
+  // Lucide outline icons throughout - Mánu 2026-09-06 sent the mockups and
+  // the mapping table; the ticks, dots and calendar tiles stay text and CSS
   const views = [
-    ["shifts", "Shifts"], ["focus", "Focused review"], ["employee", "Employees"],
-    ["client", "Clients"], ["orphans", "Unmatched notes"],
-    ...(hasLost ? [["lost", "Disappeared shifts"]] : []), ["reports", "Reports"],
+    ["shifts", "Shifts", ListChecks], ["focus", "Focused review", PanelTop], ["employee", "Employees", Users],
+    ["client", "Clients", UserRound], ["orphans", "Unmatched notes", FileQuestion],
+    ...(hasLost ? [["lost", "Disappeared shifts", FileX]] : []), ["reports", "Reports", FileDown],
   ];
   return (
     <section className={styles.workspace} data-collapsed={collapsed ? "true" : "false"}>
@@ -36,11 +42,11 @@ export default function AuditWorkspace({ children, page = "home", view = "shifts
         <Link href="/portal/admin" className={styles.back}>‹ Admin</Link>
         <p className={styles.brand}>Audit</p>
         <nav aria-label="Audit navigation">
-          <Link href="/portal/admin/audit" aria-current={page === "home" ? "page" : undefined}>Audit home</Link>
-          {canUpload && <Link href="/portal/admin/audit/new" aria-current={page === "new" ? "page" : undefined}>New audit copy</Link>}
+          <Link href="/portal/admin/audit" aria-current={page === "home" ? "page" : undefined}><SquareStack size={15} aria-hidden="true" /> Audit home</Link>
+          {canUpload && <Link href="/portal/admin/audit/new" aria-current={page === "new" ? "page" : undefined}><Plus size={15} aria-hidden="true" /> New audit copy</Link>}
           {onView && <>
-            <p className={styles.navLabel}>This period</p>
-            {views.map(([key, label]) => <button key={key} type="button" aria-current={view === key ? "page" : undefined} onClick={() => onView(key)}>{label}</button>)}
+            <p className={styles.navLabel}>{periodLabel || "This period"}</p>
+            {views.map(([key, label, Icon]) => <button key={key} type="button" aria-current={view === key ? "page" : undefined} onClick={() => onView(key)}><Icon size={15} aria-hidden="true" /> {label}</button>)}
           </>}
         </nav>
         <p className={styles.sidebarNote}>Compare the records.<br />Review each shift.</p>

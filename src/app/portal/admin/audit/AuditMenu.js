@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ChevronDown } from "lucide-react";
 import styles from "./audit.module.css";
 
 export default function AuditMenu({ label, children }) {
@@ -16,7 +17,7 @@ export default function AuditMenu({ label, children }) {
     <details ref={menu} className={styles.menu} onKeyDown={(e) => {
       if (e.key === "Escape") { menu.current.removeAttribute("open"); menu.current.querySelector("summary").focus(); }
     }}>
-      <summary className={styles.secondary}>{label} <span aria-hidden="true">⌄</span></summary>
+      <summary className={styles.secondary}>{label} <ChevronDown size={13} aria-hidden="true" /></summary>
       <div className={styles.menuPanel}>{children}</div>
     </details>
   );

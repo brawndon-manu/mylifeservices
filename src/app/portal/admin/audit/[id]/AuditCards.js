@@ -26,6 +26,7 @@ import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFla
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
 import { hrs, clientFirstLast } from "./figures";
+import { Flag, CircleAlert, ListFilter, ArrowDownWideNarrow, ChevronDown, ChevronRight } from "lucide-react";
 import AuditWorkspace from "../AuditWorkspace";
 import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
@@ -246,9 +247,21 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   };
   const title = studying ? "Focused review" : ({ shifts: "Shifts", employee: "Employees", client: "Clients", orphans: "Unmatched notes", lost: "Disappeared shifts", reports: "Reports" })[view];
   const recordView = !["orphans", "lost", "reports"].includes(view);
+  // the sidebar names the period the way a person says it - "AUG 16-31,
+  // 2026" off his mock - and falls back to the raw label if it ever fails
+  // to parse
+  const navPeriod = (() => {
+    const m = /^(\d{2})\/(\d{2})\/(\d{2}) to (\d{2})\/(\d{2})\/(\d{2})$/.exec(periodLabel || "");
+    if (!m) return periodLabel || null;
+    const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const mon = (n) => MON[Number(n) - 1] || "";
+    return m[1] === m[4] && m[3] === m[6]
+      ? `${mon(m[1])} ${Number(m[2])}–${Number(m[5])}, 20${m[3]}`
+      : `${mon(m[1])} ${Number(m[2])} – ${mon(m[4])} ${Number(m[5])}, 20${m[6]}`;
+  })();
 
   return (
-    <AuditWorkspace page="batch" view={studying ? "focus" : view} onView={changeView} hasLost={lost.length > 0} canUpload={canUpload}>
+    <AuditWorkspace page="batch" view={studying ? "focus" : view} onView={changeView} hasLost={lost.length > 0} canUpload={canUpload} periodLabel={navPeriod}>
       <header className={styles.heading}>
         <div><p className={styles.eyebrow}>{periodLabel}</p><h1>{title}</h1><p className={styles.subtitle}>{totals.shifts} billed shifts · {totals.notes} service notes</p></div>
         <div className={styles.actions}>
@@ -275,12 +288,12 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       </div>}
       <div className={styles.toolbar}>
         {recordView && <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employee, client or service" aria-label="Search shifts" className={styles.search} />}
-        {recordView && <AuditMenu label={`Filter${onlyKinds.length ? ` · ${onlyKinds.length}` : ""}`}>
+        {recordView && <AuditMenu label={<><ListFilter size={14} aria-hidden="true" /> {`Filter${onlyKinds.length ? ` · ${onlyKinds.length}` : ""}`}</>}>
           <p className={styles.menuHeading}>Match every selected finding</p>
           {Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([kind, n]) => <button key={kind} type="button" aria-pressed={onlyKinds.includes(kind)} onClick={() => toggleKind(kind)}><span>{onlyKinds.includes(kind) ? "✓ " : ""}{labelOf[kind]}</span><small>{n}</small></button>)}
           {onlyKinds.length > 0 && <button type="button" onClick={() => setOnlyKinds([])}>Clear findings</button>}
         </AuditMenu>}
-        <AuditMenu label={`Sort${sortKeys.length ? ` · ${sortKeys.length}` : ""}`}>
+        <AuditMenu label={<><ArrowDownWideNarrow size={14} aria-hidden="true" /> {`Sort${sortKeys.length ? ` · ${sortKeys.length}` : ""}`}</>}>
           <p className={styles.menuHeading}>Applied in selection order</p>
           {Object.entries(ROLL_SORTS).filter(([k]) => recordView || ["date", "first", "last"].includes(k)).map(([k, v]) => <button key={k} type="button" aria-pressed={sortKeys.includes(k)} onClick={() => toggleSort(k)}>{v.label}<small>{sortKeys.includes(k) ? sortKeys.indexOf(k) + 1 : ""}</small></button>)}
           {sortKeys.length > 0 && <button type="button" onClick={() => setSortKeys([])}>Default order</button>}
@@ -580,7 +593,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                         onClick={(e) => { e.stopPropagation(); toggle(g.name); }}
                         className="mr-2 inline-block w-4 text-muted transition hover:text-brand"
                       >
-                        {openGroups.has(g.name) ? "\u25be" : "\u25b8"}
+                        {openGroups.has(g.name) ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
                       </button>
                     )}
                     <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(g.name); }}>{staffName(g.name)}</button>
@@ -669,7 +682,23 @@ function Card({ r, onReview, title, staffName = (n) => n }) {
           {staffName(r.who)}
           {title && <span className="ml-2 text-xs font-medium text-muted">{title}</span>}
         </span>
-        <span className="text-sm tabular-nums text-muted">{r.date}</span>
+        {/* the corner answers the two questions at a glance: which day, and
+            where the review stands - his mock, 2026-09-06 */}
+        <span className="text-right">
+          <span className="block text-sm tabular-nums text-muted">{r.date}</span>
+          <span
+            className={`mt-0.5 flex items-center justify-end gap-1.5 text-sm font-medium ${
+              r.review?.decision === "approved"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : r.review?.decision === "flagged"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted"
+            }`}
+          >
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+            {r.review?.decision === "approved" ? "Approved" : r.review?.decision === "flagged" ? "Flagged" : "Not decided"}
+          </span>
+        </span>
       </div>
       {/* client first, first name first, then the service, no dots - the
           deck's heading, Mánu 2026-09-05 */}
@@ -687,13 +716,16 @@ function Card({ r, onReview, title, staffName = (n) => n }) {
           {r.reasons.map((x, i) => (
             <li
               key={i}
-              className={`text-xs leading-snug ${
+              className={`flex items-start gap-1.5 text-xs leading-snug ${
                 x.kind === "no-note"
                   ? "font-medium text-rose-600 dark:text-rose-400"
                   : "text-amber-900 dark:text-amber-200"
               }`}
             >
-              <span className="font-semibold">{x.label}.</span> {x.text}
+              {x.kind === "no-note"
+                ? <CircleAlert size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
+                : <Flag size={13} aria-hidden="true" className="mt-0.5 shrink-0" />}
+              <span><span className="font-semibold">{x.label}.</span> {x.text}</span>
             </li>
           ))}
         </ul>
