@@ -29,6 +29,7 @@ export async function buildAudit(id) {
     where: { id },
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true, auditChanges: true,
+      createdAt: true,
       clockUrl: true, clockName: true, clockFindings: true,
       notesName: true, serviceNotesName: true,
       scheduleNotesUrl: true, scheduleNotesName: true,
@@ -626,6 +627,7 @@ export async function buildAudit(id) {
       select: {
         shiftKey: true, decision: true, reason: true, billableMin: true, createdAt: true,
         billableFromMin: true, billableToMin: true,
+        billedMin: true, clockedMin: true, updatedAt: true,
         decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       },
     })
@@ -647,6 +649,13 @@ export async function buildAudit(id) {
         // reports carry it alongside the screen's preferred name
         byLegal: d.decidedBy?.name || null,
         at: d.createdAt.toISOString(),
+        // THE READING THE DECISION FROZE - the figures in front of the
+        // reviewer at the time. The side-by-side compares these against the
+        // row's current figures, so it survives any number of uploads
+        // between review sessions.
+        wasBilledMin: d.billedMin,
+        wasClockedMin: d.clockedMin,
+        lastAt: d.updatedAt.toISOString(),
       }
       : null;
     // the key the authorization table shares, so the client roll-up can look

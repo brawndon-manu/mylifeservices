@@ -31,6 +31,16 @@ export async function reviewShift(formData) {
   const user = await getCurrentUser();
   if (!isAdminUp(user?.role)) redirect("/portal");
 
+  // A SUPERSEDED COPY IS FROZEN, 2026-09-07. Deciding from an old copy would
+  // freeze figures the current one has already replaced, so the write is
+  // refused on the server the same way the payroll lane refuses - the screen
+  // hides the buttons, but the rule does not live in a hidden button.
+  const fromBatchId = String(formData.get("batchId") || "");
+  if (fromBatchId) {
+    const { supersededBy } = await import("@/lib/timesheet/superseded");
+    if (await supersededBy(fromBatchId)) return { ok: false, error: "superseded" };
+  }
+
   const decision = formData.get("decision");
   if (decision !== "approved" && decision !== "flagged") return { ok: false, error: "unknown" };
 
@@ -161,6 +171,47 @@ export async function deleteBudgetMonth(formData) {
   await prisma.clientAuthorization.deleteMany({ where: { monthKey } });
   revalidatePath("/portal/admin/audit");
   redirect("/portal/admin/audit");
+}
+
+// A NEW-NOTES ENTRY LEAVES THE LIST ONLY WHEN A PERSON SAYS SEEN - Mánu
+// 2026-09-07: the entries accumulate across uploads so a busy day cannot
+// slip one past him. Seen is a fact about the reader, not the shift, so
+// nothing else moves.
+export async function markNoteChangeSeen(formData) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) redirect("/portal");
+  const id = String(formData.get("id") || "");
+  if (!id) return { ok: false };
+  await prisma.auditNoteChange.updateMany({
+    where: { id, seenAt: null },
+    data: { seenAt: new Date(), seenById: user.id },
+  });
+  revalidatePath("/portal/admin/audit");
+  return { ok: true };
+}
+
+// A STAR ON ONE SHIFT INSIDE A SUPERSEDED COPY - Mánu 2026-09-07: "starring
+// only works in superceded." The server holds the rule: the batch must be an
+// audit copy a newer one has replaced, or the toggle refuses.
+export async function toggleShiftStar(formData) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) redirect("/portal");
+  const batchId = String(formData.get("batchId") || "");
+  const shiftKey = String(formData.get("shiftKey") || "");
+  if (!batchId || !shiftKey) return { ok: false };
+  const { supersededBy } = await import("@/lib/timesheet/superseded");
+  if (!(await supersededBy(batchId))) return { ok: false, error: "current" };
+  const standing = await prisma.auditShiftStar.findUnique({
+    where: { batchId_shiftKey: { batchId, shiftKey } },
+    select: { id: true },
+  });
+  if (standing) {
+    await prisma.auditShiftStar.delete({ where: { id: standing.id } });
+  } else {
+    await prisma.auditShiftStar.create({ data: { batchId, shiftKey, byId: user.id } });
+  }
+  revalidatePath("/portal/admin/audit");
+  return { ok: true, starred: !standing };
 }
 
 export async function undoReview(formData) {

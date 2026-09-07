@@ -24,7 +24,10 @@ export default function ShiftEvidence({ row }) {
         {scheduled && <dd className={styles.figureSub}>{span(from, to)}{!original && " · calendar"}</dd>}
       </div>
       <div><dt>Billed</dt><dd className={styles.figureValue}>
-        {correction != null ? <><span className={styles.original}><FigureHours value={hrs(row.billedMin)} /></span><span className={styles.corrected}><FigureHours value={hrs(correction)} /></span></> : <FigureHours value={hrs(row.billedMin)} />}
+        {/* a correction the newest copy has caught up to is the same number
+            twice - print it once rather than striking a figure through
+            itself */}
+        {correction != null && correction !== row.billedMin ? <><span className={styles.original}><FigureHours value={hrs(row.billedMin)} /></span><span className={styles.corrected}><FigureHours value={hrs(correction)} /></span></> : <FigureHours value={hrs(row.billedMin)} />}
       </dd><dd className={styles.figureSub}>{correction != null
         // the typed window leads when the review carries one; otherwise the
         // figure in words, and never the word "null" on a round figure

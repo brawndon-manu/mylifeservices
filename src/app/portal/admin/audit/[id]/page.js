@@ -5,6 +5,8 @@ import AuditCards from "./AuditCards";
 import { buildAudit } from "./build";
 import { prisma } from "@/lib/prisma";
 import { scheduleKey } from "@/lib/timesheet/schedule";
+import { supersededBy } from "@/lib/timesheet/superseded";
+import { periodDates } from "@/lib/timesheet/period-of";
 
 export const metadata = { title: "Audit", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -30,6 +32,37 @@ export default async function AuditBatchPage({ params }) {
   if (!data) notFound();
   const { batch, rows, lost, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations } = data;
 
+  // A SUPERSEDED COPY OPENS FROZEN - readable exactly as uploaded, nothing
+  // decidable, and its shifts take stars (the only place stars exist).
+  const newer = await supersededBy(id);
+  const frozen = newer
+    ? {
+      currentId: newer.id,
+      uploadedAt: batch.createdAt?.toISOString?.() || null,
+      stars: (
+        await prisma.auditShiftStar.findMany({
+          where: { batchId: id },
+          select: { shiftKey: true },
+        })
+      ).map((s) => s.shiftKey),
+    }
+    : null;
+
+  // NOTES THAT ARRIVED OR CHANGED AFTER THE SHIFT WAS DECIDED - unseen ledger
+  // rows on this period's days. Only the current copy shows them; they leave
+  // the list when marked seen, never on an upload.
+  const noteChanges = frozen
+    ? []
+    : await prisma.auditNoteChange.findMany({
+      where: { seenAt: null, date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true, shiftKey: true, employeeKey: true, kind: true, detail: true,
+        who: true, date: true, client: true, billedMin: true, clockedMin: true,
+        decision: true, createdAt: true, updatedAt: true, batchId: true,
+      },
+    });
+
   // the deck prints the employee's role beside the name - resolved by the
   // schedule key the rows already carry, exactly like the flagged report
   const staff = await prisma.user.findMany({
@@ -47,6 +80,12 @@ export default async function AuditBatchPage({ params }) {
         batchId={batch.id}
         periodLabel={`${batch.periodFrom} to ${batch.periodTo}`}
         canUpload={canManageTimesheets(user?.role)}
+        frozen={frozen}
+        noteChanges={noteChanges.map((n) => ({
+          ...n,
+          createdAt: n.createdAt.toISOString(),
+          updatedAt: n.updatedAt.toISOString(),
+        }))}
         rows={rows}
         titles={titles}
         orphans={orphans}

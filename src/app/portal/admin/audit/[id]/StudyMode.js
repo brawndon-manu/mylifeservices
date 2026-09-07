@@ -21,7 +21,7 @@ import ShiftEvidence from "./ShiftEvidence";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
 
-export default function StudyMode({ rows: dealt, onExit, titles = null, onReview }) {
+export default function StudyMode({ rows: dealt, onExit, titles = null, onReview, batchId = null }) {
   // THE DECK IS DEALT ONCE, when study mode opens.
   //
   // Mánu 2026-08-28: "sometimes when i click approve it skips over 2 cards
@@ -133,6 +133,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setBusy(true);
     const body = new FormData();
     body.set("decision", decision);
+    body.set("batchId", batchId || "");
     body.set("shiftKey", row.shiftKey);
     body.set("employeeKey", row.employeeKey || "");
     body.set("date", row.date || "");
@@ -171,7 +172,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setOpenNote(false);
     setOpenSched(false);
     setAt((i) => i + 1);
-  }, [row, onReview]);
+  }, [row, onReview, batchId]);
 
   // MOVING WITHOUT DECIDING. Mánu 2026-08-26: "give me option to cycle through
   // these without picking a choice."

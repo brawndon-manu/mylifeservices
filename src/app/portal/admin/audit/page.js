@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp, canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { monthLabelOf } from "@/lib/timesheet/budget-capture";
+import { ChevronRight } from "lucide-react";
 import AuditWorkspace from "./AuditWorkspace";
 import BudgetManager from "./BudgetManager";
 import styles from "./audit.module.css";
@@ -26,6 +27,16 @@ const BUDGET_ERRORS = {
 const mdy = (dt) => {
   const d = new Date(dt);
   return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
+};
+
+// 09/06/26 · 7:52 AM - a superseded copy is one of several that day, so its
+// row leads with when it landed
+const mdyTime = (dt) => {
+  const d = new Date(dt);
+  let h = d.getHours();
+  const half = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${mdy(dt)} · ${h}:${String(d.getMinutes()).padStart(2, "0")} ${half}`;
 };
 
 export default async function AuditPage({ searchParams }) {
@@ -66,11 +77,40 @@ export default async function AuditPage({ searchParams }) {
     orderBy: { createdAt: "desc" },
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true,
-      notesName: true, serviceNotesName: true, createdAt: true,
+      notesName: true, serviceNotesName: true, createdAt: true, partialThrough: true,
       serviceNotes: { select: { noteCount: true, pdfCount: true, serviceCount: true } },
       uploadedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
     },
   });
+
+  // ONE WORKING COPY PER MONTH, THE REST FOLDED - the daily upload rhythm
+  // lands thirty copies a month, so the list groups by the month the copies
+  // supersede within. The newest audit copy of a month is the current one;
+  // every earlier copy is superseded, frozen, still openable, and shows how
+  // many of its shifts carry stars.
+  const starCounts = Object.fromEntries(
+    (await prisma.auditShiftStar.groupBy({ by: ["batchId"], _count: { _all: true } }))
+      .map((s) => [s.batchId, s._count._all]),
+  );
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const monthGroups = [];
+  const groupByKey = new Map();
+  for (const b of batches) {
+    const m = /^(\d{2})\/\d{2}\/(\d{2})$/.exec(b.periodFrom || "");
+    const key = m ? `20${m[2]}-${m[1]}` : "unknown";
+    let g = groupByKey.get(key);
+    if (!g) {
+      g = {
+        key,
+        label: m ? `${MONTH_NAMES[Number(m[1]) - 1] || m[1]} 20${m[2]}` : "Other uploads",
+        audit: [],
+        payroll: [],
+      };
+      groupByKey.set(key, g);
+      monthGroups.push(g);
+    }
+    (b.auditOnly ? g.audit : g.payroll).push(b);
+  }
 
   const months = budgetMonths.map((m) => ({ key: m.monthKey, label: monthLabelOf(m.monthKey), count: m._count }));
   const canUpload = canManageTimesheets(user?.role);
@@ -82,22 +122,45 @@ export default async function AuditPage({ searchParams }) {
       </header>
       {budgetError && <p role="alert" className={styles.notice}>{budgetError}</p>}
       {budgetSaved && <p role="status" className={styles.notice}>Authorized hours saved for {budgetSaved.month}: {budgetSaved.clients} clients.{budgetSaved.skipped > 0 && ` ${budgetSaved.skipped} rows had no readable hours.`}</p>}
-      <div className={styles.sectionHeading}><h2>Pay periods</h2><span>{batches.length} {batches.length === 1 ? "period" : "periods"}</span></div>
-      {batches.length === 0 ? <div className={styles.empty}><p>No audit periods yet.</p><p className={styles.subtitle}>Upload the timesheet, schedule, clock and service note exports to begin.</p></div> : <ul className={styles.periodList}>
-        {batches.map((b) => {
+      {batches.length === 0 ? <>
+        <div className={styles.sectionHeading}><h2>Pay periods</h2><span>0 periods</span></div>
+        <div className={styles.empty}><p>No audit periods yet.</p><p className={styles.subtitle}>Upload the timesheet, schedule, clock and service note exports to begin.</p></div>
+      </> : monthGroups.map((g) => {
+        const current = g.audit[0] || null;
+        const earlier = g.audit.slice(1);
+        const uploads = g.audit.length + g.payroll.length;
+        const row = (b, isCurrent) => {
           const [month, day] = (b.periodFrom || "").split("/");
           const monthName = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][Number(month) - 1] || "—";
-          return <li key={b.id}><Link href={`/portal/admin/audit/${b.id}`} className={styles.periodRow}>
+          return <Link href={`/portal/admin/audit/${b.id}`} className={styles.periodRow}>
             <span className={styles.calendar} aria-hidden="true"><small>{monthName}</small><strong>{Number(day) || "—"}</strong></span>
-            <span><span className={styles.periodTitle}>{b.periodFrom} to {b.periodTo}</span>
-              <span className={styles.periodMeta}>{b.serviceNotes?.noteCount || 0} notes
+            <span><span className={styles.periodTitle}>{b.periodFrom} to {b.periodTo}
+              {isCurrent && <span className={styles.statusChip} data-tone="current">● Current copy</span>}
+            </span>
+              <span className={styles.periodMeta}>{b.partialThrough ? `Through ${b.partialThrough} · ` : ""}{b.serviceNotes?.noteCount || 0} notes
                 {b.serviceNotes?.pdfCount && b.serviceNotes?.serviceCount ? ` · ${b.serviceNotes.pdfCount} PDF, ${b.serviceNotes.serviceCount} XLS` : b.serviceNotes?.serviceCount ? " · XLS only" : b.serviceNotes ? " · PDF only" : " · no service notes uploaded"}
                 {b.uploadedBy ? ` · ${preferredName(b.uploadedBy)}` : ""}{b.createdAt ? ` · uploaded ${mdy(b.createdAt)}` : ""}
               </span>
             </span><span className={styles.periodArrow} aria-hidden="true">›</span>
-          </Link></li>;
-        })}
-      </ul>}
+          </Link>;
+        };
+        return <section key={g.key}>
+          <div className={styles.sectionHeading}><h2>{g.label}</h2><span>{uploads} {uploads === 1 ? "upload" : "uploads"}</span></div>
+          <ul className={styles.periodList}>
+            {current && <li key={current.id}>{row(current, true)}</li>}
+            {g.payroll.map((b) => <li key={b.id}>{row(b, false)}</li>)}
+          </ul>
+          {earlier.length > 0 && <details className={styles.fold}>
+            <summary><ChevronRight size={13} aria-hidden="true" /> Earlier uploads ({earlier.length}) · Superseded</summary>
+            {earlier.map((b) => <Link key={b.id} href={`/portal/admin/audit/${b.id}`} className={styles.oldRow}>
+              <span className={styles.oldWhen}>{mdyTime(b.createdAt)}</span>
+              <span>{b.partialThrough ? `Through ${b.partialThrough} · ` : ""}{b.serviceNotes?.noteCount || 0} notes</span>
+              <span className={styles.statusChip}>Superseded</span>
+              {starCounts[b.id] ? <span className={styles.starCount}>★ {starCounts[b.id]} starred</span> : null}
+            </Link>)}
+          </details>}
+        </section>;
+      })}
       <section className={styles.authorizations} aria-label="Monthly authorizations">
         <div className={styles.sectionHeading}><h2>Monthly authorizations</h2><BudgetManager months={months} /></div>
         <p className={styles.subtitle}>Client allowances from the monthly Budget Capture Report.</p>

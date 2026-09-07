@@ -5,7 +5,7 @@
 // the reason.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diffAuditRows, periodOverlap, adjustedAfterReviewPlan } from "../audit-changes.js";
+import { diffAuditRows, periodOverlap, adjustedAfterReviewPlan, noteChangesPlan } from "../audit-changes.js";
 
 const row = (over = {}) => ({
   shiftKey: "k1", who: "Bee Wye", whoLegal: "Brianna Wyatt", date: "08/20/26",
@@ -158,6 +158,79 @@ test("a second flip refreshes the change and carries the closing, never nests", 
     second.reason,
     'Auto: changed after review (billed 3.00h -> 1.50h). Earlier flag: "looks double booked"',
   );
+});
+
+// ---- the 09/07 split: notes inform, times flip ----
+
+test("a note merely added or edited does not flip the decision", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const diff = diffAuditRows(
+    [row({ note: null }), row({ shiftKey: "k2", note: { words: 10, summary: "s", source: "xls" } })],
+    [row({ note: { words: 42, summary: "walked", source: "dsn" } }),
+      row({ shiftKey: "k2", note: { words: 30, summary: "s", source: "xls" } })],
+    overlap,
+  );
+  const flips = adjustedAfterReviewPlan(diff, [review(), review({ shiftKey: "k2" })]);
+  assert.deepEqual(flips, []);
+});
+
+test("the note additions land in the ledger with the shift's identity", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const newRows = [
+    row({ employeeKey: "bee wye", note: { words: 42, summary: "walked", source: "dsn" }, scheduleNote: { text: "makeup" } }),
+  ];
+  const diff = diffAuditRows([row({ note: null, scheduleNote: null })], newRows, overlap);
+  const ledger = noteChangesPlan(diff, newRows, [review({ decision: "flagged", reason: "look" })]);
+  assert.equal(ledger.length, 2);
+  assert.deepEqual(ledger.map((e) => e.kind).sort(), ["schedule", "service"]);
+  const service = ledger.find((e) => e.kind === "service");
+  assert.equal(service.detail, "DSN note added (42 words)");
+  assert.equal(service.who, "Bee Wye");
+  assert.equal(service.whoLegal, "Brianna Wyatt");
+  assert.equal(service.decision, "flagged");
+  assert.equal(service.billedMin, 240);
+});
+
+test("an undecided shift's new note stays out of the ledger", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const newRows = [row({ note: { words: 42, summary: "walked", source: "dsn" } })];
+  const diff = diffAuditRows([row({ note: null })], newRows, overlap);
+  assert.deepEqual(noteChangesPlan(diff, newRows, []), []);
+});
+
+test("a vanished note still flips even with a fresh note beside it elsewhere", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const diff = diffAuditRows(
+    [row({ scheduleNote: { text: "cancelled" } })],
+    [row({ scheduleNote: null, note: { words: 60, summary: "walked", source: "dsn" } })],
+    overlap,
+  );
+  const flips = adjustedAfterReviewPlan(diff, [review()]);
+  assert.equal(flips.length, 1);
+  assert.match(flips[0].reason, /schedule note gone/);
+});
+
+test("billed landing on the reviewer's corrected figure is the report catching up, not a flip", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const diff = diffAuditRows(
+    [row({ billedMin: 240 })],
+    [row({ billedMin: 180 })],
+    overlap,
+  );
+  const flips = adjustedAfterReviewPlan(diff, [review({ billableMin: 180 })]);
+  assert.deepEqual(flips, []);
+});
+
+test("billed matching the correction while the clock also moved still flips", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const diff = diffAuditRows(
+    [row({ billedMin: 240, clockedMin: 240 })],
+    [row({ billedMin: 180, clockedMin: 180 })],
+    overlap,
+  );
+  const flips = adjustedAfterReviewPlan(diff, [review({ billableMin: 180 })]);
+  assert.equal(flips.length, 1);
+  assert.match(flips[0].reason, /clocked/);
 });
 
 test("a reviewed shift that came back wears that instead of a change list", () => {

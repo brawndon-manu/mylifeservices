@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   SquareStack, Plus, ListChecks, PanelTop, Users, UserRound,
-  FileQuestion, FileX, FileDown,
+  FileQuestion, FileX, FileDown, FilePlus2,
 } from "lucide-react";
 import styles from "./audit.module.css";
 
@@ -14,7 +14,7 @@ import styles from "./audit.module.css";
 // the workspace palette for each. The workspace used to carry its own
 // appearance button and storage, which meant the audit could disagree with
 // the rest of the portal - one control now.
-export default function AuditWorkspace({ children, page = "home", view = "shifts", onView, hasLost = false, canUpload = true, periodLabel = null }) {
+export default function AuditWorkspace({ children, page = "home", view = "shifts", onView, hasLost = false, canUpload = true, periodLabel = null, frozen = false }) {
   // THE SIDEBAR FOLDS AWAY - Mánu 2026-09-06, pointing at the same button in
   // Claude: room for the cards when the nav is not needed. The choice sticks
   // per browser; on a phone the nav is already a slim strip and stays put,
@@ -31,11 +31,20 @@ export default function AuditWorkspace({ children, page = "home", view = "shifts
     });
   // Lucide outline icons throughout - Mánu 2026-09-06 sent the mockups and
   // the mapping table; the ticks, dots and calendar tiles stay text and CSS
-  const views = [
-    ["shifts", "Shifts", ListChecks], ["focus", "Focused review", PanelTop], ["employee", "Employees", Users],
-    ["client", "Clients", UserRound], ["orphans", "Unmatched notes", FileQuestion],
-    ...(hasLost ? [["lost", "Disappeared shifts", FileX]] : []), ["reports", "Reports", FileDown],
-  ];
+  // a frozen (superseded) copy is for reading, not deciding: no Focused
+  // review, no New notes ledger, no Reports - just the frozen data views
+  const views = frozen
+    ? [
+      ["shifts", "Shifts", ListChecks], ["employee", "Employees", Users],
+      ["client", "Clients", UserRound], ["orphans", "Unmatched notes", FileQuestion],
+      ...(hasLost ? [["lost", "Disappeared shifts", FileX]] : []),
+    ]
+    : [
+      ["shifts", "Shifts", ListChecks], ["focus", "Focused review", PanelTop], ["employee", "Employees", Users],
+      ["client", "Clients", UserRound], ["orphans", "Unmatched notes", FileQuestion],
+      ["newnotes", "New notes", FilePlus2],
+      ...(hasLost ? [["lost", "Disappeared shifts", FileX]] : []), ["reports", "Reports", FileDown],
+    ];
   return (
     <section className={styles.workspace} data-collapsed={collapsed ? "true" : "false"}>
       <aside className={styles.sidebar}>

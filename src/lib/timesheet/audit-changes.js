@@ -14,6 +14,13 @@
 // of every shift that left the upload, and adjustedAfterReviewPlan turns
 // the ones somebody had already ruled on back into flags.
 //
+// And 2026-09-07, splitting notes from times for the daily rhythm: a note
+// ADDED or EDITED on a decided shift no longer flips it - it goes to the New
+// notes ledger (noteChangesPlan) where it waits to be marked seen. A note
+// that disappears still flips, and so does any time move - except the one
+// where the billed figure lands exactly on the reviewer's own corrected
+// billable, which is the report catching up to him, not a change to chase.
+//
 // The diff is scoped to the dates BOTH copies cover: a day the old copy never
 // reached is new territory, not a change - the Not-decided pile catches it.
 
@@ -28,20 +35,32 @@ const noteName = (n) => (n?.source === "dsn" ? "DSN note" : "service note");
 // the change sentences for one shift both copies hold, or [] when nothing
 // moved. Written once here so the card line, the stored diff and the
 // re-flag reason can never phrase the same change three ways.
+//
+// Beside the kinds and words it also hands back:
+//   figures    - which time figures moved, structured, so the flip plan can
+//                tell "the report caught up to the correction" from a real move
+//   noteEvents - the note ADDITIONS and EDITS alone (never disappearances),
+//                each with its kind, for the New notes ledger
 function changesBetween(prev, r) {
   const kinds = new Set();
   const words = [];
+  const figures = { billed: null, clocked: null };
+  const noteEvents = [];
   if ((r.billedMin ?? null) !== (prev.billedMin ?? null)) {
     kinds.add("hours");
+    figures.billed = { from: prev.billedMin ?? null, to: r.billedMin ?? null };
     words.push(`billed ${hrs(prev.billedMin)} -> ${hrs(r.billedMin)}`);
   }
   if ((r.clockedMin ?? null) !== (prev.clockedMin ?? null)) {
     kinds.add("hours");
+    figures.clocked = { from: prev.clockedMin ?? null, to: r.clockedMin ?? null };
     words.push(`clocked ${hrs(prev.clockedMin)} -> ${hrs(r.clockedMin)}`);
   }
   if (!prev.note && r.note) {
     kinds.add("note");
-    words.push(`${noteName(r.note)} added (${r.note.words || 0} words)`);
+    const w = `${noteName(r.note)} added (${r.note.words || 0} words)`;
+    words.push(w);
+    noteEvents.push({ kind: "service", detail: w });
   } else if (prev.note && !r.note) {
     kinds.add("note-gone");
     words.push(`${noteName(prev.note)} gone (was ${prev.note.words || 0} words)`);
@@ -50,10 +69,14 @@ function changesBetween(prev, r) {
     const reworded = (r.note.summary || "") !== (prev.note.summary || "");
     if (grewOrShrank) {
       kinds.add("note");
-      words.push(`${noteName(r.note)} changed (${prev.note.words || 0} -> ${r.note.words || 0} words)`);
+      const w = `${noteName(r.note)} changed (${prev.note.words || 0} -> ${r.note.words || 0} words)`;
+      words.push(w);
+      noteEvents.push({ kind: "service", detail: w });
     } else if (reworded) {
       kinds.add("note");
-      words.push(`${noteName(r.note)} reworded`);
+      const w = `${noteName(r.note)} reworded`;
+      words.push(w);
+      noteEvents.push({ kind: "service", detail: w });
     }
   }
   const prevSn = prev.scheduleNote?.text || null;
@@ -61,14 +84,16 @@ function changesBetween(prev, r) {
   if (!prevSn && newSn) {
     kinds.add("note");
     words.push("schedule note added");
+    noteEvents.push({ kind: "schedule", detail: "schedule note added" });
   } else if (prevSn && !newSn) {
     kinds.add("note-gone");
     words.push("schedule note gone");
   } else if (prevSn && newSn && prevSn !== newSn) {
     kinds.add("note");
     words.push("schedule note changed");
+    noteEvents.push({ kind: "schedule", detail: "schedule note changed" });
   }
-  return { kinds: [...kinds], words };
+  return { kinds: [...kinds], words, figures, noteEvents };
 }
 
 // pure: the change map between two audit builds' rows. `overlap` is the
@@ -78,6 +103,9 @@ function changesBetween(prev, r) {
 //   details - shiftKey -> one plain sentence of what moved
 //   gone    - the shifts the old copy held on shared days that the new one
 //             does not, each with enough identity to be shown and re-flagged
+//   figures - shiftKey -> which time figures moved, structured (not stored
+//             on the batch; the flip plan reads it at upload)
+//   noteEvents - shiftKey -> the note additions/edits alone, for the ledger
 export function diffAuditRows(oldRows, newRows, overlap) {
   const from = dayKey(overlap.from);
   const to = dayKey(overlap.to);
@@ -89,6 +117,8 @@ export function diffAuditRows(oldRows, newRows, overlap) {
   const changed = {};
   const details = {};
   const gone = [];
+  const figures = {};
+  const noteEvents = {};
   const seen = new Set();
   for (const r of newRows) {
     if (!inScope(r)) continue;
@@ -99,10 +129,12 @@ export function diffAuditRows(oldRows, newRows, overlap) {
       details[r.shiftKey] = "appeared on a day the previous copy already covered";
       continue;
     }
-    const { kinds, words } = changesBetween(prev, r);
-    if (kinds.length) {
-      changed[r.shiftKey] = kinds;
-      details[r.shiftKey] = words.join("; ");
+    const found = changesBetween(prev, r);
+    if (found.kinds.length) {
+      changed[r.shiftKey] = found.kinds;
+      details[r.shiftKey] = found.words.join("; ");
+      figures[r.shiftKey] = found.figures;
+      if (found.noteEvents.length) noteEvents[r.shiftKey] = found.noteEvents;
     }
   }
   for (const [k, prev] of byKey) {
@@ -119,7 +151,7 @@ export function diffAuditRows(oldRows, newRows, overlap) {
       schedTo: prev.schedTo ?? null,
     });
   }
-  return { changed, details, gone };
+  return { changed, details, gone, figures, noteEvents };
 }
 
 // A DECIDED SHIFT WHOSE FACTS MOVED GOES BACK IN THE FLAGGED PILE, wearing
@@ -143,12 +175,31 @@ function contextOf(review) {
   return `Was flagged${by}.`;
 }
 
-export function adjustedAfterReviewPlan({ changed = {}, details = {}, gone = [] }, reviews) {
+export function adjustedAfterReviewPlan({ changed = {}, details = {}, gone = [], figures = {} }, reviews) {
   const flips = [];
   const byKey = new Map((reviews || []).map((r) => [r.shiftKey, r]));
   for (const [key, kinds] of Object.entries(changed)) {
     const review = byKey.get(key);
     if (!review) continue;
+    // A NOTE MERELY ARRIVING OR GROWING NO LONGER FLIPS THE DECISION - Mánu
+    // 2026-09-07: "if its just new notes added in then it would be just to
+    // show me that its new but i still need to see it." Those land in the
+    // New notes ledger instead (noteChangesPlan below); a note VANISHING
+    // still flips, and so does any time move.
+    const serious = kinds.filter((k) => k !== "note");
+    if (!serious.length) continue;
+    // THE REPORT CAUGHT UP TO THE CORRECTION. When the only serious move is
+    // the billed figure landing exactly on the reviewer's corrected billable,
+    // the office fixed QSP to what he already ruled - his words: "if my
+    // adjusted time is now the newer report time then good." The decision and
+    // the correction stand; the card says so quietly.
+    const f = figures[key];
+    if (
+      serious.every((k) => k === "hours")
+      && review.billableMin != null
+      && f?.billed && f.billed.to === review.billableMin
+      && !f.clocked
+    ) continue;
     const what = kinds.includes("new")
       ? "back in the upload after it was reviewed as gone"
       : details[key] || "the export moved it";
@@ -166,6 +217,38 @@ export function adjustedAfterReviewPlan({ changed = {}, details = {}, gone = [] 
     });
   }
   return flips;
+}
+
+// THE NEW NOTES LEDGER - one row per note that arrived or changed on a shift
+// somebody had already ruled on. Pure: hand it the diff's noteEvents, the new
+// rows and the standing reviews; it hands back the rows to record. The
+// upload writes them into AuditNoteChange, where they stay until marked seen.
+export function noteChangesPlan({ noteEvents = {} }, newRows, reviews) {
+  const byKey = new Map((reviews || []).map((r) => [r.shiftKey, r]));
+  const rowByKey = new Map((newRows || []).map((r) => [r.shiftKey, r]));
+  const out = [];
+  for (const [key, events] of Object.entries(noteEvents)) {
+    const review = byKey.get(key);
+    if (!review) continue;
+    const r = rowByKey.get(key);
+    if (!r) continue;
+    for (const e of events) {
+      out.push({
+        shiftKey: key,
+        employeeKey: r.employeeKey || "",
+        kind: e.kind,
+        detail: e.detail,
+        who: r.who,
+        whoLegal: r.whoLegal || r.who,
+        date: r.date,
+        client: r.client || null,
+        billedMin: r.billedMin ?? null,
+        clockedMin: r.clockedMin ?? null,
+        decision: review.decision,
+      });
+    }
+  }
+  return out;
 }
 
 // the shared days of two period ranges, or null when they never touch

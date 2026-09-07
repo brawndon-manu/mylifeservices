@@ -227,4 +227,47 @@
 
 .cardFooter { margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border); }
 .cardActions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* the audit list, grouped by month: one current copy, the rest folded */
+.statusChip { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; padding: 3px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; background: var(--surface-3); color: var(--muted); vertical-align: 2px; white-space: nowrap; }
+.statusChip[data-tone="current"] { color: var(--green); }
+.fold summary { list-style: none; cursor: pointer; padding: 13px 0; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--border); }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary svg { transition: transform .15s; }
+.fold[open] summary svg { transform: rotate(90deg); }
+.oldRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 11px 0 11px 12px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.oldRow:hover .oldWhen { color: var(--accent); }
+.oldWhen { min-width: 128px; color: var(--foreground); font-weight: 550; }
+.starCount { margin-left: auto; color: var(--amber); font-size: 12px; white-space: nowrap; }
+
+/* a superseded copy opens frozen */
+.frozenBar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 18px; padding: 11px 15px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+.frozenBar strong { color: var(--foreground); font-weight: 600; }
+.frozenBar a { margin-left: auto; color: var(--accent); font-weight: 550; }
+.starBtn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 12px; font-weight: 550; white-space: nowrap; }
+.starBtn[aria-pressed="true"] { color: var(--amber); border-color: var(--amber); }
+
+/* the side-by-side: the reading the decision froze against the newest copy */
+.compare { margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
+.side { border: 1px solid var(--border); border-radius: 10px; padding: 14px 15px; background: var(--surface-2); }
+.sideNew { border-color: var(--border-strong); background: var(--surface); }
+.sideLabel { font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+.cmpRow { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; font-size: 12px; padding: 4px 0; }
+.cmpRow dt { color: var(--faint); }
+.cmpRow dd { font-variant-numeric: tabular-nums; }
+.cmpMoved { color: var(--amber); font-weight: 600; }
+.cmpSub { display: block; font-size: 10px; color: var(--faint); font-weight: 400; }
+.cmpNote { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); line-height: 1.5; }
+.pickRow { margin-top: 13px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pickRow small { flex-basis: 100%; color: var(--faint); font-size: 10px; }
+.settled { display: flex; gap: 9px; align-items: flex-start; margin-top: 12px; padding: 11px 13px; border-radius: 8px; background: var(--surface-2); font-size: 12px; color: var(--muted); line-height: 1.5; }
+.settledMark { color: var(--green); font-weight: 700; }
+
+/* the New notes view */
+.noteChangeLine { margin-top: 7px; font-size: 12px; color: var(--amber); }
+.noteChangeBody { margin-top: 10px; padding: 12px 14px; border-radius: 8px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--muted); }
+.noteChangeFoot { margin-top: 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.noteChangeFoot > span { font-size: 11px; color: var(--faint); }
+.pushRight { margin-left: auto; }
+.decisionDot { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; margin-left: auto; white-space: nowrap; }
 .workspace button[class*="bg-rose-"] { background: var(--red); color: var(--background); }

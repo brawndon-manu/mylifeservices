@@ -21,12 +21,13 @@
 //
 // Nothing here computes an hour. See the page beside it.
 import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import StudyMode from "./StudyMode";
-import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts } from "../actions";
+import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts, markNoteChangeSeen, toggleShiftStar } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
-import { hrs, clientFirstLast } from "./figures";
-import { Flag, CircleAlert, ListFilter, ArrowDownWideNarrow, ChevronDown, ChevronRight } from "lucide-react";
+import { hrs, span, clientFirstLast } from "./figures";
+import { Flag, CircleAlert, ListFilter, ArrowDownWideNarrow, ChevronDown, ChevronRight, Star } from "lucide-react";
 import AuditWorkspace from "../AuditWorkspace";
 import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
@@ -48,7 +49,7 @@ const VIEWS = [
   { key: "client", label: "By client", of: (r) => r.client || "No client on the booking" },
 ];
 
-export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null, periodLabel = "", canUpload = true }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null, periodLabel = "", canUpload = true, frozen = null, noteChanges = [] }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -98,6 +99,43 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   const noteReview = (shiftKey, review) =>
     setLocalReviews((v) => ({ ...v, [shiftKey]: review }));
 
+  // A SUPERSEDED COPY OPENS FROZEN - Mánu 2026-09-07: "all the superceded
+  // ones are frozen in time." Nothing decides from here; shifts take stars
+  // instead (the only place stars exist), and a Starred filter finds them.
+  const frozenMode = !!frozen;
+  const [stars, setStars] = useState(() => new Set(frozen?.stars || []));
+  const [starsOnly, setStarsOnly] = useState(false);
+  const onStar = async (shiftKey) => {
+    const had = stars.has(shiftKey);
+    setStars((prev) => {
+      const next = new Set(prev);
+      if (had) next.delete(shiftKey);
+      else next.add(shiftKey);
+      return next;
+    });
+    const body = new FormData();
+    body.set("batchId", batchId || "");
+    body.set("shiftKey", shiftKey);
+    let res;
+    try { res = await toggleShiftStar(body); } catch { res = null; }
+    if (!res?.ok) {
+      setStars((prev) => {
+        const next = new Set(prev);
+        if (had) next.add(shiftKey);
+        else next.delete(shiftKey);
+        return next;
+      });
+    }
+  };
+
+  // the New notes ledger, drained locally as Seen lands - the server row
+  // keeps the durable seenAt
+  const [seenIds, setSeenIds] = useState(() => new Set());
+  const openNotes = useMemo(
+    () => noteChanges.filter((n) => !seenIds.has(n.id)),
+    [noteChanges, seenIds],
+  );
+
   const inPeriod = useMemo(
     () => (period === "all" ? rows : rows.filter((r) => r.period === period)),
     [rows, period],
@@ -135,14 +173,15 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const byDecision = DECISIONS.find((d) => d.key === decision).match;
+    const byDecision = frozenMode ? () => true : DECISIONS.find((d) => d.key === decision).match;
     return inPeriod.filter((r) => {
       if (!byDecision(r)) return false;
+      if (frozenMode && starsOnly && !stars.has(r.shiftKey)) return false;
       if (onlyKinds.length && !onlyKinds.every((k) => kindOn(r, k))) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [inPeriod, decision, onlyKinds, q]);
+  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars]);
 
   // ONE LINE PER PERSON OR PER CLIENT, over whatever is showing.
   //
@@ -233,6 +272,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     [shown],
   );
 
+  // the New notes view reads the live note text off the current rows
+  const rowsByKey = useMemo(() => new Map(rows.map((r) => [r.shiftKey, r])), [rows]);
+
 
 
   // a row in the roll-up is a way into that person or client, not a dead end
@@ -245,8 +287,15 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     setStudying(next === "focus");
     if (next !== "focus") setView(next);
   };
-  const title = studying ? "Focused review" : ({ shifts: "Shifts", employee: "Employees", client: "Clients", orphans: "Unmatched notes", lost: "Disappeared shifts", reports: "Reports" })[view];
-  const recordView = !["orphans", "lost", "reports"].includes(view);
+  // "Open the shift" from a New notes entry: the shift is decided, so the
+  // Not-decided tab would hide exactly the card being opened
+  const openShiftOf = (who) => {
+    setDecision("all");
+    setQ(who);
+    setView("shifts");
+  };
+  const title = studying ? "Focused review" : ({ shifts: "Shifts", employee: "Employees", client: "Clients", orphans: "Unmatched notes", newnotes: "New notes", lost: "Disappeared shifts", reports: "Reports" })[view];
+  const recordView = !["orphans", "lost", "reports", "newnotes"].includes(view);
   // the sidebar names the period the way a person says it - "AUG 16-31,
   // 2026" off his mock - and falls back to the raw label if it ever fails
   // to parse
@@ -260,16 +309,29 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       : `${mon(m[1])} ${Number(m[2])} – ${mon(m[4])} ${Number(m[5])}, 20${m[6]}`;
   })();
 
+  const uploadedMdy = (() => {
+    if (!frozen?.uploadedAt) return null;
+    const d = new Date(frozen.uploadedAt);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
+  })();
+
   return (
-    <AuditWorkspace page="batch" view={studying ? "focus" : view} onView={changeView} hasLost={lost.length > 0} canUpload={canUpload} periodLabel={navPeriod}>
+    <AuditWorkspace page="batch" view={studying ? "focus" : view} onView={changeView} hasLost={lost.length > 0} canUpload={canUpload} periodLabel={navPeriod} frozen={frozenMode}>
       <header className={styles.heading}>
         <div><p className={styles.eyebrow}>{periodLabel}</p><h1>{title}</h1><p className={styles.subtitle}>{totals.shifts} billed shifts · {totals.notes} service notes</p></div>
-        <div className={styles.actions}>
+        {!frozenMode && <div className={styles.actions}>
           <AuditDownloads batchId={batchId} periodLabel={periodLabel} />
           {!studying && recordView && <button type="button" className={styles.primary} disabled={!shown.length} onClick={() => setStudying(true)}>Start focused review</button>}
-        </div>
+        </div>}
       </header>
-      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} /> : view === "reports" ? <>
+      {frozenMode && (
+        <div className={styles.frozenBar}>
+          <strong>Superseded copy</strong>
+          <span>{uploadedMdy ? `Uploaded ${uploadedMdy} · ` : ""}replaced by a newer copy · frozen as it read then</span>
+          {frozen.currentId && <Link href={`/portal/admin/audit/${frozen.currentId}`}>Open the current copy</Link>}
+        </div>
+      )}
+      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} /> : view === "reports" ? <>
         <p className={styles.notice}>Reports include the entire uploaded period and current saved decisions. Filters used while reviewing do not limit these downloads.</p>
         <AuditDownloads batchId={batchId} periodLabel={periodLabel} reportsPage />
       </> : <>
@@ -283,8 +345,12 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       {periods.length > 1 && <label className={styles.eyebrow}>Pay period <select className={styles.secondary} value={period} onChange={(e) => setPeriod(e.target.value)}>
         {["all", ...periods].map((p) => <option key={p} value={p}>{p === "all" ? "Every period" : p} ({periodCounts[p] ?? 0})</option>)}
       </select></label>}
-      {recordView && <div className={styles.decisionTabs} aria-label="Review status">
+      {recordView && !frozenMode && <div className={styles.decisionTabs} aria-label="Review status">
         {["open", "flagged", "approved", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
+      </div>}
+      {recordView && frozenMode && <div className={styles.decisionTabs} aria-label="Starred filter">
+        <button type="button" aria-pressed={!starsOnly} onClick={() => setStarsOnly(false)}>All shifts<span>{inPeriod.length}</span></button>
+        <button type="button" aria-pressed={starsOnly} onClick={() => setStarsOnly(true)}>Starred<span>{stars.size}</span></button>
       </div>}
       <div className={styles.toolbar}>
         {recordView && <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search employee, client or service" aria-label="Search shifts" className={styles.search} />}
@@ -301,13 +367,21 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
         {recordView && (q || onlyKinds.length > 0) && <button type="button" className={styles.secondary} onClick={() => { setQ(""); setOnlyKinds([]); }}>Clear filters</button>}
       </div>
       {recordView && <p className={styles.resultCount}>{shown.length} of {inPeriod.length} shifts{period === "all" ? "" : ` in ${period}`}</p>}
-      {batchId && recordView && <details className={styles.tools}><summary>Review tools</summary>
+      {batchId && recordView && !frozenMode && <details className={styles.tools}><summary>Review tools</summary>
         <div className={styles.tools}>
           <AutoFlag batchId={batchId} onFlagged={(applied) => setLocalReviews((v) => ({ ...v, ...Object.fromEntries(applied.map((a) => [a.shiftKey, { decision: "flagged", reason: a.reason, billableMin: null, by: null, at: null }])) }))} />
           <ResetAll batchId={batchId} onReset={() => setLocalReviews(Object.fromEntries(rowsProp.map((r) => [r.shiftKey, null])))} />
         </div>
       </details>}
-      {view === "orphans" ? (
+      {view === "newnotes" ? (
+        <NewNotes
+          rows={openNotes}
+          rowsByKey={rowsByKey}
+          titles={titles}
+          onSeen={(id) => setSeenIds((s) => new Set(s).add(id))}
+          onOpen={openShiftOf}
+        />
+      ) : view === "orphans" ? (
         <Orphans rows={sortOrphans(period === "all" ? orphans : orphans.filter((n) => n.period === period), sortKeys)} staffName={staffName} />
       ) : view === "lost" ? (
         <LostShifts rows={sortOrphans(period === "all" ? lost : lost.filter((n) => n.period === period), sortKeys)} staffName={staffName} />
@@ -330,7 +404,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
                 </span>
               </h2>
               <div className="mt-2 space-y-3">
-                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} />)}
+                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozenMode} starred={stars.has(r.shiftKey)} onStar={onStar} />)}
               </div>
             </div>
           ))}
@@ -349,6 +423,10 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           sortKeys={sortKeys}
           authorized={view === "client" ? authorized : null}
           authLabel={authMonthLabel}
+          batchId={batchId}
+          frozen={frozenMode}
+          stars={stars}
+          onStar={onStar}
         />
       )}
       <p className={styles.legend}>A time gap alone is not a finding. Read the notes before deciding. Audit decisions do not change pay.</p>
@@ -454,6 +532,94 @@ function LostShifts({ rows, staffName = (n) => n }) {
   );
 }
 
+// NOTES THAT ARRIVED OR CHANGED AFTER THE SHIFT WAS DECIDED - Mánu
+// 2026-09-07: "if there was new schedule notes/service notes then there
+// needs to be a place just for those. even if they were accepted or
+// flagged." The decision stands; the entry stays until marked seen, across
+// any number of uploads, so a busy day cannot slip one past the reviewer.
+function NewNotes({ rows, rowsByKey, titles, onSeen, onOpen }) {
+  const [busyId, setBusyId] = useState(null);
+  const uploads = new Set(rows.map((n) => n.batchId)).size;
+  const seen = async (id) => {
+    if (busyId) return;
+    setBusyId(id);
+    const body = new FormData();
+    body.set("id", id);
+    let res;
+    try { res = await markNoteChangeSeen(body); } catch { res = null; }
+    setBusyId(null);
+    if (res?.ok) onSeen(id);
+  };
+  if (!rows.length) {
+    return (
+      <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-faint">
+        No notes have arrived or changed on decided shifts since your last look.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="mt-4 text-xs text-faint">
+        Notes that arrived or changed after you decided the shift. Your decisions stand.
+        Each entry stays here until you mark it seen. {rows.length}{" "}
+        {rows.length === 1 ? "entry" : "entries"} across {uploads} {uploads === 1 ? "upload" : "uploads"}.
+      </p>
+      <ul className="mt-2 space-y-3">
+        {rows.map((n) => {
+          const row = rowsByKey.get(n.shiftKey);
+          const decision = row?.review?.decision || n.decision;
+          const detail = n.detail ? n.detail.charAt(0).toUpperCase() + n.detail.slice(1) : "Note changed";
+          const body =
+            n.kind === "schedule"
+              ? row?.scheduleNote?.text || null
+              : row?.note?.summary || null;
+          const billed = row?.billedMin ?? n.billedMin;
+          const clocked = row?.clockedMin ?? n.clockedMin;
+          return (
+            <li key={n.id} className="rounded-xl border border-border bg-surface p-4">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-base font-semibold text-foreground">{n.who}</span>
+                {titles?.[n.employeeKey] && <span className="text-xs text-muted">{titles[n.employeeKey]}</span>}
+                <span className="text-sm tabular-nums text-muted">{n.date}</span>
+                {n.client && <span className="text-sm text-muted">{clientFirstLast(n.client)}</span>}
+                <span
+                  className={`${styles.decisionDot} ${
+                    decision === "approved"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : decision === "flagged"
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-muted"
+                  }`}
+                >
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {decision === "approved" ? "Approved" : decision === "flagged" ? "Flagged" : "Not decided"}
+                </span>
+              </div>
+              <p className={styles.noteChangeLine}>{detail} on the {mdyOfIso(n.updatedAt)} upload.</p>
+              {body && (
+                <div className={styles.noteChangeBody}>
+                  {n.kind !== "schedule" && row?.note?.source === "dsn" && <span className={styles.noteTag}>DSN</span>}
+                  {body}
+                </div>
+              )}
+              <div className={styles.noteChangeFoot}>
+                <span>
+                  {billed != null ? `Billed ${hrs(billed)}` : "No billed figure"}
+                  {clocked != null ? ` · Clocked ${hrs(clocked)}` : ""}
+                </span>
+                <button type="button" className={`${styles.secondary} ${styles.pushRight}`} onClick={() => onOpen(n.who)}>Open the shift</button>
+                <button type="button" className={styles.primary} disabled={busyId === n.id} onClick={() => seen(n.id)}>
+                  {busyId === n.id ? "Saving…" : "Seen"}
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 const rollDayKey = (d) => {
   const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
   return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
@@ -515,7 +681,7 @@ const ROLL_SORTS = {
 // it should undo the ones that contradict each other."
 const SORT_CONFLICTS = [["first", "last"]];
 
-function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [] }) {
+function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [], batchId = null, frozen = false, stars = null, onStar = null }) {
   // the Last name sort flips STAFF names to "Last, First" - the employee
   // roll and the staff on its unfolded cards; clients keep the roster form
   const staffName = sortKeys.includes("last") && what === "Employee" ? lastFirst : (n) => n;
@@ -647,7 +813,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                     <td colSpan={withAuth ? 12 : 10} className="bg-surface-2/50 px-3 py-3">
                       <div className="space-y-3">
                         {rowsFor(g.name).map((r) => (
-                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} />
+                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozen} starred={!!stars?.has(r.shiftKey)} onStar={onStar} />
                         ))}
                       </div>
                     </td>
@@ -671,10 +837,20 @@ function Count({ n, tone }) {
   );
 }
 
-function Card({ r, onReview, title, staffName = (n) => n }) {
+function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen = false, starred = false, onStar = null }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const surfaced = r.reasons.length > 0;
+  // THE REPORT CAUGHT UP TO THE CORRECTION - the newest copy bills exactly
+  // what the reviewer corrected it to, so nothing flipped and the card says
+  // so quietly instead of asking anything.
+  const rv = r.review;
+  const settled =
+    !frozen
+    && rv?.billableMin != null
+    && rv.billableMin === (r.billedMin ?? null)
+    && rv.wasBilledMin != null
+    && rv.wasBilledMin !== (r.billedMin ?? null);
   // ON A PHONE THE STATUS RIDES THE NAME ROW - Mánu 2026-09-06: "put not
   // decided on the same row as the name af it the name interfered then drop
   // the status string and leave only the status color marking." The name
@@ -729,6 +905,16 @@ function Card({ r, onReview, title, staffName = (n) => n }) {
             {decisionWord}
           </span>
         </span>
+        {frozen && (
+          <button
+            type="button"
+            className={styles.starBtn}
+            aria-pressed={starred}
+            onClick={() => onStar?.(r.shiftKey)}
+          >
+            <Star size={13} aria-hidden="true" fill={starred ? "currentColor" : "none"} /> {starred ? "Starred" : "Star"}
+          </button>
+        )}
       </div>
       <p className="mt-0.5 text-sm tabular-nums text-muted sm:hidden">{r.date}</p>
       {/* client first, first name first, then the service, no dots - the
@@ -793,6 +979,16 @@ function Card({ r, onReview, title, staffName = (n) => n }) {
           {r.review.by ? ` by ${r.review.by}` : ""}
           {r.review.reason ? ` - ${r.review.reason.replace(/\.$/, "")}` : ""}
 
+        </p>
+      )}
+
+      {settled && (
+        <p className={styles.settled}>
+          <span className={styles.settledMark} aria-hidden="true">✓</span>
+          <span>
+            The newest copy now bills {hrs(r.billedMin)}, the figure you corrected it to
+            {rv.lastAt ? ` on ${mdyOfIso(rv.lastAt)}` : ""}. Your correction and {rv.decision === "approved" ? "approval" : "flag"} stand.
+          </span>
         </p>
       )}
 
@@ -867,13 +1063,20 @@ function Card({ r, onReview, title, staffName = (n) => n }) {
           )}
         </div>
       )}
-      <DecideBar r={r} onReview={onReview} />
+      {!frozen && <DecideBar r={r} onReview={onReview} batchId={batchId} settled={settled} />}
     </article>
   );
 }
 
+// 09/06/26 off an ISO stamp - the date shape every audit surface speaks
+const mdyOfIso = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
+};
 
-function DecideBar({ r, onReview }) {
+
+function DecideBar({ r, onReview, batchId = null, settled = false }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   const [billable, setBillable] = useState("");
@@ -884,12 +1087,32 @@ function DecideBar({ r, onReview }) {
   const [error, setError] = useState("");
   const reasonId = useId();
 
-  const send = async (decision) => {
+  // THE TIME MOVED AFTER THE REVIEW - the decision froze its figures, the
+  // newest copy reads differently, and neither is the settled catch-up case.
+  // The card shows both readings side by side and the buttons pick which
+  // figure bills. Mánu 2026-09-07: "show the card side by side and choosing
+  // which one to accept for billing time."
+  const rv = r.review;
+  const moved =
+    !settled
+    && rv
+    && rv.wasBilledMin != null
+    && (rv.wasBilledMin !== (r.billedMin ?? null) || (rv.wasClockedMin ?? null) !== (r.clockedMin ?? null));
+  // what the reviewer said bills: his correction where one stands, otherwise
+  // the billed figure he ruled on
+  const reviewedFigure = rv ? rv.billableMin ?? rv.wasBilledMin : null;
+  const reviewedWin =
+    rv?.billableMin != null && rv.billableFrom != null && rv.billableTo != null
+      ? { from: rv.billableFrom, to: rv.billableTo }
+      : null;
+
+  const send = async (decision, o = {}) => {
     if (busy) return;
     setBusy(true);
     setError("");
     const body = new FormData();
     body.set("decision", decision);
+    body.set("batchId", batchId || "");
     body.set("shiftKey", r.shiftKey);
     body.set("employeeKey", r.employeeKey || "");
     body.set("date", r.date || "");
@@ -900,13 +1123,16 @@ function DecideBar({ r, onReview }) {
     body.set("clockedMin", r.clockedMin ?? "");
     body.set("documentedMin", r.documentedMin ?? "");
     const bm =
-      decision === "flagged" && billable !== "" && Number.isFinite(Number(billable))
-        ? Number(billable)
-        : null;
+      o.billableMin !== undefined
+        ? o.billableMin
+        : decision === "flagged" && billable !== "" && Number.isFinite(Number(billable))
+          ? Number(billable)
+          : null;
+    const win = o.win !== undefined ? o.win : billableWin;
     if (bm != null) body.set("billableMin", bm);
-    if (bm != null && billableWin) {
-      body.set("billableFromMin", billableWin.from);
-      body.set("billableToMin", billableWin.to);
+    if (bm != null && win) {
+      body.set("billableFromMin", win.from);
+      body.set("billableToMin", win.to);
     }
     const why = decision === "flagged" ? reason.trim() : "";
     if (why) body.set("reason", why);
@@ -920,8 +1146,13 @@ function DecideBar({ r, onReview }) {
       by: "you",
       reason: why || null,
       billableMin: bm,
-      billableFrom: bm != null && billableWin ? billableWin.from : null,
-      billableTo: bm != null && billableWin ? billableWin.to : null,
+      billableFrom: bm != null && win ? win.from : null,
+      billableTo: bm != null && win ? win.to : null,
+      // the decision re-freezes to the current reading, so the side-by-side
+      // clears without a rebuild
+      wasBilledMin: r.billedMin ?? null,
+      wasClockedMin: r.clockedMin ?? null,
+      lastAt: new Date().toISOString(),
     });
     setFlagging(false);
     setReason("");
@@ -932,6 +1163,57 @@ function DecideBar({ r, onReview }) {
   return (
     <div className={styles.cardFooter}>
       {error && <p role="alert" className={styles.bad}>{error}</p>}
+      {!flagging && moved && (
+        <>
+          <div className={styles.compare}>
+            <div className={styles.side}>
+              <div className={styles.sideLabel}>As it was reviewed</div>
+              <dl>
+                <div className={styles.cmpRow}><dt>Billed</dt><dd>{hrs(rv.wasBilledMin)}</dd></div>
+                <div className={styles.cmpRow}><dt>Clocked</dt><dd>{rv.wasClockedMin != null ? hrs(rv.wasClockedMin) : "no row"}</dd></div>
+              </dl>
+              {rv.billableMin != null && (
+                <p className={styles.cmpNote}>
+                  Corrected to {hrs(rv.billableMin)}{reviewedWin ? ` (${span(reviewedWin.from, reviewedWin.to)})` : ""}.
+                </p>
+              )}
+            </div>
+            <div className={`${styles.side} ${styles.sideNew}`}>
+              <div className={styles.sideLabel}>Newest copy</div>
+              <dl>
+                <div className={styles.cmpRow}><dt>Billed</dt>
+                  <dd className={rv.wasBilledMin !== (r.billedMin ?? null) ? styles.cmpMoved : undefined}>
+                    {r.billedMin != null ? hrs(r.billedMin) : "no figure"}
+                    {rv.wasBilledMin !== (r.billedMin ?? null) && <span className={styles.cmpSub}>was {hrs(rv.wasBilledMin)}</span>}
+                  </dd>
+                </div>
+                <div className={styles.cmpRow}><dt>Clocked</dt>
+                  <dd className={(rv.wasClockedMin ?? null) !== (r.clockedMin ?? null) ? styles.cmpMoved : undefined}>
+                    {r.clockedMin != null ? hrs(r.clockedMin) : "no row"}
+                    {(rv.wasClockedMin ?? null) !== (r.clockedMin ?? null) && (
+                      <span className={styles.cmpSub}>was {rv.wasClockedMin != null ? hrs(rv.wasClockedMin) : "no row"}</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+          <div className={styles.pickRow}>
+            {reviewedFigure != null && (
+              <button type="button" disabled={busy} className={styles.primary} onClick={() => send("approved", { billableMin: reviewedFigure, win: reviewedWin })}>
+                Bill the reviewed time · {hrs(reviewedFigure)}
+              </button>
+            )}
+            {r.billedMin != null && (
+              <button type="button" disabled={busy} className={styles.secondary} onClick={() => send("approved", { billableMin: null, win: null })}>
+                Accept the new time · {hrs(r.billedMin)}
+              </button>
+            )}
+            <button type="button" disabled={busy} className={styles.secondary} onClick={() => setFlagging(true)}>Flag with a reason</button>
+            <small>Billing the reviewed time records it as a corrected billable figure, same as the adjust panel.</small>
+          </div>
+        </>
+      )}
       {flagging ? (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
           <label htmlFor={reasonId} className="block text-xs font-semibold text-foreground">
@@ -972,7 +1254,7 @@ function DecideBar({ r, onReview }) {
             </button>
           </div>
         </div>
-      ) : (
+      ) : moved ? null : (
         <div className={styles.cardActions}>
           <button type="button" disabled={busy} onClick={() => setFlagging(true)} className={styles.secondary}>Flag</button>
           <button type="button" disabled={busy} onClick={() => send("approved")} className={styles.primary}>{busy ? "Saving…" : "Approve"}</button>

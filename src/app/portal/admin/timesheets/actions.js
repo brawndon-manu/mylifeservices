@@ -1589,7 +1589,8 @@ export async function uploadBatch(formData) {
           { from: batch.periodFrom, to: batch.periodTo },
         );
         if (oldData && newData && overlap) {
-          const { changed, details, gone } = diffAuditRows(oldData.rows, newData.rows, overlap);
+          const diff = diffAuditRows(oldData.rows, newData.rows, overlap);
+          const { changed, details, gone } = diff;
           await prisma.timesheetBatch.update({
             where: { id: batch.id },
             data: {
@@ -1608,18 +1609,22 @@ export async function uploadBatch(formData) {
           // there was already a flag or approval or edited time then flag
           // those for adjusted after already reviewed and say what changed...
           // flag as well if note has disapeared! or if entire shifts have
-          // disapeared." The plan is pure and tested; this only writes it.
+          // disapeared." Since 2026-09-07 the plan splits notes from times:
+          // a note merely arriving or growing records a New notes ledger row
+          // instead of flipping, and a billed figure landing exactly on the
+          // reviewer's corrected billable is the report catching up, no flip.
+          // Both plans are pure and tested; this only writes them.
           const touched = [...Object.keys(changed), ...gone.map((g) => g.shiftKey)];
           if (touched.length) {
-            const { adjustedAfterReviewPlan } = await import("@/lib/timesheet/audit-changes");
+            const { adjustedAfterReviewPlan, noteChangesPlan } = await import("@/lib/timesheet/audit-changes");
             const reviews = await prisma.shiftReview.findMany({
               where: { shiftKey: { in: touched } },
               select: {
-                shiftKey: true, decision: true, reason: true,
+                shiftKey: true, decision: true, reason: true, billableMin: true,
                 decidedBy: { select: { name: true } },
               },
             });
-            const flips = adjustedAfterReviewPlan({ changed, details, gone }, reviews);
+            const flips = adjustedAfterReviewPlan(diff, reviews);
             for (const f of flips) {
               await prisma.shiftReview.update({
                 where: { shiftKey: f.shiftKey },
@@ -1628,6 +1633,27 @@ export async function uploadBatch(formData) {
             }
             if (flips.length) {
               console.log(`audit re-upload: ${flips.length} reviewed shift(s) pulled back to flagged for changes`);
+            }
+            // THE NEW NOTES LEDGER. One unseen row per shift and note kind:
+            // a note that moves again before it was seen refreshes the row it
+            // already has rather than stacking a second one.
+            const ledger = noteChangesPlan(diff, newData.rows, reviews);
+            for (const e of ledger) {
+              const standing = await prisma.auditNoteChange.findFirst({
+                where: { shiftKey: e.shiftKey, kind: e.kind, seenAt: null },
+                select: { id: true },
+              });
+              if (standing) {
+                await prisma.auditNoteChange.update({
+                  where: { id: standing.id },
+                  data: { detail: e.detail, batchId: batch.id, decision: e.decision, billedMin: e.billedMin, clockedMin: e.clockedMin },
+                });
+              } else {
+                await prisma.auditNoteChange.create({ data: { ...e, batchId: batch.id } });
+              }
+            }
+            if (ledger.length) {
+              console.log(`audit re-upload: ${ledger.length} note change(s) recorded for the New notes view`);
             }
           }
         }

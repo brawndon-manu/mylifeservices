@@ -858,8 +858,77 @@ model TimesheetBatch {
   updatedAt    DateTime    @updatedAt
   timesheets   Timesheet[]
   serviceNotes BatchServiceNotes?
+  auditNoteChanges AuditNoteChange[]
+  auditStars       AuditShiftStar[]
 
   @@index([createdAt])
+}
+
+// A NOTE THAT ARRIVED OR CHANGED AFTER THE SHIFT WAS DECIDED, 2026-09-07.
+//
+// Mánu, opening the daily upload rhythm: "if there was new schedule notes/
+// service notes then there needs to be a place just for those. even if they
+// were accepted or flagged... it would be just to show me that its new but i
+// still need to see it." So a note merely arriving or growing no longer flips
+// a decision back to flagged (a note VANISHING still does) - it lands here
+// instead, and stays until he marks it seen, so a busy day's uploads cannot
+// slip one past him. One unseen row per shift and note kind: a note that
+// changes again before it was seen refreshes the row rather than stacking.
+model AuditNoteChange {
+  id String @id @default(cuid())
+
+  // the shift the note belongs to - same key ShiftReview rides
+  shiftKey    String
+  employeeKey String
+
+  // the upload that brought the change
+  batchId String
+  batch   TimesheetBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // "service" (service note or DSN) or "schedule"
+  kind   String
+  // the diff's own words, e.g. "DSN note added (42 words)"
+  detail String
+
+  // enough identity to print the row even if the shift later leaves the upload
+  who        String
+  whoLegal   String?
+  date       String
+  client     String?
+  billedMin  Int?
+  clockedMin Int?
+  // the decision standing when the note moved
+  decision String?
+
+  seenAt   DateTime?
+  seenById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([seenAt])
+  @@index([shiftKey])
+}
+
+// A STAR ON ONE SHIFT INSIDE A SUPERSEDED AUDIT COPY, 2026-09-07. Mánu: "i
+// want it so i can go back to the superceded ones and star them just in case
+// i need to go back and see what was difference. starring only works in
+// superceded." The star belongs to the copy, not the shift: the same shift
+// can be starred in two copies because the point is which frozen reading
+// mattered.
+model AuditShiftStar {
+  id String @id @default(cuid())
+
+  batchId String
+  batch   TimesheetBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  shiftKey String
+  byId     String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([batchId, shiftKey])
+  @@index([batchId])
 }
 
 // THE SERVICE NOTES OF ONE PAY PERIOD, PARSED, 2026-08-27.
