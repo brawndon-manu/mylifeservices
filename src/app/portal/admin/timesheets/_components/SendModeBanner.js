@@ -1,3 +1,5 @@
+import { CircleCheck, TriangleAlert } from "lucide-react";
+
 // where timesheet emails actually go. once live this is just a quiet status
 // line - the real check before mailing 60 people is the confirm on Send all.
 // it only gets loud when sends are being redirected, because a redirected batch
@@ -5,9 +7,17 @@
 export default function SendModeBanner({ mode }) {
   if (mode.live) {
     return (
-      <p className="mt-4 flex items-center gap-2 text-xs text-muted">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        Sending is live - staff receive these at their own email address.
+      <p className="flex items-start gap-2 py-3.5 text-[12.5px] text-muted">
+        <CircleCheck
+          size={14}
+          strokeWidth={1.8}
+          aria-hidden="true"
+          className="mt-0.5 flex-none text-emerald-500"
+        />
+        <span>
+          <span className="font-medium text-foreground">Live delivery.</span>{" "}
+          Emails go to each staff member.
+        </span>
       </p>
     );
   }
@@ -16,19 +26,27 @@ export default function SendModeBanner({ mode }) {
   // looking for a switch to flip.
   const local = mode.reason === "local";
   return (
-    <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-      <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">
-        {local
-          ? "This isn't the live site - nothing can reach staff from here"
-          : "Test mode - nothing reaches staff"}
-      </p>
-      <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
-        Every timesheet email is redirected to{" "}
-        <span className="font-medium">{mode.recipients.join(", ")}</span>.
-        {local
-          ? " Live sending is switched on, but it only applies on the deployed site. A sign-in link built here would point at localhost and be useless to whoever received it."
-          : ""}
-      </p>
+    <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-amber-100 px-4 py-3 dark:bg-amber-950/30">
+      <TriangleAlert
+        size={15}
+        strokeWidth={1.8}
+        aria-hidden="true"
+        className="mt-0.5 flex-none text-amber-700 dark:text-amber-400"
+      />
+      <div className="text-[12.5px] leading-relaxed text-amber-800 dark:text-amber-200/80">
+        <p className="font-semibold text-amber-900 dark:text-amber-300">
+          {local
+            ? "This isn't the live site - nothing can reach staff from here"
+            : "Test mode - nothing reaches staff"}
+        </p>
+        <p className="mt-0.5">
+          Every timesheet email is redirected to{" "}
+          <span className="font-medium">{mode.recipients.join(", ")}</span>.
+          {local
+            ? " Live sending is switched on, but it only applies on the deployed site. A sign-in link built here would point at localhost and be useless to whoever received it."
+            : ""}
+        </p>
+      </div>
     </div>
   );
 }

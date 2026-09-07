@@ -18,12 +18,10 @@ const OFFICES = [
 
 export default function OfficeSwitch({ current }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-3">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted">
-        Offices
-      </span>
+    <div className="mt-6 flex flex-wrap items-center gap-4 border-b border-sep pb-4">
+      <span className="text-xs text-muted">Office</span>
       <div
-        className="inline-flex gap-1 rounded-lg border border-border bg-surface-2 p-1"
+        className="inline-flex gap-0.5 rounded-[9px] bg-fill p-[2.5px]"
         role="group"
         aria-label="Office"
       >
@@ -34,7 +32,7 @@ export default function OfficeSwitch({ current }) {
             <span
               key={o.key}
               aria-current="page"
-              className="rounded-md bg-surface px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm"
+              className="rounded-[7px] bg-surface px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground shadow-sm"
             >
               {o.label}
             </span>
@@ -42,7 +40,7 @@ export default function OfficeSwitch({ current }) {
             <Link
               key={o.key}
               href={o.href}
-              className="rounded-md px-3 py-1.5 text-sm font-medium text-muted transition hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-medium text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
             >
               {o.label}
             </Link>
