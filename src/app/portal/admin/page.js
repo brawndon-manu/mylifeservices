@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
 import {
@@ -12,216 +11,165 @@ import {
 } from "@/lib/roles";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { toggleMaintenance } from "./maintenance-actions";
-import BackLink from "@/components/BackLink";
-import NewBadge from "@/components/NewBadge";
+import AdminTools from "./AdminTools";
 
 export const metadata = {
   title: "Admin",
   robots: { index: false, follow: false },
 };
 
-// admin landing - a small dashboard of management tools. gated to the
-// oversight tier plus field supervisors (proxy already gates /portal/admin/*;
-// re-checked here). a supervisor sees exactly three cards: client
-// attestations, the satisfaction survey, and a read-only People.
+// admin landing - the management tools grouped by task, rendered by the
+// AdminTools client component (it owns the search filter and the maintenance
+// disclosure). gated to the oversight tier plus field supervisors (proxy
+// already gates /portal/admin/*; re-checked here). a supervisor sees exactly
+// three rows: client attestations, the satisfaction survey, and a read-only
+// People.
 export default async function AdminPage() {
   const user = await getCurrentUser();
   if (!canEnterAdmin(user?.role)) {
     redirect("/portal");
   }
+  const role = user.role;
 
   // maintenance switch is IT / SUPER only; skip the redis read for others.
-  const canMaintain = isIT(user.role);
+  const canMaintain = isIT(role);
   const maintenanceOn = canMaintain ? await getMaintenanceState() : false;
 
+  // every tool with the same role gate it had as a card. two packed columns,
+  // matching the approved layout; an empty group never renders its heading.
+  const left = [
+    {
+      label: "Payroll & review",
+      rows: [
+        {
+          show: canManageTimesheets(role),
+          href: "/portal/admin/timesheets",
+          icon: "clock",
+          title: "Timesheets",
+          body: "Agency payroll and staff signatures.",
+        },
+        {
+          show: canManageTimesheets(role),
+          href: "/portal/admin/day-program",
+          icon: "calendar",
+          title: "Day program",
+          body: "Separate payroll for the day program.",
+        },
+        {
+          show: isAdminUp(role),
+          href: "/portal/admin/audit",
+          icon: "listChecks",
+          title: "Audit",
+          body: "Compare billed time, punches, and notes.",
+        },
+      ],
+    },
+    {
+      label: "Client services",
+      rows: [
+        {
+          show: canManageClientAttestations(role),
+          href: "/portal/admin/client-attestations",
+          icon: "penLine",
+          title: "Client attestations",
+          body: "Monthly schedules and client signatures.",
+        },
+        {
+          show: canManageClientAttestations(role),
+          href: "/portal/admin/satisfaction",
+          icon: "messageSquare",
+          title: "Annual satisfaction survey",
+          body: "Collect and review client feedback.",
+        },
+      ],
+    },
+    {
+      label: "Website tools",
+      rows: [
+        {
+          show: isAdminUp(role),
+          href: "/portal/site-photos",
+          icon: "image",
+          title: "Site photos",
+          body: "Photos, captions, and visibility.",
+        },
+        {
+          show: canManageTimesheets(role),
+          href: "/portal/admin/tests",
+          icon: "flask",
+          title: "Tests",
+          body: "Preview emails and employee screens.",
+        },
+      ],
+    },
+  ];
+  const right = [
+    {
+      label: "People & equipment",
+      rows: [
+        {
+          show: true,
+          href: "/portal/admin/users",
+          icon: "users",
+          title: "User management",
+          body: "Accounts, roles, and contact details.",
+        },
+        {
+          show: isElevated(role),
+          href: "/portal/admin/applications",
+          icon: "briefcase",
+          title: "Applications",
+          body: "Job applications and résumés.",
+        },
+        {
+          show: isElevated(role),
+          href: "/portal/devices",
+          icon: "laptop",
+          title: "Devices",
+          body: "Company hardware and assignments.",
+        },
+      ],
+    },
+    {
+      label: "Company records",
+      rows: [
+        {
+          show: isAdminUp(role),
+          href: "/portal/admin/acknowledgments",
+          icon: "circleCheck",
+          title: "Acknowledgments",
+          body: "Announcement read receipts.",
+        },
+        {
+          show: isAdminUp(role),
+          href: "/portal/admin/meeting-attendance",
+          icon: "calendarDays",
+          title: "Meeting attendance",
+          body: "RSVPs and meeting roll-call.",
+        },
+        {
+          show: canViewFormRecords(role),
+          href: "/portal/admin/forms",
+          icon: "files",
+          title: "Form submissions",
+          body: "Signed forms and attribution.",
+        },
+      ],
+    },
+  ];
+  const columns = [left, right].map((groups) =>
+    groups
+      .map((g) => ({ ...g, rows: g.rows.filter((r) => r.show).map(({ show, ...r }) => r) }))
+      .filter((g) => g.rows.length > 0),
+  );
+
   return (
-    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
-      <BackLink href="/portal">Back to Dashboard</BackLink>
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
-        Admin
-      </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Admin dashboard
-      </h1>
-      <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
-        Management tools for the portal.
-      </p>
-
-      <div className="mt-10 grid gap-6 sm:grid-cols-2">
-        <LinkCard
-          href="/portal/admin/users"
-          title="User management"
-          body={
-            isElevated(user.role)
-              ? "Invite, edit, deactivate users; set roles, titles, and hire dates."
-              : "Everyone on the portal: names, titles, offices, and contact info."
-          }
-        />
-        {isElevated(user.role) && (
-          <LinkCard
-            href="/portal/devices"
-            title="Devices"
-            body="Company hardware log: what we own, who has it, and what it cost."
-          />
-        )}
-        {isAdminUp(user.role) && (
-          <LinkCard
-            href="/portal/admin/acknowledgments"
-            title="Acknowledgments"
-            body="Read-receipts across every announcement that needs one: who has acknowledged and who still hasn't."
-          />
-        )}
-        {isAdminUp(user.role) && (
-          <LinkCard
-            href="/portal/admin/meeting-attendance"
-            title="Meeting attendance"
-            body="RSVPs and roll-call across every Company Meeting: who's going, who hasn't responded, and who showed up."
-          />
-        )}
-        {isElevated(user.role) && (
-          <LinkCard
-            href="/portal/admin/applications"
-            title="Applications"
-            body="Job applications submitted through the website: preview each one, then open the full application and resume."
-          />
-        )}
-        {canViewFormRecords(user.role) && (
-          <LinkCard
-            href="/portal/admin/forms"
-            title="Form submissions"
-            body="Every signed form on file: who submitted it, how it was attributed, and a gated download. Reconcile the no-login ones."
-          />
-        )}
-        {canManageTimesheets(user.role) && (
-          <LinkCard
-            href="/portal/admin/timesheets"
-            title="Timesheets"
-            body="Upload the QSP payroll export: hours are recalculated with paid rest breaks and CA overtime, then sent to staff to sign."
-          />
-        )}
-        {canManageTimesheets(user.role) && (
-          <LinkCard
-            href="/portal/admin/day-program"
-            title="Day program"
-            body="The day program's own timesheets, separate from the agency's: upload their QSP exports, review, and send for signature under their rules."
-          />
-        )}
-        {canManageClientAttestations(user.role) && (
-          <LinkCard
-            href="/portal/admin/client-attestations"
-            title="Client attestations"
-            body="Upload the month's QSP client schedule: every client gets their own schedule with a sign-off block under it, routed to the supervisor who collects the signature."
-            isNew
-          />
-        )}
-        {canManageClientAttestations(user.role) && (
-          <LinkCard
-            href="/portal/admin/satisfaction"
-            title="Annual satisfaction survey"
-            body="Every MLS client with their assigned staff. Fill out the satisfaction survey with them - over the phone or in person - and the answers come out as the printed form, stored here and ready to download."
-            isNew
-          />
-        )}
-        {isAdminUp(user.role) && (
-          <LinkCard
-            href="/portal/admin/audit"
-            title="Audit"
-            body="What was billed for a shift, against what the clock recorded and what the service note documents. Upload the QSP service notes export; the hours come from the pay periods already uploaded."
-            isNew
-          />
-        )}
-        {canManageTimesheets(user.role) && (
-          <LinkCard
-            href="/portal/admin/tests"
-            title="Tests"
-            body="Every email we send and every card we show an employee, in every state, rendered from the real code. Nothing in it writes to the database or sends anything."
-          />
-        )}
-        {isAdminUp(user.role) && (
-          <LinkCard
-            href="/portal/site-photos"
-            title="Site photos"
-            body="Manage the public About/Stories photos: upload, caption, reorder, show or hide."
-          />
-        )}
-      </div>
-
-      {canMaintain && <MaintenanceControl on={maintenanceOn} />}
+    <section className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
+      <AdminTools
+        columns={columns}
+        maintenance={canMaintain ? { on: maintenanceOn } : null}
+        toggleMaintenance={toggleMaintenance}
+      />
     </section>
-  );
-}
-
-// IT / SUPER only. flips the public site into the maintenance splash. the portal
-// stays reachable and staff can still get in with the bypass password.
-function MaintenanceControl({ on }) {
-  return (
-    <div
-      className={`mt-10 rounded-xl border p-6 ${
-        on
-          ? "border-amber-400/60 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-950/30"
-          : "border-border bg-surface"
-      }`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              Site maintenance
-            </h2>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${
-                on
-                  ? "bg-amber-500 text-white"
-                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              }`}
-            >
-              {on ? "Site is down" : "Site is live"}
-            </span>
-          </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-            {on
-              ? "The public site is showing the maintenance page right now. The portal stays open, and staff can still get in with the bypass password."
-              : "Turns the public site into a maintenance page. The portal stays open, and staff can still get in with the bypass password. Takes a few seconds to apply."}
-          </p>
-        </div>
-
-        <form action={toggleMaintenance}>
-          <input type="hidden" name="next" value={on ? "off" : "on"} />
-          <button
-            type="submit"
-            className={`inline-flex items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 ${
-              on
-                ? "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600"
-                : "bg-amber-600 hover:bg-amber-700 focus-visible:outline-amber-600"
-            }`}
-          >
-            {on ? "Bring the site back" : "Take the site down"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function LinkCard({ href, title, body, isNew }) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-xl border border-border bg-surface p-6 shadow-sm card-lift focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
-          {title}
-          {isNew && <NewBadge />}
-        </h2>
-        <span
-          aria-hidden="true"
-          className="text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-brand"
-        >
-          →
-        </span>
-      </div>
-      <p className="mt-3 text-sm leading-relaxed text-muted">{body}</p>
-    </Link>
   );
 }

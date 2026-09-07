@@ -8,6 +8,7 @@ import { formatUSPhone, preferredName, PHONE_MAX, WORKING_HOURS_MAX } from "@/li
 import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
 import Avatar from "@/components/Avatar";
 import PhoneInput from "@/components/PhoneInput";
+import { AccessibilityControls } from "@/components/AccessibilityMenu";
 
 export const metadata = {
   title: "Settings",
@@ -379,6 +380,20 @@ export default async function SettingsPage({ searchParams }) {
             </button>
           </div>
         </form>
+      </div>
+
+      {/* the corner accessibility button is retired inside the portal - the
+          same controls live here instead (appearance also has the quick pill
+          in the desktop toolbar; both write the same stored settings). */}
+      <h2 className="mt-10 text-xl font-semibold tracking-tight text-foreground">
+        Accessibility
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+        Appearance and reading options for the whole site, saved in this
+        browser.
+      </p>
+      <div className="mt-4 max-w-md rounded-xl border border-border bg-surface p-4">
+        <AccessibilityControls />
       </div>
     </section>
   );

@@ -63,7 +63,7 @@ export default function PortalTabBar({ elevated }) {
       //
       // print:hidden for the same reason every other floating control has it -
       // a tab bar across the foot of a printed timesheet helps nobody
-      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-40 rounded-full border border-border bg-surface/95 shadow-lg backdrop-blur print:hidden lg:hidden"
+      className="glass fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-40 rounded-full border shadow-lg print:hidden lg:hidden"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-4 p-1.5">
         {tabs.map((t) => {
@@ -79,7 +79,7 @@ export default function PortalTabBar({ elevated }) {
                 // of the Canvas bar that makes where-you-are readable at a
                 // glance on a dark screen.
                 className={`flex h-13 flex-col items-center justify-center gap-1 rounded-full text-[10.5px] font-medium leading-none transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${
-                  on ? "bg-surface-3 text-brand" : "text-muted"
+                  on ? "accent-fill-soft" : "text-muted"
                 }`}
               >
                 <svg

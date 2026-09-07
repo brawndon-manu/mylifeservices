@@ -31,6 +31,18 @@
      fill alone. */
   --pen-meal: #2a78d6;
   --pen-rest: #eda100;
+  /* the portal shell's material tokens. fills are for control/hover surfaces
+     (translucent so they sit on any background), sep is the inset hairline
+     between grouped rows, glass is the one blurred material the toolbar and
+     tab bar share, sidebar is the desktop rail. defined here with the rest of
+     the palette so all three themes stay in one place; only used inside
+     .portal-shell. */
+  --fill: rgba(120, 130, 145, 0.08);
+  --fill-2: rgba(120, 130, 145, 0.14);
+  --sep: rgba(20, 30, 50, 0.08);
+  --glass: rgba(246, 247, 250, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.55);
+  --sidebar: rgba(238, 240, 244, 0.9);
 }
 
 /* Dim: soft, layered dark grays. the default dark appearance, surfaces step
@@ -50,6 +62,12 @@
   /* the same two hues, stepped for a dark surface rather than flipped */
   --pen-meal: #3987e5;
   --pen-rest: #c98500;
+  --fill: rgba(255, 255, 255, 0.055);
+  --fill-2: rgba(255, 255, 255, 0.1);
+  --sep: rgba(255, 255, 255, 0.07);
+  --glass: rgba(24, 26, 31, 0.72);
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --sidebar: rgba(22, 24, 29, 0.9);
 }
 
 /* Night: pure OLED black. layered on top of .dark, overriding just the
@@ -61,6 +79,10 @@
   --surface-3: #1a1a1f;
   --border: #232327;
   --border-strong: #303036;
+  --sep: rgba(255, 255, 255, 0.09);
+  --glass: rgba(10, 10, 12, 0.72);
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --sidebar: rgba(8, 8, 10, 0.92);
 }
 
 @theme inline {
@@ -75,6 +97,9 @@
   --color-faint: var(--faint);
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
+  --color-sep: var(--sep);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   /* Brand blues sampled from the logo gradient. Used for solid accents and
@@ -88,6 +113,74 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ============================================================
+   THE PORTAL SHELL. the portal runs the same semantic token NAMES as the
+   public site but retunes the light values into a grouped-canvas system:
+   the page is a soft gray, grouped surfaces are white, and hierarchy comes
+   from that contrast instead of borders. dark themes already have the
+   layered values, so only light needs the retune. the system font stack
+   is portal-only on purpose - the public brochure keeps its own look.
+   ============================================================ */
+.portal-shell {
+  --background: #f2f3f7;
+  --surface-2: #f4f5f8;
+  --surface-3: #e9ebf0;
+  --border: #e4e7ed;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+/* the shell div sits BELOW <html>, so its light values above would beat the
+   inherited .dark/.night ones in every theme. the dark themes re-assert their
+   values here at the same level - same numbers as the html blocks up top. */
+.dark .portal-shell {
+  --background: #14161b;
+  --surface-2: #22262e;
+  --surface-3: #2a2f38;
+  --border: #313742;
+}
+.dark.night .portal-shell {
+  --background: #000000;
+  --surface-2: #131316;
+  --surface-3: #1a1a1f;
+  --border: #232327;
+}
+
+/* the one blurred material. toolbar and tab bar share it; nothing else gets
+   backdrop-filter, both for performance and so glass stays a functional-layer
+   signal rather than a default surface. */
+.glass {
+  background: var(--glass);
+  border-color: var(--glass-edge);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+
+/* grouped settings rows: the hairline between rows is inset to the text edge
+   (past the 28px icon tile), the way grouped lists rule themselves. rows are
+   position:relative so the line can hang off the top edge. */
+.settings-row + .settings-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 54px;
+  right: 0;
+  height: 1px;
+  background: var(--sep);
+}
+
+/* soft accent fill for a selected pill/tab: readable in all three themes
+   because it keys off the theme's own accent token. */
+.accent-fill-soft {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+}
+
+/* inside the portal the corner accessibility button retires: appearance
+   lives in the desktop toolbar's pill, and the full accessibility controls
+   sit on the Settings page. the public site keeps the button. */
+body:has(.portal-shell) .corner-fab {
+  display: none;
 }
 
 /* number inputs never get the little up/down spinner arrows. site-wide rule, on

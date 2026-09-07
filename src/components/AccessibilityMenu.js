@@ -35,22 +35,7 @@ const TOGGLES = [
 
 export default function AccessibilityMenu({ align = "right", openUp = false, variant = "inline" }) {
   const [open, setOpen] = useState(false);
-  const [theme, setThemeState] = useState("light");
-  const [textSize, setTextSizeState] = useState("default");
-  const [active, setActive] = useState({}); // { [cls]: true }
   const ref = useRef(null);
-
-  // sync initial state from whatever the no-flash script set on <html>.
-  useEffect(() => {
-    const el = document.documentElement;
-    setThemeState(
-      el.classList.contains("night") ? "night" : el.classList.contains("dark") ? "dim" : "light",
-    );
-    setTextSizeState(el.dataset.textsize || "default");
-    const a = {};
-    for (const t of TOGGLES) a[t.cls] = el.classList.contains(t.cls);
-    setActive(a);
-  }, []);
 
   // close on outside click + Escape while open.
   useEffect(() => {
@@ -68,6 +53,55 @@ export default function AccessibilityMenu({ align = "right", openUp = false, var
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-label="Accessibility options"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={
+          variant === "fab"
+            ? "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface text-muted shadow-lg transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            : "flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        }
+      >
+        <AccessIcon className="h-5 w-5" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className={`absolute z-50 max-h-[80vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-lg ${
+            openUp ? "bottom-full mb-2" : "top-full mt-2"
+          } ${align === "right" ? "right-0" : "left-0"}`}
+        >
+          <AccessibilityControls />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// the controls themselves, popover-free, so the portal's Settings page can
+// carry them inline while the public site keeps the corner button. state
+// syncs from whatever the no-flash script set on <html>, and every change
+// writes the same classes + localStorage keys that script reads back.
+export function AccessibilityControls() {
+  const [theme, setThemeState] = useState("light");
+  const [textSize, setTextSizeState] = useState("default");
+  const [active, setActive] = useState({}); // { [cls]: true }
+
+  useEffect(() => {
+    const el = document.documentElement;
+    setThemeState(
+      el.classList.contains("night") ? "night" : el.classList.contains("dark") ? "dim" : "light",
+    );
+    setTextSizeState(el.dataset.textsize || "default");
+    const a = {};
+    for (const t of TOGGLES) a[t.cls] = el.classList.contains(t.cls);
+    setActive(a);
+  }, []);
 
   function save(key, value) {
     try {
@@ -115,28 +149,8 @@ export default function AccessibilityMenu({ align = "right", openUp = false, var
   }
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        aria-label="Accessibility options"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={
-          variant === "fab"
-            ? "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface text-muted shadow-lg transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-            : "flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-        }
-      >
-        <AccessIcon className="h-5 w-5" />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className={`absolute z-50 max-h-[80vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-lg ${
-            openUp ? "bottom-full mb-2" : "top-full mt-2"
-          } ${align === "right" ? "right-0" : "left-0"}`}
-        >
-          <SectionLabel>Appearance</SectionLabel>
+    <>
+      <SectionLabel>Appearance</SectionLabel>
           <div className="flex gap-1.5">
             {THEMES.map(({ value, label, Icon }) => (
               <SegButton key={value} active={theme === value} onClick={() => setTheme(value)}>
@@ -177,18 +191,16 @@ export default function AccessibilityMenu({ align = "right", openUp = false, var
             ))}
           </div>
 
-          <Divider />
-          <button
-            type="button"
-            onClick={resetAll}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-medium text-muted transition hover:bg-surface-2"
-          >
-            <ResetIcon className="h-3.5 w-3.5" />
-            Reset all
-          </button>
-        </div>
-      )}
-    </div>
+      <Divider />
+      <button
+        type="button"
+        onClick={resetAll}
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-medium text-muted transition hover:bg-surface-2"
+      >
+        <ResetIcon className="h-3.5 w-3.5" />
+        Reset all
+      </button>
+    </>
   );
 }
 
