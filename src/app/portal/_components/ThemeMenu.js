@@ -31,13 +31,18 @@ export default function ThemeMenu() {
   const ref = useRef(null);
 
   // read the stored choice once mounted (the no-flash script already applied
-  // it, so this only settles the label).
+  // it, so this only settles the label). the Settings page's appearance
+  // control announces its picks over "mls-theme" so the pill stays current
+  // when both are on screen.
   useEffect(() => {
     try {
       setChoice(localStorage.getItem("theme") || "system");
     } catch {
       /* private mode etc. */
     }
+    const onTheme = (e) => setChoice(e.detail);
+    window.addEventListener("mls-theme", onTheme);
+    return () => window.removeEventListener("mls-theme", onTheme);
   }, []);
 
   // while on System, follow the OS live.
@@ -73,6 +78,7 @@ export default function ThemeMenu() {
       /* ignore */
     }
     apply(value);
+    window.dispatchEvent(new CustomEvent("mls-theme", { detail: value }));
   }
 
   const current = CHOICES.find((c) => c.value === choice) ?? CHOICES[0];

@@ -8,7 +8,8 @@ import { formatUSPhone, preferredName, PHONE_MAX, WORKING_HOURS_MAX } from "@/li
 import { IMAGE_ACCEPT, IMAGE_MAX_BYTES } from "@/lib/hub";
 import Avatar from "@/components/Avatar";
 import PhoneInput from "@/components/PhoneInput";
-import { AccessibilityControls } from "@/components/AccessibilityMenu";
+import AppearanceSettings from "../_components/AppearanceSettings";
+import PhotoControl from "./PhotoControl";
 
 export const metadata = {
   title: "Settings",
@@ -45,7 +46,7 @@ async function updateProfile(formData) {
     WORKING_HOURS_MAX,
   );
 
-  // photo: optional upload, or a "remove" checkbox. only touch the
+  // photo: optional upload, or a "remove" flag. only touch the
   // image column when one of those is set so a plain name/phone save
   // doesnt wipe an existing photo.
   let imageUpdate = {};
@@ -111,6 +112,10 @@ async function updateProfile(formData) {
   redirect("/portal/settings?saved=1");
 }
 
+// the quiet-fill input every editable field wears.
+const INPUT =
+  "mt-1.5 block w-full rounded-[9px] bg-fill px-3 py-2 text-sm text-foreground placeholder:text-faint transition focus:outline-2 focus:-outline-offset-1 focus:outline-brand";
+
 export default async function SettingsPage({ searchParams }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -127,28 +132,23 @@ export default async function SettingsPage({ searchParams }) {
   };
   const errorMessage = params?.error ? errorMessages[params.error] : null;
 
+  const displayName = preferredName(user);
+  const initials = (displayName || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("");
+
   return (
-    <section className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
-        Settings
-      </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Your account
-      </h1>
-      {/* the phone came out of this sentence on 2026-08-16. it used to be
-          listed here as something that "shows on the Team Contacts directory",
-          which is no longer true for most of the people reading it - see the
-          note beside the field itself. */}
-      <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
-        Update how you appear in the portal: your name and photo show on the
-        Team Contacts directory. Your email and role are managed by IT and
-        can&apos;t be edited here.
-      </p>
+    <section className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
+      <h1 className="text-[26px] font-semibold tracking-tight text-foreground">Settings</h1>
+      <p className="mt-1 text-sm text-muted">Your profile, contact details, and appearance.</p>
 
       {justSaved && (
         <div
           role="status"
-          className="mt-6 flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"
+          className="mt-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"
         >
           <CheckIcon className="mt-0.5 h-5 w-5 flex-none text-emerald-600" />
           <div>
@@ -163,7 +163,7 @@ export default async function SettingsPage({ searchParams }) {
       {errorMessage && (
         <div
           role="alert"
-          className="mt-6 flex items-start gap-3 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
+          className="mt-5 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
         >
           <ExclamationIcon className="mt-0.5 h-5 w-5 flex-none text-rose-600" />
           <div>
@@ -173,227 +173,183 @@ export default async function SettingsPage({ searchParams }) {
         </div>
       )}
 
-      <div className="mt-10 rounded-xl border border-border bg-surface p-6 sm:p-8">
-        <form action={updateProfile} className="space-y-6">
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-muted"
+      <div className="mt-2 grid gap-x-12 lg:grid-cols-2">
+        {/* display:contents so the form can hold the identity row (full
+            width) and the Profile column while the office/appearance column
+            stays outside it - the grid sees straight through the form tag. */}
+        <form action={updateProfile} className="contents">
+          <div className="lg:col-span-2">
+            <PhotoControl
+              hasImage={!!user.image}
+              accept={IMAGE_ACCEPT.join(",")}
+              initials={initials}
+              avatar={
+                <Avatar
+                  name={displayName}
+                  email={user.email}
+                  image={user.image}
+                  size={56}
+                />
+              }
+              hint={`A headshot helps coworkers put a face to your name. JPG, PNG, WebP, or GIF, up to ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.`}
             >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={user.email}
-              disabled
-              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
-            />
+              <span className="block truncate text-[17px] font-semibold text-foreground">
+                {displayName}
+              </span>
+              <span className="block truncate text-[13px] text-muted">
+                {user.title ? `${user.title} · ${user.email}` : user.email}
+              </span>
+            </PhotoControl>
           </div>
 
-          {isAdminUp(user.role) && (
-            <div>
-              <label
-                htmlFor="role"
-                className="block text-sm font-medium text-muted"
-              >
-                Role
+          <div className="min-w-0">
+            <h2 className="mt-7 text-[17px] font-semibold tracking-tight text-foreground">
+              Profile
+            </h2>
+            <p className="mt-0.5 text-[12.5px] text-faint">
+              Shown across the portal and the Team Contacts directory.
+            </p>
+
+            <div className="mt-4">
+              <label className="block text-[13px] font-medium text-muted">
+                Preferred name <span className="font-normal text-faint">(optional)</span>
+              </label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input
+                  id="preferredFirstName"
+                  name="preferredFirstName"
+                  type="text"
+                  maxLength={NAME_MAX_LEN}
+                  defaultValue={user.preferredFirstName ?? ""}
+                  autoComplete="given-name"
+                  placeholder="Preferred first name"
+                  className={INPUT}
+                />
+                <input
+                  id="preferredLastName"
+                  name="preferredLastName"
+                  type="text"
+                  maxLength={NAME_MAX_LEN}
+                  defaultValue={user.preferredLastName ?? ""}
+                  autoComplete="family-name"
+                  placeholder="Preferred last name"
+                  className={INPUT}
+                />
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-faint">
+                Shown across the portal. Each blank piece falls back to your legal
+                name{user.name ? <> (<span className="font-medium text-muted">{user.name}</span>)</> : ""}
+                {" "}for that part. Your legal name is managed by HR/admin.
+              </p>
+            </div>
+
+            <div className="mt-5">
+              <label htmlFor="phone" className="block text-[13px] font-medium text-muted">
+                Phone <span className="font-normal text-faint">(optional)</span>
+              </label>
+              <PhoneInput
+                id="phone"
+                name="phone"
+                maxLength={PHONE_MAX}
+                defaultValue={user.phone ?? ""}
+                autoComplete="tel"
+                placeholder="(909) 555-0123"
+                className={INPUT}
+              />
+              {/* WHO ACTUALLY SEES IT, said plainly. supervisors and management
+                  see the number, coworkers see the name, title and email. */}
+              <p className="mt-1.5 text-xs leading-relaxed text-faint">
+                Shown to supervisors and management in the portal, and on nothing
+                public. Your coworkers see your name, title and email. Leave it
+                blank to keep it off entirely.
+              </p>
+            </div>
+
+            <div className="mt-5">
+              <label htmlFor="workingHours" className="block text-[13px] font-medium text-muted">
+                Working hours <span className="font-normal text-faint">(optional)</span>
               </label>
               <input
-                id="role"
+                id="workingHours"
+                name="workingHours"
                 type="text"
-                value={ROLE_LABELS[user.role] ?? user.role}
-                disabled
-                className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
+                maxLength={WORKING_HOURS_MAX}
+                defaultValue={user.workingHours ?? ""}
+                autoComplete="off"
+                placeholder="e.g. Mon–Fri 9am–5pm"
+                className={INPUT}
               />
+              <p className="mt-1.5 text-xs leading-relaxed text-faint">
+                Shows on your contact page so coworkers know when to reach you.
+              </p>
             </div>
-          )}
 
-          <div>
-            <label
-              htmlFor="title"
-              className="block text-sm font-medium text-muted"
-            >
-              Title
-            </label>
-            <input
-              id="title"
-              type="text"
-              value={user.title || "No title set"}
-              disabled
-              className="mt-1 block w-full cursor-not-allowed rounded-md border border-border bg-surface-2 px-3 py-2 text-base text-muted shadow-sm"
-            />
-            <p className="mt-1 text-xs text-muted">
-              Your job title, managed by HR/admin.
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-muted">
-              Preferred name <span className="text-faint">(optional)</span>
-            </label>
-            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <input
-                id="preferredFirstName"
-                name="preferredFirstName"
-                type="text"
-                maxLength={NAME_MAX_LEN}
-                defaultValue={user.preferredFirstName ?? ""}
-                autoComplete="given-name"
-                placeholder="Preferred first name"
-                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-              <input
-                id="preferredLastName"
-                name="preferredLastName"
-                type="text"
-                maxLength={NAME_MAX_LEN}
-                defaultValue={user.preferredLastName ?? ""}
-                autoComplete="family-name"
-                placeholder="Preferred last name"
-                className="block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-            </div>
-            <p className="mt-1 text-xs text-muted">
-              Shown across the portal. Each blank piece falls back to your legal
-              name{user.name ? <> (<span className="font-medium text-foreground">{user.name}</span>)</> : ""}
-              {" "}for that part. Your legal name is managed by HR/admin.
-            </p>
-            <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-surface-2 p-3">
+            <label className="mt-6 flex cursor-pointer items-center justify-between gap-4 border-t border-sep py-3.5">
+              <span className="text-sm font-medium text-foreground">
+                Hide my full name from coworkers
+                <span className="mt-0.5 block max-w-xs text-xs font-normal leading-relaxed text-faint">
+                  Only HR and management can see your full name; everyone else
+                  sees just your display name.
+                </span>
+              </span>
               <input
                 type="checkbox"
                 name="hideLegalName"
                 defaultChecked={user.hideLegalName ?? false}
-                className="mt-0.5 h-4 w-4 accent-brand"
+                className="peer sr-only"
               />
-              <span className="text-sm text-foreground">
-                Hide my full name from coworkers
-                <span className="mt-0.5 block text-xs text-muted">
-                  Only HR and management can see your full name; everyone else
-                  sees just your display name. Set a display name above so people
-                  still have something to go by.
-                </span>
+              <span
+                aria-hidden="true"
+                className="relative h-[23px] w-[38px] flex-none rounded-full bg-fill-2 transition-colors peer-checked:bg-emerald-500 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand peer-checked:[&>span]:translate-x-[15px]"
+              >
+                <span className="absolute left-0.5 top-0.5 block h-[19px] w-[19px] rounded-full bg-white shadow transition-transform" />
               </span>
             </label>
-          </div>
 
-          <div>
-            <label
-              htmlFor="phone"
-              className="block text-sm font-medium text-muted"
-            >
-              Phone <span className="text-faint">(optional)</span>
-            </label>
-            <PhoneInput
-              id="phone"
-              name="phone"
-              maxLength={PHONE_MAX}
-              defaultValue={user.phone ?? ""}
-              autoComplete="tel"
-              placeholder="(909) 555-0123"
-              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            />
-            {/* WHO ACTUALLY SEES IT, said plainly. This used to read "Shows on
-                the Team Contacts directory", which stopped being true for most
-                of the people reading it: supervisors and management see the
-                number, coworkers see the name, title and email.
-
-                The public-link checkbox that sat here is gone with it - the
-                public card shows no number at all now, so a control for it
-                would be a switch wired to nothing. The stored setting is kept
-                and no longer written; see the note in the save above. */}
-            <p className="mt-1 text-xs text-muted">
-              Shown to supervisors and management in the portal, and on nothing
-              public. Your coworkers see your name, title and email. Leave it
-              blank to keep it off entirely.
-            </p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="workingHours"
-              className="block text-sm font-medium text-muted"
-            >
-              Working hours <span className="text-faint">(optional)</span>
-            </label>
-            <input
-              id="workingHours"
-              name="workingHours"
-              type="text"
-              maxLength={WORKING_HOURS_MAX}
-              defaultValue={user.workingHours ?? ""}
-              autoComplete="off"
-              placeholder="e.g. Mon–Fri 9am–5pm"
-              className="mt-1 block w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground shadow-sm transition focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-            />
-            <p className="mt-1 text-xs text-muted">
-              Shows on your contact page so coworkers know when to reach you.
-            </p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="photo"
-              className="block text-sm font-medium text-muted"
-            >
-              Photo <span className="text-faint">(optional)</span>
-            </label>
-            <div className="mt-2 flex items-center gap-4">
-              <Avatar
-                name={preferredName(user)}
-                email={user.email}
-                image={user.image}
-                size={64}
-              />
-              <div className="flex-1">
-                <input
-                  id="photo"
-                  name="photo"
-                  type="file"
-                  accept={IMAGE_ACCEPT.join(",")}
-                  className="block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
-                />
-                {user.image && (
-                  <label className="mt-2 flex items-center gap-2 text-xs text-muted">
-                    <input
-                      type="checkbox"
-                      name="removePhoto"
-                      className="h-3.5 w-3.5 accent-brand"
-                    />
-                    Remove current photo
-                  </label>
-                )}
-              </div>
+            <div className="flex justify-end border-t border-sep pt-4">
+              <button
+                type="submit"
+                className="rounded-[9px] bg-brand px-5 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Save changes
+              </button>
             </div>
-            <p className="mt-1 text-xs text-muted">
-              A headshot helps coworkers put a face to your name. JPG, PNG,
-              WebP, or GIF, up to {Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB.
-            </p>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-            >
-              Save changes
-            </button>
           </div>
         </form>
-      </div>
 
-      {/* the corner accessibility button is retired inside the portal - the
-          same controls live here instead (appearance also has the quick pill
-          in the desktop toolbar; both write the same stored settings). */}
-      <h2 className="mt-10 text-xl font-semibold tracking-tight text-foreground">
-        Accessibility
-      </h2>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-        Appearance and reading options for the whole site, saved in this
-        browser.
-      </p>
-      <div className="mt-4 max-w-md rounded-xl border border-border bg-surface p-4">
-        <AccessibilityControls />
+        <div className="min-w-0">
+          <h2 className="mt-7 text-[17px] font-semibold tracking-tight text-foreground">
+            Managed by the office
+          </h2>
+          <p className="mt-0.5 text-[12.5px] text-faint">
+            Your email, role, and title are managed by IT and HR.
+          </p>
+          <div className="mt-1">
+            <div className="flex items-center justify-between gap-4 border-b border-sep py-3">
+              <span className="text-sm font-medium text-foreground">Email</span>
+              <span className="truncate text-[13.5px] text-muted">{user.email}</span>
+            </div>
+            {isAdminUp(user.role) && (
+              <div className="flex items-center justify-between gap-4 border-b border-sep py-3">
+                <span className="text-sm font-medium text-foreground">Role</span>
+                <span className="truncate text-[13.5px] text-muted">
+                  {ROLE_LABELS[user.role] ?? user.role}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-4 py-3">
+              <span className="text-sm font-medium text-foreground">Title</span>
+              <span className="truncate text-[13.5px] text-muted">
+                {user.title || "No title set"}
+              </span>
+            </div>
+          </div>
+
+          {/* the corner accessibility button is retired inside the portal -
+              the same controls live here (appearance also has the quick pill
+              in the desktop toolbar; both write the same stored settings). */}
+          <AppearanceSettings />
+        </div>
       </div>
     </section>
   );
