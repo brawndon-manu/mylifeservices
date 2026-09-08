@@ -461,6 +461,40 @@ export function compareToSchedule(timesheetDays, scheduleDays, { toleranceHours 
   };
 }
 
+// AN EXPORT WHOSE CALENDARS SIT UNDER THE WRONG NAMES - 2026-09-08. QSP
+// generated an Employee Schedules export with every calendar body printed
+// under the PREVIOUS employee's header (page 14 "Brandon Espinoza" carried
+// Darrel Ford's day, proven against Mánu's own QSP screenshots), and the
+// audit spent a day reading 300 phantom double-billings out of it. The tell
+// is systemic: almost everybody's schedule disagrees with their own
+// timesheet on almost every day, which no honest export does - the schedule
+// is what the timesheet bills from. So the door asks each person's sheet
+// whether its own calendar matches, and calls the export misassembled when
+// a QUARTER of the roster is wrong on most of their days. Measured on the
+// real documents: both honest exports (September copy 1 and the August
+// month) score 0 people off; the corrupt one scored 19 of 42. One person
+// off is a person question; a quarter of the roster off is the file.
+export function scheduleDisagreement(sheets, people, { toleranceHours = 1 } = {}) {
+  const byKey = new Map((people || []).map((p) => [scheduleKey(p.employee), p]));
+  let compared = 0;
+  let off = 0;
+  const samples = [];
+  for (const s of sheets || []) {
+    const p = byKey.get(scheduleKey(s.employee));
+    if (!p) continue;
+    const { rows } = compareToSchedule(s.days, p.days, { toleranceHours });
+    const comparable = rows.filter((r) => r.schedule != null && r.timesheet != null);
+    if (comparable.length < 2) continue;
+    compared++;
+    const bad = comparable.filter((r) => r.flag === "mismatch").length;
+    if (bad > comparable.length / 2) {
+      off++;
+      if (samples.length < 3) samples.push(`${s.employee}: ${bad} of ${comparable.length} days`);
+    }
+  }
+  return { compared, off, samples, misassembled: compared >= 10 && off >= 5 && off > compared / 4 };
+}
+
 // The times a rostered entry runs between.
 //
 // An entry prints as "8:30a-11:30a Chapman, J-ILS Service(3:00)", so the block

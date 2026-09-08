@@ -39,4 +39,6 @@ export const ERRORS = {
     "That correction was refused and nothing was written. The batch it was meant to land on is unchanged, and so is everybody on it - this is checked before any sheet is touched, so a refusal here never leaves half the people replaced. The reason is below.",
   save:
     "The generated timesheets could not be saved. Nothing was created: the batch and all of its sheets go in as one write, so a failure here leaves nothing behind to clean up and nothing that could take the current upload read-only. Try again - if it fails the same way twice, the message below is the database's own.",
+  schedmix:
+    "The schedule export looks misassembled - most people's calendars disagree with their own timesheets, which no honest export does. QSP has printed calendars under the wrong names before (09/07/26: every calendar sat under the previous employee's header). Nothing was created - re-pull the Employee Schedules export from QSP and upload again. The details below name samples.",
 };

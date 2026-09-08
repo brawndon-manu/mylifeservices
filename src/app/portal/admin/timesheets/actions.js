@@ -43,7 +43,7 @@ import { questionNoun } from "@/lib/timesheet/question-nouns";
 // this arrives as an error code with no person attached
 import { unstorable, unstorableRows } from "@/lib/timesheet/storable";
 import {
-  parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks,
+  parseSchedulePdf, scheduleKey, compareToSchedule, scheduleBlocks, scheduleDisagreement,
 } from "@/lib/timesheet/schedule";
 import { parseClockReport, clockShifts, clockKey, clockCoverage, gradePremiums } from "@/lib/timesheet/clock";
 import { attendanceFindings } from "@/lib/timesheet/compliance";
@@ -521,16 +521,40 @@ export async function uploadBatch(formData) {
       console.error("schedule source upload failed:", e);
     }
 
+    let schedPeople = null;
     try {
       const people = await parseSchedulePdf(sbytes);
       schedules = new Map(people.map((p) => [scheduleKey(p.employee), p]));
       scheduleStatus = "parsed";
+      schedPeople = people;
       console.log(`schedule parsed: ${people.length} employee pages`);
     } catch (e) {
       console.error("schedule parse failed:", e);
       // never lose the whole upload over the optional second file
       scheduleError = (e?.message || String(e)).slice(0, 160);
       scheduleStatus = "parse-failed";
+    }
+    // THE MISASSEMBLED-EXPORT GUARD, outside the try so the refusal cannot
+    // be swallowed as a parse failure. QSP once printed every calendar under
+    // the previous employee's name (2026-09-07) and the audit read a day of
+    // phantom double-billings out of it; when most people's calendars
+    // disagree with their own timesheets on most days, the file is the
+    // problem. The audit lane refuses it at the door; a payroll upload only
+    // warns, because there the schedule is optional corroboration.
+    if (schedPeople) {
+      const mix = scheduleDisagreement(withHours, schedPeople);
+      if (mix.misassembled) {
+        console.warn(
+          `schedule export looks misassembled: ${mix.off} of ${mix.compared} people disagree with their own timesheets (${mix.samples.join("; ")})`,
+        );
+        if (auditOnly) {
+          redirect(
+            `${NEW}error=schedmix&why=${encodeURIComponent(
+              `${mix.off} of ${mix.compared} people's calendars disagree with their own timesheets on most days (e.g. ${mix.samples.join("; ")}).`,
+            )}`,
+          );
+        }
+      }
     }
   }
 
