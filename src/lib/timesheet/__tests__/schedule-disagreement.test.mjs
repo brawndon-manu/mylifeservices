@@ -70,6 +70,38 @@ test("a tiny upload never calls the whole export misassembled", () => {
   assert.equal(out.misassembled, false);
 });
 
+// THE GUARD RUNS BEFORE ANALYSIS - a freshly parsed day carries only QSP's
+// printed figures, no paidHours. Read through paidHours alone it compared
+// every calendar against zero and refused a good export 49 to 49
+// (2026-09-09, his first blocked upload).
+test("a freshly parsed sheet speaks through QSP's printed daily figure", () => {
+  const sheets = [];
+  const people = [];
+  for (let i = 0; i < 12; i++) {
+    const name = `Person ${String.fromCharCode(65 + i)}`;
+    sheets.push({
+      employee: name,
+      days: [
+        { date: "09/01/26", printed: { daily: 8, regular: 8 } },
+        { date: "09/02/26", printed: { daily: 8, regular: 8 } },
+        { date: "09/03/26", printed: { daily: 8, regular: 8 } },
+      ],
+    });
+    people.push({
+      employee: name,
+      days: [
+        { date: "09/01/26", workHours: 8 },
+        { date: "09/02/26", workHours: 8 },
+        { date: "09/03/26", workHours: 8 },
+      ],
+    });
+  }
+  const out = scheduleDisagreement(sheets, people);
+  assert.equal(out.compared, 12);
+  assert.equal(out.off, 0);
+  assert.equal(out.misassembled, false);
+});
+
 test("people with no schedule page or too little overlap stay out of the count", () => {
   const { sheets, people } = roster(12, () => 8, () => 8);
   sheets.push({ employee: "No Calendar", days: [{ date: "09/01/26", paidHours: 8 }] });

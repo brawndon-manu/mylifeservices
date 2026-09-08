@@ -479,10 +479,19 @@ export function scheduleDisagreement(sheets, people, { toleranceHours = 1 } = {}
   let compared = 0;
   let off = 0;
   const samples = [];
+  // THE GUARD RUNS BEFORE ANALYSIS, so a freshly parsed day has no paidHours
+  // yet - only QSP's own printed daily figure. Reading paidHours alone here
+  // compared every calendar against zero and refused a perfectly good
+  // export 49 people to 49 (2026-09-09). Take whichever figure the day
+  // carries; a day with neither says nothing and stays out of the count.
+  const hoursOf = (d) => d.paidHours ?? d.printed?.daily ?? d.printed?.regular ?? null;
   for (const s of sheets || []) {
     const p = byKey.get(scheduleKey(s.employee));
     if (!p) continue;
-    const { rows } = compareToSchedule(s.days, p.days, { toleranceHours });
+    const days = (s.days || [])
+      .map((d) => ({ date: d.date, paidHours: hoursOf(d) }))
+      .filter((d) => d.paidHours != null);
+    const { rows } = compareToSchedule(days, p.days, { toleranceHours });
     const comparable = rows.filter((r) => r.schedule != null && r.timesheet != null);
     if (comparable.length < 2) continue;
     compared++;
