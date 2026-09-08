@@ -19,6 +19,7 @@ import { reviewShift, undoReview } from "../actions";
 import { ampmLabel, clientFirstLast } from "./figures";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import TimeCompare, { reviewMoved, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
 
@@ -162,6 +163,11 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
       billableFrom: billableMin != null && win ? win.from : null,
       billableTo: billableMin != null && win ? win.to : null,
       by: "you",
+      // the decision re-freezes to the current reading, so the side-by-side
+      // clears without a rebuild - same as the cards
+      wasBilledMin: row.billedMin ?? null,
+      wasClockedMin: row.clockedMin ?? null,
+      lastAt: new Date().toISOString(),
     };
     setReviewOverrides((v) => ({ ...v, [row.shiftKey]: review }));
     onReview?.(row.shiftKey, review);
@@ -480,6 +486,24 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
 . Deciding again replaces it.
               </p>
             )}
+
+            {/* the time moved after the review: both readings side by side,
+                and the pick buttons stand in for the plain Approve below -
+                the shared TimeCompare, same as the cards */}
+            {!flagging && reviewMoved(row) && (
+              <div className="mt-5">
+                <TimeCompare
+                  r={row}
+                  busy={busy}
+                  onFlag={() => setFlagging(true)}
+                  onPick={(which) =>
+                    which === "reviewed"
+                      ? send("approved", null, reviewedFigureOf(row.review), reviewedWinOf(row.review))
+                      : send("approved", null, null, null)
+                  }
+                />
+              </div>
+            )}
           </article>
 
           {flagging ? (
@@ -559,7 +583,11 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
               >
                 Flag
               </button>
-              <button
+              {/* on a moved card the TimeCompare buttons above ARE the
+                  approve - the plain one would silently mean "accept the
+                  new time" without saying so. The A key still lands there
+                  knowingly: approve-with-no-correction is that choice. */}
+              {!reviewMoved(row) && <button
                 type="button"
                 disabled={busy}
                 onClick={() => send("approved")}
@@ -567,7 +595,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                 className={`${styles.primary} order-2 sm:order-3`}
               >
                 Approve
-              </button>
+              </button>}
               <button
                 type="button"
                 onClick={() => step(1)}

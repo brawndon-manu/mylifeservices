@@ -26,13 +26,14 @@ import StudyMode from "./StudyMode";
 import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts, markNoteChangeSeen, toggleShiftStar } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
-import { hrs, span, clientFirstLast } from "./figures";
+import { hrs, clientFirstLast } from "./figures";
 import { Flag, CircleAlert, ListFilter, ArrowDownWideNarrow, ChevronDown, ChevronRight, Star } from "lucide-react";
 import AuditWorkspace from "../AuditWorkspace";
 import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
 
 const DECISIONS = [
@@ -846,12 +847,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
   // what the reviewer corrected it to, so nothing flipped and the card says
   // so quietly instead of asking anything.
   const rv = r.review;
-  const settled =
-    !frozen
-    && rv?.billableMin != null
-    && rv.billableMin === (r.billedMin ?? null)
-    && rv.wasBilledMin != null
-    && rv.wasBilledMin !== (r.billedMin ?? null);
+  const settled = !frozen && reviewSettled(r);
   // ON A PHONE THE STATUS RIDES THE NAME ROW - Mánu 2026-09-06: "put not
   // decided on the same row as the name af it the name interfered then drop
   // the status string and leave only the status color marking." The name
@@ -1078,23 +1074,9 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
   const reasonId = useId();
 
   // THE TIME MOVED AFTER THE REVIEW - the decision froze its figures, the
-  // newest copy reads differently, and neither is the settled catch-up case.
-  // The card shows both readings side by side and the buttons pick which
-  // figure bills. Mánu 2026-09-07: "show the card side by side and choosing
-  // which one to accept for billing time."
-  const rv = r.review;
-  const moved =
-    !settled
-    && rv
-    && rv.wasBilledMin != null
-    && (rv.wasBilledMin !== (r.billedMin ?? null) || (rv.wasClockedMin ?? null) !== (r.clockedMin ?? null));
-  // what the reviewer said bills: his correction where one stands, otherwise
-  // the billed figure he ruled on
-  const reviewedFigure = rv ? rv.billableMin ?? rv.wasBilledMin : null;
-  const reviewedWin =
-    rv?.billableMin != null && rv.billableFrom != null && rv.billableTo != null
-      ? { from: rv.billableFrom, to: rv.billableTo }
-      : null;
+  // newest copy reads differently, and neither is the settled catch-up case:
+  // the shared TimeCompare block shows both readings and picks which bills.
+  const moved = !settled && reviewMoved(r);
 
   const send = async (decision, o = {}) => {
     if (busy) return;
@@ -1154,55 +1136,16 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
     <div className={styles.cardFooter}>
       {error && <p role="alert" className={styles.bad}>{error}</p>}
       {!flagging && moved && (
-        <>
-          <div className={styles.compare}>
-            <div className={styles.side}>
-              <div className={styles.sideLabel}>As it was reviewed</div>
-              <dl>
-                <div className={styles.cmpRow}><dt>Billed</dt><dd>{hrs(rv.wasBilledMin)}</dd></div>
-                <div className={styles.cmpRow}><dt>Clocked</dt><dd>{rv.wasClockedMin != null ? hrs(rv.wasClockedMin) : "no row"}</dd></div>
-              </dl>
-              {rv.billableMin != null && (
-                <p className={styles.cmpNote}>
-                  Corrected to {hrs(rv.billableMin)}{reviewedWin ? ` (${span(reviewedWin.from, reviewedWin.to)})` : ""}.
-                </p>
-              )}
-            </div>
-            <div className={`${styles.side} ${styles.sideNew}`}>
-              <div className={styles.sideLabel}>Newest copy</div>
-              <dl>
-                <div className={styles.cmpRow}><dt>Billed</dt>
-                  <dd className={rv.wasBilledMin !== (r.billedMin ?? null) ? styles.cmpMoved : undefined}>
-                    {r.billedMin != null ? hrs(r.billedMin) : "no figure"}
-                    {rv.wasBilledMin !== (r.billedMin ?? null) && <span className={styles.cmpSub}>was {hrs(rv.wasBilledMin)}</span>}
-                  </dd>
-                </div>
-                <div className={styles.cmpRow}><dt>Clocked</dt>
-                  <dd className={(rv.wasClockedMin ?? null) !== (r.clockedMin ?? null) ? styles.cmpMoved : undefined}>
-                    {r.clockedMin != null ? hrs(r.clockedMin) : "no row"}
-                    {(rv.wasClockedMin ?? null) !== (r.clockedMin ?? null) && (
-                      <span className={styles.cmpSub}>was {rv.wasClockedMin != null ? hrs(rv.wasClockedMin) : "no row"}</span>
-                    )}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-          <div className={styles.pickRow}>
-            {reviewedFigure != null && (
-              <button type="button" disabled={busy} className={styles.primary} onClick={() => send("approved", { billableMin: reviewedFigure, win: reviewedWin })}>
-                Bill the reviewed time · {hrs(reviewedFigure)}
-              </button>
-            )}
-            {r.billedMin != null && (
-              <button type="button" disabled={busy} className={styles.secondary} onClick={() => send("approved", { billableMin: null, win: null })}>
-                Accept the new time · {hrs(r.billedMin)}
-              </button>
-            )}
-            <button type="button" disabled={busy} className={styles.secondary} onClick={() => setFlagging(true)}>Flag with a reason</button>
-            <small>Billing the reviewed time records it as a corrected billable figure, same as the adjust panel.</small>
-          </div>
-        </>
+        <TimeCompare
+          r={r}
+          busy={busy}
+          onFlag={() => setFlagging(true)}
+          onPick={(which) =>
+            which === "reviewed"
+              ? send("approved", { billableMin: reviewedFigureOf(r.review), win: reviewedWinOf(r.review) })
+              : send("approved", { billableMin: null, win: null })
+          }
+        />
       )}
       {flagging ? (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
