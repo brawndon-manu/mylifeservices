@@ -1668,7 +1668,8 @@ export async function uploadBatch(formData) {
             for (const f of flips) {
               await prisma.shiftReview.update({
                 where: { shiftKey: f.shiftKey },
-                data: { decision: "flagged", reason: f.reason },
+                // the flip belongs to the copy whose arrival caused it
+                data: { decision: "flagged", reason: f.reason, sourceBatchId: batch.id },
               });
             }
             if (flips.length) {

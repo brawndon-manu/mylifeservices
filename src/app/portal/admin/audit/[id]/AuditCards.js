@@ -58,6 +58,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   // spans several of them; 8/1 to 8/26 is three.
   const [period, setPeriod] = useState(periods.length === 1 ? periods[0] : "all");
   const [decision, setDecision] = useState("open");
+  // WHICH COPY A FLAG BELONGS TO - Mánu 2026-09-09: "on a new upload we need
+  // to differentiate the new flags with the new batch with the old one."
+  // Flags stamped with this copy's id split from the ones carried in; the
+  // chips only appear when this copy has made flags of its own.
+  const [flagScope, setFlagScope] = useState("all");
   const [view, setView] = useState("shifts");
   // the findings chips stack like Order by - press to add, press again to
   // drop - and kinds that cannot both be true of one shift undo each other
@@ -174,17 +179,27 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     return c;
   }, [inPeriod]);
 
+  const flagScopeCounts = useMemo(() => {
+    const flagged = inPeriod.filter((r) => r.review?.decision === "flagged");
+    const copy = flagged.filter((r) => r.review?.fromBatch === batchId).length;
+    return { all: flagged.length, copy, earlier: flagged.length - copy };
+  }, [inPeriod, batchId]);
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const byDecision = frozenMode ? () => true : DECISIONS.find((d) => d.key === decision).match;
     return inPeriod.filter((r) => {
       if (!byDecision(r)) return false;
+      if (!frozenMode && decision === "flagged" && flagScope !== "all") {
+        const mine = r.review?.fromBatch === batchId;
+        if (flagScope === "copy" ? !mine : mine) return false;
+      }
       if (frozenMode && starsOnly && !stars.has(r.shiftKey)) return false;
       if (onlyKinds.length && !onlyKinds.every((k) => kindOn(r, k))) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars]);
+  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars, flagScope, batchId]);
 
   // ONE LINE PER PERSON OR PER CLIENT, over whatever is showing.
   //
@@ -363,6 +378,13 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       {recordView && !frozenMode && <div className={styles.decisionTabs} aria-label="Review status">
         {["open", "flagged", "approved", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
       </div>}
+      {recordView && !frozenMode && decision === "flagged" && flagScopeCounts.copy > 0 && (
+        <div className={styles.decisionTabs} aria-label="Which copy flagged">
+          {[["all", "Every flag", flagScopeCounts.all], ["copy", "This copy", flagScopeCounts.copy], ["earlier", "Earlier copies", flagScopeCounts.earlier]].map(([key, label, n]) => (
+            <button key={key} type="button" aria-pressed={flagScope === key} onClick={() => setFlagScope(key)}>{label}<span>{n}</span></button>
+          ))}
+        </div>
+      )}
       {recordView && frozenMode && <div className={styles.decisionTabs} aria-label="Starred filter">
         <button type="button" aria-pressed={!starsOnly} onClick={() => setStarsOnly(false)}>All shifts<span>{inPeriod.length}</span></button>
         <button type="button" aria-pressed={starsOnly} onClick={() => setStarsOnly(true)}>Starred<span>{stars.size}</span></button>
@@ -1153,6 +1175,7 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
       billableMin: bm,
       billableFrom: bm != null && win ? win.from : null,
       billableTo: bm != null && win ? win.to : null,
+      fromBatch: batchId,
       // the decision re-freezes to the current reading, so the side-by-side
       // clears without a rebuild
       wasBilledMin: r.billedMin ?? null,

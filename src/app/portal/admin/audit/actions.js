@@ -98,6 +98,9 @@ export async function reviewShift(formData) {
     billableMin,
     billableFromMin,
     billableToMin,
+    // which copy was on screen - Mánu 2026-09-09: new flags must tell
+    // themselves apart from the old copy's
+    sourceBatchId: fromBatchId || null,
     decidedById: user.id,
   };
 
@@ -112,6 +115,7 @@ export async function reviewShift(formData) {
       billableMin: row.billableMin,
       billableFromMin: row.billableFromMin, billableToMin: row.billableToMin,
       service: row.service, client: row.client,
+      sourceBatchId: row.sourceBatchId,
     },
   });
 
@@ -265,6 +269,7 @@ export async function autoFlagShifts(batchId) {
       clockedMin: row.clockedMin,
       documentedMin: row.documentedMin,
       billableMin: null,
+      sourceBatchId: batchId,
       decidedById: user.id,
     })),
     skipDuplicates: true,

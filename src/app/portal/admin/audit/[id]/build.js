@@ -631,7 +631,7 @@ export async function buildAudit(id) {
       select: {
         shiftKey: true, decision: true, reason: true, billableMin: true, createdAt: true,
         billableFromMin: true, billableToMin: true,
-        billedMin: true, clockedMin: true, updatedAt: true,
+        billedMin: true, clockedMin: true, updatedAt: true, sourceBatchId: true,
         decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       },
     })
@@ -660,6 +660,8 @@ export async function buildAudit(id) {
         wasBilledMin: d.billedMin,
         wasClockedMin: d.clockedMin,
         lastAt: d.updatedAt.toISOString(),
+        // which copy the decision was made against, for the flag split
+        fromBatch: d.sourceBatchId,
       }
       : null;
     // the key the authorization table shares, so the client roll-up can look

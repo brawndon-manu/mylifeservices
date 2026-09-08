@@ -2220,6 +2220,15 @@ model ShiftReview {
   billableFromMin Int?
   billableToMin   Int?
 
+  // WHICH COPY THE DECISION WAS MADE AGAINST - Mánu 2026-09-09: "on a new
+  // upload we need to differentiate the new flags with the new batch with
+  // the old one." The id of the audit copy on screen when the decision was
+  // recorded (or the copy whose arrival flipped it). A plain string on
+  // purpose: copies get deleted and a dangling id still says "not this
+  // copy", which is all the screen asks of it. Null on decisions from
+  // before the column existed - those read as earlier, which they are.
+  sourceBatchId String?
+
   decidedById String
   decidedBy   User   @relation("ShiftReviewDecidedBy", fields: [decidedById], references: [id])
 

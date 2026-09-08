@@ -166,6 +166,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
       billableFrom: billableMin != null && win ? win.from : null,
       billableTo: billableMin != null && win ? win.to : null,
       by: "you",
+      fromBatch: batchId,
       // the decision re-freezes to the current reading, so the side-by-side
       // clears without a rebuild - same as the cards
       wasBilledMin: row.billedMin ?? null,
