@@ -931,12 +931,12 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
             <li
               key={i}
               className={`flex items-start gap-1.5 text-xs leading-snug ${
-                x.kind === "no-note"
+                x.kind === "no-note" || x.kind === "added-late"
                   ? "font-medium text-rose-600 dark:text-rose-400"
                   : "text-amber-900 dark:text-amber-200"
               }`}
             >
-              {x.kind === "no-note"
+              {x.kind === "no-note" || x.kind === "added-late"
                 ? <CircleAlert size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
                 : <Flag size={13} aria-hidden="true" className="mt-0.5 shrink-0" />}
               <span><span className="font-semibold">{x.label}.</span> {x.text}</span>
@@ -989,7 +989,10 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         </p>
       )}
 
-      {r.changed && (
+      {/* the added-late / time-edited findings already say this in the
+          findings list - the raw diff sentence on top was the same fact
+          twice (his call, 2026-09-08) */}
+      {r.changed && !r.changed.includes("new") && (
         <p className="mt-2 text-xs font-semibold text-sky-700 dark:text-sky-300">
           Changed since the previous copy:{" "}
           {r.changedDetail

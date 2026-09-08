@@ -778,6 +778,53 @@ export async function buildAudit(id) {
     .map((e) => ({ ...e, period: periodOf(e.date) }))
     .sort((a, b) => a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
 
+  // A SHIFT THAT ARRIVED AFTER ITS DAY WAS ALREADY COLLECTED - Mánu
+  // 2026-09-08: "we need a place to store shifts that were added into the
+  // report on days we already looked through... lets make it a red flag."
+  // But AN EDITED TIME IS NOT AN ADDITION - him again, on Gutierrez's
+  // 9:07->9:00 move: "that could be something admin did to amend it but
+  // still has a flag so i can confirm it myself." A shift's key carries its
+  // start, so an edited start reads as one gone + one new; where the gone
+  // list holds the same person, day and client at a different time, the
+  // newcomer is that shift moved, and it wears the amber time-edited flag
+  // naming the earlier reading - with a sentence when the new figure lands
+  // exactly on a corrected billable he had already recorded on the old one.
+  // A true arrival wears the red added-late flag (238 of the first 300 had
+  // no clock and no note - the backfill shape the red exists for).
+  const goneTwin = new Map();
+  for (const g of goneList) {
+    const [emp, date, , client] = (g.shiftKey || "").split("|");
+    if (emp && date) goneTwin.set(`${emp}|${date}|${client || ""}`, g);
+  }
+  for (const r of rows) {
+    if (!r.changed?.includes("new")) continue;
+    const [emp, date, , client] = (r.shiftKey || "").split("|");
+    const twin = goneTwin.get(`${emp}|${date}|${client || ""}`);
+    if (twin) {
+      const was =
+        twin.schedFrom != null && twin.schedTo != null
+          ? `${ampmLabel(twin.schedFrom)} - ${ampmLabel(twin.schedTo)}`
+          : null;
+      let text = `The earlier copy held this visit${was ? ` as ${was}` : " at another time"}${
+        twin.billedMin != null ? ` (${(twin.billedMin / 60).toFixed(2)}h billed)` : ""
+      }.`;
+      const prevReview = lostByKey.get(twin.shiftKey)?.review;
+      if (prevReview?.billableMin != null && prevReview.billableMin === (r.billedMin ?? null)) {
+        text += ` The new figure matches the ${(prevReview.billableMin / 60).toFixed(2)}h correction recorded on it.`;
+      }
+      r.reasons.push({ kind: "time-edited", label: "The time was edited after the day was uploaded", weight: 80, text });
+      r.score = (r.score || 0) + 80;
+    } else {
+      r.reasons.push({
+        kind: "added-late",
+        label: "Added after the day was uploaded",
+        weight: 90,
+        text: "The earlier copy already covered this day and did not hold this shift.",
+      });
+      r.score = (r.score || 0) + 90;
+    }
+  }
+
   // STAFF NAMES ALWAYS READ FIRST NAME FIRST - Mánu 2026-09-06: "make every
   // staff always first name then last name." The roster and the portal
   // already spell everyone that way; this catches the fallbacks, where a

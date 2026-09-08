@@ -172,7 +172,10 @@ export default async function AuditPage({ searchParams }) {
             <summary><ChevronRight size={13} aria-hidden="true" /> Earlier uploads ({earlier.length}) · Superseded</summary>
             {earlier.map((b) => <Link key={b.id} href={`/portal/admin/audit/${b.id}`} className={styles.oldRow}>
               <span className={styles.oldWhen}>{mdyTime(b.createdAt)}</span>
-              <span>{b.partialThrough ? `Through ${b.partialThrough} · ` : ""}{b.serviceNotes?.noteCount || 0} notes</span>
+              {/* the days of shifts the copy held, not just where it stopped -
+                  Mánu 2026-09-08: "needs to show the timeframes of shifts
+                  given, as well as the upload date and time" */}
+              <span>{b.periodFrom} to {b.partialThrough || b.periodTo} · {b.serviceNotes?.noteCount || 0} notes</span>
               <span className={styles.statusChip}>Superseded</span>
               {starCounts[b.id] ? <span className={styles.starCount}>★ {starCounts[b.id]} starred</span> : null}
             </Link>)}

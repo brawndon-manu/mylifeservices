@@ -1605,15 +1605,21 @@ export async function uploadBatch(formData) {
           periodFrom: { startsWith: batch.periodFrom.slice(0, 3), endsWith: batch.periodFrom.slice(-3) },
         },
         orderBy: { createdAt: "desc" },
-        select: { id: true, periodFrom: true, periodTo: true },
+        select: { id: true, periodFrom: true, periodTo: true, partialThrough: true },
       });
       if (prev) {
         const { buildAudit } = await import("../audit/[id]/build");
         const { diffAuditRows, periodOverlap } = await import("@/lib/timesheet/audit-changes");
         const [oldData, newData] = [await buildAudit(prev.id), await buildAudit(batch.id)];
+        // THE OVERLAP IS THE DATA'S REACH, NOT THE EXPORT'S PERIOD - Mánu
+        // 2026-09-08, catching it live: two month-to-date copies both say
+        // 09/01-09/15, but the first only REACHED 09/06, so measuring by the
+        // period marked every frontier-day shift "appeared on a day the
+        // previous copy already covered". A day the old copy never reached
+        // is new territory; only days both copies collected can diff.
         const overlap = periodOverlap(
-          { from: prev.periodFrom, to: prev.periodTo },
-          { from: batch.periodFrom, to: batch.periodTo },
+          { from: prev.periodFrom, to: prev.partialThrough || prev.periodTo },
+          { from: batch.periodFrom, to: batch.partialThrough || batch.periodTo },
         );
         if (oldData && newData && overlap) {
           const diff = diffAuditRows(oldData.rows, newData.rows, overlap);

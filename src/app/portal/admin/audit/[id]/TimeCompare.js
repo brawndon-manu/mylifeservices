@@ -43,6 +43,18 @@ export default function TimeCompare({ r, busy = false, onPick, onFlag }) {
   const billedMoved = rv.wasBilledMin !== (r.billedMin ?? null);
   const clockedMoved = (rv.wasClockedMin ?? null) !== (r.clockedMin ?? null);
   const win = reviewedWinOf(rv);
+  // WHAT THE REVIEWER HAD RULED - Mánu 2026-09-08: "the as it was reviewed
+  // should show if i had approved it or if i have adjusted it. cause i may
+  // not always go through them all in between new uploads." The flip keeps
+  // the original verdict as the reason's closing sentence; a review that
+  // never flipped speaks for itself.
+  const verdict = (() => {
+    const m = /(Was approved[^.]*\.|Was flagged[^.]*\.|Earlier flag: .*)$/.exec(rv.reason || "");
+    if (m) return m[1];
+    if (rv.decision === "approved") return `Approved${rv.by ? ` by ${rv.by}` : ""}.`;
+    if (rv.decision === "flagged") return `Flagged${rv.by ? ` by ${rv.by}` : ""}.`;
+    return null;
+  })();
   return (
     <>
       <div className={styles.compare}>
@@ -52,9 +64,10 @@ export default function TimeCompare({ r, busy = false, onPick, onFlag }) {
             <div className={styles.cmpRow}><dt>Billed</dt><dd>{hrs(rv.wasBilledMin)}</dd></div>
             <div className={styles.cmpRow}><dt>Clocked</dt><dd>{rv.wasClockedMin != null ? hrs(rv.wasClockedMin) : "no row"}</dd></div>
           </dl>
-          {rv.billableMin != null && (
+          {(verdict || rv.billableMin != null) && (
             <p className={styles.cmpNote}>
-              Corrected to {hrs(rv.billableMin)}{win ? ` (${span(win.from, win.to)})` : ""}.
+              {verdict}
+              {rv.billableMin != null && `${verdict ? " " : ""}Corrected to ${hrs(rv.billableMin)}${win ? ` (${span(win.from, win.to)})` : ""}.`}
             </p>
           )}
         </div>
