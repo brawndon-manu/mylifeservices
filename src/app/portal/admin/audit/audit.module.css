@@ -72,6 +72,10 @@
 .calendar { width: 49px; height: 55px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); display: flex; flex-shrink: 0; flex-direction: column; justify-content: center; align-items: center; }
 .calendar small { color: var(--red); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
 .calendar strong { font-size: 25px; line-height: 1.15; font-weight: 450; }
+/* an audit copy's tile carries the days the data reaches ("1–8") with the
+   year underneath, off his mock - the single big day stays for payroll rows */
+.calendarData strong { font-size: 15px; line-height: 1.3; font-weight: 600; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.calendarData > span { font-size: 9px; line-height: 1.2; color: var(--muted); }
 .periodTitle { display: block; font-size: 15px; font-weight: 600; }
 .periodMeta { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 .periodArrow { margin-left: auto; color: var(--faint); }

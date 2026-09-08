@@ -130,11 +130,29 @@ export default async function AuditPage({ searchParams }) {
         const earlier = g.audit.slice(1);
         const uploads = g.audit.length + g.payroll.length;
         const row = (b, isCurrent) => {
-          const [month, day] = (b.periodFrom || "").split("/");
+          const [month, day, yy] = (b.periodFrom || "").split("/");
           const monthName = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][Number(month) - 1] || "—";
+          // AN AUDIT COPY IS A MONTH, NOT A PAY PERIOD - Mánu 2026-09-08, off
+          // the daily rhythm: "it should show the month instead of the
+          // timeframe of a timesheet... I want it to show the timeframe of
+          // data we have collected." So the title names the month and the
+          // tile carries the days the copy actually reaches - periodFrom
+          // through the trim date, or the period's end once the month is
+          // over. Payroll uploads keep the pay-period reading; a fortnight
+          // is exactly what they are.
+          const thruDay = Number(((b.partialThrough || b.periodTo) || "").split("/")[1]) || null;
+          const fromDay = Number(day) || null;
           return <Link href={`/portal/admin/audit/${b.id}`} className={styles.periodRow}>
-            <span className={styles.calendar} aria-hidden="true"><small>{monthName}</small><strong>{Number(day) || "—"}</strong></span>
-            <span><span className={styles.periodTitle}>{b.periodFrom} to {b.periodTo}
+            {b.auditOnly ? (
+              <span className={`${styles.calendar} ${styles.calendarData}`} aria-hidden="true">
+                <small>{monthName}</small>
+                <strong>{fromDay && thruDay ? (fromDay === thruDay ? thruDay : `${fromDay}–${thruDay}`) : "—"}</strong>
+                <span>20{yy}</span>
+              </span>
+            ) : (
+              <span className={styles.calendar} aria-hidden="true"><small>{monthName}</small><strong>{Number(day) || "—"}</strong></span>
+            )}
+            <span><span className={styles.periodTitle}>{b.auditOnly ? g.label : `${b.periodFrom} to ${b.periodTo}`}
               {isCurrent && <span className={styles.statusChip} data-tone="current">● Current copy</span>}
             </span>
               <span className={styles.periodMeta}>{b.partialThrough ? `Through ${b.partialThrough} · ` : ""}{b.serviceNotes?.noteCount || 0} notes
