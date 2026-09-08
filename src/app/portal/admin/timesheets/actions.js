@@ -1608,6 +1608,7 @@ export async function uploadBatch(formData) {
       const newData = await buildAudit(batch.id);
       let auditChangesData = null;
       let auditNewCount = null;
+      let auditFreshCount = null;
       const prev = await prisma.timesheetBatch.findFirst({
         where: {
           auditOnly: true,
@@ -1644,6 +1645,15 @@ export async function uploadBatch(formData) {
             details,
           };
           auditNewCount = Object.values(changed).filter((k) => k.includes("new")).length;
+          // the frontier: shifts on days the earlier copy never reached -
+          // "first collected", fresh territory rather than a red flag
+          const dk = (x) => {
+            const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(x || "");
+            return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
+          };
+          auditFreshCount = newData.rows.filter(
+            (r) => dk(r.date) > dk(overlap.to) || dk(r.date) < dk(overlap.from),
+          ).length;
           // A SHIFT SOMEBODY ALREADY RULED ON DOES NOT GET TO CHANGE QUIETLY -
           // Mánu 2026-09-06: "if new service, schedule, or DSN changes and
           // there was already a flag or approval or edited time then flag
@@ -1705,6 +1715,7 @@ export async function uploadBatch(formData) {
           data: {
             auditShiftCount: newData.rows.length,
             ...(auditNewCount != null ? { auditNewCount } : {}),
+            ...(auditFreshCount != null ? { auditFreshCount } : {}),
             ...(auditChangesData ? { auditChanges: auditChangesData } : {}),
           },
         });

@@ -78,7 +78,7 @@ export default async function AuditPage({ searchParams }) {
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true,
       notesName: true, serviceNotesName: true, createdAt: true, partialThrough: true,
-      auditShiftCount: true, auditNewCount: true,
+      auditShiftCount: true, auditNewCount: true, auditFreshCount: true,
       serviceNotes: { select: { noteCount: true, pdfCount: true, serviceCount: true } },
       uploadedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
     },
@@ -163,7 +163,8 @@ export default async function AuditPage({ searchParams }) {
               {b.auditOnly && b.auditShiftCount != null ? (
                 <span className={styles.periodMeta}>
                   {b.periodFrom} to {b.partialThrough || b.periodTo} · {b.auditShiftCount} shifts
-                  {b.auditNewCount ? ` · ${b.auditNewCount} new` : ""}
+                  {b.auditFreshCount ? ` · ${b.auditFreshCount} first collected` : ""}
+                  {b.auditNewCount ? ` · ${b.auditNewCount} added late` : ""}
                   {b.createdAt ? ` · uploaded ${mdyTime(b.createdAt)}` : ""}
                   {b.uploadedBy ? ` · ${preferredName(b.uploadedBy)}` : ""}
                 </span>
@@ -190,7 +191,7 @@ export default async function AuditPage({ searchParams }) {
                   Mánu 2026-09-08: "needs to show the timeframes of shifts
                   given, as well as the upload date and time"; shifts, not
                   notes, since 2026-09-09 */}
-              <span>{b.periodFrom} to {b.partialThrough || b.periodTo}{b.auditShiftCount != null ? ` · ${b.auditShiftCount} shifts` : ` · ${b.serviceNotes?.noteCount || 0} notes`}{b.auditNewCount ? ` · ${b.auditNewCount} new` : ""}</span>
+              <span>{b.periodFrom} to {b.partialThrough || b.periodTo}{b.auditShiftCount != null ? ` · ${b.auditShiftCount} shifts` : ` · ${b.serviceNotes?.noteCount || 0} notes`}{b.auditFreshCount ? ` · ${b.auditFreshCount} first collected` : ""}{b.auditNewCount ? ` · ${b.auditNewCount} added late` : ""}</span>
               <span className={styles.statusChip}>Superseded</span>
               {starCounts[b.id] ? <span className={styles.starCount}>★ {starCounts[b.id]} starred</span> : null}
             </Link>)}

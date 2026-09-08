@@ -710,6 +710,9 @@ model TimesheetBatch {
   // and on copies from before the columns existed until the backfill.
   auditShiftCount Int?
   auditNewCount   Int?
+  // shifts on days no earlier copy collected - the frontier, "first
+  // collected" on the list - so fresh data and suspicious data read apart
+  auditFreshCount Int?
   // WHICH PROGRAM'S PAYROLL THIS IS. "MLS" for the agency, "DP" for the day
   // program, and the default makes every batch that predates the column an
   // explicit MLS one. The group key on the timesheets screen and supersededBy
