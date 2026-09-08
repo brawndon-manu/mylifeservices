@@ -156,7 +156,7 @@ export default function UploadProgress({ uploadId, seconds = 0, files, stages = 
         </p>
         <p className="mt-0.5 text-[12.5px] text-muted">
           {period?.from ? `${period.from} to ${period.to} · ` : ""}
-          {audit ? "nothing sends and no timesheet changes" : "nothing is emailed by this step"}
+          {audit ? "nothing sends" : "nothing is emailed by this step"}
         </p>
         <p className="mt-3 text-[11px] tabular-nums text-faint">
           {mmss(seconds)} elapsed

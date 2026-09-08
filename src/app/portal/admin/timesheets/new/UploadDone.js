@@ -72,7 +72,7 @@ export default function UploadDone({ href, summary, seconds, files, audit = fals
                 : `Done. ${s.employees} corrected timesheet${s.employees === 1 ? "" : "s"} generated.`}
           </p>
           <p className="mt-0.5 text-xs text-muted">
-            {s.periodFrom} to {s.periodTo} · {audit ? "nothing sends and no timesheet changes." : "nothing has been emailed to anyone."}
+            {s.periodFrom} to {s.periodTo} · {audit ? "nothing sends." : "nothing has been emailed to anyone."}
           </p>
         </div>
         {seconds != null && (

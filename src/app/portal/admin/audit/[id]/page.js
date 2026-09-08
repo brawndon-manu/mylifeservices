@@ -78,7 +78,7 @@ export default async function AuditBatchPage({ params }) {
   return (
       <AuditCards
         batchId={batch.id}
-        periodLabel={`${batch.periodFrom} to ${batch.periodTo}`}
+        periodLabel={`${batch.periodFrom} to ${batch.partialThrough || batch.periodTo}`}
         canUpload={canManageTimesheets(user?.role)}
         frozen={frozen}
         noteChanges={noteChanges.map((n) => ({

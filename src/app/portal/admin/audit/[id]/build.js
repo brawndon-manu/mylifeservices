@@ -29,7 +29,7 @@ export async function buildAudit(id) {
     where: { id },
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true, auditChanges: true,
-      createdAt: true,
+      createdAt: true, partialThrough: true,
       clockUrl: true, clockName: true, clockFindings: true,
       notesName: true, serviceNotesName: true,
       scheduleNotesUrl: true, scheduleNotesName: true,

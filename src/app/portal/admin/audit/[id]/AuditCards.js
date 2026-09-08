@@ -311,6 +311,18 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       ? `${mon(m[1])} ${Number(m[2])}–${Number(m[5])}, 20${m[3]}`
       : `${mon(m[1])} ${Number(m[2])} – ${mon(m[4])} ${Number(m[5])}, 20${m[6]}`;
   })();
+  // the page header speaks the month in full - Mánu 2026-09-09: "it should
+  // say september and the dates currently that it spans." The label already
+  // carries the reach (periodFrom to the trim date), so this only dresses it.
+  const headerPeriod = (() => {
+    const m = /^(\d{2})\/(\d{2})\/(\d{2}) to (\d{2})\/(\d{2})\/(\d{2})$/.exec(periodLabel || "");
+    if (!m) return periodLabel || null;
+    const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const name = (n) => MONTHS[Number(n) - 1] || "";
+    return m[1] === m[4] && m[3] === m[6]
+      ? `${name(m[1])} ${Number(m[2])}–${Number(m[5])}, 20${m[3]}`
+      : `${name(m[1])} ${Number(m[2])} – ${name(m[4])} ${Number(m[5])}, 20${m[6]}`;
+  })();
 
   const uploadedMdy = (() => {
     if (!frozen?.uploadedAt) return null;
@@ -321,7 +333,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   return (
     <AuditWorkspace page="batch" view={studying ? "focus" : view} onView={changeView} hasLost={lost.length > 0} canUpload={canUpload} periodLabel={navPeriod} frozen={frozenMode}>
       <header className={styles.heading}>
-        <div><p className={styles.eyebrow}>{periodLabel}</p><h1>{title}</h1><p className={styles.subtitle}>{totals.shifts} billed shifts · {totals.notes} service notes</p></div>
+        <div><p className={styles.eyebrow}>{headerPeriod}</p><h1>{title}</h1><p className={styles.subtitle}>{totals.shifts} billed shifts · {totals.notes} service notes</p></div>
         {!frozenMode && <div className={styles.actions}>
           <AuditDownloads batchId={batchId} periodLabel={periodLabel} />
           {!studying && recordView && <button type="button" className={styles.primary} disabled={!shown.length} onClick={() => setStudying(true)}>Start focused review</button>}

@@ -452,8 +452,13 @@ export async function uploadBatch(formData) {
       to: withHours[withHours.length - 1].payPeriod?.to || "",
     }
     : withHours[0].payPeriod || { from: "", to: "" };
-  // the waiting screen names the period it is working on
-  P.period = period;
+  // the waiting screen names the period it is working on. An audit copy
+  // names the days it actually COLLECTED, not the export's whole pay
+  // period - Mánu 2026-09-09: "it should say the dates currently that it
+  // spans."
+  P.period = auditOnly && partialThrough
+    ? { from: partialFrom || period.from, to: partialThrough }
+    : period;
   await setProgress(prog, P);
 
   // storage has to work BEFORE we create anything. a batch whose PDFs failed to
