@@ -42,7 +42,15 @@ export function isoDate(str) {
   return new Date(+m[1], +m[2] - 1, +m[3]);
 }
 
-export function endOfDay(now = new Date()) {
+// "TODAY" IS CALIFORNIA'S TODAY. The business runs on Pacific time and the
+// deployed server runs on UTC, where the next day starts at 5pm - a copy
+// uploaded on the evening of 09/07 recorded itself as reaching 09/08. Every
+// today-comparison here goes through this so the two clocks cannot disagree.
+export function businessNow() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+}
+
+export function endOfDay(now = businessNow()) {
   const d = new Date(now);
   d.setHours(23, 59, 59, 999);
   return d;
@@ -51,7 +59,7 @@ export function endOfDay(now = new Date()) {
 // Every date in these sheets that has not happened yet. Unparseable dates are
 // left alone rather than guessed at - they are somebody else's bug and dropping
 // a day over one would be worse than keeping it.
-export function futureDates(sheets, now = new Date()) {
+export function futureDates(sheets, now = businessNow()) {
   const cutoff = endOfDay(now);
   const out = new Set();
   for (const s of sheets || []) {
@@ -81,7 +89,7 @@ export function futureDates(sheets, now = new Date()) {
 // A sheet left with NO days is dropped entirely: it belongs to somebody who
 // worked nothing inside the window, and an empty timesheet asking for a
 // signature is the thing this whole check exists to prevent.
-export function trimDays(sheets, { now = new Date(), from = null, to = null } = {}) {
+export function trimDays(sheets, { now = businessNow(), from = null, to = null } = {}) {
   const today = endOfDay(now);
   const wanted = to ? endOfDay(to) : null;
   const clamped = !!wanted && wanted > today;
