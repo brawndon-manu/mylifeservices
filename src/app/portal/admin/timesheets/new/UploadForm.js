@@ -72,7 +72,7 @@ function mintUploadId() {
 // 2026-08-22 and this row hardcoded both the asterisk and `required` - so an
 // "optional" field silently refused to let the form submit at all. Every other
 // caller is genuinely required and passes nothing.
-function FileRow({ id, label, selected, size, onPick, tone, optional = false, accept = "application/pdf,.pdf", sendingPct = null }) {
+function FileRow({ id, label, selected, size, onPick, tone, optional = false, accept = "application/pdf,.pdf", sendingPct = null, uploaded = false }) {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-muted">
@@ -98,11 +98,18 @@ function FileRow({ id, label, selected, size, onPick, tone, optional = false, ac
       >
         {sendingPct != null
           ? `Uploading ${selected}... ${sendingPct}%`
-          : selected ? `Selected: ${selected}${size ? ` (${mb(size)})` : ""}` : "Nothing selected yet."}
+          : uploaded
+            ? `Uploaded: ${selected}${size ? ` (${mb(size)})` : ""}`
+            : selected ? `Selected: ${selected}${size ? ` (${mb(size)})` : ""}` : "Nothing selected yet."}
       </p>
     </div>
   );
 }
+
+// every picker the form can hold; a lane that lacks one simply never has a
+// file in it. file2 is in the list now - it used to ride the final POST as
+// raw bytes because the blob sender's list predated it.
+const SLOTS = ["file", "file2", "schedule", "payroll", "rests", "clock", "notes", "serviceNotes", "scheduleNotes"];
 
 // `audit` is the Audit page's lane: same form, same action, minus the payroll
 // and rest-break pickers - those two feed payroll surfaces the audit never
@@ -144,10 +151,21 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
   // on the element before the action reads the form.
   const [uploadId, setUploadId] = useState("");
   const idFieldRef = useRef(null);
-  // browser-to-Blob phase: slot -> percent while the exports are going up,
-  // null when nothing is. The pickers stay on screen through it so each row
-  // can show its own file moving.
-  const [sending, setSending] = useState(null);
+  // THE BYTES GO UP THE MOMENT A FILE LANDS - Mánu 2026-09-07: "as soon as i
+  // drop them in it can start uploading them." Each slot uploads to Blob in
+  // the background as it is picked; the button then only waits for whatever
+  // is still in the air instead of starting a 9MB transfer from zero.
+  // slot -> percent while a file is going up
+  const [sending, setSending] = useState({});
+  // slot -> { url, name, size } once its bytes are stored
+  const [blobRefs, setBlobRefs] = useState({});
+  // slot -> true when its upload failed; pressing the button retries them
+  const [blobErrs, setBlobErrs] = useState({});
+  // the button was pressed while uploads were still in the air
+  const [pendingSubmit, setPendingSubmit] = useState(false);
+  // one AbortController per slot, so re-picking a file cancels the transfer
+  // of the one it replaces
+  const controllersRef = useRef({});
   const [dragging, setDragging] = useState(false);
   const [sendError, setSendError] = useState(null);
   // what a drop could not place - named, because a silently ignored file
@@ -223,60 +241,110 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
     }
 
     // if any of this fails the upload still runs - it just runs without a
-    // counter, which is exactly how it behaved before
-    const id = mintUploadId();
+    // counter, which is exactly how it behaved before. The blob path reuses
+    // the id the eager uploads already minted, because their stored paths
+    // carry it.
+    const id = blobUpload ? ensureUploadId() : mintUploadId();
     if (idFieldRef.current) idFieldRef.current.value = id;
     setUploadId(id);
 
-    // THE BIG BYTES GO BROWSER-TO-BLOB, then a small request carries the URLs.
-    // One POST holding eight exports runs to 30MB+; Vercel refuses a serverless
-    // body over 4.5MB, so the old direct path could only ever work from
-    // localhost. With no blob store configured the direct path still runs.
+    // THE BIG BYTES ARE ALREADY IN BLOB, or on their way - the eager uploads
+    // started when the files were picked. The press only retries anything
+    // that failed and waits for whatever is still in the air; the effect
+    // below sends the small request the moment every picked file has a ref.
     if (blobUpload) {
       e.preventDefault();
-      sendViaBlob(f, id);
+      setSendError(null);
+      for (const slot of SLOTS) {
+        const file = f?.querySelector(`#${slot}`)?.files?.[0];
+        if (file && blobErrs[slot]) eagerSend(slot, file);
+      }
+      setPendingSubmit(true);
       return;
     }
     setBusy(true);
   }
 
-  async function sendViaBlob(form, id) {
-    setSendError(null);
-    const slots = ["file", "schedule", "payroll", "rests", "clock", "notes", "serviceNotes", "scheduleNotes"];
-    const picked = slots
+  // the id namespaces the blob paths and the progress poll. Minted once, at
+  // the first eager upload, and reused by the submit so both speak of the
+  // same upload.
+  const eagerIdRef = useRef("");
+  function ensureUploadId() {
+    if (!eagerIdRef.current) eagerIdRef.current = mintUploadId();
+    return eagerIdRef.current;
+  }
+
+  // one slot's file, browser-to-Blob, started the moment it is picked.
+  // Re-picking a slot aborts the transfer of the file it replaces.
+  async function eagerSend(slot, file) {
+    controllersRef.current[slot]?.abort();
+    setBlobRefs((p) => { const n = { ...p }; delete n[slot]; return n; });
+    setBlobErrs((p) => { const n = { ...p }; delete n[slot]; return n; });
+    if (!blobUpload || !file) {
+      setSending((p) => { const n = { ...p }; delete n[slot]; return n; });
+      return;
+    }
+    // a PDF far bigger than its export has ever been is the wrong file - the
+    // submit check will name it; no point moving twenty megabytes first
+    if (PDF_PICKERS.includes(slot) && file.size > PDF_LIMIT_MB * 1024 * 1024) {
+      setSending((p) => { const n = { ...p }; delete n[slot]; return n; });
+      return;
+    }
+    const ctrl = new AbortController();
+    controllersRef.current[slot] = ctrl;
+    setSending((p) => ({ ...p, [slot]: 0 }));
+    try {
+      const blob = await upload(`timesheets/src/${ensureUploadId()}/${slot}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/portal/admin/timesheets/blob-upload",
+        contentType: file.type || undefined,
+        // split-and-retry for the big exports; the service notes alone is 27MB
+        multipart: file.size > 5 * 1024 * 1024,
+        abortSignal: ctrl.signal,
+        onUploadProgress: ({ percentage }) => {
+          if (!ctrl.signal.aborted) setSending((p) => ({ ...p, [slot]: Math.round(percentage) }));
+        },
+      });
+      if (ctrl.signal.aborted) return;
+      setBlobRefs((p) => ({ ...p, [slot]: { url: blob.url, name: file.name, size: file.size } }));
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      console.error("blob upload failed:", err);
+      setBlobErrs((p) => ({ ...p, [slot]: true }));
+    } finally {
+      if (!ctrl.signal.aborted) setSending((p) => { const n = { ...p }; delete n[slot]; return n; });
+    }
+  }
+
+  // the moment every picked file has its bytes stored, the small request goes:
+  // everything the form holds EXCEPT the files, plus the references to where
+  // their bytes already are
+  useEffect(() => {
+    if (!pendingSubmit) return;
+    const form = formRef.current;
+    if (!form) return;
+    const picked = SLOTS
       .map((slot) => ({ slot, file: form.querySelector(`#${slot}`)?.files?.[0] || null }))
       .filter((p) => p.file);
-    setSending(Object.fromEntries(picked.map((p) => [p.slot, 0])));
-    const refs = {};
-    try {
-      for (const { slot, file } of picked) {
-        const blob = await upload(`timesheets/src/${id}/${slot}-${file.name}`, file, {
-          access: "public",
-          handleUploadUrl: "/portal/admin/timesheets/blob-upload",
-          contentType: file.type || undefined,
-          // split-and-retry for the big exports; the service notes alone is 27MB
-          multipart: file.size > 5 * 1024 * 1024,
-          onUploadProgress: ({ percentage }) =>
-            setSending((prev) => ({ ...(prev || {}), [slot]: Math.round(percentage) })),
-        });
-        refs[slot] = { url: blob.url, name: file.name, size: file.size };
-      }
-    } catch (err) {
-      console.error("blob upload failed:", err);
-      setSending(null);
-      setSendError("A file didn't finish uploading. Nothing was generated - try again.");
+    if (picked.some(({ slot }) => blobErrs[slot])) {
+      setPendingSubmit(false);
+      setSendError("A file didn't finish uploading. Nothing was generated - press the button to try again.");
       return;
     }
-
-    // the small request: everything the form holds EXCEPT the files, plus the
-    // references to where their bytes already are
+    const ready = picked.every(
+      ({ slot, file }) => blobRefs[slot] && blobRefs[slot].name === file.name && blobRefs[slot].size === file.size,
+    );
+    if (!ready) return;
     const fd = new FormData(form);
     for (const { slot } of picked) fd.delete(slot);
-    fd.set("blobs", JSON.stringify(refs));
-    setSending(null);
+    fd.set("blobs", JSON.stringify(Object.fromEntries(picked.map(({ slot }) => [slot, blobRefs[slot]]))));
+    setPendingSubmit(false);
     setBusy(true);
     startTransition(() => formAction(fd));
-  }
+    // formAction is stable from useActionState; the deps that matter are the
+    // refs and errors the wait is about
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSubmit, blobRefs, blobErrs]);
 
   // A DROP LANDS EVERY EXPORT AT ONCE - the shared placer, so this form and
   // the day program's behave identically. Picking one at a time still works.
@@ -333,7 +401,8 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
       <FileRow
         id="file"
-        sendingPct={sending ? sending.file ?? null : null}
+        sendingPct={sending.file ?? null}
+        uploaded={!!blobRefs.file}
         label="QSP Simple Timesheet export (PDF)"
         tone="primary"
         selected={name}
@@ -341,13 +410,15 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, file: e.target.files?.[0]?.size || 0 }));
+          eagerSend("file", e.target.files?.[0] || null);
         }}
       />
 
       {audit && (
         <FileRow
           id="file2"
-          sendingPct={sending ? sending.file2 ?? null : null}
+          sendingPct={sending.file2 ?? null}
+        uploaded={!!blobRefs.file2}
           label="Second Simple Timesheet (PDF) - optional. A month audit takes two, one per pay period"
           optional
           selected={name2}
@@ -355,26 +426,30 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
           onPick={(e) => {
             setName2(e.target.files?.[0]?.name || "");
             setSizes((p) => ({ ...p, file2: e.target.files?.[0]?.size || 0 }));
+          eagerSend("file2", e.target.files?.[0] || null);
           }}
         />
       )}
 
       <FileRow
         id="schedule"
-        sendingPct={sending ? sending.schedule ?? null : null}
+        sendingPct={sending.schedule ?? null}
+        uploaded={!!blobRefs.schedule}
         label="Employee Schedules export (PDF)"
         selected={schedName}
         size={sizes.schedule || 0}
         onPick={(e) => {
           setSchedName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, schedule: e.target.files?.[0]?.size || 0 }));
+          eagerSend("schedule", e.target.files?.[0] || null);
         }}
       />
 
       {!audit && (<>
       <FileRow
         id="payroll"
-        sendingPct={sending ? sending.payroll ?? null : null}
+        sendingPct={sending.payroll ?? null}
+        uploaded={!!blobRefs.payroll}
         label="Simple Payroll Processing Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
         selected={payrollName}
@@ -382,12 +457,14 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setPayrollName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, payroll: e.target.files?.[0]?.size || 0 }));
+          eagerSend("payroll", e.target.files?.[0] || null);
         }}
       />
 
       <FileRow
         id="rests"
-        sendingPct={sending ? sending.rests ?? null : null}
+        sendingPct={sending.rests ?? null}
+        uploaded={!!blobRefs.rests}
         label="Rest Periods Report (.xls)"
         accept=".xls,application/vnd.ms-excel"
         selected={restsName}
@@ -395,6 +472,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setRestsName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, rests: e.target.files?.[0]?.size || 0 }));
+          eagerSend("rests", e.target.files?.[0] || null);
         }}
       />
       </>)}
@@ -407,7 +485,8 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
           and it still changes no hour and no figure. */}
       <FileRow
         id="clock"
-        sendingPct={sending ? sending.clock ?? null : null}
+        sendingPct={sending.clock ?? null}
+        uploaded={!!blobRefs.clock}
         optional
         label="QSClock Time and Attendance (.xls) - optional"
         accept=".xls,application/vnd.ms-excel"
@@ -416,6 +495,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setClockName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, clock: e.target.files?.[0]?.size || 0 }));
+          eagerSend("clock", e.target.files?.[0] || null);
         }}
       />
 
@@ -430,7 +510,8 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
           billable service shifts, the .xls 192, the two together 793. */}
       <FileRow
         id="notes"
-        sendingPct={sending ? sending.notes ?? null : null}
+        sendingPct={sending.notes ?? null}
+        uploaded={!!blobRefs.notes}
         optional
         label="DSN (Employee Detailed Daily Service Notes) (.pdf) - optional"
         selected={notesName}
@@ -438,12 +519,14 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setNotesName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, notes: e.target.files?.[0]?.size || 0 }));
+          eagerSend("notes", e.target.files?.[0] || null);
         }}
       />
 
       <FileRow
         id="serviceNotes"
-        sendingPct={sending ? sending.serviceNotes ?? null : null}
+        sendingPct={sending.serviceNotes ?? null}
+        uploaded={!!blobRefs.serviceNotes}
         optional
         label="Employee Service Notes (.xls) - optional"
         accept=".xls,application/vnd.ms-excel"
@@ -452,12 +535,14 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setServiceNotesName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, serviceNotes: e.target.files?.[0]?.size || 0 }));
+          eagerSend("serviceNotes", e.target.files?.[0] || null);
         }}
       />
 
       <FileRow
         id="scheduleNotes"
-        sendingPct={sending ? sending.scheduleNotes ?? null : null}
+        sendingPct={sending.scheduleNotes ?? null}
+        uploaded={!!blobRefs.scheduleNotes}
         optional
         label="Employee Schedule Notes (.xls) - optional"
         accept=".xls,application/vnd.ms-excel"
@@ -466,6 +551,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         onPick={(e) => {
           setScheduleNotesName(e.target.files?.[0]?.name || "");
           setSizes((p) => ({ ...p, scheduleNotes: e.target.files?.[0]?.size || 0 }));
+          eagerSend("scheduleNotes", e.target.files?.[0] || null);
         }}
       />
         </div>
@@ -538,10 +624,10 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         )}
         <button
           type="submit"
-          disabled={!!sending}
+          disabled={pendingSubmit}
           className="mt-7 w-full rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:opacity-60"
         >
-          {sending ? "Uploading the files..." : "Upload and generate"}
+          {pendingSubmit ? "Finishing the uploads..." : "Upload and generate"}
         </button>
       </div>
         {busy && !result?.ok && (
