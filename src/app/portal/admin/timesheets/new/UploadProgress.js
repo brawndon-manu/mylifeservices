@@ -28,9 +28,19 @@ function mmss(s) {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// STAFF NAMES READ FIRST NAME FIRST, here too - the progress store carries
+// the name as QSP printed it ("Uribe, Brandon"), and this is a screen
+const firstLast = (n) => {
+  const v = String(n || "");
+  const i = v.indexOf(",");
+  return i < 0 ? v : `${v.slice(i + 1).trim()} ${v.slice(0, i).trim()}`;
+};
+
 // `stages` lets the day program reuse this panel with its own step list - the
 // ring, the ticker and the polling are identical; only the steps differ.
-export default function UploadProgress({ uploadId, seconds = 0, files, stages = STAGES }) {
+// `audit` swaps the payroll words for the audit copy's own: nothing here
+// generates a timesheet anybody signs, and premiums are not its business.
+export default function UploadProgress({ uploadId, seconds = 0, files, stages = STAGES, audit = false }) {
   const [state, setState] = useState(null);
   const [reachedPoll, setReachedPoll] = useState(false);
   // what the polling itself is doing. shown in one muted line at the bottom:
@@ -139,14 +149,14 @@ export default function UploadProgress({ uploadId, seconds = 0, files, stages = 
           {/* counted off the pickers rather than hardcoded - "four" survived
               the move to eight files on the MLS side and nobody noticed */}
           {generating
-            ? "Generating corrected timesheets"
+            ? audit ? "Reading each person's shifts" : "Generating corrected timesheets"
             : files?.length
               ? `Reading your ${files.length} exports`
               : "Reading the exports"}
         </p>
         <p className="mt-0.5 text-[12.5px] text-muted">
           {period?.from ? `${period.from} to ${period.to} · ` : ""}
-          nothing is emailed by this step
+          {audit ? "nothing sends and no timesheet changes" : "nothing is emailed by this step"}
         </p>
         <p className="mt-3 text-[11px] tabular-nums text-faint">
           {mmss(seconds)} elapsed
@@ -169,10 +179,10 @@ export default function UploadProgress({ uploadId, seconds = 0, files, stages = 
                 <span aria-hidden="true" className={r.failed ? "text-rose-500" : "text-emerald-500"}>
                   {r.failed ? "!" : "✓"}
                 </span>
-                <span className="truncate font-semibold text-foreground">{r.name}</span>
+                <span className="truncate font-semibold text-foreground">{firstLast(r.name)}</span>
                 <span className="ml-auto shrink-0 tabular-nums text-[11.5px] text-muted">
                   {r.failed ? "no PDF" : `${r.hours.toFixed(2)} hrs`}
-                  {!r.failed && r.premium > 0 && ` · ${r.premium.toFixed(2)} premium`}
+                  {!r.failed && !audit && r.premium > 0 && ` · ${r.premium.toFixed(2)} premium`}
                 </span>
               </li>
             ))}

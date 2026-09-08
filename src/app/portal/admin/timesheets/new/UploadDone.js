@@ -19,7 +19,9 @@ const FADE_MS = 600;
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
-export default function UploadDone({ href, summary, seconds, files }) {
+// `audit` keeps the payroll words off the audit copy's finish - no corrected
+// timesheets were generated for anyone to sign, and premiums are payroll's
+export default function UploadDone({ href, summary, seconds, files, audit = false }) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const s = summary || {};
@@ -65,10 +67,12 @@ export default function UploadDone({ href, summary, seconds, files }) {
           <p className="text-base font-semibold text-foreground" role="status">
             {failed.length
               ? `Finished with ${failed.length} problem${failed.length === 1 ? "" : "s"}.`
-              : `Done. ${s.employees} corrected timesheet${s.employees === 1 ? "" : "s"} generated.`}
+              : audit
+                ? `Done. The audit copy holds ${s.employees} ${s.employees === 1 ? "person" : "people"}.`
+                : `Done. ${s.employees} corrected timesheet${s.employees === 1 ? "" : "s"} generated.`}
           </p>
           <p className="mt-0.5 text-xs text-muted">
-            {s.periodFrom} to {s.periodTo} · nothing has been emailed to anyone.
+            {s.periodFrom} to {s.periodTo} · {audit ? "nothing sends and no timesheet changes." : "nothing has been emailed to anyone."}
           </p>
         </div>
         {seconds != null && (
@@ -78,11 +82,11 @@ export default function UploadDone({ href, summary, seconds, files }) {
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className={`mt-4 grid grid-cols-2 gap-2 ${audit ? "" : "sm:grid-cols-4"}`}>
         <Stat k="Employees" v={s.employees} />
         <Stat k="Pages read" v={s.pages} />
-        <Stat k="Corrected hrs" v={f2(s.paidHours)} />
-        <Stat k="Premium hrs" v={f2(s.premiumHours)} />
+        {!audit && <Stat k="Corrected hrs" v={f2(s.paidHours)} />}
+        {!audit && <Stat k="Premium hrs" v={f2(s.premiumHours)} />}
       </div>
 
       {failed.length > 0 && (
@@ -134,7 +138,9 @@ export default function UploadDone({ href, summary, seconds, files }) {
         </Note>
       )}
 
-      {support.unverified > 0 && (
+      {/* premium evidence is payroll's question; the audit copy never carries
+          a rests export, so the figure would only ever say the file is absent */}
+      {!audit && support.unverified > 0 && (
         <Note tone="warn">
           <b>{f2(support.unverified)} premium hours need somebody to look</b> -
           not clocked, and no corroborating record. {f2(support.recorded)} are
@@ -159,7 +165,7 @@ export default function UploadDone({ href, summary, seconds, files }) {
       )}
 
       <p className="mt-4 text-xs text-muted">
-        Taking you to the batch
+        Taking you to the {audit ? "audit copy" : "batch"}
         {" "}
         <a href={href} className="font-semibold text-brand underline underline-offset-4">
           now

@@ -18,6 +18,24 @@ export const STAGES = [
   { key: "done", label: "Done" },
 ];
 
+// THE AUDIT COPY'S UPLOAD, same panel, its own steps and no payroll clothes -
+// Mánu 2026-09-07: "this is tied to the timesheets still. it needs to be
+// unique on its own." The audit lane never carries a payroll or rests export,
+// and it grows a stage of its own: the diff against the previous copy, which
+// runs after the save. Listing "comparing" here also fixes the center label,
+// which used to fall back to "Reading the export" during that stage.
+export const AUDIT_STAGES = [
+  { key: "reading", label: "Reading the timesheet export" },
+  { key: "checking", label: "Checking the dates" },
+  { key: "schedule", label: "Reading the schedule PDF" },
+  { key: "clock", label: "Reading the clock report" },
+  { key: "notes", label: "Reading the service notes" },
+  { key: "generating", label: "Lining up each person's shifts" },
+  { key: "saving", label: "Saving the copy" },
+  { key: "comparing", label: "Comparing with the previous copy" },
+  { key: "done", label: "Done" },
+];
+
 // THE DAY PROGRAM'S UPLOAD, same panel, its own steps. Its analyze reads all
 // of its exports in one pass, so there is one reading stage where the MLS list
 // has four, and its sources are stored after the sheets are built rather than

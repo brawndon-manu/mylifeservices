@@ -13,6 +13,7 @@ import { useActionState, useEffect, useRef, useState, startTransition } from "re
 // Vercel caps a serverless body at 4.5MB and the big exports blow past it
 import { upload } from "@vercel/blob/client";
 import { placeDroppedFiles } from "@/lib/timesheet/upload-slots";
+import { STAGES, AUDIT_STAGES } from "@/lib/timesheet-stages";
 import DatePicker from "@/components/DatePicker";
 import UploadProgress from "./UploadProgress";
 import UploadDone from "./UploadDone";
@@ -631,10 +632,10 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         </button>
       </div>
         {busy && !result?.ok && (
-          <UploadProgress uploadId={uploadId} seconds={seconds} files={sourceFiles} />
+          <UploadProgress uploadId={uploadId} seconds={seconds} files={sourceFiles} stages={audit ? AUDIT_STAGES : STAGES} audit={audit} />
         )}
         {result?.ok && (
-          <UploadDone href={result.href} summary={result.summary} seconds={seconds} files={sourceFiles} />
+          <UploadDone href={result.href} summary={result.summary} seconds={seconds} files={sourceFiles} audit={audit} />
         )}
       </form>
     </div>
