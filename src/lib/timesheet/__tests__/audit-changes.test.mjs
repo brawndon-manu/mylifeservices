@@ -34,7 +34,7 @@ test("moved hours and grown notes mark a change; identical shifts stay silent", 
   const { changed, details, gone } = diffAuditRows(oldRows, newRows, overlap);
   assert.equal(changed.k1, undefined);
   assert.deepEqual(changed.k2, ["hours"]);
-  assert.equal(details.k2, "billed 2.00h -> 2.50h");
+  assert.equal(details.k2, "billed 2.00h → 2.50h");
   assert.deepEqual(changed.k3, ["note"]);
   assert.deepEqual(changed.k4, ["new"]);
   assert.deepEqual(gone, []);
@@ -54,8 +54,8 @@ test("a note that grew and hours that moved stack on one shift", () => {
     overlap,
   );
   assert.deepEqual(changed.k1, ["hours", "note"]);
-  assert.match(details.k1, /clocked 3\.33h -> 4\.00h/);
-  assert.match(details.k1, /changed \(10 -> 60 words\)/);
+  assert.match(details.k1, /clocked 3\.33h → 4\.00h/);
+  assert.match(details.k1, /changed \(10 → 60 words\)/);
 });
 
 test("a note that vanished or shrank is a change now, not silence", () => {
@@ -68,7 +68,7 @@ test("a note that vanished or shrank is a change now, not silence", () => {
   assert.deepEqual(changed.k1, ["note-gone"]);
   assert.equal(details.k1, "DSN note gone (was 50 words)");
   assert.deepEqual(changed.k2, ["note"]);
-  assert.equal(details.k2, "DSN note changed (80 -> 30 words)");
+  assert.equal(details.k2, "DSN note changed (80 → 30 words)");
 });
 
 test("same words but different opening is a reword; schedule notes count both ways", () => {
@@ -106,12 +106,12 @@ const review = (over = {}) => ({
 
 test("an approved shift that changed flips to flagged and says what moved", () => {
   const flips = adjustedAfterReviewPlan(
-    { changed: { k1: ["hours"] }, details: { k1: "billed 2.25h -> 3.00h" }, gone: [] },
+    { changed: { k1: ["hours"] }, details: { k1: "billed 2.25h → 3.00h" }, gone: [] },
     [review()],
   );
   assert.deepEqual(flips, [{
     shiftKey: "k1",
-    reason: "Auto: changed after review (billed 2.25h -> 3.00h). Was approved by Brandon Uribe.",
+    reason: "Auto: changed after review (billed 2.25h → 3.00h). Was approved by Brandon Uribe.",
   }]);
 });
 
@@ -128,7 +128,7 @@ test("a flagged shift keeps the reviewer's words inside the new reason", () => {
 
 test("an undecided shift that changed is left alone", () => {
   const flips = adjustedAfterReviewPlan(
-    { changed: { k9: ["hours"] }, details: { k9: "billed 1.00h -> 2.00h" }, gone: [] },
+    { changed: { k9: ["hours"] }, details: { k9: "billed 1.00h → 2.00h" }, gone: [] },
     [review()],
   );
   assert.deepEqual(flips, []);
@@ -147,16 +147,16 @@ test("a reviewed shift that vanished flips with the verdict carried", () => {
 
 test("a second flip refreshes the change and carries the closing, never nests", () => {
   const first = adjustedAfterReviewPlan(
-    { changed: { k1: ["hours"] }, details: { k1: "billed 2.25h -> 3.00h" }, gone: [] },
+    { changed: { k1: ["hours"] }, details: { k1: "billed 2.25h → 3.00h" }, gone: [] },
     [review({ decision: "flagged", reason: "looks double booked" })],
   )[0];
   const second = adjustedAfterReviewPlan(
-    { changed: { k1: ["hours"] }, details: { k1: "billed 3.00h -> 1.50h" }, gone: [] },
+    { changed: { k1: ["hours"] }, details: { k1: "billed 3.00h → 1.50h" }, gone: [] },
     [review({ decision: "flagged", reason: first.reason })],
   )[0];
   assert.equal(
     second.reason,
-    'Auto: changed after review (billed 3.00h -> 1.50h). Earlier flag: "looks double booked"',
+    'Auto: changed after review (billed 3.00h → 1.50h). Earlier flag: "looks double booked"',
   );
 });
 

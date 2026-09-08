@@ -49,12 +49,12 @@ function changesBetween(prev, r) {
   if ((r.billedMin ?? null) !== (prev.billedMin ?? null)) {
     kinds.add("hours");
     figures.billed = { from: prev.billedMin ?? null, to: r.billedMin ?? null };
-    words.push(`billed ${hrs(prev.billedMin)} -> ${hrs(r.billedMin)}`);
+    words.push(`billed ${hrs(prev.billedMin)} → ${hrs(r.billedMin)}`);
   }
   if ((r.clockedMin ?? null) !== (prev.clockedMin ?? null)) {
     kinds.add("hours");
     figures.clocked = { from: prev.clockedMin ?? null, to: r.clockedMin ?? null };
-    words.push(`clocked ${hrs(prev.clockedMin)} -> ${hrs(r.clockedMin)}`);
+    words.push(`clocked ${hrs(prev.clockedMin)} → ${hrs(r.clockedMin)}`);
   }
   if (!prev.note && r.note) {
     kinds.add("note");
@@ -69,7 +69,7 @@ function changesBetween(prev, r) {
     const reworded = (r.note.summary || "") !== (prev.note.summary || "");
     if (grewOrShrank) {
       kinds.add("note");
-      const w = `${noteName(r.note)} changed (${prev.note.words || 0} -> ${r.note.words || 0} words)`;
+      const w = `${noteName(r.note)} changed (${prev.note.words || 0} → ${r.note.words || 0} words)`;
       words.push(w);
       noteEvents.push({ kind: "service", detail: w });
     } else if (reworded) {

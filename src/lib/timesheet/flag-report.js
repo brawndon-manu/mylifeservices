@@ -328,6 +328,9 @@ export function pdfText(s) {
   return String(s ?? "")
     .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")
     .replace(/[\u2028\u2029]/g, " ")
+    // the change sentences use a real arrow on screen; WinAnsi has none, so
+    // on paper it prints as the ASCII it replaced rather than a "?"
+    .replace(/\u2192/g, "->")
     .replace(/./gu, (ch) => (ch.charCodeAt(0) <= 0xff || WINANSI_EXTRA.has(ch) ? ch : "?"));
 }
 
