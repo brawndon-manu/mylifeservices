@@ -222,7 +222,10 @@ export async function uploadBatch(formData) {
   // everything else." QSP snaps to whole pay periods, so the file says
   // 08/01-08/15 whatever was asked for, and the only record of the intended
   // window is the person who typed it. Both ends optional: no end means today.
-  const wantPartial = formData.get("partial") === "on";
+  // never on the audit lane: an audit copy trims its own future days and the
+  // form no longer offers the box there - refused here too so a stray POST
+  // cannot half-trim a copy
+  const wantPartial = !auditOnly && formData.get("partial") === "on";
   const partialFromInput = isoDate((formData.get("partialFrom") || "").toString());
   const partialToInput = isoDate((formData.get("partialTo") || "").toString());
   if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {

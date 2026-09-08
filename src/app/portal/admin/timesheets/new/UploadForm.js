@@ -472,8 +472,13 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         {/* TESTING A PERIOD THAT IS STILL RUNNING. Deliberately plain and
             deliberately last: the upload refuses a file holding days nobody has
             worked, and this is the way past that check, so it should read like
-            what it is rather than an ordinary option. */}
-        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
+            what it is rather than an ordinary option.
+
+            NOT ON THE AUDIT LANE - Mánu 2026-09-07: "it should just know if
+            its partial or not." It does, there: an audit copy trims days
+            after today on its own and never refuses a running period, so the
+            box had nothing left to do and only implied a choice to make. */}
+        {!audit && <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
               type="checkbox"
@@ -518,7 +523,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
               </p>
             </div>
           )}
-        </div>
+        </div>}
 
         {totalBytes > 0 && (
           <p className={`mt-5 text-xs ${overLimit ? "font-semibold text-rose-600 dark:text-rose-400" : "text-muted"}`}>
