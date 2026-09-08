@@ -5,14 +5,12 @@ import { supersededBy } from "@/lib/timesheet/superseded";
 import { preferredName } from "@/lib/contacts";
 import { sheetDisplayName } from "@/lib/timesheet/display-name";
 import TimesheetSigner from "./TimesheetSigner";
-import BreakReason from "./BreakReason";
 import { employeeAsk, breakFindingKey, resetAction } from "@/lib/timesheet/break-answers";
 // the calendar's accepted time off, for the header's Time off and Paid hours
 // rows - same one-fetch rule as the sheet render routes
 import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { timeOffTotals } from "@/lib/timesheet/time-off";
 import ReportProblem from "./ReportProblem";
-import TimesheetQuestion from "./TimesheetQuestion";
 import TimesheetViews from "./TimesheetViews";
 import DayByDay from "./DayByDay";
 import {
@@ -44,10 +42,9 @@ import { isSuper } from "@/lib/roles";
 import { sendModeSummary } from "@/lib/timesheet-mode";
 import { sendTimesheets } from "@/app/portal/admin/timesheets/actions";
 import PreviewSend from "./PreviewSend";
-import PreviewReset from "./PreviewReset";
 import LiveRefresh from "./LiveRefresh";
 import { getSheetVersion } from "@/lib/timesheet-presence";
-import ModeBar from "./ModeBar";
+import ReviewerBar from "./ReviewerBar";
 import { restMealPolicyLink } from "@/lib/policy-form";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
@@ -635,16 +632,29 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   });
   const period = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
 
+  // whether every question has an answer and the document can be put together
+  // - the same test the signer gets as `canSign`, read here so the stepper can
+  // say which stage this person is at.
+  const readyToGenerate = progress.settled && gate.canSign && breakAsks.length === 0;
+
+  // WHAT THE REVIEWER CARD CALLS THEM: the export's "Uribe, Brandon" flipped
+  // to First Last per the staff-name rule, and the first name alone for the
+  // mode sentences ("Only Brandon can sign").
+  const reviewerName = String(ts.sourceName || "").includes(",")
+    ? ts.sourceName.split(",").map((s) => s.trim()).reverse().filter(Boolean).join(" ")
+    : ts.sourceName;
+  const reviewerFirst = String(reviewerName || "").split(/\s+/)[0] || reviewerName;
+
   return (
+    // portal-shell: the portal's token layer + system font, tokens only - the
+    // corner accessibility button stays on this page (see globals.css).
     // wider than a reading column on purpose: the main thing on this page is a
     // dense letter-size timesheet, and squeezing it into 768px put its 7pt table
     // text at roughly 7 pixels tall.
-    // max-w-6xl since 2026-08-12, to buy the day-by-day calendar the width its
-    // overlapping blocks need without stacking the answer options beside them.
-    // See the note on the calendar column in DayByDay.
     // no-focus-zoom: every field here is text-sm, and a field under 16px makes
     // iOS Safari magnify the page and stay there. See the rule in globals.css.
-    <section className="no-focus-zoom mx-auto max-w-6xl px-6 py-10 sm:py-14">
+    <div className="portal-shell bg-background">
+    <section className="no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
       {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
           reaches this page within a few seconds, without either of them saying
           reload - which is the difference between fixing something while an
@@ -655,137 +665,75 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           from your own sheet - same layout, same questions, somebody else's
           hours - and the first thing anybody does on a page like this is click
           something. Named, not just flagged: "you are previewing" is a state,
-          "previewing Uribe, Brandon" is a fact you can check against the row you
-          came from. */}
+          "previewing Brandon Uribe" is a fact you can check against the row you
+          came from. The reviewer card holds the mode switch, the status line,
+          the About dialog and the reset - see ReviewerBar. */}
       {reviewing && (
-        <ModeBar
+        <ReviewerBar
           token={token}
           live={live}
-          name={ts.sourceName}
-          period={`${ts.batch.periodFrom} to ${ts.batch.periodTo}`}
+          name={reviewerName}
+          first={reviewerFirst}
+          rehearsal={rehearsal}
+          timesheetId={ts.id}
+          /* NOT `answered`, WHICH IS A DIFFERENT QUESTION. That set is the
+             `q_` rows the page restores cards for; a reset also takes the
+             `fix_` acknowledgements off a backwards rest entry, and they are
+             their answer like any other. Brandon's July sheet had one, so the
+             button read 6 beside a confirm that correctly said 7. */
+          answers={
+            ts.corrections.filter((c) => {
+              const k = String(c.kind || "");
+              return k.startsWith("q_") || k.startsWith("fix_");
+            }).length
+          }
+          /* what a reset would take off a break answer as well, counted
+             through the same rule the action applies - see `resetAction`. */
+          reasons={breakAnswers.filter((r) => resetAction(r, ts.userId)).length}
+          signed={!!ts.signedAt}
         />
       )}
-      {live && (
-        <div
-          role="status"
-          className="mb-6 rounded-xl border border-rose-300 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/30"
-        >
-          <p className="text-sm font-bold text-rose-900 dark:text-rose-200">
-            Live &mdash; this is {ts.sourceName}&apos;s real page. Everything you do here is saved.
-          </p>
-          {/* WHOSE ANSWER IT BECOMES IS NOT COSMETIC, so the banner says it.
-              These are recorded as theirs: the words are theirs, and their
-              signature is still what makes any of it count. See `answerAsThem`
-              above and the note on `answeredById`. */}
-          <p className="mt-1 text-sm text-rose-800 dark:text-rose-300">
-            Anything you answer here is recorded as their own answer, and they see it on
-            their phone within about five seconds. It still waits on their signature.
-          </p>
-        </div>
-      )}
-      {preview && (
-        <div
-          role="status"
-          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30"
-        >
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-            Preview &mdash; this is {ts.sourceName}&apos;s page, exactly as they see it.
-          </p>
-          <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
-            {rehearsal
-              ? "This is a TEST BATCH, so everything here works for real - answers save, the sheet rebuilds, the signature is stored. The only thing that differs is that any email it sends goes to one address."
-              : "Nothing you do here is saved. Answering a question or signing will be refused, so their record cannot be changed from this tab. Press Live to answer with them on the phone."}
-          </p>
-          {/* the one exception, and it goes the other way: this does not add an
-              answer, it takes every answer off. Mánu 2026-08-12: "I meant to
-              reset page. When you open up someone's time sheet corrections." */}
-          <PreviewReset
-            timesheetId={ts.id}
-            name={ts.sourceName}
-            /* NOT `answered`, WHICH IS A DIFFERENT QUESTION. That set is the
-               `q_` rows the page restores cards for; a reset also takes the
-               `fix_` acknowledgements off a backwards rest entry, and they are
-               their answer like any other. Brandon's July sheet had one, so the
-               button read 6 beside a confirm that correctly said 7. */
-            answers={
-              ts.corrections.filter((c) => {
-                const k = String(c.kind || "");
-                return k.startsWith("q_") || k.startsWith("fix_");
-              }).length
-            }
-            /* what a reset would take off a break answer as well, counted
-               through the same rule the action applies - see `resetAction`. The
-               button said "reset their N answers" with N counting corrections
-               only, so it promised less than it now does. */
-            reasons={breakAnswers.filter((r) => resetAction(r, ts.userId)).length}
-            signed={!!ts.signedAt}
-          />
-        </div>
-      )}
-      <p className="text-sm font-semibold uppercase tracking-wider text-brand-dark">
-        My Life Services
-      </p>
       {/* THE TIMESHEET REVIEW PAGE. One name, used here, in the tab title, in
           the link admins follow to it, and in every comment that refers to it -
           it had five ("their own page", "the employee page", "the corrections
           page", "the signing page", "the sign-off page") and no way to say which
           screen anybody meant. */}
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        Review your timesheet
-      </h1>
-      <p className="mt-2 text-sm text-muted">
-        {who} · {period}
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[12.5px] font-medium text-muted">{who} · Employee timesheet</p>
+          <h1 className="mt-1 text-[26px] font-semibold tracking-tight text-foreground sm:text-[28px]">
+            Review your timesheet
+          </h1>
+          <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">
+            Check your days and answer a few questions.
+            <br className="hidden sm:block" /> Then review your document and sign.
+          </p>
+        </div>
+        <PeriodTile from={ts.batch.periodFrom} to={ts.batch.periodTo} />
+      </div>
 
       {/* ONE COLUMN. Two columns put Overtime beside Hours worked, where it read
           as a second half of the same figure rather than its own line. */}
-      <div className="mt-5 grid gap-2 rounded-xl border border-border bg-surface p-4">
+      {/* HOURS ONLY. "Break penalty pay included" and "Comes off only if you
+          tell us you took them" both came out 2026-08-12 - Mánu: "make the top
+          only show the hours worked". Overtime and double time stay: they are
+          hours worked, not penalty pay, and they are what the sheet below
+          prints. `standing` is still computed - the policy line and the
+          questions read it. */}
+      {/* RECORDED TIME OFF AND THE COMBINED FIGURE, 2026-09-03 - Mánu, three
+          times: "why doesnt it say 104." Time off is hours of pay the grid
+          never held. Only once an entry is ACCEPTED on the calendar - a claim
+          is not a record - and never inside worked hours or overtime, which is
+          what keeps a PTO day from inventing OT. */}
+      <div className="mt-6 divide-y divide-sep border-y border-sep">
         <Figure label="Hours worked" value={ts.paidHours} strong />
         {ts.otHours > 0 && <Figure label="Overtime" value={ts.otHours} />}
         {ts.doubleHours > 0 && <Figure label="Double time" value={ts.doubleHours} />}
-        {/* HOURS ONLY. "Break penalty pay included" and "Comes off only if you
-            tell us you took them" both came out 2026-08-12 - Mánu: "make the top
-            only show the hours worked". Overtime and double time stay: they are
-            hours worked, not penalty pay, and they are what the sheet below
-            prints. `standing` is still computed - the policy line and the
-            questions read it. */}
-        {/* RECORDED TIME OFF AND THE COMBINED FIGURE, 2026-09-03 - Mánu, three
-            times: "why doesnt it say 104." Time off is hours of pay the grid
-            never held, so it shows as its own line with the one number the
-            page kept refusing to say. Only once an entry is ACCEPTED on the
-            calendar - a claim is not a record - and never inside worked hours
-            or overtime, which is what keeps a PTO day from inventing OT. */}
         {timeOffHours > 0 && <Figure label="Time off" value={timeOffHours} />}
         {timeOffHours > 0 && (
           <Figure label="Paid hours" value={ts.paidHours + timeOffHours} strong />
         )}
       </div>
-      {standing.assumptions > 0 && (
-        /* THE POLICY, NAMED AND LINKED, AND NOTHING ELSE. Mánu 2026-08-12 cut
-           this back to one sentence: the paragraph used to open "Those N hours
-           ARE on this timesheet and you will be paid them unless you tell us
-           otherwise" and go on to explain what saying so would cost. Every
-           figure and every consequence is gone; what remains is why we are
-           entitled to ask at all. Still shown only when there is an assumption
-           on the sheet, which is what makes the policy relevant to the page. */
-        <p className="mt-2 text-sm leading-relaxed text-muted">
-          Under the{" "}
-          {policy ? (
-            <a
-              href={policy.path}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-brand underline underline-offset-2 hover:text-brand-dark"
-            >
-              Rest &amp; Meal Period Policy and Acknowledgement
-            </a>
-          ) : (
-            <b>Rest &amp; Meal Period Policy and Acknowledgement</b>
-          )}{" "}
-          you signed, recording your rest periods and meal breaks is to be documented in your
-          schedule.
-        </p>
-      )}
 
       {ts.message && (
         <div className="mt-4 rounded-xl border border-border bg-surface-2 p-4 text-sm leading-relaxed text-foreground">
@@ -869,6 +817,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               would be gating a signature on them giving money up. What still
               blocks is a punch we CHANGED or a row we could not READ - see
               `signingGate`. */}
+          {/* WHERE THEY ARE IN THE JOB, in three words. Purely presentational -
+              the stages it names are the ones the page already enforces:
+              questions first, the document generates once every one has an
+              answer (see the signer), the signature last. */}
+          <Stepper ready={readyToGenerate} />
           {/* TWO ARRANGEMENTS OF THE SAME QUESTIONS. "Day by day" walks the
               period with each day drawn on a time axis; "All questions" is the
               one card per kind that has always been here. Both hand the same
@@ -909,41 +862,20 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 ackAction={act(acknowledgeSpan)}
               />
             }
-            detailed={[
-              // THE SAME REASONS, AS A LIST. "All questions" has no days to hang
-              // them on, so here they keep the shape they used to have on the
-              // whole page - with the count restored, which is the one thing the
-              // day-by-day version does not need to say.
-              ...(breakAsks.length > 0
-                ? [(
-                  <div key="break-asks" className="mb-6">
-                    <p className="text-sm text-muted">
-                      {breakAsks.length === 1
-                        ? "One thing to check before we can put your timesheet together."
-                        : `${breakAsks.length} things to check before we can put your timesheet together.`}
-                    </p>
-                    {breakAsks.map((ask) => (
-                      <BreakReason
-                        key={ask.findingKey}
-                        token={token}
-                        ask={ask}
-                        submitAction={act(answerBreakReason)}
-                      />
-                    ))}
-                  </div>
-                )]
-                : []),
-              ...byKind.map((group) => (
-              <TimesheetQuestion
-                /* THE CARD'S OWN KEY, NOT ITS KIND. A kind is one card only
-                   while it emits one question: `repair` is one card per
-                   out-time, so a sheet with two mis-entered rows handed React
-                   two children keyed "repair" and it warned that one may be
-                   duplicated or omitted. `cardKey` is what decided the grouping
-                   in the first place, so it is what identifies the group. */
-                key={cardKey(group[0])}
+            detailed={
+              /* THE SAME DAYS, STACKED - his All questions design, 2026-09-08.
+                 The one-card-per-kind arrangement this replaces is in git; the
+                 stacked view walks every day top to bottom with the calendar
+                 folded behind its recorded-intervals line, through the same
+                 components and the same rows in the database. */
+              <DayByDay
+                stacked
+                dpNotes={dpNotes}
+                days={ts.data.days}
+                groups={byKind}
+                scheduled={scheduledByDate}
+                restsOnRecord={restsByDate}
                 token={token}
-                questions={group}
                 answers={answers}
                 partials={partials}
                 answerTimes={answerTimes}
@@ -952,12 +884,40 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 disturbs={deps.disturbs}
                 standing={standing}
                 submitAction={act(live ? answerAsThem : answerTimesheetQuestion)}
+                breakAsks={breakAsks}
+                breakAction={act(answerBreakReason)}
                 reasonsOnRecord={reasonsOnRecord}
+                saidById={saidById}
+                ackOn={ackOn}
+                ackAction={act(acknowledgeSpan)}
               />
-              )),
-            ]}
+            }
           />
 
+          {standing.assumptions > 0 && (
+            /* THE POLICY, NAMED AND LINKED, AND NOTHING ELSE. Mánu 2026-08-12
+               cut this back to one sentence - every figure and every
+               consequence is gone; what remains is why we are entitled to ask
+               at all. Shown only when there is an assumption on the sheet, and
+               under the day box since 2026-09-08, where his design puts it. */
+            <p className="mt-4 border-b border-sep pb-4 text-[12.5px] leading-relaxed text-muted">
+              Under the{" "}
+              {policy ? (
+                <a
+                  href={policy.path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-accent underline underline-offset-2 hover:opacity-80"
+                >
+                  Rest &amp; Meal Period Policy and Acknowledgement
+                </a>
+              ) : (
+                <b>Rest &amp; Meal Period Policy and Acknowledgement</b>
+              )}{" "}
+              you signed, recording your rest periods and meal breaks is to be documented in your
+              schedule.
+            </p>
+          )}
 
           {/* WHAT THEY TOLD US, back on the page. A confirmation that leaves no
               trace is indistinguishable from one nobody gave, and two of these
@@ -1110,26 +1070,110 @@ export default async function SignTimesheetPage({ params, searchParams }) {
         </>
       )}
     </section>
+    </div>
   );
 }
 
 function Figure({ label, value, strong, tone }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-sm text-muted">{label}</span>
+    <div className="flex items-baseline justify-between gap-3 py-3">
+      <span className={`text-sm ${strong ? "font-medium text-foreground" : "text-muted"}`}>
+        {label}
+      </span>
       <span
-        className={`text-sm font-semibold ${
+        className={
           tone === "prem"
-            ? "text-rose-600 dark:text-rose-400"
+            ? "text-sm font-semibold text-rose-600 dark:text-rose-400"
             // noted, not charged - the same grey the sheet itself uses for a
             // premium it assumed away rather than billed
             : tone === "muted"
-              ? "text-muted"
-              : "text-foreground"
-        } ${strong ? "text-base" : ""}`}
+              ? "text-sm font-semibold text-muted"
+              : strong
+                ? "text-[22px] font-semibold tracking-tight text-foreground"
+                : "text-sm font-semibold text-foreground"
+        }
       >
-        {(Math.round((value || 0) * 100) / 100).toFixed(2)} hrs
+        {(Math.round((value || 0) * 100) / 100).toFixed(2)}
+        <span className="ml-1 text-[12px] font-normal text-faint">hrs</span>
       </span>
     </div>
+  );
+}
+
+// the period, as a small calendar-style tile in the header corner. "07/16/26
+// to 07/31/26" -> JUL / 16–31 / 2026; a period crossing months prints both
+// short months, and an unreadable one prints as stored.
+const TILE_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+function PeriodTile({ from, to }) {
+  const parse = (s) => {
+    const [m, d, y] = String(s || "").split("/").map(Number);
+    return m && d && y ? { m, d, y: 2000 + y } : null;
+  };
+  const a = parse(from), b = parse(to);
+  if (!a || !b) {
+    return (
+      <div className="rounded-xl bg-surface px-4 py-3 text-sm font-semibold text-foreground shadow-sm night:ring-1 night:ring-border">
+        {from} to {to}
+      </div>
+    );
+  }
+  const sameMonth = a.m === b.m && a.y === b.y;
+  return (
+    <div className="flex flex-none flex-col items-center rounded-xl bg-surface px-5 py-2.5 text-center shadow-sm night:ring-1 night:ring-border">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">
+        {sameMonth ? TILE_MONTHS[a.m - 1] : `${TILE_MONTHS[a.m - 1]}–${TILE_MONTHS[b.m - 1]}`}
+      </span>
+      <span className="text-[22px] font-semibold leading-tight tracking-tight text-foreground">
+        {a.d}–{b.d}
+      </span>
+      <span className="text-[11.5px] text-faint">{a.y}</span>
+    </div>
+  );
+}
+
+// the three stages, named. Step one is done the moment everything is answered,
+// which is also the moment step two unlocks - the page's own gates decide, this
+// only reads them.
+function Stepper({ ready }) {
+  const steps = [
+    { n: 1, label: "Review days", state: ready ? "done" : "current" },
+    { n: 2, label: "Generate", state: ready ? "current" : "todo" },
+    { n: 3, label: "Sign", state: "todo" },
+  ];
+  return (
+    <ol className="mt-6 flex flex-wrap items-center gap-2 text-[13px]">
+      {steps.map((s, i) => (
+        <li key={s.n} className="flex items-center gap-2">
+          {i > 0 && (
+            <span aria-hidden="true" className="mx-1 text-faint">
+              ›
+            </span>
+          )}
+          <span
+            aria-hidden="true"
+            className={`flex h-[22px] w-[22px] items-center justify-center rounded-full text-[11.5px] font-semibold ${
+              s.state === "current"
+                ? "bg-brand text-white"
+                : s.state === "done"
+                  ? "accent-fill-soft"
+                  : "bg-fill text-muted"
+            }`}
+          >
+            {s.n}
+          </span>
+          <span
+            className={
+              s.state === "current"
+                ? "font-semibold text-accent"
+                : s.state === "done"
+                  ? "font-medium text-foreground"
+                  : "text-muted"
+            }
+          >
+            {s.label}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }

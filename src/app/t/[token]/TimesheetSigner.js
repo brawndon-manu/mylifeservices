@@ -97,36 +97,31 @@ export default function TimesheetSigner({
   // is stored by pressing it.
   const [generated, setGenerated] = useState(false);
 
-  if (gated) {
+  // THE "NEXT: YOUR TIMESHEET" BAND, both states in one shape per his design:
+  // while questions are open the button sits disabled with the count beside
+  // it; once everything has an answer the same band's button is live.
+  if (gated || (requireGenerate && !generated)) {
     return (
-      <div className="mt-6 rounded-xl border border-border bg-surface-2 p-5">
-        <p className="text-sm font-semibold text-foreground">
-          Your timesheet is not ready to put together yet.
-        </p>
-        <p className="mt-1 text-sm text-muted">
-          {blocking === 1
-            ? "One question above still needs an answer."
-            : `${blocking} questions above still need an answer.`}{" "}
-          Once they all have one you can generate your timesheet and sign it.
-        </p>
-      </div>
-    );
-  }
-
-  if (requireGenerate && !generated) {
-    return (
-      <div className="mt-6 rounded-xl border border-border bg-surface-2 p-5">
-        <p className="text-sm font-semibold text-foreground">
-          Everything is answered - your timesheet is ready.
-        </p>
-        <p className="mt-1 text-sm text-muted">
-          It is put together from your answers when you ask for it. Check it over, then sign at the
-          bottom.
-        </p>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-sep pt-5">
+        <div className="min-w-0">
+          <p className="text-[15px] font-semibold text-foreground">Next: your timesheet</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
+            {gated
+              ? blocking === 1
+                ? "Answer the last question to generate your document."
+                : `Answer the remaining ${blocking} questions to generate your document.`
+              : "Everything is answered - your timesheet is ready. Check it over, then sign at the bottom."}
+          </p>
+        </div>
         <button
           type="button"
+          disabled={gated}
           onClick={() => setGenerated(true)}
-          className="mt-3 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
+          className={`rounded-[9px] px-4 py-2.5 text-[13.5px] font-semibold transition ${
+            gated
+              ? "cursor-not-allowed bg-fill text-faint"
+              : "bg-brand text-white shadow-sm hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          }`}
         >
           Generate my timesheet
         </button>

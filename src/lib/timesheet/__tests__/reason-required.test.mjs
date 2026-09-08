@@ -157,11 +157,14 @@ test("nothing can silently stop being asked", () => {
 });
 
 test("the other view keeps them too", () => {
-  // "All questions" has no days to hang them on, so it keeps the list - and
-  // moving them into the day view WITHOUT this would have deleted them from
-  // that half of the page entirely.
-  assert.match(PAGE, /detailed=\{\[/);
-  assert.match(PAGE, /things to check before we can put your timesheet together/);
+  // "All questions" is the stacked day walk since 2026-09-08, so the reasons
+  // reach it the same way the rail gets them: the DayByDay instance it renders
+  // has to be handed breakAsks - dropping the prop there would delete every
+  // reason from that half of the page without a word.
+  const detailed = PAGE.slice(PAGE.indexOf("detailed={"), PAGE.indexOf("/>", PAGE.indexOf("detailed={")));
+  assert.match(detailed, /<DayByDay/);
+  assert.match(detailed, /stacked/);
+  assert.match(detailed, /breakAsks=\{breakAsks\}/);
 });
 
 // NOTHING SAVES WHILE A DAY IS STILL OPEN, 2026-08-14.

@@ -178,8 +178,11 @@ body {
 
 /* inside the portal the corner accessibility button retires: appearance
    lives in the desktop toolbar's pill, and the full accessibility controls
-   sit on the Settings page. the public site keeps the button. */
-body:has(.portal-shell) .corner-fab {
+   sit on the Settings page. KEYED ON THE PORTAL CHROME, not on the token
+   layer - the timesheet review page at /t wears .portal-shell for its
+   tokens but has no Settings page to send anybody to, so its corner button
+   stays. the public site keeps the button too. */
+body:has([data-portal-chrome]) .corner-fab {
   display: none;
 }
 

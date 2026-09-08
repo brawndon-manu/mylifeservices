@@ -62,17 +62,20 @@ test("the action applies exactly that rule, and only to this person and period",
   assert.match(body, /confirmedAt: null, confirmedText: null/);
 });
 
-test("the button counts what it will actually remove", () => {
-  const panel = fs.readFileSync("src/app/t/[token]/PreviewReset.js", "utf8");
-  assert.match(panel, /const total = answers \+ reasons;/);
-  assert.match(panel, /Undo their \$\{total\}/);
+test("the confirm counts what it will actually remove", () => {
+  // the reset lives on the reviewer card since 2026-09-08. The confirm still
+  // re-reads the counts at click time through the action's own rule, and the
+  // title says the number it is about to delete.
+  const panel = fs.readFileSync("src/app/t/[token]/ReviewerBar.js", "utf8");
+  assert.match(panel, /timesheetResetImpact\(timesheetId\)/);
+  assert.match(panel, /impact\.answers \+ impact\.reasons/);
   const page = fs.readFileSync("src/app/t/[token]/page.js", "utf8");
   // counted through the same rule the action applies, not a second guess at it
   assert.match(page, /reasons=\{breakAnswers\.filter\(\(r\) => resetAction\(r, ts\.userId\)\)\.length\}/);
 });
 
-test("and the panel says whose words go", () => {
-  const panel = fs.readFileSync("src/app/t/[token]/PreviewReset.js", "utf8");
-  assert.match(panel, /wrote about a missed break goes/);
+test("and the confirm says whose words go", () => {
+  const panel = fs.readFileSync("src/app/t/[token]/ReviewerBar.js", "utf8");
+  assert.match(panel, /wrote about a missed\s+break goes/);
   assert.match(panel, /goes back to waiting on them to check it/);
 });

@@ -148,7 +148,7 @@ export default function RootLayout({ children }) {
         <main id="main-content" className="flex-1">
           {children}
         </main>
-        <PublicChrome>
+        <PublicChrome hideOnTimesheet>
           <Footer />
         </PublicChrome>
         {/* always-on accessibility control, pinned to the bottom-right corner

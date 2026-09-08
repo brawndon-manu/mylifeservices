@@ -40,7 +40,7 @@ export default async function PortalLayout({ children }) {
     // portal-shell: the portal's token layer + system font stack (globals.css).
     // no-focus-zoom: see globals.css. Every form in the portal is text-sm, and
     // under 16px iOS zooms in on focus and does not come back.
-    <div className="portal-shell no-focus-zoom min-h-screen bg-background">
+    <div data-portal-chrome="" className="portal-shell no-focus-zoom min-h-screen bg-background">
       {user && isIT(user.realRole) && (
         <PreviewBar
           realRole={user.realRole}

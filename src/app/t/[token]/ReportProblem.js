@@ -144,17 +144,18 @@ export default function ReportProblem({ token, days, submitAction, period = null
 
   if (!open) {
     return (
-      <div className="mt-8 border-t border-border pt-6">
-        <p className="text-sm text-muted">
-          Do these hours look right to you?
-        </p>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-sep pt-5">
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="mt-2 text-sm font-semibold text-brand-dark underline underline-offset-4 hover:opacity-80"
+          className="inline-flex min-h-[44px] items-center gap-2 rounded text-sm font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
+          </svg>
           Something doesn&apos;t look right
         </button>
+        <p className="text-[12.5px] text-faint">We&apos;ll help you get it corrected.</p>
       </div>
     );
   }

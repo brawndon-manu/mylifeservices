@@ -128,7 +128,13 @@ export default function Header() {
   // The number is for the top of the visit, not for every scroll position -
   // anyone who wants it back scrolls up. `relative` rather than `static` so
   // the z-index keeps doing its job for the dropdown and the hanging message.
-  const sticky = isTimesheetPath(pathname) ? "relative" : "sticky top-0";
+  //
+  // AND IT IS MINIMAL THERE, Mánu 2026-09-08: the logo, the company name and
+  // the phone number - no nav, no portal button, no menu. Somebody on their
+  // review link is here to check a document, not to browse the site, and
+  // every extra door is a way to wander off the one page their token opens.
+  const minimal = isTimesheetPath(pathname);
+  const sticky = minimal ? "relative" : "sticky top-0";
 
   return (
     <header className={`${sticky} z-40 pt-3 ${isHome ? HEADER_PULL : "mb-2"}`}>
@@ -148,9 +154,12 @@ export default function Header() {
               priority
               className="h-8 w-auto rounded-md"
             />
-            <span className="hidden sm:inline">My Life Services</span>
+            {/* the name always shows on the minimal review-page bar - it is
+                half of what that bar exists to say */}
+            <span className={minimal ? "inline" : "hidden sm:inline"}>My Life Services</span>
           </Link>
 
+          {!minimal && (
           <nav aria-label="Primary" className="hidden md:block">
             <ul className={`flex items-center gap-5 text-sm font-medium ${link}`}>
               <li>
@@ -198,8 +207,10 @@ export default function Header() {
               ))}
             </ul>
           </nav>
+          )}
 
           <div className="ml-auto flex flex-none items-center gap-2">
+            {!minimal && (
             <Link
               href="/portal"
               aria-label={portalAria}
@@ -209,6 +220,7 @@ export default function Header() {
               <PortalIcon className="h-3.5 w-3.5 flex-none" />
               <span>Employee portal</span>
             </Link>
+            )}
             {/* THE PHONE BUTTON, AND ON A TIMESHEET THE SENTENCE THAT COMES
                 WITH IT. Two variants, because the bar is a FIXED-HEIGHT SINGLE
                 ROW that must never wrap (see the note at the top of this file)
@@ -239,6 +251,7 @@ export default function Header() {
                 </span>
               )}
             </a>
+            {!minimal && (
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
@@ -250,6 +263,7 @@ export default function Header() {
             >
               <MenuIcon open={menuOpen} className="h-4.5 w-4.5" />
             </button>
+            )}
           </div>
         </div>
 
@@ -276,7 +290,7 @@ export default function Header() {
         )}
 
         {/* mobile menu - always a solid panel so it stays readable over the hero */}
-        {menuOpen && (
+        {!minimal && menuOpen && (
           <div className="absolute inset-x-4 top-full z-50 mt-2 rounded-2xl border border-border bg-surface p-2 shadow-lg sm:inset-x-6 md:hidden">
             {[...aboutLinks, ...navLinks].map((l) => (
               <Link
