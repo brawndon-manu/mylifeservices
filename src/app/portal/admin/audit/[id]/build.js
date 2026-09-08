@@ -573,6 +573,10 @@ export async function buildAudit(id) {
         ? {
           start: note.start, end: note.end, words: note.words,
           summary: note.summary, comments: note.comments, categories: note.categories,
+          // the form rebuilt goal by goal, and the ticked priority box -
+          // null/absent on notes parsed before 2026-09-07 and on the
+          // supervisor .xls notes, where the screen keeps the flat reading
+          sections: note.sections || null, highPriority: !!note.highPriority,
           signedAt: note.signedAt, signedDate: note.signedDate, signedAfterMin: note.signedAfterMin,
           miles: note.miles, page: note.page,
           source: note.source,

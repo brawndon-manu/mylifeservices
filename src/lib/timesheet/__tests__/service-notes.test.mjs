@@ -70,6 +70,96 @@ test("mileage is the answer to the question, as a yes or a no", () => {
   assert.equal(no.miles, false);
 });
 
+// ---- the form rebuilt from positions, 2026-09-07 ----
+//
+// Measured on the 9/1-9/5 export: goal names print at x=45 in their own
+// font, comments at x=60, a WRAPPED goal name sits ~11pt under its first
+// line, and a NEW goal after an uncommented one leaves the empty comment
+// space (~40pt). Mánu, showing the phone screens: an objective answered Yes
+// carries a required comment; No has no comment box at all - so a bare goal
+// name in print IS a No.
+
+const rl = (text, x, y) => ({ text, x, y, font: "f" });
+const RICH_NOTE = [
+  rl("Taylor Adams", 277, 733),
+  rl("Daily Service Note", 276, 708),
+  rl("Michael McPheeters", 14, 679),
+  rl("Shift Dates/Times", 14, 659),
+  rl("9/1/2026 10:30 AM - 12:06 PM", 29, 643),
+  rl("Summary", 14, 623),
+  rl("o Is High Priority", 79, 621),
+  rl("Staff and client did laundry before going out.", 29, 609),
+  rl("Service Notes", 16, 579),
+  rl("Cleaning", 45, 564),
+  rl("Comments: Staff and client cleaned the bathroom and", 60, 552),
+  rl("made the bed.", 60, 540),
+  rl("Cooking/Meal Prep", 45, 525),
+  rl("Independent Recreation/Participation in", 45, 485),
+  rl("Natural Environments", 45, 474),
+  rl("Comments: Staff accompanied client to Irvine Spectrum.", 60, 462),
+  rl("Auto Mileage", 16, 326),
+  rl("Do you want to claim miles?", 45, 311),
+  rl("Yes", 67, 299),
+  rl("Employee Name: Signature: Date:", 24, 226),
+  rl("Taylor Adams 9/1/2026 12:06 PM", 52, 212),
+  rl("Printed by: Brandon Uribe Printed on: 9/5/2026 10:19 PM", 101, 22),
+];
+
+test("rich lines rebuild the form: one section per objective, comment means yes", () => {
+  const n = noteFromLines(RICH_NOTE);
+  assert.deepEqual(n.sections, [
+    { goal: "Cleaning", comment: "Staff and client cleaned the bathroom and made the bed." },
+    { goal: "Cooking/Meal Prep", comment: null },
+    { goal: "Independent Recreation/Participation in Natural Environments", comment: "Staff accompanied client to Irvine Spectrum." },
+  ]);
+  // a wrapped goal name is ONE goal; a bare goal after it stays its own; and
+  // no goal name leaks into any comment's text
+  assert.deepEqual(n.categories, [
+    "Cleaning", "Cooking/Meal Prep", "Independent Recreation/Participation in Natural Environments",
+  ]);
+  assert.equal(n.comments.length, 2);
+  for (const c of n.comments) assert.doesNotMatch(c, /Cooking|Recreation/);
+  // words count the writing, not the goal names
+  assert.equal(n.words, "Staff and client did laundry before going out. Staff and client cleaned the bathroom and made the bed. Staff accompanied client to Irvine Spectrum.".split(" ").length);
+  assert.equal(n.employee, "Taylor Adams");
+  assert.equal(n.date, "09/01/26");
+  assert.equal(n.signedAt, "12:06 PM");
+});
+
+test("the priority checkbox reads unticked as o, anything else as ticked", () => {
+  assert.equal(noteFromLines(RICH_NOTE).highPriority, false);
+  const ticked = noteFromLines(RICH_NOTE.map((l) =>
+    l.text === "o Is High Priority" ? rl("x Is High Priority", 79, 621) : l));
+  assert.equal(ticked.highPriority, true);
+  assert.doesNotMatch(ticked.summary, /Is High Priority/);
+});
+
+test("two uncommented goals in a row stay two goals, not one wrapped name", () => {
+  const n = noteFromLines([
+    ...RICH_NOTE.slice(0, 9),
+    rl("Shopping in Natural Environment", 45, 407),
+    rl("Health- Medical/Dental Appointments", 45, 364),
+    rl("Independent Recreation in Natural", 45, 324),
+    rl("Environments", 45, 313),
+    rl("Comments: Staff accompanied client to Panda Express.", 60, 301),
+    ...RICH_NOTE.slice(16),
+  ]);
+  assert.deepEqual(n.sections.map((s) => s.goal), [
+    "Shopping in Natural Environment",
+    "Health- Medical/Dental Appointments",
+    "Independent Recreation in Natural Environments",
+  ]);
+  assert.equal(n.sections[0].comment, null);
+  assert.equal(n.sections[1].comment, null);
+  assert.match(n.sections[2].comment, /Panda Express/);
+});
+
+test("plain string lines keep the flat reading and no sections", () => {
+  const n = noteFromLines(NOTE);
+  assert.equal(n.sections, null);
+  assert.equal(n.highPriority, false);
+});
+
 // ---- the signature, and the trap under it ----
 
 test("the signature is read even when its header wraps onto two lines", () => {

@@ -32,6 +32,7 @@ import AuditWorkspace from "../AuditWorkspace";
 import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
 import ShiftEvidence from "./ShiftEvidence";
+import NoteBody from "./NoteBody";
 import styles from "../audit.module.css";
 
 const DECISIONS = [
@@ -1045,18 +1046,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
               </button>
               {open && (
                 <div className="mt-1.5 rounded-lg border border-border bg-surface-2 p-3">
-                  <p className="text-sm leading-relaxed text-foreground">{r.note.summary}</p>
-                  {r.note.categories.length > 0 && (
-                    <p className="mt-2 text-xs text-faint">{r.note.categories.join(" · ")}</p>
-                  )}
-                  {r.note.comments.map((c, i) => (
-                    <p key={i} className="mt-2 text-sm leading-relaxed text-muted">{c}</p>
-                  ))}
-                  <p className="mt-3 text-xs text-faint">
-                    Signed {r.note.signedDate} {r.note.signedAt}
-                    {r.note.miles ? " · miles claimed" : ""}
-                    {r.note.page ? ` · page ${r.note.page} of the export` : ""}
-                  </p>
+                  <NoteBody note={r.note} />
                 </div>
               )}
             </div>

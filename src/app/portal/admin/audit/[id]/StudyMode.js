@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewShift, undoReview } from "../actions";
 import { ampmLabel, clientFirstLast } from "./figures";
 import ShiftEvidence from "./ShiftEvidence";
+import NoteBody from "./NoteBody";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
 
@@ -454,17 +455,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                   </button>
                   {openNote && (
                     <div className="mt-2 rounded-lg border border-border bg-surface p-4">
-                      <p className="text-sm leading-relaxed text-foreground">{row.note.summary}</p>
-                      {row.note.categories.length > 0 && (
-                        <p className="mt-2 text-xs text-faint">{row.note.categories.join(" · ")}</p>
-                      )}
-                      {row.note.comments.map((c, i) => (
-                        <p key={i} className="mt-2 text-sm leading-relaxed text-muted">{c}</p>
-                      ))}
-                      <p className="mt-3 text-xs text-faint">
-                        Signed {row.note.signedDate} {row.note.signedAt}
-                        {row.note.miles ? " · miles claimed" : ""}
-                      </p>
+                      <NoteBody note={row.note} />
                     </div>
                   )}
                 </div>
