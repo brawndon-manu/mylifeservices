@@ -78,6 +78,7 @@ export default async function AuditPage({ searchParams }) {
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true,
       notesName: true, serviceNotesName: true, createdAt: true, partialThrough: true,
+      auditShiftCount: true, auditNewCount: true,
       serviceNotes: { select: { noteCount: true, pdfCount: true, serviceCount: true } },
       uploadedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
     },
@@ -155,10 +156,23 @@ export default async function AuditPage({ searchParams }) {
             <span><span className={styles.periodTitle}>{b.auditOnly ? g.label : `${b.periodFrom} to ${b.periodTo}`}
               {isCurrent && <span className={styles.statusChip} data-tone="current">● Current copy</span>}
             </span>
-              <span className={styles.periodMeta}>{b.partialThrough ? `Through ${b.partialThrough} · ` : ""}{b.serviceNotes?.noteCount || 0} notes
-                {b.serviceNotes?.pdfCount && b.serviceNotes?.serviceCount ? ` · ${b.serviceNotes.pdfCount} PDF, ${b.serviceNotes.serviceCount} XLS` : b.serviceNotes?.serviceCount ? " · XLS only" : b.serviceNotes ? " · PDF only" : " · no service notes uploaded"}
-                {b.uploadedBy ? ` · ${preferredName(b.uploadedBy)}` : ""}{b.createdAt ? ` · uploaded ${mdy(b.createdAt)}` : ""}
-              </span>
+              {/* an audit copy's line answers his three questions in order:
+                  the exact days the data spans, how many shifts it holds and
+                  how many arrived on already-collected days, and when it was
+                  uploaded to the minute - Mánu 2026-09-09 */}
+              {b.auditOnly && b.auditShiftCount != null ? (
+                <span className={styles.periodMeta}>
+                  {b.periodFrom} to {b.partialThrough || b.periodTo} · {b.auditShiftCount} shifts
+                  {b.auditNewCount ? ` · ${b.auditNewCount} new` : ""}
+                  {b.createdAt ? ` · uploaded ${mdyTime(b.createdAt)}` : ""}
+                  {b.uploadedBy ? ` · ${preferredName(b.uploadedBy)}` : ""}
+                </span>
+              ) : (
+                <span className={styles.periodMeta}>{b.partialThrough ? `Through ${b.partialThrough} · ` : ""}{b.serviceNotes?.noteCount || 0} notes
+                  {b.serviceNotes?.pdfCount && b.serviceNotes?.serviceCount ? ` · ${b.serviceNotes.pdfCount} PDF, ${b.serviceNotes.serviceCount} XLS` : b.serviceNotes?.serviceCount ? " · XLS only" : b.serviceNotes ? " · PDF only" : " · no service notes uploaded"}
+                  {b.uploadedBy ? ` · ${preferredName(b.uploadedBy)}` : ""}{b.createdAt ? ` · uploaded ${mdy(b.createdAt)}` : ""}
+                </span>
+              )}
             </span><span className={styles.periodArrow} aria-hidden="true">›</span>
           </Link>;
         };
@@ -174,8 +188,9 @@ export default async function AuditPage({ searchParams }) {
               <span className={styles.oldWhen}>{mdyTime(b.createdAt)}</span>
               {/* the days of shifts the copy held, not just where it stopped -
                   Mánu 2026-09-08: "needs to show the timeframes of shifts
-                  given, as well as the upload date and time" */}
-              <span>{b.periodFrom} to {b.partialThrough || b.periodTo} · {b.serviceNotes?.noteCount || 0} notes</span>
+                  given, as well as the upload date and time"; shifts, not
+                  notes, since 2026-09-09 */}
+              <span>{b.periodFrom} to {b.partialThrough || b.periodTo}{b.auditShiftCount != null ? ` · ${b.auditShiftCount} shifts` : ` · ${b.serviceNotes?.noteCount || 0} notes`}{b.auditNewCount ? ` · ${b.auditNewCount} new` : ""}</span>
               <span className={styles.statusChip}>Superseded</span>
               {starCounts[b.id] ? <span className={styles.starCount}>★ {starCounts[b.id]} starred</span> : null}
             </Link>)}

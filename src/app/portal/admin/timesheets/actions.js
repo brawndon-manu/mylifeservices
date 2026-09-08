@@ -1596,6 +1596,13 @@ export async function uploadBatch(formData) {
     P.stage = "comparing";
     await setProgress(prog, P);
     try {
+      const { buildAudit } = await import("../audit/[id]/build");
+      // built once whether or not a baseline exists: the list prints this
+      // copy's shift count from the batch row (Mánu 2026-09-09: "x total
+      // shifts x new"), and a full build per list row would be unaffordable
+      const newData = await buildAudit(batch.id);
+      let auditChangesData = null;
+      let auditNewCount = null;
       const prev = await prisma.timesheetBatch.findFirst({
         where: {
           auditOnly: true,
@@ -1607,10 +1614,9 @@ export async function uploadBatch(formData) {
         orderBy: { createdAt: "desc" },
         select: { id: true, periodFrom: true, periodTo: true, partialThrough: true },
       });
-      if (prev) {
-        const { buildAudit } = await import("../audit/[id]/build");
+      if (prev && newData) {
         const { diffAuditRows, periodOverlap } = await import("@/lib/timesheet/audit-changes");
-        const [oldData, newData] = [await buildAudit(prev.id), await buildAudit(batch.id)];
+        const oldData = await buildAudit(prev.id);
         // THE OVERLAP IS THE DATA'S REACH, NOT THE EXPORT'S PERIOD - Mánu
         // 2026-09-08, catching it live: two month-to-date copies both say
         // 09/01-09/15, but the first only REACHED 09/06, so measuring by the
@@ -1624,19 +1630,15 @@ export async function uploadBatch(formData) {
         if (oldData && newData && overlap) {
           const diff = diffAuditRows(oldData.rows, newData.rows, overlap);
           const { changed, details, gone } = diff;
-          await prisma.timesheetBatch.update({
-            where: { id: batch.id },
-            data: {
-              auditChanges: {
-                fromBatchId: prev.id,
-                computedAt: new Date().toISOString(),
-                overlap,
-                gone,
-                changed,
-                details,
-              },
-            },
-          });
+          auditChangesData = {
+            fromBatchId: prev.id,
+            computedAt: new Date().toISOString(),
+            overlap,
+            gone,
+            changed,
+            details,
+          };
+          auditNewCount = Object.values(changed).filter((k) => k.includes("new")).length;
           // A SHIFT SOMEBODY ALREADY RULED ON DOES NOT GET TO CHANGE QUIETLY -
           // Mánu 2026-09-06: "if new service, schedule, or DSN changes and
           // there was already a flag or approval or edited time then flag
@@ -1690,6 +1692,16 @@ export async function uploadBatch(formData) {
             }
           }
         }
+      }
+      if (newData) {
+        await prisma.timesheetBatch.update({
+          where: { id: batch.id },
+          data: {
+            auditShiftCount: newData.rows.length,
+            ...(auditNewCount != null ? { auditNewCount } : {}),
+            ...(auditChangesData ? { auditChanges: auditChangesData } : {}),
+          },
+        });
       }
     } catch (e) {
       // the diff is a convenience over the batch, never a reason to fail it

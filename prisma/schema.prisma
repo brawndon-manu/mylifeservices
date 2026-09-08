@@ -703,6 +703,13 @@ model TimesheetBatch {
   // { fromBatchId, computedAt, changed: { [shiftKey]: ["hours"|"note"|"new"] } }
   // scoped to the dates BOTH copies cover. The screen's "Changed" chip reads it.
   auditChanges   Json?
+  // the copy's billable-shift count and how many of them appeared on days an
+  // earlier copy already covered - Mánu 2026-09-09: "i just need the amount
+  // of shifts it has. x total shifts x new." Stored at upload because the
+  // audit list cannot afford a full build per row; null on payroll batches
+  // and on copies from before the columns existed until the backfill.
+  auditShiftCount Int?
+  auditNewCount   Int?
   // WHICH PROGRAM'S PAYROLL THIS IS. "MLS" for the agency, "DP" for the day
   // program, and the default makes every batch that predates the column an
   // explicit MLS one. The group key on the timesheets screen and supersededBy
