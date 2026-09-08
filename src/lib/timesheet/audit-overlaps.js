@@ -1,18 +1,19 @@
 // DOUBLE BOOKINGS - Mánu 2026-09-05: "we need a flag for double booking when
-// it comes to client and staff." Two different impossibilities, checked over
-// the CALENDAR windows (schedFrom/schedTo - what bills):
-//
-//   staff  - one person booked in two places at overlapping times. 1:1
-//            service cannot be delivered to two clients at once.
-//   client - one client booked with two DIFFERENT staff at overlapping
-//            times. A client cannot receive two 1:1 services at once.
+// it comes to client and staff." NARROWED 2026-09-08 to the client side
+// alone, off Gabe's answer to the Ford card: a staff member's own bookings
+// overlap for ordinary reasons - travel shifts, and the office creating a
+// fresh shift when somebody clocks in late - so "booked in two places at
+// once" cried wolf. Mánu: "we only need to know overlapping staff have over
+// the same client." What bills a client twice is two DIFFERENT staff booked
+// with the SAME client at overlapping times, and that is the one finding
+// left here.
 //
 // Touching edges (2:00 out, 2:00 in) are back-to-back, not overlap - the
 // comparison is strictly greater. Findings ride the rows' own reasons list,
 // so the cards, the chips, the score sort, the deck and the flagged reports
-// all carry them with no extra plumbing; the auto flagger reads the kinds.
+// all carry them with no extra plumbing; the auto flagger reads the kind.
 //
-// Pure: stamps the build's rows in place, returns the counts.
+// Pure: stamps the build's rows in place, returns the count.
 
 const clientKeyOf = (c) =>
   String(c || "")
@@ -40,30 +41,10 @@ export function stampOverlaps(rows, ampm) {
     return true;
   };
 
-  let staff = 0;
-  const byStaffDay = new Map();
-  // only CLIENT bookings count both ways - Mánu 2026-09-05: "only if its
-  // with a client." A client session overlapping a clientless block is not
-  // two clients at once.
-  for (const r of windowed) {
-    if (!clientKeyOf(r.client)) continue;
-    const k = `${r.employeeKey}|${r.date}`;
-    if (!byStaffDay.has(k)) byStaffDay.set(k, []);
-    byStaffDay.get(k).push(r);
-  }
-  for (const list of byStaffDay.values()) {
-    for (const r of list) {
-      const others = list.filter((x) => x !== r && overlaps(r, x));
-      if (!others.length) continue;
-      const named = others
-        .map((x) => `${x.client} ${spanOf(x)}`)
-        .join("; ");
-      if (add(r, "double-booked-staff", "Booked in two places at once",
-        `Also booked with ${named} at overlapping times.`)) staff++;
-    }
-  }
-
   let client = 0;
+  // only CLIENT bookings count - Mánu 2026-09-05: "only if its with a
+  // client." A client session overlapping a clientless block is not a
+  // double billing.
   const byClientDay = new Map();
   for (const r of windowed) {
     const ck = clientKeyOf(r.client);
@@ -81,8 +62,15 @@ export function stampOverlaps(rows, ampm) {
       const named = others.map((x) => `${x.who} ${spanOf(x)}`).join("; ");
       if (add(r, "double-booked-client", "The client is double booked",
         `${r.client} is also booked with ${named} at overlapping times.`)) client++;
+      // the structured windows behind the sentence, so the card can DRAW the
+      // client's day - Mánu 2026-09-08, picking the calendar-column visual
+      r.overlapPartners = others.map((x) => ({
+        who: x.who,
+        schedFrom: x.schedFrom,
+        schedTo: x.schedTo,
+      }));
     }
   }
 
-  return { staff, client };
+  return { client };
 }

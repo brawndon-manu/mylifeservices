@@ -840,6 +840,8 @@ export async function buildAudit(id) {
   for (const r of rows) {
     r.who = unComma(r.who);
     if (r.whoLegal) r.whoLegal = unComma(r.whoLegal);
+    // the double-booking partners are staff too and read the same way
+    if (r.overlapPartners) for (const p of r.overlapPartners) p.who = unComma(p.who);
   }
   for (const o of orphans) {
     o.who = unComma(o.who);

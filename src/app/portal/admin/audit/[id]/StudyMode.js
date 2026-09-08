@@ -19,6 +19,7 @@ import { reviewShift, undoReview } from "../actions";
 import { ampmLabel, clientFirstLast } from "./figures";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
@@ -65,6 +66,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
   const [billableWin, setBillableWin] = useState(null);
   const [openNote, setOpenNote] = useState(false);
   const [openSched, setOpenSched] = useState(false);
+  const [openOverlap, setOpenOverlap] = useState(false);
   const [busy, setBusy] = useState(false);
   // A REF AS WELL AS THE STATE. `busy` is what greys the buttons out, but state
   // does not settle until the next render, so two events in the same tick both
@@ -109,6 +111,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setReason("");
     setBillable("");
     setOpenNote(false);
+    setOpenOverlap(false);
   };
 
   const counts = useMemo(() => {
@@ -177,6 +180,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setReason("");
     setBillable("");
     setOpenNote(false);
+    setOpenOverlap(false);
     setOpenSched(false);
     setAt((i) => i + 1);
   }, [row, onReview, batchId]);
@@ -198,6 +202,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setReason("");
     setBillable("");
     setOpenNote(false);
+    setOpenOverlap(false);
     setOpenSched(false);
     setAt((i) => (i + by + rows.length) % rows.length);
   }, [rows.length]);
@@ -224,6 +229,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setReason("");
     setBillable("");
     setOpenNote(false);
+    setOpenOverlap(false);
     if (i >= 0) setAt(i);
   }, [rows, history, onReview]);
 
@@ -393,6 +399,135 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
               </ul>
             )}
 
+            {/* the client's day drawn like a calendar conflict - Mánu's
+                variant C, same disclosure as the cards */}
+            {row.overlapPartners?.length > 0 && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  aria-expanded={openOverlap}
+                  onClick={() => setOpenOverlap((v) => !v)}
+                  className="text-sm font-semibold text-brand underline underline-offset-4"
+                >
+                  {openOverlap ? "Hide the double booking" : "See the double booking"}
+                </button>
+                {openOverlap && <OverlapDay row={row} />}
+              </div>
+            )}
+
+
+      {/* WHAT STAFF SAID, BESIDE THE FINDING RATHER THAN BEHIND A CLICK.
+          
+          Mánu 2026-08-27 asked whether these words reach the explanations. They
+          do now, as a quote and never as a verdict: 43 of the 442 schedule notes
+          say the session ended early and 34 say somebody forgot to clock, which
+          is the answer to a great many of these findings.
+          
+          NO RULE READS THEM. "Client ended session early" explains why the CLOCK
+          is short; it does not explain why the booking still bills the full
+          time, and that gap is the thing this screen exists to find. A rule that
+          treated the note as an excuse would dismiss exactly the cases it was
+          built for. So the words are shown and the reader decides. */}
+      {row.reasons.length > 0 && row.scheduleNote && (
+        <p className="mt-3 border-l-2 border-border-strong pl-4 text-sm leading-relaxed text-muted">
+          Staff wrote: “{row.scheduleNote.text}”
+        </p>
+      )}
+
+            {/* BOTH NOTES, EACH BEHIND ITS OWN TOGGLE. Mánu 2026-08-27: "we
+                need the schdule notes and the service notes included with drop
+                downs."
+                
+                They answer different questions. The schedule note is the reason
+                typed on the shift - usually the explanation for the finding
+                itself, "Client ended early due to being tired". The service note
+                is the account of what was delivered. Neither is opened by
+                default: the figures decide whether a card needs reading, and
+                two paragraphs on every card is how a queue of 1,700 stops being
+                read at all. */}
+            <div className="mt-6 space-y-2">
+              {row.scheduleNote && (
+                <div>
+                  <button
+                    type="button"
+                    aria-expanded={openSched}
+                    onClick={() => setOpenSched((v) => !v)}
+                    className="text-sm font-semibold text-brand underline underline-offset-4"
+                  >
+                    {openSched ? "Hide the schedule note" : "Read the schedule note"}
+                  </button>
+                  {openSched && (
+                    <div className="mt-2 rounded-lg border border-border bg-surface p-4">
+                      {row.scheduleNote.from && (
+                        <p className="text-xs tabular-nums text-faint">
+                          {row.scheduleNote.from}-{row.scheduleNote.to}
+                        </p>
+                      )}
+                      <p className="mt-1 text-sm leading-relaxed text-foreground">
+                        {row.scheduleNote.text}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {row.note ? (
+                <div>
+                  <button
+                    type="button"
+                    aria-expanded={openNote}
+                    onClick={() => setOpenNote((v) => !v)}
+                    className="text-sm font-semibold text-brand underline underline-offset-4"
+                  >
+                    {openNote
+                      ? `Hide the ${row.note.source === "dsn" ? "DSN" : "service note"}`
+                      : `Read the ${row.note.source === "dsn" ? "DSN" : "service note"} (${row.note.words} words)`}
+                  </button>
+                  {openNote && (
+                    <div className="mt-2 rounded-lg border border-border bg-surface p-4">
+                      <NoteBody note={row.note} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-faint">No DSN or service note was filed against this shift.</p>
+              )}
+            </div>
+
+            {(decided[row.shiftKey] || row.review) && (
+              <p
+                className={`mt-6 text-xs font-semibold ${
+                  (decided[row.shiftKey] || row.review.decision) === "approved"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-amber-600 dark:text-amber-400"
+                }`}
+              >
+                {(decided[row.shiftKey] || row.review.decision) === "approved"
+                  ? "Approved"
+                  : "Flagged"}
+                {row.review?.by ? ` by ${row.review.by}` : ""}
+                {row.review?.reason ? ` - ${row.review.reason.replace(/\.$/, "")}` : ""}
+. Deciding again replaces it.
+              </p>
+            )}
+
+            {/* the time moved after the review: both readings side by side,
+                and the pick buttons stand in for the plain Approve below -
+                the shared TimeCompare, same as the cards */}
+            {!flagging && reviewMoved(row) && (
+              <div className="mt-5">
+                <TimeCompare
+                  r={row}
+                  busy={busy}
+                  onFlag={() => setFlagging(true)}
+                  onPick={(which) =>
+                    which === "reviewed"
+                      ? send("approved", null, reviewedFigureOf(row.review), reviewedWinOf(row.review))
+                      : send("approved", null, null, null)
+                  }
+                />
+              </div>
+            )}
           </article>
 
           {flagging ? (

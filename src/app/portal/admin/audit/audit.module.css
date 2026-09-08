@@ -12,6 +12,7 @@
   --red: #c82c29;
   --green: #19804a;
   --amber: #936000;
+  --amber-fill: #9360001f;
   display: grid;
   grid-template-columns: 204px minmax(0, 1fr);
   max-width: 1440px;
@@ -214,6 +215,7 @@
   --red: #ff6962;
   --green: #55d692;
   --amber: #e9b453;
+  --amber-fill: #e9b45326;
 }
 /* Night layers on Dim exactly as the site does: backgrounds and borders to
    true black and near-black, text and status hues unchanged. */
@@ -266,6 +268,19 @@
 .pickRow small { flex-basis: 100%; color: var(--faint); font-size: 10px; }
 .settled { display: flex; gap: 9px; align-items: flex-start; margin-top: 12px; padding: 11px 13px; border-radius: 8px; background: var(--surface-2); font-size: 12px; color: var(--muted); line-height: 1.5; }
 .settledMark { color: var(--green); font-weight: 700; }
+
+/* the client's day, drawn like a calendar conflict - Mánu's variant C pick */
+.overlapDay { display: grid; grid-template-columns: 52px minmax(0, 1fr); margin-top: 10px; max-width: 460px; }
+.overlapGutter { position: relative; }
+.overlapGutter span { position: absolute; right: 10px; transform: translateY(-50%); font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.overlapGrid { position: relative; }
+.overlapHour { position: absolute; left: 0; right: 0; height: 1px; background: var(--border); }
+.overlapBand { position: absolute; left: 0; right: 0; background: var(--amber-fill); }
+.overlapEv { position: absolute; border-radius: 6px; background: var(--surface-3); padding: 6px 9px; overflow: hidden; }
+.overlapEv p:first-child { font-size: 12px; font-weight: 600; line-height: 1.25; }
+.overlapEv p:last-child { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.overlapTwice { margin-top: 10px; font-size: 12px; color: var(--amber); }
+.overlapTwice b { font-weight: 650; }
 
 /* the New notes view */
 .noteChangeLine { margin-top: 7px; font-size: 12px; color: var(--amber); }

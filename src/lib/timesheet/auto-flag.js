@@ -99,15 +99,11 @@ export const AUTO_FLAG_RULES = [
     phrase: "GPS missing at clock out",
     test: (r) => r.gpsOut === "no",
   },
-  // the double bookings ride the rows' own findings, stamped by
-  // audit-overlaps.js at build - Mánu 2026-09-05: "we need a flag for double
-  // booking when it comes to client and staff"
-  {
-    key: "double-staff",
-    label: "booked in two places at once",
-    phrase: "booked in two places at once",
-    test: (r) => (r.reasons || []).some((x) => x.kind === "double-booked-staff"),
-  },
+  // the double booking rides the rows' own finding, stamped by
+  // audit-overlaps.js at build. The staff-side twin ("booked in two places
+  // at once") retired 2026-09-08 with its finding - travel shifts and
+  // office-created late-clock shifts overlap innocently, and what bills a
+  // client twice is the client side alone.
   {
     key: "double-client",
     label: "the client is double booked",

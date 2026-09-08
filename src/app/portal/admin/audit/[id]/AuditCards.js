@@ -33,6 +33,7 @@ import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
 
@@ -842,6 +843,7 @@ function Count({ n, tone }) {
 function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen = false, starred = false, onStar = null }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
+  const [openOverlap, setOpenOverlap] = useState(false);
   const surfaced = r.reasons.length > 0;
   // THE REPORT CAUGHT UP TO THE CORRECTION - the newest copy bills exactly
   // what the reviewer corrected it to, so nothing flipped and the card says
@@ -945,6 +947,22 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         </ul>
       )}
 
+
+      {/* the client's day drawn like a calendar conflict, behind its own
+          disclosure beside the finding it pictures - Mánu's variant C */}
+      {r.overlapPartners?.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            aria-expanded={openOverlap}
+            onClick={() => setOpenOverlap((v) => !v)}
+            className="text-xs font-semibold text-brand underline underline-offset-4"
+          >
+            {openOverlap ? "Hide the double booking" : "See the double booking"}
+          </button>
+          {openOverlap && <OverlapDay row={r} />}
+        </div>
+      )}
 
       {/* WHAT STAFF SAID, BESIDE THE FINDING RATHER THAN BEHIND A CLICK.
           
