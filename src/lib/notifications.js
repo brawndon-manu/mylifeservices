@@ -45,6 +45,14 @@ export const NOTIFICATION_TYPES = {
     accent: "border-l-amber-600",
     dot: "bg-amber-600",
   },
+  // payroll decided on the changes the employee reported - rung on their own
+  // bell. Green: it is an answer, not a problem, whichever way it went.
+  TIMESHEET_DECIDED: {
+    label: "Timesheet",
+    chip: "bg-emerald-100 text-emerald-800",
+    accent: "border-l-emerald-600",
+    dot: "bg-emerald-600",
+  },
 };
 
 export function notifConfig(type) {

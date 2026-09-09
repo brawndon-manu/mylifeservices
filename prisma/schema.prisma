@@ -1522,6 +1522,11 @@ enum NotificationType {
   // outstanding. Display chip added in notifications.js in the same change -
   // the TIMESHEET_DISPUTED lesson above.
   ACK_DEADLINE_MISSED
+  // payroll decided on the changes an employee reported (Mánu 2026-09-09, the
+  // signature on a claim): their signature stands, or a new one is needed and
+  // why. Rung on the employee's own bell, not the oversight tier. Display chip
+  // in notifications.js in the same change - the TIMESHEET_DISPUTED lesson.
+  TIMESHEET_DECIDED
 }
 
 model Notification {

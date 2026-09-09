@@ -1,0 +1,11 @@
+-- THE BELL ON PAYROLL'S DECISION (Mánu 2026-09-09).
+--
+-- When payroll decides on the changes an employee reported, their own bell
+-- says whether the signature stands or a new one is needed and why. A new
+-- notification type, because the rose "disputed" chip is the wrong colour for
+-- an answer.
+--
+-- ADDITIVE. An enum value is added, nothing is renamed or removed, no row is
+-- touched. Written by hand and applied with `prisma migrate deploy`. NEVER
+-- migrate dev on this database - it is shared with production.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'TIMESHEET_DECIDED';
