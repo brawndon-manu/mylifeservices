@@ -5,7 +5,8 @@
 // overlaid, the signature box opens a draw pad, and the filled bytes are built
 // in the browser. only the submit target differs (a timesheet row, not a
 // FormSubmission), so we adapt the payload here rather than fork the filler.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useReviewFlow } from "./ReviewFlow";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
@@ -96,6 +97,9 @@ export default function TimesheetSigner({
   // thing this person did in this tab, and it resets when they reload. Nothing
   // is stored by pressing it.
   const [generated, setGenerated] = useState(false);
+  const flow = useReviewFlow();
+  const reportGenerated = flow?.setGenerated;
+  useEffect(() => { reportGenerated?.(generated); }, [generated, reportGenerated]);
 
   // THE "NEXT: YOUR TIMESHEET" BAND, both states in one shape per his design:
   // while questions are open the button sits disabled with the count beside

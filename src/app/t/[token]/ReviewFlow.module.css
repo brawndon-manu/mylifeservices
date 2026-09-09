@@ -1,0 +1,162 @@
+.dayProgram {
+  --accent: #196e93;
+  --calendar-month: #b8333d;
+  --review-on-accent: #ffffff;
+  --review-work-ink: #196e93;
+  --review-work-fill: #eaf3f8;
+}
+
+:global(.dark) .dayProgram {
+  --accent: #7dd3fc;
+  --calendar-month: #ff919b;
+  --review-on-accent: #14161b;
+  --review-work-ink: #7dd3fc;
+  --review-work-fill: #233642;
+}
+
+.primary,
+.activeStep {
+  background: var(--accent);
+  color: var(--review-on-accent);
+}
+
+.primary:enabled:hover {
+  background: color-mix(in srgb, var(--accent) 90%, var(--foreground));
+}
+
+.primary:disabled {
+  opacity: 0.4;
+}
+
+.month {
+  color: var(--calendar-month);
+}
+
+.reviewed {
+  background: var(--status-positive);
+  color: var(--surface);
+}
+
+.issue {
+  color: var(--status-caution);
+}
+
+.dayProgram .hours {
+  color: var(--review-work-ink);
+}
+
+.dayProgram .calendar {
+  max-width: none;
+}
+
+.emptyCalendar {
+  position: relative;
+  height: 320px;
+  margin-left: 48px;
+}
+
+.emptyCalendarGrid {
+  position: absolute;
+  inset: 0;
+}
+
+.emptyCalendarHour {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--sep);
+}
+
+.emptyCalendarHour > span {
+  position: absolute;
+  right: calc(100% + 12px);
+  transform: translateY(-50%);
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.emptyCalendarLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.workShift {
+  border-radius: 8px;
+}
+
+.dayProgram .workShift,
+.dayProgram .workShift > span {
+  color: var(--review-work-ink);
+}
+
+/* Keep each text line above the hour grid, with only its own width masked.
+   The separate line boxes leave the grid visible between rows of text. */
+.shiftText > span {
+  position: relative;
+  z-index: 20;
+  padding-inline: 3px;
+  margin-inline: -3px;
+  background: linear-gradient(var(--shift-label-fill), var(--shift-label-fill)), var(--surface);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.shiftDetails {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.duplicateChoices {
+  margin-top: 12px;
+  border-block: 1px solid var(--sep);
+}
+
+.duplicateChoice {
+  display: flex;
+  width: 100%;
+  min-height: 76px;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 12px;
+  text-align: left;
+}
+
+.duplicateChoice + .duplicateChoice {
+  border-top: 1px solid var(--sep);
+}
+
+.duplicateChoice[aria-pressed="true"] {
+  background: var(--review-work-fill, var(--fill));
+}
+
+.duplicateChoice:disabled {
+  opacity: 0.6;
+}
+
+@media (max-width: 639px) {
+  .shiftDetails {
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .duplicateChoice {
+    gap: 8px;
+    padding: 16px 8px;
+  }
+}

@@ -108,6 +108,21 @@ export const CORRECTION_KINDS = {
 
 export const CORRECTION_KEYS = Object.keys(CORRECTION_KINDS);
 
+export const ADDED_HOURS_REASON = "Explain why you are adding work hours.";
+
+export function addsWorkHours(kind, day, claimedHours) {
+  if (kind !== "hours" && kind !== "day_missing") return false;
+  const hours = Number(claimedHours);
+  if (!Number.isFinite(hours)) return false;
+  return r2(hours) > r2(kind === "day_missing" ? 0 : day?.paidHours || 0);
+}
+
+export function correctionNoteProblem(kind, day, claimedHours, note) {
+  if (typeof note === "string" && note.trim()) return null;
+  if (addsWorkHours(kind, day, claimedHours)) return "addedHoursReason";
+  return CORRECTION_KINDS[kind]?.needsNote ? "note" : null;
+}
+
 export function isCorrectionKind(k) {
   return Object.prototype.hasOwnProperty.call(CORRECTION_KINDS, k);
 }

@@ -1,8 +1,12 @@
 import { parseLooseTime } from "@/lib/loose-time";
 import { movesHours, shiftsOf } from "@/lib/timesheet/questions";
-import { ChevronDown } from "lucide-react";
+import { Calendar, ChevronDown } from "lucide-react";
 import { restAttested } from "@/lib/timesheet/rest-attestation";
+import { confirmedReviewDay } from "@/lib/timesheet/review-days";
 import DayCalendar from "./DayCalendar";
+import { DayReport, ReportedDayVisual } from "./ReviewFlow";
+import reviewStyles from "./ReviewFlow.module.css";
+import { monthNameFor } from "@/lib/timesheet/mock-period";
 import DayRail, { DaysAnsweredCount } from "./DayRail";
 import { ViewToggle } from "./TimesheetViews";
 import AcknowledgeFix from "./AcknowledgeFix";
@@ -136,13 +140,20 @@ export default function DayByDay({
   // "All questions" stack: every day top to bottom in one container, the
   // calendar folded behind its recorded-intervals line. Same questions, same
   // components, same rows in the database either way.
-  stacked = false,
+  stacked = false, periodFrom = null, readOnly = false,
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
   const batched = groups.find((g) => g[0]?.batch) || null;
   const plain = groups.filter((g) => !g[0]?.batch);
   const batchDates = new Set(batched ? batched.map((q) => q.date) : []);
+  const duplicateQuestions = new Map(groups.flat().filter((q) => q.kind === "duplicateDay").map((q) => [q.date, q]));
+  const displayDays = new Map(days.map((day) => {
+    const q = duplicateQuestions.get(day.date);
+    return [day.date, confirmedReviewDay(day, q ? {
+      kind: q.kind, date: q.date, status: answers?.[q.id], choice: choices?.[q.id],
+    } : null)];
+  }));
 
   const order = new Map(days.map((d, i) => [d.date, i]));
   const datesOf = (q) => q.dates || (q.date ? [q.date] : []);
@@ -280,6 +291,8 @@ export default function DayByDay({
     groups.flat().find((q) => movesHours(q.kind) && (q.dates || [q.date]).includes(date)) || null;
 
   const onFile = (day) => {
+    const display = displayDays.get(day.date);
+    if (display?.reviewDuplicateOnce) return display.paidHours;
     const added = day.addedHours || 0;
     if (!added) return day.paidHours || 0;
     const q = moverFor(day.date);
@@ -346,8 +359,8 @@ export default function DayByDay({
     // a day whose only item is a fix still has something on it
     // an acknowledged backwards entry stops counting, so a day whose only item
     // was that one drops off the page like any other finished day
-    || (restsByDate.get(day.date) || [])
-      .some((b) => b.attention && !ackOn?.has?.(`${day.date}|${b.min}`));
+    || (!restAttested(day.date) && (restsByDate.get(day.date) || [])
+      .some((b) => b.attention && !ackOn?.has?.(`${day.date}|${b.min}`)));
 
   // EVERY DAY IS ON THE RAIL NOW, 2026-09-08. The 2026-08-15 rule - a quiet
   // day should not be on the page - was about the stacked list, where 375 of
@@ -368,8 +381,8 @@ export default function DayByDay({
   const plainBlockedOn = (date) =>
     (anchored.get(date) || []).some((g) => !answers?.[g[0].id])
     || (asksByDate.get(date) || []).length > 0
-    || (restsByDate.get(date) || [])
-      .some((b) => b.attention && !ackOn?.has?.(`${date}|${b.min}`));
+    || (!restAttested(date) && (restsByDate.get(date) || [])
+      .some((b) => b.attention && !ackOn?.has?.(`${date}|${b.min}`)));
 
   // "07/16/26" -> "Thu, Jul 16" for the rail, "Thursday, July 16" for the
   // pane heading. The mm/dd/yy spelling stays everywhere answers are keyed
@@ -384,8 +397,8 @@ export default function DayByDay({
     if (!m || !d || !y) return date;
     const at = new Date(2000 + y, m - 1, d);
     return style === "long"
-      ? `${WEEKDAYS[at.getDay()]}, ${MONTH_NAMES[m - 1]} ${d}`
-      : `${WEEKDAYS[at.getDay()].slice(0, 3)}, ${MONTH_NAMES[m - 1].slice(0, 3)} ${d}`;
+      ? `${WEEKDAYS[at.getDay()]}, ${monthNameFor(periodFrom, MONTH_NAMES[m - 1])} ${d}`
+      : `${WEEKDAYS[at.getDay()].slice(0, 3)}, ${monthNameFor(periodFrom, MONTH_NAMES[m - 1].slice(0, 3))} ${d}`;
   };
 
   // THE DAY'S PUNCHED SPAN AND HOW MANY RECORDED STRETCHES IT HOLDS, read off
@@ -412,30 +425,35 @@ export default function DayByDay({
   const railDays = shown.map((d) => ({
     date: d.date,
     label: dayLabel(d.date, "short"),
+    weekday: dayLabel(d.date, "long").split(", ")[0],
+    monthDay: dayLabel(d.date, "long").split(", ").slice(1).join(", "),
     hrs: (Math.round(onFile(d) * 100) / 100).toFixed(2),
     needs: asksOn(d),
     done: asksOn(d) && dayAnswered(d.date),
   }));
   const panes = shown.map((day) => {
+        const displayDay = displayDays.get(day.date) || day;
         const mine = anchored.get(day.date) || [];
         const elsewhere = alsoAsked.get(day.date) || [];
         const asks = asksOn(day);
-        const span = spanOf(day);
+        const span = spanOf(displayDay);
+        const emptyDay = day.reviewOnly && !span;
         return (
           <div
             key={day.date}
             /* stacked panes carry the jump anchors themselves - in the rail
                the wrapper DayRail renders owns them */
             {...(stacked ? { id: `day-${day.date}` } : {})}
-            className={stacked ? "scroll-mt-24 px-4 py-5 sm:px-6" : "p-4 sm:p-5"}
+            className={stacked ? "scroll-mt-24 px-4 py-5 sm:px-6" : "flex flex-1 flex-col p-4 sm:p-5"}
           >
+            <ReportedDayVisual day={displayDay} label={dayLabel(day.date, "long")} part="header">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div className="min-w-0">
                 {/* two tones, his design: the weekday quiet, the date itself
                     carrying the calendar red */}
-                <h3 className="text-[17px] font-semibold tracking-tight">
+                <h3 className="flex flex-wrap gap-x-1 text-[17px] font-semibold tracking-tight">
                   <span className="text-muted">{dayLabel(day.date, "long").split(", ")[0]}, </span>
-                  <span className="text-rose-600 dark:text-rose-400">
+                  <span className={`whitespace-nowrap ${reviewStyles.month}`}>
                     {dayLabel(day.date, "long").split(", ").slice(1).join(", ")}
                   </span>
                 </h3>
@@ -459,20 +477,58 @@ export default function DayByDay({
                   {day.miscKind === "pto" ? "Misc PTO" : day.miscKind === "sick" ? "Misc Sick Pay" : "Misc Client Cancellation"}
                 </p>
               )}
-              <p className="text-sm text-muted">
-                <span className="font-semibold text-foreground">
+              {!emptyDay && <p className="text-sm text-muted">
+                <span className={`font-semibold text-foreground ${reviewStyles.hours}`}>
                   {(Math.round(onFile(day) * 100) / 100).toFixed(2)}
                 </span>{" "}
-                hrs worked
-              </p>
+                {displayDay.reviewDuplicateOnce ? "hrs confirmed" : "hrs worked"}
+              </p>}
             </div>
 
+            {emptyDay && (
+              <div className="mt-5 flex items-center justify-between gap-3 border-y border-sep py-3 text-[13px] text-muted">
+                <span>Recorded work</span>
+                <span className={`text-xl font-medium tabular-nums ${reviewStyles.hours}`}>
+                  0.00 <span className="text-xs font-normal">hrs</span>
+                </span>
+              </div>
+            )}
+
+            {displayDay.reviewDuplicateOnce && (
+              <p className="mt-2 text-[13px] leading-relaxed text-muted">
+                You confirmed working this shift once. The source record still shows {Number(displayDay.reviewRecordedHours).toFixed(2)} hours pending payroll correction.
+              </p>
+            )}
+
+            </ReportedDayVisual>
             {/* ONE COLUMN NOW. With the rail taking the left edge, the pane no
                 longer has the width for the calendar BESIDE the three-outcome
                 answer cards (they need ~492px to stay two to a row) - so the
                 picture sits above the questions at every width, the way the
                 phone always drew it. The old width notes are in git. */}
-            <div className="mt-3">
+            <div className="mt-3 flex-1">
+              <ReportedDayVisual day={displayDay} part="calendar">
+              {emptyDay && (
+                <div className="py-8">
+                  <div className="sm:hidden">
+                    <Calendar size={26} strokeWidth={1.4} aria-hidden="true" className="mb-4 text-muted" />
+                    <h4 className="text-base font-medium tracking-tight text-foreground">No work recorded.</h4>
+                  </div>
+                  <div className={`hidden sm:block ${reviewStyles.emptyCalendar}`}>
+                    <div aria-hidden="true" className={reviewStyles.emptyCalendarGrid}>
+                      {Array.from({ length: 9 }, (_, i) => (
+                        <div key={i} className={reviewStyles.emptyCalendarHour} style={{ top: `${i * 12.5}%` }}>
+                          <span>{(8 + i) % 12 || 12} {i < 4 ? "AM" : "PM"}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <h4 className={reviewStyles.emptyCalendarLabel}>No work recorded.</h4>
+                  </div>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted sm:mt-6">
+                    If you worked this day, report the missing hours.
+                  </p>
+                </div>
+              )}
               {/* the calendar keeps the width the overlap labels earned
                   (Mánu 2026-08-12: "I can't see what kind of service it is") -
                   capped rather than full-pane so a short day is not a mile of
@@ -482,16 +538,16 @@ export default function DayByDay({
               {stacked && span ? (
                 <details className="group/iv border-y border-sep">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-sm text-muted transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                    {span.count} recorded interval{span.count === 1 ? "" : "s"}
+                    {span.count} {displayDay.reviewDuplicateOnce ? "confirmed" : "recorded"} interval{span.count === 1 ? "" : "s"}
                     <ChevronDown
                       size={15}
                       aria-hidden="true"
                       className="flex-none text-faint transition-transform group-open/iv:rotate-180"
                     />
                   </summary>
-                  <div className="max-w-[28rem] pb-4">
+                  <div className={`max-w-[28rem] pb-4 ${reviewStyles.calendar}`}>
                     <DayCalendar
-                      day={day}
+                      day={displayDay}
                       rests={restsByDate.get(day.date) || []}
                       scheduled={scheduled[day.date] || []}
                       proposed={proposalsByDate.get(day.date) || []}
@@ -500,9 +556,9 @@ export default function DayByDay({
                   </div>
                 </details>
               ) : (
-              <div className="max-w-[28rem]">
+              <div className={`max-w-[28rem] ${reviewStyles.calendar}`}>
                 <DayCalendar
-                  day={day}
+                  day={displayDay}
                   rests={restsByDate.get(day.date) || []}
                   scheduled={scheduled[day.date] || []}
                   proposed={proposalsByDate.get(day.date) || []}
@@ -512,6 +568,7 @@ export default function DayByDay({
                 />
               </div>
               )}
+              </ReportedDayVisual>
               <div className="mt-4 min-w-0">
               {/* THE SHELL WRAPS ONLY THE QUESTIONS, 2026-09-08 - a finished
                   day keeps its heading and its calendar (the record somebody
@@ -598,12 +655,14 @@ export default function DayByDay({
                       covers this day too.
                     </p>
                   ) : (
-                    <p className="text-sm text-muted">Nothing to check on this day.</p>
+                    !emptyDay && !readOnly && <ReportedDayVisual day={displayDay} part="quiet"><p className="text-sm text-muted">Nothing to check on this day.</p></ReportedDayVisual>
                   ))}
               </DayShell>
-              <DayDoneButton date={day.date} hasQuestions={asks} plainBlocked={plainBlockedOn(day.date)} />
               </div>
             </div>
+            <DayReport date={day.date} navigation={
+              <DayDoneButton date={day.date} hasQuestions={asks} plainBlocked={plainBlockedOn(day.date)} />
+            } />
           </div>
         );
       });
@@ -653,7 +712,7 @@ export default function DayByDay({
           used to be - which reads as broken rather than as finished. The rail
           still renders under it since 2026-09-08, so their days and calendars
           are readable even with nothing to answer. */}
-      {asking.length === 0 && undated.length === 0 && orphanAsks.length === 0 && (
+      {!readOnly && asking.length === 0 && undated.length === 0 && orphanAsks.length === 0 && (
         <div className="rounded-xl border border-emerald-300/60 bg-emerald-50 p-5 dark:border-emerald-900/50 dark:bg-emerald-950/30">
           <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
             Nothing to check on this timesheet.

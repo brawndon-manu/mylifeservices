@@ -9,8 +9,10 @@
 // that already has a punched lunch; the honest option there is the opposite
 // one. filtering it this way is also what stops people picking the option that
 // happens to pay more without noticing it doesn't describe their day.
-import { useState } from "react";
-import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
+import { useImperativeHandle, useState } from "react";
+import { createPortal } from "react-dom";
+import { useReviewFlow } from "./ReviewFlow";
+import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON } from "@/lib/timesheet/corrections";
 // the attestation covers the tens now - see rest-attestation.js
 import { restAttested } from "@/lib/timesheet/rest-attestation";
 // the same loose reading the question cards use, so "331" means 3:31 here too
@@ -18,6 +20,7 @@ import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 // the period's own day list, the same one the time-off card offers - a
 // missing day is by definition one of the period's dates the sheet lacks
 import { periodDates } from "@/lib/timesheet/time-off";
+import reviewStyles from "./ReviewFlow.module.css";
 // the engine's own punch-pair reader, so the boxes open on exactly the shifts
 // the calendar draws
 import { shiftsOf } from "@/lib/timesheet/questions";
@@ -60,8 +63,12 @@ function kindsForDay(day) {
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
 export default function ReportProblem({ token, days, submitAction, period = null }) {
+  const flow = useReviewFlow();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState([]);
+  const [localItems, setLocalItems] = useState([]);
+  const items = flow?.items ?? localItems;
+  const setItems = flow?.setItems ?? setLocalItems;
+  const [editingIndex, setEditingIndex] = useState(null);
   const [date, setDate] = useState(days[0]?.date || "");
   // WHICH date the missing day was. It used to ride the note in prose, and an
   // accepted claim then patched nothing - the override write is keyed on the
@@ -110,8 +117,41 @@ export default function ReportProblem({ token, days, submitAction, period = null
 
   const takesSlots = kindTakesSlots(activeKind);
   const slotCheck = takesSlots ? checkWorkSlots(slots, hours) : null;
+  const addingHours = activeKind === "day_missing"
+    || addsWorkHours(activeKind, day, hours)
+    || addsWorkHours(activeKind, day, slotCheck?.hours);
+  const needsNote = meta?.needsNote || addingHours;
   const setSlot = (i, key, value) =>
     setSlots((prev) => prev.map((s, j) => (j === i ? { ...s, [key]: value } : s)));
+  const displayTime = (raw) => {
+    const parsed = parseLooseTime(raw, { assumeWorkday: true });
+    return parsed ? formatTimeDisplay(parsed) : raw;
+  };
+
+  useImperativeHandle(flow?.reportRef, () => ({
+    start(wantedDate, index = null) {
+      const item = index == null ? null : items[index];
+      const chosen = item ? item.date : wantedDate;
+      const recorded = days.find((d) => d.date === chosen) || null;
+      const nextKind = item?.kind || (recorded ? "hours" : "day_missing");
+      setDate(item && !item.date ? NO_DAY : recorded ? chosen : NEW_DAY);
+      setNewDayDate(recorded ? "" : chosen || "");
+      setKind(nextKind);
+      setHours(item?.claimedHours != null ? String(item.claimedHours) : recorded ? fmt(recorded.paidHours) : "");
+      setSlots(item?.slots ? item.slots.map((slot) => ({ ...slot })) : slotsForDay(nextKind, recorded));
+      setTimes(item?.times || []);
+      setNote(item?.note || "");
+      setEditingIndex(index);
+      setError(null);
+      setOpen(true);
+    },
+  }));
+
+  function cancel() {
+    setOpen(false);
+    setEditingIndex(null);
+    flow?.setEditorTarget(null);
+  }
 
   function add() {
     setError(null);
@@ -134,17 +174,16 @@ export default function ReportProblem({ token, days, submitAction, period = null
         }
       }
     }
-    if (meta?.needsNote && !note.trim()) {
-      setError("Tell us briefly what's wrong.");
+    const noteProblem = correctionNoteProblem(activeKind, day, hours, note);
+    if (noteProblem) {
+      setError(noteProblem === "addedHoursReason" ? ADDED_HOURS_REASON : "Tell us briefly what's wrong.");
       return;
     }
     if (date === NEW_DAY && !newDayDate) {
       setError("Pick the day you worked.");
       return;
     }
-    setItems((prev) => [
-      ...prev,
-      {
+    const item = {
         date: date === NO_DAY ? null : date === NEW_DAY ? newDayDate : date,
         kind: activeKind,
         claimedHours: meta?.asksHours && hours ? Number(hours) : null,
@@ -155,8 +194,14 @@ export default function ReportProblem({ token, days, submitAction, period = null
         // raw as typed; the server reads them the same way the box did
         times: timeSlots > 0 ? times.slice(0, timeSlots) : null,
         note: note.trim() || null,
-      },
-    ]);
+      };
+    if (items.some((other, i) => i !== editingIndex && other.date === item.date
+      && (other.kind === item.kind || other.kind === "day_extra" || item.kind === "day_extra"))) {
+      setError("This day already has that correction. Edit the existing issue in review.");
+      return;
+    }
+    setItems((prev) => editingIndex == null ? [...prev, item] : prev.map((old, i) => i === editingIndex ? item : old));
+    if (flow) cancel();
     setHours("");
     setTimes([]);
     setSlots([]);
@@ -173,7 +218,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
     setBusy(true);
     try {
       const res = await submitAction({ token, items: payload });
-      if (res?.ok) setDone(true);
+      if (res?.ok) { setDone(true); flow?.setReported(true); }
       else setError(messageFor(res));
     } catch {
       setError("Something went wrong sending that. Please try again.");
@@ -195,6 +240,43 @@ export default function ReportProblem({ token, days, submitAction, period = null
       </div>
     );
   }
+
+  if (flow?.stage === "reports") {
+    return (
+      <section className="mt-7">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Your reports</h2>
+        <p className="mt-2 text-sm text-muted">Review these before moving to PTO &amp; sick pay.</p>
+        {!items.length && <p className="mt-6 text-sm text-muted">No problems reported.</p>}
+        <ul className="mt-5 divide-y divide-sep">
+          {items.map((item, index) => {
+            const before = days.find((day) => day.date === item.date);
+            return (
+              <li key={index} className="py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><h3 className="font-medium text-foreground">{item.date || "This timesheet"}</h3><p className="mt-1 text-sm text-muted">{CORRECTION_KINDS[item.kind]?.label}</p></div>
+                  <div className="flex gap-4">
+                    <button type="button" disabled={busy} className="min-h-[44px] text-sm text-accent" onClick={() => flow.report(item.date || days[0]?.date, index)}>Edit</button>
+                    <button type="button" disabled={busy} className="min-h-[44px] text-sm text-muted" onClick={() => setItems((old) => old.filter((_, i) => i !== index))}>Remove</button>
+                  </div>
+                </div>
+                {item.claimedHours != null && <p className={`mt-3 text-xl tabular-nums text-foreground ${reviewStyles.hours}`}>{fmt(before?.paidHours)} → {fmt(item.claimedHours)} <span className="text-sm text-muted">hrs</span></p>}
+                {!!item.slots?.length && <p className="mt-2 text-sm text-muted">{(checkWorkSlots(item.slots, item.claimedHours).slots || []).map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`).join(", ")}</p>}
+                {!!item.times?.length && <p className="mt-2 text-sm text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(", ")}</p>}
+                {item.note && <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.note}</p>}
+                <p className="mt-2 text-xs text-muted">Not sent</p>
+              </li>
+            );
+          })}
+        </ul>
+        {items.length > 0 && <>
+          <p className="mt-3 text-xs text-muted">Your signature stays on hold while payroll reviews submitted reports.</p>
+          <button type="button" onClick={send} disabled={busy} className="mt-4 min-h-[44px] rounded-[9px] bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? "Sending..." : "Send reports"}</button>
+        </>}
+        {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+      </section>
+    );
+  }
+  if (flow && !open) return null;
 
   if (!open) {
     return (
@@ -222,8 +304,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
     );
   }
 
-  return (
-    <div className="mt-8 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+  const editor = (
+    <div className="mt-4 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
       <h2 className="text-base font-semibold text-foreground">
         Tell payroll what&apos;s wrong
       </h2>
@@ -236,7 +318,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
         reviews it, and you&apos;ll get a corrected timesheet to sign.
       </p>
 
-      {items.length > 0 && (
+      {!flow && items.length > 0 && (
         <>
         <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">
           Ready to send ({items.length})
@@ -392,6 +474,10 @@ export default function ReportProblem({ token, days, submitAction, period = null
                     inputMode="numeric"
                     autoComplete="off"
                     value={raw}
+                    onBlur={(e) => {
+                      const formatted = displayTime(e.target.value);
+                      setTimes((previous) => previous.map((value, j) => j === i ? formatted : value));
+                    }}
                     onChange={(e) =>
                       setTimes((t) => {
                         const next = [...t];
@@ -443,7 +529,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
                   max="24"
                   value={hours}
                   onChange={(e) => setHours(e.target.value)}
-                  className="w-24 rounded-[9px] border border-border bg-surface px-3 py-2 text-right text-lg tabular-nums text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
+                  className={`w-24 rounded-[9px] border border-border bg-surface px-3 py-2 text-right text-lg tabular-nums text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${reviewStyles.hours}`}
                 />
                 <span>hrs</span>
               </div>
@@ -496,6 +582,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
                               autoComplete="off"
                               value={slot[key] || ""}
                               onChange={(e) => setSlot(i, key, e.target.value)}
+                              onBlur={(e) => setSlot(i, key, displayTime(e.target.value))}
                               className={`w-full rounded-[9px] border bg-surface px-3 py-2 text-[15px] text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
                                 read[key]
                                   ? "border-emerald-400/80"
@@ -560,22 +647,19 @@ export default function ReportProblem({ token, days, submitAction, period = null
 
         <label className="grid gap-1">
           <span className="text-sm font-semibold text-foreground">
-            Anything else about it?{" "}
-            {!meta?.needsNote && (
+            {addingHours ? "Reason for adding hours" : needsNote ? "Reason for the correction" : "Anything else about it?"}{" "}
+            {needsNote && <><span aria-hidden="true" style={{ color: "var(--status-danger)" }}>*</span><span className="sr-only">(required)</span></>}
+            {!needsNote && (
               <span className="font-normal text-muted">(optional)</span>
             )}
           </span>
-          {/* the missing day's date has its own picker now - the note asking
-              for it in prose is the wording that produced a dateless claim
-              whose accept patched nothing. The generic prompt serves every
-              kind, and the note went back to optional with the date field
-              carrying the requirement. */}
           <textarea
+            required={needsNote}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
             maxLength={1000}
-            placeholder="Anything that helps payroll check it"
+            placeholder={addingHours ? ADDED_HOURS_REASON : "Anything that helps payroll check it"}
             className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           />
         </label>
@@ -593,9 +677,9 @@ export default function ReportProblem({ token, days, submitAction, period = null
           onClick={add}
           className="rounded-[9px] px-4 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-fill"
         >
-          {items.length ? "Add another" : "Add this"}
+          {flow ? "Add to reports" : items.length ? "Add another" : "Add this"}
         </button>
-        <button
+        {!flow && <button
           type="button"
           onClick={send}
           disabled={busy || !items.length}
@@ -606,10 +690,10 @@ export default function ReportProblem({ token, days, submitAction, period = null
             : items.length
               ? `Send ${items.length} to payroll`
               : "Send to payroll"}
-        </button>
+        </button>}
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={cancel}
           className="text-sm text-muted underline hover:text-foreground"
         >
           Cancel
@@ -617,6 +701,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
       </div>
     </div>
   );
+  return flow ? (flow.editorTarget ? createPortal(editor, flow.editorTarget) : null) : editor;
 }
 
 // WHAT THE DAY LOOKS LIKE NOW, AND WHAT IT WOULD LOOK LIKE.
@@ -685,13 +770,13 @@ function SlotCompare({ day, slots }) {
       <div className="grid grid-cols-2 gap-3 text-[12.5px] text-muted">
         <div>
           On this timesheet
-          <b className="mt-0.5 block text-lg font-medium tabular-nums text-foreground">
+          <b className={`mt-0.5 block text-lg font-medium tabular-nums text-foreground ${reviewStyles.hours}`}>
             {hrs(current).toFixed(2)} <span className="text-[12.5px] font-normal text-muted">hrs</span>
           </b>
         </div>
         <div>
           What you are reporting
-          <b className="mt-0.5 block text-lg font-medium tabular-nums text-foreground">
+          <b className={`mt-0.5 block text-lg font-medium tabular-nums text-foreground ${reviewStyles.hours}`}>
             {hrs(slots).toFixed(2)} <span className="text-[12.5px] font-normal text-muted">hrs</span>
           </b>
         </div>
@@ -728,6 +813,8 @@ function messageFor(res) {
         return `${at}that day is not on this timesheet.`;
       case "note":
         return "Tell us briefly what's wrong.";
+      case "addedHoursReason":
+        return `${at}${ADDED_HOURS_REASON}`;
       case "times":
         return "Enter the time it started.";
       default:

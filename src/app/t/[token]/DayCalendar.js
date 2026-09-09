@@ -4,6 +4,8 @@ import { shiftsOf } from "@/lib/timesheet/questions";
 // the holes between punch pairs, and which of them the roster calls a meal
 import { gapsOf } from "@/lib/timesheet/day-gaps";
 import { useStagedOn } from "./StagedTimes";
+import { formatTimeDisplay } from "@/lib/loose-time";
+import reviewStyles from "./ReviewFlow.module.css";
 
 // ONE DAY DRAWN ON A TIME AXIS - the shape Mánu asked for on 2026-08-11, after
 // sketching it against his own calendar: "I feel like this may be too
@@ -758,7 +760,7 @@ export default function DayCalendar({
         {hours.map((m) => (
           <div
             key={m}
-            className="absolute inset-x-0 border-t border-border/70"
+            className="pointer-events-none absolute inset-x-0 z-10 border-t border-border/70"
             style={{ top: `${top(m)}%` }}
           >
             <span className="absolute -left-11 -top-2 w-10 text-right font-mono text-[11px] leading-4 text-faint">
@@ -800,6 +802,8 @@ export default function DayCalendar({
           // green is for a rest laid on top of worked time; this block IS the
           // scheduled time, so there is nothing under it to mix with.
           const miscBreak = miscBreakFor(day.miscBreaks, s, booked);
+          const detailed = !miscBreak && (s.drawTo - s.drawFrom) * (PX_PER_HOUR / 60) >= 120;
+          const displayTime = (min) => formatTimeDisplay(`${String(Math.floor(min / 60) % 24).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`);
 
           return (
             <div
@@ -835,8 +839,8 @@ export default function DayCalendar({
                  the name the whole lane width instead of what the time left it.
                  Only when laned: a full-width block has room for both and
                  stacking there would waste a line. */
-              className={`absolute flex overflow-hidden rounded-r-sm border-l-[3px] px-1.5 ${
-                s.lanes > 1 ? "flex-col items-start" : "items-start gap-x-1.5"
+              className={`absolute flex overflow-hidden border-l-[3px] ${reviewStyles.shiftText} ${miscBreak ? "rounded-r-sm" : reviewStyles.workShift} ${
+                detailed ? reviewStyles.shiftDetails : `px-1.5 ${s.lanes > 1 ? "flex-col items-start" : "items-start gap-x-1.5"}`
               }`}
               style={{
                 // drawn extent, which for a ten minute service is fifteen
@@ -845,15 +849,23 @@ export default function DayCalendar({
                 // one lane on an ordinary day, so this is `left: 0` and the full
                 // width - the clash case is the only one that splits
                 left: `${(s.lane * 99) / s.lanes}%`,
-                width: `${99 / s.lanes}%`,
-                borderLeftColor: miscBreak ? REST_EDGE : edgeFor(booked),
-                background: miscBreak ? `${REST}30` : washFor(booked),
+                width: s.lanes > 1 ? `calc(${99 / s.lanes}% - 6px)` : "99%",
+                borderLeftColor: miscBreak ? REST_EDGE : `var(--review-work-ink, ${edgeFor(booked)})`,
+                background: miscBreak ? `${REST}30` : `var(--review-work-fill, ${washFor(booked)})`,
+                "--shift-label-fill": miscBreak ? `${REST}30` : `var(--review-work-fill, ${washFor(booked)})`,
               }}
             >
               {/* a service that could not borrow its extra height from a gap is
                   still its true size, and would print through its neighbours the
                   same way. Same rule, same reason. */}
-              {fitsLabel(s.drawFrom, s.drawTo) && (
+              {detailed ? (
+                <>
+                  <span className="max-w-full font-medium">{booked ? serviceLabel(booked, day) : "Work"}</span>
+                  <span>{displayTime(s.from)} to {displayTime(s.to)}</span>
+                  <span className={`tabular-nums ${reviewStyles.hours}`}>{((s.to - s.from) / 60).toFixed(2)} hrs</span>
+                  {bookedClient && <span className="max-w-full text-xs text-muted">{bookedClient}</span>}
+                </>
+              ) : fitsLabel(s.drawFrom, s.drawTo) && (
                 <>
                   {!serviceOnly && (
                     <span className="whitespace-nowrap font-mono text-[12px] leading-[15px] text-muted">

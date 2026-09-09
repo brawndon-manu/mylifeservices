@@ -80,6 +80,7 @@ import { companyDate } from "@/lib/company-time";
 import {
   isCorrectionKind,
   CORRECTION_KINDS,
+  correctionNoteProblem,
   patchFor,
   mergeOverride,
   claimedTimesPatch,
@@ -2359,8 +2360,10 @@ export async function submitTimesheetCorrections({ token, items }) {
       if (Number.isFinite(n) && n >= 0 && n <= 24) claimedHours = Math.round(n * 100) / 100;
     }
 
-    const note = raw?.note ? String(raw.note).trim().slice(0, 1000) : null;
-    if (spec.needsNote && !note) return bad("note", date);
+    const note = typeof raw?.note === "string" ? raw.note.trim().slice(0, 1000) : null;
+    const recordedDay = (ts.data?.days || []).find((day) => day.date === date) || null;
+    const noteProblem = correctionNoteProblem(kind, recordedDay, claimedHours, note);
+    if (noteProblem) return bad(noteProblem, date);
 
     // THE FULL DAY'S SLOTS, re-checked here rather than trusted. An hours
     // claim without them is refused outright - the whole point of the column
@@ -4982,4 +4985,3 @@ export async function markQspEntry({ correctionId, fact, done }) {
   await bumpBatchVersion(c.timesheet.batchId);
   return { ok: true };
 }
-

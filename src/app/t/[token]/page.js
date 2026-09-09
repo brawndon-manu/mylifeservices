@@ -22,6 +22,9 @@ import {
   acknowledgeSpan,
 } from "@/app/portal/admin/timesheets/actions";
 import TimeOffCard from "./TimeOffCard";
+import ReviewFlow, { ReviewStage } from "./ReviewFlow";
+import reviewStyles from "./ReviewFlow.module.css";
+import { reviewDays } from "@/lib/timesheet/review-days";
 import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
 // the day program's Comments Details, shown back on the review. Their own
 // typed words - the second tens live in there, and if the reader ever misses
@@ -117,6 +120,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       corrections: {
         select: {
           id: true, date: true, kind: true, note: true, status: true,
+          claimedHours: true, statedSlots: true,
           createdAt: true, resolutionNote: true,
           // which of a three-outcome card they picked. Same trap as
           // `statedBreaks` below: left out it is undefined rather than absent,
@@ -637,6 +641,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // whether every question has an answer and the document can be put together
   // - the same test the signer gets as `canSign`, read here so the stepper can
   // say which stage this person is at.
+  const isDayProgram = ts.batch.program === "DP";
+  const displayedDays = isDayProgram ? reviewDays(ts.data.days, ts.batch.periodFrom, ts.batch.periodTo) : ts.data.days;
   const readyToGenerate = progress.settled && gate.canSign && breakAsks.length === 0;
 
   // WHAT THE REVIEWER CARD CALLS THEM: the export's "Uribe, Brandon" flipped
@@ -656,7 +662,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     // no-focus-zoom: every field here is text-sm, and a field under 16px makes
     // iOS Safari magnify the page and stay there. See the rule in globals.css.
     <div className="portal-shell bg-background">
-    <section className="no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+    <section className={`no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 ${isDayProgram ? reviewStyles.dayProgram : ""}`}>
       {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
           reaches this page within a few seconds, without either of them saying
           reload - which is the difference between fixing something while an
@@ -790,6 +796,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       ) : openCorrections.length > 0 ? (
         // they've told us something is wrong, so there's nothing to sign until
         // it's sorted. show what we have on record so they can see it landed.
+        <>
         <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
           <p className="text-sm font-semibold text-foreground">
             Payroll is looking at this one.
@@ -817,6 +824,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             ))}
           </ul>
         </div>
+        {isDayProgram && <ReviewFlow enabled readOnly initialReports={openCorrections}>
+          <DayByDay readOnly days={displayedDays} periodFrom={ts.batch.periodFrom}
+            groups={[]} answers={{}} scheduled={scheduledByDate} restsOnRecord={restsByDate} />
+        </ReviewFlow>}
+        </>
       ) : (
         <>
           {/* asked BEFORE the signer, but only the mandatory ones hold it back.
@@ -829,7 +841,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               the stages it names are the ones the page already enforces:
               questions first, the document generates once every one has an
               answer (see the signer), the signature last. */}
-          <Stepper ready={readyToGenerate} />
+          <ReviewFlow enabled={isDayProgram} ready={readyToGenerate} reports={
+            <ReportProblem token={token} days={ts.data?.days || []}
+              period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
+              submitAction={act(submitTimesheetCorrections)} />
+          }>
+          {!isDayProgram && <Stepper ready={readyToGenerate} />}
+          <ReviewStage name="days">
           {/* TWO ARRANGEMENTS OF THE SAME QUESTIONS. "Day by day" walks the
               period with each day drawn on a time axis; "All questions" is the
               one card per kind that has always been here. Both hand the same
@@ -839,7 +857,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             simple={
               <DayByDay
                 dpNotes={dpNotes}
-                days={ts.data.days}
+                days={displayedDays}
+                periodFrom={ts.batch.periodFrom}
                 groups={byKind}
                 scheduled={scheduledByDate}
                 restsOnRecord={restsByDate}
@@ -879,7 +898,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               <DayByDay
                 stacked
                 dpNotes={dpNotes}
-                days={ts.data.days}
+                days={displayedDays}
+                periodFrom={ts.batch.periodFrom}
                 groups={byKind}
                 scheduled={scheduledByDate}
                 restsOnRecord={restsByDate}
@@ -1000,7 +1020,9 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               exports are a different conversation. Always on the page, never
               blocking: the answer is a claim carried to the office with the
               review, and the sheet's own figures never move on it. */}
-          {(ts.batch.program || "MLS") === "DP" && (
+          </ReviewStage>
+          <ReviewStage name="leave">
+          {isDayProgram && (
             <TimeOffCard
               token={token}
               days={periodDates(ts.batch.periodFrom, ts.batch.periodTo)}
@@ -1011,6 +1033,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             />
           )}
 
+          </ReviewStage>
+          <ReviewStage name="document">
           <TimesheetSigner
             key={`sheet-${answered.length}-${breakAsks.length}`}
             token={token}
@@ -1074,14 +1098,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             </div>
           )}
 
-          {/* `period` feeds the missing-day date list - a missing day is one
-              of the period's dates the sheet has no row for */}
-          <ReportProblem
-            token={token}
-            days={ts.data?.days || []}
-            period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
-            submitAction={act(submitTimesheetCorrections)}
-          />
+          </ReviewStage>
+          </ReviewFlow>
         </>
       )}
     </section>
@@ -1118,7 +1136,7 @@ function Figure({ label, value, strong, tone }) {
                 : "text-sm font-semibold text-foreground"
         }
       >
-        {(Math.round((value || 0) * 100) / 100).toFixed(2)}
+        <span className={tone ? undefined : reviewStyles.hours}>{(Math.round((value || 0) * 100) / 100).toFixed(2)}</span>
         <span className="ml-1 text-[12px] font-normal text-faint">hrs</span>
       </span>
     </div>
@@ -1145,7 +1163,7 @@ function PeriodTile({ from, to }) {
   const sameMonth = a.m === b.m && a.y === b.y;
   return (
     <div className="flex flex-none flex-col items-center rounded-xl bg-surface px-5 py-2.5 text-center shadow-sm night:ring-1 night:ring-border">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">
+      <span className={`text-[11px] font-bold uppercase tracking-wide ${reviewStyles.month}`}>
         {sameMonth
           ? monthNameFor(from, TILE_MONTHS[a.m - 1])
           : `${monthNameFor(from, TILE_MONTHS[a.m - 1])}–${TILE_MONTHS[b.m - 1]}`}

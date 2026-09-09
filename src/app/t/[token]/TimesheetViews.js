@@ -1,5 +1,6 @@
 "use client";
 
+import { useReviewFlow } from "./ReviewFlow";
 import { createContext, useContext, useEffect, useState } from "react";
 
 // THE SIMPLE / DETAILED SWITCH. Mánu 2026-08-11: "I feel like this may be too
@@ -30,6 +31,7 @@ const ViewCtx = createContext(null);
 
 export function ViewToggle() {
   const ctx = useContext(ViewCtx);
+  const flow = useReviewFlow();
   if (!ctx) return null;
   return (
     <span className="inline-flex flex-none gap-0.5 rounded-[9px] bg-fill p-[2.5px]">
@@ -37,6 +39,7 @@ export function ViewToggle() {
         <button
           key={v.key}
           type="button"
+          disabled={!!flow?.editorTarget}
           onClick={() => ctx.pick(v.key)}
           aria-pressed={ctx.view === v.key}
           className={`rounded-[7px] px-3.5 py-1.5 text-[12.5px] transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${

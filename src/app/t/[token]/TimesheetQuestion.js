@@ -18,6 +18,8 @@
 // green once an answer has left the figures alone, plain once it has not.
 import { createContext, useContext, useEffect, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
+import { useReviewFlow } from "./ReviewFlow";
+import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
 // the five sentences, already written and already counting correctly - see the
@@ -102,6 +104,7 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   const batch = useContext(BatchCtx);
   // read before any early return - a hook cannot be called conditionally
   const nav = useContext(DayNavCtx);
+  const flow = useReviewFlow();
   if (!done) return null;
   if (!nav && done.readyOn(date)) return null;
   const hasBatchRow = !!batch?.byDay?.some?.((d) => d.date === date);
@@ -112,8 +115,8 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   // is nothing to move forward to yet - and still offers the way back.
   if (blocked) {
     return (
-      <div className="mt-3 flex items-center gap-3">
-        {hasBack && <BackButton nav={nav} />}
+      <div className={`${flow ? "" : "mt-3"} flex items-center gap-3`}>
+        {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
         <p className="ml-auto text-xs text-muted">
           Answer everything on this day to finish with it.
         </p>
@@ -128,15 +131,17 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   // just says where it takes you instead of naming the bookkeeping. Back only
   // moves - a day already worked through stays worked through.
   return (
-    <div className="mt-3 flex items-center gap-3">
-      {hasBack && <BackButton nav={nav} />}
+    <div className={`${flow ? "" : "mt-3"} flex items-center gap-3`}>
+      {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
       <button
         type="button"
+        disabled={!!flow?.editorTarget || (flow?.readOnly && nav?.index === nav?.dates?.length - 1)}
         onClick={() => {
+          flow?.markReviewed(date);
           if (hasQuestions) done.markReady(date);
           if (nav?.go) nav.go(nav.index + 1);
         }}
-        className="ml-auto rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        className={`ml-auto min-h-[44px] rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${flow ? reviewStyles.primary : ""}`}
       >
         Next
       </button>
@@ -144,10 +149,11 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   );
 }
 
-function BackButton({ nav }) {
+function BackButton({ nav, disabled = false }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => nav.go(nav.index - 1)}
       className="rounded-[9px] px-3.5 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-fill focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
@@ -300,7 +306,7 @@ function copyFor(q, standing) {
       const times = q.row.copies === 2 ? "twice" : `${q.row.copies} times`;
       return {
         title: "Did you work this shift twice?",
-        short: "The same shift is entered twice",
+        short: q.row.copies === 2 ? "This shift appears twice." : `This shift appears ${q.row.copies} times.`,
         body: (
           <>
             On <b>{q.date}</b> the schedule has the same <b>{q.row.from} to {q.row.to}</b> shift
@@ -317,8 +323,8 @@ function copyFor(q, standing) {
           { label: "The day counts", value: `${q.row.hours} hrs` },
           { label: "Worked once", value: `${q.row.single} hrs`, ours: true },
         ],
-        yes: { label: "Yes, I worked it twice", why: "Both entries are shifts you worked." },
-        no: { label: "No, I worked it once", why: "One of the entries is a duplicate." },
+        yes: { label: q.row.copies === 2 ? "I worked it twice" : `I worked it ${q.row.copies} times`, why: q.row.copies === 2 ? "Both entries should count." : "All entries should count." },
+        no: { label: "I worked it once", why: q.row.copies === 2 ? "One of the entries is a duplicate." : "The other entries are duplicates." },
         yesEffect: <>The record stays as it is.</>,
         noEffect: <>The duplicate is recorded as an entry to remove in QuickSolve.</>,
       };
@@ -1113,7 +1119,23 @@ function markMeridiem(time) {
   );
 }
 
-function Choice({ on, tone, label, why, note, onClick, busy }) {
+function Choice({ on, tone, label, why, note, onClick, busy, hours }) {
+  if (hours != null) {
+    return (
+      <button type="button" onClick={onClick} disabled={busy} aria-pressed={on} className={reviewStyles.duplicateChoice}>
+        <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] ${on ? "border-accent" : "border-faint"}`}>
+          {on && <span className="h-2 w-2 rounded-full bg-accent" />}
+        </span>
+        <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
+          {label}
+          <span className="mt-1 block text-xs font-normal text-muted">{why}</span>
+        </span>
+        <span className={`shrink-0 text-lg tabular-nums text-accent ${reviewStyles.hours}`}>
+          {Number(hours).toFixed(2)} <span className="text-xs">hrs</span>
+        </span>
+      </button>
+    );
+  }
   // ONE COLOUR FOR EVERY OPTION, 2026-08-14. Green for yes and red for no was
   // deliberate - the same language the timesheet itself uses, green for a
   // settled day and red for one that owes something - and it was reversed
@@ -1369,7 +1391,9 @@ function OneQuestion({
           <p className="text-sm text-muted">
             <b className="text-foreground">{chosenLabel}</b>
             {" - "}
-            {answer === "accepted" ? "thank you." : "your timesheet has been rebuilt."}
+            {q.kind === "duplicateDay"
+              ? (answer === "accepted" ? c.yesEffect : c.noEffect)
+              : answer === "accepted" ? "thank you." : "your timesheet has been rebuilt."}
           </p>
           {/* what is still theirs to do once the answer is in - see `afterYes` */}
           {answer === "accepted" && c.afterYes && (
@@ -1465,7 +1489,14 @@ function OneQuestion({
       )}
 
       {(!answered || editing) && !locked && (
-      <div className="mt-3 flex flex-wrap gap-2.5">
+      <div className={q.kind === "duplicateDay" ? reviewStyles.duplicateChoices : "mt-3 flex flex-wrap gap-2.5"}>
+        {q.kind === "duplicateDay" ? (
+          <>
+            <Choice on={shown === "no"} busy={pending} label={c.no.label} why={c.no.why} hours={q.row.single} onClick={() => pick("no")} />
+            <Choice on={shown === "yes"} busy={pending} label={c.yes.label} why={c.yes.why} hours={q.row.hours} onClick={() => pick("yes")} />
+          </>
+        ) : (
+        <>
         {/* A KIND CAN HAVE ONE ANSWER. `mealInShift` is the first: a meal booked
             inside a shift they clock in and out of cannot have been taken, so
             there is no yes to offer and a card that showed one would be
@@ -1512,6 +1543,8 @@ function OneQuestion({
             note={!answered || editing ? c.fourth.note : null}
             onClick={() => pick(c.fourth.value)}
           />
+        )}
+        </>
         )}
       </div>
       )}
@@ -3007,7 +3040,12 @@ export default function TimesheetQuestion({
             long card's paragraphs, but the same pair of facts - a question that
             asks you to confirm a time has to show you the time. Our own reading
             is marked, because "we think" is a proposal and the record is not. */}
-        {c.facts?.length > 0 && (
+        {head.kind === "duplicateDay" ? (
+          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+            The {head.row.copies === 2 ? "two" : head.row.copies} entries add up to <span className={reviewStyles.hours}>{Number(head.row.hours).toFixed(2)} hours</span>.
+            {" "}Worked once, this shift is <span className={reviewStyles.hours}>{Number(head.row.single).toFixed(2)} hours</span>.
+          </p>
+        ) : c.facts?.length > 0 && (
           <dl className="mt-1.5 space-y-0.5">
             {c.facts.map((f) => (
               <div key={`${f.label}-${f.value}`} className="flex gap-2 text-xs leading-5">

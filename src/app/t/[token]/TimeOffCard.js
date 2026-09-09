@@ -12,6 +12,8 @@
 // the period cannot be picked, so it cannot need refusing.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useReviewFlow } from "./ReviewFlow";
+import reviewStyles from "./ReviewFlow.module.css";
 import {
   TIME_OFF_TYPES,
   fmtTimeOffHours,
@@ -27,13 +29,16 @@ const hoursPhrase = (e) =>
 
 export default function TimeOffCard({ token, days, answer, signed, submitAction, period = null }) {
   const router = useRouter();
+  const flow = useReviewFlow();
   // `answer` is the stored row or null: { choice, timeOff: [{date, kind, hours}] }
   const saved = answer?.choice || null;
   const savedEntries = Array.isArray(answer?.timeOff) ? answer.timeOff : [];
 
-  const [editing, setEditing] = useState(false);
+  const [editing, setLocalEditing] = useState(false);
+  const setEditing = (next) => { setLocalEditing(next); flow?.setLeaveEditing(next); };
   const [entries, setEntries] = useState([]);
-  const [busy, setBusy] = useState(false);
+  const [busy, setLocalBusy] = useState(false);
+  const setBusy = (next) => { setLocalBusy(next); flow?.setLeaveBusy(next); };
   const [error, setError] = useState(null);
 
   const blank = () => ({ date: days[0] || "", kind: "pto", hours: "" });
@@ -95,6 +100,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction,
 
   return (
     <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+      {flow && <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">PTO &amp; sick pay</h2>}
       <p className="text-base font-semibold text-foreground">
         Was there PTO or sick time in this pay period that is not on your schedule?
       </p>
@@ -110,7 +116,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction,
                 <span className="text-foreground">
                   {e.date} <span className="text-muted">{label(e.kind)}</span>
                 </span>
-                <span className="tabular-nums text-muted">{hoursPhrase(e)}</span>
+                <span className={`tabular-nums text-muted ${reviewStyles.hours}`}>{hoursPhrase(e)}</span>
               </li>
             ))}
           </ul>
@@ -211,7 +217,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction,
                   value={e.hours}
                   disabled={busy}
                   onChange={(ev) => setEntry(i, { hours: ev.target.value })}
-                  className="w-full text-right tabular-nums rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
+                  className={`w-full text-right tabular-nums rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${reviewStyles.hours}`}
                 />
               </label>
               <button
@@ -296,7 +302,7 @@ function Totals({ entries }) {
   const row = (name, value, quiet = false) => (
     <div className="flex items-baseline justify-between gap-4">
       <span className={quiet ? "text-muted" : "text-foreground"}>{name}</span>
-      <span className={`tabular-nums ${quiet ? "text-muted" : "font-medium text-foreground"}`}>
+      <span className={`tabular-nums ${quiet ? "text-muted" : `font-medium text-foreground ${reviewStyles.hours}`}`}>
         {value}
       </span>
     </div>
