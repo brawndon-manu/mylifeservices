@@ -53,6 +53,21 @@ const BatchCtx = createContext(null);
 // through with the day, which collapses it and lets the panel count it.
 const DayDoneCtx = createContext(null);
 
+// WHERE THIS DAY SITS IN THE PERIOD, and how to move. The rail owns the
+// selection, so it fills this in; the day's own footer reads it to know whether
+// there is a day behind this one and which one is next.
+//
+// It lives in this file rather than in DayRail.js because DayRail already
+// imports from here, and the other direction would be an import cycle. Same
+// reason DayDoneCtx and BatchCtx sit here.
+const DayNavCtx = createContext(null);
+
+export function DayNavProvider({ dates = [], index = 0, go, children }) {
+  return (
+    <DayNavCtx.Provider value={{ dates, index, go }}>{children}</DayNavCtx.Provider>
+  );
+}
+
 // the rail's way in: whether a day has been marked done in THIS tab. The
 // rail ring used to read only SAVED answers, so a day worked through and
 // closed stayed amber until Save my answers - which read as nothing
@@ -82,28 +97,62 @@ export function DayDoneProvider({ children }) {
 // to be clear: the plain cards on the day are counted on the server, because
 // they save on their own and the page knows what is on record; the batched rows
 // are staged in the browser, so only the batch provider knows.
-export function DayDoneButton({ date, plainBlocked = false }) {
+export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true }) {
   const done = useContext(DayDoneCtx);
   const batch = useContext(BatchCtx);
+  // read before any early return - a hook cannot be called conditionally
+  const nav = useContext(DayNavCtx);
   if (!done) return null;
-  if (done.readyOn(date)) return null;
+  if (!nav && done.readyOn(date)) return null;
   const hasBatchRow = !!batch?.byDay?.some?.((d) => d.date === date);
   const blocked = plainBlocked || (hasBatchRow && batch.blockedOn(date));
+  const hasBack = (nav?.index ?? 0) > 0;
+  // BACK IS JUST NAVIGATION, so it does not wait on the day being finished. A
+  // day with answers still owing keeps the sentence where Next would be - there
+  // is nothing to move forward to yet - and still offers the way back.
   if (blocked) {
     return (
-      <p className="mt-3 text-xs text-muted">Answer everything on this day to finish with it.</p>
+      <div className="mt-3 flex items-center gap-3">
+        {hasBack && <BackButton nav={nav} />}
+        <p className="ml-auto text-xs text-muted">
+          Answer everything on this day to finish with it.
+        </p>
+      </div>
     );
   }
+  // NEXT ON THE RIGHT, BACK ON THE LEFT - Mánu 2026-09-08: "instead of done
+  // with day lets just have it say next on the bottom right of the card to move
+  // forward. then the ones after all back on the bottom left for them."
+  //
+  // Next still marks the day finished, which is what turns its ring green; it
+  // just says where it takes you instead of naming the bookkeeping. Back only
+  // moves - a day already worked through stays worked through.
   return (
-    <div className="mt-3">
+    <div className="mt-3 flex items-center gap-3">
+      {hasBack && <BackButton nav={nav} />}
       <button
         type="button"
-        onClick={() => done.markReady(date)}
-        className="rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        onClick={() => {
+          if (hasQuestions) done.markReady(date);
+          if (nav?.go) nav.go(nav.index + 1);
+        }}
+        className="ml-auto rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
-        Done with this day
+        Next
       </button>
     </div>
+  );
+}
+
+function BackButton({ nav }) {
+  return (
+    <button
+      type="button"
+      onClick={() => nav.go(nav.index - 1)}
+      className="rounded-[9px] px-3.5 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-fill focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+    >
+      Back
+    </button>
   );
 }
 

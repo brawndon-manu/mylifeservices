@@ -589,9 +589,6 @@ export default function DayByDay({
                     only item is a Misc question or an off-clock rest had no way
                     to be closed at all. A quiet day has nothing to be done with,
                     so it gets the sentence instead of the button. */}
-                {asks && (
-                  <DayDoneButton date={day.date} plainBlocked={plainBlockedOn(day.date)} />
-                )}
                 {!asks &&
                   (elsewhere.length > 0 ? (
                     <p className="text-sm text-muted">
@@ -604,6 +601,7 @@ export default function DayByDay({
                     <p className="text-sm text-muted">Nothing to check on this day.</p>
                   ))}
               </DayShell>
+              <DayDoneButton date={day.date} hasQuestions={asks} plainBlocked={plainBlockedOn(day.date)} />
               </div>
             </div>
           </div>
@@ -624,15 +622,7 @@ export default function DayByDay({
         </div>
         <ViewToggle />
       </div>
-      {stacked ? (
-        /* the All questions arrangement: every day in one container, top to
-           bottom, hairlines between - his screenshot's shape */
-        <div className="mt-3 divide-y divide-sep overflow-hidden rounded-xl bg-surface shadow-sm night:ring-1 night:ring-border">
-          {panes}
-        </div>
-      ) : (
-        <DayRail days={railDays}>{panes}</DayRail>
-      )}
+      <DayRail days={railDays} stacked={stacked}>{panes}</DayRail>
     </>
   );
 

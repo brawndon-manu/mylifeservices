@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
-import { useDayDone } from "./TimesheetQuestion";
+import { useDayDone, DayNavProvider } from "./TimesheetQuestion";
 
 // THE DAY RAIL: the period's days down the left, one day's work shown at a
 // time. Presentation only - every pane stays MOUNTED and the unselected ones
@@ -14,10 +14,12 @@ import { useDayDone } from "./TimesheetQuestion";
 // The issue panel above links to #day-<date>; a hash change selects that day
 // and brings the box into view, so those jumps keep working with only one day
 // on screen.
-export default function DayRail({ days, children }) {
+export default function DayRail({ days, children, stacked = false }) {
   const first = Math.max(0, days.findIndex((d) => d.needs && !d.done));
   const [sel, setSel] = useState(first === -1 ? 0 : first);
   const boxRef = useRef(null);
+  const afterRef = useRef(null);
+  const paneRefs = useRef([]);
   // a day finished in this tab counts as done on the ring, not only a saved
   // one - see useDayDone
   const readyOn = useDayDone();
@@ -41,7 +43,25 @@ export default function DayRail({ days, children }) {
 
   const panes = Array.isArray(children) ? children : [children];
 
+  if (stacked) return (
+    <>
+      <div className="mt-3 divide-y divide-sep overflow-hidden rounded-xl bg-surface shadow-sm night:ring-1 night:ring-border">
+        {panes.map((pane, i) => (
+          <div key={days[i]?.date ?? i} ref={(el) => { paneRefs.current[i] = el; }} tabIndex={-1} className="scroll-mt-24">
+            <DayNavProvider dates={days.map((d) => d.date)} index={i} go={(next) => {
+              const target = next === days.length ? afterRef.current : paneRefs.current[next];
+              target?.focus({ preventScroll: true });
+              target?.scrollIntoView({ block: "start" });
+            }}>{pane}</DayNavProvider>
+          </div>
+        ))}
+      </div>
+      <div ref={afterRef} tabIndex={-1} className="scroll-mt-24" />
+    </>
+  );
+
   return (
+    <>
     <div
       ref={boxRef}
       className="mt-3 scroll-mt-24 overflow-hidden rounded-xl bg-surface shadow-sm night:ring-1 night:ring-border sm:flex sm:items-stretch"
@@ -92,11 +112,33 @@ export default function DayRail({ days, children }) {
       <div className="min-w-0 flex-1">
         {panes.map((pane, i) => (
           <div key={days[i]?.date ?? i} id={`day-${days[i]?.date}`} hidden={i !== sel}>
-            {pane}
+            {/* the day's own footer needs to know where it sits and how to
+                move - the rail owns the selection, so it hands it down. Wrapped
+                per pane rather than once around the list because each pane's
+                index is the thing being told. `go` also brings the box back
+                into view, the same as a rail click on a long page. */}
+            <DayNavProvider
+              dates={days.map((d) => d.date)}
+              index={i}
+              go={(next) => {
+                if (next === days.length) {
+                  afterRef.current?.focus({ preventScroll: true });
+                  afterRef.current?.scrollIntoView({ block: "start" });
+                  return;
+                }
+                if (next < 0 || next >= days.length) return;
+                setSel(next);
+                boxRef.current?.scrollIntoView({ block: "start" });
+              }}
+            >
+              {pane}
+            </DayNavProvider>
           </div>
         ))}
       </div>
     </div>
+    <div ref={afterRef} tabIndex={-1} className="scroll-mt-24" />
+    </>
   );
 }
 
