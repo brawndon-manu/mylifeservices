@@ -1005,6 +1005,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               days={periodDates(ts.batch.periodFrom, ts.batch.periodTo)}
               answer={timeOffAnswerOf(ts.corrections)}
               signed={!!ts.signedAt}
+              period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
               submitAction={act(answerTimeOff)}
             />
           )}

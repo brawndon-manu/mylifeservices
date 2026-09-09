@@ -12,14 +12,20 @@
 // the period cannot be picked, so it cannot need refusing.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { TIME_OFF_TYPES, fmtTimeOffHours } from "@/lib/timesheet/time-off";
+import {
+  TIME_OFF_TYPES,
+  fmtTimeOffHours,
+  timeOffTotals,
+  checkTimeOffEntries,
+  timeOffProblem,
+} from "@/lib/timesheet/time-off";
 
 const label = (kind) => TIME_OFF_TYPES[kind] || "PTO";
 const sentenceWord = (kind) => (kind === "sick" ? "sick time" : "PTO");
 const hoursPhrase = (e) =>
   `${fmtTimeOffHours(e.hours)} ${Number(e.hours) === 1 ? "hour" : "hours"} of ${sentenceWord(e.kind)}`;
 
-export default function TimeOffCard({ token, days, answer, signed, submitAction }) {
+export default function TimeOffCard({ token, days, answer, signed, submitAction, period = null }) {
   const router = useRouter();
   // `answer` is the stored row or null: { choice, timeOff: [{date, kind, hours}] }
   const saved = answer?.choice || null;
@@ -48,16 +54,17 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
   async function send(choice, list) {
     setError(null);
     if (choice === "yes") {
-      for (const e of list) {
-        const n = Number(e.hours);
-        if (!e.date || !Number.isFinite(n) || n <= 0 || n > 24) {
-          setError("Each day needs its hours, up to 24.");
-          return;
-        }
-      }
-      const dates = list.map((e) => e.date);
-      if (new Set(dates).size !== dates.length) {
-        setError("A day is listed twice.");
+      // THE SERVER'S OWN CHECK, so the screen refuses exactly what the action
+      // would refuse and names the same day. The period comes in as a prop
+      // because the rule is "inside this pay period" and the card cannot know
+      // that from its day list alone.
+      const check = checkTimeOffEntries(
+        list.map((e) => ({ date: e.date, kind: e.kind, hours: Number(e.hours) })),
+        period?.from,
+        period?.to,
+      );
+      if (!check.ok) {
+        setError(timeOffProblem(check));
         return;
       }
     }
@@ -74,7 +81,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
         setEditing(false);
         router.refresh();
       } else {
-        setError(messageFor(res?.error));
+        setError(messageFor(res?.error, res));
       }
     } catch {
       setError("Something went wrong saving that. Please try again.");
@@ -93,15 +100,30 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
       </p>
 
       {!editing && saved === "yes" && (
-        <ul className="mt-3 space-y-1">
-          {savedEntries.map((e) => (
-            <li key={e.date} className="text-sm text-muted">
-              <span className="font-semibold text-foreground">{e.date}</span>
-              {" - "}
-              {hoursPhrase(e)}
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-3 divide-y divide-sep">
+            {savedEntries.map((e) => (
+              <li
+                key={e.date}
+                className="flex items-baseline justify-between gap-3 py-2.5 text-sm"
+              >
+                <span className="text-foreground">
+                  {e.date} <span className="text-muted">{label(e.kind)}</span>
+                </span>
+                <span className="tabular-nums text-muted">{hoursPhrase(e)}</span>
+              </li>
+            ))}
+          </ul>
+          <Totals entries={savedEntries} />
+          <p className="mt-4 border-l-2 border-accent/60 pl-3 text-[12.5px] leading-relaxed text-muted">
+            <span className="font-medium text-foreground">
+              With payroll, not added to your pay yet.
+            </span>
+            <br />
+            Once payroll records it, PTO and sick pay appear under their own
+            categories on your timesheet.
+          </p>
+        </>
       )}
       {!editing && saved === "no" && (
         <p className="mt-3 text-sm text-muted">You said there was none.</p>
@@ -118,12 +140,16 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
               Change this
             </button>
           ) : (
+            /* TWO PLAIN BUTTONS, Mánu's call 2026-09-08. A segment shell was
+               tried and dropped: No sends the answer straight away and Yes
+               opens the editor, so neither is a selection and no segment could
+               ever show as picked. */
             <>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => send("no", [])}
-                className="rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-50"
+                className="rounded-[9px] bg-fill px-5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
               >
                 No
               </button>
@@ -131,7 +157,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                 type="button"
                 disabled={busy}
                 onClick={startYes}
-                className="rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-50"
+                className="rounded-[9px] bg-fill px-5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
               >
                 Yes
               </button>
@@ -143,9 +169,12 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
       {editing && (
         <div className="mt-4 grid gap-3">
           {entries.map((e, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Day</span>
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_1fr_auto] items-end gap-x-2 gap-y-3 border-b border-sep pb-4 last:border-0 last:pb-0 sm:grid-cols-[1.1fr_1fr_5.5rem_auto] sm:gap-3"
+            >
+              <label className="col-span-3 grid gap-1 sm:col-span-1">
+                <span className="text-[12.5px] font-medium text-foreground">Day</span>
                 <select
                   value={e.date}
                   disabled={busy}
@@ -158,7 +187,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                 </select>
               </label>
               <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Type</span>
+                <span className="text-[12.5px] font-medium text-foreground">Type</span>
                 <select
                   value={e.kind}
                   disabled={busy}
@@ -171,7 +200,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                 </select>
               </label>
               <label className="grid gap-1">
-                <span className="text-xs font-semibold text-muted">Hours</span>
+                <span className="text-[12.5px] font-medium text-foreground">Hours</span>
                 {/* spinner arrows are killed site-wide in globals.css */}
                 <input
                   type="number"
@@ -182,20 +211,20 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                   value={e.hours}
                   disabled={busy}
                   onChange={(ev) => setEntry(i, { hours: ev.target.value })}
-                  placeholder="e.g. 8"
-                  className="w-24 rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
+                  className="w-full text-right tabular-nums rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
                 />
               </label>
-              {entries.length > 1 && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setEntries((prev) => prev.filter((_, j) => j !== i))}
-                  className="pb-2 text-xs font-semibold text-muted underline hover:text-foreground"
-                >
-                  Remove
-                </button>
-              )}
+              <button
+                type="button"
+                disabled={busy || entries.length === 1}
+                onClick={() => setEntries((prev) => prev.filter((_, j) => j !== i))}
+                aria-label={`Remove day ${i + 1}`}
+                className="mb-1 inline-flex h-9 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-fill disabled:opacity-40"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           ))}
 
@@ -204,11 +233,21 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
               type="button"
               disabled={busy}
               onClick={() => setEntries((prev) => [...prev, blank()])}
-              className="text-sm font-semibold text-brand-dark underline underline-offset-4 hover:opacity-80"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded text-[13px] font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-40"
             >
-              + Add another day
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Add another day
             </button>
           </div>
+
+          {/* PTO AND SICK PAY COUNT SEPARATELY. They are different categories
+              on the timesheet and in the payroll report, so one combined figure
+              would be a total nobody can act on. Work hours are named here too
+              because the point of the card is that reporting leave does not
+              move them. */}
+          <Totals entries={entries} />
 
           {error && (
             <p className="text-sm font-semibold text-rose-600 dark:text-rose-400">{error}</p>
@@ -250,7 +289,32 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
   );
 }
 
-function messageFor(code) {
+function Totals({ entries }) {
+  const t = timeOffTotals(
+    (entries || []).map((e) => ({ kind: e.kind, hours: Number(e.hours) })),
+  );
+  const row = (name, value, quiet = false) => (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className={quiet ? "text-muted" : "text-foreground"}>{name}</span>
+      <span className={`tabular-nums ${quiet ? "text-muted" : "font-medium text-foreground"}`}>
+        {value}
+      </span>
+    </div>
+  );
+  return (
+    <div className="mt-4 grid gap-2 rounded-[10px] bg-fill px-4 py-4 text-[13px]">
+      {row("PTO", `${fmtTimeOffHours(t.pto)} hrs`)}
+      {row("Sick pay", `${fmtTimeOffHours(t.sick)} hrs`)}
+      <div className="mt-1 border-t border-sep pt-2">
+        {row("Work hours", "Unchanged", true)}
+      </div>
+    </div>
+  );
+}
+
+function messageFor(code, res) {
+  // the action names the row it refused; say the same words the screen would
+  if (code === "entry") return timeOffProblem({ code: res?.code, at: res?.at });
   switch (code) {
     case "already":
       return "This timesheet has already been signed, so it can't be changed here.";

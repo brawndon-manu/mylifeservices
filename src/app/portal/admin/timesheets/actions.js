@@ -68,7 +68,10 @@ import { sendSignedTimesheetCopy } from "@/lib/timesheet-signed-email";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
 // the day-program review's time-off question: what a valid answer is, and the
 // lines it adds to both review emails
-import { TIME_OFF_KIND, TIME_OFF_STATUS, cleanTimeOffEntries, timeOffReviewItems, periodDates } from "@/lib/timesheet/time-off";
+import { TIME_OFF_KIND, TIME_OFF_STATUS, checkTimeOffEntries, timeOffReviewItems, periodDates } from "@/lib/timesheet/time-off";
+// the SAME check the review screen runs, so a claim cannot arrive with slots
+// the server never looked at - see work-slots.js
+import { checkWorkSlots, kindTakesSlots } from "@/lib/timesheet/work-slots";
 import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
@@ -3442,12 +3445,16 @@ export async function answerTimeOff({ token, choice, entries }) {
   if (ts.signedAt) return { ok: false, error: "already" };
   if (ts.corrections.length) return { ok: false, error: "reported" };
 
-  const clean = choice === "yes"
-    ? cleanTimeOffEntries(entries, ts.batch.periodFrom, ts.batch.periodTo)
-    : [];
-  // a yes with nothing left after validation is not an answer worth storing -
-  // it would read back as "you said yes" over an empty list
-  if (choice === "yes" && !clean.length) return { ok: false, error: "empty" };
+  // NOTHING IS DROPPED QUIETLY. The old cleaner FILTERED, so a fumbled row
+  // vanished and the save still answered ok - three days in, two days stored,
+  // "saved" on screen. checkTimeOffEntries refuses the whole answer and names
+  // the day, and only an answer where every row passed reaches the store.
+  let clean = [];
+  if (choice === "yes") {
+    const check = checkTimeOffEntries(entries, ts.batch.periodFrom, ts.batch.periodTo);
+    if (!check.ok) return { ok: false, error: "entry", code: check.code, at: check.at ?? null };
+    clean = check.entries;
+  }
 
   const prior = await prisma.timesheetCorrection.findFirst({
     where: { timesheetId: ts.id, kind: TIME_OFF_KIND },

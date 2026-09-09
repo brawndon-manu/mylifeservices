@@ -125,6 +125,63 @@ export function cleanTimeOffEntries(raw, periodFrom, periodTo) {
   return out;
 }
 
+// THE SAME RULES, BUT SAYING WHAT THEY REJECTED.
+//
+// Mánu 2026-09-08: "Do not silently drop invalid entries." cleanTimeOffEntries
+// FILTERS - a bad row just vanishes and the save reports success, so a person
+// who typed three days and fumbled one was told "saved" and given two. The
+// only thing that stopped a wholly invalid answer was the empty-list check
+// after the fact.
+//
+// This checks the same conditions in the same order and stops at the first
+// row that fails, naming the day so the message can point at it. The screen
+// calls it so the employee can fix the row, and the answer action calls it so
+// a hand-built request cannot get past it either. cleanTimeOffEntries stays as
+// it is - it is the filter this is built on, and its own pins still hold.
+export function checkTimeOffEntries(raw, periodFrom, periodTo) {
+  const list = Array.isArray(raw) ? raw : [];
+  if (!list.length) return { ok: false, code: "empty" };
+  if (list.length > 40) return { ok: false, code: "tooMany" };
+  const days = new Set(periodDates(periodFrom, periodTo));
+  const seen = new Set();
+  for (const e of list) {
+    const date = String(e?.date || "");
+    const kind = String(e?.kind || "");
+    const hours = Number(e?.hours);
+    if (!days.has(date)) return { ok: false, code: "date", at: date || null };
+    if (seen.has(date)) return { ok: false, code: "duplicate", at: date };
+    if (!isTimeOffType(kind)) return { ok: false, code: "kind", at: date };
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) {
+      return { ok: false, code: "hours", at: date };
+    }
+    seen.add(date);
+  }
+  // every row passed, so the filter cannot drop one and the two agree
+  return { ok: true, entries: cleanTimeOffEntries(list, periodFrom, periodTo) };
+}
+
+// what to tell the person, per code. One place, so the screen and the action
+// cannot describe the same refusal differently.
+export function timeOffProblem({ code, at } = {}) {
+  const day = at ? `${at}: ` : "";
+  switch (code) {
+    case "empty":
+      return "Add the day you were off.";
+    case "tooMany":
+      return "That is more days than this period holds.";
+    case "date":
+      return `${day}that day is not in this pay period.`;
+    case "duplicate":
+      return `${day}this day is already listed. Change the row it is on.`;
+    case "kind":
+      return `${day}pick PTO or sick pay.`;
+    case "hours":
+      return `${day}enter the hours you were off, more than 0 and up to 24.`;
+    default:
+      return "Check the days you entered.";
+  }
+}
+
 // "8" not "8.00", "4.5" not "4.50" - hours in a sentence, not in a table.
 export const fmtTimeOffHours = (h) => String(r2(h));
 
