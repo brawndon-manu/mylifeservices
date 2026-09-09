@@ -30,6 +30,20 @@ export function deadlineInstant(dateStr) {
   return iso ? new Date(iso) : null;
 }
 
+// THE INVERSE: the Date a deadline IS -> "2026-09-09", the day it falls on in
+// California, for a DatePicker's value. toISOString() cannot do this job - an
+// end-of-day-LA deadline is 06:59 UTC the NEXT day, so a UTC read showed the
+// edit form a date one day late, and saving that back moved the deadline a day
+// AND re-armed the chase (a second real email to everyone still owing).
+// Round-trips with deadlineInstant.
+export function deadlineDateValue(expiresAt) {
+  if (!expiresAt) return "";
+  const d = new Date(expiresAt);
+  if (Number.isNaN(d.getTime())) return "";
+  // en-CA formats as YYYY-MM-DD, which is exactly what a date input takes.
+  return d.toLocaleDateString("en-CA", { timeZone: DEADLINE_TZ });
+}
+
 // has this post's deadline passed?
 export function deadlinePassed(expiresAt, now = new Date()) {
   return !!(expiresAt && now.getTime() >= new Date(expiresAt).getTime());

@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 
 import {
   deadlineInstant,
+  deadlineDateValue,
   deadlinePassed,
   chaseWindowOpen,
   chaseEmailCopy,
@@ -28,6 +29,31 @@ test("a deadline is the end of its own day, California - never teatime the day b
   assert.equal(deadlineInstant(""), null);
   assert.equal(deadlineInstant("09/09/2026"), null);
   assert.equal(deadlineInstant(null), null);
+});
+
+test("the edit form reads a deadline back as its California day, not its UTC one", () => {
+  // THE SECOND HALF OF THE SAME BUG. The ILS attestation's deadline is
+  // 09/09 11:59 PM LA, stored as 2026-09-10T06:59Z. The edit form read that
+  // with toISOString() and showed 09/10 - a day late - so saving the form
+  // untouched pushed the deadline to 09/10 AND cleared the one-shot chase
+  // stamp, re-arming a second real email to everyone still owing.
+  const ils = deadlineInstant("2026-09-09");
+  assert.equal(ils.toISOString().split("T")[0], "2026-09-10"); // the wrong read
+  assert.equal(deadlineDateValue(ils), "2026-09-09"); // the day it actually is
+  // round-trips both ways, across the DST boundary
+  for (const day of ["2026-09-09", "2026-12-09", "2027-03-14", "2027-11-07"]) {
+    assert.equal(deadlineDateValue(deadlineInstant(day)), day);
+    assert.equal(
+      deadlineInstant(deadlineDateValue(deadlineInstant(day))).getTime(),
+      deadlineInstant(day).getTime(),
+    );
+  }
+  // a post with no deadline leaves the field empty rather than dated
+  assert.equal(deadlineDateValue(null), "");
+  assert.equal(deadlineDateValue(undefined), "");
+  assert.equal(deadlineDateValue("not a date"), "");
+  // a stored string works the same as a Date (Prisma hands back Dates, JSON strings)
+  assert.equal(deadlineDateValue("2026-09-10T06:59:00.000Z"), "2026-09-09");
 });
 
 test("the chase window opens 8 PM California the night before and closes at the deadline", () => {

@@ -27,6 +27,7 @@ import {
   insertImageMarkdown,
 } from "@/lib/announcement-images";
 import { ATTACH_ACCEPT, ATTACH_MAX_BYTES, ATTACH_MAX_COUNT, attachmentsOf } from "@/lib/announcements";
+import { deadlineDateValue } from "@/lib/announcement-deadline";
 import DatePicker from "@/components/DatePicker";
 import AudiencePicker from "./AudiencePicker";
 import ExemptPicker from "./ExemptPicker";
@@ -787,7 +788,7 @@ export default function AnnouncementForm({
                 <DatePicker
                   id="expiresAt"
                   name="expiresAt"
-                  defaultValue={d.expiresAt ? new Date(d.expiresAt).toISOString().split("T")[0] : ""}
+                  defaultValue={deadlineDateValue(d.expiresAt)}
                   inputClassName={`${INPUT} pr-10`}
                 />
                 <p className="mt-1 text-xs text-muted">
