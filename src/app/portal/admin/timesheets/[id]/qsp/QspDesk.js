@@ -23,11 +23,34 @@ const CHIPS = [
   { key: "none", label: "Nothing to change" },
 ];
 
-export default function QspDesk({ rows, mark, viewerName }) {
+export default function QspDesk({ rows, mark, signOff, viewerName }) {
   const [chip, setChip] = useState("all");
   // entry key -> { state: "marked" | "unmarking", byName } laid over the
   // server's marks until the refresh catches up
   const [local, setLocal] = useState({});
+  // sheet id -> { byName, when } | null, the sign-off laid over the server's
+  // until the refresh catches up (null = taken back off)
+  const [signed, setSigned] = useState({});
+  const signedOffOf = (row) => (row.timesheetId in signed ? signed[row.timesheetId] : row.qspSignedOff);
+  // THE OFFICE PUTS ITS NAME ON "QUICKSOLVE MATCHES" - see signOffQsp. Same
+  // optimistic shape as a mark: shown at once, rolled back if refused.
+  const signOffRow = (row, undo) => {
+    setError(null);
+    const prev = signedOffOf(row);
+    setSigned((s) => ({ ...s, [row.timesheetId]: undo ? null : { byName: viewerName, when: "just now" } }));
+    signOff({ timesheetId: row.timesheetId, undo }).then(
+      (res) => {
+        if (!res?.ok) {
+          setSigned((s) => ({ ...s, [row.timesheetId]: prev }));
+          setError(messageFor(res?.error));
+        }
+      },
+      () => {
+        setSigned((s) => ({ ...s, [row.timesheetId]: prev }));
+        setError(messageFor());
+      },
+    );
+  };
   const [busyAll, setBusyAll] = useState({});
   const [error, setError] = useState(null);
 
@@ -136,6 +159,8 @@ export default function QspDesk({ rows, mark, viewerName }) {
           toggle={toggle}
           alreadyDone={alreadyDone}
           busyAll={!!busyAll[row.timesheetId]}
+          signedOff={signedOffOf(row)}
+          signOffRow={signOffRow}
         />
       ))}
       {!shown.length && (
@@ -154,9 +179,12 @@ function Stat({ n, label, tone = "text-foreground" }) {
   );
 }
 
-function PersonCard({ row, toggle, alreadyDone, busyAll }) {
+function PersonCard({ row, toggle, alreadyDone, busyAll, signedOff, signOffRow }) {
   const left = row.owedNow - row.markedNow;
   const settled = row.approved && left === 0 && row.owedNow > 0;
+  const signedOffLine = signedOff
+    ? ` Signed off by ${signedOff.byName || "the office"} · ${signedOff.when}.`
+    : "";
 
   return (
     <PresenceCard
@@ -212,6 +240,7 @@ function PersonCard({ row, toggle, alreadyDone, busyAll }) {
           Every entry added in QuickSolve. Approved ✓{" "}
           <span className="font-normal text-muted">
             · {row.approved.byName || "approved"} · {row.approved.when}
+            {signedOffLine}
           </span>
         </div>
       ) : row.none ? (
@@ -238,8 +267,27 @@ function PersonCard({ row, toggle, alreadyDone, busyAll }) {
               {left === 0
                 ? "Every entry is added."
                 : `${left} ${left === 1 ? "entry is" : "entries are"} still to add.`}
+              {left === 0 && signedOffLine}
               {row.approved && ` Approved by ${row.approved.byName || "the office"} · ${row.approved.when}.`}
             </p>
+            {left === 0 && !signedOff && (
+              <button
+                type="button"
+                onClick={() => signOffRow(row, false)}
+                className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand"
+              >
+                Sign off
+              </button>
+            )}
+            {left === 0 && signedOff && !row.approved && (
+              <button
+                type="button"
+                onClick={() => signOffRow(row, true)}
+                className="text-sm font-medium text-muted transition hover:text-foreground"
+              >
+                Undo sign-off
+              </button>
+            )}
             {left > 0 && (
               <button
                 type="button"
@@ -338,6 +386,10 @@ function messageFor(code) {
       return "That review is not signed any more. Reload the page.";
     case "unknown":
       return "That entry is not on this review any more. Reload the page.";
+    case "left":
+      return "Not every entry is marked as added yet.";
+    case "nothing":
+      return "This review left nothing to add in QuickSolve.";
     default:
       return "Something went wrong saving that. Try again.";
   }

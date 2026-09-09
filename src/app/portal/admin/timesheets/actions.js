@@ -2038,6 +2038,15 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
     select: {
       id: true, batchId: true, signedAt: true, approvedAt: true,
       signedPdfUrl: true, pdfUrl: true, data: true,
+      // THE OFFICE SIGNS OFF ONCE QUICKSOLVE MATCHES (Mánu 2026-09-09: "I can
+      // only sign off on their signed sheet once the numbers have moved to
+      // what the timesheet says"). A review that left entries to key waits on
+      // the desk's sign-off before the approval line can be signed.
+      qspSignedOffAt: true,
+      corrections: {
+        where: { status: { not: "open" } },
+        select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true, timeOff: true },
+      },
     },
   });
   if (!ts) return { ok: false, error: "auth" };
@@ -2045,6 +2054,9 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   // signature on an unattested document
   if (!ts.signedAt) return { ok: false, error: "notsigned" };
   if (ts.approvedAt) return { ok: false, error: "already" };
+  if (!ts.qspSignedOffAt && qspItemsOf(ts.corrections).some((it) => it.changes.length)) {
+    return { ok: false, error: "qsp" };
+  }
   if (typeof signatureDataUrl !== "string" || !signatureDataUrl.startsWith("data:image")) {
     return { ok: false, error: "nosignature" };
   }
@@ -5131,6 +5143,54 @@ function qspItemsOf(corrections) {
   return [...reviewChoices(corrections), ...timeOffReviewItems(corrections)];
 }
 
+// THE OFFICE'S OWN SIGN-OFF ON A SIGNED REVIEW - qspSignedOffAt, declared
+// 2026-09-02 and wired 2026-09-09. Every QuickSolve entry the review produced
+// has been marked as added, and somebody puts their name on that. Refused
+// while any entry is still to add, and pointless on a review that produced
+// none. `undo` takes the name back off; so does un-marking any entry.
+export async function signOffQsp({ timesheetId, undo = false }) {
+  const user = await requireTimesheetAccess();
+  const ts = await prisma.timesheet.findUnique({
+    where: { id: String(timesheetId || "") },
+    select: {
+      id: true, batchId: true, signedAt: true, qspSignedOffAt: true,
+      corrections: {
+        where: { status: { not: "open" } },
+        select: {
+          id: true, kind: true, date: true, status: true, choice: true, statedBreaks: true,
+          question: true, timeOff: true, qspMarks: { select: { fact: true } },
+        },
+      },
+    },
+  });
+  if (!ts) return { ok: false, error: "gone" };
+  if (!ts.signedAt) return { ok: false, error: "notsigned" };
+
+  if (undo) {
+    await prisma.timesheet.update({
+      where: { id: ts.id },
+      data: { qspSignedOffAt: null, qspSignedOffById: null, qspSignedOffByName: null },
+    });
+  } else {
+    const owed = qspItemsOf(ts.corrections).flatMap((it) =>
+      it.changes.map((ch) => ({ correctionId: it.correctionId, fact: ch.fact })),
+    );
+    if (!owed.length) return { ok: false, error: "nothing" };
+    const marks = new Map(ts.corrections.map((c) => [c.id, new Set(c.qspMarks.map((m) => m.fact))]));
+    const left = owed.filter((o) => !marks.get(o.correctionId)?.has(o.fact)).length;
+    if (left > 0) return { ok: false, error: "left", left };
+    await prisma.timesheet.update({
+      where: { id: ts.id },
+      data: { qspSignedOffAt: new Date(), qspSignedOffById: user.id, qspSignedOffByName: preferredName(user) },
+    });
+  }
+
+  revalidatePath(`/portal/admin/timesheets/${ts.batchId}/qsp`);
+  revalidatePath(`/portal/admin/timesheets/sheet/${ts.id}/approve`);
+  await bumpBatchVersion(ts.batchId);
+  return { ok: true, byName: undo ? null : preferredName(user) };
+}
+
 // MARK ONE QUICKSOLVE ENTRY AS ADDED, or take the mark back off. The fact
 // sentence is the entry's identity - it is what the desk shows and what the
 // office email printed - and it has to be one this row actually derives, so a
@@ -5152,6 +5212,12 @@ export async function markQspEntry({ correctionId, fact, done }) {
 
   if (done === false) {
     await prisma.qspEntryMark.deleteMany({ where: { correctionId: c.id, fact: wanted } });
+    // an entry taken back off means QuickSolve no longer matches the review,
+    // so a sign-off on it no longer holds
+    await prisma.timesheet.update({
+      where: { id: c.timesheet.id },
+      data: { qspSignedOffAt: null, qspSignedOffById: null, qspSignedOffByName: null },
+    });
   } else {
     await prisma.qspEntryMark.upsert({
       where: { correctionId_fact: { correctionId: c.id, fact: wanted } },

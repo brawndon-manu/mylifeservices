@@ -6,7 +6,7 @@ import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
 import { timeOffReviewItems } from "@/lib/timesheet/time-off";
-import { markQspEntry } from "@/app/portal/admin/timesheets/actions";
+import { markQspEntry, signOffQsp } from "@/app/portal/admin/timesheets/actions";
 import QspDesk from "./QspDesk";
 // the batch's ONE presence system, mounted in the layout - faces, hover, and
 // the version poll that makes marks and approvals live are all already
@@ -40,6 +40,8 @@ export default async function QspDeskPage({ params }) {
         select: {
           id: true, sourceName: true, signedAt: true,
           approvedAt: true,
+          // the office's sign-off that QuickSolve matches - see signOffQsp
+          qspSignedOffAt: true, qspSignedOffByName: true,
           approvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
           user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
           corrections: {
@@ -89,6 +91,9 @@ export default async function QspDeskPage({ params }) {
       approved: t.approvedAt
         ? { byName: t.approvedBy ? preferredName(t.approvedBy) : null, when: fmt(t.approvedAt) }
         : null,
+      qspSignedOff: t.qspSignedOffAt
+        ? { byName: t.qspSignedOffByName, when: fmt(t.qspSignedOffAt) }
+        : null,
       items,
       owed,
       marked: items.reduce((n, it) => n + it.changes.filter((ch) => ch.mark).length, 0),
@@ -112,7 +117,7 @@ export default async function QspDeskPage({ params }) {
       <p className="mt-1 text-sm text-muted">{batch.periodFrom} to {batch.periodTo}</p>
 
       <PresenceBar />
-      <QspDesk rows={rows} mark={markQspEntry} viewerName={preferredName(user)} />
+      <QspDesk rows={rows} mark={markQspEntry} signOff={signOffQsp} viewerName={preferredName(user)} />
     </section>
   );
 }

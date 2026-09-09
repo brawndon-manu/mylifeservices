@@ -13,6 +13,10 @@ import { premiumStanding } from "@/lib/timesheet/premium-split";
 // Malacova's fortnight: eleven PTO days read "compliant" on this page with
 // nothing saying why, because the choices behind the sheet were nowhere on it
 import { employeeResolution } from "@/lib/timesheet/corrections";
+// the entries the review left to key into QuickSolve - approval waits on the
+// desk's sign-off while any exist (Mánu 2026-09-09)
+import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+import { timeOffReviewItems } from "@/lib/timesheet/time-off";
 
 export const metadata = { title: "Approve timesheet", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -40,6 +44,18 @@ export default async function ApproveTimesheetPage({ params }) {
     },
   });
   if (!ts) notFound();
+
+  // WHAT THE REVIEW LEFT TO KEY INTO QUICKSOLVE, every decided row - not only
+  // the `q_` answers listed below. While any exist and nobody has signed the
+  // desk off, the approval line waits: the office signs off once QuickSolve
+  // matches, and the approval is the record that it did.
+  const decided = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: ts.id, status: { not: "open" } },
+    select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true, timeOff: true },
+  });
+  const qspOwed = [...reviewChoices(decided), ...timeOffReviewItems(decided)]
+    .reduce((n, it) => n + it.changes.length, 0);
+  const qspHold = qspOwed > 0 && !ts.qspSignedOffAt;
 
   // THE FIGURE ON THE DOCUMENT THEY SIGNED, not the stored column. This screen
   // is where somebody approves the pay, and it was quoting `premiumHours` - the
@@ -132,6 +148,20 @@ export default async function ApproveTimesheetPage({ params }) {
           >
             Open the approved PDF →
           </a>
+        </div>
+      ) : qspHold ? (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-900/60 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">
+            Waiting on QuickSolve
+          </p>
+          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
+            {who}&apos;s review left {qspOwed} {qspOwed === 1 ? "entry" : "entries"} to
+            add in QuickSolve. Approval opens once they are in and the review is
+            signed off on the QuickSolve desk.
+          </p>
+          <Link href={`/portal/admin/timesheets/${ts.batch.id}/qsp`} className="mt-3 inline-block text-sm font-medium text-brand hover:text-brand-dark">
+            Open the QuickSolve desk →
+          </Link>
         </div>
       ) : (
         <>

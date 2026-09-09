@@ -12,6 +12,7 @@ const ERRORS = {
   auth: "You don't have permission to approve this.",
   notsigned: "The employee hasn't signed this yet.",
   already: "This has already been approved.",
+  qsp: "This review is not signed off on the QuickSolve desk yet.",
   nosignature: "Draw your signature first.",
   nofile: "Couldn't load the signed timesheet.",
   norect:
