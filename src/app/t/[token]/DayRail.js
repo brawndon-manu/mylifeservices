@@ -45,6 +45,30 @@ export default function DayRail({ days, children, stacked = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const requestedDate = flow?.activeDate;
+  // WHICH REQUEST WE HAVE ALREADY HONOURED.
+  //
+  // Mánu 2026-09-09: he reported the 3rd, answered a question on the 11th, and
+  // the rail threw him back to the 3rd. `activeDate` is set by an explicit Edit
+  // or Report and never cleared, and this effect listed `days` - which is a
+  // freshly built array on every render. So any re-render re-ran it and it
+  // dutifully re-selected the last date anybody had asked for. Every time, not
+  // intermittently.
+  //
+  // `report()` hands over a NEW object per request, so honouring each object
+  // once is exactly "follow an explicit action, and only when it is made".
+  const honoured = useRef(null);
+  useEffect(() => {
+    if (!requestedDate || honoured.current === requestedDate) return;
+    honoured.current = requestedDate;
+    const i = days.findIndex((day) => day.date === requestedDate.date);
+    // Selection follows an explicit Edit or Report action in the shared flow.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (i >= 0) setSel(i);
+    const target = stacked ? paneRefs.current[i] : boxRef.current;
+    target?.scrollIntoView({ block: "start" });
+  }, [requestedDate, days, stacked]);
+
   const panes = Array.isArray(children) ? children : [children];
 
   if (stacked) return (

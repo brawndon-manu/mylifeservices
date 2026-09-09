@@ -33,6 +33,8 @@ import { parseComments } from "@/lib/timesheet/comments";
 import {
   correctionLabel, employeeResolution, resolutionTakesReason, reviewerSettledDates,
 } from "@/lib/timesheet/corrections";
+// the reported half of "what you have told us" - see claim-signing.js
+import { claimsOf } from "@/lib/timesheet/claim-signing";
 import {
   questionPolicyApplies, buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
 } from "@/lib/timesheet/questions";
@@ -256,6 +258,16 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const answered = ts.corrections.filter(
     (c) => String(c.kind || "").startsWith("q_") && c.status !== "open",
   );
+  // AND WHAT THEY REPORTED, which is the other half of the same sentence.
+  //
+  // Mánu 2026-09-09: he reported the 3rd and answered a question on the 11th,
+  // and only the 11th appeared under "What you have told us about this
+  // timesheet". The panel had always filtered to `q_` kinds, so a reported
+  // problem was structurally excluded from a heading that claims to list
+  // everything he told us. It was survivable while an open report replaced the
+  // whole signer with its own list; under the pending flow both belong in one
+  // place, and page 2 of the signed document lists exactly this set.
+  const toldUs = claimsOf(ts.corrections);
 
   // NOTHING THEY ANSWERED DROPS OFF THE PAGE.
   //
@@ -963,12 +975,40 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               missed. That is the half no export carries, they typed it, and it
               is about to be printed on the sheet below - so it reads back here
               rather than only appearing on the document after they sign. */}
-          {Object.keys(answers).length > 0 && (
+          {(Object.keys(answers).length > 0 || toldUs.length > 0) && (
             <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
               <p className="text-[15px] font-semibold text-foreground">
                 What you have told us about this timesheet
               </p>
               <ul className="mt-1.5 divide-y divide-sep">
+                {toldUs.map((c) => (
+                  <li key={`told-${c.kind}-${c.date}`} className="flex gap-4 py-2.5 text-[13px]">
+                    <span className="w-24 flex-none font-semibold text-foreground">
+                      {c.date ? tellDay(c.date) : "This timesheet"}
+                    </span>
+                    <span className="min-w-0 text-muted">
+                      <span className={`font-semibold ${
+                        c.status === "accepted"
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : c.status === "declined"
+                            ? "text-foreground"
+                            : "text-amber-700 dark:text-amber-400"
+                      }`}>
+                        {c.status === "accepted"
+                          ? "approved"
+                          : c.status === "declined"
+                            ? "not approved"
+                            : "reported"}
+                      </span>
+                      <span className="mt-0.5 block text-faint">{correctionLabel(c.kind)}</span>
+                      {c.note && (
+                        <span className="mt-1 block border-l-2 border-sep pl-2 italic text-faint">
+                          &ldquo;{c.note}&rdquo;
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
                 {answered.map((c) => {
                   const said = employeeResolution(c, questionFor(c));
                   const words = resolutionTakesReason(c) ? reasonFor(c) : null;
