@@ -10,6 +10,7 @@ import { employeeAsk, breakFindingKey, resetAction } from "@/lib/timesheet/break
 // rows - same one-fetch rule as the sheet render routes
 import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { timeOffTotals } from "@/lib/timesheet/time-off";
+import { monthNameFor } from "@/lib/timesheet/mock-period";
 import ReportProblem from "./ReportProblem";
 import TimesheetViews from "./TimesheetViews";
 import DayByDay from "./DayByDay";
@@ -1145,7 +1146,9 @@ function PeriodTile({ from, to }) {
   return (
     <div className="flex flex-none flex-col items-center rounded-xl bg-surface px-5 py-2.5 text-center shadow-sm night:ring-1 night:ring-border">
       <span className="text-[11px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">
-        {sameMonth ? TILE_MONTHS[a.m - 1] : `${TILE_MONTHS[a.m - 1]}–${TILE_MONTHS[b.m - 1]}`}
+        {sameMonth
+          ? monthNameFor(from, TILE_MONTHS[a.m - 1])
+          : `${monthNameFor(from, TILE_MONTHS[a.m - 1])}–${TILE_MONTHS[b.m - 1]}`}
       </span>
       <span className="text-[22px] font-semibold leading-tight tracking-tight text-foreground">
         {a.d}–{b.d}

@@ -15,6 +15,8 @@ import TestBatchBadge from "./TestBatchBadge";
 // underneath, earlier uploads folded below. Every value still comes off
 // batchState and the timesheet rows - nothing here computes its own truth.
 
+import { monthNameFor } from "@/lib/timesheet/mock-period";
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -30,17 +32,19 @@ const parse = (s) => {
 function periodTitle(from, to) {
   const a = parse(from), b = parse(to);
   if (!a || !b) return { title: `${from} to ${to}`, year: null };
+  // a demo period prints its own name - see mock-period.js
+  const first = monthNameFor(from, MONTHS[a.m - 1]);
   const title =
     a.m === b.m && a.y === b.y
-      ? `${MONTHS[a.m - 1]} ${a.d}–${b.d}`
-      : `${MONTHS[a.m - 1]} ${a.d} – ${MONTHS[b.m - 1]} ${b.d}`;
+      ? `${first} ${a.d}–${b.d}`
+      : `${first} ${a.d} – ${MONTHS[b.m - 1]} ${b.d}`;
   return { title, year: a.y };
 }
 
 // "09/05/26" -> "Sep 5"; anything unreadable prints as stored.
 function shortDay(s) {
   const p = parse(s);
-  return p ? `${MONTHS[p.m - 1].slice(0, 3)} ${p.d}` : s;
+  return p ? `${monthNameFor(s, MONTHS[p.m - 1].slice(0, 3))} ${p.d}` : s;
 }
 
 // "09/01/26".."09/06/26" -> "Sep 1–6"; months differ -> "Sep 28–Oct 2".
@@ -48,7 +52,7 @@ function shortRange(from, to) {
   const a = parse(from), b = parse(to);
   if (!a || !b) return `${from}–${to}`;
   return a.m === b.m && a.y === b.y
-    ? `${MONTHS[a.m - 1].slice(0, 3)} ${a.d}–${b.d}`
+    ? `${monthNameFor(from, MONTHS[a.m - 1].slice(0, 3))} ${a.d}–${b.d}`
     : `${shortDay(from)}–${shortDay(to)}`;
 }
 

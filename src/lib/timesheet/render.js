@@ -19,6 +19,7 @@ import { restAttested } from "./rest-attestation.js";
 // the time-off line's one wording - shared with nothing else on purpose, so
 // the sheet and the tests read the same sentence
 import { timeOffLine, timeOffTotals } from "./time-off.js";
+import { monthNameFor } from "./mock-period.js";
 
 // read straight off disk - this only ever runs server-side.
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
@@ -192,7 +193,7 @@ export function ordinal(n) {
 export function periodTitle(payPeriod) {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(String(payPeriod?.from || "").trim());
   if (!m) return "";
-  const month = MONTHS[Number(m[1]) - 1];
+  const month = monthNameFor(payPeriod?.from, MONTHS[Number(m[1]) - 1]);
   if (!month) return "";
   const yr = Number(m[3]);
   const year = yr < 100 ? 2000 + yr : yr;
