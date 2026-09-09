@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
+import { useDayDone } from "./TimesheetQuestion";
 
 // THE DAY RAIL: the period's days down the left, one day's work shown at a
 // time. Presentation only - every pane stays MOUNTED and the unselected ones
@@ -17,6 +18,9 @@ export default function DayRail({ days, children }) {
   const first = Math.max(0, days.findIndex((d) => d.needs && !d.done));
   const [sel, setSel] = useState(first === -1 ? 0 : first);
   const boxRef = useRef(null);
+  // a day finished in this tab counts as done on the ring, not only a saved
+  // one - see useDayDone
+  const readyOn = useDayDone();
 
   useEffect(() => {
     const onHash = () => {
@@ -54,7 +58,7 @@ export default function DayRail({ days, children }) {
               type="button"
               aria-current={on ? "true" : undefined}
               onClick={() => setSel(i)}
-              className={`flex min-w-[7.5rem] flex-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:min-w-0 ${
+              className={`flex min-w-[7.5rem] flex-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:min-w-0 ${
                 on ? "accent-fill-soft" : "hover:bg-fill"
               }`}
             >
@@ -69,17 +73,17 @@ export default function DayRail({ days, children }) {
               <span
                 aria-hidden="true"
                 className={`flex h-[15px] w-[15px] flex-none items-center justify-center rounded-full ${
-                  d.done
+                  d.done || readyOn(d.date)
                     ? "bg-emerald-500 text-white"
                     : d.needs
                       ? "border-[1.5px] border-amber-500"
                       : "border-[1.5px] border-border-strong"
                 }`}
               >
-                {d.done && <Check size={10} strokeWidth={3} />}
+                {(d.done || readyOn(d.date)) && <Check size={10} strokeWidth={3} />}
               </span>
               <span className="sr-only">
-                {d.done ? "Answered" : d.needs ? "Needs answers" : "Nothing to check"}
+                {d.done || readyOn(d.date) ? "Answered" : d.needs ? "Needs answers" : "Nothing to check"}
               </span>
             </button>
           );
@@ -93,5 +97,19 @@ export default function DayRail({ days, children }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// the "N of M days answered" line, counting the days finished in this tab as
+// well as the saved ones - it sat server-rendered and contradicted the rings.
+export function DaysAnsweredCount({ days }) {
+  const readyOn = useDayDone();
+  const need = days.filter((d) => d.needs);
+  if (!need.length) return null;
+  const done = need.filter((d) => d.done || readyOn(d.date)).length;
+  return (
+    <p className="mt-0.5 text-[12.5px] text-faint">
+      {done} of {need.length} day{need.length === 1 ? "" : "s"} answered
+    </p>
   );
 }

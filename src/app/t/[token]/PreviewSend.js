@@ -19,6 +19,7 @@
 // reading, not sending.
 
 import { useState, useTransition } from "react";
+import { Send } from "lucide-react";
 
 export default function PreviewSend({
   action, timesheetId, name, email, mode, alreadySent,
@@ -30,7 +31,7 @@ export default function PreviewSend({
   // to send to, and the fix for that is on the batch screen rather than here.
   if (!email) {
     return (
-      <p className="mt-3 border-t border-amber-300 pt-3 text-sm text-amber-800 dark:border-amber-800 dark:text-amber-300">
+      <p className="mt-3 border-t border-sep pt-3 text-[13px] leading-relaxed text-muted">
         No account is matched to this timesheet yet, so there is nobody to send
         it to. Match them on the batch screen first.
       </p>
@@ -38,13 +39,14 @@ export default function PreviewSend({
   }
 
   return (
-    <div className="mt-3 border-t border-amber-300 pt-3 dark:border-amber-800">
+    <div className="mt-3 border-t border-sep pt-3">
       {!open ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-lg border border-amber-400 px-3 py-1.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+          className="inline-flex items-center gap-2 rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
+          <Send size={14} strokeWidth={1.8} aria-hidden="true" className="text-muted" />
           {alreadySent ? "Send their link again" : "Email them their link"}
         </button>
       ) : (
@@ -55,7 +57,7 @@ export default function PreviewSend({
               row the way a batch send does */}
           <input type="hidden" name="resend" value="on" />
 
-          <p className="text-sm text-amber-900 dark:text-amber-200">
+          <p className="text-sm text-foreground">
             {alreadySent ? "Send again to " : "Send to "}
             <b>{name}</b> at <span className="font-mono">{email}</span>?
           </p>
@@ -63,7 +65,7 @@ export default function PreviewSend({
           {/* WHERE IT WILL ACTUALLY LAND. In test mode the address above is not
               the address it goes to, and finding that out afterwards is how a
               real send gets made by mistake in the other direction. */}
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-xs text-muted">
             {mode?.live
               ? "Live - this really goes to them."
               : `${mode?.label || "Test mode"}${
@@ -76,7 +78,7 @@ export default function PreviewSend({
               type="submit"
               disabled={pending}
               onClick={() => start(() => {})}
-              className="rounded-lg bg-amber-700 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-800 disabled:opacity-60"
+              className="rounded-[9px] bg-amber-600 px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
             >
               {pending ? "Sending…" : "Send it"}
             </button>
@@ -84,7 +86,7 @@ export default function PreviewSend({
               type="button"
               disabled={pending}
               onClick={() => setOpen(false)}
-              className="rounded-lg border border-amber-400 px-3 py-1.5 text-sm font-medium text-amber-900 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+              className="rounded-[9px] px-3.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:bg-fill disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               Cancel
             </button>

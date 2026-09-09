@@ -39,14 +39,14 @@ export default function BreakReason({ token, ask, submitAction }) {
   const q = employeeQuestion(ask, { lateMinutes: ask.lateMinutes });
 
   return (
-    <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700/70 dark:bg-amber-950/30">
+    <div className="amber-tint-card mt-4 rounded-xl p-4 shadow-sm night:ring-1 night:ring-border">
       <p className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300">{ask.date}</p>
 
       {/* WE HAVE ONE, AND THEY HAVE NOT CHECKED IT YET */}
       {ask.mode === "confirm" && !changing && (
         <>
           <p className="mt-2 font-semibold text-foreground">{q.toldUs}</p>
-          <p className="mt-2 rounded-lg border border-amber-300 bg-surface px-3 py-2 text-sm italic text-foreground dark:border-amber-800">
+          <p className="mt-2 rounded-[9px] bg-surface px-3 py-2 text-sm italic text-foreground shadow-sm">
             &ldquo;{ask.reason}&rdquo;
           </p>
           <p className="mt-3 font-semibold text-foreground">Is that correct?</p>
@@ -55,7 +55,7 @@ export default function BreakReason({ token, ask, submitAction }) {
               type="button"
               disabled={pending}
               onClick={() => send(true, null)}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+              className="rounded-[9px] bg-brand px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-60"
             >
               {pending ? "Saving…" : "Yes, that is right"}
             </button>
@@ -63,7 +63,7 @@ export default function BreakReason({ token, ask, submitAction }) {
               type="button"
               disabled={pending}
               onClick={() => setChanging(true)}
-              className="rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-sm font-semibold text-foreground transition hover:bg-surface-2 disabled:opacity-60"
+              className="rounded-[9px] bg-fill px-3.5 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-60"
             >
               No, that is not what I said
             </button>
@@ -76,7 +76,7 @@ export default function BreakReason({ token, ask, submitAction }) {
       {ask.mode === "confirm" && changing && (
         <>
           <p className="mt-2 font-semibold text-foreground">{q.toldUs}</p>
-          <p className="mt-2 rounded-lg border border-border-strong bg-surface-2 px-3 py-2 text-sm italic text-faint line-through">
+          <p className="mt-2 rounded-[9px] bg-fill px-3 py-2 text-sm italic text-faint line-through">
             &ldquo;{ask.reason}&rdquo;
           </p>
           <p className="mt-3 font-semibold text-foreground">What is the right reason?</p>
@@ -85,14 +85,14 @@ export default function BreakReason({ token, ask, submitAction }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={q.placeholder}
-            className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+            className="mt-2 w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           />
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
               disabled={pending || !text.trim()}
               onClick={() => send(false, text)}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+              className="rounded-[9px] bg-brand px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
             >
               {pending ? "Saving…" : "Save this instead"}
             </button>
@@ -118,14 +118,14 @@ export default function BreakReason({ token, ask, submitAction }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={q.placeholder}
-            className="mt-2 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
+            className="mt-2 w-full rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           />
           <div className="mt-2">
             <button
               type="button"
               disabled={pending || !text.trim()}
               onClick={() => send(true, text)}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+              className="rounded-[9px] bg-brand px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
             >
               {pending ? "Saving…" : "Save"}
             </button>

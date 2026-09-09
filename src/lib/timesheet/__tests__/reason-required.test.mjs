@@ -98,7 +98,8 @@ test("a reason on record is shown in the box, not hidden behind a refusal", () =
 test("and both cards say where those words came from", () => {
   // without it, an answer given on another question about the same day looks
   // like something we filled in for them
-  const hits = [...CARD.matchAll(/This is what you told us for \{q\.date\} already/g)];
+  // the date reads as its day's name since 2026-09-08, on both cards alike
+  const hits = [...CARD.matchAll(/This is what you told us for \{dayLong\(q\.date\)\} already/g)];
   assert.equal(hits.length, 2, `said on ${hits.length} of the two cards`);
 });
 

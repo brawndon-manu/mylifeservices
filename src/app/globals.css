@@ -176,6 +176,29 @@ body {
   color: var(--accent);
 }
 
+/* a card kept faintly amber: reviewer-only controls stay marked at a glance
+   without shouting. mixed off the surface token so all three themes hold. */
+.amber-tint-card {
+  background: color-mix(in srgb, var(--surface) 88%, #f59e0b 12%);
+}
+.dark .amber-tint-card {
+  background: color-mix(in srgb, var(--surface) 90%, #f59e0b 10%);
+}
+
+/* the green sibling, for settled things - the signed panel, a finished state */
+.green-tint-card {
+  background: color-mix(in srgb, var(--surface) 90%, #10b981 10%);
+}
+.dark .green-tint-card {
+  background: color-mix(in srgb, var(--surface) 91%, #10b981 9%);
+}
+
+/* a picked answer chip: accent ring + soft accent wash, all three themes */
+.choice-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 /* THE RAISED SEGMENT of a segmented control. bg-surface was the old raised
    tone and it disappears the moment the control sits ON a surface card in a
    dark theme - the picked segment matched the card exactly and read as

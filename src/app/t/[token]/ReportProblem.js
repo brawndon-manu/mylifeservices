@@ -130,11 +130,11 @@ export default function ReportProblem({ token, days, submitAction, period = null
 
   if (done) {
     return (
-      <div className="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/30">
-        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+      <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+        <p className="text-sm font-semibold text-foreground">
           Thanks - payroll has been told.
         </p>
-        <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
+        <p className="mt-1 text-[13px] leading-relaxed text-muted">
           Don&apos;t sign this one. Someone will look at what you reported and
           send you a corrected timesheet to sign.
         </p>
@@ -161,7 +161,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
   }
 
   return (
-    <div className="mt-8 rounded-xl border border-border bg-surface-2 p-5">
+    <div className="mt-8 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
       <h2 className="text-base font-semibold text-foreground">
         Tell payroll what&apos;s wrong
       </h2>
@@ -183,7 +183,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
           {items.map((it, i) => (
             <li
               key={i}
-              className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2"
+              className="flex items-start justify-between gap-3 rounded-[9px] bg-fill px-3 py-2"
             >
               <span className="text-sm text-foreground">
                 <span className="font-semibold">{it.date || "This timesheet"}</span>
@@ -219,7 +219,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
           <select
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+            className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           >
             {days.map((d) => (
               <option key={d.date} value={d.date}>
@@ -241,7 +241,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
             <select
               value={newDayDate}
               onChange={(e) => setNewDayDate(e.target.value)}
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+              className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
             >
               <option value="">Pick the day</option>
               {(period ? periodDates(period.from, period.to) : [])
@@ -315,15 +315,15 @@ export default function ReportProblem({ token, days, submitAction, period = null
                         return next;
                       })
                     }
-                    placeholder="e.g. 331 for 3:31"
                     className={`w-36 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
                       mins != null ? "border-emerald-500" : raw.trim() ? "border-rose-500" : "border-border"
                     }`}
                   />
+                  {/* the typed time reads itself back, the same as the day
+                      question's slot row - no placeholder to imitate and no
+                      "reads as" preamble, the figure IS the confirmation */}
                   {mins != null && (
-                    <span className="text-sm text-muted">
-                      reads as <b className="text-foreground">{formatTimeDisplay(mins)}</b>
-                    </span>
+                    <span className="text-sm text-foreground">{formatTimeDisplay(mins)}</span>
                   )}
                 </div>
               );
@@ -358,7 +358,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
               value={hours}
               onChange={(e) => setHours(e.target.value)}
               placeholder="e.g. 8.5"
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+              className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
             />
           </label>
         )}
@@ -381,7 +381,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
             rows={3}
             maxLength={1000}
             placeholder="Anything that helps payroll check it"
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+            className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           />
         </label>
       </div>
@@ -396,7 +396,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <button
           type="button"
           onClick={add}
-          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface"
+          className="rounded-[9px] px-4 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-fill"
         >
           {items.length ? "Add another" : "Add this"}
         </button>
@@ -404,7 +404,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
           type="button"
           onClick={send}
           disabled={busy || !items.length}
-          className="rounded-lg bg-brand-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
         >
           {busy
             ? "Sending..."

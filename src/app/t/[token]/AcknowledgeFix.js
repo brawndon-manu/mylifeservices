@@ -41,7 +41,7 @@ export default function AcknowledgeFix({ token, date, min, done, submitAction })
           type="button"
           disabled={pending}
           onClick={() => press(true)}
-          className="rounded-md border border-border-strong px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-brand hover:text-brand disabled:opacity-50"
+          className="rounded-[8px] px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-fill disabled:opacity-50"
         >
           {pending ? "Working…" : "Undo"}
         </button>
@@ -55,7 +55,7 @@ export default function AcknowledgeFix({ token, date, min, done, submitAction })
         type="button"
         disabled={pending}
         onClick={() => press(false)}
-        className="rounded-lg border border-amber-400 bg-surface px-3 py-1.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+        className="rounded-[9px] bg-fill px-3.5 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-50"
       >
         {pending ? "Saving…" : "I have seen this"}
       </button>

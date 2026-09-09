@@ -18,6 +18,7 @@
 // green once an answer has left the figures alone, plain once it has not.
 import { createContext, useContext, useEffect, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
+import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
 // the five sentences, already written and already counting correctly - see the
 // note on `renderReason`. Client-safe: break-answers.js imports nothing.
@@ -51,6 +52,15 @@ const BatchCtx = createContext(null);
 // writes once at the bottom. This is neither - it is the person saying they are
 // through with the day, which collapses it and lets the panel count it.
 const DayDoneCtx = createContext(null);
+
+// the rail's way in: whether a day has been marked done in THIS tab. The
+// rail ring used to read only SAVED answers, so a day worked through and
+// closed stayed amber until Save my answers - which read as nothing
+// happening. Null-safe outside the provider.
+export function useDayDone() {
+  const done = useContext(DayDoneCtx);
+  return (date) => !!done?.readyOn?.(date);
+}
 
 export function DayDoneProvider({ children }) {
   const [ready, setReady] = useState(() => new Set());
@@ -89,7 +99,7 @@ export function DayDoneButton({ date, plainBlocked = false }) {
       <button
         type="button"
         onClick={() => done.markReady(date)}
-        className="rounded-lg border border-border-strong bg-surface-2 px-3 py-1.5 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand"
+        className="rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
         Done with this day
       </button>
@@ -1013,7 +1023,7 @@ function Refusal({ err }) {
   const inside = at?.shifts?.length ? at.shifts : at?.window?.length ? at.window : at?.windows;
 
   return (
-    <div className="mt-3 rounded-lg border border-rose-400/70 bg-rose-500/10 p-3">
+    <div className="mt-3 rounded-xl bg-rose-500/10 p-3.5">
       {where && (
         <p className="font-mono text-xs font-bold text-rose-800 dark:text-rose-300">
           {where}
@@ -1064,23 +1074,25 @@ function Choice({ on, tone, label, why, note, onClick, busy }) {
   // anybody has finished giving it. `tone` is still passed and still says
   // which is which; nothing reads it here any more.
   const ring = on
-    ? "border-2 border-brand bg-brand/10"
-    : "border border-border-strong bg-surface-2 hover:border-brand";
+    ? "choice-on border"
+    : "border border-border bg-surface hover:border-border-strong";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={busy}
       aria-pressed={on}
-      className={`flex-1 basis-60 rounded-lg p-3 text-left transition disabled:opacity-60 ${ring}`}
+      className={`flex-1 basis-60 rounded-[10px] p-3 text-left transition-colors disabled:opacity-60 ${ring}`}
     >
-      <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+      <span className={`flex items-center gap-2 text-sm font-semibold ${on ? "text-accent" : "text-foreground"}`}>
         <span
           aria-hidden="true"
-          className={`h-3.5 w-3.5 flex-none rounded-full border-2 ${
-            on ? "border-brand bg-brand" : "border-border-strong"
+          className={`flex h-[15px] w-[15px] flex-none items-center justify-center rounded-full border-[1.5px] ${
+            on ? "border-accent" : "border-faint"
           }`}
-        />
+        >
+          {on && <span className="h-[7px] w-[7px] rounded-full bg-accent" />}
+        </span>
         {label}
       </span>
       {why && <span className="mt-1.5 block pl-5.5 text-xs text-muted">{why}</span>}
@@ -1312,11 +1324,11 @@ function OneQuestion({
           </p>
           {/* what is still theirs to do once the answer is in - see `afterYes` */}
           {answer === "accepted" && c.afterYes && (
-            <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-700/70 dark:bg-amber-950/30">
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            <div className="amber-tint-card mt-2 rounded-xl p-3.5">
+              <p className="text-sm font-semibold text-foreground">
                 {c.afterYes.title}
               </p>
-              <p className="mt-1 text-sm leading-relaxed text-amber-800 dark:text-amber-300">
+              <p className="mt-1 text-sm leading-relaxed text-muted">
                 {c.afterYes.body}
               </p>
             </div>
@@ -1336,7 +1348,7 @@ function OneQuestion({
               to change this, it should say are you sure - it will change the
               answers below ONLY IF they'll be changed." */}
           {warning ? (
-            <div className="mt-2 rounded-lg border-2 border-amber-500 bg-amber-500/10 p-3">
+            <div className="amber-tint-card mt-2 rounded-xl p-3.5">
               <p className="text-sm font-semibold text-foreground">Are you sure?</p>
               <p className="mt-1 text-sm text-muted">
                 Changing this changes your hours for{" "}
@@ -1472,7 +1484,7 @@ function OneQuestion({
           never be changed to the one that needs a time. Mánu 2026-08-11:
           "doesnt let me go back and change it to this." */}
       {needsTime && (
-        <div className="mt-3 rounded-lg border border-border-strong bg-surface-2 p-3">
+        <div className="mt-3 rounded-xl bg-fill p-3.5">
           <p className="text-sm font-semibold text-foreground">{c.timeLabel}</p>
           <p className="mt-1 text-xs text-muted">
             {c.timeHint
@@ -1502,9 +1514,8 @@ function OneQuestion({
                       disabled={pending}
                       value={raw}
                       onChange={(e) => setSlotAt((t) => ({ ...t, [need.slot]: e.target.value }))}
-                      placeholder="e.g. 331 for 3:31"
-                      className={`w-36 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
-                        mins ? "border-emerald-500" : raw.trim() ? "border-rose-500" : "border-amber-500/70"
+                      className={`w-36 rounded-[9px] border bg-surface px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
+                        mins ? "border-emerald-400/80" : raw.trim() ? "border-rose-400" : "border-border"
                       }`}
                     />
                     {!mins && need.suggest && (
@@ -1512,7 +1523,7 @@ function OneQuestion({
                         type="button"
                         disabled={pending}
                         onClick={() => setSlotAt((t) => ({ ...t, [need.slot]: need.suggest }))}
-                        className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                        className="rounded-[9px] bg-fill px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2"
                       >
                         Use {need.suggest}
                       </button>
@@ -1528,7 +1539,7 @@ function OneQuestion({
                           type="button"
                           disabled={pending}
                           onClick={() => setSlotAt((t) => ({ ...t, [need.slot]: opt }))}
-                          className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                          className="rounded-[9px] bg-fill px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2"
                         >
                           Use {opt}
                         </button>
@@ -1552,9 +1563,8 @@ function OneQuestion({
                 disabled={pending}
                 value={at}
                 onChange={(e) => setAt(e.target.value)}
-                placeholder="e.g. 331 for 3:31"
-                className={`w-40 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
-                  at.trim() && !typedHHMM ? "border-rose-500" : "border-border-strong"
+                className={`w-40 rounded-[9px] border bg-surface px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
+                  at.trim() && !typedHHMM ? "border-rose-400" : "border-border"
                 }`}
               />
               {suggestion && !at.trim() && (
@@ -1562,7 +1572,7 @@ function OneQuestion({
                   type="button"
                   disabled={pending}
                   onClick={() => setAt(suggestion)}
-                  className="rounded-lg border border-border-strong px-3 py-2 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                  className="rounded-[9px] bg-fill px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2"
                 >
                   Use {suggestion}
                 </button>
@@ -1580,7 +1590,7 @@ function OneQuestion({
       )}
 
       {wantsBlock && (
-        <div className="mt-3 rounded-lg border border-border-strong bg-surface-2 p-3">
+        <div className="mt-3 rounded-xl bg-fill p-3.5">
           <p className="text-sm font-semibold text-foreground">
             What should your {q.row?.service || "unpunched"} time be on {q.date}?
           </p>
@@ -1595,8 +1605,8 @@ function OneQuestion({
             value={block}
             onChange={(e) => setBlock(e.target.value)}
             placeholder="e.g. 8a-12p"
-            className={`mt-2 w-48 rounded-lg border bg-surface px-3 py-2 text-sm text-foreground ${
-              block.trim() ? "border-emerald-500" : "border-amber-500/70"
+            className={`mt-2 w-48 rounded-[9px] border bg-surface px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
+              block.trim() ? "border-emerald-400/80" : "border-border"
             }`}
           />
           {!block.trim() && (
@@ -1615,7 +1625,7 @@ function OneQuestion({
           On a late lunch it hangs off the YES: the break happened, and what
           nothing on any export can say is what held it up. */}
       {needsReason && (
-        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-700/70 dark:bg-amber-950/30">
+        <div className="amber-tint-card mt-3 rounded-xl p-3.5">
           <p className="text-sm font-semibold text-foreground">{reasonAsk.ask}</p>
           {/* min-h below sm because `rows` counts LINES, not pixels: the 16px
               these fields get on a phone (see no-focus-zoom in globals.css)
@@ -1635,7 +1645,7 @@ function OneQuestion({
             </p>
           ) : saidAlready ? (
             <p className="mt-1.5 text-xs text-muted">
-              This is what you told us for {q.date} already. Change it here if it is not right.
+              This is what you told us for {dayLong(q.date)} already. Change it here if it is not right.
             </p>
           ) : null}
         </div>
@@ -1787,25 +1797,24 @@ export function breakLabel(q) {
 // The children are still built on the server either way. Not rendering them is a
 // display decision, not a saving of work, and it keeps this to one small
 // component rather than moving the day list into the client.
-export function DayShell({ date, hours, summary = null, children }) {
+export function DayShell({ date, summary = null, children }) {
   const done = useContext(DayDoneCtx);
   const ctx = useContext(BatchCtx);
   if (!done?.readyOn?.(date)) return children;
+  // THE DATE AND THE HOURS STAY OFF THIS ROW since 2026-09-08 - the shell sits
+  // under the day pane's own heading now, which already says both.
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-      <span className="min-w-0">
-        <span className="font-mono text-sm font-semibold text-foreground">{date}</span>
-        <span className="ml-3 text-sm text-emerald-700 dark:text-emerald-400">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-fill px-3.5 py-2.5">
+      <span className="flex min-w-0 items-center gap-2 text-sm text-muted">
+        <CircleCheck size={15} strokeWidth={1.8} aria-hidden="true" className="flex-none text-emerald-500" />
+        <span className="min-w-0 font-medium text-foreground">
           {[ctx?.summaryFor?.(date), summary].filter(Boolean).join(" · ") || "Answered"}
         </span>
-        {hours != null && (
-          <span className="ml-3 text-xs text-muted">{hours} hrs</span>
-        )}
       </span>
       <button
         type="button"
         onClick={() => done.unmarkReady(date)}
-        className="rounded-lg border border-border-strong px-3 py-1 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+        className="rounded-[9px] px-3 py-1.5 text-[13px] font-medium text-muted transition-colors hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
       >
         Change this
       </button>
@@ -2144,7 +2153,14 @@ export function BatchProvider({
     .map(({ q, v }) => {
       const said = v ? label(q, v) : null;
       if (!said) return null;
-      const times = (q.needs || []).map((need) => rawAt(q, need.slot)).filter(Boolean);
+      // the times read back as CLOCK TIMES, not the digits somebody typed -
+      // "Took it, 115" said nothing; "Took it, 1:15 PM" is the record
+      const times = (q.needs || [])
+        .map((need) => {
+          const m = minutesAt(q, need);
+          return m ? formatTimeDisplay(m) : rawAt(q, need.slot);
+        })
+        .filter(Boolean);
       return times.length ? `${said}, ${times.join(", ")}` : said;
     })
     .filter(Boolean)
@@ -2216,6 +2232,10 @@ export function BatchProvider({
   // not provided, so one of two is the same premium as none of two. What was
   // wrong was the RECORD, and the time for the ten they did get.
   const owedOn = (q) => (q.row?.part === "rest" ? (q.needs || []).length : 1);
+  // the block's own title and the word its sentences use - his design,
+  // 2026-09-08: the kind is the heading, the finding is the line under it.
+  const titleFor = (q) => (q.row?.part === "meal" ? "Meal break" : owedOn(q) >= 2 ? "Rest breaks" : "Rest break");
+  const partWord = (q) => (q.row?.part === "meal" ? "meal break" : owedOn(q) >= 2 ? "breaks" : "break");
   const optionsFor = (q) => {
     if (noRoom(q)) return ["no"];
     return owedOn(q) >= 2 ? ["yes", "partial", "no"] : ["yes", "no"];
@@ -2256,12 +2276,15 @@ export function BatchProvider({
     waiting?.has?.(q.id) ? (
       <span className="text-xs text-muted">waiting on the question above</span>
     ) : noRoom(q) ? null : (
+    // A SEGMENTED CONTROL, his rendition 2026-09-08 (superseding the chip
+    // round from earlier the same day): quiet track, the picked answer as the
+    // raised segment. The focus ring is OURS - Safari's system-accent ring on
+    // a click was clashing with the control.
     // FULL WIDTH AND 44px ON A PHONE. This pair is the whole point of the page
-    // and it was 32px tall with the two answers a few pixels apart, which is a
-    // mis-tap on a screen where the two answers mean opposite things. Unchanged
-    // above sm, where a pointer is doing the work.
-    <span className="flex w-full overflow-hidden rounded-lg border border-border-strong sm:w-auto">
-      {optionsFor(q).map((opt, i) => (
+    // and the two answers mean opposite things. Unchanged above sm, where a
+    // pointer is doing the work.
+    <span role="group" aria-label={`Did you take your ${partWord(q)}?`} className="inline-flex w-full gap-0.5 rounded-[8px] bg-fill p-[3px] sm:w-auto">
+      {optionsFor(q).map((opt) => (
         <button
           key={opt}
           type="button"
@@ -2271,13 +2294,10 @@ export function BatchProvider({
             setConfirming(false);
             setPicked((p) => ({ ...p, [q.id]: (q.id in p ? p[q.id] : savedValue(q)) === opt ? null : opt }));
           }}
-          className={`min-h-11 flex-1 px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-50 sm:min-h-0 sm:flex-none ${
-            i > 0 ? "border-l border-border-strong" : ""
-          } ${
-            // one colour, like the options above - see the note on `Choice`
+          className={`min-h-11 flex-1 rounded-[6px] px-4 py-1.5 text-[13px] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand disabled:opacity-50 sm:min-h-9 sm:flex-none ${
             v === opt
-              ? "bg-brand text-white"
-              : "bg-surface-2 text-muted hover:bg-surface hover:text-foreground"
+              ? "seg-on font-medium text-foreground"
+              : "font-medium text-muted hover:text-foreground"
           }`}
         >
           {label(q, opt)}
@@ -2332,18 +2352,35 @@ export function BatchProvider({
       { lateMinutes: q.row?.lateMinutes ?? null },
     );
     return (
-      <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-700/70 dark:bg-amber-950/30">
-        <p className="text-sm font-semibold text-foreground">{ask.ask}</p>
+      /* HIS MISSED LAYOUT, 2026-09-08: the why as its own section under a
+         hairline - heading, the day named in the line under it, the label
+         and the box. The engine's own placeholder stays; the precise ask
+         sentence lives on in the sheet's record. */
+      <div className="mt-6 border-t border-sep pt-6">
+        <p className="text-base font-medium tracking-tight text-foreground">
+          Why did you miss your {partWord(q)}?
+        </p>
+        <p className="mt-1 text-[13px] text-muted">
+          Tell us what happened on {dayLong(q.date)}.
+        </p>
+        <label htmlFor={`reason-${q.id}`} className="mt-5 block text-[13px] font-medium text-foreground">Your reason</label>
         <textarea
+          id={`reason-${q.id}`}
           rows={2}
           value={reasons[q.id] ?? already ?? ""}
           onChange={(e) => setReasons((r) => ({ ...r, [q.id]: e.target.value }))}
           placeholder={ask.placeholder}
-          className="mt-2 min-h-[5.5rem] w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground sm:min-h-0"
+          className="mt-2 min-h-[5.5rem] w-full rounded-[9px] border border-border bg-fill px-3 py-3 text-base text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand sm:text-sm"
         />
-        {!said ? (
-          <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
-            Needed before this can be saved. It goes at the bottom of your timesheet.
+        {(reasons[q.id] ?? already ?? "").trim() ? (
+          <p className="mt-1.5 flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-700 dark:text-emerald-400">
+            <CircleCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+            Answer ready to review.
+          </p>
+        ) : null}
+        {!said && !(reasons[q.id] ?? "").trim() ? (
+          <p className="mt-1.5 text-[12.5px] text-muted">
+            Add a reason to complete this answer. It goes at the bottom of your timesheet.
           </p>
         ) : already ? (
           /* WHERE THE WORDS IN THE BOX CAME FROM. Without this an answer they
@@ -2351,10 +2388,11 @@ export function BatchProvider({
              filled in for them, which is the one thing a reason must not look
              like. Editing it replaces it; there is only ever one per day per
              break, however many questions ask about that day. */
-          <p className="mt-1.5 text-xs text-muted">
-            This is what you told us for {q.date} already. Change it here if it is not right.
+          <p className="mt-1.5 text-[12.5px] text-muted">
+            This is what you told us for {dayLong(q.date)} already. Change it here if it is not right.
           </p>
         ) : null}
+        <p className="mt-2 text-xs text-muted">You&apos;ll review your answers before submitting.</p>
       </div>
     );
   };
@@ -2362,26 +2400,30 @@ export function BatchProvider({
   const renderTimes = ({ q, v }) => {
     if ((v !== "yes" && v !== "partial") || !(q.needs || []).length) return null;
     const partial = v === "partial";
+    const one = q.needs.length === 1 || partial;
+    const oneWord = q.row?.part === "meal" ? "meal break" : one ? "break" : "breaks";
+    const windows = q.needs.length === 1 ? (q.needs[0].window || []) : [];
+    const stillOwed = !partial && q.needs.some((n) => !minutesAt(q, n));
     return (
-      <div className="mt-2 w-full rounded-lg border border-border-strong bg-surface-2 p-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-faint">
-          When did you take {q.needs.length === 1 || partial ? "it" : "them"} on {q.date}?
+      /* HIS FOLLOW-UP LAYOUT, 2026-09-08: a section under a hairline - the
+         question as its heading (no date; the day pane's heading names it),
+         the worked spans, OUR loose-time boxes exactly as they were (his
+         call), the fit-within sentence, then the two helper lines. */
+      <div className="mt-6 border-t border-sep pt-6">
+        <p className="text-base font-medium tracking-tight text-foreground">
+          When did you take your {oneWord}?
         </p>
         {partial && (
-          <p className="mt-1 text-xs text-muted">
+          <p className="mt-1 text-[13px] text-muted">
             Fill in the {q.needs.length === 2 ? "one" : "ones"} you did get and leave the rest
             blank. The record will say which you had.
           </p>
         )}
-        {/* THEIR OWN SHIFTS, not the gaps between them. Mánu 2026-08-11: a rest
-            has to sit inside a service, so offering the unscheduled gap was
-            proposing the very thing the card above penalises. */}
-        {(q.needs[0]?.shifts || []).length > 0 && (
-          <p className="mt-1.5 text-xs text-muted">
-            You worked{" "}
-            <b className="font-mono text-foreground">{q.needs[0].shifts.join("  ")}</b> that day.
-          </p>
-        )}
+        {/* the Worked spans line came off 2026-09-08, his call - the calendar
+            above already draws every punched stretch, and the fit-within
+            sentence below is the constraint that decides the answer (the
+            window is a SUBSET of the worked day, so nothing binding is
+            lost). */}
         {(q.needs[0]?.known || []).length > 0 && (
           <p className="mt-1 text-xs text-muted">
             Already on record:{" "}
@@ -2397,16 +2439,32 @@ export function BatchProvider({
             .
           </p>
         )}
-        <div className="mt-2 space-y-2">
+        <div className="mt-5 space-y-2">
           {q.needs.map((need) => {
             const raw = rawAt(q, need.slot);
             const mins = minutesAt(q, need);
             const bad = badTime(q, need);
             return (
-              <div key={need.slot} className="flex flex-wrap items-center gap-2.5">
-                <label htmlFor={`t-${q.id}-${need.slot}`} className="w-28 text-sm text-foreground">
-                  {need.label}
-                </label>
+              <div key={need.slot} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] bg-fill px-3 py-4 sm:px-4">
+                <span className="min-w-20 flex-1">
+                  <label
+                    htmlFor={`t-${q.id}-${need.slot}`}
+                    className="block text-sm font-semibold text-foreground"
+                  >
+                    {/* "Start time", his call - a two-slot day keeps the
+                        engine's labels so the boxes stay tellable apart */}
+                    {q.needs.length === 1 ? "Start time" : need.label}
+                  </label>
+                  <span className="block text-[13px] text-muted">
+                    {/* `mins` is "HH:MM", so the end is computed in minutes and
+                        folded back - string + number was printing "01:3110" */}
+                    {mins
+                      ? need.minutes
+                        ? `${formatTimeDisplay(mins)} – ${formatTimeDisplay(addMinutes(mins, need.minutes))}`
+                        : formatTimeDisplay(mins)
+                      : need.minutes ? `${need.minutes} minutes` : ""}
+                  </span>
+                </span>
                 <input
                   id={`t-${q.id}-${need.slot}`}
                   type="text"
@@ -2415,11 +2473,9 @@ export function BatchProvider({
                   disabled={pending}
                   value={raw || (need.prefill && !(q.id in times && need.slot in (times[q.id] || {})) ? need.prefill : raw)}
                   onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
-                  placeholder="e.g. 115 for 1:15"
-                  className={`w-32 rounded-lg border bg-surface px-3 py-1.5 text-sm text-foreground ${
-                    bad ? "border-rose-500"
-                      : mins ? "border-emerald-500"
-                        : partial ? "border-border-strong" : "border-amber-500/70"
+                  className={`w-32 rounded-[9px] border bg-surface px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
+                    bad ? "border-rose-400"
+                      : mins ? "border-emerald-400/80" : "border-border"
                   }`}
                 />
                 {false && need.suggest && (
@@ -2432,17 +2488,44 @@ export function BatchProvider({
                     use {need.suggest}
                   </button>
                 )}
-                <span className={`text-xs ${bad ? "text-rose-600 dark:text-rose-400" : "text-muted"}`}>
+                <span className={`empty:hidden w-full text-xs ${bad ? "text-rose-600 dark:text-rose-400" : "text-muted"}`}>
                   {bad === "outside"
                     ? "that is not inside any shift you worked that day"
                     : bad === "window"
                       ? `that has to be inside ${(need.window || []).join(" or ")}`
-                      : mins && raw.trim() ? `reads as ${formatTimeDisplay(mins)}` : need.hint}
+                      : mins ? null : q.needs.length === 1 ? null : need.hint}
                 </span>
               </div>
             );
           })}
         </div>
+        {/* the constraint as a sentence under the box when there is one slot -
+            with two slots each row keeps its own inline hint above */}
+        {q.needs.length === 1 && (
+          windows.length > 0 ? (
+            <p className="mt-3 text-xs leading-relaxed text-muted">
+              Your break must fit within{" "}
+              {windows.map((w, i) => (
+                <span key={w}>
+                  {i > 0 ? " or " : ""}
+                  <b className="font-medium tabular-nums text-foreground">{w}</b>
+                </span>
+              ))}
+              .
+            </p>
+          ) : q.needs[0].hint ? (
+            <p className="mt-2 text-[13px] text-muted">{q.needs[0].hint}</p>
+          ) : null
+        )}
+        {stillOwed || q.needs.some((n) => badTime(q, n)) ? (
+          <p className="mt-6 text-xs text-muted">Enter the start time to complete this answer.</p>
+        ) : (
+          <p className="mt-6 flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-700 dark:text-emerald-400">
+            <CircleCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+            Answer ready to review.
+          </p>
+        )}
+        <p className="mt-2 text-xs text-muted">You&apos;ll review your answers before submitting.</p>
       </div>
     );
   };
@@ -2475,7 +2558,7 @@ export function BatchProvider({
   return (
     <BatchCtx.Provider
       value={{
-        renderToggle, renderTimes, renderReason, missingLabel, noRoom, byDay, list, copy,
+        renderToggle, renderTimes, renderReason, missingLabel, noRoom, titleFor, partWord, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
         dirty, missingTimes, missingTimeDates, missingReasons, undecided, missed, took, hours, base, answeredAll,
         ready,
@@ -2497,7 +2580,7 @@ export function BatchProvider({
 export function BatchDays({ dates }) {
   const ctx = useContext(BatchCtx);
   if (!ctx) return null;
-  const { renderToggle, renderTimes, renderReason, missingLabel, noRoom } = ctx;
+  const { renderToggle, renderTimes, renderReason, missingLabel, noRoom, titleFor, partWord } = ctx;
   const byDay = dates ? ctx.byDay.filter((d) => dates.includes(d.date)) : ctx.byDay;
   if (!byDay.length) return null;
 
@@ -2510,77 +2593,40 @@ export function BatchDays({ dates }) {
           to the full premium, and that is now nine to thirteen. The friction
           landed on the answer that pays people, which was raised before it was
           built and is his call. */}
-      <ul className="mt-3 divide-y divide-border">
-        {byDay.map(({ date, hours, items }) => (
-          /* NO ROW TINT. A red wash across the whole line was louder than the
-             answer it was reporting and ran past the words it belonged to. The
-             segment itself carries the colour. */
-          /* ANCHORED, so the missing-times warning can send somebody here.
-             Digits only: "07/16/26" carries slashes, not valid in an id.
-             scroll-mt-24 keeps the row clear of the header when jumped to. */
-          <li key={date} id={dayAnchorId(date)} className="scroll-mt-24 py-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-              <span className="min-w-0">
-                <span className="font-mono text-sm text-foreground">{date}</span>
-                <span className="ml-3 text-xs text-muted">
-                  {items.length === 1 ? `${missingLabel(items[0].q)} · ` : ""}
-                  {hours} hrs worked
-                </span>
-                {/* WHY THERE IS NO CONTROL, next to the finding rather than in
-                    the slot the control would have used. `justify-between`
-                    pushes that slot to the far right, which is right for a
-                    segmented toggle and wrong for a sentence: it left the
-                    explanation stranded at the other end of a wide row from the
-                    thing it explains, and out of line with every other row. */}
-                {items.length === 1 && noRoom(items[0].q) && (
-                  <span className="ml-3 text-xs text-muted">
-                    there is no gap in this day long enough to have taken one
-                  </span>
-                )}
-                {items.length > 1 && (
-                  <span className="ml-2 rounded-full border border-border-strong px-2 py-0.5 text-[11px] text-muted">
-                    2 to answer
-                  </span>
-                )}
-              </span>
-              {items.length === 1 && renderToggle({ item: items[0] })}
-            </div>
-            {/* UNDER THE FLAG IT BELONGS TO, NOT UNDER THE LIST.
-                A day short both a lunch and its tens has two rows, and the time
-                and reason boxes for BOTH were rendered after BOTH toggles - so
-                the lunch's reason box appeared below the rest question, and on a
-                day where both were answered you got two identical "Can you tell
-                us why?" boxes stacked with nothing saying which was which.
-                Each row now carries its own. */}
-            {items.length > 1 &&
-              items.map((item) => (
-                <div
-                  key={item.q.id}
-                  className="mt-2 border-l-2 border-border py-1 pl-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                    <span className="min-w-0 text-sm text-foreground">
-                      {missingLabel(item.q)}
-                      {noRoom(item.q) && (
-                        <span className="ml-3 text-xs text-muted">
-                          there is no gap in this day long enough to have taken one
-                        </span>
+      <ul className="mt-2 divide-y divide-sep">
+        {byDay.map(({ date, items }) => (
+          /* ONE TITLED SECTION PER DECISION, his design 2026-09-08: the kind
+             as the heading ("Rest break"), the finding under it, the
+             segmented answer on the right, the follow-ups below. A day short
+             both a lunch and its tens is two sections in the same li.
+             ANCHORED, so the missing-times warning can send somebody here.
+             Digits only: "07/16/26" carries slashes, not valid in an id. */
+          <li key={date} id={dayAnchorId(date)} className="scroll-mt-24">
+            {items.map((item) => {
+              const { q, v } = item;
+              return (
+                <div key={q.id} className="border-t border-sep py-6 first:border-t-0 first:pt-3 last:pb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-4">
+                    <div className="min-w-0">
+                      <p className="text-[22px] font-semibold leading-tight tracking-tight text-foreground">
+                        {titleFor(q)}
+                      </p>
+                      <p className="mt-1 text-[13px] text-muted">{missingLabel(q)}.</p>
+                      {/* WHY THERE IS NO CONTROL, next to the finding rather
+                          than stranded in the control's slot. */}
+                      {noRoom(q) && (
+                        <p className="mt-0.5 text-[13px] text-muted">
+                          There is no gap in this day long enough to have taken one.
+                        </p>
                       )}
-                    </span>
+                    </div>
                     {renderToggle({ item })}
                   </div>
                   {renderTimes(item)}
                   {renderReason(item)}
                 </div>
-              ))}
-            {/* the single-decision day keeps its toggle up on the header row, so
-                its boxes follow directly under it and there is nothing to move */}
-            {items.length === 1 && (
-              <Fragment key={`t-${items[0].q.id}`}>
-                {renderTimes(items[0])}
-                {renderReason(items[0])}
-              </Fragment>
-            )}
+              );
+            })}
           </li>
         ))}
       </ul>
@@ -2591,6 +2637,38 @@ export function BatchDays({ dates }) {
 // THE ONE CONFIRM FOR THE WHOLE BATCH, wherever its rows ended up. Rendered once
 // per provider: after the list in "All questions", after the last day in "Day by
 // day". It still spells out the total before anything is written.
+// "07/16/26" -> "Thu, Jul 16" for the missing-time chips - the same label the
+// day rail wears, so the chip and the row it scrolls to read alike.
+const DAY_WORDS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_WORDS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const chipLabel = (date) => {
+  const [m, d, y] = String(date || "").split("/").map(Number);
+  if (!m || !d || !y) return date;
+  const at = new Date(2000 + y, m - 1, d);
+  return `${DAY_WORDS[at.getDay()]}, ${MONTH_WORDS[m - 1]} ${d}`;
+};
+
+// "13:31" + 10 -> "13:41", for reading a break's span back
+const addMinutes = (hhmm, add) => {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  const t = h * 60 + m + (add || 0);
+  return `${String(Math.floor(t / 60) % 24).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+};
+
+// and the long form for a sentence: "Thursday, July 16"
+const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const dayLong = (date) => {
+  const [m, d, y] = String(date || "").split("/").map(Number);
+  if (!m || !d || !y) return date;
+  const at = new Date(2000 + y, m - 1, d);
+  return `${DAY_FULL[at.getDay()]}, ${MONTH_FULL[m - 1]} ${d}`;
+};
+
 export function BatchConfirm() {
   const ctx = useContext(BatchCtx);
   if (!ctx) return null;
@@ -2610,10 +2688,39 @@ export function BatchConfirm() {
   const readyCount = days.filter((d) => ready?.has?.(d)).length;
   const leftCount = days.length - readyCount;
 
+  // NOTHING STANDS BETWEEN THEM AND SAVING - the green line's condition, and
+  // only while there is genuinely something to save.
+  const readyToSave =
+    !confirming && undecided.length === 0 && missingTimes === 0 && missingReasons === 0
+    && !(answeredAll && !dirty.length);
+
   return (
     <>
       {!confirming && (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3">
+          <div className="min-w-0">
+            <p className="text-[15px] font-semibold text-foreground">Save my answers</p>
+            {readyToSave && (
+              <p className="mt-1 flex items-center gap-2 text-[13px] text-muted">
+                <CircleCheck size={15} strokeWidth={1.8} aria-hidden="true" className="flex-none text-emerald-500" />
+                Every day has an answer. They are saved together as one set.
+              </p>
+            )}
+            {/* WHAT PRESSING IT WOULD ACTUALLY PUT ON RECORD. Ready is typed in
+                and collapsed, not saved - this is the one control that turns the
+                first into the second, so it is the one that has to say how many
+                are waiting on it. */}
+            {!readyToSave && readyCount > 0 && (
+              <p className="mt-1 text-[13px] text-muted">
+                <b className="font-semibold text-foreground">
+                  {readyCount === 1 ? "1 day ready" : `${readyCount} days ready`}
+                </b>
+                {leftCount > 0
+                  ? ` · ${leftCount} still open`
+                  : " · nothing else on this card"}
+              </p>
+            )}
+          </div>
           <button
             type="button"
             // EVERY DAY NEEDS AN ANSWER BEFORE ANY OF THEM SAVES, 2026-08-14.
@@ -2625,14 +2732,12 @@ export function BatchConfirm() {
             //
             // The reason survives the reversal, so the shape does too. It blocks
             // - nothing is written while a day is still open - but the block
-            // SAYS SO, in the line below and in the label, rather than the
-            // button going dead with the explanation somewhere off screen. That
-            // is the same treatment the missing times and missing reasons get,
-            // which is the family this now belongs to.
+            // SAYS SO, in the lines below and in the label, rather than the
+            // button going dead with the explanation somewhere off screen.
             disabled={pending}
             onClick={() => { if (!undecided.length) setConfirming(true); }}
             aria-disabled={undecided.length > 0}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:opacity-40"
+            className="flex-none rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             {/* THE BUTTON NAMES ITS ACTION. It carried the count for a while
                 and that made three tellings of one fact on one row - the label,
@@ -2640,104 +2745,94 @@ export function BatchConfirm() {
                 the sentence that also says what it stops. */}
             {answeredAll && !dirty.length ? "Answered" : "Save my answers"}
           </button>
-          {/* WHAT PRESSING IT WOULD ACTUALLY PUT ON RECORD. Ready is typed in
-              and collapsed, not saved - this is the one control that turns the
-              first into the second, so it is the one that has to say how many
-              are waiting on it. */}
-          {readyCount > 0 && (
-            <span className="text-sm text-muted">
-              <b className="text-foreground">
-                {readyCount === 1 ? "1 day ready" : `${readyCount} days ready`}
-              </b>
-              {leftCount > 0
-                ? ` · ${leftCount} still open`
-                : " · nothing else on this card"}
-            </span>
-          )}
         </div>
       )}
 
-      {/* SAYING YOU TOOK A BREAK IS ONLY HALF THE ANSWER. The record is the
-          thing that was missing, so a day claimed without a time is not a day
-          that has been answered. */}
-      {!confirming && missingTimes > 0 && (
-        <div className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
-          {/* THE SENTENCE IS UNCHANGED, word for word. What was missing was not
-              wording, it was WHERE - so the days are added under it rather than
-              the text being rewritten. */}
-          <p>
-            <b>{missingTimes} {missingTimes === 1 ? "time" : "times"} still to fill in.</b>{" "}
-            Nothing is submitted until every day you answered &ldquo;took them&rdquo; says when.
-          </p>
-          {/* ONE CHIP PER DAY, not per missing time: two blank tens on one day
-              are one place to go, and two identical chips would just be a
-              second thing to try. Scrolls rather than jumps, and centres the
-              row, because a day landed under the sticky header reads as the
-              link having done nothing. */}
-          {missingTimeDates.length > 0 && (
-            <p className="mt-2 flex flex-wrap gap-1.5">
-              {missingTimeDates.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById(dayAnchorId(d));
-                    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                  }}
-                  className="rounded-full border border-amber-500/60 px-2.5 py-1 font-mono text-xs font-semibold text-amber-900 transition hover:bg-amber-500/20 dark:text-amber-200"
-                >
-                  {d}
-                </button>
-              ))}
+      {/* WHAT STILL STANDS BETWEEN THEM AND SAVING - quiet lines under one
+          hairline since 2026-09-08 (his option B pick): every sentence word
+          for word as the amber boxes carried it, with the amber held to the
+          icons and the day chips. */}
+      {!confirming && (undecided.length > 0 || missingTimes > 0 || missingReasons > 0) && (
+        <div className="mt-4 grid gap-3 border-t border-sep pt-3.5">
+          {/* NOTHING SAVES WHILE A DAY IS STILL OPEN. The card commits every
+              one of its days in a single write - that is what makes it one card
+              and not thirteen - so a half-answered set is not a partial save,
+              it is a set somebody has not finished. */}
+          {undecided.length > 0 && (
+            <p className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+              <CircleAlert size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-500" />
+              <span>
+                {/* IT COUNTS ANSWERS, NOT DAYS AND NOT TIME LEFT. The wording
+                    before this put a number in front of the word day, and it
+                    was read as a number of days REMAINING - there is no due
+                    date on any of this. One date can carry two answers, a meal
+                    and its rests. */}
+                <b className="font-semibold text-foreground">
+                  {undecided.length === 1
+                    ? "One question here still needs an answer."
+                    : `${undecided.length} questions here still need an answer.`}
+                </b>{" "}
+                They are saved together, so none of them is recorded until all of them
+                have one.
+              </span>
+            </p>
+          )}
+
+          {/* SAYING YOU TOOK A BREAK IS ONLY HALF THE ANSWER. The record is the
+              thing that was missing, so a day claimed without a time is not a
+              day that has been answered. */}
+          {missingTimes > 0 && (
+            <div className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+              <Clock3 size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-500" />
+              <span>
+                {/* THE SENTENCE IS UNCHANGED, word for word. */}
+                <b className="font-semibold text-foreground">
+                  {missingTimes} {missingTimes === 1 ? "time" : "times"} still to fill in.
+                </b>{" "}
+                Nothing is submitted until every day you answered &ldquo;took them&rdquo; says when.
+                {/* ONE CHIP PER DAY, not per missing time: two blank tens on
+                    one day are one place to go. Scrolls rather than jumps, and
+                    centres the row, because a day landed under the sticky
+                    header reads as the link having done nothing. */}
+                {missingTimeDates.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById(dayAnchorId(d));
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                    className="ml-2 inline-flex rounded-[7px] bg-amber-500/15 px-2 py-0.5 align-baseline font-mono text-xs font-semibold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
+                  >
+                    {chipLabel(d)}
+                  </button>
+                ))}
+              </span>
+            </div>
+          )}
+
+          {/* AND SAYING YOU MISSED ONE IS ONLY HALF TOO. The why is the one
+              half no QSP export has a field for, so a day claimed as missed
+              without it records the violation and cannot say what caused it. */}
+          {missingReasons > 0 && (
+            <p className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+              <CircleAlert size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-500" />
+              <span>
+                <b className="font-semibold text-foreground">
+                  {missingReasons} {missingReasons === 1 ? "reason" : "reasons"} still to write.
+                </b>{" "}
+                Nothing is submitted until every day that needs one has it.
+              </span>
             </p>
           )}
         </div>
       )}
 
-      {/* NOTHING SAVES WHILE A DAY IS STILL OPEN. The card commits every one of
-          its days in a single write - that is what makes it one card and not
-          thirteen - so a half-answered set is not a partial save, it is a set
-          somebody has not finished. */}
-      {!confirming && undecided.length > 0 && (
-        <p className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
-          {/* IT COUNTS ANSWERS, NOT DAYS AND NOT TIME LEFT.
-              The wording before this put a number in front of the word day, and
-              it was read as a number of days REMAINING - there is no due date on
-              any of this. The word was wrong for a second reason too, which the
-              line beside the button had already noted: one date can carry two
-              answers, a meal and its rests.
-              Worded to avoid the old phrase rather than quoting it, because the
-              test below reads this file as text and a comment containing it
-              counts as another telling. */}
-          <b>
-            {undecided.length === 1
-              ? "One question here still needs an answer."
-              : `${undecided.length} questions here still need an answer.`}
-          </b>{" "}
-          They are saved together, so none of them is recorded until all of them
-          have one.
-        </p>
-      )}
-
-      {/* AND SAYING YOU MISSED ONE IS ONLY HALF TOO. The why is the one half no
-          QSP export has a field for, so a day claimed as missed without it
-          records the violation and cannot say what caused it. Same shape and
-          same place as the times warning above, because it is the same rule
-          pointed at the other answer. */}
-      {!confirming && missingReasons > 0 && (
-        <p className="mt-3 rounded-lg border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
-          <b>
-            {missingReasons} {missingReasons === 1 ? "reason" : "reasons"} still to write.
-          </b>{" "}
-          Nothing is submitted until every day that needs one has it.
-        </p>
-      )}
-
       {confirming && (
         <div
-          className="mt-3 rounded-lg border-2 border-brand bg-brand/10 p-4"
+          className="mt-3 rounded-xl bg-fill p-4"
         >
-          <p className="text-base font-semibold text-foreground">Are you sure you want to confirm?</p>
+          <p className="text-[15px] font-semibold text-foreground">Are you sure you want to confirm?</p>
           <div className="mt-2 space-y-1.5 text-sm text-muted">
             {/* EVERY TALLY AND EVERY FIGURE CAME OUT 2026-08-12, at Mánu's
                 instruction: the days-missed count, the penalty arithmetic
@@ -2753,10 +2848,7 @@ export function BatchConfirm() {
               type="button"
               disabled={pending}
               onClick={commit}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
-                // one colour, like the options - see the note on `Choice`
-                "bg-brand"
-              }`}
+              className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
             >
               Yes, confirm
             </button>
@@ -2764,7 +2856,7 @@ export function BatchConfirm() {
               type="button"
               disabled={pending}
               onClick={() => setConfirming(false)}
-              className="rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-muted"
+              className="rounded-[9px] px-4 py-2 text-[13.5px] font-medium text-muted transition-colors hover:bg-fill"
             >
               Go back
             </button>
@@ -2808,10 +2900,10 @@ export default function TimesheetQuestion({
   // wrong way round: a card where somebody reported twelve missed breaks went
   // green, which reads as "all settled, nothing owed".
   const tone = !allAnswered
-    ? "border-2 border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30"
+    ? "amber-tint-card shadow-sm night:ring-1 night:ring-border"
     : anyDeclined
-      ? "border-2 border-rose-400 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30"
-      : "border border-border-strong bg-surface-2";
+      ? "bg-rose-500/10 shadow-sm night:ring-1 night:ring-border"
+      : "bg-surface shadow-sm night:ring-1 night:ring-border";
   // a BATCH kind is answered day by day and committed in one go - see BatchCard.
   const batched = !!head.batch;
   // more than one question in a card means each one is its own pay decision and
@@ -2857,7 +2949,7 @@ export default function TimesheetQuestion({
   // identical to the long card; only the words around it are gone.
   if (terse) {
     return (
-      <div className="mt-3 border-l-2 border-amber-400 pl-3 dark:border-amber-700">
+      <div className="mt-3 border-l-2 border-amber-400/70 pl-3.5 dark:border-amber-600/60">
         <p className="text-sm font-semibold text-foreground">{c.short || c.title}</p>
         {c.dates?.length > 1 && (
           <p className="mt-1 font-mono text-xs text-muted">{c.dates.join("  ")}</p>

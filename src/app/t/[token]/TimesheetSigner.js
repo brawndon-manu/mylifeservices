@@ -156,7 +156,7 @@ export default function TimesheetSigner({
           aria-labelledby="sign-confirm-title"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
         >
-          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl bg-surface p-6 shadow-2xl night:ring-1 night:ring-border">
             <p id="sign-confirm-title" className="text-lg font-semibold text-foreground">
               Ready to sign?
             </p>
@@ -173,20 +173,20 @@ export default function TimesheetSigner({
                 2026-08-12 at Mánu's instruction. What is left is the count of
                 unanswered questions, that it is fine to leave them, and the two
                 buttons. The dialog talks about answering, not about pay. */}
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => gate.current?.(true)}
-                className="rounded-lg bg-brand-light px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-              >
-                Sign and submit
-              </button>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => gate.current?.(false)}
-                className="rounded-lg border border-border-strong px-4 py-2.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+                className="rounded-[9px] px-4 py-2.5 text-[13.5px] font-medium text-muted transition-colors hover:bg-fill"
               >
                 Go back and answer them
+              </button>
+              <button
+                type="button"
+                onClick={() => gate.current?.(true)}
+                className="rounded-[9px] bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark"
+              >
+                Sign and submit
               </button>
             </div>
 

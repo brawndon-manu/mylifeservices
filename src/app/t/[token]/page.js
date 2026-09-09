@@ -46,6 +46,7 @@ import LiveRefresh from "./LiveRefresh";
 import { getSheetVersion } from "@/lib/timesheet-presence";
 import ReviewerBar from "./ReviewerBar";
 import { restMealPolicyLink } from "@/lib/policy-form";
+import { Shield, CircleCheck, Clock3 } from "lucide-react";
 
 // no-login page where an employee reviews and signs their own timesheet. lives
 // outside /portal so proxy.js doesn't bounce it to login - the signed token IS
@@ -155,12 +156,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     const newer = await supersededBy(ts.batch.id);
     if (newer) {
       return (
-        <section className="mx-auto max-w-2xl px-6 py-16">
-          <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-6 dark:border-amber-900/50 dark:bg-amber-950/30">
-            <p className="text-base font-semibold text-amber-900 dark:text-amber-200">
+        <section className="portal-shell mx-auto max-w-2xl px-6 py-16">
+          <div className="amber-tint-card rounded-xl px-6 py-5 shadow-sm night:ring-1 night:ring-border">
+            <p className="text-[15px] font-semibold text-foreground">
               This timesheet was replaced.
             </p>
-            <p className="mt-2 text-sm leading-relaxed text-amber-800 dark:text-amber-200/80">
+            <p className="mt-2 text-sm leading-relaxed text-muted">
               A newer copy of this pay period&apos;s timesheet exists, and this
               link opens the old one. Answers and signatures only count on the
               newest copy. Use the most recent email from the office, or ask
@@ -609,7 +610,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // which is what the pdf route itself 404s on: no day rows.
   if (!(ts.data?.days || []).length) {
     return (
-      <section className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
+      <section className="portal-shell mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           This timesheet isn&apos;t ready yet
         </h1>
@@ -736,7 +737,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       </div>
 
       {ts.message && (
-        <div className="mt-4 rounded-xl border border-border bg-surface-2 p-4 text-sm leading-relaxed text-foreground">
+        <div className="mt-4 rounded-xl bg-surface px-4 py-3.5 text-sm leading-relaxed text-foreground shadow-sm night:ring-1 night:ring-border">
           {ts.message}
         </div>
       )}
@@ -752,17 +753,20 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       )}
 
       {ts.signedAt ? (
-        <div className="mt-6 rounded-xl border border-emerald-300/60 bg-emerald-50 p-5 dark:border-emerald-900/50 dark:bg-emerald-950/30">
-          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+        <div className="green-tint-card mt-6 flex items-start gap-2.5 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+          <CircleCheck size={16} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-emerald-600 dark:text-emerald-400" />
+          <div>
+          <p className="text-sm font-semibold text-foreground">
             Signed - thank you.
           </p>
-          <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-200/80">
+          <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
             You signed this on{" "}
             {new Date(ts.signedAt).toLocaleDateString("en-US", {
               month: "long", day: "numeric", year: "numeric",
             })}
             . Payroll has your copy - nothing else to do.
           </p>
+          </div>
         </div>
       ) : ts.heldAt ? (
         // THE OFFICE HOLD. Somebody on the admin side pressed Hold signing on
@@ -770,23 +774,26 @@ export default async function SignTimesheetPage({ params, searchParams }) {
         // the same shape as an open report below, and the server refuses a
         // signature behind it either way. The reason is the office's own note
         // and is deliberately not printed.
-        <div className="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-            The office is working on this timesheet.
-          </p>
-          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
-            Signing is closed while they do. You will get an updated timesheet
-            to review and sign when it is ready.
-          </p>
+        <div className="amber-tint-card mt-6 flex items-start gap-2.5 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+          <Clock3 size={16} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-600 dark:text-amber-400" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              The office is working on this timesheet.
+            </p>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
+              Signing is closed while they do. You will get an updated timesheet
+              to review and sign when it is ready.
+            </p>
+          </div>
         </div>
       ) : openCorrections.length > 0 ? (
         // they've told us something is wrong, so there's nothing to sign until
         // it's sorted. show what we have on record so they can see it landed.
-        <div className="mt-6 rounded-xl border border-amber-300/60 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+          <p className="text-sm font-semibold text-foreground">
             Payroll is looking at this one.
           </p>
-          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/80">
+          <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
             You reported{" "}
             {openCorrections.length === 1
               ? "a problem"
@@ -800,8 +807,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           </p>
           <ul className="mt-3 space-y-1">
             {openCorrections.map((c) => (
-              <li key={c.id} className="text-sm text-amber-800 dark:text-amber-200/80">
-                <span className="font-semibold">{c.date || "This timesheet"}</span>
+              <li key={c.id} className="text-[13px] text-muted">
+                <span className="font-semibold text-foreground">{c.date || "This timesheet"}</span>
                 {" - "}
                 {correctionLabel(c.kind)}
                 {c.note && <span className="block text-xs opacity-80">{c.note}</span>}
@@ -936,27 +943,28 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               is about to be printed on the sheet below - so it reads back here
               rather than only appearing on the document after they sign. */}
           {Object.keys(answers).length > 0 && (
-            <div className="mt-5 rounded-xl border border-border bg-surface-2 p-5">
-              <p className="text-sm font-semibold text-foreground">
+            <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+              <p className="text-[15px] font-semibold text-foreground">
                 What you have told us about this timesheet
               </p>
-              <ul className="mt-2.5 space-y-2">
+              <ul className="mt-1.5 divide-y divide-sep">
                 {answered.map((c) => {
                   const said = employeeResolution(c, questionFor(c));
                   const words = resolutionTakesReason(c) ? reasonFor(c) : null;
                   return (
-                    <li key={`${c.kind}-${c.date}`} className="text-sm text-muted">
-                      <span className="font-semibold text-foreground">{c.date}</span>
-                      {" - "}
-                      <span className={c.status === "declined" ? "text-emerald-700 dark:text-emerald-400" : ""}>
-                        {c.status === "accepted" ? "confirmed" : "corrected"}
-                      </span>
-                      {said && <span className="block text-xs opacity-80">{said}</span>}
-                      {words && (
-                        <span className="mt-1 block border-l-2 border-border-strong pl-2 text-xs italic opacity-80">
-                          &ldquo;{words}&rdquo;
+                    <li key={`${c.kind}-${c.date}`} className="flex gap-4 py-2.5 text-[13px]">
+                      <span className="w-24 flex-none font-semibold text-foreground">{tellDay(c.date)}</span>
+                      <span className="min-w-0 text-muted">
+                        <span className={c.status === "declined" ? "font-semibold text-emerald-700 dark:text-emerald-400" : "font-semibold text-foreground"}>
+                          {c.status === "accepted" ? "confirmed" : "corrected"}
                         </span>
-                      )}
+                        {said && <span className="mt-0.5 block text-faint">{said}</span>}
+                        {words && (
+                          <span className="mt-1 block border-l-2 border-sep pl-2 italic text-faint">
+                            &ldquo;{words}&rdquo;
+                          </span>
+                        )}
+                      </span>
                     </li>
                   );
                 })}
@@ -1040,18 +1048,23 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               press sign. Sending them the link is that way out, and it is not
               a preview-shaped act. */}
           {reviewing && (
-            <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                You cannot sign this for them.
-              </p>
-              <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
-                A signature has to come from {ts.sourceName}. Send them the link
-                and they can sign it themselves once you have been through it.
-              </p>
+            <div className="amber-tint-card mt-5 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+              <div className="flex items-start gap-2.5">
+                <Shield size={16} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-600 dark:text-amber-400" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">
+                    You cannot sign this for them.
+                  </p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
+                    A signature has to come from {reviewerName}. Send them the link
+                    and they can sign it themselves once you have been through it.
+                  </p>
+                </div>
+              </div>
               <PreviewSend
                 action={sendTimesheets.bind(null, ts.batch.id)}
                 timesheetId={ts.id}
-                name={ts.sourceName}
+                name={reviewerName}
                 email={ts.user?.email || null}
                 mode={sendModeSummary()}
                 alreadySent={!!ts.sentAt}
@@ -1072,6 +1085,16 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     </section>
     </div>
   );
+}
+
+// "07/16/26" -> "Thu, Jul 16" for the told-us rows.
+const TELL_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const TELL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function tellDay(date) {
+  const [m, d, y] = String(date || "").split("/").map(Number);
+  if (!m || !d || !y) return date;
+  const at = new Date(2000 + y, m - 1, d);
+  return `${TELL_DAYS[at.getDay()]}, ${TELL_MONTHS[m - 1]} ${d}`;
 }
 
 function Figure({ label, value, strong, tone }) {

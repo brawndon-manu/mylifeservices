@@ -87,7 +87,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
   const readOnly = !!signed;
 
   return (
-    <div className="mt-5 rounded-xl border border-border bg-surface-2 p-5">
+    <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
       <p className="text-base font-semibold text-foreground">
         Was there PTO or sick time in this pay period that is not on your schedule?
       </p>
@@ -113,7 +113,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
             <button
               type="button"
               onClick={startYes}
-              className="rounded-lg border border-border-strong bg-surface-2 px-3 py-1.5 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand"
+              className="rounded-[9px] bg-fill px-3.5 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2"
             >
               Change this
             </button>
@@ -123,7 +123,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                 type="button"
                 disabled={busy}
                 onClick={() => send("no", [])}
-                className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand disabled:opacity-50"
+                className="rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-50"
               >
                 No
               </button>
@@ -131,7 +131,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                 type="button"
                 disabled={busy}
                 onClick={startYes}
-                className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand disabled:opacity-50"
+                className="rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-50"
               >
                 Yes
               </button>
@@ -150,7 +150,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                   value={e.date}
                   disabled={busy}
                   onChange={(ev) => setEntry(i, { date: ev.target.value })}
-                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                  className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
                 >
                   {days.map((d) => (
                     <option key={d} value={d}>{d}</option>
@@ -163,7 +163,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                   value={e.kind}
                   disabled={busy}
                   onChange={(ev) => setEntry(i, { kind: ev.target.value })}
-                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                  className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
                 >
                   {Object.entries(TIME_OFF_TYPES).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
@@ -183,7 +183,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
                   disabled={busy}
                   onChange={(ev) => setEntry(i, { hours: ev.target.value })}
                   placeholder="e.g. 8"
-                  className="w-24 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                  className="w-24 rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
                 />
               </label>
               {entries.length > 1 && (
@@ -219,7 +219,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
               type="button"
               disabled={busy || !entries.length}
               onClick={() => send("yes", entries)}
-              className="rounded-lg bg-brand-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
             >
               {busy ? "Saving..." : "Save"}
             </button>
@@ -227,7 +227,7 @@ export default function TimeOffCard({ token, days, answer, signed, submitAction 
               type="button"
               disabled={busy}
               onClick={() => send("no", [])}
-              className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-foreground transition hover:border-brand hover:text-brand disabled:opacity-50"
+              className="rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 disabled:opacity-50"
             >
               No
             </button>

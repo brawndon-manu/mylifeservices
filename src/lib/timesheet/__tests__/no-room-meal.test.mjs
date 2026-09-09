@@ -65,15 +65,14 @@ test("and it does not render buttons at all", () => {
 });
 
 test("the sentence sits beside the finding, not in the control's slot", () => {
-  // the row is `justify-between`, which is right for a segmented toggle and
-  // wrong for a sentence - it stranded the explanation at the far end of a wide
-  // row from the thing it explains, and out of line with every other row
-  const hits = [...CARD.matchAll(/there is no gap in this day long enough to have taken one/g)];
-  assert.equal(hits.length, 2, "one for the single-decision row and one for a day with two");
-  for (const m of hits) {
-    const before = CARD.slice(Math.max(0, m.index - 400), m.index);
-    assert.match(before, /ml-3 text-xs text-muted/, "the sentence is not inline with the label");
-  }
+  // every decision is one titled section since 2026-09-08, so the sentence
+  // renders once, directly under the finding it explains - never in the
+  // slot the segmented control uses
+  const hits = [...CARD.matchAll(/There is no gap in this day long enough to have taken one/g)];
+  assert.equal(hits.length, 1, "once, in the per-decision section");
+  const before = CARD.slice(Math.max(0, hits[0].index - 600), hits[0].index);
+  assert.match(before, /\{missingLabel\(q\)\}/, "it sits under the finding line");
+  assert.doesNotMatch(before.slice(-260), /renderToggle/, "and not in the control's slot");
 });
 
 test("the answer is settled, so the confirm is not held waiting for it", () => {
@@ -100,7 +99,10 @@ test("a rostered lunch is never noRoom, however tight the day", () => {
 // below the rest question, and a day with both answered showed two identical
 // "Can you tell us why?" boxes with nothing saying which was which.
 test("a two-decision day renders each box inside its own row", () => {
-  const block = CARD.slice(CARD.indexOf("{items.length > 1 &&"), CARD.indexOf("{items.length === 1 && ("));
+  // one titled section per decision since 2026-09-08 - the boxes render
+  // inside the per-item map, so a day's two decisions can never share or
+  // swap their follow-ups
+  const block = CARD.slice(CARD.indexOf("{items.map((item) => {"), CARD.indexOf("</li>", CARD.indexOf("{items.map((item) => {")));
   assert.match(block, /\{renderTimes\(item\)\}/);
   assert.match(block, /\{renderReason\(item\)\}/);
 });

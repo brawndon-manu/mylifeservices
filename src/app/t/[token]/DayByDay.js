@@ -2,7 +2,7 @@ import { parseLooseTime } from "@/lib/loose-time";
 import { movesHours, shiftsOf } from "@/lib/timesheet/questions";
 import { ChevronDown } from "lucide-react";
 import DayCalendar from "./DayCalendar";
-import DayRail from "./DayRail";
+import DayRail, { DaysAnsweredCount } from "./DayRail";
 import { ViewToggle } from "./TimesheetViews";
 import AcknowledgeFix from "./AcknowledgeFix";
 import BreakReason from "./BreakReason";
@@ -59,8 +59,8 @@ function NeedsFixing({ items, token, ackOn, ackAction }) {
     return `${x}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h < 12 ? "a" : "p"}`;
   };
   return (
-    <div className="mb-3 rounded-xl border border-amber-400/70 bg-amber-50 p-4 dark:border-amber-600/60 dark:bg-amber-950/30">
-      <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+    <div className="amber-tint-card mb-3 rounded-xl p-4 shadow-sm night:ring-1 night:ring-border">
+      <p className="text-sm font-semibold text-foreground">
         {items.length === 1
           ? "One entry recorded backwards"
           : `${items.length} entries recorded backwards`}
@@ -69,17 +69,17 @@ function NeedsFixing({ items, token, ackOn, ackAction }) {
         {items.map((b, i) => (
           <li key={`fix-${b.min}-${i}`} className="text-sm">
             <div className="grid gap-x-3 gap-y-0.5 sm:grid-cols-[128px_minmax(0,1fr)]">
-              <span className="text-amber-800/80 dark:text-amber-300/80">QuickSolve has</span>
-              <span className="font-mono font-semibold text-amber-900 dark:text-amber-200">
+              <span className="text-muted">QuickSolve has</span>
+              <span className="font-mono text-[13px] font-semibold text-foreground">
                 {b.recorded?.from} to {b.recorded?.to}
               </span>
-              <span className="text-amber-800/80 dark:text-amber-300/80">It should read</span>
-              <span className="font-mono font-semibold text-emerald-800 dark:text-emerald-300">
+              <span className="text-muted">It should read</span>
+              <span className="font-mono text-[13px] font-semibold text-emerald-700 dark:text-emerald-400">
                 {clock(b.min)} to {clock(b.min + (b.minutes || 10))}
               </span>
             </div>
             {b.recorded?.why && (
-              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+              <p className="mt-1 text-xs text-muted">
                 {b.recorded.why} - so the entry reads as a break that ends before it starts.
               </p>
             )}
@@ -401,8 +401,9 @@ export default function DayByDay({
   };
 
   // ANSWERED, ON THE SERVER'S RECORD. The batched rows stage locally until the
-  // one confirm, so a day worked through but not yet committed reads as open
-  // here - the panel above is what shows Ready; the rail's tick means saved.
+  // one confirm, so this alone would leave a day worked through reading as
+  // open until Save. The rail and the count OR in the client's day-done state
+  // through useDayDone, so finishing a day moves them right away.
   const dayAnswered = (date) =>
     !plainBlockedOn(date) &&
     (batched || []).filter((q) => q.date === date).every((q) => !!answers?.[q.id]);
@@ -414,9 +415,6 @@ export default function DayByDay({
     needs: asksOn(d),
     done: asksOn(d) && dayAnswered(d.date),
   }));
-  const needDays = railDays.filter((d) => d.needs).length;
-  const answeredDays = railDays.filter((d) => d.needs && d.done).length;
-
   const panes = shown.map((day) => {
         const mine = anchored.get(day.date) || [];
         const elsewhere = alsoAsked.get(day.date) || [];
@@ -430,20 +428,15 @@ export default function DayByDay({
             {...(stacked ? { id: `day-${day.date}` } : {})}
             className={stacked ? "scroll-mt-24 px-4 py-5 sm:px-6" : "p-4 sm:p-5"}
           >
-            <DayShell
-              date={day.date}
-              hours={(Math.round(onFile(day) * 100) / 100).toFixed(2)}
-              /* a day with no batched row has no staged summary to show, so the
-                 plain cards say what was settled instead */
-              summary={(anchored.get(day.date) || [])
-                .map((g) => saidById[g[0].id])
-                .filter(Boolean)
-                .join(" · ") || null}
-            >
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div className="min-w-0">
-                <h3 className="text-[17px] font-semibold tracking-tight text-foreground">
-                  {dayLabel(day.date, "long")}
+                {/* two tones, his design: the weekday quiet, the date itself
+                    carrying the calendar red */}
+                <h3 className="text-[17px] font-semibold tracking-tight">
+                  <span className="text-muted">{dayLabel(day.date, "long").split(", ")[0]}, </span>
+                  <span className="text-rose-600 dark:text-rose-400">
+                    {dayLabel(day.date, "long").split(", ").slice(1).join(", ")}
+                  </span>
                 </h3>
                 {/* the punched span reads under the title in BOTH arrangements
                     - his reference shows it on the rail pane too */}
@@ -519,6 +512,20 @@ export default function DayByDay({
               </div>
               )}
               <div className="mt-4 min-w-0">
+              {/* THE SHELL WRAPS ONLY THE QUESTIONS, 2026-09-08 - a finished
+                  day keeps its heading and its calendar (the record somebody
+                  may still want to read) and collapses the work below them.
+                  Wrapping the whole pane left one summary line stranded in a
+                  tall empty box beside the rail. */}
+              <DayShell
+                date={day.date}
+                /* a day with no batched row has no staged summary to show, so
+                   the plain cards say what was settled instead */
+                summary={(anchored.get(day.date) || [])
+                  .map((g) => saidById[g[0].id])
+                  .filter(Boolean)
+                  .join(" · ") || null}
+              >
                 {/* THE HOUR-MOVING QUESTION FIRST, THEN THE BREAKS ROW.
                     A locked row says "waiting on the question above", and the
                     question it waits on is a plain card - so drawing the batch
@@ -539,7 +546,7 @@ export default function DayByDay({
                   ackAction={ackAction}
                 />
                 {(dpNotes?.[day.date] || []).length > 0 && (
-                  <div className="mb-3 rounded-lg border border-border bg-surface-2 px-3.5 py-2.5">
+                  <div className="mb-3 rounded-xl bg-fill px-3.5 py-2.5">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">
                       Your QuickSolve notes
                     </p>
@@ -595,9 +602,9 @@ export default function DayByDay({
                   ) : (
                     <p className="text-sm text-muted">Nothing to check on this day.</p>
                   ))}
+              </DayShell>
               </div>
             </div>
-            </DayShell>
           </div>
         );
       });
@@ -610,11 +617,9 @@ export default function DayByDay({
       <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <h2 className="text-[17px] font-semibold tracking-tight text-foreground">Your days</h2>
-          {needDays > 0 && (
-            <p className="mt-0.5 text-[12.5px] text-faint">
-              {answeredDays} of {needDays} day{needDays === 1 ? "" : "s"} answered
-            </p>
-          )}
+          {/* counted in the client so a day finished in this tab moves the
+              number before Save does - the rings and the count must agree */}
+          <DaysAnsweredCount days={railDays} />
         </div>
         <ViewToggle />
       </div>
@@ -691,12 +696,12 @@ export default function DayByDay({
           <BatchHeading
             question={batched[0]}
             standing={standing}
-            className="rounded-xl border-2 border-amber-400 bg-amber-50 p-5 dark:border-amber-700 dark:bg-amber-950/30"
+            className="amber-tint-card rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border"
           />
           {daysView}
           {/* ONE CONFIRM FOR ALL OF THEM, after the last day - the same single
               commit the other view makes. */}
-          <div className="mt-5 rounded-xl bg-surface-2 p-5 night:ring-1 night:ring-border">
+          <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
             <BatchConfirm />
           </div>
         </BatchProvider>
