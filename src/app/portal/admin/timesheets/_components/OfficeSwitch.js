@@ -32,7 +32,7 @@ export default function OfficeSwitch({ current }) {
             <span
               key={o.key}
               aria-current="page"
-              className="rounded-[7px] bg-surface px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground shadow-sm"
+              className="seg-on rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground"
             >
               {o.label}
             </span>

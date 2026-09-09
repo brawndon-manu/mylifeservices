@@ -69,7 +69,7 @@ export default function ReviewerBar({
       on
         ? tone === "rose"
           ? "bg-rose-200 font-semibold text-rose-900 dark:bg-rose-900/70 dark:text-rose-200"
-          : "bg-surface font-semibold text-foreground shadow-sm"
+          : "seg-on font-semibold text-foreground"
         : "font-medium text-muted hover:text-foreground"
     }`;
 

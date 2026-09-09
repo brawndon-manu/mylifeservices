@@ -174,7 +174,7 @@ function Segmented({ options, value, onPick, label }) {
             aria-checked={on}
             onClick={() => onPick(o.value)}
             className={`flex-1 rounded-[7px] py-1.5 text-[12.5px] transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${
-              on ? "bg-surface font-semibold text-foreground shadow-sm" : "font-medium text-muted"
+              on ? "seg-on font-semibold text-foreground" : "font-medium text-muted"
             }`}
           >
             {o.label}

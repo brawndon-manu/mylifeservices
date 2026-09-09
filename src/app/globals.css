@@ -176,6 +176,19 @@ body {
   color: var(--accent);
 }
 
+/* THE RAISED SEGMENT of a segmented control. bg-surface was the old raised
+   tone and it disappears the moment the control sits ON a surface card in a
+   dark theme - the picked segment matched the card exactly and read as
+   unchanged. Light keeps the white pill; dark raises a step ABOVE the card. */
+.seg-on {
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+.dark .seg-on {
+  background: var(--surface-3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
 /* inside the portal the corner accessibility button retires: appearance
    lives in the desktop toolbar's pill, and the full accessibility controls
    sit on the Settings page. KEYED ON THE PORTAL CHROME, not on the token

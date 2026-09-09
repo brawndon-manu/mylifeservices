@@ -41,7 +41,7 @@ export function ViewToggle() {
           aria-pressed={ctx.view === v.key}
           className={`rounded-[7px] px-3.5 py-1.5 text-[12.5px] transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${
             ctx.view === v.key
-              ? "bg-surface font-semibold text-foreground shadow-sm"
+              ? "seg-on font-semibold text-foreground"
               : "font-medium text-muted hover:text-foreground"
           }`}
         >
