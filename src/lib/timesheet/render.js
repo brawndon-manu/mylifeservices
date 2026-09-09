@@ -18,7 +18,10 @@ import { recordedBreaksFor, insertRecordedBreaks, withStatedRest, withStatedBrea
 import { restAttested } from "./rest-attestation.js";
 // the time-off line's one wording - shared with nothing else on purpose, so
 // the sheet and the tests read the same sentence
-import { timeOffLine, timeOffTotals } from "./time-off.js";
+import { timeOffLine, timeOffTotals, TIME_OFF_KIND, TIME_OFF_TYPES } from "./time-off.js";
+import { claimsOf } from "./claim-signing.js";
+import { clockLabel } from "./work-slots.js";
+import { CORRECTION_KINDS } from "./corrections.js";
 import { monthNameFor } from "./mock-period.js";
 
 // read straight off disk - this only ever runs server-side.
@@ -247,6 +250,89 @@ export function buildColumns(days, neededPunches = Infinity, pageWidth = PAGE_W)
   return { COLUMNS: cols, IDX, xs, right: x };
 }
 
+// THE PENDING DOCUMENT (Mánu 2026-09-09, mock C of three).
+//
+// A signature used to be refused while a report was open, so the person who
+// found the mistake waited with no document at all. The sheet's own attestation
+// is why: "all hours I worked during the pay period recorded above are the
+// actual hours I worked" - signing that on a sheet you have just disputed is
+// signing something false. That sentence, not the layout, shaped this.
+//
+// So while a claim is open the document is two things. Page 1 is the timesheet
+// AS RECORDED, carrying no attestation and no signature; page 2, "Reported
+// Changes", carries the claim, the attestation to the claim, the signature, and
+// payroll's decision box. The person signs what they are asking for, and if
+// payroll grants exactly that, the signature stands - see claim-signing.js.
+//
+// Copy approved 2026-09-09. Hyphens, never dashes, on anything printed.
+const PAGE_ONE_NOTE =
+  "This page prints the timesheet as recorded. It carries no attestation and no signature while a report is open.";
+const bandTitle = (n) => `NOT FINAL - see page ${n}`;
+const bandBody = (count) =>
+  `The employee has reported ${count} ${count === 1 ? "change" : "changes"} to this timesheet.`;
+// "page 1" on a one-page sheet, which is nearly every sheet; a period that
+// spills onto a second page names the range, so the sentence stays true.
+const claimAttest = (sheetPages) =>
+  "I attest that the changes listed on this page are true and complete, and that apart from them the hours recorded on " +
+  (sheetPages <= 1 ? "page 1" : `pages 1 to ${sheetPages}`) +
+  " are the actual hours I worked. I understand payroll has not yet decided on these changes.";
+
+// ONE PRINTABLE LINE PER REPORTED CHANGE, in the words of the mock. Only the
+// claims still waiting on payroll: a decided claim is either on page 1 already
+// (accepted, the day rebuilt) or is not a change this document asks for. A
+// time-off answer is one row holding several days, each its own line, and a
+// day already on the calendar is dropped the same way - it rides the grid as
+// a PTO row by then. Exported so the sentence can be pinned without a render.
+const f2c = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
+const dateKey = (s) => { const [m, d, y] = String(s || "").split("/"); return `${y}${m}${d}`; };
+export function claimLines(claims, days = [], acceptedTimeOff = []) {
+  const byDate = new Map((days || []).map((d) => [d.date, d]));
+  const recorded = (date) => {
+    const d = byDate.get(date);
+    return d ? `The timesheet records ${f2c(d.paidHours)}.` : "The timesheet records no shift.";
+  };
+  const joinAnd = (xs) =>
+    xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+  const spans = (slots) =>
+    (slots || [])
+      .filter((sl) => Number.isFinite(sl?.from) && Number.isFinite(sl?.to))
+      .map((sl) => `${clockLabel(sl.from)} to ${clockLabel(sl.to)}`);
+  const out = [];
+  for (const c of claimsOf(claims)) {
+    if (c.kind === TIME_OFF_KIND) {
+      if (c.choice !== "yes") continue;
+      for (const e of Array.isArray(c.timeOff) ? c.timeOff : []) {
+        if (!e?.date || !(Number(e.hours) > 0)) continue;
+        const kind = e.kind === "sick" ? "sick" : "pto";
+        if ((acceptedTimeOff || []).some((a) => a.date === e.date && (a.kind === "sick" ? "sick" : "pto") === kind)) continue;
+        out.push({
+          date: e.date,
+          text: `Paid leave not on my schedule. ${f2c(e.hours)} hours ${TIME_OFF_TYPES[kind]}. ${recorded(e.date)}`,
+          note: null,
+        });
+      }
+      continue;
+    }
+    if (c.status !== "open") continue;
+    const label = CORRECTION_KINDS[c.kind]?.label;
+    if (!label) continue;
+    let text = `${label}.`;
+    if (c.kind === "hours" || c.kind === "day_missing") {
+      const worked = spans(c.statedSlots);
+      const hrs = c.claimedHours != null ? `${f2c(c.claimedHours)} hours` : null;
+      if (worked.length && hrs) text += ` I worked ${joinAnd(worked)}, ${hrs}.`;
+      else if (worked.length) text += ` I worked ${joinAnd(worked)}.`;
+      else if (hrs) text += ` I worked ${hrs}.`;
+    }
+    const breaks = (c.statedBreaks || []).filter((b) => b?.from && b?.to);
+    if (breaks.length) text += ` Taken ${joinAnd(breaks.map((b) => `${b.from} to ${b.to}`))}.`;
+    if (c.date) text += ` ${recorded(c.date)}`;
+    out.push({ date: c.date || "", text, note: c.note ? String(c.note).trim() || null : null });
+  }
+  // by day, the whole-sheet ones last
+  return out.sort((a, b) => (a.date && b.date ? dateKey(a.date).localeCompare(dateKey(b.date)) : a.date ? -1 : b.date ? 1 : 0));
+}
+
 export async function renderCorrected(sheet, opts = {}) {
   // what the two reports recorded, per date. Empty when a batch predates the
   // stored rest times, in which case the Breaks column simply stays blank -
@@ -264,6 +350,14 @@ export async function renderCorrected(sheet, opts = {}) {
     sheet.restsByDate || [],
     sheet.scheduleByDate || null,
   );
+
+  // IS THIS THE PENDING DOCUMENT - see claimLines. `sheet.claims` is the
+  // sheet's correction rows and `sheet.timeOff` the calendar's accepted days,
+  // both handed in by render-sheet.js; a caller that passes neither gets the
+  // ordinary signed timesheet, exactly as before.
+  const lines = claimLines(sheet.claims, sheet.days, sheet.timeOff);
+  const pending = lines.length > 0;
+  const claimedDates = new Set(lines.map((l) => l.date).filter(Boolean));
 
   // No clock readings in the file. pdf-lib stamps CreationDate and ModDate from
   // the system clock, so the same sheet rendered twice produced different bytes
@@ -346,6 +440,13 @@ export async function renderCorrected(sheet, opts = {}) {
   let tableTop = null;
   let rowTops = [];
   const pages = [];
+  // the pending document's deferred drawing: the band on every timesheet page
+  // and the "see page N" cells cannot be drawn until the claims page exists
+  // and has a number, so their places are reserved here and filled at the end.
+  const bands = [];
+  const deferredCells = [];
+  let claimsPage = null;
+  let headerKind = "sheet";
 
   const text = (s, x, yy, { size = 8, f = font, color = INK } = {}) =>
     page.drawText(String(s), { x, y: yy, size, font: f, color });
@@ -391,7 +492,9 @@ export async function renderCorrected(sheet, opts = {}) {
       const lh = (logo.height / logo.width) * lw;
       page.drawImage(logo, { x: L + 24, y: y - lh + 14, width: lw, height: lh });
     }
-    const title = continued ? "Employee Timesheet (continued)" : "Employee Timesheet";
+    const title = headerKind === "claims"
+      ? continued ? "Reported Changes (continued)" : "Reported Changes"
+      : continued ? "Employee Timesheet (continued)" : "Employee Timesheet";
     text(title, (PAGE_W - bold.widthOfTextAtSize(title, 19)) / 2, y - 18, {
       size: 19, f: bold, color: BRAND,
     });
@@ -430,6 +533,13 @@ export async function renderCorrected(sheet, opts = {}) {
       text(banner.body, L + 7 + bold.widthOfTextAtSize(banner.title, size) + gap, base, {
         size, color: NOTEINK,
       });
+      y -= boxH + 3;
+    }
+    if (pending && headerKind !== "claims") {
+      // the same box as the basis banner, reserved now and drawn at the end
+      const boxH = 16.5;
+      y -= 8;
+      bands.push({ pg: page, top: y, boxH });
       y -= boxH + 3;
     }
   };
@@ -487,7 +597,18 @@ export async function renderCorrected(sheet, opts = {}) {
   let hasOutside = false;
   let hasUnknown = false;
 
-  for (const d of sheet.days) {
+  // A CLAIMED DAY THE SHEET DOES NOT HOLD still gets a row, so a missing day
+  // or a PTO day reads "see page N" in its place rather than being absent from
+  // the page that points at it. Punchless and figureless: it prints dashes.
+  const known = new Set((sheet.days || []).map((d) => d.date));
+  const placeholders = [...claimedDates]
+    .filter((dt) => !known.has(dt) && /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(dt))
+    .map((date) => ({ date, punches: [], placeholder: true }));
+  const rows = placeholders.length
+    ? [...sheet.days, ...placeholders].sort((a, b) => dateKey(a.date).localeCompare(dateKey(b.date)))
+    : sheet.days;
+
+  for (const d of rows) {
     const per = IDX.punch.length;
 
     // The recorded breaks go back onto the punch row, in the cells they
@@ -498,7 +619,7 @@ export async function renderCorrected(sheet, opts = {}) {
     // rest or meal, paid or unpaid. The one exception is a break that IS the
     // whole gap, where both punches are already on the row and repeating them
     // would just cost two columns.
-    const entries = entriesFor(d);
+    const entries = d.placeholder ? [] : entriesFor(d);
     const { punches: shown, unplaced } = insertRecordedBreaks(d.punches || [], entries);
     if (shown.some((x) => x.mark === "added")) hasAdded = true;
     // an entry in the rest report that is a meal long. Drawn as the meal its
@@ -650,11 +771,16 @@ export async function renderCorrected(sheet, opts = {}) {
       chunk.forEach((p, i) => centerIn(p.raw, xs[IDX.punch[i]], base, { size: 6.5 }));
 
       if (isLast) {
-        centerIn(f2(d.regularHours), xs[IDX.regular], base, { size: 7.5 });
-        // only drawn when the column exists on this sheet
-        if (IDX.overtime != null) centerIn(orBlank(d.otHours), xs[IDX.overtime], base, { size: 7.5 });
-        if (IDX.double != null) centerIn(orBlank(d.doubleHours), xs[IDX.double], base, { size: 7.5 });
-        centerIn(f2(d.paidHours), xs[IDX.daily], base, { size: 7.5 });
+        if (d.placeholder) {
+          centerIn("-", xs[IDX.regular], base, { size: 7.5, color: MUTED });
+          centerIn("-", xs[IDX.daily], base, { size: 7.5, color: MUTED });
+        } else {
+          centerIn(f2(d.regularHours), xs[IDX.regular], base, { size: 7.5 });
+          // only drawn when the column exists on this sheet
+          if (IDX.overtime != null) centerIn(orBlank(d.otHours), xs[IDX.overtime], base, { size: 7.5 });
+          if (IDX.double != null) centerIn(orBlank(d.doubleHours), xs[IDX.double], base, { size: 7.5 });
+          centerIn(f2(d.paidHours), xs[IDX.daily], base, { size: 7.5 });
+        }
 
         // Each note carries its own tone, because one row can hold both: the
         // 16th is a waived meal AND a missed rest, and printing the whole line
@@ -804,7 +930,14 @@ export async function renderCorrected(sheet, opts = {}) {
         // blank Comments cell reads as "we did not look", and the whole point of
         // this column is that somebody did. Green, so a clean day is legible at
         // a glance.
-        if (!notes.length) good("compliant");
+        // A CLAIMED DAY SAYS ONLY WHERE THE CLAIM IS. The recorded findings
+        // stay true of the record, but this is the page that carries no
+        // attestation, and the cell points at the page that does. Drawn at
+        // the end, once the claims page has a number.
+        if (claimedDates.has(d.date)) {
+          notes.length = 0;
+          deferredCells.push({ pg: page, x: xs[IDX.comments].x + 3, base, maxW: xs[IDX.comments].w - 6 });
+        } else if (!notes.length) good("compliant");
         {
           // the column is narrow and these notes vary in length, so shrink to
           // fit and only clip as a last resort. running past the column edge on
@@ -885,6 +1018,13 @@ export async function renderCorrected(sheet, opts = {}) {
   if (IDX.overtime != null) centerIn(orBlank(sheet.totals.otHours), xs[IDX.overtime], tBase, { size: 8, f: bold });
   if (IDX.double != null) centerIn(orBlank(sheet.totals.doubleHours), xs[IDX.double], tBase, { size: 8, f: bold });
   centerIn(f2(sheet.totals.paidHours), xs[IDX.daily], tBase, { size: 8, f: bold });
+  if (pending) {
+    const col = xs[IDX.comments];
+    const s = "no signature on this page";
+    let size = 6;
+    while (size > 4 && italic.widthOfTextAtSize(s, size) > col.w - 6) size -= 0.2;
+    text(s, col.x + 3, tBase, { size, f: italic, color: MUTED });
+  }
   y = tBot;
   y -= 14;
 
@@ -1249,6 +1389,21 @@ export async function renderCorrected(sheet, opts = {}) {
   // sheet reading as a clean bill of health for days nobody verified.
   if (assumedNote) y = drawAssumedNote(y);
 
+  // the signable trailer's geometry, filled by whichever branch draws it: the
+  // ordinary document puts it under the table, the pending one on its own page.
+  let sigRect, dateRect, sigPage, apprRect, apprDateRect, apprPage;
+  let decision = null;
+  const TRAILER_H = 158;
+
+  if (pending) {
+    // NO ATTESTATION AND NO SIGNATURE ON THE FIGURES while a report is open -
+    // the sentence they would otherwise be signing is the one they dispute.
+    // The comments and the export line still follow: they describe the record.
+    y -= 12;
+    ensure(30);
+    y = wrapCentered(page, PAGE_ONE_NOTE, L, y, R - L, { font: italic, size: 6.5, color: MUTED, leading: 8.5 });
+    y -= 14;
+  } else {
   // ---------- attestation ----------
   // everything from here down is the signable trailer; keep it together rather
   // than splitting a signature block across a page break. the colour key used
@@ -1266,7 +1421,6 @@ export async function renderCorrected(sheet, opts = {}) {
   // lines; four fit in 34 rather than 25, and a sheet landing exactly on the
   // boundary would start the trailer with too little room and trip the footer
   // guard below - which is how a signature block ends up half off the page.
-  const TRAILER_H = 158;
   ensure(TRAILER_H);
 
   // WHAT THEY ARE PUTTING THEIR NAME TO. Changed 2026-08-17 on Mánu's wording,
@@ -1323,11 +1477,11 @@ export async function renderCorrected(sheet, opts = {}) {
   text("Date:", L + 322, y, { size: 8.5 });
   // no underline drawn here - the AcroForm widgets added at the end sit in these
   // rects and provide their own boxes.
-  const sigRect = { x: L + 100, y: y - 4, width: 200, height: 15 };
-  const dateRect = { x: L + 356, y: y - 4, width: 180, height: 15 };
+  sigRect = { x: L + 100, y: y - 4, width: 200, height: 15 };
+  dateRect = { x: L + 356, y: y - 4, width: 180, height: 15 };
   // pin the page these rects belong to - later sections may start a new page,
   // and the form widgets have to land on the page they were drawn for.
-  const sigPage = page;
+  sigPage = page;
   y -= 20;
 
   // ---------- admin block ----------
@@ -1355,10 +1509,11 @@ export async function renderCorrected(sheet, opts = {}) {
   text("Date:", L + 322, apprY, { size: 8.5 });
   // fillable, like the employee block - management signs off in the portal once
   // the employee has signed, and the approved copy is what gets filed.
-  const apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
-  const apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
-  const apprPage = page;
+  apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
+  apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
+  apprPage = page;
   y = adminBoxTop - adminBoxH - 16;
+  }
 
   // dotted separator + the notes block. reserve room for the heading and at
   // least a couple of note lines so the heading never lands on the footer.
@@ -1446,6 +1601,94 @@ export async function renderCorrected(sheet, opts = {}) {
     L, y, { size: 6.5, color: MUTED, f: italic },
   );
 
+  // ---------- reported changes (the pending document's own page) ----------
+  if (pending) {
+    headerKind = "claims";
+    newPage(false);
+    claimsPage = page;
+    const ptitle = periodTitle(sheet.payPeriod);
+    if (ptitle) {
+      text(ptitle, (PAGE_W - bold.widthOfTextAtSize(ptitle, 12)) / 2, y - 8, { size: 12, f: bold, color: BRAND });
+      y -= 24;
+    }
+    text("WHAT I AM ASKING PAYROLL TO CHANGE", L, y, { size: 8, f: bold, color: NOTEINK });
+    y -= 6;
+    for (const ln of lines) {
+      ensure(32);
+      line(L, y, R, y, GRID, 0.5);
+      y -= 11;
+      text(ln.date || "All days", L, y, { size: 8, f: bold });
+      y = wrap(page, ln.text, L + 58, y, R - L - 58, { font, size: 8, color: INK, leading: 10 });
+      // their reason, in their words - italic and quoted like every other
+      // sentence on this document that somebody typed
+      if (ln.note) {
+        y = wrap(page, `"${ln.note}"`, L + 58, y, R - L - 58, { font: italic, size: 7.5, color: MUTED, leading: 9 });
+      }
+      y -= 5;
+    }
+    line(L, y, R, y, GRID, 0.5);
+    y -= 18;
+    ensure(TRAILER_H + 12);
+
+    // the attestation is to the CLAIM, and to the rest of the record only
+    // apart from it - see the note above claimLines
+    y = wrapCentered(page, claimAttest(pages.indexOf(claimsPage)), L, y, R - L, { font, size: 6.5, color: INK, leading: 8.5 });
+    y -= 14;
+
+    // the same AcroForm fields as the ordinary document, so the signer needs
+    // no second path; only the label and its box move, because the label is
+    // longer. The date field keeps its place.
+    const sigLabel = "Employee Signature - reported changes:";
+    text(sigLabel, L + 6, y, { size: 8.5 });
+    const sigX = L + 6 + font.widthOfTextAtSize(sigLabel, 8.5) + 8;
+    text("Date:", L + 332, y, { size: 8.5 });
+    sigRect = { x: sigX, y: y - 4, width: Math.max(90, L + 322 - sigX), height: 15 };
+    dateRect = { x: L + 356, y: y - 4, width: 180, height: 15 };
+    sigPage = page;
+    y -= 20;
+
+    // ---------- admin block, with the decision ----------
+    const barH = 14;
+    page.drawRectangle({ x: L, y: y - barH + 4, width: R - L, height: barH, color: BLACK });
+    const adminLabel = "Below for Admin Use Only";
+    text(adminLabel, (PAGE_W - bold.widthOfTextAtSize(adminLabel, 8)) / 2, y - barH + 8, {
+      size: 8, f: bold, color: WHITE,
+    });
+    y -= barH + 4;
+    const boxTop = y;
+    const boxH = 58;
+    page.drawRectangle({
+      x: L, y: y - boxH, width: R - L, height: boxH,
+      borderColor: BLACK, borderWidth: 0.8,
+    });
+    // two boxes, drawn rather than typed - Helvetica has no ballot glyph. The
+    // approval step ticks one of them; until then both are empty.
+    const decY = y - 15;
+    text("Decision:", L + 6, decY, { size: 8.5, f: bold });
+    const sq = 9;
+    const tick = (x, label) => {
+      page.drawRectangle({ x, y: decY - 2, width: sq, height: sq, borderColor: BLACK, borderWidth: 0.8 });
+      text(label, x + sq + 5, decY, { size: 8.5 });
+      return { x, y: decY - 2, size: sq, right: x + sq + 5 + font.widthOfTextAtSize(label, 8.5) };
+    };
+    const approved = tick(L + 60, "approved as reported");
+    const changed = tick(approved.right + 18, "changed - reason attached");
+    // the approval line keeps the ordinary document's exact geometry: the
+    // stamp finds it by this label and derives the rects from it
+    const apprY = y - boxH + 12;
+    text("Approval Signature:", L + 6, apprY, { size: 8.5 });
+    text("Date:", L + 322, apprY, { size: 8.5 });
+    apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
+    apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
+    apprPage = page;
+    decision = {
+      pageIndex: pages.length - 1,
+      approved: { x: approved.x, y: approved.y, size: sq },
+      changed: { x: changed.x, y: changed.y, size: sq },
+    };
+    y = boxTop - boxH - 16;
+  }
+
   // ---------- footer ----------
   // hard guard: content must never run under the footer. paging should prevent
   // this, so hitting it means a layout bug - better to shout than to hand
@@ -1471,6 +1714,38 @@ export async function renderCorrected(sheet, opts = {}) {
       });
     }
   });
+
+  // ---------- the pending document's deferred marks ----------
+  // now that the claims page has a number: the band on every timesheet page
+  // and the "see page N" cell on every claimed day
+  if (pending) {
+    const n = pages.indexOf(claimsPage) + 1;
+    const title = bandTitle(n);
+    const body = bandBody(lines.length);
+    const gap = 5;
+    for (const b of bands) {
+      let size = 7.5;
+      while (
+        size > 5 &&
+        bold.widthOfTextAtSize(title, size) + gap + font.widthOfTextAtSize(body, size) > R - L - 14
+      ) size -= 0.25;
+      b.pg.drawRectangle({
+        x: L, y: b.top - b.boxH, width: R - L, height: b.boxH,
+        color: NOTEBG, borderColor: NOTEBORDER, borderWidth: 0.6,
+      });
+      const base = b.top - b.boxH + (b.boxH - size) / 2 + 1;
+      b.pg.drawText(title, { x: L + 7, y: base, size, font: bold, color: NOTEINK });
+      b.pg.drawText(body, {
+        x: L + 7 + bold.widthOfTextAtSize(title, size) + gap, y: base, size, font, color: NOTEINK,
+      });
+    }
+    const cell = `see page ${n}`;
+    for (const c of deferredCells) {
+      let size = 6;
+      while (size > 4 && font.widthOfTextAtSize(cell, size) > c.maxW) size -= 0.2;
+      c.pg.drawText(cell, { x: c.x, y: c.base, size, font, color: NOTEINK });
+    }
+  }
 
   // ---------- signature fields ----------
   // real AcroForm fields, so the portal's existing FormFiller renders a draw-box
@@ -1502,7 +1777,9 @@ export async function renderCorrected(sheet, opts = {}) {
     dateWidth: apprDateRect.width,
   };
 
-  return { bytes: await doc.save(), approvalRect };
+  // `decision` is the pending document's two boxes, for the step that ticks
+  // one; null on the ordinary document, which has no decision to record.
+  return { bytes: await doc.save(), approvalRect, decision, pending };
 }
 
 // which punches actually moved, as out/in pairs. showing the whole day's punch

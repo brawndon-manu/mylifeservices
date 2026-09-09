@@ -85,6 +85,17 @@ export const RENDER_SELECT = {
     // the payroll the sheet belongs to.
     select: { periodFrom: true, periodTo: true, restsByDate: true, testOnly: true, program: true },
   },
+  // THE CLAIMS, for the pending document (Mánu 2026-09-09). Every row, not
+  // only the open ones: the renderer decides which still wait on payroll,
+  // and a time-off answer is one row that is "open" per day, against the
+  // calendar. Left out, a reported sheet renders as the ordinary document
+  // and asks for a signature on figures the person has just disputed.
+  corrections: {
+    select: {
+      id: true, date: true, kind: true, status: true, choice: true,
+      claimedHours: true, statedSlots: true, statedBreaks: true, note: true, timeOff: true,
+    },
+  },
 };
 
 // Sum the stored day rows rather than trusting the sheet's own columns.
@@ -239,6 +250,10 @@ export async function renderSheet(ts, {
       // hours are pay, never worked time, so they join no total on this
       // document. See the line where it is drawn.
       timeOff,
+      // THE CLAIMS, every row - the renderer keeps the ones still waiting on
+      // payroll and draws the pending document when any remain. See the
+      // select above and claimLines in render.js.
+      claims: ts.corrections || null,
       punchCorrections: d.punchCorrections || null,
       // the Breaks column: what the two reports RECORDED, never derived from
       // the punches
