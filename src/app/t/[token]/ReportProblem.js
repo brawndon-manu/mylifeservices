@@ -233,9 +233,13 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <p className="text-sm font-semibold text-foreground">
           Thanks - payroll has been told.
         </p>
+        {/* A REPORTED SHEET IS SIGNABLE (Mánu 2026-09-09): what they reported
+            goes on page 2 of the pending document, and they sign that. The old
+            sentence told them not to sign, which is now the opposite of the
+            flow. */}
         <p className="mt-1 text-[13px] leading-relaxed text-muted">
-          Don&apos;t sign this one. Someone will look at what you reported and
-          send you a corrected timesheet to sign.
+          What you reported goes on page 2 of your timesheet. Sign it there,
+          and payroll decides after.
         </p>
       </div>
     );
@@ -269,7 +273,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
           })}
         </ul>
         {items.length > 0 && <>
-          <p className="mt-3 text-xs text-muted">Your signature stays on hold while payroll reviews submitted reports.</p>
           <button type="button" onClick={send} disabled={busy} className="mt-4 min-h-[44px] rounded-[9px] bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? "Sending..." : "Send reports"}</button>
         </>}
         {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
@@ -314,8 +317,9 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <span className="font-semibold text-foreground">
           You can report more than one day
         </span>{" "}
-        - add each one, then send them together. Nothing changes until someone
-        reviews it, and you&apos;ll get a corrected timesheet to sign.
+        - add each one, then send them together. What you send goes on page 2
+        of your timesheet, and you sign it there. Nothing changes until payroll
+        decides.
       </p>
 
       {!flow && items.length > 0 && (
