@@ -57,6 +57,25 @@ test("the edit form reads a deadline back as its California day, not its UTC one
   assert.equal(deadlineDateValue("2026-09-10T06:59:00.000Z"), "2026-09-09");
 });
 
+test("a deadline instant is never midnight UTC, which is what marks a legacy row", () => {
+  // Before this module existed a deadline was stored as new Date("YYYY-MM-DD"),
+  // i.e. MIDNIGHT UTC, which is 5 PM California the day BEFORE the day the
+  // author typed. Those rows were normalized to end-of-day California by
+  // scratch/legacy-deadline-normalize.mjs, and that script identifies them by
+  // exactly this: an end-of-day-LA instant is 06:59 or 07:59 UTC, so midnight
+  // UTC cannot be one. If the deadline hour ever moves, that marker stops
+  // working and this pin is where it gets caught.
+  for (const month of ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]) {
+    for (const day of ["01", "15", "28"]) {
+      for (const year of ["2026", "2027"]) {
+        const iso = deadlineInstant(`${year}-${month}-${day}`).toISOString();
+        assert.ok(!iso.endsWith("T00:00:00.000Z"), `${year}-${month}-${day} landed on midnight UTC`);
+        assert.match(iso, /T0[67]:59:00\.000Z$/); // PDT or PST, nothing else
+      }
+    }
+  }
+});
+
 test("the chase window opens 8 PM California the night before and closes at the deadline", () => {
   const expiresAt = deadlineInstant("2026-09-09");
   // 8:00 PM PDT on 09/08 is 03:00 UTC on 09/09
