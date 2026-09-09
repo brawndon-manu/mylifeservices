@@ -333,6 +333,17 @@ export const GAP_SPLITS_ENTITLEMENT_MIN = 60;
 // worked. Deliberate, and the reason the question exists.
 export const MISC_COUNTS_UP_TO_MIN = 10;
 
+// AND ONLY MISC TIME OVER TWO HOURS IS WORTH ASKING ABOUT. Mánu 2026-09-08:
+// "the only misc time that should be asked about is if its over 2 hours.
+// anything less dont worry about it."
+//
+// Strictly over: a flat two hours is not asked. Nothing about the ENGINE
+// changes - a discounted misc block stays discounted, which is what it did
+// before the question existed - so the effect is that a day carrying less than
+// this stops being a question on anybody's review. One number to move if the
+// call changes.
+export const MISC_ASK_OVER_MIN = 120;
+
 // minutes past midnight to "8:30a". Local because the surfaces that show a Misc
 // block all read it off the stored day rather than formatting it themselves.
 export function clock12(min) {

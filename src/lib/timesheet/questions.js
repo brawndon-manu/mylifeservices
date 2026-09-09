@@ -51,7 +51,21 @@ import { blockTimes, serviceOf } from "./schedule.js";
 // the thirty minute figure, from the one place that holds it. `findings.js`
 // reaches for RULES the same way; parse.js loads pdfjs lazily, so importing it
 // costs a function reference and nothing else.
-import { RULES } from "./parse.js";
+import { RULES, MISC_ASK_OVER_MIN } from "./parse.js";
+
+// Saved answers remain editable only while their question is still applicable.
+export function questionPolicyApplies(q, data) {
+  if (!q) return false;
+  const dates = q.dates || [q.date];
+  if (q.kind === "miscTime") {
+    return dates.every((date) => (data?.days || []).some(
+      (day) => day.date === date && day.miscMin > MISC_ASK_OVER_MIN,
+    ));
+  }
+  const restOnly = ["repair", "restNoTimes", "restTooLongOffClock",
+    "restOutsideScheduled", "shortMealRest", "nothingDocumentedRest"];
+  return !restOnly.includes(q.kind) || dates.every((date) => !restAttested(date));
+}
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -807,6 +821,11 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   // overrides can tell.
   for (const d of days) {
     if (!(d.miscBlocks || []).length) continue;
+    // OVER TWO HOURS OR IT IS NOT A QUESTION - his call, 2026-09-08. Read off
+    // the day's total misc minutes rather than the longest block: two rostered
+    // ninety-minute stretches are three hours of the day nobody was charged
+    // for, and that is the thing worth asking about.
+    if ((d.miscMin || 0) <= MISC_ASK_OVER_MIN) continue;
     if (d.miscKind || d.miscWorked) {
       if (!reviewerSettled) continue;
       if (reviewerSettled.has?.(d.date)) continue;

@@ -67,12 +67,12 @@ test("reading the ordinal off the slot name is what refused it", () => {
 import fs from "node:fs";
 const DBD = fs.readFileSync("src/app/t/[token]/DayByDay.js", "utf8");
 
-test("a backwards row gets a panel in the work column", () => {
+test("a backwards row gets a panel only before rest attestation", () => {
   assert.match(DBD, /function NeedsFixing/);
   assert.match(DBD, /<NeedsFixing\s/);
   // driven by the same flag the calendar colours from, so the two cannot
   // disagree about which rows need fixing
-  assert.match(DBD, /\.filter\(\(b\) => b\.attention\)/);
+  assert.match(DBD, /\.filter\(\(b\) => b\.attention && !restAttested\(day\.date\)\)/);
 });
 
 test("it says what it should read FROM and TO, not just that it is wrong", () => {

@@ -99,3 +99,27 @@ test("the settled set is read the same way wherever it is needed", async () => {
   assert.deepEqual([...reviewerSettledDates(null)], []);
   assert.deepEqual([...reviewerSettledDates(undefined)], []);
 });
+
+test("Misc asks only above two hours, including combined blocks", () => {
+  for (const min of [10, 60, 119, 120, 121, 180]) {
+    assert.equal(asks(day({ miscMin: min })).length, min > 120 ? 1 : 0);
+  }
+  assert.equal(asks(day({ miscMin: 121, miscBlocks: [
+    { from: "8a", to: "9a", min: 60 }, { from: "1p", to: "2:01p", min: 61 },
+  ] })).length, 1);
+});
+
+test("saved questions obey current Misc and rest policies without suppressing meals", async () => {
+  const { questionPolicyApplies } = await import("../questions.js");
+  const date = "09/01/26";
+  for (const min of [120, 121]) {
+    assert.equal(questionPolicyApplies({ kind: "miscTime", date }, { days: [{ date, miscMin: min }] }), min > 120);
+  }
+  for (const kind of ["repair", "restNoTimes", "restTooLongOffClock", "restOutsideScheduled", "shortMealRest", "nothingDocumentedRest"]) {
+    assert.equal(questionPolicyApplies({ kind, date }), false, kind);
+    assert.equal(questionPolicyApplies({ kind, date: "08/31/26" }), true, kind);
+  }
+  for (const kind of ["restIsMealLength", "nothingDocumentedMeal", "mealLate"]) {
+    assert.equal(questionPolicyApplies({ kind, date }), true, kind);
+  }
+});

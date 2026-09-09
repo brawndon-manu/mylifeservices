@@ -11,11 +11,25 @@
 // happens to pay more without noticing it doesn't describe their day.
 import { useState } from "react";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
+// the attestation covers the tens now - see rest-attestation.js
+import { restAttested } from "@/lib/timesheet/rest-attestation";
 // the same loose reading the question cards use, so "331" means 3:31 here too
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 // the period's own day list, the same one the time-off card offers - a
 // missing day is by definition one of the period's dates the sheet lacks
 import { periodDates } from "@/lib/timesheet/time-off";
+// the engine's own punch-pair reader, so the boxes open on exactly the shifts
+// the calendar draws
+import { shiftsOf } from "@/lib/timesheet/questions";
+// THE FULL DAY'S SLOTS. Same module the server checks with - see work-slots.js
+import {
+  checkWorkSlots,
+  slotsFromShifts,
+  clockLabel,
+  kindTakesSlots,
+  readSlot,
+  MAX_SLOTS,
+} from "@/lib/timesheet/work-slots";
 
 function kindsForDay(day) {
   if (!day) return ["other"];
@@ -25,8 +39,20 @@ function kindsForDay(day) {
   // punched, so the honest claim there is that the punch time is wrong.
   if (day.mealLate) out.push("meal_ontime");
   else if (day.mealViolation) out.push("meal_taken");
-  if (day.restCount > 0) out.push("rest_missed");
-  if (day.restViolation) out.push("rest_taken");
+  // NOBODY IS ASKED ABOUT A TEN ANY MORE. Mánu 2026-09-08: "they dont need to
+  // be asked about 10 minute rest breaks at all anymore. the attestations are
+  // for stating they took their breaks." The two rest kinds were the last place
+  // on this page that still asked, and rest_missed was the worse of the pair:
+  // it promised a premium every money path now ignores by the day's own date.
+  //
+  // BY THE DAY'S DATE, like every other gate in this policy, so an August
+  // re-upload still offers them and the code behind the gate stays whole - his
+  // standing reason, "keep the code just in case David switches up like he
+  // always does".
+  if (!restAttested(day.date)) {
+    if (day.restCount > 0) out.push("rest_missed");
+    if (day.restViolation) out.push("rest_taken");
+  }
   out.push("day_extra", "other");
   return out;
 }

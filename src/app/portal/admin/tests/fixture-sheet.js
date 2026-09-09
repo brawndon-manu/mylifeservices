@@ -844,12 +844,12 @@ export const FIXTURE_DAYS = [
     ],
     "breaks": [],
     "mealMin": 0,
-    "miscMin": 90,
+    "miscMin": 180,
     "otHours": 0,
-    "paidMin": 90,
+    "paidMin": 180,
     "printed": {
-      "daily": 1.5,
-      "regular": 1.5
+      "daily": 3,
+      "regular": 3
     },
     "punches": [
       {
@@ -859,8 +859,8 @@ export const FIXTURE_DAYS = [
       },
       {
         "x": 102.997001,
-        "min": 750,
-        "raw": "12:30p"
+        "min": 840,
+        "raw": "2p"
       }
     ],
     "restMin": 0,
@@ -871,8 +871,8 @@ export const FIXTURE_DAYS = [
       {
         "end": {
           "x": 102.997001,
-          "min": 750,
-          "raw": "12:30p"
+          "min": 840,
+          "raw": "2p"
         },
         "min": 90,
         "start": {
@@ -893,9 +893,9 @@ export const FIXTURE_DAYS = [
     "mealWaived": false,
     "miscBlocks": [
       {
-        "to": "12:30p",
-        "end": 750,
-        "min": 90,
+        "to": "2p",
+        "end": 840,
+        "min": 180,
         "from": "11a",
         "start": 660
       }
@@ -906,10 +906,10 @@ export const FIXTURE_DAYS = [
     "seventhDay": false,
     "workGroups": [
       {
-        "end": 750,
-        "min": 90,
+        "end": 840,
+        "min": 180,
         "start": 660,
-        "miscMin": 90
+        "miscMin": 180
       }
     ],
     "doubleHours": 0,

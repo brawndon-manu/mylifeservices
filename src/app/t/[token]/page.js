@@ -30,7 +30,7 @@ import {
   correctionLabel, employeeResolution, resolutionTakesReason, reviewerSettledDates,
 } from "@/lib/timesheet/corrections";
 import {
-  buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
+  questionPolicyApplies, buildQuestions, signingGate, dependencyGate, questionId, answerProgress,
 } from "@/lib/timesheet/questions";
 import { blockTimes, serviceOf, clientOf } from "@/lib/timesheet/schedule";
 import { restKey, restNameFor } from "@/lib/timesheet/rests";
@@ -276,7 +276,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     const kind = String(c.kind).slice(2);
     if (!c.question || liveKeys.has(`${kind}|${c.date}`)) continue;
     const q = c.question;
-    if (!q.id || seenRestored.has(q.id)) continue;
+    if (!q.id || !questionPolicyApplies(q, ts.data) || seenRestored.has(q.id)) continue;
     seenRestored.add(q.id);
     restored.push(q);
   }

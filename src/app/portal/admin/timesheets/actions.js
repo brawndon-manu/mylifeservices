@@ -21,7 +21,7 @@ import {
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES, collidesWithRecorded, shiftAlreadyHasTen } from "@/lib/timesheet/questions";
+import { questionPolicyApplies, buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES, collidesWithRecorded, shiftAlreadyHasTen } from "@/lib/timesheet/questions";
 // the reported-problem card reads times the same loose way the question cards
 // do, and this is the server's own reading of what that box was sent
 import { parseLooseTime } from "@/lib/loose-time";
@@ -3635,7 +3635,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     select: { question: true },
   })) {
     const q = row.question;
-    if (q?.id && !questions.some((x) => x.id === q.id)) restoredQuestions.set(q.id, q);
+    if (q?.id && questionPolicyApplies(q, ts.data) && !questions.some((x) => x.id === q.id)) restoredQuestions.set(q.id, q);
   }
   // RESOLVE AND VALIDATE EVERYTHING BEFORE WRITING ANYTHING. A batch where the
   // ninth day carries a time we cannot read must not leave the first eight

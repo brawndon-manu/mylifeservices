@@ -1,6 +1,7 @@
 import { parseLooseTime } from "@/lib/loose-time";
 import { movesHours, shiftsOf } from "@/lib/timesheet/questions";
 import { ChevronDown } from "lucide-react";
+import { restAttested } from "@/lib/timesheet/rest-attestation";
 import DayCalendar from "./DayCalendar";
 import DayRail, { DaysAnsweredCount } from "./DayRail";
 import { ViewToggle } from "./TimesheetViews";
@@ -539,7 +540,7 @@ export default function DayByDay({
                     sentence to point at. */}
                 <NeedsFixing
                   items={(restsByDate.get(day.date) || [])
-                    .filter((b) => b.attention)
+                    .filter((b) => b.attention && !restAttested(day.date))
                     .map((b) => ({ ...b, date: day.date }))}
                   token={token}
                   ackOn={ackOn}

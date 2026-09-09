@@ -131,10 +131,18 @@ export function correctionEffect(kind, day, claimedHours) {
       return "Removes the 1 hr meal premium for this day.";
     case "meal_ontime":
       return "Removes the 1 hr late-meal premium for this day.";
+    // A STORED REST CLAIM ON A COVERED DAY MOVES NOTHING, and the reviewer
+    // reading this row has to be told that rather than promised an hour. The
+    // categories are not offered on an attested day any more, so this is what
+    // a claim made before the attestation reads as now.
     case "rest_missed":
-      return "Owes a 1 hr rest premium for this day.";
+      return restAttested(day?.date)
+        ? "No change - rest breaks are covered by the attestation."
+        : "Owes a 1 hr rest premium for this day.";
     case "rest_taken":
-      return "Removes the 1 hr rest premium for this day.";
+      return restAttested(day?.date)
+        ? "No change - rest breaks are covered by the attestation."
+        : "Removes the 1 hr rest premium for this day.";
     case "day_missing":
       return claimedHours
         ? `Adds a ${r2(claimedHours).toFixed(2)} hr day.`
