@@ -45,7 +45,17 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
     reportRef.current?.start(date, index);
   }
   // drafts must be sent before the document generates; sent ones do not hold it
-  const canGenerate = ready && !editorTarget && (reported || !items.length);
+  const draftsUnsent = items.length > 0 && !reported;
+  const canGenerate = ready && !editorTarget && !draftsUnsent;
+  // WHY THE FOOTER IS HELD, said above the buttons. Mánu 2026-09-09: he added a
+  // report on the 3rd, pressed Next without sending it, and found Next dead on
+  // the PTO step with the reason printed under the fold. The reports step holds
+  // now, where the Send button is, and every hold says why in the one place.
+  const hold = editorTarget ? "Add this report or cancel it before continuing."
+    : leaveEditing ? "Save your answer or cancel before continuing."
+    : draftsUnsent && stage !== "days" ? "Review and send your reports before generating your timesheet."
+    : stage === "leave" && !ready ? "Answer the remaining questions to generate your document."
+    : null;
   const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? 3 : 2;
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly,
     reviewedDays, markReviewed,
@@ -72,16 +82,15 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
       <div hidden={enabled && stage !== "reports"}>{reports}</div>
       {enabled && !readOnly && (stage !== "days" || items.length > 0 || editorTarget) && (
         <div className="mt-6 border-t border-sep pt-5">
-          {(editorTarget || leaveEditing) && <p className="mb-3 text-xs text-muted">{editorTarget ? "Add this report or cancel it before continuing." : "Save your answer or cancel before continuing."}</p>}
+          {hold && <p className="mb-3 text-xs text-muted">{hold}</p>}
           {stage === "days" ? <div className="flex justify-end"><button type="button" className={button} disabled={!!editorTarget} onClick={() => go("reports")}>Review reports ({items.length})</button></div> : <div className="flex items-center justify-between gap-3">
             <button type="button" className={button} disabled={!!editorTarget || leaveEditing || leaveBusy}
               onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : "leave")}>Back</button>
             {stage !== "document" && <button type="button" className={`${button} ${styles.primary}`}
-              disabled={!!editorTarget || leaveEditing || leaveBusy || (stage === "leave" && !canGenerate)}
+              disabled={!!editorTarget || leaveEditing || leaveBusy || (stage === "reports" && draftsUnsent) || (stage === "leave" && !canGenerate)}
               onClick={() => go(stage === "reports" ? "leave" : "document")}>Next</button>}
           </div>}
           {stage !== "days" && stage !== "document" && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" ? "PTO & sick pay" : "Generate"}</p>}
-          {stage === "leave" && !canGenerate && <p className="mt-3 text-sm text-muted">{items.length && !reported ? "Review and send your reports before generating your timesheet." : "Answer the remaining questions to generate your document."}</p>}
         </div>
       )}
     </ReviewContext.Provider>
