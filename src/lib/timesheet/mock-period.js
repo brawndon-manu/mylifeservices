@@ -15,12 +15,21 @@
 // Keyed on the period's own start date. Nothing else in the app knows this
 // file exists, and deleting the entry gives the period its real name back.
 const MOCK_MONTHS = {
-  "09/01/37": "Mocktember",
+  "09/01/37": { name: "Mocktember", short: "MOCK" },
 };
 
 // "09/01/37" -> "Mocktember", or null for every real period.
 export function mockMonthName(from) {
-  return MOCK_MONTHS[String(from || "").trim()] || null;
+  return MOCK_MONTHS[String(from || "").trim()]?.name || null;
+}
+
+// THE CALENDAR TILE'S FORM. The little date tile on a pay period card is 48px
+// wide with an 11px month in it, so the full name cannot go there - and the
+// title sitting beside it already spells it out. Held here rather than sliced
+// off the name, because slicing produced "Mock" in places where the whole word
+// fits and reads better.
+export function mockMonthShort(from) {
+  return MOCK_MONTHS[String(from || "").trim()]?.short || null;
 }
 
 // the month name a period should print, mock or real. `fallback` is whatever

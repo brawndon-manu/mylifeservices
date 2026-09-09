@@ -15,7 +15,7 @@ import TestBatchBadge from "./TestBatchBadge";
 // underneath, earlier uploads folded below. Every value still comes off
 // batchState and the timesheet rows - nothing here computes its own truth.
 
-import { monthNameFor } from "@/lib/timesheet/mock-period";
+import { monthNameFor, mockMonthShort } from "@/lib/timesheet/mock-period";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -140,7 +140,8 @@ export default function PeriodCards({ periods }) {
                       className="flex h-[54px] w-12 flex-none flex-col items-center justify-center rounded-[9px] bg-surface-2 ring-1 ring-sep"
                     >
                       <span className="text-[11px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">
-                        {parse(b.periodFrom) ? MONTHS[parse(b.periodFrom).m - 1].slice(0, 3) : ""}
+                        {mockMonthShort(b.periodFrom)
+                          || (parse(b.periodFrom) ? MONTHS[parse(b.periodFrom).m - 1].slice(0, 3) : "")}
                       </span>
                       <span className="text-[22px] font-medium leading-tight tracking-tight text-foreground">
                         {parse(b.periodFrom)?.d ?? ""}
