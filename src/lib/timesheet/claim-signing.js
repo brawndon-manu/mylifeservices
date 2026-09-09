@@ -131,12 +131,60 @@ export function daysMovedOutsideClaim(before, after, claimedDates, tolerance = 0
   return moved;
 }
 
+// THE ROWS THE RULE READS, as a Prisma select - one shape for every caller
+// that loads a sheet's corrections to decide a signature, so none of them
+// quietly omits the field the decision turns on.
+export const CLAIM_SELECT = {
+  id: true, date: true, kind: true, status: true, choice: true, claimedHours: true,
+  statedSlots: true, statedBreaks: true, note: true, timeOff: true, resolutionNote: true,
+};
+
+// WHAT PAGE 2 SAID WHEN THEY SIGNED - the row's signedClaim column. The claims
+// still waiting on payroll, the day figures as they stood, the totals. Null
+// on a sheet signed clean: there is no claim to freeze, and a stale snapshot
+// from an earlier signature must not outlive it.
+export function signedClaimSnapshot({ corrections, days, totals, timeOff }) {
+  const open = claimsOf(corrections).filter((c) => claimStatus(c, timeOff || []) === "open");
+  if (!open.length) return null;
+  return {
+    claims: open.map((c) => ({
+      id: c.id ?? null, date: c.date ?? null, kind: c.kind, choice: c.choice ?? null,
+      claimedHours: c.claimedHours ?? null, statedSlots: c.statedSlots ?? null,
+      statedBreaks: c.statedBreaks ?? null, note: c.note ?? null, timeOff: c.timeOff ?? null,
+    })),
+    days: (days || []).map((d) => ({ date: d.date, paidHours: d.paidHours ?? 0 })),
+    totals: {
+      regular: totals?.regularHours ?? totals?.regular ?? 0,
+      overtime: totals?.otHours ?? totals?.overtime ?? 0,
+      doubleTime: totals?.doubleHours ?? totals?.doubleTime ?? 0,
+    },
+  };
+}
+
+// THE DECISION ON A SIGNATURE WHEN THE FIGURES ARE REBUILT. The "before" is
+// what they signed - the snapshot's days - and only when there is no snapshot
+// (a signature from before it existed, or a sheet signed clean) the days as
+// stored going in. An unsigned sheet has nothing to keep.
+export function decideSignature({ signedAt, signedClaim, corrections, days, next, timeOff }) {
+  if (!signedAt) return { keep: false, why: "unsigned" };
+  const before = signedClaim?.days
+    || (days || []).map((d) => ({ date: d.date, paidHours: d.paidHours ?? 0 }));
+  return signatureSurvives({ corrections, before, after: next, timeOff });
+}
+
 // DOES THE SIGNATURE SURVIVE THE REBUILD? The rebuild clears it unconditionally
 // today, with the note that a corrected sheet is a different document. That
 // stays true when the document changed under them, and stops being true when
 // payroll granted exactly what they signed for.
+// AN OPEN CLAIM IS NOT A DENIED ONE. Payroll decides claims one at a time -
+// the hours on the 3rd today, the PTO on the 9th when it reaches the
+// calendar - and each acceptance rebuilds the sheet. While any claim still
+// waits, the signature stands provided nothing outside the claims moved
+// ("pending"); the last decision settles it. A claim declined or changed is
+// the answer already, whatever is still open.
 export function signatureSurvives({ corrections, before, after, timeOff }) {
-  if (!grantedAsReported(corrections, { timeOff })) return { keep: false, why: "changed" };
+  const statuses = claimsOf(corrections).map((c) => claimStatus(c, timeOff || []));
+  if (statuses.some((st) => st !== "open" && st !== "accepted")) return { keep: false, why: "changed" };
   // the days they claimed: a correction's own date, or every day a time-off
   // answer names - those are expected to appear, and appearing is not moving
   const claimed = claimsOf(corrections).flatMap((c) =>
@@ -144,5 +192,11 @@ export function signatureSurvives({ corrections, before, after, timeOff }) {
   ).filter(Boolean);
   const moved = daysMovedOutsideClaim(before, after, claimed);
   if (moved.length) return { keep: false, why: "otherDaysMoved", moved };
+  if (statuses.some((st) => st === "open")) return { keep: true, why: "pending" };
   return { keep: true, why: "grantedAsReported" };
 }
+
+// IS EVERY CLAIM DECIDED - the moment the bell can ring. A time-off claim is
+// decided on the calendar, so the accepted days are part of the question.
+export const allClaimsDecided = (corrections, timeOff) =>
+  claimsOf(corrections).every((c) => claimStatus(c, timeOff || []) !== "open");

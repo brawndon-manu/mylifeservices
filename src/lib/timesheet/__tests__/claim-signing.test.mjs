@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   claimsOf, claimStage, canSignClaim, grantedAsReported,
   daysMovedOutsideClaim, signatureSurvives, timeOffStatus,
+  signedClaimSnapshot, decideSignature, CLAIM_SELECT, allClaimsDecided,
 } from "../claim-signing.js";
 
 const claim = (date, status, kind = "hours") => ({ date, status, kind });
@@ -99,6 +100,28 @@ test("the signature survives only a clean grant", () => {
   assert.deepEqual(out.moved, [{ date: "09/04/37", was: 6.5, now: 8 }]);
   // and a sheet nobody reported on keeps its signature, which is today's behaviour
   assert.equal(signatureSurvives({ corrections: [], before, after: before }).keep, true);
+
+  // AN OPEN CLAIM IS NOT A DENIED ONE. Payroll accepted the 3rd today and the
+  // PTO on the 9th is still waiting on the calendar: the signature stands for
+  // now, and the calendar decides it later.
+  const pto = { kind: "time_off", status: "noted", choice: "yes", timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] };
+  assert.deepEqual(
+    signatureSurvives({ corrections: [claim("09/03/37", "accepted"), pto], before, after, timeOff: [] }),
+    { keep: true, why: "pending" },
+  );
+  // ... unless a day they never mentioned moved meanwhile
+  assert.equal(signatureSurvives({ corrections: [claim("09/03/37", "accepted"), pto], before, after: drifted, timeOff: [] }).why, "otherDaysMoved");
+  // ... or the answer is already no
+  assert.equal(signatureSurvives({ corrections: [claim("09/03/37", "declined"), pto], before, after, timeOff: [] }).why, "changed");
+  // the calendar settles it
+  assert.deepEqual(
+    signatureSurvives({ corrections: [claim("09/03/37", "accepted"), pto], before, after, timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] }),
+    { keep: true, why: "grantedAsReported" },
+  );
+  assert.equal(allClaimsDecided([claim("09/03/37", "accepted"), pto], []), false);
+  assert.equal(allClaimsDecided([claim("09/03/37", "accepted"), pto], [{ date: "09/09/37", kind: "pto", hours: 8 }]), true);
+  assert.equal(allClaimsDecided([claim("09/03/37", "open")], []), false);
+  assert.equal(allClaimsDecided([], []), true);
 });
 
 
@@ -130,4 +153,52 @@ test("a time-off claim is decided by the calendar, not by its row", () => {
     signatureSurvives({ corrections: [pto], before, after, timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] }),
     { keep: true, why: "grantedAsReported" },
   );
+});
+
+// WHAT THEY SIGNED, FROZEN. The snapshot is what page 2 said: the claims still
+// waiting, the day figures as they stood, the totals. Null on a clean sheet.
+test("the signed claim snapshot freezes the open claims and the figures as signed", () => {
+  const days = [day("09/01/37", 6.5), day("09/03/37", 4.5)];
+  const totals = { regularHours: 64.5, otHours: 4, doubleHours: 1 };
+  const hours = { id: "c1", date: "09/03/37", kind: "hours", status: "open", claimedHours: 6.5,
+    statedSlots: [{ from: 510, to: 900 }], note: "left at three" };
+  const pto = { id: "c2", kind: "time_off", status: "noted", choice: "yes", timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] };
+  const snap = signedClaimSnapshot({ corrections: [hours, pto, { kind: "q_duplicateDay", status: "open" }], days, totals, timeOff: [] });
+  assert.deepEqual(snap.claims.map((c) => c.id), ["c1", "c2"]);
+  assert.equal(snap.claims[0].note, "left at three");
+  assert.deepEqual(snap.days, [{ date: "09/01/37", paidHours: 6.5 }, { date: "09/03/37", paidHours: 4.5 }]);
+  assert.deepEqual(snap.totals, { regular: 64.5, overtime: 4, doubleTime: 1 });
+  // decided rows and calendar days are not part of what is being asked
+  assert.equal(signedClaimSnapshot({ corrections: [{ ...hours, status: "accepted" }], days, totals, timeOff: [] }), null);
+  assert.equal(signedClaimSnapshot({ corrections: [pto], days, totals, timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] }), null);
+  assert.equal(signedClaimSnapshot({ corrections: [], days, totals, timeOff: [] }), null);
+  // every field the rule reads is in the select every caller shares
+  for (const k of ["id", "date", "kind", "status", "choice", "claimedHours", "statedSlots", "timeOff", "resolutionNote"]) {
+    assert.equal(CLAIM_SELECT[k], true, k);
+  }
+});
+
+// THE DECISION AT REBUILD TIME reads "before" off the snapshot - what they
+// actually signed - and only falls back to the stored days without one.
+test("decideSignature compares the rebuild against what was signed", () => {
+  const hours = { id: "c1", date: "09/03/37", kind: "hours", status: "accepted", claimedHours: 6.5 };
+  const signed = { days: [day("09/01/37", 6.5), day("09/03/37", 4.5)] };
+  const granted = [day("09/01/37", 6.5), day("09/03/37", 6.5)];
+  assert.deepEqual(
+    decideSignature({ signedAt: new Date(), signedClaim: signed, corrections: [hours], days: [], next: granted, timeOff: [] }),
+    { keep: true, why: "grantedAsReported" },
+  );
+  // the stored days had already moved on (a later rebuild); the snapshot is
+  // still the baseline, so the 1st moving under them is caught
+  const drift = [day("09/01/37", 7), day("09/03/37", 6.5)];
+  const r = decideSignature({ signedAt: new Date(), signedClaim: signed, corrections: [hours], days: [], next: drift, timeOff: [] });
+  assert.equal(r.keep, false);
+  assert.equal(r.why, "otherDaysMoved");
+  assert.deepEqual(r.moved, [{ date: "09/01/37", was: 6.5, now: 7 }]);
+  // no snapshot: the stored days stand in
+  assert.equal(decideSignature({ signedAt: new Date(), signedClaim: null, corrections: [hours], days: signed.days, next: granted, timeOff: [] }).keep, true);
+  // declined: not granted, whatever the figures did
+  assert.equal(decideSignature({ signedAt: new Date(), signedClaim: signed, corrections: [{ ...hours, status: "declined" }], days: [], next: signed.days, timeOff: [] }).why, "changed");
+  // never signed: nothing to keep
+  assert.deepEqual(decideSignature({ signedAt: null, signedClaim: signed, corrections: [hours], days: [], next: granted, timeOff: [] }), { keep: false, why: "unsigned" });
 });
