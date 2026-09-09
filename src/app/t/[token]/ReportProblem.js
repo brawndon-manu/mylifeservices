@@ -71,6 +71,10 @@ export default function ReportProblem({ token, days, submitAction, period = null
   const [kind, setKind] = useState("hours");
   const [hours, setHours] = useState("");
   const [times, setTimes] = useState([]);
+  // THE WHOLE DAY, NOT THE DIFFERENCE. An hours claim carries every work slot
+  // for the day, unchanged ones included, so payroll gets a day it can rebuild
+  // rather than a number it has to guess the shape of.
+  const [slots, setSlots] = useState([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -97,8 +101,27 @@ export default function ReportProblem({ token, days, submitAction, period = null
   // unreadable, and "" slips straight through a `== null` check
   const timeMin = (i) => parseLooseTime(times[i] || "", { assumeWorkday: true }) || null;
 
+  // an existing day opens on its own punches; a missing day opens blank
+  function slotsForDay(nextKind, nextDay) {
+    if (!kindTakesSlots(nextKind)) return [];
+    const from = nextDay ? slotsFromShifts(shiftsOf(nextDay)) : [];
+    return from.length ? from : [{ from: "", to: "" }];
+  }
+
+  const takesSlots = kindTakesSlots(activeKind);
+  const slotCheck = takesSlots ? checkWorkSlots(slots, hours) : null;
+  const setSlot = (i, key, value) =>
+    setSlots((prev) => prev.map((s, j) => (j === i ? { ...s, [key]: value } : s)));
+
   function add() {
     setError(null);
+    if (takesSlots) {
+      const check = checkWorkSlots(slots, hours);
+      if (!check.ok) {
+        setError(check.message);
+        return;
+      }
+    }
     if (meta?.asksHours && !hours) {
       setError("Let us know how many hours, so payroll knows what to check.");
       return;
@@ -125,6 +148,10 @@ export default function ReportProblem({ token, days, submitAction, period = null
         date: date === NO_DAY ? null : date === NEW_DAY ? newDayDate : date,
         kind: activeKind,
         claimedHours: meta?.asksHours && hours ? Number(hours) : null,
+        // raw as typed, like `times` above - the server runs the same
+        // checkWorkSlots on the employee's own input rather than trusting our
+        // reading of it
+        slots: takesSlots ? slots.map((sl) => ({ from: sl.from, to: sl.to })) : null,
         // raw as typed; the server reads them the same way the box did
         times: timeSlots > 0 ? times.slice(0, timeSlots) : null,
         note: note.trim() || null,
@@ -132,6 +159,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
     ]);
     setHours("");
     setTimes([]);
+    setSlots([]);
     setNote("");
   }
 
@@ -173,7 +201,15 @@ export default function ReportProblem({ token, days, submitAction, period = null
       <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-sep pt-5">
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            // SEED THE BOXES AS THE CARD OPENS. They used to fill only when
+            // the day or the category CHANGED, so the first thing anyone saw
+            // was "When did you work?" over nothing at all.
+            const first = days.find((d) => d.date === date) || null;
+            setSlots(slotsForDay(kind, first));
+            if (kindTakesSlots(kind)) setHours(first ? fmt(first.paidHours) : "");
+            setOpen(true);
+          }}
           className="inline-flex min-h-[44px] items-center gap-2 rounded text-sm font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -222,6 +258,13 @@ export default function ReportProblem({ token, days, submitAction, period = null
                     .filter(Boolean)
                     .map((m) => formatTimeDisplay(m))
                     .join(" and ")})`}
+                {(it.slots || []).length > 0 && (
+                  <span className="mt-0.5 block text-xs tabular-nums text-muted">
+                    {(checkWorkSlots(it.slots, it.claimedHours).slots || [])
+                      .map((sl) => `${clockLabel(sl.from)} to ${clockLabel(sl.to)}`)
+                      .join(", ")}
+                  </span>
+                )}
                 {it.note && (
                   <span className="block text-xs text-muted">{it.note}</span>
                 )}
@@ -244,7 +287,17 @@ export default function ReportProblem({ token, days, submitAction, period = null
           <span className="text-sm font-semibold text-foreground">Which day?</span>
           <select
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setDate(next);
+              setError(null);
+              // the boxes follow the day, so a switch cannot leave one day's
+              // punches sitting under another day's heading
+              const nextDay = days.find((d) => d.date === next) || null;
+              const nextKind = available.includes(kind) ? kind : "hours";
+              setSlots(slotsForDay(nextKind, nextDay));
+              if (kindTakesSlots(nextKind)) setHours(nextDay ? fmt(nextDay.paidHours) : "");
+            }}
             className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           >
             {days.map((d) => (
@@ -297,7 +350,12 @@ export default function ReportProblem({ token, days, submitAction, period = null
                 name="kind"
                 value={k}
                 checked={activeKind === k}
-                onChange={() => setKind(k)}
+                onChange={() => {
+                  setKind(k);
+                  setError(null);
+                  setSlots(slotsForDay(k, day));
+                  if (kindTakesSlots(k) && !hours) setHours(day ? fmt(day.paidHours) : "");
+                }}
                 className="mt-1"
               />
               <span>
@@ -358,35 +416,146 @@ export default function ReportProblem({ token, days, submitAction, period = null
         )}
 
         {meta?.asksHours && (
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-foreground">
-              {meta.hint}
-            </span>
-            {day && (
-              <span className="text-xs text-muted">
-                This timesheet currently says{" "}
-                <span className="font-semibold text-foreground">
-                  {fmt(day.paidHours)} hrs
-                </span>{" "}
-                for {day.date}.
-              </span>
+          <div className="grid gap-4">
+            {/* THE DAY'S TOTAL, on its own fill row. The figure is the anchor
+                and the slots underneath have to agree with it. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-[10px] bg-fill px-4 py-4">
+              <label htmlFor="rp-hours" className="grid gap-1">
+                <span className="text-sm font-semibold text-foreground">
+                  {takesSlots ? "The day's work hours" : meta.hint}
+                </span>
+                <span className="max-w-[16rem] text-[12.5px] leading-relaxed text-muted">
+                  {activeKind === "day_missing"
+                    ? "Missing from this timesheet."
+                    : day
+                      ? `${fmt(day.paidHours)} hours recorded now.`
+                      : meta.hoursHelp}
+                </span>
+              </label>
+              <div className="flex shrink-0 items-center gap-2 text-[12.5px] text-muted">
+                {/* spinner arrows are killed site-wide in globals.css */}
+                <input
+                  id="rp-hours"
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min="0"
+                  max="24"
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  className="w-24 rounded-[9px] border border-border bg-surface px-3 py-2 text-right text-lg tabular-nums text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
+                />
+                <span>hrs</span>
+              </div>
+            </div>
+            {takesSlots && (
+              <p className="text-[12.5px] leading-relaxed text-muted">
+                Include paid breaks. Leave out an unpaid lunch, PTO and sick
+                pay.
+              </p>
             )}
-            {meta.hoursHelp && (
-              <span className="text-xs text-muted">{meta.hoursHelp}</span>
+
+            {/* EVERY SLOT FOR THE DAY, unchanged ones included - a difference
+                is not something payroll can rebuild a day from. */}
+            {takesSlots && (
+              <div className="grid gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h3 className="text-[15px] font-medium text-foreground">
+                    When did you work?
+                  </h3>
+                  <span className="rounded-md bg-fill px-2 py-1 text-[11px] text-muted">
+                    Required
+                  </span>
+                </div>
+                <p className="text-[12.5px] leading-relaxed text-muted">
+                  List every slot you worked on this day. Leave unpaid gaps
+                  between them.
+                </p>
+                <div className="grid gap-2">
+                  {slots.map((slot, i) => {
+                    const read = readSlot(slot);
+                    return (
+                      <div
+                        key={i}
+                        className="grid grid-cols-[1fr_1fr_auto] items-start gap-2 rounded-[10px] bg-fill px-3 py-3 sm:grid-cols-[1.5rem_1fr_1fr_auto] sm:gap-3 sm:px-4"
+                      >
+                        <span className="hidden pt-7 text-[12.5px] text-muted sm:block">
+                          {i + 1}
+                        </span>
+                        {[
+                          ["from", "Start"],
+                          ["to", "End"],
+                        ].map(([key, label]) => (
+                          <label key={key} className="grid gap-1">
+                            <span className="text-[12.5px] font-medium text-foreground">
+                              {label}
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              value={slot[key] || ""}
+                              onChange={(e) => setSlot(i, key, e.target.value)}
+                              className={`w-full rounded-[9px] border bg-surface px-3 py-2 text-[15px] text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
+                                read[key]
+                                  ? "border-emerald-400/80"
+                                  : (slot[key] || "").trim()
+                                    ? "border-rose-400"
+                                    : "border-border"
+                              }`}
+                            />
+                            {/* the figure IS the confirmation, same as the day
+                                question's slot row */}
+                            <span className="min-h-4 text-[11px] text-muted">
+                              {read[key] ? formatTimeDisplay(read[key]) : ""}
+                            </span>
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setSlots((p) => p.filter((_, j) => j !== i))}
+                          disabled={slots.length === 1}
+                          aria-label={`Remove work slot ${i + 1}`}
+                          className="mt-6 inline-flex h-9 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface disabled:opacity-40"
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                            <path d="M18 6 6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setSlots((p) => [...p, { from: "", to: "" }])}
+                    disabled={slots.length >= MAX_SLOTS}
+                    className="inline-flex min-h-[44px] items-center gap-2 rounded text-[13px] font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-40"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    Add a work slot
+                  </button>
+                </div>
+                {slotCheck && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className={`flex items-start gap-2 text-[12.5px] leading-relaxed ${
+                      slotCheck.ok
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-muted"
+                    }`}
+                  >
+                    {slotCheck.message}
+                  </p>
+                )}
+                <SlotCompare day={day} slots={slotCheck?.slots || null} />
+              </div>
             )}
-            {/* spinner arrows are killed site-wide in globals.css */}
-            <input
-              type="number"
-              inputMode="decimal"
-              step="any"
-              min="0"
-              max="24"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              placeholder="e.g. 8.5"
-              className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
-            />
-          </label>
+          </div>
         )}
 
         <label className="grid gap-1">
@@ -450,7 +619,121 @@ export default function ReportProblem({ token, days, submitAction, period = null
   );
 }
 
+// WHAT THE DAY LOOKS LIKE NOW, AND WHAT IT WOULD LOOK LIKE.
+//
+// Two lanes side by side rather than one drawing with two meanings: the day on
+// record is quiet and neutral, the proposed day carries the accent. The
+// drawing is aria-hidden and the figures above it carry the meaning, the same
+// rule the double-booking day column follows.
+//
+// It is NOT DayCalendar. That component draws the day the engine recorded, and
+// its own note says a calendar re-deriving the engine's answer is a second
+// opinion that can disagree with the question beside it. A provisional claim
+// is not the engine's answer, so it gets its own quiet picture.
+// the slot refusals in a sentence. The live check beside the boxes says all of
+// this as you type; this is the fallback for a request the form did not build.
+function checkSlotMessage(code) {
+  switch (code) {
+    case "noSlots":
+      return "add the day's work slots.";
+    case "tooMany":
+      return `a day takes up to ${MAX_SLOTS} work slots.`;
+    case "badHours":
+      return "enter the day's work hours, more than 0 and up to 24.";
+    case "incomplete":
+      return "every work slot needs a start and an end.";
+    case "backwards":
+      return "each slot has to end after it starts, on the same day.";
+    case "overlap":
+      return "two work slots overlap. Each minute counts once.";
+    case "mismatch":
+      return "the slots do not add up to the hours entered.";
+    default:
+      return "check the work slots for this day.";
+  }
+}
+
+function SlotCompare({ day, slots }) {
+  const current = shiftsOf(day);
+  if (!slots?.length) return null;
+  const all = [...current, ...slots];
+  const low = Math.floor(Math.min(...all.map((s) => s.from)) / 60) * 60;
+  const high = Math.ceil(Math.max(...all.map((s) => s.to)) / 60) * 60;
+  const span = Math.max(60, high - low);
+  const hrs = (list) => Math.round((list.reduce((n, s) => n + (s.to - s.from), 0) / 60) * 100) / 100;
+
+  const lane = (list, mine) => (
+    <div className="relative rounded-[8px] bg-fill" aria-hidden="true">
+      {list.map((s, i) => (
+        <div
+          key={i}
+          style={{ top: `${((s.from - low) / span) * 100}%`, height: `${((s.to - s.from) / span) * 100}%` }}
+          className={`absolute inset-x-0 overflow-hidden rounded-[4px] border-l-2 px-1.5 py-1 text-[10.5px] leading-tight ${
+            mine
+              ? "border-accent bg-accent/10 text-accent"
+              : "border-border-strong bg-surface text-muted"
+          }`}
+        >
+          {clockLabel(s.from)}
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="mt-1 grid gap-2">
+      <div className="grid grid-cols-2 gap-3 text-[12.5px] text-muted">
+        <div>
+          On this timesheet
+          <b className="mt-0.5 block text-lg font-medium tabular-nums text-foreground">
+            {hrs(current).toFixed(2)} <span className="text-[12.5px] font-normal text-muted">hrs</span>
+          </b>
+        </div>
+        <div>
+          What you are reporting
+          <b className="mt-0.5 block text-lg font-medium tabular-nums text-foreground">
+            {hrs(slots).toFixed(2)} <span className="text-[12.5px] font-normal text-muted">hrs</span>
+          </b>
+        </div>
+      </div>
+      <div className="grid h-40 grid-cols-2 gap-3">
+        {lane(current, false)}
+        {lane(slots, true)}
+      </div>
+      <p className="text-[12.5px] leading-relaxed text-muted">
+        Payroll reviews these slots before any corrected timesheet is issued.
+      </p>
+    </div>
+  );
+}
+
 function messageFor(res) {
+  // AN ITEM WAS REFUSED, and the action names which day and why. The screen
+  // checks all of this first, so reaching here means a request the form did
+  // not build - but it says what happened rather than "something went wrong".
+  if (res?.error === "item") {
+    const at = res.at ? `${res.at}: ` : "";
+    const code = String(res.code || "");
+    if (code.startsWith("slots:")) {
+      return `${at}${checkSlotMessage(code.slice(6))}`;
+    }
+    switch (code) {
+      case "newDayDate":
+        return "Pick the day you worked.";
+      case "outsidePeriod":
+        return `${at}that day is not in this pay period.`;
+      case "dayExists":
+        return `${at}this timesheet already lists that day, so report the hours on it instead.`;
+      case "unknownDay":
+        return `${at}that day is not on this timesheet.`;
+      case "note":
+        return "Tell us briefly what's wrong.";
+      case "times":
+        return "Enter the time it started.";
+      default:
+        return "Something in what you reported could not be read. Check it and try again.";
+    }
+  }
   switch (res?.error) {
     case "already":
       return "This timesheet has already been signed, so it can't be changed here. Reply to the email that brought you here.";
