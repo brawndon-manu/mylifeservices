@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import {
   claimsOf, claimStage, canSignClaim, grantedAsReported,
-  daysMovedOutsideClaim, signatureSurvives,
+  daysMovedOutsideClaim, signatureSurvives, timeOffStatus,
 } from "../claim-signing.js";
 
 const claim = (date, status, kind = "hours") => ({ date, status, kind });
@@ -16,7 +16,11 @@ test("a claim is what the employee reported, never a question answer", () => {
     claim("09/03/37", "open"),
     { kind: "q_duplicateDay", date: "09/11/37", status: "declined" },
     { kind: "fix_restNoTimes", date: "09/04/37", status: "accepted" },
-    { kind: "time_off", date: null, status: "noted" },
+    { kind: "time_off", date: null, status: "noted", choice: "yes", timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] },
+    // a "no" agrees with the schedule and asks for nothing; a "yes" naming no
+    // day asks for nothing either
+    { kind: "time_off", date: null, status: "noted", choice: "no", timeOff: null },
+    { kind: "time_off", date: null, status: "noted", choice: "yes", timeOff: [] },
   ];
   assert.deepEqual(claimsOf(rows).map((c) => c.kind), ["hours", "time_off"]);
   assert.deepEqual(claimsOf([]), []);
@@ -95,4 +99,35 @@ test("the signature survives only a clean grant", () => {
   assert.deepEqual(out.moved, [{ date: "09/04/37", was: 6.5, now: 8 }]);
   // and a sheet nobody reported on keeps its signature, which is today's behaviour
   assert.equal(signatureSurvives({ corrections: [], before, after: before }).keep, true);
+});
+
+
+// A TIME-OFF CLAIM IS DECIDED ON THE CALENDAR. Its row is stored "noted" and
+// never changes; the office's only act is adding the day as a PtoEntry. Read
+// as "open" the row blocked nothing and as "noted" it was never granted, so a
+// PTO-only claim could never have kept its signature.
+test("a time-off claim is decided by the calendar, not by its row", () => {
+  const pto = { kind: "time_off", status: "noted", choice: "yes", timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] };
+  assert.equal(timeOffStatus(pto, []), "open", "nothing on the calendar yet");
+  assert.equal(timeOffStatus(pto, [{ date: "09/09/37", kind: "pto", hours: 8 }]), "accepted");
+  assert.equal(timeOffStatus(pto, [{ date: "09/09/37", kind: "pto", hours: 6 }]), "changed", "a different figure was granted");
+  assert.equal(timeOffStatus(pto, [{ date: "09/09/37", kind: "sick", hours: 8 }]), "changed", "sick pay is not PTO");
+  // two days, one still waiting: the claim is open
+  const two = { ...pto, timeOff: [...pto.timeOff, { date: "09/10/37", kind: "pto", hours: 8 }] };
+  assert.equal(timeOffStatus(two, [{ date: "09/09/37", kind: "pto", hours: 8 }]), "open");
+
+  assert.equal(claimStage({ corrections: [pto] }), "pending");
+  assert.equal(claimStage({ corrections: [pto] }, { timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] }), "decided");
+  assert.equal(grantedAsReported([pto]), false, "not on the calendar is not granted");
+  assert.equal(grantedAsReported([pto], { timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] }), true);
+  assert.equal(grantedAsReported([pto], { timeOff: [{ date: "09/09/37", kind: "pto", hours: 6 }] }), false);
+
+  // the granted day appearing on the sheet is the claim being granted, not a
+  // day moving under them
+  const before = [{ date: "09/01/37", paidHours: 6.5 }];
+  const after = [{ date: "09/01/37", paidHours: 6.5 }, { date: "09/09/37", paidHours: 8 }];
+  assert.deepEqual(
+    signatureSurvives({ corrections: [pto], before, after, timeOff: [{ date: "09/09/37", kind: "pto", hours: 8 }] }),
+    { keep: true, why: "grantedAsReported" },
+  );
 });
