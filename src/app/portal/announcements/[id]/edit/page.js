@@ -53,6 +53,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      ackExemptUserIds: true,
       formId: true,
       deletedAt: true,
       publishedAt: true,

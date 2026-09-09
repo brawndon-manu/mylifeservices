@@ -39,6 +39,7 @@ export async function GET(req) {
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      ackExemptUserIds: true,
       acks: {
         select: {
           userId: true,

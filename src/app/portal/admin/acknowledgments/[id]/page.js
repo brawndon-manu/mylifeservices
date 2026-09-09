@@ -5,7 +5,7 @@ import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
-import { ackAudienceWhere, isCompanyMeeting } from "@/lib/announcements";
+import { ackOwedWhere, isCompanyMeeting } from "@/lib/announcements";
 import {
   buildAckRoster,
   audienceLabelShort,
@@ -56,6 +56,7 @@ export default async function AcknowledgmentDetailPage({ params, searchParams })
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      ackExemptUserIds: true,
       acks: { select: { userId: true, viaEmail: true, createdAt: true } },
     },
   });
@@ -65,7 +66,7 @@ export default async function AcknowledgmentDetailPage({ params, searchParams })
 
   const [audienceUsers, allActive] = await Promise.all([
     prisma.user.findMany({
-      where: ackAudienceWhere(p),
+      where: ackOwedWhere(p),
       select: {
         id: true,
         name: true,

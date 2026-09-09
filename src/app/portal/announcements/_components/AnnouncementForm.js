@@ -29,6 +29,7 @@ import {
 import { ATTACH_ACCEPT, ATTACH_MAX_BYTES, ATTACH_MAX_COUNT, attachmentsOf } from "@/lib/announcements";
 import DatePicker from "@/components/DatePicker";
 import AudiencePicker from "./AudiencePicker";
+import ExemptPicker from "./ExemptPicker";
 import MeetingFields from "./MeetingFields";
 import EventFields from "./EventFields";
 
@@ -811,6 +812,11 @@ export default function AnnouncementForm({
                   showAllRoles
                 />
               </div>
+              <ExemptPicker
+                staffByTitle={ackStaffByTitle}
+                defaultIds={Array.isArray(d.ackExemptUserIds) ? d.ackExemptUserIds : []}
+                mode={ackMode}
+              />
             </div>
           )}
         </div>

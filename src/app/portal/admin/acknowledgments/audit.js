@@ -6,7 +6,7 @@
 // rosters show preferred names; the files these rows feed are records.
 import { prisma } from "@/lib/prisma";
 import { payrollName } from "@/lib/contacts";
-import { ackAudienceWhere } from "@/lib/announcements";
+import { ackOwedWhere } from "@/lib/announcements";
 import { PACIFIC, fmtPosted } from "./roster";
 
 const stampFmt = new Intl.DateTimeFormat("en-US", {
@@ -51,7 +51,7 @@ export async function ackAuditPeople(p, { office = "" } = {}) {
   const [audienceUsers, submissions] = await Promise.all([
     prisma.user.findMany({
       where: {
-        ...ackAudienceWhere(p),
+        ...ackOwedWhere(p),
         ...(office ? { offices: { has: office } } : {}),
       },
       select: USER_SELECT,

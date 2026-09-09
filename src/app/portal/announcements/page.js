@@ -20,9 +20,17 @@ import {
   isCompanyMeeting,
   isEvent,
   eventAudienceLabel,
-  isAckExempt,
   canSeeAnnouncement,
+  inAckAudience,
+  isExemptOnPost,
+  ackOwedWhere,
 } from "@/lib/announcements";
+// the deadline chips + California date formatting, one definition
+import {
+  DEADLINE_TZ,
+  overdueChipLabel,
+  missedChipLabel,
+} from "@/lib/announcement-deadline";
 import { companyDateTime } from "@/lib/company-time";
 import AuthorPreview from "./_components/AuthorPreview";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -111,8 +119,63 @@ export default async function AnnouncementsPage({ searchParams }) {
   // visibility gate: meetings + ack-required posts only show to their invited
   // audience (admins + the author always see them); everything else is public.
   const visible = posts.filter((p) => canSeeAnnouncement(p, user));
-  const activeOrPinned = visible.filter((p) => p.pinnedAt || !isExpired(p));
-  const expiredUnpinned = visible.filter((p) => !p.pinnedAt && isExpired(p));
+
+  // A PASSED DEADLINE IS A CALL TO ACTION, NOT AN EXPIRY - Mánu 2026-09-08:
+  // "the deadline doesnt mean it needs to go away." A sign/ack post stays in
+  // the active list for anyone who still owes it - on a form post the
+  // SIGNATURE is the debt, so the read-record ack alone settles nothing - and
+  // for the elevated tier while anybody is outstanding. Only a post owing
+  // nobody anything sinks below the fold when its date passes.
+  const ackPost = (p) => p.requireAck && !isCompanyMeeting(p.tag) && !!p.publishedAt;
+  const formPostIds = visible.filter((p) => ackPost(p) && p.formId).map((p) => p.id);
+  const mySignedIds = formPostIds.length
+    ? new Set(
+        (
+          await prisma.formSubmission.findMany({
+            where: { userId: user.id, announcementId: { in: formPostIds } },
+            select: { announcementId: true },
+          })
+        ).map((s) => s.announcementId),
+      )
+    : new Set();
+  const oweOf = (p) =>
+    ackPost(p) &&
+    inAckAudience(p, user) &&
+    !isExemptOnPost(p, user.id) &&
+    (p.formId ? !mySignedIds.has(p.id) : !p.acks.length);
+
+  // how many people missed each passed deadline - the elevated tier's chip,
+  // and what keeps a post afloat for them. Counted only over the expired
+  // sign/ack posts in view, which is a handful at most.
+  const missedByPost = new Map();
+  if (isElevated(user.role)) {
+    for (const p of visible) {
+      if (!ackPost(p) || !isExpired(p)) continue;
+      const owed = await prisma.user.findMany({
+        where: ackOwedWhere(p),
+        select: { id: true },
+      });
+      const ids = owed.map((u) => u.id);
+      const doneRows = ids.length
+        ? p.formId
+          ? await prisma.formSubmission.findMany({
+              where: { announcementId: p.id, userId: { in: ids } },
+              select: { userId: true },
+            })
+          : await prisma.announcementAck.findMany({
+              where: { announcementId: p.id, userId: { in: ids } },
+              select: { userId: true },
+            })
+        : [];
+      const done = new Set(doneRows.map((r) => r.userId));
+      missedByPost.set(p.id, ids.filter((id) => !done.has(id)).length);
+    }
+  }
+
+  const afloat = (p) =>
+    p.pinnedAt || !isExpired(p) || oweOf(p) || (missedByPost.get(p.id) || 0) > 0;
+  const activeOrPinned = visible.filter(afloat);
+  const expiredUnpinned = visible.filter((p) => !afloat(p));
   const ordered = [...activeOrPinned, ...expiredUnpinned];
 
   return (
@@ -261,7 +324,13 @@ export default async function AnnouncementsPage({ searchParams }) {
           </div>
         ) : (
           ordered.map((p) => (
-            <PostCard key={p.id} post={p} currentUser={user} />
+            <PostCard
+              key={p.id}
+              post={p}
+              currentUser={user}
+              owes={oweOf(p)}
+              missed={missedByPost.get(p.id) || 0}
+            />
           ))
         )}
       </div>
@@ -269,7 +338,7 @@ export default async function AnnouncementsPage({ searchParams }) {
   );
 }
 
-function PostCard({ post, currentUser }) {
+function PostCard({ post, currentUser, owes = false, missed = 0 }) {
   const expired = isExpired(post);
   const liked = post.likes.length > 0;
   const canDelete =
@@ -277,7 +346,6 @@ function PostCard({ post, currentUser }) {
   const canPin = isModerator(currentUser.role);
   const canEdit = post.authorId === currentUser.id || isSuper(currentUser.role);
   const iAcked = post.acks?.length > 0;
-  const iMustAck = !isAckExempt(currentUser);
   const tagClass = ANNOUNCEMENT_TAG_STYLES[post.tag] ?? "bg-surface-3 text-muted";
   const changelog = isChangelog(post.tag);
   const meeting = isCompanyMeeting(post.tag);
@@ -312,26 +380,48 @@ function PostCard({ post, currentUser }) {
                 Pinned
               </span>
             )}
-            {!meeting && expired && (
+            {/* A PASSED DEADLINE IS A CALL TO ACTION, NOT AN EXPIRY - the
+                owed see overdue, the elevated see how many missed, and only
+                a post owing nobody anything reads Past due. */}
+            {!meeting && expired && owes && (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                {overdueChipLabel(post)}
+              </span>
+            )}
+            {!meeting && expired && !owes && missed > 0 && (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                {missedChipLabel(missed)}
+              </span>
+            )}
+            {!meeting && expired && !owes && missed === 0 && (
               <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                 Past due
               </span>
             )}
             {!meeting && post.expiresAt && !expired && (
               <span className="text-muted">
-                due {new Date(post.expiresAt).toLocaleDateString()}
+                due{" "}
+                {new Date(post.expiresAt).toLocaleDateString("en-US", {
+                  timeZone: DEADLINE_TZ,
+                })}
               </span>
             )}
+            {/* the ack pair reads off what is genuinely OWED: on a form post
+                the signature is the debt, so an opened-but-unsigned viewer
+                keeps the amber rather than a green "Acknowledged" telling
+                them they are done. An exempt or out-of-audience reader gets
+                the quiet requested chip. Overdue already says it after the
+                deadline, so the amber pair stands down there. */}
             {!meeting && post.requireAck &&
-              (iAcked ? (
+              (iAcked && !owes ? (
                 <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
                   Acknowledged
                 </span>
-              ) : iMustAck ? (
+              ) : owes && !expired ? (
                 <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                   Acknowledgment needed
                 </span>
-              ) : (
+              ) : owes && expired ? null : (
                 <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                   Acknowledgment requested
                 </span>

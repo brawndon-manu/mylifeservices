@@ -49,6 +49,37 @@ export function ackAudienceWhere(post) {
   return where;
 }
 
+// is this user in the post's ack audience - the JS mirror of ackAudienceWhere,
+// so the page chips and the owed sets share one membership rule. Everyone
+// excludes the ack-exempt Owner/Director title; targeted audiences match
+// whole title segments, exactly as titleSegmentMatch does on the DB side.
+export function inAckAudience(post, user) {
+  if (!user) return false;
+  const everyone =
+    post.ackEveryone || (!post.ackTitles?.length && !post.ackUserIds?.length);
+  if (everyone) return !isAckExempt(user);
+  if ((post.ackUserIds || []).includes(user.id)) return true;
+  return (post.ackTitles || []).some((t) => titleHasSegment(user.title, t));
+}
+
+// PEOPLE WHO OWE THE SIGNATURE OR ACKNOWLEDGMENT: the audience minus this
+// post's exemptions. ackAudienceWhere stays the audience - visibility and
+// every email, which an exempt person still gets (Mánu on April, 2026-09-08:
+// "she gets the email so she can at least see it but she doesnt need to sign
+// it") - while every roster denominator, overdue chip, chase reminder and
+// missed-deadline count reads THIS one.
+export function ackOwedWhere(post) {
+  const base = ackAudienceWhere(post);
+  const exempt = Array.isArray(post.ackExemptUserIds) ? post.ackExemptUserIds : [];
+  if (!exempt.length) return base;
+  return { AND: [base, { id: { notIn: exempt } }] };
+}
+
+// the per-user half of the same rule.
+export function isExemptOnPost(post, userId) {
+  return Array.isArray(post.ackExemptUserIds) && post.ackExemptUserIds.includes(userId);
+}
+
 // who can SEE an announcement (feed + detail page). Company Meetings and
 // acknowledgment-required announcements are private to their invited audience;
 // every other announcement is visible to all staff. the elevated tier - HR and

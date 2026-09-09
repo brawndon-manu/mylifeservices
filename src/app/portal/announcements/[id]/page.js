@@ -30,11 +30,19 @@ import {
   formatHasOnline,
   formatHasAddress,
   ackAudienceWhere,
-  isAckExempt,
+  ackOwedWhere,
+  inAckAudience,
+  isExemptOnPost,
   computeMeetingLocks,
   canSeeAnnouncement,
   attachmentsOf,
 } from "@/lib/announcements";
+// the deadline chips + California date formatting, one definition
+import {
+  DEADLINE_TZ,
+  overdueChipLabel,
+  missedChipLabel,
+} from "@/lib/announcement-deadline";
 import AuthorPreview from "../_components/AuthorPreview";
 import Avatar from "@/components/Avatar";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -327,17 +335,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         orderBy: { createdAt: "desc" },
       })
     : null;
-  // am I in this announcement's ack audience? (Everyone = the expected-ack
-  // staff set; otherwise my job title has to match one of the targeted titles.)
-  const titleMatches = (t) =>
-    (user.title || "").toLowerCase().includes(t.toLowerCase());
-  // meetings use the RSVP response as the record - no separate acknowledgment.
+  // am I in this announcement's ack audience, and not exempted on this post?
+  // `inAckAudience` is the shared JS mirror of ackAudienceWhere (whole title
+  // segments, like the roster) - the loose substring match that lived here
+  // could owe "Program Manager" posts to an Assistant Program Manager the
+  // roster never counted. Meetings use the RSVP response as the record.
   const iMustAck =
-    !meeting &&
-    (post.ackEveryone
-      ? !isAckExempt(user)
-      : (post.ackTitles || []).some(titleMatches) ||
-        (post.ackUserIds || []).includes(user.id));
+    !meeting && inAckAudience(post, user) && !isExemptOnPost(post, user.id);
   // the roster (who's responded / acknowledged / going / attended) is sensitive -
   // Admin/IT/Super only. NOTE: gated on the EFFECTIVE role, and no author
   // exception, so "view as staff" (or any non-admin) never sees it.
@@ -356,11 +360,13 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
 
   let roster = null;
   if (post.requireAck && !meeting && canSeeRoster) {
-    // the roster denominator = this announcement's audience (shared helper).
+    // the roster denominator = the people who OWE this announcement: the
+    // audience minus its per-post exemptions. An exempt reader (April on the
+    // ILS attestation) gets the post and the email and appears nowhere here.
     // the signatures too, so the roster can tell "read it" from "signed it"
     const [expectedUsers, acks, submissions] = await Promise.all([
       prisma.user.findMany({
-        where: ackAudienceWhere(post),
+        where: ackOwedWhere(post),
         select: {
           id: true,
           name: true,
@@ -450,6 +456,18 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     };
   }
 
+  // WHAT I PERSONALLY STILL OWE HERE, for the overdue chip: on a form-backed
+  // post the signature is the debt, on an ack-only post the tick is.
+  const iOwe = iMustAck && (post.formId ? !mySignature : !myAck);
+  // and how many people missed a passed deadline, for the roster tier's chip -
+  // signatures outstanding on a form post, acknowledgments otherwise. Exempt
+  // people are already outside the roster denominator, so they cannot miss.
+  const missedCount = roster
+    ? roster.needsSignature
+      ? roster.total - roster.signedCount
+      : roster.notYet.length
+    : 0;
+
   // ---- Company Meeting ----
   const meetingOptions = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
   const myPicks = (post.meetingChoices || []).map((c) => c.optionId);
@@ -467,10 +485,9 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     ).map((c) => [c.optionId, c._count._all]),
   );
   // can I pick a session? = in the meeting audience (same membership as ack).
-  const iCanPick = post.ackEveryone
-    ? !isAckExempt(user)
-    : (post.ackTitles || []).some(titleMatches) ||
-      (post.ackUserIds || []).includes(user.id);
+  // The per-post ack exemption does NOT apply: an invitee picks a session
+  // whether or not a signature is expected of them.
+  const iCanPick = inAckAudience(post, user);
 
   // my current response (going / cant make it + reason), for the controls.
   const myResponse = post.meetingResponses?.[0] || null;
@@ -1448,13 +1465,32 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 <span className={`rounded-full px-2.5 py-0.5 font-medium ${tagClass}`}>
                   {post.tag}
                 </span>
-                {!meeting && expired && (
+                {/* A PASSED DEADLINE IS A CALL TO ACTION, NOT AN EXPIRY -
+                    Mánu 2026-09-08. Somebody who still owes the signature
+                    sees the overdue chip; the roster tier sees how many
+                    missed; only a post owing nobody anything reads Past due. */}
+                {!meeting && expired && iOwe && (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    {overdueChipLabel(post)}
+                  </span>
+                )}
+                {!meeting && expired && !iOwe && missedCount > 0 && (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    {missedChipLabel(missedCount)}
+                  </span>
+                )}
+                {!meeting && expired && !iOwe && missedCount === 0 && (
                   <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
                     Past due
                   </span>
                 )}
                 {!meeting && post.expiresAt && !expired && (
-                  <span>due {new Date(post.expiresAt).toLocaleDateString()}</span>
+                  <span>
+                    due{" "}
+                    {new Date(post.expiresAt).toLocaleDateString("en-US", {
+                      timeZone: DEADLINE_TZ,
+                    })}
+                  </span>
                 )}
               </div>
             </div>

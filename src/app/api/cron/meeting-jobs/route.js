@@ -8,7 +8,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Resend } from "resend";
-import { ackAudienceWhere, formatHasOnline, isCompanyMeeting } from "@/lib/announcements";
+import { ackAudienceWhere, ackOwedWhere, formatHasOnline, isCompanyMeeting } from "@/lib/announcements";
+import { notifyOversight } from "@/lib/notify";
+// the deadline's windows and words, one definition - see the module note
+import {
+  chaseWindowOpen,
+  deadlinePassed,
+  chaseEmailCopy,
+  missedBellCopy,
+  dueDateLong,
+} from "@/lib/announcement-deadline";
 import {
   emailAnnouncement,
   emailAudienceWhere,
@@ -58,7 +67,10 @@ export async function GET(request) {
   }
   const resend = new Resend(process.env.RESEND_API_KEY);
   const now = new Date();
-  const result = { reminders: 0, nudges: 0, notices: 0, emails: 0, held: 0, published: 0 };
+  const result = {
+    reminders: 0, nudges: 0, notices: 0, emails: 0, held: 0, published: 0,
+    chases: 0, deadlineBells: 0,
+  };
 
   // ---- scheduled publishes, first ----
   //
@@ -453,6 +465,115 @@ export async function GET(request) {
           data: { meetingResponseNoticeSentAt: new Date() },
         });
         result.notices++;
+      }
+    }
+  }
+
+  // ---- sign/acknowledge deadlines ----
+  //
+  // Mánu 2026-09-08: "the deadline is a call to action for the peple who
+  // havet signed and us to be notified that they missed the deadlne to sign."
+  // Two one-shot jobs per deadline, stamped like the meeting jobs above:
+  //   4. the night-before chase - 8 PM California, to exactly the people who
+  //      still owe it (the owed audience minus whoever has done the thing -
+  //      the SIGNATURE on a form post, the ack otherwise)
+  //   5. the missed bell - the moment a run sees the deadline passed with
+  //      anyone outstanding, the elevated tier's bells ring with the count
+  // The composer has PROMISED the chase since it shipped ("Anyone who hasn't
+  // signed by then gets a reminder.") - this is the machinery behind that
+  // sentence, which until now was words.
+  {
+    const ackPosts = await prisma.announcement.findMany({
+      where: {
+        requireAck: true,
+        deletedAt: null,
+        publishedAt: { not: null },
+        tag: { not: "Company Meeting" },
+        expiresAt: { not: null },
+        OR: [{ ackReminderSentAt: null }, { deadlineNoticedAt: null }],
+      },
+      select: {
+        id: true, title: true, formId: true, expiresAt: true,
+        ackEveryone: true, ackTitles: true, ackUserIds: true, ackExemptUserIds: true,
+        ackReminderSentAt: true, deadlineNoticedAt: true,
+      },
+    });
+    for (const post of ackPosts) {
+      const owedUsers = await prisma.user.findMany({
+        where: ackOwedWhere(post),
+        select: RECIP_SELECT,
+      });
+      const ids = owedUsers.map((u) => u.id);
+      const doneRows = !ids.length
+        ? []
+        : post.formId
+          ? await prisma.formSubmission.findMany({
+              where: { announcementId: post.id, userId: { in: ids } },
+              select: { userId: true },
+            })
+          : await prisma.announcementAck.findMany({
+              where: { announcementId: post.id, userId: { in: ids } },
+              select: { userId: true },
+            });
+      const done = new Set(doneRows.map((r) => r.userId));
+      const outstanding = owedUsers.filter((u) => !done.has(u.id));
+
+      // 4. the night-before chase. Nobody outstanding = nothing to send, and
+      // the stamp still lands so the tick stops asking.
+      if (!post.ackReminderSentAt && chaseWindowOpen(post.expiresAt, now)) {
+        let ok = true;
+        if (outstanding.length) {
+          const { subject, line } = chaseEmailCopy(post);
+          const bodyHtml = `<p style="font-size:15px;color:#1f2937;margin:0 0 8px;">${line}</p>`;
+          const ctaHtml = seeOriginalButton(`${base}/portal/announcements/${post.id}`);
+          ok = await sendBatch(
+            outstanding.map((r) => ({
+              from,
+              to: [r.email],
+              subject,
+              html: buildAnnouncementEmailHtml({
+                logoUrl,
+                title: post.title || "Announcement",
+                authorName: "My Life Services",
+                authorTitle: null,
+                dateStr: dueDateLong(post.expiresAt),
+                eyebrow: "Reminder",
+                requireAck: false,
+                bodyHtml,
+                ackUrl: null,
+                meetingHtml: null,
+                ctaHtml,
+              }),
+              text: `${subject}. ${line}`,
+            })),
+          );
+        }
+        if (ok) {
+          await prisma.announcement.update({
+            where: { id: post.id },
+            data: { ackReminderSentAt: new Date() },
+          });
+          result.chases++;
+        }
+      }
+
+      // 5. the missed-deadline bell. Stamped even when everyone made it -
+      // "everyone signed" is the job finishing quietly, not a bell.
+      if (!post.deadlineNoticedAt && deadlinePassed(post.expiresAt, now)) {
+        if (outstanding.length) {
+          const { title, body } = missedBellCopy(post, outstanding);
+          await notifyOversight({
+            type: "ACK_DEADLINE_MISSED",
+            title,
+            body,
+            link: `/portal/announcements/${post.id}`,
+          });
+          result.deadlineBells++;
+        }
+        await prisma.announcement.update({
+          where: { id: post.id },
+          data: { deadlineNoticedAt: new Date() },
+        });
       }
     }
   }

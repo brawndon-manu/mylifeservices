@@ -1,0 +1,101 @@
+// AN ANNOUNCEMENT DEADLINE, IN ONE PLACE.
+//
+// Mánu 2026-09-08: "the deadline doesnt mean it needs to go away. the deadline
+// is a call to action for the peple who havet signed and us to be notified
+// that they missed the deadlne to sign." So a deadline here is three things,
+// none of which is an expiry: the date a signature or acknowledgment is due,
+// a chase the night before to whoever still owes, and a bell to the elevated
+// tier the moment it passes with people outstanding. The post itself never
+// sinks while anyone still owes it - that rule lives on the pages.
+//
+// EVERY INSTANT IS CALIFORNIA'S. The old parse read "2026-09-09" as midnight
+// UTC, which is 5:00 PM Pacific on the 8th - so every deadline went "Past
+// due" a day early, at teatime. "Due 09/09" now means through 11:59 PM
+// America/Los_Angeles on 09/09, and every date this module prints is
+// formatted in that zone. Same family as the businessNow() fix (ae8b1f5).
+//
+// Pure on purpose: instants in, words and booleans out. The cron, the server
+// actions and the pages all ask here, so the chase, the bell, the chips and
+// the printed dates cannot disagree about what a deadline is.
+import { zonedToInstant } from "./meeting-time.js";
+
+export const DEADLINE_TZ = "America/Los_Angeles";
+
+// "2026-09-09" (the DatePicker's posted value) -> the Date the deadline IS:
+// end of that day, California. null when it cannot be read.
+export function deadlineInstant(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || "").trim());
+  if (!m) return null;
+  const iso = zonedToInstant(m[0], "23:59", DEADLINE_TZ);
+  return iso ? new Date(iso) : null;
+}
+
+// has this post's deadline passed?
+export function deadlinePassed(expiresAt, now = new Date()) {
+  return !!(expiresAt && now.getTime() >= new Date(expiresAt).getTime());
+}
+
+// THE CHASE WINDOW: 8:00 PM California the night before the deadline day,
+// open until the deadline itself. Mirrors the meeting night-before reminder,
+// so the two kinds of evening nudge land at the same hour.
+export function chaseWindowOpen(expiresAt, now = new Date()) {
+  if (!expiresAt) return false;
+  const end = new Date(expiresAt).getTime();
+  if (now.getTime() >= end) return false;
+  // the deadline is 23:59 LA on its own day, so the night before 8 PM is
+  // exactly one day and 3:59 earlier - derived from the instant rather than
+  // re-parsing a date string, so DST days stay honest via the zone math.
+  const dayStr = new Date(end).toLocaleDateString("en-CA", { timeZone: DEADLINE_TZ });
+  const [y, mo, d] = dayStr.split("-").map(Number);
+  const prev = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  const iso = zonedToInstant(prev.toISOString().slice(0, 10), "20:00", DEADLINE_TZ);
+  if (!iso) return false;
+  return now.getTime() >= new Date(iso).getTime();
+}
+
+// does this post take a SIGNATURE (an attached form) or an acknowledgment?
+export const signMode = (post) => !!post?.formId;
+
+// "Wednesday, September 9" - the chase email's date, California.
+export function dueDateLong(expiresAt) {
+  if (!expiresAt) return null;
+  return new Date(expiresAt).toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", timeZone: DEADLINE_TZ,
+  });
+}
+
+// "09/09/2026" - the bell's date, California.
+export function dueDateShort(expiresAt) {
+  if (!expiresAt) return null;
+  return new Date(expiresAt).toLocaleDateString("en-US", {
+    month: "2-digit", day: "2-digit", year: "numeric", timeZone: DEADLINE_TZ,
+  });
+}
+
+// the chase email's words. One sentence; the See-original button carries the post.
+export function chaseEmailCopy(post) {
+  const due = dueDateLong(post.expiresAt);
+  return {
+    subject: `Reminder: ${post.title || "an announcement"}`,
+    line: signMode(post)
+      ? `Your signature is due by ${due}.`
+      : `Your acknowledgment is due by ${due}.`,
+  };
+}
+
+// the missed-deadline bell's words, exactly as approved.
+export function missedBellCopy(post, outstanding) {
+  const n = outstanding.length;
+  const who = n === 1 ? "1 person has" : `${n} people have`;
+  const verb = signMode(post) ? "signed" : "acknowledged";
+  return {
+    title: signMode(post) ? "Attestation deadline missed" : "Acknowledgment deadline missed",
+    body: `${who} not ${verb} "${post.title || "an announcement"}". The deadline was ${dueDateShort(post.expiresAt)}.`,
+  };
+}
+
+// the overdue chip a person who still owes sees, and the elevated tier's count.
+export const overdueChipLabel = (post) =>
+  signMode(post) ? "Signature overdue" : "Acknowledgment overdue";
+export const missedChipLabel = (n) => `${n} missed the deadline`;

@@ -401,6 +401,21 @@ model Announcement {
   // specific individuals to target (in addition to ackTitles), used when the
   // poster narrows a title role to certain people. unioned with ackTitles.
   ackUserIds                  String[]                      @default([])
+  // PEOPLE IN THE AUDIENCE WHO ARE NOT EXPECTED TO SIGN OR ACKNOWLEDGE.
+  // Mánu 2026-09-08, on April: "i want her to get the email so she can at
+  // least see it but she doesnt need to sign it." They still see the post and
+  // still get every email; they are simply never owed - out of the roster
+  // denominator, the overdue chips, the reminder chase and the missed count.
+  // Applied by ackOwedWhere only; ackAudienceWhere (visibility + email) never
+  // reads it.
+  ackExemptUserIds            String[]                      @default([])
+  // ONE-SHOT STAMPS for the deadline jobs in cron/meeting-jobs, same pattern
+  // as meetingResponseNoticeSentAt: the night-before chase email to whoever
+  // still owes, and the missed-deadline bell to the elevated tier. Stamped
+  // only when the batch actually left; editing the deadline to a later date
+  // clears both so a pushed-back deadline re-arms its jobs.
+  ackReminderSentAt           DateTime?
+  deadlineNoticedAt           DateTime?
   // an optional fillable form attached to this announcement: acknowledging it
   // means filling + submitting the form, which writes the ack (see FormSubmission).
   formId                      String?
@@ -1478,6 +1493,10 @@ enum NotificationType {
   // so every insert threw and notifyOversight's catch ate it - the bell never
   // rang for a dispute until 2026-09-02.
   TIMESHEET_DISPUTED
+  // an announcement's sign/acknowledge deadline passed with people still
+  // outstanding. Display chip added in notifications.js in the same change -
+  // the TIMESHEET_DISPUTED lesson above.
+  ACK_DEADLINE_MISSED
 }
 
 model Notification {

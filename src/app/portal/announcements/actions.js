@@ -69,10 +69,13 @@ import {
   ANNOUNCEMENT_CONTENT_MAX,
   CHANGELOG_CONTENT_MAX,
   ackAudienceWhere,
+  ackOwedWhere,
   titleSegmentMatch,
   isAckExempt,
   computeMeetingLocks,
 } from "@/lib/announcements";
+// deadlines are end-of-day California, one definition - see the module note
+import { deadlineInstant } from "@/lib/announcement-deadline";
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -85,6 +88,25 @@ function parseDateField(raw) {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return null;
   return d;
+}
+
+// THE DEADLINE FIELD IS NOT parseDateField. A bare "2026-09-09" reads as
+// midnight UTC, which is 5:00 PM Pacific on the 8th - so every sign-by date
+// went "Past due" at teatime the day before it. A deadline means through the
+// end of its own day, California. See announcement-deadline.js.
+function parseDeadlineField(raw) {
+  if (typeof raw !== "string" || !raw) return null;
+  return deadlineInstant(raw);
+}
+
+// the per-post exemption list: people who get the post and the email but owe
+// no signature or acknowledgment. Deduped and capped; an id outside the
+// audience is inert, so membership is not validated against it.
+function parseExemptUserIds(formData) {
+  const ids = formData
+    .getAll("ackExemptUserIds")
+    .filter((v) => typeof v === "string" && v && v.length < 64);
+  return [...new Set(ids)].slice(0, 200);
 }
 
 // the acknowledgment audience from the form: Everyone (the whole expected-ack
@@ -487,7 +509,7 @@ export async function createPost(formData) {
   // Optional, and capped well under the body: it is a footnote, not a post.
   const portalOnly = cleanBody(formData.get("portalOnly"), 5000);
 
-  const expiresAt = parseDateField(formData.get("expiresAt"));
+  const expiresAt = parseDeadlineField(formData.get("expiresAt"));
 
   // proxy posting: an IT/admin can post on behalf of another employee.
   let authorId = user.id;
@@ -565,6 +587,7 @@ export async function createPost(formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      ackExemptUserIds: parseExemptUserIds(formData),
       formId,
       ...parseMeetingFields(formData, tag),
       meetingAttestationFormId,
@@ -760,6 +783,8 @@ export async function editPost(postId, formData) {
       attachments: true,
       meetingOptions: true,
       meetingAt: true,
+      // so a moved deadline can be told from an untouched one below
+      expiresAt: true,
     },
   });
   if (!post || post.deletedAt) {
@@ -811,7 +836,7 @@ export async function editPost(postId, formData) {
     redirect(`/portal/announcements/${postId}/edit?error=content`);
   }
   const portalOnly = cleanBody(formData.get("portalOnly"), 5000);
-  const expiresAt = parseDateField(formData.get("expiresAt"));
+  const expiresAt = parseDeadlineField(formData.get("expiresAt"));
   const requireAck = formData.get("requireAck") === "on";
   const ackAudience = parseAckAudience(
     formData,
@@ -848,7 +873,15 @@ export async function editPost(postId, formData) {
       ackEveryone,
       ackTitles,
       ackUserIds,
+      ackExemptUserIds: parseExemptUserIds(formData),
       formId,
+      // A MOVED DEADLINE RE-ARMS ITS JOBS. Pushing the date (or clearing it)
+      // makes the night-before chase and the missed-deadline bell meaningful
+      // again, so the one-shot stamps come off and the cron fires them for
+      // the new date. An untouched deadline keeps its stamps.
+      ...((post.expiresAt?.getTime() ?? null) !== (expiresAt?.getTime() ?? null)
+        ? { ackReminderSentAt: null, deadlineNoticedAt: null }
+        : {}),
       ...authorUpdate,
       ...meetingFields,
       ...parseEventFields(formData, tag),
@@ -2027,6 +2060,7 @@ export async function sendAckEmails(postId) {
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      ackExemptUserIds: true,
     },
   });
   if (!post || post.deletedAt || !post.requireAck) {
@@ -2042,12 +2076,15 @@ export async function sendAckEmails(postId) {
     redirect(`/portal/announcements/${postId}?error=emailConfig`);
   }
 
-  // recipients = this announcement's audience (NOT every staffer) who hasn't
-  // acked yet, so the roster button can only nudge the people it's actually for.
+  // recipients = the people who still OWE this announcement (audience minus
+  // the per-post exemptions) and haven't acked, so the roster button can only
+  // nudge the people it's actually for - never an exempt reader.
   const recipients = await prisma.user.findMany({
     where: {
-      ...ackAudienceWhere(post),
-      announcementAcks: { none: { announcementId: postId } },
+      AND: [
+        ackOwedWhere(post),
+        { announcementAcks: { none: { announcementId: postId } } },
+      ],
     },
     select: {
       id: true,

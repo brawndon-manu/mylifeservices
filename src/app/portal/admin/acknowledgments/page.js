@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import BackLink from "@/components/BackLink";
-import { ackAudienceWhere, COMPANY_MEETING_TAG } from "@/lib/announcements";
+import { ackOwedWhere, COMPANY_MEETING_TAG } from "@/lib/announcements";
 import {
   buildAckRoster,
   audienceLabelShort,
@@ -49,6 +49,7 @@ export default async function AcknowledgmentsPage({ searchParams }) {
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
+      ackExemptUserIds: true,
       acks: { select: { userId: true, viaEmail: true, createdAt: true } },
     },
   });
@@ -57,7 +58,7 @@ export default async function AcknowledgmentsPage({ searchParams }) {
     rawPosts.map(async (p) => {
       const audienceUsers = await prisma.user.findMany({
         where: {
-          ...ackAudienceWhere(p),
+          ...ackOwedWhere(p),
           ...(office ? { offices: { has: office } } : {}),
         },
         select: {

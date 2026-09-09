@@ -37,6 +37,14 @@ export const NOTIFICATION_TYPES = {
     accent: "border-l-rose-600",
     dot: "bg-rose-600",
   },
+  // an announcement's sign/acknowledge deadline passed with people still
+  // outstanding - written by the cron's missed-deadline job.
+  ACK_DEADLINE_MISSED: {
+    label: "Deadline",
+    chip: "bg-amber-100 text-amber-800",
+    accent: "border-l-amber-600",
+    dot: "bg-amber-600",
+  },
 };
 
 export function notifConfig(type) {
