@@ -24,6 +24,10 @@
   --faint: #94a3b8;        /* tertiary / labels (slate-400) */
   --accent: #196e93;       /* links + accent text */
   --accent-strong: #0e5379;
+  --calendar-month: #c9363d;
+  --status-positive: #357347;
+  --status-caution: #946a14;
+  --status-danger: #bd2838;
   /* the two premium series, and they mean what the signed timesheet's colour
      key means: blue is a meal period, yellow is a rest break. Steps validated
      against both surfaces - on white the yellow sits under 3:1, which is why
@@ -59,6 +63,10 @@
   --faint: #6f7682;
   --accent: #38b6ef;       /* lightened so links read on dark */
   --accent-strong: #7dd3fc;
+  --calendar-month: #ff7a80;
+  --status-positive: #8bcba0;
+  --status-caution: #dabc6d;
+  --status-danger: #ff8089;
   /* the same two hues, stepped for a dark surface rather than flipped */
   --pen-meal: #3987e5;
   --pen-rest: #c98500;

@@ -1,17 +1,19 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
+import { splitSourceName } from "@/lib/timesheet/people-sort";
 import { CORRECTION_KINDS, correctionEffect } from "@/lib/timesheet/corrections";
+// minutes -> "08:00 AM", the same words the employee typed them as
+import { breaksAgainstSlots, droppedBreakLabel } from "@/lib/timesheet/work-slots";
 import { TIME_OFF_KIND } from "@/lib/timesheet/time-off";
-import CorrectionRow from "./CorrectionRow";
-import RecomputeButton from "./RecomputeButton";
+import ReportedIssues from "./ReportedIssues";
+import { shiftsOf } from "@/lib/timesheet/questions";
 
 export const dynamic = "force-dynamic";
 
-const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
+const iso = (date) => date?.toISOString() || null;
 
 export default async function CorrectionsPage({ params }) {
   const user = await getCurrentUser();
@@ -20,7 +22,7 @@ export default async function CorrectionsPage({ params }) {
   const { id } = await params;
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
-    select: { id: true, periodFrom: true, periodTo: true },
+    select: { id: true, periodFrom: true, periodTo: true, program: true },
   });
   if (!batch) notFound();
 
@@ -65,130 +67,46 @@ export default async function CorrectionsPage({ params }) {
     orderBy: { disputedAt: "desc" },
   });
 
-  const openCount = sheets.reduce(
-    (n, s) => n + s.corrections.filter((c) => c.status === "open").length,
-    0,
-  );
+  const reports = sheets.map((s) => {
+    const days = s.data?.days || [];
+    const originalDays = s.data?.daysOriginal || days;
+    const source = splitSourceName(s.sourceName);
+    return {
+      id: s.id,
+      name: s.user ? preferredName(s.user) : [source.first, source.last].filter(Boolean).join(" "),
+      paidHours: s.paidHours,
+      premiumHours: s.premiumHours,
+      recomputedAt: iso(s.recomputedAt),
+      sentAt: iso(s.sentAt),
+      signedAt: iso(s.signedAt),
+      approvedAt: iso(s.approvedAt),
+      canRebuild: originalDays.some((d) => Array.isArray(d.punches)),
+      corrections: s.corrections.map((c) => {
+        const day = days.find((d) => d.date === c.date) || null;
+        const original = originalDays.find((d) => d.date === c.date) || null;
+        return {
+          id: c.id, date: c.date, kind: c.kind,
+          label: CORRECTION_KINDS[c.kind]?.label || "Reported issue",
+          claimedHours: c.claimedHours,
+          statedSlots: Array.isArray(c.statedSlots) ? c.statedSlots.map(({ from, to }) => ({ from, to })) : [],
+          statedTimes: Array.isArray(c.statedBreaks)
+            ? c.statedBreaks.filter((b) => b?.from && b?.to).map((b) => `${b.from} to ${b.to}`) : [],
+          strandedBreaks: Array.isArray(c.statedSlots) && c.statedSlots.length && day
+            ? breaksAgainstSlots(day.breaks, c.statedSlots).dropped.map(droppedBreakLabel) : [],
+          note: c.note, status: c.status, resolutionNote: c.resolutionNote,
+          resolvedBy: c.resolvedBy ? preferredName(c.resolvedBy) : null,
+          createdAt: iso(c.createdAt), resolvedAt: iso(c.resolvedAt),
+          effect: correctionEffect(c.kind, c.status === "open" ? day : original, c.claimedHours),
+          original: original ? {
+            paidHours: original.paidHours, slots: shiftsOf(original),
+            mealCount: original.mealCount, restCount: original.restCount,
+            restRequired: original.restRequired,
+            mealViolation: original.mealViolation, restViolation: original.restViolation,
+          } : null,
+        };
+      }),
+    };
+  });
 
-  return (
-    <section className="mx-auto max-w-7xl px-6 py-10">
-      <Link
-        href={`/portal/admin/timesheets/${id}`}
-        className="text-sm text-muted underline underline-offset-4 hover:text-foreground"
-      >
-        Back to the batch
-      </Link>
-
-      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
-        Reported problems
-      </h1>
-      <p className="mt-2 text-sm text-muted">
-        {batch.periodFrom} to {batch.periodTo} ·{" "}
-        {openCount === 0
-          ? "nothing outstanding"
-          : `${openCount} waiting on you`}
-      </p>
-
-      {sheets.length === 0 ? (
-        <p className="mt-10 rounded-xl border border-border bg-surface p-6 text-sm text-muted">
-          Nobody has reported a problem with this batch.
-        </p>
-      ) : (
-        <div className="mt-8 space-y-6">
-          {sheets.map((s) => {
-            const who = s.user ? preferredName(s.user) : s.sourceName;
-            const open = s.corrections.filter((c) => c.status === "open");
-            const days = s.data?.days || [];
-            const canRebuild =
-              open.length === 0 &&
-              days.length > 0 &&
-              days.some((d) => Array.isArray(d.punches));
-
-            return (
-              <div
-                key={s.id}
-                className="rounded-xl border border-border bg-surface p-5"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-foreground">{who}</h2>
-                    <p className="text-sm text-muted">
-                      {fmt(s.paidHours)} hrs · {fmt(s.premiumHours)} premium
-                      {s.recomputedAt && " · recomputed"}
-                    </p>
-                  </div>
-                  {open.length > 0 ? (
-                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-                      {open.length} open
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                      All handled
-                    </span>
-                  )}
-                </div>
-
-                <ul className="mt-4 space-y-3">
-                  {s.corrections.map((c) => {
-                    const day = days.find((d) => d.date === c.date) || null;
-                    return (
-                      <CorrectionRow
-                        key={c.id}
-                        correction={{
-                          id: c.id,
-                          date: c.date,
-                          kind: c.kind,
-                          label: CORRECTION_KINDS[c.kind]?.label || c.kind,
-                          claimedHours: c.claimedHours,
-                          // the times an unpunched-break claim named - whoever
-                          // decides this row is deciding those
-                          statedTimes: Array.isArray(c.statedBreaks)
-                            ? c.statedBreaks
-                              .filter((b) => b?.from && b?.to)
-                              .map((b) => `${b.from} to ${b.to}`)
-                            : [],
-                          note: c.note,
-                          status: c.status,
-                          resolutionNote: c.resolutionNote,
-                          resolvedBy: c.resolvedBy ? preferredName(c.resolvedBy) : null,
-                          effect: correctionEffect(c.kind, day, c.claimedHours),
-                        }}
-                        day={
-                          day && {
-                            paidHours: day.paidHours,
-                            mealCount: day.mealCount,
-                            restCount: day.restCount,
-                            restRequired: day.restRequired,
-                            mealViolation: day.mealViolation,
-                            restViolation: day.restViolation,
-                          }
-                        }
-                      />
-                    );
-                  })}
-                </ul>
-
-                {open.length === 0 && (
-                  <div className="mt-5 border-t border-border pt-4">
-                    {canRebuild ? (
-                      <RecomputeButton
-                        timesheetId={s.id}
-                        accepted={s.corrections.filter((c) => c.status === "accepted").length}
-                      />
-                    ) : (
-                      <p className="text-sm text-muted">
-                        This batch was uploaded before corrections existed, so
-                        there&apos;s no punch detail to rebuild the sheet from.
-                        Re-upload the period to correct it here.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
+  return <ReportedIssues batch={batch} sheets={reports} />;
 }
