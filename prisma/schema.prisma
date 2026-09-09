@@ -1063,6 +1063,18 @@ model Timesheet {
   // set it was the public share-link flow.
   signedName   String?
   signedIp     String?
+  // WHAT THEY SIGNED, when the signature sits on a claim rather than on the
+  // figures (Mánu 2026-09-09, the pending document: page 1 the sheet as
+  // recorded with no attestation, page 2 the reported changes carrying the
+  // signature). Frozen at the moment of signing so page 2 can be printed again
+  // exactly as signed after payroll's decision rebuilds the sheet:
+  //   { claims: [{ id, date, kind, claimedHours, statedSlots, note, timeOff }],
+  //     days: [{ date, paidHours }], totals: { regular, overtime, doubleTime } }
+  // `days` is the "before" claim-signing.js compares the rebuild against;
+  // `claims` is the claim itself, kept here because a correction row changes
+  // status and can be withdrawn, and the signed document must not. Null on a
+  // sheet signed clean and on every signature made before this existed.
+  signedClaim  Json?
 
   // management sign-off, after the employee has signed. the approved copy is
   // the final record - it's what the batch downloads hand back for filing.

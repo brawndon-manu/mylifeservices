@@ -1,0 +1,17 @@
+-- THE SIGNED CLAIM ON A TIMESHEET (Mánu 2026-09-09).
+--
+-- A signature used to be refused while a report was open. It now goes on a
+-- PENDING document instead: page 1 the sheet as recorded with no attestation,
+-- page 2 the reported changes with the signature on them. This column freezes
+-- what page 2 said at the moment of signing, so the document can be printed
+-- again exactly as signed after payroll's decision rebuilds the figures, and so
+-- the rebuild can tell whether anything moved beyond what they asked for.
+--
+-- ADDITIVE AND NULLABLE. Every existing sheet keeps reading exactly as it does
+-- today, and nothing is backfilled: a signature made before this column
+-- existed was on the figures, not on a claim, and there is nothing to freeze.
+--
+-- Written by hand and applied with `prisma migrate deploy`. NEVER migrate dev
+-- on this database - it is shared with production and it offered to reset it
+-- on 2026-09-08 over two migrations missing from this machine.
+ALTER TABLE "Timesheet" ADD COLUMN IF NOT EXISTS "signedClaim" JSONB;
