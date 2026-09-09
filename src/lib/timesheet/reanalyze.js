@@ -85,7 +85,15 @@ export function reanalyzeDays(days, {
     // recompute the entitlement straight back over somebody's answer - the same
     // shape of bug as Dinley 08/07, where `reentitle` undid what she had said.
     const answered = overrides?.[d.date] || {};
-    const before = analyzeDayInput(d, {
+    // AN ACCEPTED HOURS CORRECTION REPLACES THE DAY'S CLOCK, and the engine has
+    // to read the new one. Mánu 2026-09-08: an hours claim carries every work
+    // slot for the day, so accepting it is a statement about when the person
+    // worked, not just how long. Analysing the OLD punches here would recompute
+    // the meal and rest findings from the shape the correction rejected.
+    const corrected = answered.correctedPunches === true && answered.punches?.length
+      ? answered.punches
+      : null;
+    const before = analyzeDayInput(corrected ? { ...d, punches: corrected } : d, {
       shifts,
       restTimes: restTimesFor(d.date),
       restSourceAvailable,
@@ -100,15 +108,32 @@ export function reanalyzeDays(days, {
     // THE CANARY. Paid hours come from the punches and the printed floor, and
     // neither of those changed, so a re-analysis must not move them. If it does,
     // an input was not rebuilt properly and every figure downstream is suspect.
+    //
+    // EXCEPT ON A DAY SOMEBODY ACCEPTED NEW PUNCHES FOR. There the move is the
+    // whole point, and calling it drift would be worse than cosmetic: the
+    // caller falls back to the stored days for the WHOLE SHEET the moment
+    // paidDrift is non-zero, so one corrected day would quietly discard every
+    // other day's re-analysis as well. Reported either way; only an
+    // unexplained move counts as drift.
     if (Math.abs((after.paidHours || 0) - (d.paidHours || 0)) > 0.005) {
-      paidDrift++;
-      moved.push({
-        date: d.date,
-        field: "paidHours",
-        was: d.paidHours,
-        now: after.paidHours,
-        suspect: true,
-      });
+      if (corrected) {
+        moved.push({
+          date: d.date,
+          field: "paidHours",
+          was: d.paidHours,
+          now: after.paidHours,
+          corrected: true,
+        });
+      } else {
+        paidDrift++;
+        moved.push({
+          date: d.date,
+          field: "paidHours",
+          was: d.paidHours,
+          now: after.paidHours,
+          suspect: true,
+        });
+      }
     }
     // what the rules moved, which is the point of running at all. Reported so a
     // re-analysis that changes what somebody is charged can be seen rather than

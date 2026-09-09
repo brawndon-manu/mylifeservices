@@ -2319,10 +2319,16 @@ export async function submitTimesheetCorrections({ token, items }) {
 
   const knownDates = new Set((ts.data?.days || []).map((d) => d.date));
 
+  // NOTHING IS DROPPED QUIETLY, Mánu 2026-09-08: "Never silently discard an
+  // invalid issue or accept an hours correction without its required slots."
+  // This loop used to `continue` past anything it did not like and report ok
+  // as long as ONE item survived, so a fumbled issue vanished between the
+  // screen and the office. Every refusal now names the day it refused.
+  const bad = (code, at) => ({ ok: false, error: "item", code, at: at ?? null });
   const clean = [];
   for (const raw of items) {
     const kind = String(raw?.kind || "");
-    if (!isCorrectionKind(kind)) continue;
+    if (!isCorrectionKind(kind)) return bad("kind", raw?.date ? String(raw.date).slice(0, 12) : null);
     const spec = CORRECTION_KINDS[kind];
 
     // a date has to be one this sheet actually lists, otherwise an accepted
@@ -2336,10 +2342,12 @@ export async function submitTimesheetCorrections({ token, items }) {
     let date = raw?.date ? String(raw.date).slice(0, 12) : null;
     if (spec.scope === "newDay") {
       const inPeriod = periodDates(ts.batch.periodFrom, ts.batch.periodTo);
-      if (!date || !inPeriod.includes(date) || knownDates.has(date)) continue;
+      if (!date) return bad("newDayDate", null);
+      if (!inPeriod.includes(date)) return bad("outsidePeriod", date);
+      if (knownDates.has(date)) return bad("dayExists", date);
     } else {
       if (date && !knownDates.has(date)) date = null;
-      if (spec.scope === "day" && !date) continue;
+      if (spec.scope === "day" && !date) return bad("unknownDay", raw?.date ? String(raw.date).slice(0, 12) : null);
     }
 
     let claimedHours = null;
@@ -2349,7 +2357,17 @@ export async function submitTimesheetCorrections({ token, items }) {
     }
 
     const note = raw?.note ? String(raw.note).trim().slice(0, 1000) : null;
-    if (spec.needsNote && !note) continue;
+    if (spec.needsNote && !note) return bad("note", date);
+
+    // THE FULL DAY'S SLOTS, re-checked here rather than trusted. An hours
+    // claim without them is refused outright - the whole point of the column
+    // is that an accepted correction can rebuild the day.
+    let statedSlots = null;
+    if (kindTakesSlots(kind)) {
+      const check = checkWorkSlots(raw?.slots, claimedHours);
+      if (!check.ok) return bad(`slots:${check.code}`, date);
+      statedSlots = check.slots;
+    }
 
     // AN UNPUNCHED BREAK CLAIM CARRIES ITS TIME, stored in the same
     // `statedBreaks` shape the question answers use - which is what puts the
@@ -2369,10 +2387,13 @@ export async function submitTimesheetCorrections({ token, items }) {
         // parseLooseTime hands back "HH:MM" or "" - the MINUTES come from
         // hhmmToMin, exactly the pair the question action runs on
         const start = hhmmToMin(parseLooseTime(String(r || ""), { assumeWorkday: true }));
-        if (start == null) continue;
         // where and what: a refusal points at the day and quotes the typed
         // time, the same contract every question-card refusal honours
         const where = { date, slot: `${kindOf}${i + 1}` };
+        // AND AN UNREADABLE ONE IS REFUSED, not skipped. The note above has
+        // always said so; the code skipped it, so two rests with one fumbled
+        // time stored a single ten and reported success.
+        if (start == null) return { ok: false, error: "badtime", given: String(r || ""), at: where };
         if (start + minutes > 1439) {
           return { ok: false, error: "badtime", given: String(r || ""), at: where };
         }
@@ -2389,13 +2410,17 @@ export async function submitTimesheetCorrections({ token, items }) {
           source: "typed",
         });
       }
-      if (!list.length) continue;
+      if (!list.length) return bad("times", date);
       statedBreaks = list;
     }
 
     // spread rather than a null field: Prisma's Json columns take JsonNull,
     // not a JS null, so an absent claim simply leaves the column alone
-    clean.push({ date, kind, claimedHours, note, ...(statedBreaks ? { statedBreaks } : {}) });
+    clean.push({
+      date, kind, claimedHours, note,
+      ...(statedBreaks ? { statedBreaks } : {}),
+      ...(statedSlots ? { statedSlots } : {}),
+    });
   }
   if (!clean.length) return { ok: false, error: "empty" };
 
@@ -2489,7 +2514,7 @@ export async function resolveCorrection(correctionId, decision, formData) {
   let overrides = c.timesheet.overrides || {};
   if (decision === "accepted") {
     const day = (c.timesheet.data?.days || []).find((d) => d.date === c.date) || null;
-    const patch = patchFor(c.kind, day, c.claimedHours);
+    const patch = patchFor(c.kind, day, c.claimedHours, c.statedSlots);
     // ACCEPTING THE REPORT IS THE REVIEWER'S DECISION, and the premium
     // markers read that: an hour a reviewer settles does not wait on a
     // signature the way the employee's own answer does. Without these stamps
@@ -4127,13 +4152,17 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       status: "accepted",
       NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
     },
-    select: { kind: true, date: true, claimedHours: true, statedBreaks: true },
+    // statedSlots is HERE because patchFor needs it: a select that omitted it
+    // handed patchFor undefined and the rebuild dropped the corrected clock
+    // without a word - the same silent-whitelist trap applyOverrides warns
+    // about twice.
+    select: { kind: true, date: true, claimedHours: true, statedBreaks: true, statedSlots: true },
   });
   for (const c of acceptedReports) {
     // the dateless legacy rows patch nothing, exactly as their accept did
     if (!c.date) continue;
     const day = pristine.find((d) => d.date === c.date) || null;
-    const patch = patchFor(c.kind, day, c.claimedHours);
+    const patch = patchFor(c.kind, day, c.claimedHours, c.statedSlots);
     const stamped = { ...patch, _answeredBy: "admin" };
     if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
     if (patch.restViolation != null) stamped._restAnsweredBy = "admin";

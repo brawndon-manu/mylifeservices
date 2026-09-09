@@ -1347,6 +1347,19 @@ model TimesheetCorrection {
   // 2026-08-10.
   statedBreaks Json?
 
+  // THE FULL DAY'S WORK, AS THEY STATE IT, on an `hours` or `day_missing`
+  // claim. [{ from, to }] in minutes past midnight, sorted, every slot for the
+  // day including the ones that did not change - Mánu 2026-09-08: "Ask for the
+  // corrected FULL DAY'S work hours, not the difference."
+  //
+  // A claim, never the record. claimedHours is still the number payroll reads
+  // and the only thing an accepted patch has ever moved; this is the shape
+  // behind that number, so an accepted correction can rebuild the day instead
+  // of guessing where the hours went. Every slot starts and ends on the day
+  // being corrected - see work-slots.js, which the screen and the server both
+  // validate with.
+  statedSlots Json?
+
   // THE PTO AND SICK DAYS THEY SAY THE SCHEDULE IS MISSING, on the one
   // "time_off" row a day-program review holds. [{ date, kind: "pto" | "sick",
   // hours }]. A claim, not the record - the PtoEntry row only exists once

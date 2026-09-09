@@ -1,0 +1,15 @@
+-- THE FULL DAY'S WORK SLOTS ON A CORRECTION (Mánu 2026-09-08).
+--
+-- An hours claim carried one number. It carries the day's shape now, so an
+-- accepted correction can rebuild the day rather than leave the engine to
+-- guess where the hours went.
+--
+-- ADDITIVE AND NULLABLE. Every existing correction keeps reading exactly as it
+-- does today, and nothing is backfilled: a claim made before this column
+-- existed genuinely has no stated slots, and pretending otherwise would invent
+-- punches nobody typed.
+--
+-- Written by hand and applied with `prisma migrate deploy`. NEVER migrate dev
+-- on this database - it is shared with production and it offered to reset it
+-- on 2026-09-08 over two migrations missing from this machine.
+ALTER TABLE "TimesheetCorrection" ADD COLUMN IF NOT EXISTS "statedSlots" JSONB;

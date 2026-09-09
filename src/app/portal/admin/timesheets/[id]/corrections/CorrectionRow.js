@@ -55,6 +55,25 @@ export default function CorrectionRow({ correction: c, day }) {
           <span className="font-semibold">{fmt(c.claimedHours)} hrs</span>.
         </p>
       )}
+      {(c.statedSlots || []).length > 0 && (
+        <div className="mt-1 text-sm text-foreground">
+          <p>They say the day was:</p>
+          <ul className="mt-1 grid gap-0.5 tabular-nums">
+            {c.statedSlots.map((sl) => (
+              <li key={sl} className="font-semibold">{sl}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-muted">
+            Accepting this replaces the day&apos;s clock with these slots.
+          </p>
+          {(c.strandedBreaks || []).length > 0 && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+              These recorded breaks sit outside the new clock and come off the
+              day: {c.strandedBreaks.join(", ")}.
+            </p>
+          )}
+        </div>
+      )}
       {(c.statedTimes || []).length > 0 && (
         <p className="mt-1 text-sm text-foreground">
           They say they took it at{" "}

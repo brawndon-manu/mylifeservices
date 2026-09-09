@@ -21,6 +21,10 @@
 // attestation had already retired (10 hours on the September batch's
 // unrebuildable days). It drags nothing into the bundle.
 import { restAttested } from "./rest-attestation.js";
+// AND A SECOND EXCEPTION on the same terms: work-slots.js is slot geometry
+// whose only import is loose-time.js, which imports nothing at all. No pdf and
+// no parse, so the review page's bundle is unchanged.
+import { breaksAgainstSlots } from "./work-slots.js";
 
 // §226.7 pays one hour per violation, max one meal + one rest premium a day.
 const PREMIUM_HOURS_PER_VIOLATION = 1;
@@ -154,12 +158,55 @@ export function correctionEffect(kind, day, claimedHours) {
   }
 }
 
+// [{from,to}] in minutes -> the punch list the engine reads. Null when there is
+// nothing usable, so a caller can spread the result and change nothing.
+//
+// The clock strings are rebuilt because the sheet PRINTS them: a day whose
+// punches carry no `raw` draws blank times where the corrected day should read.
+export function punchesFromSlots(slots) {
+  const list = (slots || []).filter(
+    (s) => Number.isFinite(s?.from) && Number.isFinite(s?.to) && s.to > s.from,
+  );
+  if (!list.length) return null;
+  const sorted = [...list].sort((a, b) => a.from - b.from);
+  const out = [];
+  for (const s of sorted) {
+    out.push({ raw: clockRaw(s.from), min: s.from });
+    out.push({ raw: clockRaw(s.to), min: s.to });
+  }
+  return out;
+}
+
+// minutes -> "8:30a", the compact form the sheet's own punch cells print
+function clockRaw(min) {
+  const t = ((Math.round(min) % 1440) + 1440) % 1440;
+  const h = Math.floor(t / 60);
+  const m = t % 60;
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")}${h < 12 ? "a" : "p"}`;
+}
+
 // turn an accepted correction into a per-day patch. `day` is the stored day this
 // is about (null for a day being added).
-export function patchFor(kind, day, claimedHours) {
+export function patchFor(kind, day, claimedHours, statedSlots = null) {
+  // THE ACCEPTED SLOTS BECOME THE DAY'S PUNCHES. Mánu 2026-09-08: an hours
+  // claim carries the whole day now, so accepting it can rebuild the day
+  // instead of moving a number and leaving the calendar drawing the old shape.
+  //
+  // `punches` is the pair list the engine reads - {raw, min} per clock event,
+  // in and out alternating, which is what shiftsOf and analyzeDay both walk.
+  // `correctedPunches` is the marker: the re-analysis expects paid hours to
+  // move on exactly these days and must not read the move as reconstruction
+  // drift, which discards the whole sheet's re-analysis. See reanalyze.js.
+  const punchPatch = (slots) => {
+    const list = punchesFromSlots(slots);
+    return list ? { punches: list, correctedPunches: true } : {};
+  };
+
   switch (kind) {
     case "hours":
-      return claimedHours == null ? {} : { paidHours: r2(claimedHours) };
+      return claimedHours == null
+        ? {}
+        : { paidHours: r2(claimedHours), ...punchPatch(statedSlots) };
     case "meal_missed": {
       // they worked through a punched meal: the unpaid gap becomes paid time
       // and the premium is owed. we know the gap length, so this one is exact.
@@ -183,7 +230,11 @@ export function patchFor(kind, day, claimedHours) {
     case "rest_taken":
       return { restViolation: false };
     case "day_missing":
-      return { added: true, paidHours: r2(claimedHours || 0) };
+      return {
+        added: true,
+        paidHours: r2(claimedHours || 0),
+        ...punchPatch(statedSlots),
+      };
     case "day_extra":
       return { removed: true };
     default:
@@ -290,6 +341,31 @@ export function applyOverrides(days, overrides) {
     // `data.days` on the on-demand path, and this belongs to one person rather
     // than to the batch's shared restsByDate.
     if (patch.statedBreaks) next.statedBreaks = patch.statedBreaks;
+    // THE DAY'S OWN CLOCK, REPLACED BY AN ACCEPTED CORRECTION. Everything that
+    // draws a day walks `punches` - shiftsOf, the calendars, the sheet's punch
+    // cells - so a correction that moved only `paidHours` left every picture of
+    // the day showing the shape the employee said was wrong. Same whitelist
+    // trap as the three fields below: a key left out here is ignored in
+    // silence.
+    if (patch.punches) next.punches = patch.punches;
+    if (patch.correctedPunches != null) next.correctedPunches = patch.correctedPunches;
+    // AND THE BREAK RECORDS THAT NO LONGER FIT IT. `breaks` are the gaps
+    // BETWEEN the old punches, so a replaced clock leaves gaps describing a day
+    // nobody is claiming - a meal gap from the old shape can land inside worked
+    // time on the new one, and the day calendar draws it there. On the
+    // re-analysed path this is a no-op: analyzeDay rebuilt the gaps from these
+    // very punches, so every one of them fits. It matters on the paths that do
+    // not re-analyse - a day with no schedule to rebuild from, and a frozen
+    // sheet. Nothing is deleted quietly: what came off is named on the day.
+    if (patch.punches) {
+      const slots = [];
+      for (let i = 0; i + 1 < patch.punches.length; i += 2) {
+        slots.push({ from: patch.punches[i].min, to: patch.punches[i + 1].min });
+      }
+      const { kept, dropped } = breaksAgainstSlots(next.breaks, slots);
+      next.breaks = kept;
+      if (dropped.length) next.breaksDropped = dropped;
+    }
     // MINUTES THAT STOPPED BEING OFF-CLOCK TIME, and everything the sheet draws
     // from them. `restsOffClock*` is what stripes a cell and `addedHours` is
     // what prints "+0.17 added" beside the daily total.
@@ -335,10 +411,15 @@ export function applyOverrides(days, overrides) {
       mealCount: 0,
       restCount: 0,
       restRequired: 0,
-      punches: [],
+      // AN ADDED DAY USED TO HAVE NO CLOCK AT ALL, so the calendar drew
+      // nothing for it and the sheet printed a total beside empty punch cells.
+      // A missing-day claim states its slots now, so the day arrives with the
+      // clock the employee gave us.
+      punches: patch.punches || [],
       breaks: [],
       corrected: true,
       addedByHand: true,
+      ...(patch.correctedPunches ? { correctedPunches: true } : {}),
     });
   }
 
