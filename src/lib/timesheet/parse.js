@@ -13,6 +13,9 @@
 // Relative, with the extension, like every other pure module in here: these
 // files are imported directly by `node --test`, which resolves no "@/" alias.
 import { getPdfjs } from "../pdf-globals.js";
+// the DSN rest-break attestation: days it covers charge no rest premium and
+// ask no rest questions. The date rule and the story live in one file.
+import { restAttested } from "./rest-attestation.js";
 
 // ---- rules (tune in one place) ----
 //
@@ -552,7 +555,12 @@ export function reentitle(day, paidHours) {
     mealViolation:
       (mealRequired && !mealUnknown && !mealWaived && (!mealTaken || !!day.mealLate))
       || secondMealViolation,
-    restViolation: !day.restUnknown && (day.restTaken ?? 0) < restRequired,
+    // THE ATTESTATION GATE RIDES EVERY RECOMPUTE TOO. An answer that moves the
+    // hours re-derives the violation through here, and a gate that only lived
+    // in analyzeDay would put the premium back on the exact day an answer
+    // touched. Same expression as analyzeDay's - see rest-attestation.js.
+    restViolation:
+      !restAttested(day.date) && !day.restUnknown && (day.restTaken ?? 0) < restRequired,
   };
 }
 
@@ -1506,7 +1514,12 @@ export function analyzeDay(day) {
     compressedDay,
     onSiteMin,
     // an unverifiable day is not a violation. it is a day we cannot answer.
-    restViolation: !restUnknown && restTaken < restRequired,
+    // And an ATTESTED day is not one either: since the DSN carries the
+    // rest-break attestation, no day it covers charges a rest premium however
+    // the count reads. `restRequired` and `restTaken` above stay truthful -
+    // the entitlement is a fact about the hours, only the charge is off.
+    // See rest-attestation.js; `reentitle` carries the same gate.
+    restViolation: !restAttested(day.date) && !restUnknown && restTaken < restRequired,
   };
 }
 

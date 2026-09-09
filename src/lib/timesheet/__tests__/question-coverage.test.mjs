@@ -40,8 +40,13 @@ const casesIn = (src, from) => {
 // EVERY SHAPE THAT RAISES A QUESTION, built so the set is derived rather than
 // typed out. If a new kind is added to questions.js, add a shape here and the
 // rest of the assertions will tell you what else it needs.
+// A PRE-ATTESTATION DATE ON PURPOSE. The DSN rest-break attestation
+// (rest-attestation.js, effective 09/01/26) quiets every rest-only kind for
+// the days it covers - and this suite's whole job is to enumerate every kind
+// the engine CAN raise, which it still can for the days before it. A fixture
+// dated inside the attested era made five kinds vanish from the census.
 const day = (over = {}) => ({
-  date: "04/02/27", paidHours: 8, rawHours: 8, regularHours: 8, otHours: 0,
+  date: "04/02/26", paidHours: 8, rawHours: 8, regularHours: 8, otHours: 0,
   doubleHours: 0, addedHours: 0, punches: [], breaks: [],
   restTaken: 0, restRequired: 2, mealViolation: false, mealLate: false,
   restViolation: false, ...over,
@@ -60,7 +65,7 @@ function everyKind() {
   // from the ROWS and the punches, never from a flag analyzeDay sets at upload.
   add([day({ punches: [{ min: 8 * 60 }, { min: 17 * 60 }] })], {
     restRows: [{
-      name: "Newperson, Someone", date: "04/02/27", out: "7:00 AM", in: "7:10 AM",
+      name: "Newperson, Someone", date: "04/02/26", out: "7:00 AM", in: "7:10 AM",
       minutes: 10, counted: true, shift: "8:00 AM to 11:00 AM",
     }],
   });                                                                    // restOutsideScheduled
@@ -68,21 +73,21 @@ function everyKind() {
   // repair comes off a REST ROW the parser had to fix, not off the day
   add([day({ restViolation: true })], {
     restRows: [{
-      name: "Newperson, Someone", date: "04/02/27", out: "9:00 AM", in: "9:10 AM",
+      name: "Newperson, Someone", date: "04/02/26", out: "9:00 AM", in: "9:10 AM",
       minutes: 10, repair: { field: "out", from: "9:00 PM", to: "9:00 AM" },
     }],
   });                                                                    // repair
   add([day({ mealViolation: true, mealMissing: true })], {
-    restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "2:00 PM", in: "2:30 PM", minutes: 30, counted: false }],
+    restRows: [{ name: "Newperson, Someone", date: "04/02/26", out: "2:00 PM", in: "2:30 PM", minutes: 30, counted: false }],
   });                                                                    // restIsMealLength
   add([day({ restTaken: 0, restRequired: 1, restViolation: true })], {
-    restRows: [{ name: "Newperson, Someone", date: "04/02/27", out: "", in: "", minutes: null }],
+    restRows: [{ name: "Newperson, Someone", date: "04/02/26", out: "", in: "", minutes: null }],
   });                                                                    // restNoTimes
   // too long to be a rest, no single-field repair, and the day's meal is NOT
   // missing - so neither the repair nor the meal reading takes it. Hatt 07/20.
   add([day({ mealViolation: false, mealMissing: false, restViolation: true })], {
     restRows: [{
-      name: "Newperson, Someone", date: "04/02/27", out: "3:30 PM", in: "4:30 PM",
+      name: "Newperson, Someone", date: "04/02/26", out: "3:30 PM", in: "4:30 PM",
       minutes: 60, counted: false, reversed: false, kind: "too-long", repair: null,
     }],
   });                                                                    // restTooLongOffClock
@@ -175,16 +180,26 @@ test("the kinds are a known set, so a new one cannot arrive unnoticed", () => {
 
 test("the same shape raises the same question on any date, in any period", () => {
   // the whole point of Mánu's question: nothing about this is tied to the batch
-  // it was written against.
+  // it was written against. ONE exception exists now, and it is dated policy
+  // rather than batch: the DSN rest-break attestation (rest-attestation.js)
+  // quiets the rest asks for the days it covers. So the promise holds per
+  // policy era - any two days under the same policy raise the same kinds -
+  // and the boundary moves exactly the rest side, never the meal side.
   const shape = (date) => [day({ date, mealViolation: true, restViolation: true })];
   const kindsOn = (date) =>
     buildQuestions({ days: shape(date) }, { restRows: [], sourceName: "X" })
       .map((q) => q.kind)
       .sort();
   const july = kindsOn("07/20/26");
-  for (const other of ["01/01/27", "08/01/26", "12/31/28", "02/29/28"]) {
+  for (const other of ["01/01/26", "04/02/26", "08/01/26", "08/31/26"]) {
     assert.deepEqual(kindsOn(other), july, `a ${other} day should raise what a 07/20/26 day raises`);
   }
+  const attested = kindsOn("09/02/26");
+  for (const other of ["01/01/27", "12/31/28", "02/29/28"]) {
+    assert.deepEqual(kindsOn(other), attested, `a ${other} day should raise what a 09/02/26 day raises`);
+  }
+  assert.deepEqual(july, ["nothingDocumentedMeal", "nothingDocumentedRest"]);
+  assert.deepEqual(attested, ["nothingDocumentedMeal"]);
 });
 
 // ---------------------------------------------------------------------------

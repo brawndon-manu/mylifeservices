@@ -15,6 +15,12 @@
 // this module is deliberately free of any pdf/parse import so the timesheet review page
 // can use the labels without dragging the engine into the browser bundle.
 // `recomputeSheet` takes applyOvertime as an argument for the same reason.
+// THE ONE EXCEPTION: rest-attestation.js is twenty lines of pure date math
+// with no imports of its own, and the premium sum below must ask it - a
+// rebuild that trusted a stale stored flag kept charging rest premiums the
+// attestation had already retired (10 hours on the September batch's
+// unrebuildable days). It drags nothing into the bundle.
+import { restAttested } from "./rest-attestation.js";
 
 // §226.7 pays one hour per violation, max one meal + one rest premium a day.
 const PREMIUM_HOURS_PER_VIOLATION = 1;
@@ -407,7 +413,13 @@ export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, re
   const withOt = applyOvertime(rebanded, payPeriod || null);
 
   const mealDays = withOt.filter((d) => d.mealViolation).map((d) => d.date);
-  const restDays = withOt.filter((d) => d.restViolation).map((d) => d.date);
+  // the DSN rest-break attestation: a covered day pays no rest premium even
+  // when its stored flag is stale - a day reanalyzeDays could not rebuild (no
+  // schedule rows) keeps `restViolation: true` forever, and this sum is what
+  // decides the money on every rebuild. Same date rule as splitPremium.
+  const restDays = withOt
+    .filter((d) => d.restViolation && !restAttested(d.date))
+    .map((d) => d.date);
 
   return {
     days: withOt.map((d) => ({

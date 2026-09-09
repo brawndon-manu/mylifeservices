@@ -38,6 +38,9 @@
 import {
   restKey, restNameFor, isMealLengthRest, clockMin, serviceFit, FULL_REST_MIN, REST_LONG_MAX_MIN,
 } from "./rests.js";
+// the DSN rest-break attestation - covered days ask no rest-only questions.
+// The date rule and the story live in one file.
+import { restAttested } from "./rest-attestation.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
 // the same loose reading the time boxes run on, for reading a slot's own
 // `known` times back into minutes - see collidesWithRecorded
@@ -729,7 +732,17 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
     return (kind === "meal" ? d.mealViolation === true : d.restViolation === true) ? -1 : 0;
   };
 
+  // THE DSN ATTESTATION QUIETS THE REST-ONLY ASKS (2026-09-08). Staff no
+  // longer document their tens, so a covered day asks nothing whose only job
+  // was rest credit or a rest premium: `repair`, `restNoTimes`,
+  // `restTooLongOffClock`, `restOutsideScheduled` and `shortMealRest` skip
+  // attested days below, and the took-it/missed-it rest decision goes with
+  // them because `restViolation` is gated at analysis. `restIsMealLength`
+  // alone still asks - its answer moves the MEAL premium, which the
+  // attestation says nothing about. Recorded rests still draw on the sheet
+  // and the day view. The rule and the date live in rest-attestation.js.
   for (const r of mine) {
+    if (restAttested(r.date)) continue;
     if (!r.repair || mealReadingWins(r)) continue;
     // `both` moves the whole row twelve hours - see `proposeRepair`. Reading it
     // as a single-field fix would leave the untouched end at its recorded value
@@ -848,6 +861,8 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
     });
   }
 
+  // NOT gated by the rest attestation, alone of the rest-row asks: saying
+  // "that was my lunch" moves the MEAL premium, which is still charged.
   for (const r of mine) {
     if (!mealReadingWins(r)) continue;
     const d = dayOf(r.date);
@@ -878,6 +893,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //    whenever a time is missing, and it asks for the start rather than a yes
   //    or no, because there is nothing to agree or disagree with.
   for (const r of mine) {
+    if (restAttested(r.date)) continue; // attested - see the repair loop's note
     if (r.repair || mealReadingWins(r)) continue;
     const missing = [
       String(r.out || "").trim() ? null : "out",
@@ -927,6 +943,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //    the repair question, and a meal-shaped row on a day missing its meal goes
   //    to the meal question. This is what is left.
   for (const r of mine) {
+    if (restAttested(r.date)) continue; // attested - see the repair loop's note
     if (r.counted || r.repair || mealReadingWins(r)) continue;
     if (!(Number(r.minutes) > REST_LONG_MAX_MIN)) continue;
     const d = dayOf(r.date);
@@ -1005,6 +1022,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //                   as taken, which can put a premium on the day.
   const offClockRows = [];
   for (const r of mine) {
+    if (restAttested(r.date)) continue; // attested - see the repair loop's note
     if (!r.counted || r.repair || mealReadingWins(r)) continue;
     const d = dayOf(r.date);
     if (!d) continue;
@@ -1139,7 +1157,10 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //    credited as the person's rest period. Bucio's midnight ten, and five
   //    Devine days. Declining takes the credit back off, which on a day it
   //    cleared a violation puts the premium back.
-  const shortMeal = days.filter((d) => (d.restsFromShortMeals || 0) > 0);
+  const shortMeal = days.filter(
+    // attested days out - the credit is moot where no rest premium can exist
+    (d) => (d.restsFromShortMeals || 0) > 0 && !restAttested(d.date),
+  );
   if (shortMeal.length) {
     const restores = shortMeal.filter(
       (d) => (d.restTaken ?? 0) >= (d.restRequired ?? 0) && (d.restRequired ?? 0) > 0,
@@ -1214,7 +1235,10 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   }
 
   const mealUndocumented = days.filter((d) => d.mealViolation && !d.mealLate);
-  const restUndocumented = days.filter((d) => d.restViolation);
+  // `restViolation` is already gated at analysis, but a stored day can carry
+  // an old truth - the same date rule holds here so an attested day is never
+  // asked to document a rest whatever its stored flag says.
+  const restUndocumented = days.filter((d) => d.restViolation && !restAttested(d.date));
   if (mealUndocumented.length || restUndocumented.length) {
     const dates = [...new Set([
       ...mealUndocumented.map((d) => d.date),

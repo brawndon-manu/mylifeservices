@@ -21,6 +21,9 @@
 // `settled` group, because "we looked at this and it was fine" is the answer
 // somebody needs when they are on the phone about it.
 import { restKey, restNameFor, clockMin, countsAsTaken, FULL_REST_MIN } from "./rests.js";
+// the DSN rest-break attestation - covered days surface no rest anomaly rows.
+// The recorded rests still draw on the day calendars; see rest-attestation.js.
+import { restAttested } from "./rest-attestation.js";
 import { workedBeforeMin, RULES } from "./parse.js";
 import { describePunchIssue, scheduledPaidHours } from "./anomalies.js";
 import { blockTimes, serviceOf, clientOf } from "./schedule.js";
@@ -454,7 +457,7 @@ export function buildFindings(batch) {
     return null;
   };
 
-  for (const r of (batch.restsByDate || []).filter((x) => x.offOwnShift)) {
+  for (const r of (batch.restsByDate || []).filter((x) => x.offOwnShift && !restAttested(x.date))) {
     const t = restByName.get(restKey(r.name));
     const day = (t?.data?.days || []).find((x) => x.date === r.date);
     const seg = day ? segmentAround(day, clockMin(r.out), clockMin(r.in)) : null;
@@ -525,6 +528,7 @@ export function buildFindings(batch) {
   }
   for (const [k, out] of firstRestAt) {
     const [name, date] = k.split("|");
+    if (restAttested(date)) continue; // attested day - no rest rows at all
     const t = restByName.get(name);
     const day = (t?.data?.days || []).find((x) => x.date === date);
     if (!day) continue;
@@ -716,6 +720,11 @@ export function buildFindings(batch) {
 
   for (const t of batch.timesheets) {
     for (const d of t.data?.days || []) {
+      // EVERY FINDING IN THIS WALK IS ABOUT REST CREDIT - outside, unpaid,
+      // meal-as-rest, tacked - so the DSN attestation quiets the whole loop
+      // for the days it covers. The recorded rests still draw on the calendar
+      // built above. See rest-attestation.js.
+      if (restAttested(d.date)) continue;
       // A rest logged before clock-in or after clock-out. It was not a rest
       // taken during work, and it STILL COUNTS - Mánu's call was to surface it
       // rather than move premiums on the engine's say-so. Which makes saying it

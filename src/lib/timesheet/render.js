@@ -13,6 +13,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { recordedBreaksFor, insertRecordedBreaks, withStatedRest, withStatedBreaks } from "./recorded-breaks.js";
+// the DSN rest-break attestation - a covered day's notes column stays quiet
+// about rests owed. The drawn breaks are untouched. See rest-attestation.js.
+import { restAttested } from "./rest-attestation.js";
 // the time-off line's one wording - shared with nothing else on purpose, so
 // the sheet and the tests read the same sentence
 import { timeOffLine, timeOffTotals } from "./time-off.js";
@@ -717,14 +720,16 @@ export async function renderCorrected(sheet, opts = {}) {
         // charging nothing for it.
         if (pn?.rest === "assumed") {
           // said below, with the meal
-        } else if (d.restUnknown) {
+        } else if (d.restUnknown && !restAttested(d.date)) {
           // "0 taken" and "nothing recorded it" are different claims, and only
           // one of them is a finding. Printing 0 for the second is asserting
-          // something no source supports.
+          // something no source supports. An ATTESTED day says neither - the
+          // DSN attestation covers the breaks, so "owed" is not a thing the
+          // sheet can claim about it.
           bad(`rest: no record (${d.restRequired} owed)`);
         } else if (pn?.rest === "taken") {
           good("rest taken, confirmed");
-        } else if (d.restViolation) {
+        } else if (d.restViolation && !restAttested(d.date)) {
           // PRINT THE FIGURE THE PREMIUM WAS DECIDED ON. This used to be
           // min(restCount, restRecorded), where restCount is the punch-gap
           // count - the number the engine deliberately does not trust. The

@@ -32,6 +32,9 @@
 // of those are now PAID unless somebody tells us otherwise.
 
 import { buildQuestions, answerProgress, mealNoRoom } from "./questions.js";
+// the DSN rest-break attestation - covered days owe no rest premium, whatever
+// a flag stored under the old rules says. See rest-attestation.js.
+import { restAttested } from "./rest-attestation.js";
 
 const PER_VIOLATION = 1;
 
@@ -122,7 +125,12 @@ export function splitPremium(days, { confirmed, signed } = {}) {
     // Superior Court (2011). This mirrors how `premiums` is summed in parse.js
     // rather than inventing a second way to count the same hours.
     const mealOwed = d.mealViolation === true || d.mealLate === true;
-    const restOwed = d.restViolation === true;
+    // BY THE DAY'S DATE, NOT ONLY THE STORED FLAG. A batch analysed before the
+    // DSN rest-break attestation shipped can still carry `restViolation: true`
+    // on days the attestation covers - the September payroll upload holds 93 -
+    // and this is the money path, so it asks the date rule itself rather than
+    // trusting a flag stored under the old rules. See rest-attestation.js.
+    const restOwed = d.restViolation === true && !restAttested(d.date);
 
     if (mealOwed) {
       // NO GAP LONG ENOUGH MEANS THERE IS NOTHING TO ASSUME.
@@ -259,7 +267,8 @@ export function applyAssumptions(days, { confirmed, answers, pastDue } = {}) {
 
   return (days || []).map((d) => {
     const mealOwed = d.mealViolation === true || d.mealLate === true;
-    const restOwed = d.restViolation === true;
+    // same date rule as splitPremium above - a stale stored flag is not owed
+    const restOwed = d.restViolation === true && !restAttested(d.date);
     const mealAssumed = mealOwed && d.mealLate !== true && !has(d.date, "meal");
     const restAssumed = restOwed && !has(d.date, "rest");
     // a day they answered "yes, I took it" on has already had its violation
@@ -293,7 +302,10 @@ export function applyAssumptions(days, { confirmed, answers, pastDue } = {}) {
 // summarises can only ever be counted the same way.
 export function premiumsFromDays(days) {
   const mealDays = (days || []).filter((d) => d.mealViolation).map((d) => d.date);
-  const restDays = (days || []).filter((d) => d.restViolation).map((d) => d.date);
+  // same date rule as splitPremium - an attested day's stale flag counts nothing
+  const restDays = (days || [])
+    .filter((d) => d.restViolation && !restAttested(d.date))
+    .map((d) => d.date);
   return {
     mealDays,
     restDays,

@@ -21,6 +21,10 @@ export const WAIVER_MAX_HOURS = 6;
 
 // gap bands, matching RULES.mealMinMin / mealMaxMin in parse.js
 const MEAL_GAP_MIN = 21;
+// the DSN rest-break attestation - covered days put no hour in a rest bucket,
+// whatever a flag stored under the old rules says. See rest-attestation.js.
+import { restAttested } from "./rest-attestation.js";
+
 const MEAL_GAP_MAX = 90;
 
 // punches stay in DOCUMENT order. that is what pairs an out with its in, and
@@ -74,7 +78,7 @@ export function premiumEvidence(sheets) {
     for (const d of days) {
       const m = mealBucket(d);
       if (m) { by[m].days++; by[m].people.add(name); }
-      if (d.restViolation) {
+      if (d.restViolation && !restAttested(d.date)) {
         const code = d.restSource === "none" ? "R2" : "R1";
         by[code].days++; by[code].people.add(name);
       }

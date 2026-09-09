@@ -34,6 +34,8 @@
 // `.js` on purpose: every intra-lib import here carries it, because these
 // modules are read by `node --test`, which has no bundler to guess with.
 import { mealWindows, mealBookedInside, mealBookedShort } from "./questions.js";
+// the DSN rest-break attestation - covered days list no rest violation.
+import { restAttested } from "./rest-attestation.js";
 
 export const VIOLATION_KINDS = {
   "rest-not-taken": {
@@ -123,7 +125,9 @@ const clock = (m) => {
 export function dayViolations(d, entry = null) {
   if (!d) return [];
   const out = [];
-  if (d.restViolation) {
+  // the DSN rest-break attestation: a covered day lists no rest violation,
+  // whatever a flag stored under the old rules says. See rest-attestation.js.
+  if (d.restViolation && !restAttested(d.date)) {
     const short = (d.restRequired || 0) - (d.restTaken || 0);
     out.push({
       kind: "rest-not-taken",
