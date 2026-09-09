@@ -4,6 +4,9 @@ import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { decideSignature, CLAIM_SELECT } from "@/lib/timesheet/claim-signing";
+import { settleDecidedSheet } from "@/app/portal/admin/timesheets/actions";
+import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
@@ -227,7 +230,10 @@ export async function uploadDayProgramBatch(formData) {
 
     const existing = await prisma.timesheet.findMany({
       where: { batchId: intoBatchId },
-      select: { id: true, sourceName: true },
+      select: {
+        id: true, sourceName: true, signedAt: true, signedClaim: true, userId: true, data: true,
+        corrections: { select: CLAIM_SELECT },
+      },
     });
     const byName = new Map(existing.map((r) => [restKey(r.sourceName || ""), r]));
     // ONLY PEOPLE ALREADY ON IT. Someone in the file who is not on the batch
@@ -248,6 +254,18 @@ export async function uploadDayProgramBatch(formData) {
     ];
 
     const ids = sheetRows.map((r) => byName.get(restKey(r.sourceName || "")).id);
+    // DOES EACH SIGNATURE SURVIVE THE NEW FIGURES - see claim-signing.js and
+    // the MLS re-upload, which does the same. Read-only, before the transaction.
+    const survives = new Map();
+    for (const row of sheetRows) {
+      const hit = byName.get(restKey(row.sourceName || ""));
+      if (!hit?.signedAt) continue;
+      const timeOff = await loadTimeOffFor({ userId: hit.userId, batch: target });
+      survives.set(hit.id, decideSignature({
+        signedAt: hit.signedAt, signedClaim: hit.signedClaim, corrections: hit.corrections,
+        days: hit.data?.days || [], next: row.data?.days || [], timeOff,
+      }));
+    }
     P.stage = "saving";
     await setProgress(prog, P);
     try {
@@ -276,12 +294,15 @@ export async function uploadDayProgramBatch(formData) {
               ...row,
               overrides: {},
               // the corrected sheet is a different document, so the signature
-              // and the sign-off cannot carry over to it
-              signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null,
-              approvedAt: null, approvedById: null, approvedPdfUrl: null,
+              // and the sign-off cannot carry over to it - unless the new
+              // figures are exactly the claim they signed, see `survives`
+              ...(survives.get(hit.id)?.keep ? {} : {
+                signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null, signedClaim: null,
+                approvedAt: null, approvedById: null, approvedPdfUrl: null,
+                // back onto the chase list: it has to go out again
+                sentAt: null,
+              }),
               disputedAt: null, pdfUrl: null,
-              // back onto the chase list: it has to go out again
-              sentAt: null,
               recomputedAt: new Date(),
             },
           });
@@ -433,6 +454,25 @@ export async function setPto(formData) {
         hours: capped, kind, note, byId: user.id, byName: preferredNameOf(user),
       },
     });
+  }
+
+  // A DAY ON THE CALENDAR IS THE DECISION ON A TIME-OFF CLAIM (Mánu
+  // 2026-09-09, the signature on a claim). The sheets in this period that
+  // asked for a day get settled: once every claim is decided, the signature
+  // stands or falls and the bell tells them. Best effort, after the write it
+  // explains, and it never undoes that write.
+  try {
+    const asked = await prisma.timesheet.findMany({
+      where: {
+        userId: personKey,
+        batch: { program, periodFrom, periodTo },
+        corrections: { some: { kind: "time_off", choice: "yes" } },
+      },
+      select: { id: true },
+    });
+    for (const t of asked) await settleDecidedSheet(t.id);
+  } catch (e) {
+    console.error("time off decision settle failed:", e);
   }
 
   if (back) revalidatePath(back);

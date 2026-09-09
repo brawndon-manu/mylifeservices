@@ -14,9 +14,12 @@ const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-me
 
 export default function ReviewFlow({ enabled, ready, reports, children, initialReports = [], readOnly = false }) {
   const [stage, setStage] = useState("days");
-  const [draftItems, setItems] = useState([]);
+  // reports already sent arrive as the list, marked sent: not drafts, not
+  // editable, and since 2026-09-09 no longer a hold on the signature - what
+  // gets signed while they wait is the pending document that carries them
+  const [draftItems, setItems] = useState(() => (readOnly ? [] : initialReports));
   const items = readOnly ? initialReports : draftItems;
-  const [reported, setReported] = useState(readOnly);
+  const [reported, setReported] = useState(readOnly || initialReports.length > 0);
   const [generated, setGenerated] = useState(false);
   const [reviewedDays, setReviewedDays] = useState(() => new Set());
   const markReviewed = (date) => setReviewedDays((previous) => new Set(previous).add(date));
@@ -41,7 +44,8 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
     setEditorTarget(target);
     reportRef.current?.start(date, index);
   }
-  const canGenerate = ready && !reported && !items.length && !editorTarget;
+  // drafts must be sent before the document generates; sent ones do not hold it
+  const canGenerate = ready && !editorTarget && (reported || !items.length);
   const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? 3 : 2;
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly,
     reviewedDays, markReviewed,
@@ -77,7 +81,7 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
               onClick={() => go(stage === "reports" ? "leave" : "document")}>Next</button>}
           </div>}
           {stage !== "days" && stage !== "document" && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" ? "PTO & sick pay" : "Generate"}</p>}
-          {stage === "leave" && !canGenerate && <p className="mt-3 text-sm text-muted">{reported ? "Your signature stays on hold while payroll reviews submitted reports." : items.length ? "Review and send your reports before generating your timesheet." : "Answer the remaining questions to generate your document."}</p>}
+          {stage === "leave" && !canGenerate && <p className="mt-3 text-sm text-muted">{items.length && !reported ? "Review and send your reports before generating your timesheet." : "Answer the remaining questions to generate your document."}</p>}
         </div>
       )}
     </ReviewContext.Provider>

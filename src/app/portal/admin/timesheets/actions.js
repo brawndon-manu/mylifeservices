@@ -74,6 +74,8 @@ import { TIME_OFF_KIND, TIME_OFF_STATUS, checkTimeOffEntries, timeOffReviewItems
 import { checkWorkSlots, kindTakesSlots } from "@/lib/timesheet/work-slots";
 import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
+import { claimsOf, decideSignature, signedClaimSnapshot, allClaimsDecided, CLAIM_SELECT } from "@/lib/timesheet/claim-signing";
+import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
 import { pushRecent } from "@/lib/timesheet-stages";
 import { companyDate } from "@/lib/company-time";
@@ -1453,7 +1455,10 @@ export async function uploadBatch(formData) {
 
     const existing = await prisma.timesheet.findMany({
       where: { batchId: intoBatchId },
-      select: { id: true, sourceName: true, signedAt: true },
+      select: {
+        id: true, sourceName: true, signedAt: true, signedClaim: true, userId: true, data: true,
+        corrections: { select: CLAIM_SELECT },
+      },
     });
     const byName = new Map(existing.map((r) => [restKey(r.sourceName || ""), r]));
     // ONLY PEOPLE ALREADY ON IT. Someone in the file who is not on the batch is
@@ -1479,6 +1484,20 @@ export async function uploadBatch(formData) {
     ];
 
     const ids = sheetRows.map((r) => byName.get(restKey(r.sourceName || "")).id);
+    // DOES EACH SIGNATURE SURVIVE THE NEW FIGURES - see claim-signing.js. The
+    // office fixing QuickSolve and re-exporting is one way a reported change
+    // gets granted, and a signature on that claim stands when the new figures
+    // are exactly what was asked for. Decided before the transaction, read-only.
+    const survives = new Map();
+    for (const row of sheetRows) {
+      const hit = byName.get(restKey(row.sourceName || ""));
+      if (!hit.signedAt) continue;
+      const timeOff = await loadTimeOffFor({ userId: hit.userId, batch: target });
+      survives.set(hit.id, decideSignature({
+        signedAt: hit.signedAt, signedClaim: hit.signedClaim, corrections: hit.corrections,
+        days: hit.data?.days || [], next: row.data?.days || [], timeOff,
+      }));
+    }
     try {
       await prisma.$transaction(async (tx) => {
         await tx.timesheetBatch.update({
@@ -1510,12 +1529,15 @@ export async function uploadBatch(formData) {
               ...row,
               overrides: {},
               // the corrected sheet is a different document, so the signature
-              // and the sign-off cannot carry over to it
-              signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null,
-              approvedAt: null, approvedById: null, approvedPdfUrl: null,
+              // and the sign-off cannot carry over to it - unless the new
+              // figures are exactly the claim they signed, see `survives`
+              ...(survives.get(hit.id)?.keep ? {} : {
+                signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null, signedClaim: null,
+                approvedAt: null, approvedById: null, approvedPdfUrl: null,
+                // back onto the chase list: it has to go out again
+                sentAt: null,
+              }),
               disputedAt: null, pdfUrl: null,
-              // back onto the chase list: it has to go out again
-              sentAt: null,
               recomputedAt: new Date(),
             },
           });
@@ -1909,14 +1931,13 @@ export async function sendTimesheets(batchId, formData) {
   if (batch.auditOnly) redirect(`/portal/admin/audit/${batch.id}`);
 
   // a row with no generated PDF would email someone a link to a 404, so it is
-  // never sendable - the review screen flags those separately. a sheet with an
-  // open dispute isn't sendable either: asking someone to sign again while
-  // their report sits unanswered is exactly the chasing this replaces.
+  // never sendable - the review screen flags those separately. A sheet with an
+  // open report IS sendable since 2026-09-09: what they are asked to sign while
+  // it waits is the pending document, which carries the report itself.
   const where = {
     batchId,
     userId: { not: null },
     renderOk: true,
-    disputedAt: null,
   };
   if (onlyId) where.id = onlyId.toString();
   else if (!resend) where.sentAt = null;
@@ -2513,7 +2534,16 @@ export async function resolveCorrection(correctionId, decision, formData) {
 
   const c = await prisma.timesheetCorrection.findUnique({
     where: { id: correctionId },
-    include: { timesheet: { select: { id: true, batchId: true, data: true, overrides: true } } },
+    include: {
+      timesheet: {
+        select: {
+          id: true, batchId: true, data: true, overrides: true,
+          // for the decision on their signature and the bell that tells them
+          userId: true, signedAt: true, signedClaim: true,
+          batch: { select: { periodFrom: true, periodTo: true, program: true } },
+        },
+      },
+    },
   });
   if (!c || c.status !== "open") return;
 
@@ -2578,18 +2608,107 @@ export async function resolveCorrection(correctionId, decision, formData) {
     });
     const since = sheet.recomputedAt?.getTime() ?? 0;
     const pending = sheet.corrections.some((x) => (x.resolvedAt?.getTime() ?? 0) > since);
+    // PAYROLL HAS DECIDED. Whether their signature stands is claim-signing.js's
+    // call: a rebuild decides it against the new figures; with nothing to
+    // rebuild - nothing accepted since the last one - the figures are the same
+    // and only the decisions matter, and a signature on a claim now declined
+    // does not stand. Either way the bell tells them.
     if (pending) {
-      await recomputeTimesheet(c.timesheet.id);
-    } else {
-      await prisma.timesheet.update({
-        where: { id: c.timesheet.id },
-        data: { disputedAt: null },
+      const r = await recomputeTimesheet(c.timesheet.id);
+      // a time-off claim may still be waiting on the calendar: the bell rings
+      // only once everything is decided, or now if the answer is already no
+      const timeOff = await loadTimeOffFor(c.timesheet);
+      const claims = await prisma.timesheetCorrection.findMany({
+        where: { timesheetId: c.timesheet.id }, select: CLAIM_SELECT,
       });
+      const signature = r?.signature || null;
+      if (allClaimsDecided(claims, timeOff) || (c.timesheet.signedAt && signature && !signature.keep)) {
+        await ringDecision(c.timesheet, signature, claims);
+      }
+    } else {
+      await settleDecidedSheet(c.timesheet.id);
     }
   }
 
   revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}/corrections`);
   revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}`);
+}
+
+// THE LAST DECISION WITHOUT A REBUILD. Nothing accepted since the last rebuild
+// means the figures are what they are - the decisions alone settle the
+// signature: a claim declined or changed clears it, granted keeps it. Also the
+// path for a time-off claim, which is decided on the calendar (see setPto in
+// the day program's actions) and never rebuilds anything. Rings the bell once
+// every claim is decided; while one still waits, does nothing at all.
+export async function settleDecidedSheet(timesheetId) {
+  const sheet = await prisma.timesheet.findUnique({
+    where: { id: timesheetId },
+    select: {
+      id: true, userId: true, signedAt: true, signedClaim: true, data: true,
+      batch: { select: { periodFrom: true, periodTo: true, program: true } },
+    },
+  });
+  if (!sheet) return null;
+  const claims = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: sheet.id }, select: CLAIM_SELECT,
+  });
+  const timeOff = await loadTimeOffFor(sheet);
+  if (!allClaimsDecided(claims, timeOff)) return null;
+  const days = sheet.data?.days || [];
+  const signature = decideSignature({
+    signedAt: sheet.signedAt, signedClaim: sheet.signedClaim, corrections: claims,
+    days, next: days, timeOff,
+  });
+  await prisma.timesheet.update({
+    where: { id: sheet.id },
+    data: {
+      disputedAt: null,
+      ...(sheet.signedAt && !signature.keep ? {
+        signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null, signedClaim: null,
+        approvedAt: null, approvedById: null, approvedPdfUrl: null, sentAt: null,
+      } : {}),
+    },
+  });
+  await ringDecision(sheet, signature, claims);
+  return signature;
+}
+
+// THE BELL ON THE DECISION (Mánu 2026-09-09; the email rides with the future
+// one-button send, see TASKS). One row on the employee's own bell, linking to
+// their sheet. Three things it can say: the signature stands; a new signature
+// is needed and why; or, if they had not signed yet, that it is ready. A
+// declined claim carries the office's note, which is the reason they are owed.
+// Best effort: a bell that fails to ring never undoes the decision.
+async function ringDecision(sheet, signature, claims) {
+  if (!sheet?.userId) return;
+  const period = `${sheet.batch?.periodFrom || ""} to ${sheet.batch?.periodTo || ""}`;
+  const declined = claimsOf(claims)
+    .filter((c) => c.status === "declined")
+    .map((c) => `${c.date || "This timesheet"}: not approved${c.resolutionNote ? ` - ${c.resolutionNote}` : ""}.`);
+  const notes = declined.length ? ` ${declined.join(" ")}` : "";
+  let title;
+  let body;
+  if (signature?.keep) {
+    title = "Timesheet approved as reported";
+    body = `Payroll approved the changes you reported on your ${period} timesheet. Your signature stands.`;
+  } else if (!signature || signature.why === "unsigned") {
+    title = "Your timesheet is ready to sign";
+    body = `Payroll decided on the changes you reported on your ${period} timesheet.${notes} Open it to review and sign.`;
+  } else if (signature.why === "otherDaysMoved") {
+    const dates = (signature.moved || []).map((m) => m.date).join(", ");
+    title = "Your timesheet needs a new signature";
+    body = `Payroll approved the changes you reported on your ${period} timesheet, and rebuilding it also changed ${dates}. Open it to review and sign the updated copy.`;
+  } else {
+    title = "Your timesheet needs a new signature";
+    body = `Payroll decided on the changes you reported on your ${period} timesheet, and not everything was approved as reported.${notes} Open it to review and sign the updated copy.`;
+  }
+  try {
+    await prisma.notification.create({
+      data: { userId: sheet.userId, type: "TIMESHEET_DECIDED", title, body, link: `/t/${signTimesheetToken(sheet.id)}` },
+    });
+  } catch (e) {
+    console.error(`decision bell failed for timesheet ${sheet.id}:`, e);
+  }
 }
 
 // correct a single day by hand, from the data-checks screen.
@@ -3339,6 +3458,31 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
     return { ok: false, error: "render" };
   }
 
+  // DOES THE SIGNATURE SURVIVE THIS REBUILD - see claim-signing.js. Compared
+  // against what they signed (the snapshot's days), or the days as stored when
+  // there is no snapshot. A caller that loaded the row without `signedAt` gets
+  // the old answer: cleared.
+  let signature = { keep: false, why: "unsigned" };
+  if (ts.signedAt) {
+    const claims = await prisma.timesheetCorrection.findMany({
+      where: { timesheetId: ts.id }, select: CLAIM_SELECT,
+    });
+    signature = decideSignature({
+      signedAt: ts.signedAt, signedClaim: ts.signedClaim ?? null, corrections: claims,
+      days: stored.days || [], next: next.days, timeOff: await loadTimeOffFor(ts),
+    });
+  }
+  // A REPORT STILL OPEN STAYS REPORTED. An employee answering a question after
+  // sending a report rebuilds the sheet through here, and `disputedAt: null`
+  // below used to wipe the mark the review table filters on while the claim
+  // still waited. Left as it is while any claim is open; cleared otherwise.
+  const openClaims = await prisma.timesheetCorrection.count({
+    where: {
+      timesheetId: ts.id, status: "open",
+      NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
+    },
+  });
+
   await prisma.timesheet.update({
     where: { id: ts.id },
     data: {
@@ -3355,20 +3499,26 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
       pdfUrl: null,
       overrides,
       // the corrected sheet is a different document, so the old signature and
-      // sign-off can't carry over to it. it goes back out unsigned.
-      signedAt: null,
-      signedPdfUrl: null,
-      signedName: null,
-      signedIp: null,
-      approvedAt: null,
-      approvedById: null,
-      approvedPdfUrl: null,
-      // an admin recompute has to go back OUT, so it stops counting as sent.
-      // an employee answering a question on the sheet in front of them is about
-      // to sign that same sheet - clearing sentAt there would put them back on
-      // the chase list for a document they are already looking at.
-      ...(keepSent ? {} : { sentAt: null }),
-      disputedAt: null,
+      // sign-off can't carry over to it - UNLESS it is exactly the document
+      // they signed for: every reported change granted and nothing else moved
+      // (Mánu 2026-09-09, the signature on a claim). Then it stands, and so
+      // does everything that followed it.
+      ...(signature.keep ? {} : {
+        signedAt: null,
+        signedPdfUrl: null,
+        signedName: null,
+        signedIp: null,
+        signedClaim: null,
+        approvedAt: null,
+        approvedById: null,
+        approvedPdfUrl: null,
+        // an admin recompute has to go back OUT, so it stops counting as sent.
+        // an employee answering a question on the sheet in front of them is about
+        // to sign that same sheet - clearing sentAt there would put them back on
+        // the chase list for a document they are already looking at.
+        ...(keepSent ? {} : { sentAt: null }),
+      }),
+      ...(openClaims > 0 ? {} : { disputedAt: null }),
       recomputedAt: new Date(),
       data: {
         ...stored,
@@ -3393,7 +3543,8 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   // rebuilds a whole batch can say which figures changed rather than leaving it
   // to somebody noticing. Nothing reads it yet; the alternative was throwing the
   // record away at the only point it exists.
-  return { ok: true, reanalysis };
+  // and whether the signature stood - the decision's caller rings the bell
+  return { ok: true, reanalysis, signature };
 }
 
 // "13:15" -> 795, or null if it is not a time on this clock. One parser, so the
@@ -3446,7 +3597,8 @@ export async function answerTimeOff({ token, choice, entries }) {
   // the question only exists on day-program sheets, so only they may answer it
   if ((ts.batch.program || "MLS") !== "DP") return { ok: false, error: "unknown" };
   if (ts.signedAt) return { ok: false, error: "already" };
-  if (ts.corrections.length) return { ok: false, error: "reported" };
+  // NOT refused while a report is open (Mánu 2026-09-09): this step comes
+  // AFTER the reports in the flow, and the pending document carries both.
 
   // NOTHING IS DROPPED QUIETLY. The old cleaner FILTERED, so a fumbled row
   // vanished and the save still answered ok - three days in, two days stored,
@@ -3602,7 +3754,9 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   });
   if (!ts) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
-  if (ts.corrections.length) return { ok: false, error: "reported" };
+  // NOT refused while a report is open (Mánu 2026-09-09): report the 3rd, then
+  // answer the 11th - the claim stays open and the pending document carries
+  // it; the answer rebuilds the figures it always did.
 
   // WHO IS ACTUALLY ANSWERING. The token is the only credential this action
   // requires, so the employee on their emailed link and a reviewer on the
@@ -4514,17 +4668,21 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     // was sent to, the batch's period and rehearsal flags, and the answer
     // rows the QuickSolve changes list derives from.
     select: {
-      id: true, batchId: true, signedAt: true, disputedAt: true, heldAt: true, sourceName: true,
+      id: true, batchId: true, signedAt: true, heldAt: true, sourceName: true,
       intendedEmail: true,
+      // for the signed claim snapshot: the figures as they stand at signing
+      userId: true, data: true, regularHours: true, otHours: true, doubleHours: true,
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true, email: true } },
-      batch: { select: { periodFrom: true, periodTo: true, testOnly: true, testEmail: true, auditOnly: true } },
+      batch: { select: { periodFrom: true, periodTo: true, program: true, testOnly: true, testEmail: true, auditOnly: true } },
+      // EVERY row now, open ones included: the open claims are what page 2 of
+      // the pending document carries, frozen below as `signedClaim`. The
+      // emails still read only the decided ones - see `decided`.
       corrections: {
-        where: { status: { not: "open" } },
         // `question` is the frozen card, which employeeResolution reads for
         // the two-lunches wording - left out it arrives undefined and the
         // sentence quietly loses its shape. `timeOff` is the day-program
         // answer's entries, same trap: left out, the emails lose those lines.
-        select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true, timeOff: true },
+        select: { ...CLAIM_SELECT, question: true },
       },
     },
   });
@@ -4533,12 +4691,15 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // action gets the same nothing
   if (ts.batch?.auditOnly) return { ok: false, error: "auth" };
   if (ts.signedAt) return { ok: false, error: "already" };
-  // you shouldn't attest to a document you've told us is wrong. the page hides
-  // the signer while a report is open; this is the server-side half of that.
-  if (ts.disputedAt) return { ok: false, error: "disputed" };
-  // the office hold - same shape: the page states it and drops the signer,
-  // and this is the rule behind the suggestion. See holdTimesheetSigning.
+  // A REPORTED SHEET IS SIGNABLE (Mánu 2026-09-09). It used to be refused on
+  // `disputedAt`, because the sheet's attestation is the one sentence a person
+  // with a report disputes. What they sign now while a report is open is the
+  // PENDING document - page 1 as recorded with no attestation, page 2 the claim
+  // - so the refusal is gone; see claim-signing.js and render.js.
+  // the office hold stays - same shape: the page states it and drops the
+  // signer, and this is the rule behind the suggestion. See holdTimesheetSigning.
   if (ts.heldAt) return { ok: false, error: "held" };
+  const decided = ts.corrections.filter((c) => c.status !== "open");
   if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
   if (pdfBase64.length > 8_000_000) return { ok: false, error: "toobig" };
 
@@ -4560,11 +4721,19 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     }
   }
 
+  // WHAT THEY SIGNED, frozen - null on a clean sheet, see the schema
+  const signedClaim = signedClaimSnapshot({
+    corrections: ts.corrections, days: ts.data?.days || [],
+    totals: { regularHours: ts.regularHours, otHours: ts.otHours, doubleHours: ts.doubleHours },
+    timeOff: await loadTimeOffFor(ts),
+  });
+
   await prisma.timesheet.update({
     where: { id },
     data: {
       signedAt: new Date(),
       signedPdfUrl,
+      signedClaim,
       // WHO SIGNED, WHICH WAS NEVER BEING RECORDED.
       //
       // `signedName` had been null on every signature ever taken. The signer
@@ -4619,7 +4788,7 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // the time-off days join the review record: the employee's copy states each
   // as a fact, the office copy carries the add-to-schedule action. Sorted back
   // together so the office reads one list in day order.
-  const reviewItems = [...reviewChoices(ts.corrections), ...timeOffReviewItems(ts.corrections)]
+  const reviewItems = [...reviewChoices(decided), ...timeOffReviewItems(decided)]
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const employeeName = (ts.user ? preferredName(ts.user) : null) || ts.sourceName;
   const periodLabel = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
@@ -4870,12 +5039,17 @@ export async function recordOfflineSignature(timesheetId, formData) {
     where: { id: timesheetId },
     select: {
       id: true, batchId: true, sourceName: true, userId: true, data: true,
-      signedAt: true, disputedAt: true, renderOk: true,
+      signedAt: true, renderOk: true,
+      // for the signed claim snapshot - a paper signature on a reported sheet
+      // is a signature on the pending document too
+      regularHours: true, otHours: true, doubleHours: true,
+      batch: { select: { periodFrom: true, periodTo: true, program: true } },
+      corrections: { select: CLAIM_SELECT },
     },
   });
   if (!ts) return { ok: false, error: "gone" };
   if (ts.signedAt) return { ok: false, error: "already" };
-  if (ts.disputedAt) return { ok: false, error: "disputed" };
+  // no refusal on a reported sheet any more - see submitSignedTimesheet
   if (!ts.renderOk) return { ok: false, error: "norender" };
 
   const name = (formData.get("signedName") || "").toString().trim().slice(0, 120);
@@ -4919,6 +5093,11 @@ export async function recordOfflineSignature(timesheetId, formData) {
       // putting the reviewer's address in a field that means "where they signed
       // from" would be a small lie in a record built to be checkable.
       signedIp: null,
+      signedClaim: signedClaimSnapshot({
+        corrections: ts.corrections, days: ts.data?.days || [],
+        totals: { regularHours: ts.regularHours, otHours: ts.otHours, doubleHours: ts.doubleHours },
+        timeOff: await loadTimeOffFor(ts),
+      }),
       data: {
         ...(ts.data || {}),
         signedOffline: {

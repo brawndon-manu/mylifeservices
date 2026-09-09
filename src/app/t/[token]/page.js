@@ -805,43 +805,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             </p>
           </div>
         </div>
-      ) : openCorrections.length > 0 ? (
-        // they've told us something is wrong, so there's nothing to sign until
-        // it's sorted. show what we have on record so they can see it landed.
-        <>
-        <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
-          <p className="text-sm font-semibold text-foreground">
-            Payroll is looking at this one.
-          </p>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
-            You reported{" "}
-            {openCorrections.length === 1
-              ? "a problem"
-              : `${openCorrections.length} problems`}{" "}
-            on{" "}
-            {new Date(openCorrections[0].createdAt).toLocaleDateString("en-US", {
-              month: "long", day: "numeric", year: "numeric",
-            })}
-            . Don&apos;t sign this version - once it&apos;s sorted you&apos;ll get
-            a corrected timesheet to sign.
-          </p>
-          <ul className="mt-3 space-y-1">
-            {openCorrections.map((c) => (
-              <li key={c.id} className="text-[13px] text-muted">
-                <span className="font-semibold text-foreground">{c.date || "This timesheet"}</span>
-                {" - "}
-                {correctionLabel(c.kind)}
-                {c.note && <span className="block text-xs opacity-80">{c.note}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-        {isDayProgram && <ReviewFlow enabled readOnly initialReports={openCorrections}>
-          <DayByDay readOnly days={displayedDays} periodFrom={ts.batch.periodFrom}
-            groups={[]} answers={{}} scheduled={scheduledByDate} restsOnRecord={restsByDate} />
-        </ReviewFlow>}
-        </>
       ) : (
+        // A REPORTED SHEET IS SIGNABLE (Mánu 2026-09-09). This branch used to be
+        // preceded by "Payroll is looking at this one" with no signer while a
+        // report was open. The document they sign now is the pending one, and
+        // the reports they sent ride into the flow below as sent items.
         <>
           {/* asked BEFORE the signer, but only the mandatory ones hold it back.
               An unanswered break question leaves the premium ON, so making
@@ -853,7 +821,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               the stages it names are the ones the page already enforces:
               questions first, the document generates once every one has an
               answer (see the signer), the signature last. */}
-          <ReviewFlow enabled={isDayProgram} ready={readyToGenerate} reports={
+          <ReviewFlow enabled={isDayProgram} ready={readyToGenerate} initialReports={openCorrections} reports={
             <ReportProblem token={token} days={ts.data?.days || []}
               period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
               submitAction={act(submitTimesheetCorrections)} />
