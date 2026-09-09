@@ -12,6 +12,7 @@ import {
   deadlinePassed,
   chaseWindowOpen,
   chaseEmailCopy,
+  ackNudgeCopy,
   missedBellCopy,
   overdueChipLabel,
   missedChipLabel,
@@ -95,6 +96,41 @@ test("the chase and the bell say the approved words", () => {
   assert.equal(overdueChipLabel(signPost), "Signature overdue");
   assert.equal(overdueChipLabel(ackPost), "Acknowledgment overdue");
   assert.equal(missedChipLabel(4), "4 missed the deadline");
+});
+
+test("the roster nudge asks a form post for a signature, never a one-click finish", () => {
+  // THE LIVE INCIDENT: this sender mailed 38 people "Acknowledge that I've
+  // read this / One click confirms it, no login needed" on a form post, five
+  // minutes after the chase told them their signature was due.
+  const signPost = {
+    title: "ILS documentation training materials and attestation",
+    formId: "f1",
+  };
+  assert.deepEqual(ackNudgeCopy(signPost), {
+    subject: "Please sign: ILS documentation training materials and attestation",
+    lead: "This announcement comes with a document to sign.",
+    cta: "Review and sign",
+    textCta: "Review and sign",
+    note: "Opens the form in the portal. Signed in or not, you can sign it there.",
+  });
+  // nothing in a form post's nudge may promise that one click finishes it
+  const words = Object.values(ackNudgeCopy(signPost)).join(" ");
+  assert.ok(!/one click/i.test(words));
+  assert.ok(!/acknowledg/i.test(words));
+
+  // an ack-only post keeps every word it had
+  const ackPost = { title: "Required admin time", formId: null };
+  assert.deepEqual(ackNudgeCopy(ackPost), {
+    subject: "Please acknowledge: Required admin time",
+    lead:
+      "By clicking below, you acknowledge that you have read and understood the contents of this announcement.",
+    cta: "Acknowledge that I've read this",
+    textCta: "Acknowledge that you've read this",
+    note: "One click confirms it, no login needed.",
+  });
+  // and an untitled post still addresses something
+  assert.equal(ackNudgeCopy({ formId: "f1" }).subject, "Please sign: New announcement");
+  assert.equal(ackNudgeCopy({}).subject, "Please acknowledge: New announcement");
 });
 
 test("an exempt person stays in the audience and leaves the owed set", () => {

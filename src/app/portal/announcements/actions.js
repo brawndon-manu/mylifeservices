@@ -75,7 +75,7 @@ import {
   computeMeetingLocks,
 } from "@/lib/announcements";
 // deadlines are end-of-day California, one definition - see the module note
-import { deadlineInstant } from "@/lib/announcement-deadline";
+import { deadlineInstant, ackNudgeCopy } from "@/lib/announcement-deadline";
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -2021,25 +2021,27 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-function ackEmailHtml({ firstName, title, snippet, url }) {
+function ackEmailHtml({ firstName, title, snippet, url, lead, cta, note }) {
   // simple inline-styled email - trusted internal content, but escaped anyway.
   return `
   <div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; color: #1f2937;">
     <p style="font-size: 15px;">Hi ${escapeHtml(firstName)},</p>
     <p style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">${escapeHtml(title)}</p>
     <p style="font-size: 14px; line-height: 1.6; color: #4b5563; white-space: pre-wrap;">${escapeHtml(snippet)}</p>
-    <p style="font-size: 14px; line-height: 1.6; color: #374151;">By clicking below, you acknowledge that you have read and understood the contents of this announcement.</p>
+    <p style="font-size: 14px; line-height: 1.6; color: #374151;">${escapeHtml(lead)}</p>
     <p style="margin: 22px 0;">
-      <a href="${url}" style="display: inline-block; background: #2f6f4f; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-size: 15px; font-weight: 600;">Acknowledge that I've read this</a>
+      <a href="${url}" style="display: inline-block; background: #2f6f4f; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-size: 15px; font-weight: 600;">${escapeHtml(cta)}</a>
     </p>
-    <p style="font-size: 12px; color: #6b7280;">One click confirms it, no login needed. If the button doesnt work, paste this into your browser:<br /><a href="${url}" style="color: #2f6f4f;">${url}</a></p>
+    <p style="font-size: 12px; color: #6b7280;">${escapeHtml(note)} If the button doesnt work, paste this into your browser:<br /><a href="${url}" style="color: #2f6f4f;">${url}</a></p>
   </div>`;
 }
 
-// "Send to staff by email" - emails an individualized one-click ack link to
-// every active person on the expected list who hasnt acknowledged yet (so a
-// re-send only nudges the stragglers). Supervisor+ only. best-effort: a send
-// failure is logged, not fatal. stamps ackEmailSentAt when at least one went.
+// "Send to staff by email" - emails an individualized link to every active
+// person who still OWES this post and hasnt finished it (a signature on a form
+// post, an acknowledgment otherwise), so a re-send only nudges the stragglers.
+// The words follow the debt: a form post asks for a signature and never
+// promises a one-click finish. Supervisor+ only. best-effort: a send failure is
+// logged, not fatal. stamps ackEmailSentAt when at least one went.
 export async function sendAckEmails(postId) {
   const user = await requireUser();
   if (!isSupervisorUp(user.role)) {
@@ -2105,7 +2107,10 @@ export async function sendAckEmails(postId) {
 
   const title = post.title || "New announcement";
   const snippet = (post.content || "").slice(0, 240);
-  const subject = `Please acknowledge: ${title}`;
+  // THE WORDS FOLLOW THE DEBT. A form post owes a signature, so the nudge
+  // cannot promise a one-click finish - see ackNudgeCopy.
+  const nudge = ackNudgeCopy(post);
+  const subject = nudge.subject;
   const messages = recipients.map((r) => {
     const url = `${base}/a/ack/${signAckToken(postId, r.id)}`;
     const firstName = firstNameOf(r) || "there";
@@ -2123,8 +2128,8 @@ export async function sendAckEmails(postId) {
       subject: route.redirected
         ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}`
         : subject,
-      html: ackEmailHtml({ firstName, title, snippet, url }),
-      text: `Hi ${firstName},\n\n${snippet}\n\nAcknowledge that you've read this: ${url}\n\nOne click confirms it, no login needed.`,
+      html: ackEmailHtml({ firstName, title, snippet, url, lead: nudge.lead, cta: nudge.cta, note: nudge.note }),
+      text: `Hi ${firstName},\n\n${snippet}\n\n${nudge.textCta}: ${url}\n\n${nudge.note}`,
     };
   });
 

@@ -98,6 +98,36 @@ export function chaseEmailCopy(post) {
   };
 }
 
+// THE ROSTER'S NUDGE EMAIL. Mánu 2026-09-08: this sender was the last one
+// still speaking acknowledgments. On the live ILS attestation it mailed 38
+// people "Acknowledge that I've read this / One click confirms it, no login
+// needed" five and a half minutes after the chase had told them their
+// SIGNATURE was due - and on a form post one click confirms nothing, so the
+// people who stopped at the confirmation screen believed they were finished.
+// The words follow the debt now. The sign-mode strings are the ones the
+// publish email (announcement-email.js) and the /a/ack landing page already
+// use, so all three doors read the same. Ack-only posts keep every old word.
+export function ackNudgeCopy(post) {
+  const title = post.title || "New announcement";
+  return signMode(post)
+    ? {
+        subject: `Please sign: ${title}`,
+        lead: "This announcement comes with a document to sign.",
+        cta: "Review and sign",
+        // the plain-text line reads as an instruction, the button as a label
+        textCta: "Review and sign",
+        note: "Opens the form in the portal. Signed in or not, you can sign it there.",
+      }
+    : {
+        subject: `Please acknowledge: ${title}`,
+        lead:
+          "By clicking below, you acknowledge that you have read and understood the contents of this announcement.",
+        cta: "Acknowledge that I've read this",
+        textCta: "Acknowledge that you've read this",
+        note: "One click confirms it, no login needed.",
+      };
+}
+
 // the missed-deadline bell's words, exactly as approved.
 export function missedBellCopy(post, outstanding) {
   const n = outstanding.length;
