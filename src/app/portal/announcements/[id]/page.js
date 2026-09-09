@@ -43,6 +43,8 @@ import {
   overdueChipLabel,
   missedChipLabel,
 } from "@/lib/announcement-deadline";
+// opening a form-backed post IS the read-record - written on view, below
+import { recordAnnouncementAck } from "@/lib/announcement-ack";
 import AuthorPreview from "../_components/AuthorPreview";
 import Avatar from "@/components/Avatar";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -335,6 +337,21 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
         orderBy: { createdAt: "desc" },
       })
     : null;
+  // OPENING THE POST IS THE RECORD ON A FORM-BACKED ANNOUNCEMENT - Mánu
+  // 2026-09-08: no acknowledge step there, "just let us know if someone has
+  // opened it in the portal". Viewing writes the same open the emailed
+  // Review-and-sign button writes, so the roster's Opened column covers both
+  // doors. Exempt people record too; the roster simply never counts them.
+  if (
+    post.formId &&
+    post.publishedAt &&
+    !meeting &&
+    !post.acks.length &&
+    inAckAudience(post, user)
+  ) {
+    await recordAnnouncementAck({ announcementId: post.id, userId: user.id });
+  }
+
   // am I in this announcement's ack audience, and not exempted on this post?
   // `inAckAudience` is the shared JS mirror of ackAudienceWhere (whole title
   // segments, like the roster) - the loose substring match that lived here
@@ -1569,8 +1586,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
           {sentCount != null && (
             <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
               {sentCount > 0
-                ? `Emailed ${sentCount} ${sentCount === 1 ? "person" : "people"} who hadn't acknowledged yet.`
-                : "Everyone on the list has already acknowledged - no emails sent."}
+                ? `Emailed ${sentCount} ${sentCount === 1 ? "person" : "people"} who hadn't ${post.formId ? "signed" : "acknowledged"} yet.`
+                : `Everyone on the list has already ${post.formId ? "signed" : "acknowledged"} - no emails sent.`}
             </div>
           )}
 
@@ -1609,7 +1626,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                           : "This one needs the attached form filled out and submitted."}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-brand-dark/80 dark:text-sky-200/80">
-                        Acknowledging records that you opened it. Submitting &ldquo;
+                        Opening this page records that you saw it. Submitting &ldquo;
                         {post.form?.title}&rdquo; is what finishes it.
                       </p>
                     </div>
@@ -1671,7 +1688,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     {roster.acked.length}
                   </span>
                   <span className="text-sm text-muted">
-                    of {roster.total} acknowledged · {roster.pct}%
+                    of {roster.total} {roster.needsSignature ? "opened" : "acknowledged"} ·{" "}
+                    {roster.pct}%
                   </span>
                 </div>
                 {/* OPENED IS NOT SIGNED. On a post carrying a form the tick only
@@ -1699,8 +1717,15 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     <AckEmailAction
                       postId={post.id}
                       send={sendAckEmails}
-                      notYetCount={roster.notYet.length}
+                      // on a form post the nudge counts SIGNATURES owed, so
+                      // an opened-but-unsigned person is in the number
+                      notYetCount={
+                        roster.needsSignature
+                          ? roster.total - roster.signedCount
+                          : roster.notYet.length
+                      }
                       isMeeting={meeting}
+                      needsSignature={roster.needsSignature}
                     />
                   )}
                 </div>
@@ -1709,7 +1734,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3">
                 <div
                   className="h-full rounded-full bg-emerald-500"
-                  style={{ width: `${roster.pct}%` }}
+                  // on a form post the bar tracks the debt that matters
+                  style={{ width: `${roster.needsSignature ? roster.signedPct : roster.pct}%` }}
                 />
               </div>
               {post.ackEmailSentAt && (
@@ -1719,14 +1745,15 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     month: "short",
                     day: "numeric",
                   })}
-                  . Re-sending only emails staff who haven&apos;t acknowledged.
+                  . Re-sending only emails staff who haven&apos;t{" "}
+                  {roster.needsSignature ? "signed" : "acknowledged"}.
                 </p>
               )}
 
               <div className="mt-4 grid gap-5 border-t border-border pt-4 sm:grid-cols-2">
                 <div>
                   <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                    Acknowledged ({roster.acked.length})
+                    {roster.needsSignature ? "Opened" : "Acknowledged"} ({roster.acked.length})
                   </p>
                   <ul className="mt-2 space-y-1.5">
                     {roster.acked.length === 0 && (

@@ -774,7 +774,7 @@ export default function AnnouncementForm({
                   {/* OPENED AND SIGNED ARE TWO STATES, and the person choosing
                       the form has to know that before they choose it. */}
                   <p className="mt-1 text-xs text-muted">
-                    Acknowledging records that they opened it. Submitting the
+                    Opening the post records that they saw it. Submitting the
                     signed form is what finishes it. The roster tracks both.
                   </p>
                 </div>

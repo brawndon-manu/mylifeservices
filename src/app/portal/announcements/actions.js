@@ -2077,13 +2077,17 @@ export async function sendAckEmails(postId) {
   }
 
   // recipients = the people who still OWE this announcement (audience minus
-  // the per-post exemptions) and haven't acked, so the roster button can only
-  // nudge the people it's actually for - never an exempt reader.
+  // the per-post exemptions) and haven't finished it. ON A FORM POST THE
+  // SIGNATURE IS THE DEBT - Mánu 2026-09-08: "some have acknowledged but
+  // havent signed" - and the old no-ack filter skipped exactly those people,
+  // so the nudge could never reach the ones it most existed for.
   const recipients = await prisma.user.findMany({
     where: {
       AND: [
         ackOwedWhere(post),
-        { announcementAcks: { none: { announcementId: postId } } },
+        post.formId
+          ? { formSubmissions: { none: { announcementId: postId } } }
+          : { announcementAcks: { none: { announcementId: postId } } },
       ],
     },
     select: {

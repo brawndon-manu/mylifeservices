@@ -24,9 +24,10 @@ function MailIcon({ className }) {
   );
 }
 
-export default function AckEmailAction({ postId, send, notYetCount, isMeeting }) {
+export default function AckEmailAction({ postId, send, notYetCount, isMeeting, needsSignature = false }) {
   const [open, setOpen] = useState(false);
-  const verb = isMeeting ? "responded" : "acknowledged";
+  // a form-backed post is finished by SIGNING - the nudge speaks that language
+  const verb = isMeeting ? "responded" : needsSignature ? "signed" : "acknowledged";
   const noun = notYetCount === 1 ? "person" : "people";
 
   // everyone's done - nothing to nudge. guide them to the resend dialog above.
@@ -69,8 +70,12 @@ export default function AckEmailAction({ postId, send, notYetCount, isMeeting })
                 {notYetCount} {noun}
               </span>{" "}
               who haven&apos;t {verb}, with a one-click{" "}
-              {isMeeting ? "link to respond" : "link to acknowledge"}. Anyone who
-              already has won&apos;t be emailed again.
+              {isMeeting
+                ? "link to respond"
+                : needsSignature
+                  ? "link to review and sign"
+                  : "link to acknowledge"}
+              . Anyone who already has won&apos;t be emailed again.
             </p>
             <form
               action={send.bind(null, postId)}

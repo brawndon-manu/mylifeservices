@@ -330,6 +330,8 @@ export default async function AnnouncementsPage({ searchParams }) {
               currentUser={user}
               owes={oweOf(p)}
               missed={missedByPost.get(p.id) || 0}
+              signedByMe={mySignedIds.has(p.id)}
+              exemptMe={isExemptOnPost(p, user.id)}
             />
           ))
         )}
@@ -338,7 +340,7 @@ export default async function AnnouncementsPage({ searchParams }) {
   );
 }
 
-function PostCard({ post, currentUser, owes = false, missed = 0 }) {
+function PostCard({ post, currentUser, owes = false, missed = 0, signedByMe = false, exemptMe = false }) {
   const expired = isExpired(post);
   const liked = post.likes.length > 0;
   const canDelete =
@@ -406,24 +408,24 @@ function PostCard({ post, currentUser, owes = false, missed = 0 }) {
                 })}
               </span>
             )}
-            {/* the ack pair reads off what is genuinely OWED: on a form post
-                the signature is the debt, so an opened-but-unsigned viewer
-                keeps the amber rather than a green "Acknowledged" telling
-                them they are done. An exempt or out-of-audience reader gets
-                the quiet requested chip. Overdue already says it after the
-                deadline, so the amber pair stands down there. */}
-            {!meeting && post.requireAck &&
-              (iAcked && !owes ? (
+            {/* the ack pair reads off what is genuinely OWED, in the debt's
+                own language: a form post speaks signatures (green only once
+                SIGNED - an opened-but-unsigned viewer keeps the amber), an
+                ack post speaks acknowledgments. An exempt reader gets no
+                chip at all - nothing is asked of them. Overdue already says
+                it after the deadline, so the amber pair stands down there. */}
+            {!meeting && post.requireAck && !exemptMe &&
+              ((post.formId ? signedByMe : iAcked && !owes) ? (
                 <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                  Acknowledged
+                  {post.formId ? "Signed" : "Acknowledged"}
                 </span>
               ) : owes && !expired ? (
                 <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-                  Acknowledgment needed
+                  {post.formId ? "Signature needed" : "Acknowledgment needed"}
                 </span>
               ) : owes && expired ? null : (
                 <span className="rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">
-                  Acknowledgment requested
+                  {post.formId ? "Signature requested" : "Acknowledgment requested"}
                 </span>
               ))}
           </div>
