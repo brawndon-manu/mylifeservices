@@ -62,7 +62,20 @@ export const BASES = ["projected", "corrected"];
 
 // Everything a render needs, so every caller selects the same fields and none
 // of them quietly omits one and produces a subtly different document.
-export const RENDER_SELECT = {
+// EVERYTHING THE RENDERER READS OFF THE SHEET ITSELF, with no batch.
+//
+// Split out on 2026-09-09 because the two batch-wide download routes cannot
+// spread `RENDER_SELECT`: they query their sheets NESTED under the batch, so the
+// `batch` sub-select below would re-fetch the same batch once per sheet. They
+// hand-rolled a copy of this instead, and it drifted exactly the way the note on
+// `userId` describes - their copy asked only for answered `q_` corrections, so an
+// open claim never reached the renderer and a reported sheet printed as the
+// ordinary one-page document with no sign it had been disputed. Proven on
+// Jonathan Kramer's sheet: two pages with this select, one page with theirs.
+//
+// So there is one definition and two shapes of it. A route that holds the batch
+// already spreads this; a route that does not spreads `RENDER_SELECT`.
+export const RENDER_SELECT_SHEET = {
   id: true,
   sourceName: true,
   data: true,
@@ -75,16 +88,17 @@ export const RENDER_SELECT = {
   // review page on 2026-08-17 and none of them appeared. Found by rendering
   // the live route beside a probe that fetched the rows directly.
   userId: true,
-  // the display name reads the account and the batch's rehearsal flag. Left out
-  // of this select they arrive undefined and the sheet silently falls back to
-  // `sourceName` - the same class of failure as `restsUrl`, showing up as a
-  // recording with the wrong name on it rather than as an error.
+  // CURRENTLY UNREAD BY THE RENDERER, and the comment here used to say the
+  // opposite. It claimed the display name reads the account, so a select without
+  // it printed the wrong name - and an audit of the batch routes believed that
+  // and reported a name bug that does not exist. `sheetDisplayName` destructures
+  // `user` and never uses it: the DOCUMENT prints `sourceName`, the export's own
+  // spelling, on purpose, and it is the /t page that passes
+  // `fallback: preferredName(user)` to get the preferred name on SCREEN. Checked
+  // both ways on a real sheet - the printed name is identical with and without
+  // this field. Kept because `sheetDisplayName` still takes a user and a
+  // document-side fallback would need it; it costs one join.
   user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
-  batch: {
-    // `program` rides along for loadBreakReasons, which scopes the reasons to
-    // the payroll the sheet belongs to.
-    select: { periodFrom: true, periodTo: true, restsByDate: true, testOnly: true, program: true },
-  },
   // THE CLAIMS, for the pending document (Mánu 2026-09-09). Every row, not
   // only the open ones: the renderer decides which still wait on payroll,
   // and a time-off answer is one row that is "open" per day, against the
@@ -95,6 +109,15 @@ export const RENDER_SELECT = {
       id: true, date: true, kind: true, status: true, choice: true,
       claimedHours: true, statedSlots: true, statedBreaks: true, note: true, timeOff: true,
     },
+  },
+};
+
+export const RENDER_SELECT = {
+  ...RENDER_SELECT_SHEET,
+  batch: {
+    // `program` rides along for loadBreakReasons, which scopes the reasons to
+    // the payroll the sheet belongs to.
+    select: { periodFrom: true, periodTo: true, restsByDate: true, testOnly: true, program: true },
   },
 };
 

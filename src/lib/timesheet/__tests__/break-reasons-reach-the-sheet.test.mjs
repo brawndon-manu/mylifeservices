@@ -23,8 +23,17 @@ test("RENDER_SELECT carries the column the reasons are keyed on", () => {
   assert.match(block, /batch:\s*\{[\s\S]*periodFrom:\s*true/);
 });
 
-// the two batch routes build their own selects rather than reusing
-// RENDER_SELECT, so each needs its own guard
+// THE TWO BATCH ROUTES NO LONGER BUILD THEIR OWN SELECTS (2026-09-09). They
+// hand-rolled a copy of RENDER_SELECT, which is why each needed its own guard
+// here - and the copy drifted in a second way this guard did not cover: it asked
+// only for answered `q_` corrections, so an open claim never reached the renderer
+// and a reported sheet printed as the ordinary one-page document. They now spread
+// `RENDER_SELECT_SHEET`, the same definition minus the batch they already hold.
+//
+// So the assertion below accepts either way of getting the column, exactly as the
+// whole-set test at the bottom of this file already does. Spreading is not the
+// weaker guarantee: the first test in this file pins `userId` inside that
+// definition, so a route that spreads it cannot lose the column.
 const ROUTES = [
   ["../../../app/portal/admin/timesheets/[id]/download/route.js", "merged batch PDF"],
   ["../../../app/portal/admin/timesheets/[id]/download-zip/route.js", "batch zip"],
@@ -34,7 +43,10 @@ for (const [file, label] of ROUTES) {
   test(`${label} selects userId, or its sheets lose every reason`, () => {
     const src = read(file);
     assert.match(src, /loadBreakReasons/, "this route renders sheets");
-    assert.match(src, /userId:\s*true/, `${label} must select userId`);
+    assert.ok(
+      /userId:\s*true/.test(src) || /RENDER_SELECT_SHEET/.test(src),
+      `${label} must select userId, literally or by spreading RENDER_SELECT_SHEET`,
+    );
   });
 }
 

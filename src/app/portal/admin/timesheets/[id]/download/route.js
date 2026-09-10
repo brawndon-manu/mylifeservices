@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
-import { renderSheet } from "@/lib/timesheet/render-sheet";
+import { renderSheet, RENDER_SELECT_SHEET } from "@/lib/timesheet/render-sheet";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
@@ -46,21 +46,14 @@ export async function GET(req, { params }) {
           : { OR: [{ signedPdfUrl: { not: null } }, { approvedPdfUrl: { not: null } }] },
         orderBy: { sourceName: "asc" },
         select: {
-          id: true, data: true, signedPdfUrl: true, approvedPdfUrl: true, sourceName: true,
-          dueAt: true,
-          // the break reasons hang off it - see the note in RENDER_SELECT.
-          // Without it `loadBreakReasons` returns [] and every sheet in the
-          // merged PDF quietly loses its Comments lines.
-          userId: true,
-          // these rows reach the renderer as `claims`, for the pending document
-          // a reported sheet prints. Same narrowing as the zip route: only
-          // answered `q_` questions, so an OPEN claim never arrives and a
-          // reported sheet prints as the ordinary document here. Not widened
-          // silently - see the note there.
-          corrections: {
-            where: { kind: { startsWith: "q_" }, status: { not: "open" } },
-            select: { kind: true, date: true, status: true },
-          },
+          // THE RENDERER'S OWN CONTRACT, not a copy of it - same correction as
+          // the zip beside it (Mánu 2026-09-09). The copy here asked only for
+          // answered `q_` corrections, so a reported sheet was merged into this
+          // bundle as the ordinary one-page document with no sign it was
+          // disputed. Minus the batch, which this query holds and passes in.
+          ...RENDER_SELECT_SHEET,
+          signedPdfUrl: true,
+          approvedPdfUrl: true,
         },
       },
     },

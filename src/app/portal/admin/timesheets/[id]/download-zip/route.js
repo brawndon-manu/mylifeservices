@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { renderSheet } from "@/lib/timesheet/render-sheet";
+import { renderSheet, RENDER_SELECT_SHEET } from "@/lib/timesheet/render-sheet";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { buildZip, safeEntryName } from "@/lib/zip";
@@ -32,28 +32,19 @@ export async function GET(req, { params }) {
       timesheets: {
         orderBy: { sourceName: "asc" },
         select: {
-          id: true,
-          sourceName: true,
-          data: true,
+          // THE RENDERER'S OWN CONTRACT, not a copy of it (Mánu 2026-09-09). The
+          // copy that used to be here asked only for answered `q_` corrections,
+          // so an open claim never reached the renderer and a reported sheet came
+          // out of this zip as the ordinary one-page document with nothing on it
+          // to say the person had disputed it. `RENDER_SELECT_SHEET` is the same
+          // definition the single-sheet routes spread, minus the batch, which
+          // this query already holds and passes in below.
+          ...RENDER_SELECT_SHEET,
+          // and what this route needs on top: which stored copy to prefer, and
+          // the name the zip entry is filed under.
           signedPdfUrl: true,
           approvedPdfUrl: true,
           signedAt: true,
-          dueAt: true,
-          // the break reasons hang off it - see the note in RENDER_SELECT.
-          // Without it `loadBreakReasons` returns [] and every sheet in the
-          // zip quietly loses its Comments lines.
-          userId: true,
-          // these rows reach the renderer as `claims`, for the pending document
-          // a reported sheet prints. NOTE the scope is narrower than
-          // RENDER_SELECT's, which takes EVERY row: this one asks only for
-          // answered `q_` questions, so an OPEN claim never arrives and a
-          // reported sheet in this zip prints as the ordinary document. Left as
-          // it is for now rather than widened silently - it changes which
-          // document a disputed sheet produces.
-          corrections: {
-            where: { kind: { startsWith: "q_" }, status: { not: "open" } },
-            select: { kind: true, date: true, status: true },
-          },
         },
       },
     },
