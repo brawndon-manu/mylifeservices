@@ -1054,7 +1054,6 @@ const REFUSALS = {
   alreadyrecorded: "A break at that time is already on this day's record. Give the time of the one that has no record, or answer that you did not take it.",
   shifthasten: "QuickSolve holds one rest break per shift, and that shift already has one. Pick a time inside a shift that does not, or answer that you did not take it.",
   nolunchgap: "There is no half hour gap in that day long enough to hold a lunch, so that time cannot be right.",
-  reported: "You have told us something is wrong with this timesheet, so it is with payroll and answers are on hold.",
   // the three below mean the browser sent something the server would not
   // recognise. They are not the person's fault and there is nothing for them to
   // change, so they say so rather than blaming the answer.
