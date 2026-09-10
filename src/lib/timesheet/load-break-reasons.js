@@ -35,9 +35,11 @@ export async function loadBreakReasons(ts) {
 // to `renderSheet`, and a route that forgets prints a sheet silently missing
 // its time-off line. Keyed (program, period, person) like the PtoEntry rows
 // themselves, so the record survives every re-upload.
-export async function loadTimeOffFor(ts) {
+// `client` so a caller inside an interactive transaction reads the same view it
+// is writing - see `rebuildSheetFor`, which the answer action now runs in one.
+export async function loadTimeOffFor(ts, client = prisma) {
   if (!ts?.userId || !ts?.batch?.periodFrom) return [];
-  return prisma.ptoEntry.findMany({
+  return client.ptoEntry.findMany({
     where: {
       program: ts.batch.program || "MLS",
       periodFrom: ts.batch.periodFrom,

@@ -3300,7 +3300,12 @@ export async function recomputeTimesheet(timesheetId) {
 // knows how a corrected document is produced.
 //
 // The caller does the authorisation and the guards. This does the work.
-async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
+// `client` IS THE TRANSACTION, when there is one. The answer action commits its
+// rows and this rebuild together (see `answerTimesheetQuestion`), so every read
+// and the single write below have to run on the same client or the rebuild
+// computes from a view that does not include the answer it was called for.
+// Defaults to `prisma`, so every other caller is unchanged.
+async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prisma } = {}) {
   const stored = ts.data || {};
   // RECOMPUTE FROM THE PRISTINE DAYS, NOT THE STORED ONES.
   //
@@ -3481,26 +3486,26 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false } = {}) {
   // the old answer: cleared.
   let signature = { keep: false, why: "unsigned" };
   if (ts.signedAt) {
-    const claims = await prisma.timesheetCorrection.findMany({
+    const claims = await client.timesheetCorrection.findMany({
       where: { timesheetId: ts.id }, select: CLAIM_SELECT,
     });
     signature = decideSignature({
       signedAt: ts.signedAt, signedClaim: ts.signedClaim ?? null, corrections: claims,
-      days: stored.days || [], next: next.days, timeOff: await loadTimeOffFor(ts),
+      days: stored.days || [], next: next.days, timeOff: await loadTimeOffFor(ts, client),
     });
   }
   // A REPORT STILL OPEN STAYS REPORTED. An employee answering a question after
   // sending a report rebuilds the sheet through here, and `disputedAt: null`
   // below used to wipe the mark the review table filters on while the claim
   // still waited. Left as it is while any claim is open; cleared otherwise.
-  const openClaims = await prisma.timesheetCorrection.count({
+  const openClaims = await client.timesheetCorrection.count({
     where: {
       timesheetId: ts.id, status: "open",
       NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
     },
   });
 
-  await prisma.timesheet.update({
+  await client.timesheet.update({
     where: { id: ts.id },
     data: {
       rawHours: r2(next.totals.rawHours),
@@ -4082,7 +4087,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // the rule that decides who owes one. A late meal keeps its own key, because a
   // late meal and a missing meal are different questions about the same day and
   // must not land on one row.
-  const writeBreakAnswer = async (q, date, why) => {
+  const writeBreakAnswer = async (tx, q, date, why) => {
     const kind = reasonSlotFor(q.kind);
     const findingKey = breakFindingKey(kind, date);
     // no account behind the sheet means no person to hang it off, which is the
@@ -4104,7 +4109,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     // passes on nothing. Renamed here rather than loosening an assertion that
     // exists to catch a real bug - and this note is worded to avoid the landmark
     // too, because a comment quoting it breaks it exactly as the code would.
-    const prior = await prisma.timesheetBreakAnswer.findUnique({ where });
+    const prior = await tx.timesheetBreakAnswer.findUnique({ where });
     if (prior) {
       // THEIR OWN WORDS, REPLACEABLE BY THEM.
       //
@@ -4122,7 +4127,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       // replaced without being on screen first - an untouched answer sends the
       // same words straight back and this update is a no-op. That is a better
       // guarantee than refusing, and it is the one that lets them fix a typo.
-      await prisma.timesheetBreakAnswer.update({
+      await tx.timesheetBreakAnswer.update({
         where: { id: prior.id },
         // ours stays in `reason`; theirs goes in `confirmedText` beside it. Where
         // nobody recorded one, theirs IS the only reason there is and fills both.
@@ -4132,7 +4137,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       });
       return;
     }
-    await prisma.timesheetBreakAnswer.create({
+    await tx.timesheetBreakAnswer.create({
       data: {
         program: ts.batch.program || "MLS",
         periodFrom: ts.batch.periodFrom,
@@ -4160,300 +4165,343 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     });
   };
 
-  // record the answers first, so rebuilding the overrides below sees them
-  for (const { q, choice: pick, stated, statedBreaks, reason, block } of resolved) {
-    const kindKey = `q_${q.kind}`;
-    const dates = q.dates || [q.date];
-    // UNANSWERED AGAIN. Scoped to this sheet, this kind and these dates - never
-    // a bare delete - and the override rebuild below then runs without it, so
-    // the sheet goes back to what it said before they answered.
-    if (pick === null) {
-      await prisma.timesheetCorrection.deleteMany({
-        where: { timesheetId: ts.id, kind: kindKey, date: { in: dates }, status: { not: "open" } },
-      });
-      continue;
-    }
-    for (const date of dates) {
-      const existing = await prisma.timesheetCorrection.findFirst({
-        where: { timesheetId: ts.id, date, kind: kindKey },
-        select: { id: true },
-      });
-      const record = {
-        // THE QUESTION AS IT WAS ASKED, so the card survives being answered.
-        //
-        // An answer that resolves its finding deletes its own question, and the
-        // card is what carries "Change this" - so answering used to be the end
-        // of any chance to correct a mis-click. Every premium-bearing issue has
-        // to stay on their page and stay changeable until they sign, because
-        // the correction happens on a phone call and they need to watch it land.
-        //
-        // Frozen HERE rather than rebuilt later: `data.daysOriginal` was
-        // measured and cannot produce it - the answered miscTime question is
-        // absent from the pristine days too. `q` is the object this action
-        // already validated the answer against, so the snapshot is exactly what
-        // was put to them and not a reconstruction of it.
-        question: q,
-        // a partial and a "never took it" both settle as declines: the premium
-        // stands either way, and what differs is the record
-        status: pick === "yes" ? "accepted" : "declined",
-        // the answer itself, because `status` cannot hold a third outcome and
-        // two of `restTooLongOffClock`'s three are declines that move nothing
-        choice: pick,
-        resolvedAt: new Date(),
-        // the person who actually gave the answer - the employee on their own
-        // link, or the reviewer recording it for them. Every row before
-        // 2026-08-17 carries the employee's id whoever was driving.
-        resolvedById: answeredById,
-        note: `Asked about the ${date} ${questionNoun(q.kind)}.`,
-        resolutionNote: resolutionFor(q, pick, stated, statedBreaks, block),
-        // WHATEVER THE ANSWER ACTUALLY COLLECTED, and nothing else.
-        //
-        // This used to null the times on any "no", which was right while "no"
-        // always meant "I never got it". It is not right for a card whose "no"
-        // IS the one that asks for times: `restOutsideScheduled` collects them
-        // on the decline, and clearing them lost the very thing that tells "I
-        // took it during a shift" apart from "I did not take it at all". Mánu
-        // 2026-08-11: "when i chose those time options it goes back to selecting
-        // i did not take it at all."
-        //
-        // Storing the resolved value clears them just as well where it should:
-        // `statedBreaks` is only ever built when the chosen answer is the one
-        // this kind asks times on, so changing from "yes I took them" to "no I
-        // missed them" still lands null and still wipes the old times.
-        //
-        // SCOPED TO THIS DATE where the slots carry one. A grouped question
-        // writes a row per date, and the whole list was going onto every one of
-        // them - so Uribe's 07/28 carried the times for 07/29 and 07/31 too, and
-        // his sheet would have drawn three rests on a day with one.
-        statedBreaks: statedBreaks
-          ? statedBreaks.filter((b) => !b.date || b.date === date)
-          : null,
-      };
-      if (existing) {
-        await prisma.timesheetCorrection.update({ where: { id: existing.id }, data: record });
-      } else {
-        await prisma.timesheetCorrection.create({
-          data: { timesheetId: ts.id, date, kind: kindKey, ...record },
-        });
+  // ONE TRANSACTION: THE ANSWERS AND THE REBUILD COMMIT TOGETHER, OR NEITHER DOES.
+  //
+  // Mánu 2026-09-09, on an answer of his that vanished. Taking an answer back
+  // off the record is a `deleteMany`, and the rebuild that follows it used to be
+  // a separate write - so when the rebuild threw (a dev server holding a Prisma
+  // client that predated `signedClaim`), the DELETE had already committed and
+  // the rebuild had not. His answer was gone and the figures still said what
+  // they said before he touched it. Nothing recovers that: the row is the only
+  // record of the answer.
+  //
+  // The whole batch has the same hole without the delete: a thirteen-day card
+  // wrote a row per day in its own statement, so a failure on the ninth left
+  // eight answers stored and the sheet never rebuilt - which is the exact shape
+  // the validation pass above exists to prevent, enforced only against bad input
+  // and not against a write that fails.
+  //
+  // So every row and the rebuild's single update now run on one client inside
+  // one interactive transaction. The reads inside it run on `tx` as well, or the
+  // override rebuild would compute from a view without the answer it was called
+  // for. The rebuild renders a PDF to check the sheet, measured at 69 to 149 ms
+  // over the Mocktember sheet and the six newest real ones, so the timeout is
+  // generous rather than tight and the transaction is still short.
+  //
+  // A FAILED REBUILD THROWS rather than returning, because returning from a
+  // transaction callback COMMITS it - the answers would survive a rebuild that
+  // did not, which is the bug with extra steps.
+  try {
+    await prisma.$transaction(async (tx) => {
+      // record the answers first, so rebuilding the overrides below sees them
+      for (const { q, choice: pick, stated, statedBreaks, reason, block } of resolved) {
+        const kindKey = `q_${q.kind}`;
+        const dates = q.dates || [q.date];
+        // UNANSWERED AGAIN. Scoped to this sheet, this kind and these dates - never
+        // a bare delete - and the override rebuild below then runs without it, so
+        // the sheet goes back to what it said before they answered.
+        if (pick === null) {
+          await tx.timesheetCorrection.deleteMany({
+            where: { timesheetId: ts.id, kind: kindKey, date: { in: dates }, status: { not: "open" } },
+          });
+          continue;
+        }
+        for (const date of dates) {
+          const existing = await tx.timesheetCorrection.findFirst({
+            where: { timesheetId: ts.id, date, kind: kindKey },
+            select: { id: true },
+          });
+          const record = {
+            // THE QUESTION AS IT WAS ASKED, so the card survives being answered.
+            //
+            // An answer that resolves its finding deletes its own question, and the
+            // card is what carries "Change this" - so answering used to be the end
+            // of any chance to correct a mis-click. Every premium-bearing issue has
+            // to stay on their page and stay changeable until they sign, because
+            // the correction happens on a phone call and they need to watch it land.
+            //
+            // Frozen HERE rather than rebuilt later: `data.daysOriginal` was
+            // measured and cannot produce it - the answered miscTime question is
+            // absent from the pristine days too. `q` is the object this action
+            // already validated the answer against, so the snapshot is exactly what
+            // was put to them and not a reconstruction of it.
+            question: q,
+            // a partial and a "never took it" both settle as declines: the premium
+            // stands either way, and what differs is the record
+            status: pick === "yes" ? "accepted" : "declined",
+            // the answer itself, because `status` cannot hold a third outcome and
+            // two of `restTooLongOffClock`'s three are declines that move nothing
+            choice: pick,
+            resolvedAt: new Date(),
+            // the person who actually gave the answer - the employee on their own
+            // link, or the reviewer recording it for them. Every row before
+            // 2026-08-17 carries the employee's id whoever was driving.
+            resolvedById: answeredById,
+            note: `Asked about the ${date} ${questionNoun(q.kind)}.`,
+            resolutionNote: resolutionFor(q, pick, stated, statedBreaks, block),
+            // WHATEVER THE ANSWER ACTUALLY COLLECTED, and nothing else.
+            //
+            // This used to null the times on any "no", which was right while "no"
+            // always meant "I never got it". It is not right for a card whose "no"
+            // IS the one that asks for times: `restOutsideScheduled` collects them
+            // on the decline, and clearing them lost the very thing that tells "I
+            // took it during a shift" apart from "I did not take it at all". Mánu
+            // 2026-08-11: "when i chose those time options it goes back to selecting
+            // i did not take it at all."
+            //
+            // Storing the resolved value clears them just as well where it should:
+            // `statedBreaks` is only ever built when the chosen answer is the one
+            // this kind asks times on, so changing from "yes I took them" to "no I
+            // missed them" still lands null and still wipes the old times.
+            //
+            // SCOPED TO THIS DATE where the slots carry one. A grouped question
+            // writes a row per date, and the whole list was going onto every one of
+            // them - so Uribe's 07/28 carried the times for 07/29 and 07/31 too, and
+            // his sheet would have drawn three rests on a day with one.
+            statedBreaks: statedBreaks
+              ? statedBreaks.filter((b) => !b.date || b.date === date)
+              : null,
+          };
+          if (existing) {
+            await tx.timesheetCorrection.update({ where: { id: existing.id }, data: record });
+          } else {
+            await tx.timesheetCorrection.create({
+              data: { timesheetId: ts.id, date, kind: kindKey, ...record },
+            });
+          }
+          // and the why, as the row a reviewer would have written - see
+          // `writeBreakAnswer`. Only on a "no", which is the answer that IS the
+          // violation.
+          // on whichever answer this kind hangs its sentence off - see `REASON_ON`
+          // in break-answers.js, which both sides read
+          if (reasonOwedOn(q.kind, pick)) await writeBreakAnswer(tx, q, date, reason);
+        }
       }
-      // and the why, as the row a reviewer would have written - see
-      // `writeBreakAnswer`. Only on a "no", which is the answer that IS the
-      // violation.
-      // on whichever answer this kind hangs its sentence off - see `REASON_ON`
-      // in break-answers.js, which both sides read
-      if (reasonOwedOn(q.kind, pick)) await writeBreakAnswer(q, date, reason);
-    }
-  }
 
-  // rebuild EVERY override from every answer on record, this one included
-  const answers = await prisma.timesheetCorrection.findMany({
-    where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
-    // `choice` IS NEEDED HERE. `status` holds accepted or declined and cannot
-    // say which of three outcomes somebody picked, so a Misc answer of "I was
-    // working" rebuilt as "sick pay" - both are declines. Left out of this
-    // select it arrives undefined, which is the same failure shape as every
-    // other column this file has been caught by.
-    // `resolvedById` is the provenance: whose answer each patch carries, which
-    // the reband markers in recomputeSheet turn into "settles on its own"
-    // versus "waits for the signature".
-    select: { date: true, kind: true, status: true, choice: true, resolutionNote: true, statedBreaks: true, resolvedById: true },
-  });
-  // WHICH RESOLVERS ACTUALLY REVIEW TIMESHEETS, looked up fresh. Judging
-  // "admin" off nothing but "differs from the sheet's userId" flips every old
-  // answer to a reviewer's the day a sheet is re-matched - see actorKindFor.
-  const otherResolverIds = [...new Set(
-    answers.map((a) => a.resolvedById).filter((x) => x && x !== ts.userId),
-  )];
-  const reviewerIds = new Set(
-    otherResolverIds.length
-      ? (await prisma.user.findMany({
-          where: { id: { in: otherResolverIds } },
-          select: { id: true, role: true },
-        })).filter((u) => canManageTimesheets(u.role)).map((u) => u.id)
-      : [],
-  );
-  // AND KEEP WHAT A REVIEWER SAID, WHICH IS NOT AN ANSWER ON THIS LIST.
-  //
-  // This started from {} and refilled itself from the corrections alone, so
-  // every override written by anything OTHER than an employee answer was thrown
-  // away the next time that employee answered anything at all.
-  //
-  // `classifyMiscTime` is the one that writes them: a reviewer saying a day's
-  // Misc was PTO, sick pay or hours worked stores it here rather than as a
-  // correction, because it is not a reply to a question. So Gabe classifying a
-  // day at noon and the employee answering any question that evening silently
-  // undid the classification, on a sheet whose admin screen went on showing it
-  // as recorded, by name and to the minute.
-  //
-  // Only the misc fields and their provenance are carried over. Everything else
-  // in here IS derived from the answers and has to be rebuilt, or a stale patch
-  // from an answer somebody has since changed would survive as well.
-  // the same list `clearMiscClassification` removes, so a sixth field added to
-  // `patchesFor` is carried here without anybody remembering to
-  const KEEP = new Set([...MISC_PATCH_FIELDS, "_was", "_by", "_at", "_source"]);
-  const overrides = {};
-  for (const [date, ov] of Object.entries(ts.overrides || {})) {
-    if (ov?._source !== "misc-classify") continue;
-    const kept = Object.fromEntries(Object.entries(ov).filter(([k]) => KEEP.has(k)));
-    if (Object.keys(kept).length) overrides[date] = kept;
-  }
-  // PATCH THE PRISTINE DAY, NEVER THE ALREADY-PATCHED ONE.
-  //
-  // `rebuildSheetFor` has recomputed from `daysOriginal` since 2f0b194 for
-  // exactly this reason, and this loop was left reading `data.days` - which the
-  // PREVIOUS answer has already rewritten. It did not matter while every patch
-  // was a boolean or was derived from a stored minute count; it matters the
-  // moment one sets an absolute figure.
-  //
-  // Mánu 2026-08-11, on his own sheet: he answered "I took it during a shift"
-  // (6.17 -> 6.00), then changed to "yes, that is when I took it". The second
-  // patch computed its target from the 6.00 the first one had written, so it
-  // landed back on 6.00 and his hours stayed down. It reads as "I cannot change
-  // my answer once I confirm it", which is what he reported.
-  const pristine = ts.data?.daysOriginal || ts.data?.days || [];
-  // AND EVERY ACCEPTED REPORT, RE-DERIVED FROM ITS OWN ROW.
-  //
-  // The same failure as the misc classifications above, one writer later:
-  // resolveCorrection merges an accepted report's patch into the blob, this
-  // rebuild started over without it, and the patch died the next time the
-  // employee answered anything at all. Bustamante 08/28 is the case: the
-  // accepted missing day's `added` patch lived only in the blob, he answered
-  // the ten ON that very day, and paid fell 96 -> 88 with the desk still
-  // reading Accepted by Mánu Uribe.
-  //
-  // Re-derived from the rows rather than carried over from the old blob, the
-  // way the answers below drive their own loop: the accepted rows are the
-  // current record, so a report somebody has since re-resolved cannot leave a
-  // stale patch behind. Runs BEFORE the answers so an answer about the same
-  // date merges on top, which is exactly the 08/28 shape - the accepted day
-  // brings the hours, the answer brings its breaks.
-  const acceptedReports = await prisma.timesheetCorrection.findMany({
-    where: {
-      timesheetId: ts.id,
-      status: "accepted",
-      NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
-    },
-    // statedSlots is HERE because patchFor needs it: a select that omitted it
-    // handed patchFor undefined and the rebuild dropped the corrected clock
-    // without a word - the same silent-whitelist trap applyOverrides warns
-    // about twice.
-    select: { kind: true, date: true, claimedHours: true, statedBreaks: true, statedSlots: true },
-  });
-  for (const c of acceptedReports) {
-    // the dateless legacy rows patch nothing, exactly as their accept did
-    if (!c.date) continue;
-    const day = pristine.find((d) => d.date === c.date) || null;
-    const patch = patchFor(c.kind, day, c.claimedHours, c.statedSlots);
-    const stamped = { ...patch, _answeredBy: "admin" };
-    if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
-    if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
-    Object.assign(stamped, claimedTimesPatch(overrides, c.date, c.statedBreaks) || {});
-    if (Object.keys(patch).length || stamped.statedBreaks) {
-      overrides[c.date] = { ...(overrides[c.date] || {}), ...stamped };
-    }
-  }
-  // EVERY ANSWER ON RECORD, NOT EVERY QUESTION STILL BEING ASKED.
-  //
-  // This walked the live question set, and several kinds DELETE their own
-  // question by being answered - a classified Misc day raises nothing, so does a
-  // late lunch declined, so does a documented break. The next answer given on
-  // the sheet then rebuilt the overrides without them and silently undid them.
-  //
-  // Beall 07/20 is the case: "paid time off" wrote its correction, the override
-  // computed correctly, and answering a second day wiped it. The correction sat
-  // on record with `miscKind` never moving.
-  //
-  // So the answers drive the loop now. Where the question still exists it is
-  // used, because `patchesFor` reads `row` on a few kinds; where it has gone, a
-  // stub carries what those kinds actually need, which is the kind and the date.
-  // The kinds that vanish are exactly the ones whose patch depends on neither.
-  const stubFor = (a) => {
-    const kind = String(a.kind || "").replace(/^q_/, "");
-    const part = kind === "nothingDocumentedMeal" ? "meal"
-      : kind === "nothingDocumentedRest" ? "rest" : null;
-    return {
-      kind,
-      date: a.date,
-      row: part ? { part, meal: part === "meal", rest: part === "rest" } : {},
-    };
-  };
-  const seen = new Set();
-  for (const a of answers) {
-    const q2 = questions.find(
-      (x) => `q_${x.kind}` === a.kind && (x.dates || [x.date]).includes(a.date),
-    ) || stubFor(a);
-    for (const date of [a.date]) {
-      if (!date || seen.has(`${a.kind}|${date}`)) continue;
-      seen.add(`${a.kind}|${date}`);
-      const day = pristine.find((d) => d.date === date);
-      // WHICH OF THE THREE, rebuilt from what the row carries. A declined
-      // `restOutsideScheduled` with times on it is "I took it earlier"; one
-      // without is "I never took it", and only the second drops the rest count.
-      // Same shape as the partial - no third status, no migration.
-      const hasTimes = Array.isArray(a.statedBreaks) && a.statedBreaks.length > 0;
-      // WHAT THEY ACTUALLY PICKED, where the row remembers it. `choice` is the
-      // only thing that can tell three outcomes apart; the status fallback is
-      // for rows written before that column existed.
-      const back = a.choice
-        || (a.status === "accepted"
-          ? "yes"
-          : q2.kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no");
-      const patch = patchesFor(q2, back, day);
-      const clean = Object.fromEntries(
-        Object.entries(patch).filter(([, v]) => v != null),
+      // rebuild EVERY override from every answer on record, this one included
+      const answers = await tx.timesheetCorrection.findMany({
+        where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
+        // `choice` IS NEEDED HERE. `status` holds accepted or declined and cannot
+        // say which of three outcomes somebody picked, so a Misc answer of "I was
+        // working" rebuilt as "sick pay" - both are declines. Left out of this
+        // select it arrives undefined, which is the same failure shape as every
+        // other column this file has been caught by.
+        // `resolvedById` is the provenance: whose answer each patch carries, which
+        // the reband markers in recomputeSheet turn into "settles on its own"
+        // versus "waits for the signature".
+        select: { date: true, kind: true, status: true, choice: true, resolutionNote: true, statedBreaks: true, resolvedById: true },
+      });
+      // WHICH RESOLVERS ACTUALLY REVIEW TIMESHEETS, looked up fresh. Judging
+      // "admin" off nothing but "differs from the sheet's userId" flips every old
+      // answer to a reviewer's the day a sheet is re-matched - see actorKindFor.
+      const otherResolverIds = [...new Set(
+        answers.map((a) => a.resolvedById).filter((x) => x && x !== ts.userId),
+      )];
+      const reviewerIds = new Set(
+        otherResolverIds.length
+          ? (await tx.user.findMany({
+              where: { id: { in: otherResolverIds } },
+              select: { id: true, role: true },
+            })).filter((u) => canManageTimesheets(u.role)).map((u) => u.id)
+          : [],
       );
-      if (Object.keys(clean).length) {
-        overrides[date] = { ...(overrides[date] || {}), ...clean };
-        // WHOSE ANSWER is behind each violation flag this patch touches.
-        // recomputeSheet's reband reads these when an answer takes a premium
-        // off a day that owed one: "admin" settles the hour on its own,
-        // "employee" keeps it in the original figure until the signature
-        // lands. Stamped per flag because a day can carry a meal answer from
-        // a reviewer's call and a rest answer the employee gave themselves,
-        // and the two must not share a fate.
-        const by = actorKindFor(a.resolvedById, ts.userId, reviewerIds);
-        if ("mealViolation" in clean) overrides[date]._mealAnsweredBy = by;
-        if ("restViolation" in clean) overrides[date]._restAnsweredBy = by;
-        // AND THE DATE-LEVEL FALLBACK, for the drops no flag ever names. An
-        // answer that moves paid hours - "that ten was inside my shift",
-        // 6.17 to 6.00 - lets the re-derivation waive the meal and drop the
-        // second rest without any violation key in the patch, and the reband
-        // still has to know whose answer did it. Employee wins a mixed date
-        // on purpose: the conservative reading keeps the hour visible.
-        overrides[date]._answeredBy =
-          overrides[date]._answeredBy === "employee" || by === "employee"
-            ? "employee"
-            : "admin";
-      }
-      // THE TIMES COME BACK FROM THE ANSWER, not from the override that wrote
-      // them. Overrides are rebuilt from scratch on every reply, so anything
-      // held only in the blob is dropped the moment somebody answers a
-      // different question - which is what happened to `statedRest` until
-      // 2026-08-10. Kept on the correction row, they survive every rebuild.
+      // AND KEEP WHAT A REVIEWER SAID, WHICH IS NOT AN ANSWER ON THIS LIST.
       //
-      // MERGED, NOT REPLACED, since the split on 2026-08-10. A day short both a
-      // meal and its rests now has TWO answer rows, each carrying its own times.
-      // Assigning here would have let whichever ran second silently drop the
-      // other's - the lunch time vanishing off a sheet somebody then signs.
-      // De-duped by slot so a rebuild cannot stack the same break twice.
-      if (Array.isArray(a.statedBreaks) && a.statedBreaks.length) {
-        const merged = [...(overrides[date]?.statedBreaks || []), ...a.statedBreaks];
-        const bySlot = new Map(merged.map((b) => [b.slot, b]));
-        overrides[date] = { ...(overrides[date] || {}), statedBreaks: [...bySlot.values()] };
+      // This started from {} and refilled itself from the corrections alone, so
+      // every override written by anything OTHER than an employee answer was thrown
+      // away the next time that employee answered anything at all.
+      //
+      // `classifyMiscTime` is the one that writes them: a reviewer saying a day's
+      // Misc was PTO, sick pay or hours worked stores it here rather than as a
+      // correction, because it is not a reply to a question. So Gabe classifying a
+      // day at noon and the employee answering any question that evening silently
+      // undid the classification, on a sheet whose admin screen went on showing it
+      // as recorded, by name and to the minute.
+      //
+      // Only the misc fields and their provenance are carried over. Everything else
+      // in here IS derived from the answers and has to be rebuilt, or a stale patch
+      // from an answer somebody has since changed would survive as well.
+      // the same list `clearMiscClassification` removes, so a sixth field added to
+      // `patchesFor` is carried here without anybody remembering to
+      const KEEP = new Set([...MISC_PATCH_FIELDS, "_was", "_by", "_at", "_source"]);
+      const overrides = {};
+      for (const [date, ov] of Object.entries(ts.overrides || {})) {
+        if (ov?._source !== "misc-classify") continue;
+        const kept = Object.fromEntries(Object.entries(ov).filter(([k]) => KEEP.has(k)));
+        if (Object.keys(kept).length) overrides[date] = kept;
       }
-    }
-  }
-  // the employee's own time rides on the day row, same as before
-  for (const { q, stated } of resolved) {
-    if (stated && q.date) {
-      overrides[q.date] = { ...(overrides[q.date] || {}), statedRest: stated };
-    }
-  }
+      // PATCH THE PRISTINE DAY, NEVER THE ALREADY-PATCHED ONE.
+      //
+      // `rebuildSheetFor` has recomputed from `daysOriginal` since 2f0b194 for
+      // exactly this reason, and this loop was left reading `data.days` - which the
+      // PREVIOUS answer has already rewritten. It did not matter while every patch
+      // was a boolean or was derived from a stored minute count; it matters the
+      // moment one sets an absolute figure.
+      //
+      // Mánu 2026-08-11, on his own sheet: he answered "I took it during a shift"
+      // (6.17 -> 6.00), then changed to "yes, that is when I took it". The second
+      // patch computed its target from the 6.00 the first one had written, so it
+      // landed back on 6.00 and his hours stayed down. It reads as "I cannot change
+      // my answer once I confirm it", which is what he reported.
+      const pristine = ts.data?.daysOriginal || ts.data?.days || [];
+      // AND EVERY ACCEPTED REPORT, RE-DERIVED FROM ITS OWN ROW.
+      //
+      // The same failure as the misc classifications above, one writer later:
+      // resolveCorrection merges an accepted report's patch into the blob, this
+      // rebuild started over without it, and the patch died the next time the
+      // employee answered anything at all. Bustamante 08/28 is the case: the
+      // accepted missing day's `added` patch lived only in the blob, he answered
+      // the ten ON that very day, and paid fell 96 -> 88 with the desk still
+      // reading Accepted by Mánu Uribe.
+      //
+      // Re-derived from the rows rather than carried over from the old blob, the
+      // way the answers below drive their own loop: the accepted rows are the
+      // current record, so a report somebody has since re-resolved cannot leave a
+      // stale patch behind. Runs BEFORE the answers so an answer about the same
+      // date merges on top, which is exactly the 08/28 shape - the accepted day
+      // brings the hours, the answer brings its breaks.
+      const acceptedReports = await tx.timesheetCorrection.findMany({
+        where: {
+          timesheetId: ts.id,
+          status: "accepted",
+          NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
+        },
+        // statedSlots is HERE because patchFor needs it: a select that omitted it
+        // handed patchFor undefined and the rebuild dropped the corrected clock
+        // without a word - the same silent-whitelist trap applyOverrides warns
+        // about twice.
+        select: { kind: true, date: true, claimedHours: true, statedBreaks: true, statedSlots: true },
+      });
+      for (const c of acceptedReports) {
+        // the dateless legacy rows patch nothing, exactly as their accept did
+        if (!c.date) continue;
+        const day = pristine.find((d) => d.date === c.date) || null;
+        const patch = patchFor(c.kind, day, c.claimedHours, c.statedSlots);
+        const stamped = { ...patch, _answeredBy: "admin" };
+        if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
+        if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
+        Object.assign(stamped, claimedTimesPatch(overrides, c.date, c.statedBreaks) || {});
+        if (Object.keys(patch).length || stamped.statedBreaks) {
+          overrides[c.date] = { ...(overrides[c.date] || {}), ...stamped };
+        }
+      }
+      // EVERY ANSWER ON RECORD, NOT EVERY QUESTION STILL BEING ASKED.
+      //
+      // This walked the live question set, and several kinds DELETE their own
+      // question by being answered - a classified Misc day raises nothing, so does a
+      // late lunch declined, so does a documented break. The next answer given on
+      // the sheet then rebuilt the overrides without them and silently undid them.
+      //
+      // Beall 07/20 is the case: "paid time off" wrote its correction, the override
+      // computed correctly, and answering a second day wiped it. The correction sat
+      // on record with `miscKind` never moving.
+      //
+      // So the answers drive the loop now. Where the question still exists it is
+      // used, because `patchesFor` reads `row` on a few kinds; where it has gone, a
+      // stub carries what those kinds actually need, which is the kind and the date.
+      // The kinds that vanish are exactly the ones whose patch depends on neither.
+      const stubFor = (a) => {
+        const kind = String(a.kind || "").replace(/^q_/, "");
+        const part = kind === "nothingDocumentedMeal" ? "meal"
+          : kind === "nothingDocumentedRest" ? "rest" : null;
+        return {
+          kind,
+          date: a.date,
+          row: part ? { part, meal: part === "meal", rest: part === "rest" } : {},
+        };
+      };
+      const seen = new Set();
+      for (const a of answers) {
+        const q2 = questions.find(
+          (x) => `q_${x.kind}` === a.kind && (x.dates || [x.date]).includes(a.date),
+        ) || stubFor(a);
+        for (const date of [a.date]) {
+          if (!date || seen.has(`${a.kind}|${date}`)) continue;
+          seen.add(`${a.kind}|${date}`);
+          const day = pristine.find((d) => d.date === date);
+          // WHICH OF THE THREE, rebuilt from what the row carries. A declined
+          // `restOutsideScheduled` with times on it is "I took it earlier"; one
+          // without is "I never took it", and only the second drops the rest count.
+          // Same shape as the partial - no third status, no migration.
+          const hasTimes = Array.isArray(a.statedBreaks) && a.statedBreaks.length > 0;
+          // WHAT THEY ACTUALLY PICKED, where the row remembers it. `choice` is the
+          // only thing that can tell three outcomes apart; the status fallback is
+          // for rows written before that column existed.
+          const back = a.choice
+            || (a.status === "accepted"
+              ? "yes"
+              : q2.kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no");
+          const patch = patchesFor(q2, back, day);
+          const clean = Object.fromEntries(
+            Object.entries(patch).filter(([, v]) => v != null),
+          );
+          if (Object.keys(clean).length) {
+            overrides[date] = { ...(overrides[date] || {}), ...clean };
+            // WHOSE ANSWER is behind each violation flag this patch touches.
+            // recomputeSheet's reband reads these when an answer takes a premium
+            // off a day that owed one: "admin" settles the hour on its own,
+            // "employee" keeps it in the original figure until the signature
+            // lands. Stamped per flag because a day can carry a meal answer from
+            // a reviewer's call and a rest answer the employee gave themselves,
+            // and the two must not share a fate.
+            const by = actorKindFor(a.resolvedById, ts.userId, reviewerIds);
+            if ("mealViolation" in clean) overrides[date]._mealAnsweredBy = by;
+            if ("restViolation" in clean) overrides[date]._restAnsweredBy = by;
+            // AND THE DATE-LEVEL FALLBACK, for the drops no flag ever names. An
+            // answer that moves paid hours - "that ten was inside my shift",
+            // 6.17 to 6.00 - lets the re-derivation waive the meal and drop the
+            // second rest without any violation key in the patch, and the reband
+            // still has to know whose answer did it. Employee wins a mixed date
+            // on purpose: the conservative reading keeps the hour visible.
+            overrides[date]._answeredBy =
+              overrides[date]._answeredBy === "employee" || by === "employee"
+                ? "employee"
+                : "admin";
+          }
+          // THE TIMES COME BACK FROM THE ANSWER, not from the override that wrote
+          // them. Overrides are rebuilt from scratch on every reply, so anything
+          // held only in the blob is dropped the moment somebody answers a
+          // different question - which is what happened to `statedRest` until
+          // 2026-08-10. Kept on the correction row, they survive every rebuild.
+          //
+          // MERGED, NOT REPLACED, since the split on 2026-08-10. A day short both a
+          // meal and its rests now has TWO answer rows, each carrying its own times.
+          // Assigning here would have let whichever ran second silently drop the
+          // other's - the lunch time vanishing off a sheet somebody then signs.
+          // De-duped by slot so a rebuild cannot stack the same break twice.
+          if (Array.isArray(a.statedBreaks) && a.statedBreaks.length) {
+            const merged = [...(overrides[date]?.statedBreaks || []), ...a.statedBreaks];
+            const bySlot = new Map(merged.map((b) => [b.slot, b]));
+            overrides[date] = { ...(overrides[date] || {}), statedBreaks: [...bySlot.values()] };
+          }
+        }
+      }
+      // the employee's own time rides on the day row, same as before
+      for (const { q, stated } of resolved) {
+        if (stated && q.date) {
+          overrides[q.date] = { ...(overrides[q.date] || {}), statedRest: stated };
+        }
+      }
 
-  // ONE REBUILD, whatever came in. A thirteen day card rebuilding the sheet
-  // thirteen times is why the batch shape exists.
-  const rebuilt = await rebuildSheetFor(ts, overrides, { keepSent: true });
-  if (!rebuilt.ok) return rebuilt;
+      // ONE REBUILD, whatever came in. A thirteen day card rebuilding the sheet
+      // thirteen times is why the batch shape exists.
+      const res = await rebuildSheetFor(ts, overrides, { keepSent: true, client: tx });
+      if (!res.ok) {
+        const stop = new Error("rebuild refused");
+        stop.rebuild = res;
+        throw stop;
+      }
+    }, { timeout: 20000, maxWait: 10000 });
+  } catch (e) {
+    // the rebuild's own refusal, reported as it always was - the answers are
+    // rolled back with it, so the screen and the record still agree
+    if (e?.rebuild) return e.rebuild;
+    // AND A WRITE THAT ACTUALLY FAILED. It used to leave a half-written answer
+    // and a 500; now nothing is written and the page says so, which is the one
+    // case where "that didn't save, try again" is true advice.
+    console.error("answer transaction failed:", e);
+    return { ok: false, error: "save" };
+  }
 
   revalidatePath(`/t/${token}`);
   await bumpSheetVersion(ts.id);

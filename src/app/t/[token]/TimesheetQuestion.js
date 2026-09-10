@@ -1054,6 +1054,13 @@ const REFUSALS = {
   alreadyrecorded: "A break at that time is already on this day's record. Give the time of the one that has no record, or answer that you did not take it.",
   shifthasten: "QuickSolve holds one rest break per shift, and that shift already has one. Pick a time inside a shift that does not, or answer that you did not take it.",
   nolunchgap: "There is no half hour gap in that day long enough to hold a lunch, so that time cannot be right.",
+  // THE WRITE ITSELF FAILED, which is the one refusal where "try again" is real
+  // advice: nothing was saved, so there is nothing to undo before retrying. The
+  // answers and the sheet rebuild commit in one transaction now (see
+  // `answerTimesheetQuestion`), so "nothing changed" is a guarantee and not a
+  // hope - before that, a failure here could take an answer off the record and
+  // leave the figures untouched.
+  save: "That didn't save, so nothing on your timesheet changed. Try it again.",
   // the three below mean the browser sent something the server would not
   // recognise. They are not the person's fault and there is nothing for them to
   // change, so they say so rather than blaming the answer.
