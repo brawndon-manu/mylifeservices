@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { restAttested } from "@/lib/timesheet/rest-attestation";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 
@@ -24,6 +25,16 @@ function mealWhy(d) {
 }
 function restWhy(d) {
   if (!d.restViolation) return null;
+  // AN ATTESTED REST IS NOT OWED, and this page was the last reader that did not
+  // know it (Mánu 2026-09-09). Rest breaks are attested from 09/01/26 - see
+  // rest-attestation.js - and every other reader of the same flag already drops
+  // those days: premium-split.js does it in three places, which is what the
+  // payout report, the penalty roster PDF and the batch page's live figure all
+  // pay from, and premium-evidence.js does it too. Reading the stored flag alone
+  // charged a premium the company does not owe and nothing else charges. Found
+  // on MLS 09/01/26-09/15/26, where this page showed 10 rest days and the payout
+  // report paid none of them.
+  if (restAttested(d.date)) return null;
   if (d.restSource === "none") return "not in the Rest Periods Report";
   return `report shows ${d.restTaken ?? 0} of ${d.restRequired}`;
 }
