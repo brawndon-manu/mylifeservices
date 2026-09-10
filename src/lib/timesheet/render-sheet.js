@@ -70,8 +70,10 @@ export const BASES = ["projected", "corrected"];
 // hand-rolled a copy of this instead, and it drifted exactly the way the note on
 // `userId` describes - their copy asked only for answered `q_` corrections, so an
 // open claim never reached the renderer and a reported sheet printed as the
-// ordinary one-page document with no sign it had been disputed. Proven on
-// Jonathan Kramer's sheet: two pages with this select, one page with theirs.
+// ordinary one-page document with no sign it had been disputed. Proven against a
+// real sheet holding an open claim: two pages with this select, one page with
+// theirs. No employee is named here on purpose - this repository is public, and a
+// person having disputed their pay is not a detail a code comment should carry.
 //
 // So there is one definition and two shapes of it. A route that holds the batch
 // already spreads this; a route that does not spreads `RENDER_SELECT`.
