@@ -355,7 +355,20 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // all: it falls as people answer, and every figure the premium card quotes
   // now comes from premiumSplit, whose original does not.
 
-  const readyToSend = rows.filter((r) => r.user && r.hasPdf && !r.sentAt && !r.disputed).length;
+  // THE SAME SET `sendTimesheets` WILL ACTUALLY SEND (Mánu 2026-09-09). This
+  // number is not decoration: it gates the send button, labels it, and fills the
+  // confirm dialog that says how many real people are about to be emailed, so a
+  // count that disagrees with the action is a count that misstates a live send.
+  // It disagreed twice. A FUZZY match is refused by the send - see
+  // match-confirm.js, "Lines, Megan" in Megan McAlpine's inbox - and this
+  // counted it anyway: 50 such rows across 28 of the 48 batches, so every send
+  // he has run promised more than it did. And a REPORTED sheet was excluded
+  // here while the send stopped skipping it on 2026-09-09, which would have
+  // understated the next one. `renderOk` is a non-null Boolean, so `hasPdf`
+  // already matches the send's own `renderOk: true`.
+  const readyToSend = rows.filter(
+    (r) => r.user && r.hasPdf && !r.sentAt && r.matchMethod !== "fuzzy",
+  ).length;
 
   // LIVE / NEEDS A DECISION / FINAL, worked out once and read by both the badge
   // and the send gate, so the two can never disagree about whether a period is
