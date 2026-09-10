@@ -181,7 +181,27 @@ export async function GET(request) {
   };
 
   const meetings = await prisma.announcement.findMany({
-    where: { tag: "Company Meeting", deletedAt: null },
+    where: {
+      tag: "Company Meeting",
+      deletedAt: null,
+      // A DRAFT NEVER EMAILS ANYBODY (Mánu 2026-09-09, off three reminders for
+      // one meeting). This asked only that the announcement was not deleted, so
+      // an UNPUBLISHED copy sent reminders exactly like a live one. There were
+      // three records titled "September zoom trainings", created seven seconds
+      // apart on 2026-08-21 by what looks like a submit that fired three times;
+      // two were never published, both carried the same session with the
+      // night-before reminder on, and one cron run walked all three and sent one
+      // email each at 8:00pm. The drafts had nobody signed up, so their only
+      // recipients were the six in ALWAYS_REMINDED below, who got three copies
+      // while the twenty people actually booked onto the session got the one
+      // correct email from the published record.
+      //
+      // Filtered HERE rather than at each sender, because none of the four jobs
+      // in this file should touch a draft: nobody has been invited to it, so the
+      // author nudge, the response-due notice and the attestation are all noise
+      // for the same reason the reminders were wrong.
+      publishedAt: { not: null },
+    },
     select: {
       id: true,
       title: true,
