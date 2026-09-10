@@ -400,6 +400,17 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
 
+  // WHY THE SEND IS SHUT, WRITTEN ONCE. Three things read it now: the panel's
+  // amber block, the per-row button's confirm, and the banner a server refusal
+  // comes back with. Three copies of it would be three chances to drift.
+  const sendBlocked = state.key !== "final";
+  const blockedWhy =
+    state.key === "live"
+      ? `Cannot send until the pay period comes to an end. The export reaches ${state.reach}, the period runs to ${batch.periodTo}.`
+      : state.key === "superseded"
+        ? "A later upload of this pay period exists. Send from that one."
+        : "The whole period is in, but nobody has said the schedule is locked yet.";
+
   const sentCount = sp?.sent ? Number(sp.sent) : null;
   const failedCount = sp?.failed ? Number(sp.failed) : null;
   const unconfirmedCount = sp?.unconfirmed ? Number(sp.unconfirmed) : null;
@@ -923,6 +934,15 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         </div>
       )}
 
+      {/* THE SERVER REFUSED A SEND. Only reachable when something posted without
+          the override - a forged request, or a UI that lost the rule - so it says
+          the same sentence the panel says rather than inventing a second one. */}
+      {sp?.notfinal && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          {blockedWhy}
+        </div>
+      )}
+
       {unmatched > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           <strong>{unmatched}</strong>{" "}
@@ -941,14 +961,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         // SHUT UNTIL SOMEBODY SAYS THE PERIOD IS FINISHED. Not until the data
         // looks finished - the schedule locks at 8pm on the last day and no
         // export records it, so a full period is still only a precondition.
-        blocked={state.key !== "final"}
-        blockedWhy={
-          state.key === "live"
-            ? `Cannot send until the pay period comes to an end. The export reaches ${state.reach}, the period runs to ${batch.periodTo}.`
-            : state.key === "superseded"
-              ? "A later upload of this pay period exists. Send from that one."
-              : "The whole period is in, but nobody has said the schedule is locked yet."
-        }
+        // Enforced in `sendTimesheets` as well since 2026-09-09; this prop is the
+        // explanation and the override, no longer the rule itself.
+        blocked={sendBlocked}
+        blockedWhy={blockedWhy}
       />
 
       <ReviewTable
@@ -960,6 +976,8 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         send={sendTimesheets}
         hasSource={!!batch.sourceUrl}
         hasSchedule={!!batch.scheduleUrl}
+        blocked={sendBlocked}
+        blockedWhy={blockedWhy}
       />
     </section>
   );

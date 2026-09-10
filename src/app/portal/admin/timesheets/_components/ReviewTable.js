@@ -31,6 +31,12 @@ export default function ReviewTable({
   send,
   hasSource,
   hasSchedule,
+  // THE PERIOD GATE REACHES THE ROWS TOO (Mánu 2026-09-09). It used to live only
+  // on `SendPanel`, so Send all was shut on an open period while the Send button
+  // on every row beside it mailed one person on a single click. Same sentence,
+  // one confirm instead of two, and the server refuses either way without it.
+  blocked = false,
+  blockedWhy = null,
 }) {
   const [filter, setFilter] = useState("all");
 
@@ -379,7 +385,7 @@ export default function ReviewTable({
                         Confirm the match to send
                       </span>
                     ) : r.hasPdf ? (
-                      <SendOneButton send={send} batchId={batchId} row={r} />
+                      <SendOneButton send={send} batchId={batchId} row={r} blocked={blocked} blockedWhy={blockedWhy} />
                     ) : (
                       <span
                         title="The PDF for this timesheet was never stored, so there's nothing to link to. Re-upload the export."
@@ -492,7 +498,7 @@ function SheetLinks({ r }) {
 // A SIGNED SHEET ASKS FIRST. Resending an already-signed review is nearly
 // always a misclick, and the person on the other end gets an email asking for
 // a signature they already gave.
-function SendOneButton({ send, batchId, row }) {
+function SendOneButton({ send, batchId, row, blocked = false, blockedWhy = null }) {
   const [state, setState] = useState("idle");
   // pinned when the click happens - the revalidate stamps sentAt onto the row,
   // and the receipt must keep saying what the click did
@@ -526,12 +532,18 @@ function SendOneButton({ send, batchId, row }) {
         ) {
           return;
         }
+        // THE PERIOD IS NOT CLOSED, SAID ONCE. The same sentence the panel
+        // shows, and the same question it asks on its override, so going early
+        // from a row is a decision rather than a click. The server refuses
+        // without the `anyway` this sets - see `sendTimesheets`.
+        if (blocked && !window.confirm(`${blockedWhy}\n\nSend anyway?`)) return;
         setState("busy");
         setDoneLabel(row.sentAt ? "Resent" : "Sent");
         try {
           const fd = new FormData();
           fd.set("timesheetId", row.id);
           fd.set("inline", "1");
+          if (blocked) fd.set("anyway", "1");
           const res = await send(batchId, fd);
           setState(res?.ok ? "done" : "fail");
         } catch {

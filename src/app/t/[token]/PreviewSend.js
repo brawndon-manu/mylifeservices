@@ -56,6 +56,12 @@ export default function PreviewSend({
               arrive or could not be opened, so it must not skip an already-sent
               row the way a batch send does */}
           <input type="hidden" name="resend" value="on" />
+          {/* AND PAST THE PERIOD GATE, ALWAYS. `sendTimesheets` refuses an
+              unlocked period since 2026-09-09 unless the request says it means
+              to. This control exists for one person on the phone who cannot open
+              their link, which is exactly the case the override is for, and it
+              already asks twice before it sends. */}
+          <input type="hidden" name="anyway" value="1" />
 
           <p className="text-sm text-foreground">
             {alreadySent ? "Send again to " : "Send to "}

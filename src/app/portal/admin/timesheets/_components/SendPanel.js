@@ -114,6 +114,11 @@ Send anyway?`)) e.preventDefault();
             <input type="checkbox" name="resend" className="h-4 w-4 accent-brand" />
             Also resend to people who already got it
           </label>
+          {/* WHAT THE SERVER NEEDS TO SEE. The gate is enforced in
+              `sendTimesheets` as of 2026-09-09, not only here, so an override
+              has to travel with the request - without it the server would
+              refuse the very send this panel just took two confirms to allow. */}
+          {blocked && override && <input type="hidden" name="anyway" value="1" />}
           <button
             type="submit"
             className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"

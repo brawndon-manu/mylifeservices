@@ -1889,7 +1889,7 @@ export async function clearTimesheetAssignment(timesheetId) {
 // send one timesheet, or every unsent matched one in the batch. the message +
 // deadline come from the review screen. test mode redirects every address.
 export async function sendTimesheets(batchId, formData) {
-  await requireTimesheetAccess();
+  const actor = await requireTimesheetAccess();
   // A REPLACED UPLOAD IS READ ONLY, and this is the worst one to allow: an
   // old export emails figures the current one has already moved. Redirected
   // rather than returned, because this action redirects on every path.
@@ -1922,6 +1922,8 @@ export async function sendTimesheets(batchId, formData) {
     select: {
       id: true, periodFrom: true, periodTo: true, restsByDate: true,
       testOnly: true, testEmail: true, auditOnly: true,
+      // THE PERIOD GATE'S ONE COLUMN, selected 2026-09-09. See the rule below.
+      lockedAt: true,
     },
   });
   if (!batch) redirect("/portal/admin/timesheets");
@@ -1929,6 +1931,40 @@ export async function sendTimesheets(batchId, formData) {
   // screen with a send button, so reaching this is URL surgery - refused the
   // same way a superseded batch is.
   if (batch.auditOnly) redirect(`/portal/admin/audit/${batch.id}`);
+
+  // THE PERIOD HAS TO BE CLOSED, AND THAT IS A SERVER RULE NOW (Mánu
+  // 2026-09-09, "fix the send gate on the server too").
+  //
+  // It was only ever `SendPanel`'s `blocked` prop - whose default is FALSE - plus
+  // two window.confirms. So the one rule standing between a click and sixty real
+  // people getting their payroll document lived entirely in the browser, and a
+  // rewritten panel that dropped the prop would have removed it with no error
+  // anywhere. Worse, the per-row Send button never carried the prop at all, so
+  // one person at a time was sendable on an open period with a single click.
+  //
+  // `batchState` calls a period final exactly when it is LOCKED (batch-state.js:
+  // `batch?.lockedAt ? "final" : ...`), and a superseded batch has already been
+  // redirected above, so this column is the whole test. No reach to recompute.
+  //
+  // THE DOOR STAYS, because it is load-bearing and not theoretical: three
+  // batches in this database were sent while never locked, one of them 31 people
+  // on the day program. `anyway` is what an override posts, so the server can
+  // tell a human who chose to go early from a UI that lost the rule. The panel
+  // sends it after its two confirms; the per-row button after one; the /t
+  // preview send always, because its whole purpose is one person on the phone
+  // who cannot open their link.
+  const anyway = formData.get("anyway") === "1";
+  if (!batch.lockedAt && !anyway) {
+    if (inline) return { ok: false, error: "notfinal" };
+    redirect(`/portal/admin/timesheets/${batchId}?notfinal=1`);
+  }
+  if (!batch.lockedAt) {
+    // not a refusal, a record: somebody went early on purpose and the log is the
+    // only place that now says so.
+    console.warn(
+      `timesheet send on an unlocked period: batch ${batchId} by ${actor?.id || "unknown"}`,
+    );
+  }
 
   // a row with no generated PDF would email someone a link to a 404, so it is
   // never sendable - the review screen flags those separately. A sheet with an
