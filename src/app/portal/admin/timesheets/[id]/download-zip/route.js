@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { renderSheet } from "@/lib/timesheet/render-sheet";
-import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { buildZip, safeEntryName } from "@/lib/zip";
@@ -44,9 +43,13 @@ export async function GET(req, { params }) {
           // Without it `loadBreakReasons` returns [] and every sheet in the
           // zip quietly loses its Comments lines.
           userId: true,
-          // rendered on the SAME basis the employee signs on, so a batch export
-          // cannot carry a different figure from the document that person
-          // actually attested to.
+          // these rows reach the renderer as `claims`, for the pending document
+          // a reported sheet prints. NOTE the scope is narrower than
+          // RENDER_SELECT's, which takes EVERY row: this one asks only for
+          // answered `q_` questions, so an OPEN claim never arrives and a
+          // reported sheet in this zip prints as the ordinary document. Left as
+          // it is for now rather than widened silently - it changes which
+          // document a disputed sheet produces.
           corrections: {
             where: { kind: { startsWith: "q_" }, status: { not: "open" } },
             select: { kind: true, date: true, status: true },
@@ -81,14 +84,22 @@ export async function GET(req, { params }) {
         if (!res.ok) continue;
         data = Buffer.from(await res.arrayBuffer());
       } else {
-        const standing = premiumStanding(t.data?.days || [], t.corrections);
+        // EXACTLY THE DOCUMENT THE EMPLOYEE SIGNS (Mánu 2026-09-09). This
+        // rendered `corrected`, whose whole job is to be the admin reading: it
+        // stamps "AS CORRECTED" and "Not the copy sent for signature" across the
+        // page and prints a different figure, which three-documents.test.mjs
+        // pins and which a real unsigned sheet was checked against. So every
+        // unsigned sheet in this zip came out marked unsignable while the
+        // comment here claimed it matched what they sign. `projected` is that
+        // copy - see render-sheet.js, "the copy that is emailed and signed, and
+        // what payroll pays" - and it takes no `confirmed`/`answers`/`pastDue`
+        // for the reason /t/[token]/pdf gives: the projected copy is the stored
+        // days exactly as they are, answers already reach it because accepting
+        // one rebuilds the sheet, and a deadline going by moves no figure.
         const rendered = await renderSheet({ ...t, batch }, {
-          basis: "corrected",
+          basis: "projected",
           breakReasons: await loadBreakReasons({ ...t, batch }),
           timeOff: await loadTimeOffFor({ ...t, batch }),
-          confirmed: standing.confirmed,
-          answers: standing.answers,
-          pastDue: !!t.dueAt && t.dueAt.getTime() < Date.now(),
         });
         if (!rendered) continue;
         data = Buffer.from(rendered.bytes);

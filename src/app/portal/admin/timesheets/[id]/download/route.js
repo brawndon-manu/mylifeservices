@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { renderSheet } from "@/lib/timesheet/render-sheet";
-import { premiumStanding } from "@/lib/timesheet/premium-split";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
@@ -53,10 +52,11 @@ export async function GET(req, { params }) {
           // Without it `loadBreakReasons` returns [] and every sheet in the
           // merged PDF quietly loses its Comments lines.
           userId: true,
-          // the answers, because an unsigned sheet is rendered here on the
-          // SAME basis the employee signs on. Merging the ignoring-assumptions
-          // copy into a batch export would hand payroll a different figure from
-          // the one on the document that person actually attested to.
+          // these rows reach the renderer as `claims`, for the pending document
+          // a reported sheet prints. Same narrowing as the zip route: only
+          // answered `q_` questions, so an OPEN claim never arrives and a
+          // reported sheet prints as the ordinary document here. Not widened
+          // silently - see the note there.
           corrections: {
             where: { kind: { startsWith: "q_" }, status: { not: "open" } },
             select: { kind: true, date: true, status: true },
@@ -86,14 +86,17 @@ export async function GET(req, { params }) {
         if (!res.ok) continue;
         bytes = await res.arrayBuffer();
       } else {
-        const standing = premiumStanding(ts.data?.days || [], ts.corrections);
+        // EXACTLY THE DOCUMENT THE EMPLOYEE SIGNS (Mánu 2026-09-09), the same
+        // correction as the zip beside it and for the same reason: `corrected`
+        // stamps "AS CORRECTED" and "Not the copy sent for signature" and prints
+        // a different figure, so merging it handed payroll a bundle of pages
+        // marked unsignable. `projected` is the copy that is emailed, signed and
+        // paid - see render-sheet.js - and it takes no
+        // `confirmed`/`answers`/`pastDue`, per /t/[token]/pdf.
         const rendered = await renderSheet({ ...ts, batch }, {
-          basis: "corrected",
+          basis: "projected",
           breakReasons: await loadBreakReasons({ ...ts, batch }),
           timeOff: await loadTimeOffFor({ ...ts, batch }),
-          confirmed: standing.confirmed,
-          answers: standing.answers,
-          pastDue: !!ts.dueAt && ts.dueAt.getTime() < Date.now(),
         });
         if (!rendered) continue;
         bytes = rendered.bytes;
