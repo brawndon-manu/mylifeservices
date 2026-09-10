@@ -790,7 +790,7 @@ function SlotCompare({ day, slots }) {
         {lane(slots, true)}
       </div>
       <p className="text-[12.5px] leading-relaxed text-muted">
-        Payroll reviews these slots before any corrected timesheet is issued.
+        Payroll reviews these slots before the figures change.
       </p>
     </div>
   );
