@@ -3,6 +3,26 @@
 // send-everyone panel: one message + one deadline applied to the whole batch.
 // deliberately requires a confirm, since this is the button that mails every
 // employee their own payroll document.
+//
+// IF YOU ARE REDESIGNING THIS, READ THIS FIRST.
+//
+// `blocked` and `blockedWhy` are not decoration. A pay period cannot be sent
+// until somebody has marked it final, and until 2026-09-09 that rule existed
+// ONLY here - in a prop whose default is `false` - plus the two confirms below.
+// The rule is enforced in `sendTimesheets` now as well, so dropping the props no
+// longer lets an unfinished period go out. What dropping them DOES remove is the
+// explanation and the override: the server refuses without an explicit
+// `anyway=1`, and this panel is where a human chooses to post it.
+//
+// THE OVERRIDE IS DELIBERATE. Payroll has needed it - of the eight batches ever
+// sent, three were sent while never locked, one of them a 31-person day-program
+// send - and a wall with no door means somebody edits the database at 6pm on
+// payroll day. Keep the door, keep both confirms, and keep `anyway` conditional
+// on the human having taken it.
+//
+// `send-gate.test.mjs` pins all of that in source and explains each failure.
+// The same props go to `ReviewTable`, because the per-row Send button needs them
+// too: it used to send one person on a single click while this panel was shut.
 import { useState } from "react";
 import DatePicker from "@/components/DatePicker";
 
