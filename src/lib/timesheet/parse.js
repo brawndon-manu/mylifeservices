@@ -207,9 +207,51 @@ function numColOf(x, w = 0) {
   return bd < 24 ? best : null;
 }
 
-// parse one page into { employee, payPeriod, days, comments }
+// QSP APPENDS THE PERIOD'S PAID TIME OFF TO THE EMPLOYEE'S OWN NAME LINE.
+//
+// With sick pay and PTO switched on in QuickSolve (Mánu 2026-09-09), the export
+// prints "Employee Name: Aranda, Jennifer Paid Sick Time Used this Period: 15.00"
+// on ONE line. The name pattern below took everything to the end of it, so the
+// whole string became the person's name: no account matched it, and 22 stored
+// sheets across 8 people sat unmatched and unsendable because of it.
+//
+// The name stops at the label now, and WHAT WAS STRIPPED IS KEPT rather than
+// thrown away - the figure is real and the sheet shows it. The payroll report's
+// own SickHr and PTO columns are the better source when that file was uploaded,
+// because they are structured, they carry PTO as well, and their names are
+// clean; this is the fallback for an upload without it.
+//
+// Only time-off labels are stripped. Anything else trailing a colon is left on
+// the name, because a name that loses a real part of itself is the failure this
+// is fixing, pointed the other way.
+const TIME_OFF_TAIL =
+  /\s+((?:paid\s+sick\s+time|sick\s+time|sick|paid\s+time\s+off|pto|vacation|holiday)[a-z ]*?)\s*:\s*(\d+(?:\.\d+)?)\s*$/i;
+
+export function splitEmployeeName(raw) {
+  let name = String(raw ?? "").trim();
+  const totals = {};
+  // a line can carry more than one of them, so strip from the right until the
+  // tail stops looking like time off
+  for (;;) {
+    const m = TIME_OFF_TAIL.exec(name);
+    if (!m) break;
+    const label = m[1].trim();
+    const key = /pto|paid\s+time\s+off|vacation/i.test(label) ? "pto"
+      : /sick/i.test(label) ? "sick"
+        : /holiday/i.test(label) ? "holiday"
+          : "other";
+    totals[key] = round2((totals[key] || 0) + Number(m[2]));
+    // the label as QSP spelled it, so the sheet can print their words
+    totals.labels = { ...(totals.labels || {}), [key]: label };
+    name = name.slice(0, m.index).trim();
+  }
+  return { name, timeOff: Object.keys(totals).length ? totals : null };
+}
+
+// parse one page into { employee, payPeriod, days, comments, qspTimeOff }
 function parsePage(rows) {
   let employee = null;
+  let qspTimeOff = null;
   let payPeriod = null;
   const byDate = new Map();
   const order = [];
@@ -221,7 +263,12 @@ function parsePage(rows) {
 
     if (!employee) {
       const m = /Employee\s+Name:\s*(.+)$/i.exec(text);
-      if (m) employee = m[1].trim();
+      if (m) {
+        // see splitEmployeeName: the line can carry the period's paid time off
+        const split = splitEmployeeName(m[1]);
+        employee = split.name;
+        qspTimeOff = split.timeOff;
+      }
     }
     if (!payPeriod) {
       const m = /Pay\s+Period:\s*(\d{2}\/\d{2}\/\d{2})\s*to\s*(\d{2}\/\d{2}\/\d{2})/i.exec(text);
@@ -269,7 +316,7 @@ function parsePage(rows) {
     entry.refs.push(...refs);
   }
 
-  return { employee, payPeriod, days: order.map((d) => byDate.get(d)), comments };
+  return { employee, qspTimeOff, payPeriod, days: order.map((d) => byDate.get(d)), comments };
 }
 
 // classify one day's punches into worked segments + typed breaks

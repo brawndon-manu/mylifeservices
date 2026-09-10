@@ -214,6 +214,14 @@ export async function renderSheet(ts, {
       // column is matched on. Separate from `employee`, which is what the page
       // PRINTS - the sheet has to carry the name payroll knows them by.
       restName: restNameFor(ts.sourceName, d),
+      // WHAT QUICKSOLVE SAYS THEY USED, shown and never paid (Mánu 2026-09-09).
+      // Stored at upload from the payroll report's SickHr / PTO columns, or from
+      // the timesheet's own name line where no payroll report came with it - see
+      // `splitEmployeeName`. Time off is PAID from the calendar the office
+      // records, which is where the payout workbook still reads it; this only
+      // puts QuickSolve's own figure on the document, the way their export does.
+      qspSick: d.qspSick ?? null,
+      qspPto: d.qspPto ?? null,
       payPeriod: d.payPeriod || { from: ts.batch?.periodFrom, to: ts.batch?.periodTo },
       days,
       basis,

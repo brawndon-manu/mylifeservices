@@ -507,6 +507,21 @@ export async function renderCorrected(sheet, opts = {}) {
     y -= 18;
     text("Employee Name:", L, y, { size: 8.5 });
     text(sheet.employee ?? "", L + 74, y, { size: 8.5, f: bold });
+    // WHAT QUICKSOLVE SAYS THEY USED THIS PERIOD, in QuickSolve's own words and
+    // on their own line (Mánu 2026-09-09). Their export prints this appended to
+    // the name; ours gives it its own line, because gluing it to the name is
+    // exactly what stranded eight people as unmatched - see splitEmployeeName.
+    //
+    // A NOTE, NOT A FIGURE THIS SHEET PAYS. Time off is paid from the calendar
+    // the office records and the totals below are worked hours only, so this
+    // sits to the right of the name and never enters a column.
+    {
+      const off = [
+        sheet.qspSick > 0 ? `Paid Sick Time Used this Period: ${f2(sheet.qspSick)}` : null,
+        sheet.qspPto > 0 ? `PTO Used this Period: ${f2(sheet.qspPto)}` : null,
+      ].filter(Boolean).join("    ");
+      if (off) text(off, R - font.widthOfTextAtSize(off, 8), y, { size: 8 });
+    }
     y -= 9;
 
     const banner = BASIS_BANNER[sheet.basis];

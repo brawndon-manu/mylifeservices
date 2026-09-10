@@ -1229,6 +1229,25 @@ export async function uploadBatch(formData) {
         qspMiles: payroll?.hasMiles
           ? (payroll.get(payrollKey(t.employee || ""))?.miles ?? null)
           : null,
+        // PAID SICK TIME AND PTO, from the payroll report's own columns, with
+        // the timesheet's own line as the fallback (Mánu 2026-09-09, after
+        // switching both on in QuickSolve).
+        //
+        // THE PAYROLL REPORT WINS where it was uploaded: SickHr and PTO are
+        // structured columns on clean names, and the report carries PTO where
+        // the timesheet's name line only ever showed sick time. `qspTimeOff` is
+        // what the parser stripped off the name line - see splitEmployeeName -
+        // and it is the answer for an upload with no payroll report rather than
+        // nothing at all.
+        //
+        // SHOWN, NOT PAID. Mánu's call the same day: time off is paid from the
+        // calendar the office records, which is where the payout workbook still
+        // takes it from. This pair is on the sheet so the document says what
+        // QuickSolve says, and nothing downstream adds it to an hours figure.
+        qspSick: payroll?.get(payrollKey(t.employee || ""))?.sick
+          ?? t.qspTimeOff?.sick ?? null,
+        qspPto: payroll?.get(payrollKey(t.employee || ""))?.pto
+          ?? t.qspTimeOff?.pto ?? null,
         // which pages of each source PDF this person is on. the parsers have
         // always known - it just went nowhere, so the checks screen could
         // quote a document without being able to point at it.
