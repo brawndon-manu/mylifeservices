@@ -875,8 +875,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           <strong>{disputed}</strong>{" "}
           {disputed === 1 ? "person says their timesheet is" : "people say their timesheets are"}{" "}
-          wrong. Their signatures are on hold and they won&apos;t be sent again
-          until it&apos;s resolved.{" "}
+          wrong. Nothing changes until you decide.{" "}
           <Link
             href={`/portal/admin/timesheets/${batch.id}/corrections`}
             className="font-semibold underline underline-offset-4"

@@ -2522,10 +2522,15 @@ export async function submitTimesheetCorrections({ token, items }) {
     console.error("correction alert failed:", e);
   }
 
+  // THE SIGNATURE IS NOT ON HOLD (Mánu 2026-09-09). This read "Their signature
+  // is on hold.", which stopped being true the day a reported sheet became
+  // signable: what they sign is the pending document carrying the claim on page
+  // 2, and the decision below keeps or clears it. What IS still true is that
+  // the figures do not move until the office decides, so that is what it says.
   await notifyOversight({
     type: "TIMESHEET_DISPUTED",
     title: `${who} reported a timesheet problem`,
-    body: `${clean.length} item${clean.length === 1 ? "" : "s"} on the ${periodLabel} timesheet. Their signature is on hold.`,
+    body: `${clean.length} item${clean.length === 1 ? "" : "s"} on the ${periodLabel} timesheet. Nothing changes until you decide.`,
     link: `/portal/admin/timesheets/${ts.batchId}/corrections`,
   });
 

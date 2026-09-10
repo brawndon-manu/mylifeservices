@@ -74,8 +74,9 @@ export function buildCorrectionAlertHtml({
       timesheet for <strong>${esc(periodLabel)}</strong>.
     </p>
     <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#5b6b7c;">
-      Their signature is on hold until this is resolved. Nothing has changed on
-      the timesheet - the figures only move if you accept a correction.
+      They sign page 2 of their timesheet, which carries what they reported.
+      Nothing has changed on the timesheet - the figures only move if you accept
+      a correction.
     </p>
     <table style="width:100%;border-collapse:collapse;margin:0 0 22px;border:1px solid #e6ecf2;border-radius:8px;">
       <thead>
@@ -149,7 +150,7 @@ export async function sendCorrectionAlert({
         }`,
     ),
     ``,
-    `Their signature is on hold until it's resolved.`,
+    `They sign page 2 of their timesheet, which carries what they reported.`,
     reviewUrl,
   ]
     .filter(Boolean)
