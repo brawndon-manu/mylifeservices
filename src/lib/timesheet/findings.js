@@ -416,7 +416,24 @@ export function buildFindings(batch) {
   const restByName = new Map(
     batch.timesheets.map((t) => [restKey(restNameFor(t.sourceName, t.data)), t]),
   );
-  for (const r of (batch.restsByDate || []).filter((x) => x.kind)) {
+  // WE ARE NOT ACCOUNTING FOR THE TEN RIGHT NOW (Mánu 2026-09-10), so the screen
+  // stops asking about it. Every other rest path on this page was already gated
+  // on `restAttested` - the day loop below opens with the same `continue` - and
+  // this report loop was the one that was not, which is why a fully attested
+  // period still raised eight rows about ten minute breaks: under ten, over the
+  // limit, no times recorded, a time mis-picked. Nobody is asked about a ten any
+  // more, so a row about the length of one is bookkeeping with nothing behind it.
+  //
+  // THE CODE STAYS WHOLE, on purpose, and this is a date gate rather than a
+  // deletion. `describeRestRow` below still knows all eight cases, the kinds keep
+  // their labels, and every batch from before the effective date still shows them.
+  // Setting REST_ATTESTATION_EFFECTIVE to null in rest-attestation.js brings the
+  // whole thing back on every period at once - see the note there. David changes
+  // his mind, and this has to survive him changing it back.
+  //
+  // Recorded rests still DRAW wherever a day is drawn. This is about what the
+  // checks screen asks somebody to go and fix, not about hiding the record.
+  for (const r of (batch.restsByDate || []).filter((x) => x.kind && !restAttested(x.date))) {
     const t = restByName.get(restKey(r.name));
     entries.push({
       // the real sheet, so "Open their sheet" works. rest rows are keyed on the
