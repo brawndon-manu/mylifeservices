@@ -308,13 +308,18 @@ function describeRestRow(r, mealScheduled) {
       );
     case "over-ten":
       return anomaly(
-        `${len}, counted`,
+        // WAS `counted`, THE SAME HEAD THE CATCH-ALL BELOW PRINTS (2026-09-10).
+        // Two different findings read identically on screen: this one is
+        // specifically longer than a ten, the other is anything else QSP wrote
+        // oddly. A head that cannot tell two rows apart is not a head.
+        `${len}, longer than a ten`,
         `Longer than the ten minutes a paid rest period allows. It counts and owes nothing, but ` +
         `it is worth knowing about - fifteen minutes is one and a half times the entitlement.`,
       );
     default:
       return anomaly(
-        `${len}, counted`,
+        // the catch-all, and it now says so rather than sharing the head above
+        `${len}, worth a second look`,
         `The report records this break and it counts as taken. It is here because QSP wrote ` +
         `something worth a second look at the row rather than at the break.`,
       );
@@ -636,7 +641,12 @@ export function buildFindings(batch) {
       outsideShift: beyond.length ? beyond : all,
     };
   };
-  const restRow = (t, d, key, head, lead) => ({
+  // `group` is a parameter rather than a constant (2026-09-10). It was hardcoded
+  // to "anomaly", so the two kinds built through here could never be filed
+  // anywhere else however they were labelled. The other four rest kinds set
+  // their group at their own push site and were always adjustable; these two
+  // now are too. The default keeps every existing caller where it was.
+  const restRow = (t, d, key, head, lead, group = "anomaly") => ({
     timesheetId: t.id,
     rowKey: `${key}-${t.id}-${d.date}`,
     personKey: t.userId ?? null,
@@ -649,7 +659,7 @@ export function buildFindings(batch) {
     byDate: {},
     kind: key,
     date: d.date,
-    d: { group: "anomaly", head, tone: "text-violet-700 dark:text-violet-300", lead },
+    d: { group, head, tone: "text-violet-700 dark:text-violet-300", lead },
   });
 
   // WHAT EVERY ROW'S DAY LOOKED LIKE, ready for `DayPeek` to draw on demand.
@@ -945,9 +955,20 @@ export const KINDS = {
   violation: { label: "Rest periods and meal periods not taken", order: 0 },
   overlap: { label: "Bookings billed over each other", order: 0 },
   punch: { label: "Punches that do not read", order: 1 },
-  flag: { label: "Punches the schedule can settle", order: 2 },
-  rest: { label: "Rest report entries that cannot be read", order: 2 },
+  // NOT ABOUT PUNCHES (2026-09-10). This kind is the schedule compared with the
+  // timesheet, and two of its three cases are not punches being settled at all:
+  // a day the schedule has and the timesheet does not, and a day worked with
+  // nothing rostered. A punch the schedule settles is the `punch` kind above.
+  flag: { label: "Scheduled hours against worked hours", order: 2 },
+  // "cannot be read" was narrower than what this covers (2026-09-10): six of
+  // its cases are read perfectly well and simply record something odd - under
+  // ten, over the limit, longer than a ten, no times, and the catch-all.
+  rest: { label: "Rest report entries that need a second look", order: 2 },
   "rest-off-shift": { label: "Rests filed against the wrong shift", order: 3 },
+  // HAD NO ENTRY AT ALL until 2026-09-10, so every one of these rows fell
+  // through to the generic "Other" heading while all ten of its neighbours had
+  // a name. Order 4 was the one gap in the sequence.
+  "meal-as-rest": { label: "Meal blocks counted as rest periods", order: 4 },
   // no "rest-in-meal" - a rest inside the rostered lunch is folded into
   // "rest-unpaid" below, because it is the same ten minutes.
   "rest-outside": { label: "Rests logged outside the shift", order: 5 },
