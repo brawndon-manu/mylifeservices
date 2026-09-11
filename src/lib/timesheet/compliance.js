@@ -69,6 +69,39 @@ export const COMPLIANCE_KINDS = {
       + (f.client ? ` for ${f.client}` : "")
       + (f.scheduledMin != null ? `, rostered at ${hrs(f.scheduledMin)}` : ""),
   },
+  // ---- travel, from the roster (Mánu 2026-09-10) ---------------------------
+  //
+  // ILS Travel is rostered like any other block and carries its own times, so
+  // all four of these read off the schedule with nothing new to import. They
+  // are scheduling faults in the same sense as the two above: nobody is owed
+  // anything, no rule was broken, and the fix is in QuickSolve before the next
+  // period is built. He asked for them by name after the ten minute break came
+  // out and the anomaly pile emptied.
+  //
+  // THE THRESHOLDS ARE HIS, confirmed 2026-09-10 off a run against both months:
+  // 30 minutes for one block, more than 50 for a person's day. The other two
+  // have no number to argue about - a gap is an hour, and touching the lunch is
+  // touching it. All four live in TRAVEL below, one line each.
+  "travel-long": {
+    label: "Travel booked at 30 minutes or more",
+    action: "Half an hour of travel on one leg is worth checking against the distance.",
+    describe: (f) => `${f.minutes} minutes of travel${f.client ? ` for ${f.client}` : ""}`,
+  },
+  "travel-day-total": {
+    label: "More than 50 minutes of travel in a day",
+    action: "Check whether the day can be routed with less driving between clients.",
+    describe: (f) => `${f.minutes} minutes of travel across ${f.blocks} ${f.blocks === 1 ? "booking" : "bookings"}`,
+  },
+  "travel-in-gap": {
+    label: "Travel booked inside a gap in the day",
+    action: "The gap is an hour or more with no work in it, so the travel is being paid across time nobody was working.",
+    describe: (f) => `${f.minutes} minutes of travel inside a ${hrs(f.gapMinutes)} gap`,
+  },
+  "travel-at-lunch": {
+    label: "Travel booked against the lunch break",
+    action: "Travel butted up against the meal period. Move one or the other so the thirty minutes stay clear.",
+    describe: (f) => `${f.minutes} minutes of travel ${f.side}`,
+  },
   // ---- attendance, from the QSClock export -------------------------------
   "no-clock-in": {
     label: "Shift never clocked into",
@@ -141,6 +174,91 @@ export function overCapBookings(scheduleByDate) {
   return out.sort((a, b) => b.minutes - a.minutes);
 }
 
+// THE FOUR TRAVEL RULES, read off the roster.
+//
+// Thresholds are named constants rather than numbers in the middle of a
+// condition, because they are the part somebody will want to argue with.
+export const TRAVEL_LONG_MIN = 30;
+export const TRAVEL_DAY_MIN = 50;   // "more than", so 50 exactly does not flag
+export const TRAVEL_GAP_MIN = 60;
+
+const isTravelBlock = (shift) => /travel/i.test(blockService(shift?.text) || "");
+const isMealBlock = (shift) => !!shift?.meal || /meal break/i.test(String(shift?.text || ""));
+
+// the block's own start and end, which the overlap rules already read this way
+function blockSpan(shift) {
+  const m = RANGE.exec(String(shift?.text || "").trim());
+  if (!m) return null;
+  const start = toMin(m[1]);
+  const end = toMin(m[2]);
+  return start == null || end == null ? null : { start, end };
+}
+
+export function travelFindings(scheduleByDate) {
+  const out = [];
+  for (const [date, day] of Object.entries(scheduleByDate || {})) {
+    const blocks = (day?.shifts || [])
+      .map((shift) => ({ shift, at: blockSpan(shift) }))
+      .filter((b) => b.at)
+      .sort((a, b) => a.at.start - b.at.start);
+    const travel = blocks.filter((b) => isTravelBlock(b.shift));
+    if (!travel.length) continue;
+
+    // 1. one leg of 30 minutes or more
+    for (const b of travel) {
+      const minutes = b.at.end - b.at.start;
+      if (minutes < TRAVEL_LONG_MIN) continue;
+      out.push({
+        kind: "travel-long", date, minutes,
+        client: blockClient(b.shift?.text) || null, text: b.shift?.text || null,
+      });
+    }
+
+    // 2. the day's driving added up. ONE finding for the day, not one per block:
+    // the fault is the shape of the day, and a row per leg would say it four
+    // times.
+    const total = travel.reduce((n, b) => n + (b.at.end - b.at.start), 0);
+    if (total > TRAVEL_DAY_MIN) {
+      out.push({ kind: "travel-day-total", date, minutes: total, blocks: travel.length });
+    }
+
+    // 3. travel sitting inside an hour or more of nothing. Measured between
+    // WORKED blocks, so the lunch and the travel itself do not close the gap
+    // and hide it.
+    const work = blocks.filter((b) => !isTravelBlock(b.shift) && !isMealBlock(b.shift));
+    for (let i = 0; i < work.length - 1; i++) {
+      const from = work[i].at.end;
+      const to = work[i + 1].at.start;
+      if (to - from < TRAVEL_GAP_MIN) continue;
+      for (const b of travel) {
+        if (b.at.start >= from && b.at.end <= to) {
+          out.push({
+            kind: "travel-in-gap", date, minutes: b.at.end - b.at.start,
+            gapMinutes: to - from, text: b.shift?.text || null,
+          });
+        }
+      }
+    }
+
+    // 4. travel touching the meal period on either side. Exact adjacency: a
+    // roster does not land on the same minute by accident, so a tolerance would
+    // catch coincidences rather than decisions.
+    for (const meal of blocks.filter((b) => isMealBlock(b.shift))) {
+      for (const b of travel) {
+        const before = b.at.end === meal.at.start;
+        const after = b.at.start === meal.at.end;
+        if (!before && !after) continue;
+        out.push({
+          kind: "travel-at-lunch", date, minutes: b.at.end - b.at.start,
+          side: before ? "before the lunch break" : "after the lunch break",
+          text: b.shift?.text || null,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => b.minutes - a.minutes);
+}
+
 // Days where two rostered blocks sit on top of each other. `overlapInfo` is the
 // same function the checks list and the person cards already ask, so this
 // cannot drift from what those say.
@@ -206,6 +324,7 @@ export function complianceFor(data, attendance = null) {
   return [
     ...overCapBookings(byDate),
     ...overlappingDays(byDate),
+    ...travelFindings(byDate),
     ...(attendance?.findings || []),
   ];
 }
