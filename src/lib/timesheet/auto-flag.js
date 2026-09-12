@@ -19,6 +19,28 @@ const QA_NOISE = [
   /Added break time per timesheets? review( submission)?\s*[-—]?\s*QA Admin/gi,
 ];
 
+// THE ENGINE'S OWN FLAGS, TOLD APART ON SCREEN - Mánu 2026-09-12: "lets add a
+// little robot emoticon for the auto flags." 85 of the 120 flags on the
+// current period are the engine's, so telling them from a person's judgement
+// at a glance is most of what the line is for.
+//
+// The PREFIX is what is stored, and it stays stored: the workbook and the
+// client report print the reason verbatim, and a spreadsheet cell wants words
+// rather than a picture. Only screens swap it for the robot.
+export const AUTO_PREFIX = "Auto:";
+
+export function isAutoFlag(review) {
+  return typeof review?.reason === "string" && review.reason.startsWith(AUTO_PREFIX);
+}
+
+// the reason as a screen says it: without the prefix the robot now stands for,
+// and without the full stop the line already ends with
+export function flagReasonBody(reason) {
+  if (typeof reason !== "string") return "";
+  const body = reason.startsWith(AUTO_PREFIX) ? reason.slice(AUTO_PREFIX.length) : reason;
+  return body.trim().replace(/\.$/, "");
+}
+
 // everything staff wrote about the shift, in one string: the note's summary
 // column, its comment lines, and the schedule note
 export function autoFlagText(row) {

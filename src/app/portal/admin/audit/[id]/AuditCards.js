@@ -33,6 +33,7 @@ import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import DecisionLine from "./DecisionLine";
 import FlagAbout from "./FlagAbout";
 import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
@@ -624,9 +625,7 @@ function LostShifts({ rows, staffName = (n) => n }) {
                     : "text-amber-600 dark:text-amber-400"
                 }`}
               >
-                {n.review.decision === "approved" ? "Approved" : "Flagged"}
-                {n.review.by ? ` by ${n.review.by}` : ""}
-                {n.review.reason ? ` - ${n.review.reason.replace(/\.$/, "")}` : ""}
+                <DecisionLine review={n.review} />
               </p>
             ) : (
               <p className="mt-2 text-xs font-semibold text-faint">Nobody had ruled on it.</p>
@@ -1105,9 +1104,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
               : "text-amber-600 dark:text-amber-400"
           }`}
         >
-          {r.review.decision === "approved" ? "Approved" : "Flagged"}
-          {r.review.by ? ` by ${r.review.by}` : ""}
-          {r.review.reason ? ` - ${r.review.reason.replace(/\.$/, "")}` : ""}
+          <DecisionLine review={r.review} />
 
         </p>
       )}

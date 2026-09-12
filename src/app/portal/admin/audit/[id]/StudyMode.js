@@ -20,8 +20,10 @@ import { ampmLabel, clientFirstLast } from "./figures";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
 import FlagAbout from "./FlagAbout";
+import DecisionLine from "./DecisionLine";
 import { Flag } from "lucide-react";
 import { kindsOf, labelOfKind } from "@/lib/timesheet/review-kinds";
+
 import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
@@ -544,11 +546,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                     : "text-amber-600 dark:text-amber-400"
                 }`}
               >
-                {(decided[row.shiftKey] || row.review.decision) === "approved"
-                  ? "Approved"
-                  : "Flagged"}
-                {row.review?.by ? ` by ${row.review.by}` : ""}
-                {row.review?.reason ? ` - ${row.review.reason.replace(/\.$/, "")}` : ""}
+                <DecisionLine review={row.review} decision={decided[row.shiftKey] || row.review.decision} />
 . Deciding again replaces it.
               </p>
             )}
