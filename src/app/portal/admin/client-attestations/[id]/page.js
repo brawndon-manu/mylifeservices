@@ -60,11 +60,24 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
     unsigned: rows.filter((a) => !a.signedAt).length,
   };
   const mode = attestationSendMode();
+  // WHAT EACH DESTINATION ACTUALLY RESOLVES TO, so the confirmation can say
+  // how many emails a press sends rather than how many clients are on the
+  // month. On September those are 239 and 6 - the number that matters is the
+  // one nobody could see.
+  const unsigned = rows.filter((a) => !a.signedAt);
+  const unsent = unsigned.filter((a) => !a.sentAt);
+  const resolves = (set) => ({
+    supervisor: set.filter((a) => a.supervisorUserId).length,
+    staff: set.filter((a) => a.staffUserId && !a.clientSignedAt).length,
+    client: 0, // client emails are not stored, so this destination never resolves
+    other: set.length,
+  });
   const sendCounts = {
     all: counts.all,
     unsigned: counts.unsigned,
     unrouted: counts.unrouted,
-    unsent: rows.filter((a) => !a.signedAt && !a.sentAt).length,
+    unsent: unsent.length,
+    resolves: { unsigned: resolves(unsigned), unsent: resolves(unsent) },
   };
 
   const shown =
@@ -133,6 +146,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
 
       <SendPanel
         counts={sendCounts}
+        mode={mode}
         action={sendAttestations.bind(null, batch.id)}
       />
 

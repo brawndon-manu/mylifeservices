@@ -164,27 +164,55 @@ export function resolveFormRecipients(intendedEmail, cc = [], env = process.env)
 // protecting is still protected where it matters: nothing can leave a laptop,
 // and every send is a button somebody pressed on the review screen, never a
 // side effect of uploading.
+// ATTESTATIONS GET THE SAME TWO LOCKS AS TIMESHEETS, 2026-09-12.
+//
+// Until now this asked only "is this production", so one press of Send all on
+// the real site put mail in real inboxes with nothing else standing in the
+// way. Measured on the September month when Mánu asked who Send all goes to:
+// the default destination is 6 emails, but ticking "Assigned staff" is 217
+// emails to 50 staff members, on one click, with no confirmation.
+//
+// ITS OWN PHRASE, NOT THE TIMESHEET ONE. TIMESHEET_LIVE_SEND is already set on
+// this laptop - which is the whole reason lock 2 exists, see the note at the
+// top of this file - so sharing it would have unlocked attestations on the
+// real site the moment this shipped, which is the opposite of the point.
+// Payroll and attestations are different sends and each is opened on purpose.
+//
+// Unset, this fails to TEST: mail on production goes to Mánu's own inboxes
+// rather than to staff. A redirected batch is a nuisance; the other direction
+// is 50 people receiving a client's schedule from a half-finished routing table.
+export function attestationLiveSendConfigured(env = process.env) {
+  return env.ATTESTATIONS_LIVE_SEND === LIVE_PHRASE;
+}
+
 export function attestationLiveSend(env = process.env) {
-  return isProductionDeployment(env);
+  return attestationLiveSendConfigured(env) && isProductionDeployment(env);
 }
 
 export function resolveAttestationRecipients(intendedEmail, env = process.env) {
-  if (isProductionDeployment(env)) {
+  if (attestationLiveSend(env)) {
     return { to: [intendedEmail], redirected: false, intendedEmail };
   }
   return { to: localInboxes(env), redirected: true, intendedEmail };
 }
 
-// what the review screen shows, so the current mode is never implicit
+// what the review screen shows, so the current mode is never implicit.
+// `reason` says WHICH lock is shut, because "test mode" on the real site with
+// the phrase missing looks like a bug until you know which one is holding.
 export function attestationSendMode(env = process.env) {
   if (attestationLiveSend(env)) {
     return { live: true, label: "LIVE - emails go to the people you pick", recipients: [], reason: null };
   }
+  const reason = attestationLiveSendConfigured(env)
+    ? "local"      // the phrase is set, the environment is not production
+    : "not-live";  // the phrase itself is missing
   return {
     live: false,
-    label: "TEST - not the live site, so everything is redirected",
+    label: reason === "local"
+      ? "TEST - not the live site, so everything is redirected"
+      : "TEST - everything is redirected",
     recipients: localInboxes(env),
-    reason: "local",
+    reason,
   };
 }
 

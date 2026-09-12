@@ -37,18 +37,34 @@ const LABELS = {
   other: "the typed address",
 };
 
-export default function SendPanel({ counts, action }) {
+export default function SendPanel({ counts, mode = null, action }) {
   const [picked, setPicked] = useState({ supervisor: true, staff: false, client: false, other: false });
   const [customEmail, setCustomEmail] = useState("");
   const [onlyUnsent, setOnlyUnsent] = useState(true);
   const [result, setResult] = useState(null);
   const [open, setOpen] = useState(false);
+  // THE PRESS THAT SENDS IS NOT THE PRESS THAT OPENS - Mánu 2026-09-12, after
+  // asking who Send all goes to. There was no confirmation at all: the panel
+  // opened on one click and sent on the next, and with "Assigned staff" ticked
+  // that second click is 217 emails to 50 people. Email is not undoable, which
+  // is the case where an are-you-sure is the right answer rather than an Undo.
+  const [confirming, setConfirming] = useState(false);
 
   const rows = onlyUnsent ? counts.unsent : counts.unsigned;
   const chosen = Object.keys(picked).filter((k) => picked[k]);
   const destinations = chosen.map((k) => LABELS[k]).join(", ");
 
-  const toggle = (k) => setPicked((p) => ({ ...p, [k]: !p[k] }));
+  // how many emails this press actually sends, per destination, counted off
+  // the same set the send will walk. A destination that resolves for nobody
+  // says so rather than being left out.
+  const resolves = counts.resolves?.[onlyUnsent ? "unsent" : "unsigned"] || null;
+  const perDestination = chosen.map((k) => ({ key: k, label: LABELS[k], n: resolves ? resolves[k] : null }));
+  const total = perDestination.reduce((a, d) => a + (d.n ?? 0), 0);
+
+  const toggle = (k) => {
+    setConfirming(false);
+    setPicked((p) => ({ ...p, [k]: !p[k] }));
+  };
 
   return (
     <div className="mt-6 rounded-xl border border-border bg-surface p-5">
@@ -119,7 +135,7 @@ export default function SendPanel({ counts, action }) {
                     name="customEmail"
                     type="email"
                     value={customEmail}
-                    onChange={(e) => setCustomEmail(e.target.value)}
+                    onChange={(e) => { setConfirming(false); setCustomEmail(e.target.value); }}
                     placeholder="Email address"
                     className="mt-2 w-full max-w-sm rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
                   />
@@ -152,7 +168,7 @@ export default function SendPanel({ counts, action }) {
               type="checkbox"
               name="onlyUnsent"
               checked={onlyUnsent}
-              onChange={(e) => setOnlyUnsent(e.target.checked)}
+              onChange={(e) => { setConfirming(false); setOnlyUnsent(e.target.checked); }}
               className="mt-0.5"
             />
             <span className="text-sm text-muted">
@@ -160,19 +176,77 @@ export default function SendPanel({ counts, action }) {
             </span>
           </label>
 
+          {/* THE COUNT THAT MATTERS IS EMAILS, NOT CLIENTS. This line used to
+              read "239 clients to: each client's field supervisor" when the
+              press sent 6, because 233 of them have nobody to send to. */}
           <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm text-muted">
             {chosen.length === 0 ? (
               <>No destination checked.</>
             ) : (
               <>
+                <b className="text-foreground">{total}</b>{" "}
+                {total === 1 ? "email" : "emails"} from{" "}
                 <b className="text-foreground">{rows}</b>{" "}
-                {rows === 1 ? "client" : "clients"} to:{" "}
+                {rows === 1 ? "client" : "clients"}, to{" "}
                 <b className="text-foreground">{destinations}</b>.
+                {perDestination.some((d) => d.n === 0) && (
+                  <>
+                    {" "}
+                    {perDestination
+                      .filter((d) => d.n === 0)
+                      .map((d) => `Nothing resolves for ${d.label}.`)
+                      .join(" ")}
+                  </>
+                )}
+                {rows - (resolves?.supervisor ?? rows) > 0 && picked.supervisor && (
+                  <> {rows - resolves.supervisor} have no supervisor and are skipped.</>
+                )}
               </>
             )}
           </div>
 
-          <Go label="Send" />
+          {!confirming ? (
+            <button
+              type="button"
+              disabled={chosen.length === 0}
+              onClick={() => setConfirming(true)}
+              className="rounded-md bg-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Send
+            </button>
+          ) : (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+              <p className="text-sm font-semibold text-foreground">
+                {total === 1 ? "Send 1 email?" : `Send ${total} emails?`}
+              </p>
+              <ul className="mt-2 space-y-1 text-sm text-muted">
+                {perDestination.map((d) => (
+                  <li key={d.key}>
+                    {d.n === null ? "?" : d.n} to {d.label}
+                    {d.n === 0 ? " - nobody to send to" : ""}
+                  </li>
+                ))}
+              </ul>
+              {mode && (
+                <p className="mt-2.5 text-sm text-foreground">
+                  {mode.live
+                    ? "These go to the real addresses."
+                    : `These come to ${mode.recipients.join(", ")} instead. Nothing reaches anyone else.`}
+                </p>
+              )}
+              <p className="mt-2.5 text-sm text-muted">This cannot be taken back.</p>
+              <div className="mt-3 flex gap-2">
+                <Go label={total === 1 ? "Send 1 email" : `Send ${total} emails`} />
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  className="rounded-md border border-border-strong px-4 py-2 text-sm font-medium text-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       )}
 
