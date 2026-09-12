@@ -19,12 +19,15 @@ import { reviewShift, undoReview } from "../actions";
 import { ampmLabel, clientFirstLast } from "./figures";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import FlagAbout from "./FlagAbout";
+import { Flag } from "lucide-react";
+import { kindsOf, labelOfKind } from "@/lib/timesheet/review-kinds";
 import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
 
-export default function StudyMode({ rows: dealt, onExit, titles = null, onReview, batchId = null }) {
+export default function StudyMode({ rows: dealt, onExit, titles = null, onReview, batchId = null, onKind = null }) {
   // THE DECK IS DEALT ONCE, when study mode opens.
   //
   // Mánu 2026-08-28: "sometimes when i click approve it skips over 2 cards
@@ -55,6 +58,19 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     return m;
   });
   const [reviewOverrides, setReviewOverrides] = useState({});
+  // what a flag is about, toggled from in here and remembered in here - the
+  // deck is dealt once, so the row object never hears about it from the page
+  const [kindsByShift, setKindsByShift] = useState({});
+  const kindsFor = (row) => (kindsByShift[row.shiftKey] !== undefined ? kindsByShift[row.shiftKey] : row.review?.kinds) || [];
+  const onRowKind = (row) => async (kind, off) => {
+    const was = kindsFor(row);
+    const next = off ? was.filter((k) => k !== kind) : [...new Set([...was, kind])];
+    setKindsByShift((v) => ({ ...v, [row.shiftKey]: next }));
+    const ok = await onKind?.(row, kind, off);
+    if (!ok) setKindsByShift((v) => ({ ...v, [row.shiftKey]: was }));
+    return ok;
+  };
+
   const [error, setError] = useState("");
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
@@ -366,6 +382,19 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                     ? `\u00A0\u00A0\u00A0${ampmLabel(row.schedFrom)} - ${ampmLabel(row.schedTo)}`
                     : ""}
                 </span>
+                {/* what a standing flag is about, the same summary the card
+                    carries, so neither surface needs a mark on every
+                    disclosure saying the same thing again */}
+                {(decided[row.shiftKey] || row.review?.decision) === "flagged"
+                  && kindsOf({ kinds: kindsFor(row), billableMin: row.review?.billableMin }).length > 0 && (
+                  <span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                    {kindsOf({ kinds: kindsFor(row), billableMin: row.review?.billableMin }).map((k) => (
+                      <span key={k} className="inline-flex items-center gap-1">
+                        <Flag size={10} aria-hidden="true" /> {labelOfKind(k, row.note?.source)}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </span>
               <span className="text-sm tabular-nums text-muted">
                 {at + 1} of {rows.length}
@@ -467,6 +496,12 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                       <p className="mt-1 text-sm leading-relaxed text-foreground">
                         {row.scheduleNote.text}
                       </p>
+                      <FlagAbout
+                        className="mt-3 border-t border-border pt-3"
+                        on={kindsFor(row).includes("schedule")}
+                        what="Flag this schedule note"
+                        onToggle={(off) => onRowKind(row)("schedule", off)}
+                      />
                     </div>
                   )}
                 </div>
@@ -487,6 +522,12 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                   {openNote && (
                     <div className="mt-2 rounded-lg border border-border bg-surface p-4">
                       <NoteBody note={row.note} />
+                      <FlagAbout
+                        className="mt-3 border-t border-border pt-3"
+                        on={kindsFor(row).includes("note")}
+                        what={row.note.source === "dsn" ? "Flag this DSN" : "Flag this service note"}
+                        onToggle={(off) => onRowKind(row)("note", off)}
+                      />
                     </div>
                   )}
                 </div>

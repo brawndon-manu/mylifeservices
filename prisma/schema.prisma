@@ -2253,6 +2253,20 @@ model ShiftReview {
   decision String
   reason   String?
 
+  // WHAT THE FLAG IS ABOUT - Mánu 2026-09-12: "i want the options to include
+  // 'Changed billing time' ... as well as flagged DSN. flagged above would
+  // hold all of those combined."
+  //
+  // Several at once on purpose: changing the billable time BECAUSE the DSN is
+  // thin is one flag about two things, and the 58 hand-typed reasons on record
+  // read exactly that way ("No service note", "No clock out").
+  //
+  // Stored values are the CHOSEN ones only - "note", "schedule", "shift".
+  // "billing" is NOT stored: billableMin already says it, so deriving it means
+  // the 59 flags that changed a figure before this column existed carry the
+  // label with no backfill and nothing for anyone to remember.
+  kinds String[] @default([])
+
   // the reading at the moment of the decision
   billedMin     Int?
   clockedMin    Int?

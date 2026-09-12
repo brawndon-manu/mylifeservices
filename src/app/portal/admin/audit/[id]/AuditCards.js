@@ -23,7 +23,7 @@
 import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import StudyMode from "./StudyMode";
-import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts, markNoteChangeSeen, toggleShiftStar } from "../actions";
+import { reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts, markNoteChangeSeen, toggleShiftStar, toggleReviewKind } from "../actions";
 import BillableAdjust from "./BillableAdjust";
 import { AUTO_FLAG_RULES } from "@/lib/timesheet/auto-flag";
 import { hrs, clientFirstLast } from "./figures";
@@ -33,9 +33,11 @@ import AuditDownloads from "../AuditDownloads";
 import AuditMenu from "../AuditMenu";
 import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
+import FlagAbout from "./FlagAbout";
 import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
+import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, offerableKinds } from "@/lib/timesheet/review-kinds";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -72,6 +74,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     ["billed-over-clocked", "billed-under-clocked", "never-clocked", "not-in-clock"],
   ];
   const [onlyKinds, setOnlyKinds] = useState([]);
+  // WHICH FLAGS - Mánu 2026-09-12: "flagged above would hold all of those
+  // combined." One pile, and this narrows it to what the flags are about.
+  // Sits under the Flagged tab rather than beside the decisions, because it
+  // only means anything inside that pile.
+  const [kindFilter, setKindFilter] = useState("all");
   const toggleKind = (k) =>
     setOnlyKinds((prev) => {
       if (prev.includes(k)) return prev.filter((x) => x !== k);
@@ -97,6 +104,40 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   // decision lands here so the counts and the piles move without re-running
   // the whole audit build; the server row is the durable record.
   const [localReviews, setLocalReviews] = useState({});
+  // WHAT A FLAG IS ABOUT, toggled from inside the note itself. Held locally
+  // the same way a decision is so the piles and counts move without re-running
+  // the build; the server row is the durable record.
+  const onKind = async (r, kind, off) => {
+    const was = r.review || null;
+    const nextKinds = off
+      ? (was?.kinds || []).filter((k) => k !== kind)
+      : [...new Set([...(was?.kinds || []), kind])];
+    const next = was
+      ? { ...was, kinds: nextKinds, decision: off ? was.decision : "flagged" }
+      : { decision: "flagged", by: "you", reason: null, kinds: nextKinds, billableMin: null, fromBatch: batchId, lastAt: new Date().toISOString() };
+    setLocalReviews((v) => ({ ...v, [r.shiftKey]: next }));
+    const body = new FormData();
+    body.set("batchId", batchId || "");
+    body.set("shiftKey", r.shiftKey);
+    body.set("kind", kind);
+    body.set("employeeKey", r.employeeKey || "");
+    body.set("date", r.date || "");
+    body.set("startMin", r.startMin ?? "");
+    body.set("client", r.client || "");
+    body.set("service", r.service || "");
+    body.set("billedMin", r.billedMin ?? "");
+    body.set("clockedMin", r.clockedMin ?? "");
+    body.set("documentedMin", r.documentedMin ?? "");
+    if (off) body.set("off", "1");
+    let res;
+    try { res = await toggleReviewKind(body); } catch { res = null; }
+    if (!res?.ok) {
+      setLocalReviews((v) => ({ ...v, [r.shiftKey]: was }));
+      return false;
+    }
+    return true;
+  };
+
   const rows = useMemo(
     () => rowsProp.map((r) => {
       const l = localReviews[r.shiftKey];
@@ -106,6 +147,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   );
   const noteReview = (shiftKey, review) =>
     setLocalReviews((v) => ({ ...v, [shiftKey]: review }));
+
 
   // A SUPERSEDED COPY OPENS FROZEN - Mánu 2026-09-07: "all the superceded
   // ones are frozen in time." Nothing decides from here; shifts take stars
@@ -179,6 +221,15 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     return c;
   }, [inPeriod]);
 
+  // counted inside the period showing, exactly like the decision counts, and
+  // over the flagged rows only since that is the pile this narrows. The
+  // sub-counts deliberately sum to more than the pile: one flag about the DSN
+  // and the billing time is counted under both.
+  const kindCounts = useMemo(
+    () => countKinds(inPeriod.filter((r) => r.review?.decision === "flagged")),
+    [inPeriod],
+  );
+
   const flagScopeCounts = useMemo(() => {
     const flagged = inPeriod.filter((r) => r.review?.decision === "flagged");
     const copy = flagged.filter((r) => r.review?.fromBatch === batchId).length;
@@ -195,11 +246,16 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
         if (flagScope === "copy" ? !mine : mine) return false;
       }
       if (frozenMode && starsOnly && !stars.has(r.shiftKey)) return false;
+      // only inside the pile it belongs to. The kind row is rendered under
+      // Flagged and nowhere else, so applying it on another tab would be a
+      // filter with no control on screen - switch to Not decided with a kind
+      // held and every card vanishes for no visible reason.
+      if (decision === "flagged" && kindFilter !== "all" && !hasKind(r.review, kindFilter)) return false;
       if (onlyKinds.length && !onlyKinds.every((k) => kindOn(r, k))) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars, flagScope, batchId]);
+  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars, flagScope, batchId, kindFilter]);
 
   // ONE LINE PER PERSON OR PER CLIENT, over whatever is showing.
   //
@@ -361,7 +417,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           {frozen.currentId && <Link href={`/portal/admin/audit/${frozen.currentId}`}>Open the current copy</Link>}
         </div>
       )}
-      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} /> : view === "reports" ? <>
+      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} onKind={onKind} /> : view === "reports" ? <>
         <p className={styles.notice}>Reports include the entire uploaded period and current saved decisions. Filters used while reviewing do not limit these downloads.</p>
         <AuditDownloads batchId={batchId} periodLabel={periodLabel} reportsPage />
       </> : <>
@@ -378,6 +434,18 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       {recordView && !frozenMode && <div className={styles.decisionTabs} aria-label="Review status">
         {["open", "flagged", "approved", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
       </div>}
+      {recordView && !frozenMode && decision === "flagged" && (
+        <div className={styles.decisionTabs} aria-label="What the flags are about">
+          <button type="button" aria-pressed={kindFilter === "all"} onClick={() => setKindFilter("all")}>
+            Every flag<span>{decisionCounts.flagged}</span>
+          </button>
+          {ALL_KINDS.map((k) => (
+            <button key={k} type="button" aria-pressed={kindFilter === k} onClick={() => setKindFilter(k)}>
+              {labelOfKind(k)}<span>{kindCounts[k]}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {recordView && !frozenMode && decision === "flagged" && flagScopeCounts.copy > 0 && (
         <div className={styles.decisionTabs} aria-label="Which copy flagged">
           {[["all", "Every flag", flagScopeCounts.all], ["copy", "This copy", flagScopeCounts.copy], ["earlier", "Earlier copies", flagScopeCounts.earlier]].map(([key, label, n]) => (
@@ -401,7 +469,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           {Object.entries(ROLL_SORTS).filter(([k]) => recordView || ["date", "first", "last"].includes(k)).map(([k, v]) => <button key={k} type="button" aria-pressed={sortKeys.includes(k)} onClick={() => toggleSort(k)}>{v.label}<small>{sortKeys.includes(k) ? sortKeys.indexOf(k) + 1 : ""}</small></button>)}
           {sortKeys.length > 0 && <button type="button" onClick={() => setSortKeys([])}>Default order</button>}
         </AuditMenu>
-        {recordView && (q || onlyKinds.length > 0) && <button type="button" className={styles.secondary} onClick={() => { setQ(""); setOnlyKinds([]); }}>Clear filters</button>}
+        {recordView && (q || onlyKinds.length > 0 || (decision === "flagged" && kindFilter !== "all")) && <button type="button" className={styles.secondary} onClick={() => { setQ(""); setOnlyKinds([]); setKindFilter("all"); }}>Clear filters</button>}
       </div>
       {recordView && <p className={styles.resultCount}>{shown.length} of {inPeriod.length} shifts{period === "all" ? "" : ` in ${period}`}</p>}
       {batchId && recordView && !frozenMode && <details className={styles.tools}><summary>Review tools</summary>
@@ -441,7 +509,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
                 </span>
               </h2>
               <div className="mt-2 space-y-3">
-                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozenMode} starred={stars.has(r.shiftKey)} onStar={onStar} />)}
+                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozenMode} starred={stars.has(r.shiftKey)} onStar={onStar} onKind={onKind} />)}
               </div>
             </div>
           ))}
@@ -464,6 +532,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           frozen={frozenMode}
           stars={stars}
           onStar={onStar}
+          onKind={onKind}
         />
       )}
       <p className={styles.legend}>A time gap alone is not a finding. Read the notes before deciding. Audit decisions do not change pay.</p>
@@ -718,7 +787,7 @@ const ROLL_SORTS = {
 // it should undo the ones that contradict each other."
 const SORT_CONFLICTS = [["first", "last"]];
 
-function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [], batchId = null, frozen = false, stars = null, onStar = null }) {
+function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [], batchId = null, frozen = false, stars = null, onStar = null, onKind = null }) {
   // the Last name sort flips STAFF names to "Last, First" - the employee
   // roll and the staff on its unfolded cards; clients keep the roster form
   const staffName = sortKeys.includes("last") && what === "Employee" ? lastFirst : (n) => n;
@@ -850,7 +919,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                     <td colSpan={withAuth ? 12 : 10} className="bg-surface-2/50 px-3 py-3">
                       <div className="space-y-3">
                         {rowsFor(g.name).map((r) => (
-                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozen} starred={!!stars?.has(r.shiftKey)} onStar={onStar} />
+                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozen} starred={!!stars?.has(r.shiftKey)} onStar={onStar} onKind={onKind} />
                         ))}
                       </div>
                     </td>
@@ -874,7 +943,7 @@ function Count({ n, tone }) {
   );
 }
 
-function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen = false, starred = false, onStar = null }) {
+function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen = false, starred = false, onStar = null, onKind = null }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const [openOverlap, setOpenOverlap] = useState(false);
@@ -913,6 +982,9 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         : "text-muted";
   const decisionWord =
     r.review?.decision === "approved" ? "Approved" : r.review?.decision === "flagged" ? "Flagged" : "Not decided";
+  // what a standing flag is about, printed under the corner so the pile can be
+  // read without opening anything. Billing rides in from billableMin.
+  const aboutKinds = r.review?.decision === "flagged" ? kindsOf(r.review) : [];
   return (
     <article className={styles.card} data-decision={r.review?.decision || "open"}>
       {/* the corner answers the two questions at a glance: which day, and
@@ -950,6 +1022,15 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         )}
       </div>
       <p className="mt-0.5 text-sm tabular-nums text-muted sm:hidden">{r.date}</p>
+      {aboutKinds.length > 0 && (
+        <p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+          {aboutKinds.map((k) => (
+            <span key={k} className="inline-flex items-center gap-1">
+              <Flag size={10} aria-hidden="true" /> {labelOfKind(k, r.note?.source)}
+            </span>
+          ))}
+        </p>
+      )}
       {/* client first, first name first, then the service, no dots - the
           deck's heading, Mánu 2026-09-05 */}
       <p className="mt-0.5 text-sm">
@@ -1078,6 +1159,14 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
                   <p className="mt-0.5 text-sm leading-relaxed text-foreground">
                     {r.scheduleNote.text}
                   </p>
+                  {!frozen && (
+                    <FlagAbout
+                      className="mt-3 border-t border-border pt-3"
+                      on={hasKind(r.review, "schedule")}
+                      what="Flag this schedule note"
+                      onToggle={(off) => onKind?.(r, "schedule", off)}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1098,6 +1187,14 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
               {open && (
                 <div className="mt-1.5 rounded-lg border border-border bg-surface-2 p-3">
                   <NoteBody note={r.note} />
+                  {!frozen && (
+                    <FlagAbout
+                      className="mt-3 border-t border-border pt-3"
+                      on={hasKind(r.review, "note")}
+                      what={r.note.source === "dsn" ? "Flag this DSN" : "Flag this service note"}
+                      onToggle={(off) => onKind?.(r, "note", off)}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1120,6 +1217,10 @@ const mdyOfIso = (iso) => {
 function DecideBar({ r, onReview, batchId = null, settled = false }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
+  // WHAT THE FLAG IS ABOUT - offered only where the shift has the thing, so a
+  // shift with no schedule note cannot be flagged about one
+  const [kinds, setKinds] = useState([]);
+  const offerable = offerableKinds(r);
   const [billable, setBillable] = useState("");
   // the clock window the figure was typed as, when the time boxes made it -
   // rides beside billable and lands on the review as billableFrom/ToMin
@@ -1163,6 +1264,8 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
     }
     const why = decision === "flagged" ? reason.trim() : "";
     if (why) body.set("reason", why);
+    const picked = decision === "flagged" ? (o.kinds !== undefined ? o.kinds : kinds) : [];
+    if (picked.length) body.set("kinds", picked.join(","));
     let res;
     try { res = await reviewShift(body); }
     catch { setError("Could not save the decision. Please try again."); return; }
@@ -1172,6 +1275,7 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
       decision,
       by: "you",
       reason: why || null,
+      kinds: picked,
       billableMin: bm,
       billableFrom: bm != null && win ? win.from : null,
       billableTo: bm != null && win ? win.to : null,
@@ -1184,6 +1288,7 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
     });
     setFlagging(false);
     setReason("");
+    setKinds([]);
     setBillable("");
     setBillableWin(null);
   };
@@ -1216,6 +1321,32 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
             onChange={(e) => setReason(e.target.value)}
             className="mt-1.5 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
           />
+          {/* WHAT IT IS ABOUT, more than one allowed. Changed billing time is
+              not here on purpose: the adjustment below already says it. */}
+          {offerable.length > 0 && (
+            <fieldset className="mt-2.5">
+              <legend className="text-xs font-semibold text-foreground">
+                What is it about? <span className="font-normal text-muted">Optional.</span>
+              </legend>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {offerable.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    aria-pressed={kinds.includes(k)}
+                    onClick={() => setKinds((v) => (v.includes(k) ? v.filter((x) => x !== k) : [...v, k]))}
+                    className={`rounded-md border px-2.5 py-1 text-xs font-medium transition ${
+                      kinds.includes(k)
+                        ? "border-amber-500 bg-amber-500 text-white"
+                        : "border-border-strong text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {labelOfKind(k, r.note?.source)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
           {/* the corrected time lives behind its own button so an untouched
               flag looks untouched - see BillableAdjust */}
           <BillableAdjust

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { readBudgetCapture } from "@/lib/timesheet/budget-capture";
+import { CHOSEN_KINDS } from "@/lib/timesheet/review-kinds";
 
 // THE STANDALONE SERVICE NOTES UPLOAD IS GONE, 2026-08-27.
 //
@@ -81,6 +82,14 @@ export async function reviewShift(formData) {
   const billableFromMin = windowOk ? Math.round(rawFrom) : null;
   const billableToMin = windowOk ? Math.round(rawTo) : null;
 
+  // WHAT THE FLAG IS ABOUT. Only the chosen kinds are stored - billing is
+  // derived from billableMin - and an unknown one is dropped rather than
+  // saved, since the screen reads these back by name.
+  const kinds = String(formData.get("kinds") || "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter((k) => CHOSEN_KINDS.includes(k));
+
   const row = {
     shiftKey,
     employeeKey: String(formData.get("employeeKey") || ""),
@@ -90,6 +99,8 @@ export async function reviewShift(formData) {
     service: String(formData.get("service") || "") || null,
     decision,
     reason: decision === "flagged" ? reason || null : null,
+    // an approval is not about anything - the kinds go with the flag
+    kinds: decision === "flagged" ? kinds : [],
     // THE READING AS IT STOOD. A later upload can move these figures; what was
     // signed off should not move with them.
     billedMin: num("billedMin"),
@@ -110,7 +121,7 @@ export async function reviewShift(formData) {
     // changing your mind is allowed and overwrites the decision, the reason and
     // who made it - the row is the current decision, not a history of them
     update: {
-      decision: row.decision, reason: row.reason, decidedById: user.id,
+      decision: row.decision, reason: row.reason, kinds: row.kinds, decidedById: user.id,
       billedMin: row.billedMin, clockedMin: row.clockedMin, documentedMin: row.documentedMin,
       billableMin: row.billableMin,
       billableFromMin: row.billableFromMin, billableToMin: row.billableToMin,
@@ -216,6 +227,81 @@ export async function toggleShiftStar(formData) {
   }
   revalidatePath("/portal/admin/audit");
   return { ok: true, starred: !standing };
+}
+
+// FLAGGING FROM INSIDE THE THING ITSELF - Mánu 2026-09-11: "i want to add an
+// option to flag the note for review", and 2026-09-12: "i also liked the flag
+// for dsn."
+//
+// Adds or removes ONE kind, leaving the reason, the corrected figure and the
+// other kinds alone - which is why it is not reviewShift with a kinds list.
+// Adding a kind to a shift nobody has decided flags it, because Mánu chose one
+// pile: "flagged above would hold all of those combined."
+//
+// Removing the last kind does NOT unflag the shift. A flag is a decision a
+// person made; saying it is no longer about the DSN is not the same as saying
+// it was never flagged, and 695 flags on record carry no kind at all.
+export async function toggleReviewKind(formData) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) redirect("/portal");
+  const shiftKey = String(formData.get("shiftKey") || "");
+  const kind = String(formData.get("kind") || "");
+  if (!shiftKey) return { ok: false };
+  if (!CHOSEN_KINDS.includes(kind)) return { ok: false, error: "kind" };
+
+  const batchId = String(formData.get("batchId") || "");
+  if (batchId) {
+    const { supersededBy } = await import("@/lib/timesheet/superseded");
+    if (await supersededBy(batchId)) return { ok: false, error: "superseded" };
+  }
+
+  const off = String(formData.get("off") || "") === "1";
+  const num = (k) => {
+    const v = formData.get(k);
+    return v === null || v === "" || v === "null" ? null : Number(v);
+  };
+
+  const standing = await prisma.shiftReview.findUnique({
+    where: { shiftKey },
+    select: { id: true, kinds: true, decision: true },
+  });
+
+  if (!standing) {
+    if (off) return { ok: true, kinds: [] };
+    await prisma.shiftReview.create({
+      data: {
+        shiftKey,
+        employeeKey: String(formData.get("employeeKey") || ""),
+        date: String(formData.get("date") || ""),
+        startMin: num("startMin"),
+        client: String(formData.get("client") || "") || null,
+        service: String(formData.get("service") || "") || null,
+        decision: "flagged",
+        kinds: [kind],
+        billedMin: num("billedMin"),
+        clockedMin: num("clockedMin"),
+        documentedMin: num("documentedMin"),
+        sourceBatchId: batchId || null,
+        decidedById: user.id,
+      },
+    });
+    revalidatePath("/portal/admin/audit");
+    return { ok: true, decision: "flagged", kinds: [kind] };
+  }
+
+  const next = off
+    ? standing.kinds.filter((k) => k !== kind)
+    : [...new Set([...standing.kinds, kind])];
+  await prisma.shiftReview.update({
+    where: { id: standing.id },
+    data: {
+      kinds: next,
+      // adding a kind to an approved shift flags it - one pile, his call
+      ...(off ? {} : { decision: "flagged", sourceBatchId: batchId || null, decidedById: user.id }),
+    },
+  });
+  revalidatePath("/portal/admin/audit");
+  return { ok: true, decision: off ? standing.decision : "flagged", kinds: next };
 }
 
 export async function undoReview(formData) {

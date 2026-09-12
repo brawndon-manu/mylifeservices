@@ -629,7 +629,7 @@ export async function buildAudit(id) {
     ? await prisma.shiftReview.findMany({
       where: { shiftKey: { in: rows.map((r) => r.shiftKey) } },
       select: {
-        shiftKey: true, decision: true, reason: true, billableMin: true, createdAt: true,
+        shiftKey: true, decision: true, reason: true, kinds: true, billableMin: true, createdAt: true,
         billableFromMin: true, billableToMin: true,
         billedMin: true, clockedMin: true, updatedAt: true, sourceBatchId: true,
         decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -643,6 +643,9 @@ export async function buildAudit(id) {
       ? {
         decision: d.decision,
         reason: d.reason,
+        // what the flag is about, as chosen. The billing kind is derived from
+        // billableMin by kindsOf, so it is deliberately not stored here.
+        kinds: d.kinds || [],
         billableMin: d.billableMin,
         // the window the correction was typed as, when the time boxes made
         // it - shown wherever the corrected figure shows
@@ -746,7 +749,7 @@ export async function buildAudit(id) {
     where: { date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
     select: {
       shiftKey: true, employeeKey: true, date: true, client: true, service: true,
-      decision: true, reason: true, billedMin: true, billableMin: true,
+      decision: true, reason: true, kinds: true, billedMin: true, billableMin: true,
       decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
     },
   });
@@ -764,6 +767,7 @@ export async function buildAudit(id) {
       billedMin: d.billedMin,
       review: {
         decision: d.decision,
+        kinds: d.kinds || [],
         reason: d.reason,
         billableMin: d.billableMin,
         by: d.decidedBy ? preferredName(d.decidedBy) : null,

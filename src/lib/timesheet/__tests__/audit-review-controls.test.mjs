@@ -27,7 +27,7 @@ test("reset-all is period-scoped and counted before it deletes", () => {
 
 test("the cards decide with the same action and the same adjustment as the deck", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
-  assert.match(cards, /import \{ reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts, markNoteChangeSeen, toggleShiftStar \} from "\.\.\/actions"/);
+  assert.match(cards, /import \{ reviewShift, resetAllReviews, auditResetImpact, autoFlagImpact, autoFlagShifts, markNoteChangeSeen, toggleShiftStar, toggleReviewKind \} from "\.\.\/actions"/);
   assert.match(cards, /function DecideBar/);
   assert.ok(cards.includes("Flag it"), "card panel carries Flag it");
   assert.match(cards, /There is no undo\./, "the reset dialog says what it destroys");
