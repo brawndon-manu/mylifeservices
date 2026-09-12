@@ -42,6 +42,26 @@ export function resolveRouting({ routing = null, client = null } = {}) {
   return { staffUser, staffFrom, supervisor, supervisorFrom };
 }
 
+// A FIELD SUPERVISOR ATTESTS THEIR OWN CLIENTS - Mánu 2026-09-12, asked
+// because 56 of the September rows are staffed by one of the 7 supervisors and
+// had nobody to send to.
+//
+// DERIVED, NOT STORED, for the reason the changed-billing-time label is: the
+// rows already exist with nothing on them, and reading the rule at the moment
+// it is needed means all 56 resolve with no backfill and nothing to keep in
+// step. Store it and every future upload has to remember to.
+//
+// A hand-set supervisor still wins - somebody typed it looking at the case.
+//
+// WORTH KNOWING, since it was his call and not a technical one: on these the
+// person who delivered the service is the one confirming it was delivered as
+// scheduled, so there is no second pair of eyes on those 56.
+export function supervisorOf({ supervisor = null, staffUser = null, isFieldSupervisor = () => false } = {}) {
+  if (supervisor) return { supervisor, from: "set" };
+  if (staffUser && isFieldSupervisor(staffUser)) return { supervisor: staffUser, from: "self" };
+  return { supervisor: null, from: null };
+}
+
 // can this client be sent to at all, and if not, why the screen says so
 export function routingGaps(resolved) {
   return {

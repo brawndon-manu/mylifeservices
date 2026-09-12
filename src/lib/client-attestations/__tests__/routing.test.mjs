@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  resolveRouting, routingGaps, isEmptyRouting, byClientKey,
+  resolveRouting, routingGaps, isEmptyRouting, byClientKey, supervisorOf,
 } from "../routing.js";
 
 const sup = { id: "s1", name: "B. Rotter" };
@@ -142,7 +142,8 @@ test("the long list is only drawn where it is needed", () => {
   const staffCell = page.slice(page.indexOf("{a.staffUser ? ("), page.indexOf("{a.entryCount}"));
   assert.match(staffCell, /choices=\{staffChoices\}/, "the staff list is in the staff cell");
   assert.match(staffCell, /a\.staffUser \?/, "and only when nobody is assigned");
-  const supCell = page.slice(page.indexOf("{a.supervisor ? ("), page.indexOf("{a.sentAt ?"));
+  const supCell = page.slice(page.indexOf("{supFor.get(a.id).supervisor ? ("), page.indexOf("{a.sentAt ?"));
+  assert.ok(supCell.length > 100, "found the supervisor cell");
   assert.match(supCell, /choices=\{supervisorChoices\}/);
   // a signed month is settled - its routing is part of what was agreed
   assert.match(staffCell, /a\.signedAt \?/, "a signed row is never re-routed");
@@ -157,4 +158,54 @@ test("both screens offer the same supervisors", () => {
   for (const src of [page, caseloads]) {
     assert.match(src, /titleHasSegment\(u\.title, "Field Supervisor"\)/, "the same definition");
   }
+});
+
+test("a field supervisor attests their own clients", () => {
+  // Mánu 2026-09-12, asked rather than assumed: 56 of the September rows are
+  // staffed by one of the 7 supervisors and had nobody to send to.
+  const isFieldSupervisor = (u) => u?.title === "Field Supervisor";
+  const boss = { id: "s1", name: "B. Rotter", title: "Field Supervisor" };
+  const ili = { id: "u1", name: "Casey Lewis", title: "Independent Living Instructor" };
+
+  const own = supervisorOf({ supervisor: null, staffUser: boss, isFieldSupervisor });
+  assert.equal(own.supervisor, boss);
+  assert.equal(own.from, "self", "the screen can say why");
+
+  // an ordinary staff member still needs one
+  assert.deepEqual(supervisorOf({ supervisor: null, staffUser: ili, isFieldSupervisor }),
+    { supervisor: null, from: null });
+
+  // a supervisor somebody typed always wins, even over a supervisor staffing
+  // their own client
+  const set = supervisorOf({ supervisor: { id: "s2" }, staffUser: boss, isFieldSupervisor });
+  assert.equal(set.supervisor.id, "s2");
+  assert.equal(set.from, "set");
+
+  assert.deepEqual(supervisorOf(), { supervisor: null, from: null });
+});
+
+test("nothing stores the self-supervision, it is read where it is needed", () => {
+  // the rows already exist with an empty column; storing the rule would mean
+  // backfilling 56 and remembering it on every future upload
+  const actions = fs.readFileSync("src/app/portal/admin/client-attestations/actions.js", "utf8");
+  assert.match(actions, /supervisorOf\(\{/, "the send reads the rule");
+  assert.match(actions, /title: true/, "and selects the title it needs to");
+  const upload = actions.slice(
+    actions.indexOf("export async function uploadClientSchedules"),
+    actions.indexOf("export async function setClientRouting"),
+  );
+  assert.ok(upload.length > 500, "found the upload");
+  assert.doesNotMatch(upload, /supervisorOf/, "the upload stores nothing derived");
+});
+
+test("the screen counts and shows the same supervisor", () => {
+  // a screen that counts one thing and shows another is worse than either
+  const page = fs.readFileSync("src/app/portal/admin/client-attestations/[id]/page.js", "utf8");
+  assert.match(page, /const supFor = new Map\(/, "read once");
+  for (const use of [
+    /unrouted: rows\.filter\(\(a\) => !supFor\.get\(a\.id\)\.supervisor\)/,
+    /supervisor: set\.filter\(\(a\) => supFor\.get\(a\.id\)\.supervisor\)/,
+    /\? rows\.filter\(\(a\) => !supFor\.get\(a\.id\)\.supervisor\)/,
+  ]) assert.match(page, use, "the counts and the filter read it");
+  assert.doesNotMatch(page, /!a\.supervisorUserId/, "nothing reads the raw column any more");
 });

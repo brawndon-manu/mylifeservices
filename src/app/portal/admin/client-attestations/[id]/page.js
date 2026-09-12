@@ -17,6 +17,7 @@ import {
   setClientRouting,
 } from "../actions";
 import { titleHasSegment } from "@/lib/positions";
+import { supervisorOf } from "@/lib/client-attestations/routing";
 
 export const metadata = {
   title: "Client attestations",
@@ -43,7 +44,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
         orderBy: { clientName: "asc" },
         include: {
           staffUser: {
-            select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
+            select: { id: true, name: true, title: true, preferredFirstName: true, preferredLastName: true },
           },
           supervisor: {
             select: { id: true, name: true, preferredFirstName: true, preferredLastName: true },
@@ -55,6 +56,18 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
   if (!batch) notFound();
 
   const rows = batch.attestations;
+
+  // WHO EACH ROW'S SUPERVISOR ACTUALLY IS - a Field Supervisor attests their
+  // own clients, so the answer is not always the stored column. Read once here
+  // and used by the counts, the filter and the cell, because a screen that
+  // counts one thing and shows another is worse than either.
+  const isFieldSupervisor = (u) => titleHasSegment(u?.title, "Field Supervisor");
+  const supFor = new Map(
+    rows.map((a) => [
+      a.id,
+      supervisorOf({ supervisor: a.supervisor, staffUser: a.staffUser, isFieldSupervisor }),
+    ]),
+  );
 
   // WHO A CLIENT CAN BE ASSIGNED TO - Mánu 2026-09-12: "client with no staff
   // should get option to assign to staff but for this we can give them to a
@@ -81,7 +94,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
     .sort(byName);
   const counts = {
     all: rows.length,
-    unrouted: rows.filter((a) => !a.supervisorUserId).length,
+    unrouted: rows.filter((a) => !supFor.get(a.id).supervisor).length,
     signed: rows.filter((a) => a.signedAt).length,
     unsigned: rows.filter((a) => !a.signedAt).length,
   };
@@ -93,7 +106,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
   const unsigned = rows.filter((a) => !a.signedAt);
   const unsent = unsigned.filter((a) => !a.sentAt);
   const resolves = (set) => ({
-    supervisor: set.filter((a) => a.supervisorUserId).length,
+    supervisor: set.filter((a) => supFor.get(a.id).supervisor).length,
     staff: set.filter((a) => a.staffUserId && !a.clientSignedAt).length,
     client: 0, // client emails are not stored, so this destination never resolves
     other: set.length,
@@ -108,7 +121,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
 
   const shown =
     show === "unrouted"
-      ? rows.filter((a) => !a.supervisorUserId)
+      ? rows.filter((a) => !supFor.get(a.id).supervisor)
       : show === "signed"
         ? rows.filter((a) => a.signedAt)
         : show === "unsigned"
@@ -234,8 +247,13 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
                   {a.scheduledHours.toFixed(2)}
                 </td>
                 <td className="px-4 py-3">
-                  {a.supervisor ? (
-                    <span className="text-foreground">{preferredName(a.supervisor)}</span>
+                  {supFor.get(a.id).supervisor ? (
+                    <span className="text-foreground">
+                      {preferredName(supFor.get(a.id).supervisor)}
+                      {supFor.get(a.id).from === "self" && (
+                        <span className="block text-xs text-faint">Supervises this client</span>
+                      )}
+                    </span>
                   ) : a.signedAt ? (
                     <span className="text-amber-700 dark:text-amber-400">Not assigned</span>
                   ) : (
@@ -281,7 +299,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
                 <td className="px-4 py-3 text-right">
                   {!a.signedAt && (
                     <div className="flex items-center justify-end gap-1.5">
-                      {(!a.staffUser || !a.supervisor) && (
+                      {(!a.staffUser || !supFor.get(a.id).supervisor) && (
                         <>
                           {/* THE FORM LIVES HERE, ITS CONTROLS DO NOT. A form
                               cannot wrap table cells, so the selects sit in

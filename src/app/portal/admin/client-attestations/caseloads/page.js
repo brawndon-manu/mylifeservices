@@ -32,7 +32,7 @@ export default async function CaseloadsPage({ searchParams }) {
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
   const why = typeof sp?.why === "string" ? sp.why : null;
 
-  const [clients, users] = await Promise.all([
+  const [clients, users, waiting] = await Promise.all([
     prisma.client.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -61,12 +61,32 @@ export default async function CaseloadsPage({ searchParams }) {
         title: true,
       },
     }),
+    // WHAT IS ACTUALLY WAITING ON THIS SCREEN. Unsigned attestations whose
+    // supervisor column is empty - the paperwork that cannot be sent until
+    // somebody here is given a supervisor.
+    prisma.clientAttestation.findMany({
+      where: { signedAt: null, supervisorUserId: null, staffUserId: { not: null } },
+      select: { staffUserId: true },
+    }),
   ]);
 
   const supervisors = users
     .filter((u) => titleHasSegment(u.title, "Field Supervisor"))
     .map((u) => ({ id: u.id, name: preferredName(u) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // HOW MANY FORMS EACH GAP IS HOLDING UP. A Field Supervisor attests their own
+  // clients, so their rows are not waiting on anybody and are not counted -
+  // the same rule the attestations screen reads, or the two would disagree
+  // about what is outstanding.
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  const isFieldSupervisor = (u) => titleHasSegment(u?.title, "Field Supervisor");
+  const blocked = new Map();
+  for (const w of waiting) {
+    const u = usersById.get(w.staffUserId);
+    if (!u || isFieldSupervisor(u)) continue;
+    blocked.set(u.id, (blocked.get(u.id) || 0) + 1);
+  }
 
   // staff -> clients, from the roster
   const byStaff = new Map();
@@ -80,6 +100,22 @@ export default async function CaseloadsPage({ searchParams }) {
     if (!byStaff.has(k)) byStaff.set(k, { staff: c.staffUser, clients: [] });
     byStaff.get(k).clients.push(c);
   }
+
+  // STAFF THE ROSTER DOES NOT LIST. 11 people carry September clients with no
+  // roster row of their own, so this screen never showed them and their
+  // supervisor could not be set anywhere - 26 forms stuck behind a name that
+  // was not on the page.
+  for (const [staffId, n] of blocked) {
+    if (byStaff.has(staffId)) continue;
+    const u = usersById.get(staffId);
+    const full = clients.find((c) => c.staffUser?.id === staffId)?.staffUser;
+    byStaff.set(staffId, {
+      staff: full || { ...u, supervisorId: null, supervisor: null },
+      clients: [],
+      offRoster: n,
+    });
+  }
+  for (const g of byStaff.values()) g.blocked = blocked.get(g.staff.id) || 0;
 
   // supervisor -> staff groups
   const bySupervisor = new Map();
@@ -99,7 +135,11 @@ export default async function CaseloadsPage({ searchParams }) {
   );
   for (const b of supervisorBlocks)
     b.groups.sort((a, z) => preferredName(a.staff).localeCompare(preferredName(z.staff)));
-  noSupervisor.sort((a, z) => preferredName(a.staff).localeCompare(preferredName(z.staff)));
+  // whoever is holding up the most forms first - this block is a worklist, not
+  // a directory
+  noSupervisor.sort(
+    (a, z) => z.blocked - a.blocked || preferredName(a.staff).localeCompare(preferredName(z.staff)),
+  );
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
@@ -228,6 +268,16 @@ function SupervisorBlock({ title, tone, groups, supervisors }) {
                 {g.clients.length}
               </span>
             </div>
+            {g.blocked > 0 && (
+              <p className="mt-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                {g.blocked} {g.blocked === 1 ? "form is" : "forms are"} waiting on this
+              </p>
+            )}
+            {g.clients.length === 0 && (
+              <p className="mt-1 text-xs text-faint">
+                Not on the roster. Carries clients on the schedule.
+              </p>
+            )}
             <form
               action={setStaffSupervisor.bind(null, g.staff.id)}
               className="mt-3 flex items-center gap-2"

@@ -26,7 +26,7 @@ import { fetchStored, formFileName } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { titleHasSegment } from "@/lib/positions";
 import { attestationLiveSend } from "@/lib/timesheet-mode";
-import { byClientKey, isEmptyRouting } from "@/lib/client-attestations/routing";
+import { byClientKey, isEmptyRouting, supervisorOf } from "@/lib/client-attestations/routing";
 import { SEND_TARGETS } from "@/lib/client-attestations/targets";
 import { readClientRoster, matchRosterStaff } from "@/lib/client-attestations/roster";
 
@@ -510,6 +510,9 @@ export async function setStaffSupervisor(staffUserId, formData) {
   });
   revalidatePath("/portal/admin/client-attestations/caseloads");
   revalidatePath("/portal/admin/client-attestations");
+  // the months themselves - the rows just moved out of "No supervisor" and the
+  // count on that screen has to say so
+  revalidatePath("/portal/admin/client-attestations/[id]", "page");
 }
 
 // SEND THE WHOLE MONTH, or what is left of it. The row buttons handle one
@@ -568,7 +571,7 @@ export async function sendAttestations(batchId, formData) {
         select: { email: true, name: true, preferredFirstName: true, preferredLastName: true },
       },
       staffUser: {
-        select: { email: true, name: true, preferredFirstName: true, preferredLastName: true },
+        select: { email: true, name: true, title: true, preferredFirstName: true, preferredLastName: true },
       },
     },
     orderBy: { clientName: "asc" },
@@ -589,11 +592,19 @@ export async function sendAttestations(batchId, formData) {
       let to = null;
       // who this destination means for THIS row, and why it may mean nobody
       if (target === "supervisor") {
-        if (!row.supervisor?.email) {
+        // a Field Supervisor attests their own clients - his call, 2026-09-12.
+        // Read here rather than stored, so the rows that already exist with
+        // nobody on them resolve with no backfill.
+        const { supervisor: who } = supervisorOf({
+          supervisor: row.supervisor,
+          staffUser: row.staffUser,
+          isFieldSupervisor: (u) => titleHasSegment(u?.title, "Field Supervisor"),
+        });
+        if (!who?.email) {
           skipped.push(`${row.clientName} (no supervisor)`);
           continue;
         }
-        to = { email: row.supervisor.email, name: preferredName(row.supervisor) };
+        to = { email: who.email, name: preferredName(who) };
       } else if (target === "staff") {
         if (!row.staffUser?.email) {
           skipped.push(`${row.clientName} (no staff account)`);
