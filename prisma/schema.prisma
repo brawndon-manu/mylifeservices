@@ -134,6 +134,8 @@ model User {
   clientAttestationsAsStaff    ClientAttestation[]           @relation("ClientAttestationStaff")
   clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
   clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
+  routedClients     ClientRouting[] @relation("ClientRoutingStaff")
+  supervisedRoutings ClientRouting[] @relation("ClientRoutingSupervisor")
   clientReportsConducted       ClientReport[]                @relation("ClientReportConductedBy")
   clientAuthorizationsUploaded ClientAuthorization[]         @relation("ClientAuthorizationUploadedBy")
 }
@@ -2061,6 +2063,46 @@ model Client {
   updatedAt DateTime @updatedAt
 
   @@index([staffUserId])
+}
+
+// ROUTING SOMEBODY SET BY HAND, 2026-09-12. Mánu: "client with no staff should
+// get option to assign to staff but for this we can give them to a supervisor
+// too."
+//
+// KEYED BY clientKey AND NOT Client.id, for the reason ClientAttestation is:
+// `uploadClientRoster` runs client.deleteMany({}) and recreates the table from
+// the spreadsheet, so anything stored on Client is destroyed by the next
+// export HR sends. 105 of 274 clients have no Case Worker in the file today,
+// and re-typing their staff every month is not a thing anyone would keep doing.
+//
+// A SUPERVISOR CAN BE SET WITHOUT A STAFF MEMBER. Normally a client's
+// supervisor is whoever supervises their assigned staff, but a client with
+// nobody assigned still has paperwork that has to reach a person, so the two
+// are independent here.
+//
+// BOTH NULLABLE, and a row with both null is the same as no row. The screen
+// deletes rather than storing an empty one.
+model ClientRouting {
+  // the name as sorted tokens - see src/lib/client-attestations/names.js
+  clientKey String @id
+
+  // the name as it stood when this was set, so the row still reads right if
+  // the roster later spells the person differently
+  clientName String
+
+  staffUserId String?
+  staffUser   User?   @relation("ClientRoutingStaff", fields: [staffUserId], references: [id], onDelete: SetNull)
+
+  supervisorUserId String?
+  supervisor       User?   @relation("ClientRoutingSupervisor", fields: [supervisorUserId], references: [id], onDelete: SetNull)
+
+  setById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffUserId])
+  @@index([supervisorUserId])
 }
 
 // A REPORT FILLED OUT ABOUT ONE CLIENT, 2026-08-31.

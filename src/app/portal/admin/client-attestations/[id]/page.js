@@ -14,7 +14,9 @@ import {
   sendAttestationOne,
   sendAttestations,
   recordPaperSignature,
+  setClientRouting,
 } from "../actions";
+import { titleHasSegment } from "@/lib/positions";
 
 export const metadata = {
   title: "Client attestations",
@@ -53,6 +55,30 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
   if (!batch) notFound();
 
   const rows = batch.attestations;
+
+  // WHO A CLIENT CAN BE ASSIGNED TO - Mánu 2026-09-12: "client with no staff
+  // should get option to assign to staff but for this we can give them to a
+  // supervisor too."
+  //
+  // Both lists are loaded once and the pickers are drawn only on the rows that
+  // need one. 98 active accounts against 233 rows with no supervisor: a select
+  // on every row and every column would be 25,000 options on one page. Only 22
+  // rows have no staff, so the long list is drawn 22 times and the short one
+  // 233 times.
+  const people = await prisma.user.findMany({
+    where: { deactivatedAt: null },
+    select: { id: true, name: true, title: true, preferredFirstName: true, preferredLastName: true },
+  });
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  const staffChoices = people
+    .map((u) => ({ id: u.id, name: preferredName(u) }))
+    .sort(byName);
+  // the same definition the caseloads screen uses, so one screen cannot offer
+  // somebody the other refuses
+  const supervisorChoices = people
+    .filter((u) => titleHasSegment(u.title, "Field Supervisor"))
+    .map((u) => ({ id: u.id, name: preferredName(u) }))
+    .sort(byName);
   const counts = {
     all: rows.length,
     unrouted: rows.filter((a) => !a.supervisorUserId).length,
@@ -187,7 +213,19 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted">
-                  {a.staffUser ? preferredName(a.staffUser) : a.caseWorker || "-"}
+                  {a.staffUser ? (
+                    preferredName(a.staffUser)
+                  ) : a.signedAt ? (
+                    a.caseWorker || "-"
+                  ) : (
+                    <RoutePick
+                      form={`route-${a.id}`}
+                      name="staffUserId"
+                      choices={staffChoices}
+                      label={`Staff for ${a.clientName}`}
+                      empty="Nobody"
+                    />
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-muted">
                   {a.entryCount}
@@ -198,10 +236,16 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
                 <td className="px-4 py-3">
                   {a.supervisor ? (
                     <span className="text-foreground">{preferredName(a.supervisor)}</span>
+                  ) : a.signedAt ? (
+                    <span className="text-amber-700 dark:text-amber-400">Not assigned</span>
                   ) : (
-                    <span className="text-amber-700 dark:text-amber-400">
-                      Not assigned
-                    </span>
+                    <RoutePick
+                      form={`route-${a.id}`}
+                      name="supervisorUserId"
+                      choices={supervisorChoices}
+                      label={`Supervisor for ${a.clientName}`}
+                      empty="Nobody"
+                    />
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted">
@@ -237,6 +281,32 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
                 <td className="px-4 py-3 text-right">
                   {!a.signedAt && (
                     <div className="flex items-center justify-end gap-1.5">
+                      {(!a.staffUser || !a.supervisor) && (
+                        <>
+                          {/* THE FORM LIVES HERE, ITS CONTROLS DO NOT. A form
+                              cannot wrap table cells, so the selects sit in
+                              their own columns and join this one by id - which
+                              is what the HTML form attribute is for. One
+                              submit sends both, so assigning a staff member
+                              and a supervisor is one action, not two. */}
+                          <form id={`route-${a.id}`} action={setClientRouting} />
+                          <input type="hidden" name="clientKey" value={a.clientKey} form={`route-${a.id}`} />
+                          <input type="hidden" name="clientName" value={a.clientName} form={`route-${a.id}`} />
+                          {a.staffUser && (
+                            <input type="hidden" name="staffUserId" value={a.staffUser.id} form={`route-${a.id}`} />
+                          )}
+                          {a.supervisor && (
+                            <input type="hidden" name="supervisorUserId" value={a.supervisor.id} form={`route-${a.id}`} />
+                          )}
+                          <button
+                            type="submit"
+                            form={`route-${a.id}`}
+                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:text-foreground"
+                          >
+                            Assign
+                          </button>
+                        </>
+                      )}
                       {a.formUrl && (
                         <SendButton
                           attestation={{
@@ -287,6 +357,28 @@ function Filter({ id, k, now, label, n }) {
     >
       {label} <span className="tabular-nums">{n}</span>
     </Link>
+  );
+}
+
+// ONE COLUMN'S PICKER. Quiet until used: it reads "Nobody" because that is
+// what the row currently says, and the long staff list is only ever drawn on
+// the rows that have no staff.
+function RoutePick({ form, name, choices, label, empty }) {
+  return (
+    <select
+      name={name}
+      form={form}
+      defaultValue=""
+      aria-label={label}
+      className="w-full min-w-0 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs text-muted"
+    >
+      <option value="">{empty}</option>
+      {choices.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
   );
 }
 

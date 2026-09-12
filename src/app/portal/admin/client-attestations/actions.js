@@ -26,6 +26,7 @@ import { fetchStored, formFileName } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { titleHasSegment } from "@/lib/positions";
 import { attestationLiveSend } from "@/lib/timesheet-mode";
+import { byClientKey, isEmptyRouting } from "@/lib/client-attestations/routing";
 import { SEND_TARGETS } from "@/lib/client-attestations/targets";
 import { readClientRoster, matchRosterStaff } from "@/lib/client-attestations/roster";
 
@@ -97,6 +98,12 @@ export async function uploadClientSchedules(formData) {
     ...roster.map((r) => r.caseWorkerName).filter(Boolean),
   ]);
   const rosterByKey = new Map(roster.map((r) => [r.clientKey, r]));
+  // routings somebody set by hand, which outlive every roster re-import
+  const routingByKey = byClientKey(
+    await prisma.clientRouting.findMany({
+      select: { clientKey: true, staffUserId: true, supervisorUserId: true },
+    }),
+  );
 
   const source = await putBlob(
     `client-attestations/${randomBytes(12).toString("hex")}.pdf`,
@@ -130,8 +137,14 @@ export async function uploadClientSchedules(formData) {
     // that case waits for a person rather than picking one of them.
     const rosterRow = rosterByKey.get(clientKey(client.clientName)) || null;
     const resolved = [...new Set(matches.map((m) => m.userId).filter(Boolean))];
+    // A HAND-SET ROUTING BEATS BOTH - see src/lib/client-attestations/routing.js.
+    // The roster is a monthly re-export with 105 of 274 Case Worker cells
+    // blank; an answer somebody typed must not be overwritten by the next one.
+    const routed = routingByKey.get(clientKey(client.clientName)) || null;
     const staffUserId =
-      rosterRow?.staffUserId || (resolved.length === 1 ? resolved[0] : null);
+      routed?.staffUserId
+      || rosterRow?.staffUserId
+      || (resolved.length === 1 ? resolved[0] : null);
     const staffUser = staffUserId ? staffAccounts.find((u) => u.id === staffUserId) : null;
 
     let formUrl = null;
@@ -159,8 +172,12 @@ export async function uploadClientSchedules(formData) {
       caseWorker: rosterRow?.caseWorkerName || null,
       office: rosterRow?.office || null,
       staffUserId,
-      supervisorUserId: staffUser?.supervisorId || null,
-      matchMethod: rosterRow?.staffUserId
+      // a supervisor set by hand stands on its own, so a client with no staff
+      // at all still reaches a person
+      supervisorUserId: routed?.supervisorUserId || staffUser?.supervisorId || null,
+      matchMethod: routed?.staffUserId
+        ? "manual"
+        : rosterRow?.staffUserId
         ? "roster"
         : staffUserId
           ? "initial"
@@ -189,6 +206,64 @@ export async function uploadClientSchedules(formData) {
 
   revalidatePath("/portal/admin/client-attestations");
   redirect(`/portal/admin/client-attestations/${batch.id}`);
+}
+
+// ROUTING ONE CLIENT BY HAND - Mánu 2026-09-12: "client with no staff should
+// get option to assign to staff but for this we can give them to a supervisor
+// too."
+//
+// Stored against clientKey rather than the Client row, because a roster import
+// deletes and recreates that table. Clearing both fields deletes the row: an
+// assignment that says nothing should not look like one that does.
+//
+// It updates the OPEN months too. The stored attestation is the thing a send
+// reads, so a routing fixed today has to reach the form that is waiting to go
+// out - but never a signed one, whose routing is part of what was agreed.
+export async function setClientRouting(formData) {
+  const user = await requireAccess();
+  const clientKeyIn = String(formData.get("clientKey") || "").trim();
+  const clientName = String(formData.get("clientName") || "").trim();
+  if (!clientKeyIn) return { ok: false, error: "noclient" };
+
+  const staffUserId = String(formData.get("staffUserId") || "").trim() || null;
+  const supervisorUserId = String(formData.get("supervisorUserId") || "").trim() || null;
+
+  // a picker can only ever name a real active account
+  const ids = [staffUserId, supervisorUserId].filter(Boolean);
+  if (ids.length) {
+    const found = await prisma.user.count({ where: { id: { in: ids }, deactivatedAt: null } });
+    if (found !== new Set(ids).size) return { ok: false, error: "nouser" };
+  }
+
+  if (isEmptyRouting({ staffUserId, supervisorUserId })) {
+    await prisma.clientRouting.deleteMany({ where: { clientKey: clientKeyIn } });
+  } else {
+    await prisma.clientRouting.upsert({
+      where: { clientKey: clientKeyIn },
+      create: { clientKey: clientKeyIn, clientName, staffUserId, supervisorUserId, setById: user?.id || null },
+      update: { clientName, staffUserId, supervisorUserId, setById: user?.id || null },
+    });
+  }
+
+  // carry it onto the months still waiting to be signed
+  const supervisorFallback = staffUserId
+    ? (await prisma.user.findUnique({ where: { id: staffUserId }, select: { supervisorId: true } }))?.supervisorId || null
+    : null;
+  await prisma.clientAttestation.updateMany({
+    where: { clientKey: clientKeyIn, signedAt: null },
+    data: {
+      staffUserId,
+      supervisorUserId: supervisorUserId || supervisorFallback,
+      ...(staffUserId ? { matchMethod: "manual" } : {}),
+    },
+  });
+
+  revalidatePath("/portal/admin/client-attestations");
+  // and the month the picker was used on. The routing is set from a batch page
+  // and the row has to redraw there, so the dynamic segment is revalidated by
+  // its route rather than by one id - a client appears on every open month.
+  revalidatePath("/portal/admin/client-attestations/[id]", "page");
+  return { ok: true, staffUserId, supervisorUserId };
 }
 
 // ASSIGNING THE SUPERVISOR BY HAND, until the per-staff mapping is filled in.
