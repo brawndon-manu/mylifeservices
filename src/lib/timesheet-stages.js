@@ -48,6 +48,19 @@ export const DP_STAGES = [
   { key: "done", label: "Done" },
 ];
 
+// A MONTH OF CLIENT SCHEDULES, its own steps. One PDF in, one drawn form per
+// client out, and the drawing is nearly all of the wait: 240 clients is 240
+// renders and 240 stores. Mánu 2026-09-12, watching it sit on "Building the
+// forms...": "its stuck here". It was not - it had another minute to go and no
+// way to say so.
+export const CLIENT_SCHEDULE_STAGES = [
+  { key: "reading", label: "Reading the schedules PDF" },
+  { key: "storing", label: "Storing the export" },
+  { key: "generating", label: "Drawing a form for each client" },
+  { key: "saving", label: "Saving the month" },
+  { key: "done", label: "Done" },
+];
+
 // how many names to keep in the ticker. enough that it reads as moving, few
 // enough that the payload stays small on a poll every second.
 export const RECENT_MAX = 4;

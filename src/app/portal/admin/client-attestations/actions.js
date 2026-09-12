@@ -25,6 +25,8 @@ import { sendAttestation } from "@/lib/client-attestations/send";
 import { fetchStored, formFileName } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { titleHasSegment } from "@/lib/positions";
+import { progressKey, setProgress } from "@/lib/timesheet-progress";
+import { pushRecent } from "@/lib/timesheet-stages";
 import { attestationLiveSend } from "@/lib/timesheet-mode";
 import { byClientKey, isEmptyRouting, supervisorOf } from "@/lib/client-attestations/routing";
 import { SEND_TARGETS } from "@/lib/client-attestations/targets";
@@ -40,6 +42,17 @@ async function requireAccess() {
 
 export async function uploadClientSchedules(formData) {
   const user = await requireAccess();
+
+  // WHAT IT IS DOING, WHILE IT DOES IT - Mánu 2026-09-12 watching a 240-client
+  // month sit on "Building the forms...": "its stuck here". It was not; it had
+  // most of a minute left and no way to say so. Same store the timesheet
+  // upload uses, its own scope so the two counters can never be confused.
+  //
+  // Every write is best-effort inside setProgress: a redis blip costs the
+  // counter, never the upload.
+  const prog = progressKey(user.id, formData.get("uploadId"), "ca");
+  const P = { stage: "reading", done: 0, total: null, recent: [] };
+  await setProgress(prog, P);
 
   const file = formData.get("file");
   if (!file || typeof file !== "object" || !("size" in file) || file.size === 0) {
@@ -105,6 +118,8 @@ export async function uploadClientSchedules(formData) {
     }),
   );
 
+  P.stage = "storing";
+  await setProgress(prog, P);
   const source = await putBlob(
     `client-attestations/${randomBytes(12).toString("hex")}.pdf`,
     buffer,
@@ -119,6 +134,10 @@ export async function uploadClientSchedules(formData) {
   // takes a network round trip, and 252 of those one after another is most of
   // the wait. A handful at a time keeps it quick without opening 252 sockets at
   // once - and the results are collected in order, so page 1 is still row 1.
+  P.stage = "generating";
+  P.total = parsed.clients.length;
+  await setProgress(prog, P);
+
   const rows = [];
   const LANES = 8;
   const build = async (client) => {
@@ -162,6 +181,12 @@ export async function uploadClientSchedules(formData) {
       console.error(`attestation render failed for ${client.clientName}:`, e?.message || e);
     }
 
+    P.done += 1;
+    P.recent = pushRecent(P.recent, { name: client.clientName, failed: !formUrl });
+    // throttled: the screen polls once a second, so a write per client would
+    // buy nothing and cost a round trip inside the slowest loop here
+    await setProgress(prog, P, { minGapMs: 300 });
+
     return {
       clientName: client.clientName,
       clientKey: clientKey(client.clientName),
@@ -193,6 +218,9 @@ export async function uploadClientSchedules(formData) {
     rows.push(...(await Promise.all(group.map(build))));
   }
 
+  P.stage = "saving";
+  await setProgress(prog, P);
+
   const batch = await prisma.clientAttestationBatch.create({
     data: {
       monthLabel: parsed.monthLabel,
@@ -203,6 +231,9 @@ export async function uploadClientSchedules(formData) {
     },
     select: { id: true },
   });
+
+  P.stage = "done";
+  await setProgress(prog, P);
 
   revalidatePath("/portal/admin/client-attestations");
   redirect(`/portal/admin/client-attestations/${batch.id}`);

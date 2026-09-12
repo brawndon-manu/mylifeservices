@@ -27,10 +27,16 @@ const TTL_SECONDS = 900;
 // read another's upload progress by guessing, and a malformed id can only ever
 // collide with that user's own runs.
 const KEY_MAX = 64;
-export function progressKey(userId, uploadId) {
+
+// `scope` keeps one upload's counter from ever being read as another's. It
+// defaults to the timesheet lane this was built for, so every existing caller
+// is unchanged; the client schedules upload passes its own. Same store, same
+// rules, separate keys - one mechanism rather than a second one copied.
+export function progressKey(userId, uploadId, scope = "ts") {
   const safe = String(uploadId || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, KEY_MAX);
-  if (!userId || !safe) return null;
-  return `mls:ts:progress:${userId}:${safe}`;
+  const lane = String(scope || "").replace(/[^a-z]/g, "").slice(0, 8);
+  if (!userId || !safe || !lane) return null;
+  return `mls:${lane}:progress:${userId}:${safe}`;
 }
 
 // One write, never a read-modify-write. The caller already holds the whole
