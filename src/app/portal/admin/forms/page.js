@@ -63,8 +63,18 @@ export default async function FormSubmissionsPage({ searchParams }) {
     <section className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackLink href="/portal/admin">Back to Admin</BackLink>
-        {/* file downloads, not pages - Link would try to client-navigate */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* THE ONE ACTION ON THIS SCREEN, and the only way to reach it -
+              Mánu 2026-09-12: "where do i get here for other emails i need to
+              do". The page existed with nothing pointing at it. A real page,
+              so a Link rather than an anchor. */}
+          <Link
+            href="/portal/admin/forms/email-import"
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand-light px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+          >
+            Record an email sign-off
+          </Link>
+          {/* file downloads, not pages - Link would try to client-navigate */}
           <a
             href={`/portal/admin/forms/csv${officeQs}`}
             className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"

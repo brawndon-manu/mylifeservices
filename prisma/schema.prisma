@@ -680,6 +680,13 @@ model FormSubmission {
   submitterEmail String
   pdfUrl         String
   pdfName        String?
+  // WHAT THE PERSON ACTUALLY WROTE, when the submission came from words rather
+  // than a filled form - Mánu 2026-09-12 on the SB-294 backfill: "maybe lets
+  // incldue all of the people response to the email as well since we have
+  // timestamps too". The reply IS the signature on an email acknowledgment, so
+  // a record that only counts them is missing the evidence. Null on an
+  // ordinary form submission, where the PDF is the evidence.
+  submittedText  String?
   ip             String?
   createdAt      DateTime @default(now())
 

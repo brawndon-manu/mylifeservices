@@ -20,10 +20,18 @@ export function submissionRow(s) {
   };
 }
 
+// EVERY WAY A SUBMISSION CAN BE ATTRIBUTED, in one place. The record page does
+// `ATTRIBUTION[s.attribution] || ATTRIBUTION.unassigned`, so a value it has not
+// been told about does not break - it quietly reads "Needs assignment" on rows
+// that are assigned, which is how the email import shipped 68 correctly
+// attributed replies all wearing a badge saying nobody had claimed them.
+export const ATTRIBUTED = ["signed-in", "email-match", "assigned", "email-import"];
+
 // how a submission got tied to a person, as words
-export const ATTRIBUTION_LABELS = {
+const ATTRIBUTION_LABELS = {
   "signed-in": "signed in",
   "email-match": "email match",
+  "email-import": "read off an email thread",
   assigned: "assigned",
   unassigned: "needs assignment",
 };
@@ -62,7 +70,7 @@ export function submissionWhere({ form, status, period, q, office }) {
   if (form) where.formId = form;
   if (office) where.user = { offices: { has: office } };
   if (status === "unassigned") where.attribution = "unassigned";
-  else if (status === "attributed") where.attribution = { in: ["signed-in", "email-match", "assigned"] };
+  else if (status === "attributed") where.attribution = { in: ATTRIBUTED };
   const since = periodStart(period);
   if (since) where.createdAt = { gte: since };
   if (q) {

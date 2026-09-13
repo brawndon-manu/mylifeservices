@@ -23,6 +23,8 @@ export const dynamic = "force-dynamic";
 const ATTRIBUTION = {
   "signed-in": { label: "Signed in", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" },
   "email-match": { label: "Email match", cls: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" },
+  // acknowledged by email before the portal held it, read off a pasted thread
+  "email-import": { label: "From an email thread", cls: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300" },
   assigned: { label: "Assigned", cls: "bg-sky-100 text-brand" },
   unassigned: { label: "Needs assignment", cls: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" },
 };
@@ -50,9 +52,16 @@ export default async function FormRecordPage({ params, searchParams }) {
         user: { select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, title: true, image: true, email: true } },
       },
     }),
+    // PEOPLE WHO HAVE LEFT ARE ASSIGNABLE TOO - Mánu 2026-09-12, on backfilling
+    // email sign-offs: "we can make deavcitaved accounts for eployees that are
+    // no longer with us". A record of who acknowledged a 2026 notice has to be
+    // able to name somebody who left in 2027, so the list cannot be the people
+    // still here. They are marked rather than hidden.
     prisma.user.findMany({
-      where: { deactivatedAt: null },
-      select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, title: true, image: true },
+      select: {
+        id: true, name: true, preferredFirstName: true, preferredLastName: true,
+        title: true, image: true, deactivatedAt: true,
+      },
       orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
     }),
   ]);
@@ -73,7 +82,9 @@ export default async function FormRecordPage({ params, searchParams }) {
   const candidates = activeUsers.map((u) => ({
     id: u.id,
     displayName: preferredName(u),
-    title: u.title || "",
+    // somebody who has left still shows their old job, with the fact they are
+    // gone said plainly beside it
+    title: u.deactivatedAt ? `${u.title || "Staff"} · no longer here` : u.title || "",
     image: u.image || null,
   }));
 

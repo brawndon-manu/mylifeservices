@@ -4,6 +4,9 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
 import { OFFICE_FILTER_LABELS } from "@/lib/positions";
 import { renderFormSignatureReport } from "@/lib/form-report-pdf";
+import { appendSourceDocument, appendReplies } from "@/lib/forms/email-ack-pdf";
+import { fetchStored } from "@/lib/client-attestations/serve";
+import { preferredName } from "@/lib/contacts";
 import { PERIODS, readFilters, submissionWhere, submissionRow } from "../../query";
 import { fileDate } from "../../../acknowledgments/audit";
 import { fmtPosted } from "../../../acknowledgments/roster";
@@ -21,7 +24,7 @@ export async function GET(req, { params }) {
   const { id } = await params;
   const form = await prisma.form.findUnique({
     where: { id },
-    select: { id: true, title: true, category: true },
+    select: { id: true, title: true, category: true, fileUrl: true },
   });
   if (!form) return new NextResponse("Not found", { status: 404 });
 
@@ -75,6 +78,37 @@ export async function GET(req, { params }) {
   } catch (e) {
     console.error("form signature report pdf failed:", e);
     return new NextResponse("Could not build the report", { status: 500 });
+  }
+
+  // WHAT EACH PERSON WROTE, where the submission is words rather than a filled
+  // form. Before the roster, the reader sees the evidence; after it, the
+  // document they were agreeing to.
+  try {
+    bytes = await appendReplies(
+      Buffer.from(bytes),
+      submissions.map((sub) => ({
+        name: sub.user ? preferredName(sub.user) : sub.submitterName,
+        asTyped: sub.submitterName,
+        when: sub.createdAt,
+        text: sub.submittedText,
+      })),
+    );
+  } catch (e) {
+    console.error("could not attach the replies to the report:", e);
+  }
+
+  // AND THE DOCUMENT ITSELF. A roster of who acknowledged does not say what
+  // they acknowledged, which is what made this report useless on its own for
+  // the SB-294 backfill - it is the notice and the email that carry the
+  // obligation. Best effort: a document that will not fetch costs the
+  // attachment, never the report.
+  try {
+    const source = await fetchStored(form.fileUrl);
+    if (source) {
+      bytes = await appendSourceDocument(Buffer.from(bytes), source, { title: form.title });
+    }
+  } catch (e) {
+    console.error("could not attach the source document to the report:", e);
   }
 
   const slug = form.title

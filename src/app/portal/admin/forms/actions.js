@@ -21,8 +21,12 @@ async function requireRecordsAccess() {
 export async function assignFormSubmission(submissionId, userId) {
   await requireRecordsAccess();
 
+  // A DEACTIVATED ACCOUNT IS A VALID ANSWER. An email sign-off from May can
+  // belong to somebody who left in August, and refusing to record it would
+  // leave the submission unassigned for ever - see the candidate list in
+  // forms/[id]/page.js.
   const target = await prisma.user.findFirst({
-    where: { id: userId, deactivatedAt: null },
+    where: { id: userId },
     select: { id: true },
   });
   if (!target) redirect("/portal/admin/forms?error=assign");
