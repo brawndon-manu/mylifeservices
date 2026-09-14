@@ -28,7 +28,11 @@ export function submissionRow(s) {
 export const ATTRIBUTED = ["signed-in", "email-match", "assigned", "email-import"];
 
 // how a submission got tied to a person, as words
-const ATTRIBUTION_LABELS = {
+// Exported because the CSV route prints the same words as the screen. Dropping
+// the keyword here is what took production down from b6715aa on 2026-09-13:
+// nothing in the tests or the dev server touches this route, so the only thing
+// that noticed was the build.
+export const ATTRIBUTION_LABELS = {
   "signed-in": "signed in",
   "email-match": "email match",
   "email-import": "read off an email thread",
