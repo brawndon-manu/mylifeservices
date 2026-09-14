@@ -1,0 +1,16 @@
+.selectionActions { display: flex; gap: 16px; margin-bottom: 12px; }
+.selectionActions button { min-height: 32px; color: var(--accent-strong); font-size: 12px; cursor: pointer; }
+.selectionActions button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.search { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); }
+.search svg { flex-shrink: 0; }
+.search input { min-width: 0; width: 100%; min-height: 44px; padding: 8px 0; background: transparent; color: var(--foreground); font-size: 13px; }
+.search input::placeholder { color: var(--muted); }
+.action { margin-top: 6px; color: var(--foreground); font-size: 12px; line-height: 1.7; }
+.sourceBlock { margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.clockInfo { padding: 16px; border-radius: 8px; background: var(--surface-2); font-size: 12px; line-height: 1.7; color: var(--muted); }
+.clockInfo h4 { margin-bottom: 8px; color: var(--foreground); font-weight: 500; }
+.clockInfo li + li { margin-top: 6px; }
+.loadMore { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
+.loadMore button { cursor: pointer; }
+.loadMore p { color: var(--muted); font-size: 12px; }
+@media (max-width: 700px) { .search input { font-size: 16px; } }

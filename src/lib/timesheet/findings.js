@@ -690,12 +690,14 @@ export function buildFindings(batch) {
   // with five people drew "ILS Service" five times over. `clientOf` is the same
   // cut `serviceOf` makes, taken from the other side of it.
   //
-  // Keyed on timesheet AND date, so a rest row that matched no timesheet simply
-  // finds nothing and draws no control - which is right, since there is no
-  // stored day behind it to draw.
+  // Include schedule-only dates: an unworked day still has a roster to inspect.
+  // Keep punches empty on those dates; scheduled time is not worked time.
   const dayViews = new Map();
   for (const t of batch.timesheets) {
-    for (const d of t.data?.days || []) {
+    const storedDays = new Map((t.data?.days || []).map((d) => [d.date, d]));
+    const dates = new Set([...storedDays.keys(), ...Object.keys(t.data?.scheduleCheck?.byDate || {})]);
+    for (const date of dates) {
+      const d = storedDays.get(date) || { date };
       const blocks = [];
       for (const sh of t.data?.scheduleCheck?.byDate?.[d.date]?.shifts || []) {
         const at = blockTimes(sh.text);
