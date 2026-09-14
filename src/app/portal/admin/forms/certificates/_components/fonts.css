@@ -1,0 +1,29 @@
+/* THE TWO SHIPPED FACES, FOR THE PREVIEW ONLY.
+ *
+ * The renderer reads the same two files off disk and embeds them subset; this
+ * is the browser's copy so that what is drawn on the picture is the face the
+ * PDF will use. A preview in the wrong face is worse than no preview: a name
+ * at 28pt is 264pt wide in Great Vibes and 340pt in Playfair Display, so the
+ * marker would be placed against a width nobody gets.
+ *
+ * Fetched only when one of them is actually selected, which is why the heavier
+ * of the two costs nothing on a screen that never picks it.
+ *
+ * Both are OFL. The licences sit beside the files in public/fonts.
+ */
+
+@font-face {
+  font-family: "MLS Great Vibes";
+  src: url("/fonts/GreatVibes-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MLS Playfair Display";
+  src: url("/fonts/PlayfairDisplay-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}

@@ -13,8 +13,9 @@
 // and the record only ever holds points.
 import { useState } from "react";
 import DatePicker from "@/components/DatePicker";
-import { printedDate } from "@/lib/certificates/render";
+import { printedDate } from "@/lib/certificates/printed-date";
 import { toPoints } from "@/lib/certificates/placement";
+import { DEFAULT_FACE, DEFAULT_COLOR, cleanColor } from "@/lib/certificates/faces";
 import PlacementPanel from "./_components/PlacementPanel";
 import { renderPages } from "./_components/render-pages";
 
@@ -27,8 +28,6 @@ export default function CertificateBuilder({ candidates, action }) {
   // different times".
   const [templates, setTemplates] = useState([]);
   const [at, setAt] = useState(0);
-  const [placing, setPlacing] = useState("name");
-  const [guides, setGuides] = useState(true);
   const [picked, setPicked] = useState([]);
   const [q, setQ] = useState("");
   const [typed, setTyped] = useState("");
@@ -66,6 +65,8 @@ export default function CertificateBuilder({ candidates, action }) {
       align: "center",
       dateSpot: null,
       dateSize: 14,
+      face: DEFAULT_FACE,
+      color: DEFAULT_COLOR,
     };
   }
 
@@ -99,16 +100,6 @@ export default function CertificateBuilder({ candidates, action }) {
   const ready = templates.length > 0 && placed === templates.length && people > 0
     && templates.every((t) => t.title.trim());
 
-  function onPick(e, index) {
-    const r = e.currentTarget.getBoundingClientRect();
-    const at2 = {
-      page: index,
-      xPct: (e.clientX - r.left) / r.width,
-      yPct: (e.clientY - r.top) / r.height,
-    };
-    patch(at, placing === "date" ? { dateSpot: at2 } : { spot: at2 });
-  }
-
   // NOT A SUBMIT BUTTON, ON PURPOSE. The form has no action of its own - it
   // calls a server action from here - so a press before this component has
   // hydrated makes the browser do a plain submit: a full navigation that the
@@ -133,6 +124,8 @@ export default function CertificateBuilder({ candidates, action }) {
         ...toPoints({ xPct: t.spot.xPct, yPct: t.spot.yPct, pdfW: np.pdfW, pdfH: np.pdfH }),
         size: t.size,
         align: t.align,
+        face: t.face,
+        color: cleanColor(t.color),
       };
       if (t.dateSpot) {
         const dp = t.pages[t.dateSpot.page];

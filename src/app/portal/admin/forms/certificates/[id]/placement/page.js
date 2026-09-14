@@ -20,7 +20,7 @@ export default async function CertificatePlacementPage({ params }) {
     where: { id },
     select: {
       id: true, title: true, templateUrl: true, issuedOn: true,
-      page: true, x: true, y: true, size: true, align: true,
+      page: true, x: true, y: true, size: true, align: true, face: true, color: true,
       datePage: true, dateX: true, dateY: true, dateSize: true, dateAlign: true,
       _count: { select: { certificates: true } },
       // THE SAMPLE IS A REAL ONE. Drawing "Sample Name" would show a width

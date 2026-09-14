@@ -10,25 +10,21 @@
 // it converts before saving - storing pixels would bake that width into the
 // record and move every name the next time the layout changed.
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import fontkitPkg from "@pdf-lib/fontkit";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { faceFor, dateFaceFor, toRgb, DEFAULT_FACE, DEFAULT_COLOR } from "./faces.js";
+// THE DATE FORMATTER LIVES APART, and must stay there. This file reads font
+// files off disk, so anything that imports it is pulled into the bundle that
+// import lands in - and a client component asking for printedDate used to drag
+// node:fs/promises into the browser chunk and fail the build outright. It is
+// re-exported here so every server caller is unaffected.
+import { printedDate } from "./printed-date.js";
+
+export { printedDate };
 
 export const DEFAULT_SIZE = 28;
 
-// THE DATE AS A CERTIFICATE SAYS IT. The picker hands over an ISO string
-// ("2026-09-13") because that is unambiguous to store and to sort; nobody
-// prints a date that way. Read as California's calendar day rather than as an
-// instant, so a date never slides to the day before on a server in another
-// zone.
-export function printedDate(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-  // anything already typed as words or slashes is left exactly as it is
-  if (!m) return raw;
-  const at = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
-  }).format(at);
-}
 export const MIN_SIZE = 8;
 export const MAX_SIZE = 96;
 
@@ -56,14 +52,35 @@ export function fitSize({ text, font, size, maxWidth }) {
 
 // one piece of text, fitted and placed. Shared so the name and the date cannot
 // drift apart in how they land.
-function stamp({ target, text, x, y, size, align, font }) {
+function stamp({ target, text, x, y, size, align, font, color }) {
   const pageWidth = target.getWidth();
   // the usable width around the point, so a long name shrinks instead of
   // running into the border art
   const room = align === "left" ? pageWidth - x - 24 : Math.min(x, pageWidth - x) * 2 - 24;
   const fitted = fitSize({ text, font, size, maxWidth: Math.max(60, room) });
   const at = placeName({ text, x, y, size: fitted, align, font, pageWidth });
-  target.drawText(text, { x: at.x, y, size: fitted, font, color: rgb(0.06, 0.09, 0.16) });
+  target.drawText(text, { x: at.x, y, size: fitted, font, color: rgb(color.r, color.g, color.b) });
+}
+
+// A SHIPPED FACE IS READ ONCE PER PROCESS. The file is 445KB for Great Vibes
+// and a run draws it 108 times; re-reading it off disk for each certificate is
+// 48MB of pointless I/O. Next has to be told to carry these files into the
+// function - see outputFileTracingIncludes in next.config.mjs.
+const fileCache = new Map();
+async function faceBytes(file) {
+  if (!fileCache.has(file)) {
+    fileCache.set(file, readFile(path.join(process.cwd(), "public", "fonts", file)));
+  }
+  return fileCache.get(file);
+}
+
+// SUBSET, ALWAYS. Measured on the real template: Great Vibes adds 7.5KB to a
+// certificate subset and 217KB whole, and nothing on a certificate needs a
+// glyph nobody's name contains.
+async function embed(doc, face) {
+  if (face.standard) return doc.embedFont(StandardFonts[face.standard]);
+  doc.registerFontkit(fontkitPkg.default || fontkitPkg);
+  return doc.embedFont(await faceBytes(face.file), { subset: true });
 }
 
 // `date` is drawn only where the batch was given a place for it - most
@@ -72,15 +89,18 @@ function stamp({ target, text, x, y, size, align, font }) {
 export async function renderCertificate(templateBytes, {
   name, page = 0, x, y, size = DEFAULT_SIZE, align = "center",
   date = null, datePage = null, dateX = null, dateY = null, dateSize = 14, dateAlign = "center",
+  face = DEFAULT_FACE, color = DEFAULT_COLOR,
 }) {
   const doc = await PDFDocument.load(templateBytes);
   const pages = doc.getPages();
   const pick = (n) => pages[Math.min(Math.max(0, Number(n) || 0), pages.length - 1)];
-  const font = await doc.embedFont(StandardFonts.HelveticaBold);
-  const plain = await doc.embedFont(StandardFonts.Helvetica);
+  const chosen = faceFor(face);
+  const font = await embed(doc, chosen);
+  const plain = await embed(doc, dateFaceFor(face));
+  const ink = toRgb(color);
 
   const text = String(name || "").trim();
-  if (text) stamp({ target: pick(page), text, x, y, size, align, font });
+  if (text) stamp({ target: pick(page), text, x, y, size, align, font, color: ink });
 
   const when = printedDate(date);
   if (when && dateX != null && dateY != null) {
@@ -93,6 +113,7 @@ export async function renderCertificate(templateBytes, {
       size: dateSize || 14,
       align: dateAlign || "center",
       font: plain,
+      color: ink,
     });
   }
   return Buffer.from(await doc.save());

@@ -19,6 +19,7 @@ import { hasBlobStorage, putBlob, delBlob } from "@/lib/blob";
 import { randomBytes } from "node:crypto";
 import { renderCertificate, DEFAULT_SIZE, MIN_SIZE, MAX_SIZE } from "@/lib/certificates/render";
 import { cleanTitle } from "@/lib/certificates/title";
+import { faceFor, cleanColor } from "@/lib/certificates/faces";
 
 async function requireAccess() {
   const user = await getCurrentUser();
@@ -106,6 +107,10 @@ export async function createCertificates(formData) {
     const dateY = hasDate ? num(plan.dateY, -1) : null;
     const dateSize = hasDate ? Math.min(Math.max(num(plan.dateSize, 14), MIN_SIZE), MAX_SIZE) : null;
     const dateAlign = plan.dateAlign === "left" ? "left" : "center";
+    // an unknown face or a mistyped colour falls back rather than printing
+    // something nobody chose across a whole run
+    const face = faceFor(plan.face).key;
+    const color = cleanColor(plan.color);
 
     const stored = await putBlob(
       `certificates/templates/${randomBytes(12).toString("hex")}.pdf`,
@@ -120,7 +125,7 @@ export async function createCertificates(formData) {
       let bytes;
       try {
         bytes = await renderCertificate(templateBytes, {
-          name: p.printedName, page, x, y, size, align,
+          name: p.printedName, page, x, y, size, align, face, color,
           date: p.issuedOn, datePage, dateX, dateY, dateSize, dateAlign,
         });
       } catch (e) {
@@ -146,7 +151,7 @@ export async function createCertificates(formData) {
           title: cleanTitle(plan.title),
           templateUrl: stored.url,
           templateName: typeof file.name === "string" ? file.name.slice(0, 200) : null,
-          page, x, y, size, align,
+          page, x, y, size, align, face, color,
           issuedOn,
           datePage, dateX, dateY, dateSize, dateAlign,
           runId,
@@ -233,6 +238,8 @@ export async function regenerateCertificateBatch(batchId, plan) {
   const dateY = hasDate ? num(plan.dateY, -1) : null;
   const dateSize = hasDate ? Math.min(Math.max(num(plan.dateSize, 14), MIN_SIZE), MAX_SIZE) : null;
   const dateAlign = hasDate ? (plan.dateAlign === "left" ? "left" : "center") : null;
+  const face = faceFor(plan?.face).key;
+  const color = cleanColor(plan?.color);
 
   let templateBytes;
   try {
@@ -252,7 +259,7 @@ export async function regenerateCertificateBatch(batchId, plan) {
     let bytes;
     try {
       bytes = await renderCertificate(templateBytes, {
-        name: c.printedName, page, x, y, size, align,
+        name: c.printedName, page, x, y, size, align, face, color,
         date: c.issuedOn, datePage, dateX, dateY, dateSize, dateAlign,
       });
     } catch (e) {
@@ -271,7 +278,7 @@ export async function regenerateCertificateBatch(batchId, plan) {
     await prisma.$transaction([
       prisma.certificateBatch.update({
         where: { id: batch.id },
-        data: { page, x, y, size, align, datePage, dateX, dateY, dateSize, dateAlign },
+        data: { page, x, y, size, align, face, color, datePage, dateX, dateY, dateSize, dateAlign },
       }),
       ...made.map((m) => prisma.certificate.update({ where: { id: m.id }, data: { pdfUrl: m.now } })),
     ]);

@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toPoints, toSpot } from "@/lib/certificates/placement";
+import { DEFAULT_FACE, DEFAULT_COLOR, cleanColor } from "@/lib/certificates/faces";
 import PlacementPanel from "../../_components/PlacementPanel";
 import { renderPages } from "../../_components/render-pages";
 
@@ -37,6 +38,8 @@ export default function PlacementEditor({ batch, sample, dateSample, action }) {
   const [align, setAlign] = useState(batch.align === "left" ? "left" : "center");
   const [dateSpot, setDateSpot] = useState(null);
   const [dateSize, setDateSize] = useState(batch.dateSize || 14);
+  const [face, setFace] = useState(batch.face || DEFAULT_FACE);
+  const [color, setColor] = useState(batch.color || DEFAULT_COLOR);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -74,6 +77,8 @@ export default function PlacementEditor({ batch, sample, dateSample, action }) {
     if ("size" in fields) setSize(fields.size);
     if ("dateSize" in fields) setDateSize(fields.dateSize);
     if ("align" in fields) setAlign(fields.align);
+    if ("face" in fields) setFace(fields.face);
+    if ("color" in fields) setColor(fields.color);
   }
 
   // NOT A SUBMIT BUTTON. There is no form here and no action on one, so a press
@@ -87,6 +92,8 @@ export default function PlacementEditor({ batch, sample, dateSample, action }) {
       ...toPoints({ xPct: spot.xPct, yPct: spot.yPct, pdfW: np.pdfW, pdfH: np.pdfH }),
       size,
       align,
+      face,
+      color: cleanColor(color),
     };
     if (dateSpot) {
       const dp = pages[dateSpot.page];
@@ -121,7 +128,7 @@ export default function PlacementEditor({ batch, sample, dateSample, action }) {
   return (
     <div className="mt-6 rounded-xl border border-border bg-surface p-5">
       <PlacementPanel
-        value={{ pages, spot, size, align, dateSpot, dateSize }}
+        value={{ pages, spot, size, align, dateSpot, dateSize, face, color }}
         onChange={onChange}
         sample={sample}
         dateSample={dateSample}

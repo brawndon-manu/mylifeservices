@@ -12,6 +12,8 @@
 // the date's spot, and gets them back through onChange; all this component
 // knows is the picture, where the marks are, and what to draw in them.
 import { useState } from "react";
+import { FACES, INKS, faceFor, dateFaceFor, cleanColor, DEFAULT_COLOR } from "@/lib/certificates/faces";
+import "./fonts.css";
 
 export default function PlacementPanel({ value, onChange, sample, dateSample }) {
   // which mark a click drops, and whether the centre lines are shown. Both are
@@ -20,6 +22,9 @@ export default function PlacementPanel({ value, onChange, sample, dateSample }) 
   const [guides, setGuides] = useState(true);
 
   const { pages, spot, size, align, dateSpot, dateSize } = value;
+  const face = faceFor(value.face);
+  const dateFace = dateFaceFor(value.face);
+  const ink = cleanColor(value.color || DEFAULT_COLOR);
 
   function onPick(e, index) {
     const r = e.currentTarget.getBoundingClientRect();
@@ -104,6 +109,50 @@ export default function PlacementPanel({ value, onChange, sample, dateSample }) 
         </div>
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted">Font</span>
+          {FACES.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              aria-pressed={face.key === f.key}
+              onClick={() => onChange({ face: f.key })}
+              style={{ fontFamily: f.css, fontWeight: f.weight, fontStyle: f.style }}
+              className={`rounded-md border px-2.5 py-1 transition ${
+                face.key === f.key ? "border-brand bg-brand-light text-white" : "border-border-strong text-muted"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted">Color</span>
+          {INKS.map((c) => (
+            <button
+              key={c.hex}
+              type="button"
+              aria-label={c.label}
+              title={c.label}
+              aria-pressed={ink === c.hex}
+              onClick={() => onChange({ color: c.hex })}
+              style={{ backgroundColor: c.hex }}
+              className={`h-6 w-6 rounded-full border transition ${
+                ink === c.hex ? "border-brand ring-2 ring-brand" : "border-border-strong"
+              }`}
+            />
+          ))}
+          <input
+            value={value.color || DEFAULT_COLOR}
+            onChange={(e) => onChange({ color: e.target.value })}
+            onBlur={(e) => onChange({ color: cleanColor(e.target.value) })}
+            aria-label="Color as hex"
+            spellCheck={false}
+            className="w-24 rounded-md border border-border-strong bg-surface px-2 py-1 font-mono text-xs text-foreground"
+          />
+        </div>
+      </div>
 
       <div className="mt-4 space-y-4">
         {pages.map((p, i) => (
@@ -139,13 +188,16 @@ export default function PlacementPanel({ value, onChange, sample, dateSample }) 
             )}
             {dateSpot?.page === i && (
               <span
-                className="pointer-events-none absolute whitespace-nowrap text-[#0f172a]"
+                className="pointer-events-none absolute whitespace-nowrap"
                 style={{
                   left: `${dateSpot.xPct * 100}%`,
                   top: `${dateSpot.yPct * 100}%`,
                   transform: `translate(${align === "center" ? "-50%" : "0"}, -100%)`,
                   fontSize: dateSize * (p.w / p.pdfW),
-                  fontFamily: "Helvetica, Arial, sans-serif",
+                  fontFamily: dateFace.css,
+                  fontWeight: dateFace.weight,
+                  fontStyle: dateFace.style,
+                  color: ink,
                 }}
               >
                 {dateSample}
@@ -153,13 +205,16 @@ export default function PlacementPanel({ value, onChange, sample, dateSample }) 
             )}
             {spot?.page === i && (
               <span
-                className="pointer-events-none absolute whitespace-nowrap font-bold text-[#0f172a]"
+                className="pointer-events-none absolute whitespace-nowrap"
                 style={{
                   left: `${spot.xPct * 100}%`,
                   top: `${spot.yPct * 100}%`,
                   transform: `translate(${align === "center" ? "-50%" : "0"}, -100%)`,
                   fontSize: size * (p.w / p.pdfW),
-                  fontFamily: "Helvetica, Arial, sans-serif",
+                  fontFamily: face.css,
+                  fontWeight: face.weight,
+                  fontStyle: face.style,
+                  color: ink,
                 }}
               >
                 {sample}

@@ -2388,6 +2388,14 @@ model CertificateBatch {
   // "center" draws the name centred on x; "left" starts it there
   align String @default("center")
 
+  // WHAT IT IS PRINTED IN - Mánu 2026-09-13: "lets add fonts and colors to the
+  // certificate maker". A fixed Helvetica Bold is wrong on a script template.
+  // The key is one of FACES in src/lib/certificates/faces.js and the colour is
+  // a #rrggbb; both fall back rather than throwing, so a row written before
+  // these existed still prints exactly as it did.
+  face  String @default("helvetica-bold")
+  color String @default("#0f172a")
+
   // California's date. The batch's is the default; a person can carry their own
   // - Mánu 2026-09-13: "can you make it so i can pick different dates for each
   // staff i choose... the one below could use the date above". People finish a

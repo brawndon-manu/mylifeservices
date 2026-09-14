@@ -23,6 +23,14 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  // THE CERTIFICATE FONTS HAVE TO REACH THE FUNCTION. render.js reads the two
+  // shipped faces off disk, and the tracer does not follow a path built at
+  // runtime, so a deploy without this renders a certificate in Great Vibes
+  // perfectly on localhost and throws ENOENT in production.
+  outputFileTracingIncludes: {
+    "/portal/admin/forms/certificates/**": ["./public/fonts/*.ttf"],
+  },
+
   // bump server action body size so hub post images (up to ~4MB) fit.
   //
   // RAISED TO 50MB ON 2026-08-27 for the timesheet upload, which now carries
