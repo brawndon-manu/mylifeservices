@@ -74,6 +74,12 @@ export default async function FormSubmissionsPage({ searchParams }) {
           >
             Record an email sign-off
           </Link>
+          <Link
+            href="/portal/admin/forms/certificates"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Certificates
+          </Link>
           {/* file downloads, not pages - Link would try to client-navigate */}
           <a
             href={`/portal/admin/forms/csv${officeQs}`}

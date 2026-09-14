@@ -134,6 +134,7 @@ model User {
   clientAttestationsAsStaff    ClientAttestation[]           @relation("ClientAttestationStaff")
   clientAttestationsSupervised ClientAttestation[]           @relation("ClientAttestationSupervisor")
   clientsAssigned              Client[]                      @relation("ClientAssignedStaff")
+  certificates      Certificate[]   @relation("CertificateHolder")
   routedClients     ClientRouting[] @relation("ClientRoutingStaff")
   supervisedRoutings ClientRouting[] @relation("ClientRoutingSupervisor")
   clientReportsConducted       ClientReport[]                @relation("ClientReportConductedBy")
@@ -2353,4 +2354,95 @@ model ShiftReview {
   @@index([decision])
   @@index([employeeKey])
   @@index([date])
+}
+
+// CERTIFICATES PRINTED FROM ONE TEMPLATE - Mánu 2026-09-13: "can we work on a
+// certificate generator? ... it should take names and a certificate pdf and
+// hopefully we can make it so we choose where it goes for the name?"
+//
+// ITS OWN PAIR OF TABLES RATHER THAN FormSubmission, which the email sign-offs
+// reuse. That model is about somebody signing something and its screen says
+// "who signed it, when". A certificate is ISSUED TO a person; nobody signs it,
+// and filing them together would make both records read wrong.
+//
+// WHERE THE NAME GOES is stored with the batch, not guessed per run: the
+// position is picked once by clicking the rendered template, and every name in
+// the batch is drawn at the same place. Kept in PDF points from the bottom-left
+// of the page, which is what pdf-lib draws in - storing screen pixels would
+// bake in whatever width the picker happened to be.
+model CertificateBatch {
+  id String @id @default(cuid())
+
+  // what the certificate is for, as it will be listed
+  title String
+
+  // the blank template, exactly as it was uploaded
+  templateUrl  String
+  templateName String?
+
+  // the name's place on it
+  page  Int    @default(0)
+  x     Float
+  y     Float
+  size  Float  @default(28)
+  // "center" draws the name centred on x; "left" starts it there
+  align String @default("center")
+
+  // California's date. The batch's is the default; a person can carry their own
+  // - Mánu 2026-09-13: "can you make it so i can pick different dates for each
+  // staff i choose... the one below could use the date above". People finish a
+  // course on different days, and the certificate should say which.
+  issuedOn String?
+
+  // WHERE THE DATE GOES, when it goes anywhere. Optional on purpose: most
+  // templates print their own date, and a batch with no placement records the
+  // dates without drawing them. Same points-from-bottom-left as the name.
+  datePage  Int?
+  dateX     Float?
+  dateY     Float?
+  dateSize  Float?  @default(14)
+  dateAlign String? @default("center")
+
+  // BATCHES MADE IN ONE GO SHARE THIS - Mánu 2026-09-13: "i need to make 6 more
+  // certificates with 18 staff each and i dont want to enter the names and
+  // dates 6 different times". Each certificate type stays its own batch,
+  // because that is how they are looked up afterwards; the run is what lets
+  // all six be downloaded together.
+  runId String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  certificates Certificate[]
+
+  @@index([createdAt])
+  @@index([runId])
+}
+
+// ONE PERSON'S CERTIFICATE. `userId` is null for a name that was typed rather
+// than picked from the directory - somebody with no account still gets one, and
+// the record keeps the name that was printed either way, because that is what
+// the document says.
+model Certificate {
+  id String @id @default(cuid())
+
+  batchId String
+  batch   CertificateBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation("CertificateHolder", fields: [userId], references: [id], onDelete: SetNull)
+
+  // exactly what was drawn on the page. A picked person prints their LEGAL
+  // name - a certificate is a document - and this records what was used.
+  printedName String
+
+  // this person's own date, falling back to the batch's when it was not set
+  issuedOn String?
+
+  pdfUrl String
+
+  createdAt DateTime @default(now())
+
+  @@index([batchId])
+  @@index([userId])
 }
