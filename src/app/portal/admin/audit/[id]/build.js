@@ -17,6 +17,7 @@ import { filedGapMin } from "@/lib/timesheet/note-filed";
 import { stampOverlaps } from "@/lib/timesheet/audit-overlaps";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
 import { periodDates } from "@/lib/timesheet/period-of";
+import { auditWindow, inAuditWindow } from "@/lib/timesheet/audit-window";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -30,7 +31,7 @@ export async function buildAudit(id) {
     where: { id },
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true, auditChanges: true,
-      createdAt: true, partialThrough: true,
+      createdAt: true, partialFrom: true, partialThrough: true,
       clockUrl: true, clockName: true, clockFindings: true,
       notesName: true, serviceNotesName: true,
       scheduleNotesUrl: true, scheduleNotesName: true,
@@ -40,6 +41,23 @@ export async function buildAudit(id) {
   if (!batch) return null;
 
   const notes = batch.serviceNotes?.notes || [];
+
+  // WHAT DAYS THIS COPY ACTUALLY COVERS - Mánu 2026-09-14: "all my reports i
+  // generated from qsp were from september 1st - 13 ... with the exception of
+  // some of them still getting the entire month like the month schedule ... is
+  // there a way we can make it so i pick which days it goes to".
+  //
+  // The schedule is the widest export of the lot: ask QSP for a month and it
+  // gives you the month, so a copy uploaded on the 14th with everything else
+  // pulled to the 13th carried 79 rows for the 14th with no clock row, no note
+  // and no punch on any of them - and every one of those 79 became a "no DSN"
+  // auto flag. The window is typed at upload and stored as partialFrom /
+  // partialThrough; here is where it is honoured.
+  //
+  // Clamped rather than trusted: a window wider than the period is the period.
+  // partialThrough has been written for a while and was never read, so batches
+  // made before the box existed carry one that only ever narrows to today.
+  const window = auditWindow(batch);
 
   const dateKey = (d) => {
     const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
@@ -752,7 +770,7 @@ export async function buildAudit(id) {
   const rowKeys = new Set(rows.map((r) => r.shiftKey));
   const lostByKey = new Map();
   const lostDecisions = await prisma.shiftReview.findMany({
-    where: { date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
+    where: { date: { in: periodDates(window.from, window.to) } },
     select: {
       shiftKey: true, employeeKey: true, date: true, client: true, service: true,
       decision: true, reason: true, kinds: true, billedMin: true, billableMin: true,
@@ -864,10 +882,13 @@ export async function buildAudit(id) {
     if (l.whoLegal) l.whoLegal = unComma(l.whoLegal);
   }
 
-  rows.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
+  // days outside the window never reach the screen, the counts or the engine
+  const inWindow = rows.filter((r) => inAuditWindow(r.date, window));
+  inWindow.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
   return {
     batch,
-    rows,
+    rows: inWindow,
+    window,
     lost,
     orphans,
     notesCount: notes.length,

@@ -561,11 +561,15 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
             worked, and this is the way past that check, so it should read like
             what it is rather than an ordinary option.
 
-            NOT ON THE AUDIT LANE - Mánu 2026-09-07: "it should just know if
-            its partial or not." It does, there: an audit copy trims days
-            after today on its own and never refuses a running period, so the
-            box had nothing left to do and only implied a choice to make. */}
-        {!audit && <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
+            ON THE AUDIT LANE IT SAYS SOMETHING ELSE. It was hidden there -
+            Mánu 2026-09-07, "it should just know if its partial or not" - and
+            for future days it does know: a copy trims days after today on its
+            own. What it cannot know is that the OTHER exports stop EARLIER
+            than today. 2026-09-14: everything pulled for 09/01-09/13, the
+            month schedule returned the whole month, and the copy carried 79
+            rows for the 14th with no clock row, no note and no punch on any of
+            them - all 79 of which became "no DSN" auto flags. */}
+        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
               type="checkbox"
@@ -575,10 +579,21 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
               className="mt-0.5 h-4 w-4 flex-none accent-amber-600"
             />
             <span className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
-              <span className="font-semibold">Testing: partial pay period.</span>{" "}
-              Keep only the days in the range below and drop the rest. The batch
-              is marked partial, and any workweek cut off part-way through has
-              provisional overtime.
+              {audit ? (
+                <>
+                  <span className="font-semibold">The exports only cover part of the period.</span>{" "}
+                  Keep only the days in the range below. Use it when a report was
+                  pulled for fewer days than the schedule, so the extra days do
+                  not read as shifts with nothing clocked.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">Testing: partial pay period.</span>{" "}
+                  Keep only the days in the range below and drop the rest. The batch
+                  is marked partial, and any workweek cut off part-way through has
+                  provisional overtime.
+                </>
+              )}
             </span>
           </label>
 
@@ -610,7 +625,7 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
               </p>
             </div>
           )}
-        </div>}
+        </div>
 
         {totalBytes > 0 && (
           <p className={`mt-5 text-xs ${overLimit ? "font-semibold text-rose-600 dark:text-rose-400" : "text-muted"}`}>
