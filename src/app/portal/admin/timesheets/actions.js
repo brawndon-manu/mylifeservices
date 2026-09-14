@@ -3158,6 +3158,7 @@ export async function resetBatchAnswers(batchId) {
   revalidatePath(`/portal/admin/timesheets/${batchId}`);
   revalidatePath(`/portal/admin/timesheets/${batchId}/corrections`);
   revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/legacy`);
   return { ok: true, answers: count, rebuilt, failed };
 }
 

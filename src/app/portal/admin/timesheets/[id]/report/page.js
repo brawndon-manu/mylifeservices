@@ -1,9 +1,14 @@
+import PayoutTable from "./PayoutTable";
+import { ChevronDown, Download, FileSpreadsheet, FileText, Check, CircleAlert } from "lucide-react";
+import { batchPeriodLabels } from "@/lib/timesheet/batch-overview";
+import styles from "./PayoutReport.module.css";
+import BatchViews from "../../_components/BatchViews";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { preferredName } from "@/lib/contacts";
+import { payrollName, preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 import { miscTimeOffHours } from "@/lib/timesheet/time-off";
@@ -73,7 +78,8 @@ export default async function PayoutReportPage({ params }) {
     const misc = miscTimeOffHours(t.data?.days);
     return {
     id: t.id,
-    who: t.user ? preferredName(t.user) : t.sourceName,
+    who: payrollName(t.user, t.sourceName),
+    preferred: preferredLabel(t.user),
     sourceName: t.sourceName,
     matched: !!t.userId,
     regularHours: Math.max(0, (t.regularHours || 0) - misc.total),
@@ -94,7 +100,6 @@ export default async function PayoutReportPage({ params }) {
     // column - which is not zero miles, so the cell says nothing rather than
     // 0.00. Reimbursed per mile, never hours, so it stays out of `payable`.
     miles: t.data?.qspMiles ?? null,
-    partialWeek: t.partialWeek,
     signedAt: t.signedAt,
     approvedAt: t.approvedAt,
     // ONLY the open ones - a `q_` row is an ANSWER, not a reported problem
@@ -127,61 +132,58 @@ export default async function PayoutReportPage({ params }) {
 
   const disputed = rows.filter((r) => r.disputed).length;
   const unmatched = rows.filter((r) => !r.matched).length;
-  const partial = rows.filter((r) => r.partialWeek).length;
+
+  const period = batchPeriodLabels(batch.periodFrom, batch.periodTo);
+  const number = (value) => Number(fmt(value)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className={styles.report}>
+      <div className={styles.back}>
         <BackLink href={`/portal/admin/timesheets/${batch.id}`}>Back to the batch</BackLink>
-        <span className="flex flex-wrap items-center gap-2">
-          <a
-            href={`/portal/admin/timesheets/${batch.id}/report/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
-          >
-            Download PDF
-          </a>
-          {/* one workbook with tabs - Summary, Payout, Penalty hours - which
-              is what payroll actually opens. Mánu 2026-09-03, off David's ask. */}
-          <a
-            href={`/portal/admin/timesheets/${batch.id}/report/xlsx`}
-            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
-          >
-            Download Excel
-          </a>
-          <a
-            href={`/portal/admin/timesheets/${batch.id}/report/csv`}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-          >
-            Download CSV
-          </a>
-        </span>
       </div>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.month}>{period.eyebrow} · {batch.program === "DP" ? "Day program" : "ILS"}</p>
+          <h1>Payout report</h1>
+          <p className={styles.subtitle}>{period.title} · {rows.length} employees</p>
+        </div>
+        <details className={styles.downloads}>
+          <summary className={styles.button}><Download size={16} aria-hidden="true" />Download report<ChevronDown size={14} aria-hidden="true" /></summary>
+          <nav className={styles.menu} aria-label="Report downloads">
+            <a href={`/portal/admin/timesheets/${batch.id}/report/xlsx`}><FileSpreadsheet size={16} aria-hidden="true" /><span>Excel workbook<small>Summary, payout, and penalty hours</small></span></a>
+            <a href={`/portal/admin/timesheets/${batch.id}/report/pdf`} target="_blank" rel="noopener noreferrer"><FileText size={16} aria-hidden="true" /><span>PDF report<small>Opens in a new tab</small></span></a>
+            <a href={`/portal/admin/timesheets/${batch.id}/report/csv`}><FileSpreadsheet size={16} aria-hidden="true" /><span>CSV spreadsheet</span></a>
+          </nav>
+        </details>
+      </header>
+      <BatchViews batchId={batch.id} count={batch.timesheets.length} active="payout" />
 
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
-        Payout report
-      </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        {batch.periodFrom} to {batch.periodTo}
-      </h1>
-      <p className="mt-2 max-w-2xl text-sm text-muted">
-        What this pay period owes, per person and in total. This is the figures
-        only - the signed timesheets are a separate record and download
-        separately from the batch.
-      </p>
-
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Big label="Hours worked" value={fmt(totals.paidHours)} />
-        <Big label="Premium hours" value={fmt(totals.premiumHours)} tone="prem" />
-        {/* the calendar's recorded time off - pay, never worked time, so it
-            has its own tile and joins only the payable figure */}
-        <Big label="Time off hours" value={fmt(totals.timeOff)} />
-        <Big label="Total hours payable" value={fmt(totals.payable)} strong />
-        {/* mileage is reimbursed rather than paid as hours, so it sits beside
-            the hour figures and is never added into them */}
-        <Big label="Miles driven" value={fmt(totals.miles)} />
-      </div>
+      <section className={styles.summary} aria-label="Pay period totals">
+        <div className={styles.summaryTop}>
+          <div>
+            <p className={styles.label}>Total hours payable</p>
+            <p className={styles.payable}>{number(totals.payable)} <span>hrs</span></p>
+            <p className={styles.caption}>Work + premiums + recorded leave</p>
+          </div>
+          <div className={styles.summaryAside}>
+            <span className={styles.status} data-settled={standing.settled}>
+              {standing.settled ? <Check size={14} aria-hidden="true" /> : <CircleAlert size={14} aria-hidden="true" />}
+              {standing.settled ? "Premiums settled" : "Provisional premiums"}
+            </span>
+            <p className={styles.caption}>{standing.settled ? `${standing.people} employees answered` : `${standing.waiting} of ${standing.people} awaiting answers`}</p>
+          </div>
+        </div>
+        <dl className={styles.breakdown}>
+          <Metric label="Hours worked" value={number(totals.paidHours)} />
+          <Metric label="Miles driven" value={number(totals.miles)} unit="mi" />
+          <Metric label="Premium hours" value={number(totals.premiumHours)} />
+          <Metric label="PTO" value={number(totals.ptoHours)} />
+          <Metric label="Sick pay" value={number(totals.sickHours)} />
+        </dl>
+        <div className={styles.mileage}>
+          <span>Mileage is reimbursed separately from hours{!knownMiles && " · Mileage not supplied"}</span>
+        </div>
+      </section>
 
       {/* WHETHER THE PREMIUM COLUMN IS FINISHED CHANGING, AND WHICH WAY.
           THIS INVERTED ON 2026-08-11. It used to read "can rise and cannot
@@ -191,25 +193,25 @@ export default async function PayoutReportPage({ params }) {
           an employee gets shortchanged - it is that payroll budgets a figure
           that has not finished shrinking. */}
       {standing.settled ? (
-        <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <details className={styles.explanation}><summary><Check size={16} aria-hidden="true" />Premium review complete<ChevronDown size={14} aria-hidden="true" /></summary><p>
           <strong>Final.</strong> All {standing.people} have answered what they were
           asked about their breaks. Nothing further can move the premium column,
           in either direction.
-        </div>
+        </p></details>
       ) : (
-        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+        <details className={`${styles.explanation} ${styles.caution}`}><summary><CircleAlert size={16} aria-hidden="true" />Premiums may decrease by up to {fmt(standing.assumptions)} hours<ChevronDown size={14} aria-hidden="true" /></summary><p>
           <strong>Provisional.</strong> {standing.waiting} of {standing.people} have not
           answered yet. Every break the reports do not show is charged here, so up to{" "}
           <strong>{fmt(standing.assumptions)}</strong> premium hours come OFF if everyone
           still to answer confirms they took theirs. This total can fall and cannot
           rise.
-        </div>
+        </p></details>
       )}
 
-      {(disputed > 0 || unmatched > 0 || partial > 0) && (
-        <div className="mt-4 space-y-2">
+      {(disputed > 0 || unmatched > 0) && (
+        <div className={styles.notes}>
           {disputed > 0 && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <div className={styles.warning}>
               <strong>{disputed}</strong>{" "}
               {disputed === 1 ? "person has" : "people have"} reported a problem
               that hasn&apos;t been resolved. Those figures are likely to change.{" "}
@@ -223,114 +225,24 @@ export default async function PayoutReportPage({ params }) {
             </div>
           )}
           {unmatched > 0 && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <div className={styles.warning}>
               <strong>{unmatched}</strong> row
               {unmatched === 1 ? " is" : "s are"} not matched to an account. They
               are counted in the totals but named only as QSP printed them.
             </div>
           )}
-          {/* The two boundary weeks are NOT the same and this used to call both
-              provisional. The one at the START is missing days that already
-              happened, so QSP's export can see them and we now take its printed
-              overtime where it is higher - that is settled. The one at the END
-              is missing days that had not happened when anything was exported,
-              so nobody can know them yet. That one is genuinely still open. */}
-          {partial > 0 && (
-            <div className="rounded-md border border-border bg-surface-2 px-4 py-3 text-sm text-muted">
-              <strong>{partial}</strong> sheet{partial === 1 ? "" : "s"} include a
-              workweek cut off by the pay-period boundary. The week at the start
-              of the period is settled: its missing days sit in the previous
-              export, QSP could see them, and the overtime here takes QSP&apos;s
-              own figure wherever that is higher than ours. The week at the END
-              is still open - its last days fall after this period closes, so no
-              export holds them yet, and anyone sitting on 40.00 hours here would
-              go into overtime for any time worked on those days.
-            </div>
-          )}
+
         </div>
       )}
 
-      <div className="mt-8 overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[940px] text-sm">
-          <thead className="bg-surface-2 text-xs uppercase tracking-wider text-muted">
-            <tr>
-              <Th align="left">Employee</Th>
-              <Th>Regular</Th>
-              <Th>OT</Th>
-              <Th>Double</Th>
-              <Th>Hours worked</Th>
-              <Th>Premium</Th>
-              <Th>PTO</Th>
-              <Th>Sick</Th>
-              <Th>Total payable</Th>
-              <Th>Miles driven</Th>
-              <Th align="left">Status</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-border">
-                <td className="px-3 py-2 text-foreground">
-                  {r.who}
-                  {!r.matched && (
-                    <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">
-                      unmatched
-                    </span>
-                  )}
-                  {r.partialWeek && (
-                    <span className="ml-2 text-xs text-muted">partial week</span>
-                  )}
-                </td>
-                <Td>{fmt(r.regularHours)}</Td>
-                <Td>{fmt(r.otHours)}</Td>
-                <Td>{fmt(r.doubleHours)}</Td>
-                <Td strong>{fmt(r.paidHours)}</Td>
-                <Td tone={r.premiumHours > 0 ? "prem" : undefined}>
-                  {fmt(r.premiumHours)}
-                </Td>
-                <Td strong={r.ptoHours > 0}>{fmt(r.ptoHours)}</Td>
-                <Td strong={r.sickHours > 0}>{fmt(r.sickHours)}</Td>
-                <Td strong>{fmt(r.payable)}</Td>
-                <Td>{fmt(r.miles || 0)}</Td>
-                <td className="px-3 py-2 text-xs text-muted">
-                  {r.disputed
-                    ? "Reported a problem"
-                    : r.approvedAt
-                      ? "Approved"
-                      : r.signedAt
-                        ? "Signed"
-                        : "Not signed"}
-                  {r.recomputed && " · corrected"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot className="border-t-2 border-border-strong bg-surface-2 font-semibold">
-            <tr>
-              <td className="px-3 py-3 text-foreground">
-                {rows.length} employee{rows.length === 1 ? "" : "s"}
-              </td>
-              <Td>{fmt(totals.regularHours)}</Td>
-              <Td>{fmt(totals.otHours)}</Td>
-              <Td>{fmt(totals.doubleHours)}</Td>
-              <Td strong>{fmt(totals.paidHours)}</Td>
-              <Td tone="prem">{fmt(totals.premiumHours)}</Td>
-              <Td>{fmt(totals.ptoHours)}</Td>
-              <Td>{fmt(totals.sickHours)}</Td>
-              <Td strong>{fmt(totals.payable)}</Td>
-              <Td strong>{fmt(totals.miles)}</Td>
-              <td />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      <PayoutTable rows={rows} totals={totals} periodTitle={period.title} />
 
       {/* THE ONE LINE THAT KEEPS THE ZERO HONEST. The column reads 0.00 until a
           payroll report carrying `Miles Driven` is uploaded, and on a payroll
           document a zero somebody cannot account for is worse than a blank. So
           where no figure is known at all, the table says why underneath. */}
       {!knownMiles && (
-        <p className="mt-3 text-xs text-muted">
+        <p className={styles.footnote}>
           Miles driven reads 0.00 because the payroll report for this period was
           uploaded before QuickSolve added its mileage column. Upload the current
           report to fill it in.
@@ -340,37 +252,19 @@ export default async function PayoutReportPage({ params }) {
   );
 }
 
-function Th({ children, align }) {
-  return (
-    <th className={`px-3 py-2 font-semibold ${align === "left" ? "text-left" : "text-right"}`}>
-      {children}
-    </th>
-  );
+function Metric({ label, value, unit = "hrs" }) {
+  return <div><dt>{label}</dt><dd>{value}<span> {unit}</span></dd></div>;
 }
 
-function Td({ children, strong, tone }) {
-  return (
-    <td
-      className={`px-3 py-2 text-right tabular-nums ${
-        tone === "prem" ? "text-rose-600 dark:text-rose-400" : "text-foreground"
-      } ${strong ? "font-semibold" : ""}`}
-    >
-      {children}
-    </td>
-  );
-}
-
-function Big({ label, value, tone, strong }) {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <p className="text-xs uppercase tracking-wider text-muted">{label}</p>
-      <p
-        className={`mt-1 text-2xl font-semibold tabular-nums ${
-          tone === "prem" ? "text-rose-600 dark:text-rose-400" : "text-foreground"
-        } ${strong ? "text-3xl" : ""}`}
-      >
-        {value}
-      </p>
-    </div>
-  );
+function preferredLabel(user) {
+  if (!user) return null;
+  const clean = (value) => String(value || "").trim().replace(/\s+/g, " ");
+  const legal = clean(user.name);
+  const preferredFirst = clean(user.preferredFirstName);
+  const preferredLast = clean(user.preferredLastName);
+  if (!preferredFirst && !preferredLast) return null;
+  const full = clean(preferredName({ ...user, preferredFirstName: preferredFirst, preferredLastName: preferredLast }));
+  if (full.toLocaleLowerCase() === legal.toLocaleLowerCase()) return null;
+  const sameLast = !preferredLast || legal.toLocaleLowerCase().endsWith(` ${preferredLast.toLocaleLowerCase()}`);
+  return sameLast ? preferredFirst || legal.split(" ")[0] : full;
 }

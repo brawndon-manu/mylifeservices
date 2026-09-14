@@ -1,6 +1,5 @@
+import BatchViews from "../_components/BatchViews";
 import Link from "next/link";
-import { reviewChoices } from "@/lib/timesheet/qsp-changes";
-import { timeOffReviewItems } from "@/lib/timesheet/time-off";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -15,20 +14,16 @@ import {
   confirmedFromAnswers,
 } from "@/lib/timesheet/premium-split";
 import BackLink from "@/components/BackLink";
-import SendModeBanner from "../_components/SendModeBanner";
+import BatchOverview from "../_components/BatchOverview";
+import { employeeCardPay } from "@/lib/timesheet/employee-card-pay";
+import { batchWorkTotals, batchPeriodLabels } from "@/lib/timesheet/batch-overview";
+import { reviewerSettledDates } from "@/lib/timesheet/corrections";
 import ReviewTable from "../_components/ReviewTable";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { isSuper } from "@/lib/roles";
 import SendPanel from "../_components/SendPanel";
-import LiveBadge, { PeriodStrip, VersionBadge, SignatureBadge } from "../_components/LiveBadge";
-import LockPeriod from "../_components/LockPeriod";
 import { batchState } from "@/lib/timesheet/batch-state";
-import TestBatchBadge from "../_components/TestBatchBadge";
-import ProgramBadge from "../_components/ProgramBadge";
-import DeleteBatchButton from "../_components/DeleteBatchButton";
-import ResetAnswersButton from "../_components/ResetAnswersButton";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
-import { companyDate } from "@/lib/company-time";
 
 // the tab is where the name is most visible, and "Timesheet batch" told you
 // nothing about WHICH one when three are open at once. `batch` is our word
@@ -146,6 +141,11 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // mode - see `?preview=1` and the banner it raises on the far side.
   const canPreview = isSuper(user?.role);
 
+  const ptoRows = await prisma.ptoEntry.findMany({
+    where: { program: batch.program || "MLS", periodFrom: batch.periodFrom, periodTo: batch.periodTo },
+    select: { personKey: true, hours: true, kind: true },
+  });
+
   const rows = batch.timesheets.map((t) => {
     // THE SAME THREE FIGURES THE THREE DOCUMENTS PRINT, computed from the
     // function the documents are built with rather than read off the stored
@@ -185,6 +185,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     // link, and the column is two documents now: the projected sheet and the
     // signed one. See the note on `SheetLinks`.
     premiumProjected: split.projected,
+    pay: employeeCardPay(t, ptoRows, split),
     partialWeek: t.partialWeek,
     // a lunch that HAPPENED but started after the fifth hour still owes a
     // premium, and it reads as an error to anyone who remembers taking it.
@@ -270,12 +271,6 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     batch.sourceUrl, batch.scheduleUrl, batch.clockUrl, batch.payrollUrl, batch.restsUrl,
     batch.notesUrl, batch.serviceNotesUrl, batch.scheduleNotesUrl, batch.dpMileageUrl,
   ].filter(Boolean).length;
-  // pinned to Pacific rather than the server's zone. this renders on the
-  // server, so without a fixed zone it reads "Aug 6" on a dev box in
-  // California and "Aug 7" on Vercel, which runs UTC - the same upload,
-  // two dates, depending where the page was rendered. Payroll is in
-  // California, so California is the answer that means something.
-  const uploadedOn = companyDate(batch.createdAt);
   const uploadedByName = batch.uploadedBy ? preferredName(batch.uploadedBy) : null;
 
   const total = rows.length;
@@ -283,59 +278,14 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const unmatched = total - matched;
   const sent = rows.filter((r) => r.sentAt).length;
   const signed = rows.filter((r) => r.signedAt).length;
-  // what a reset would destroy, counted from the rows already loaded rather than
-  // with a second query - the `q_` rows ARE the answers
-  const answersGiven = batch.timesheets.reduce(
-    (n, t) => n + t.corrections.filter((c) => String(c.kind || "").startsWith("q_")).length,
-    0,
-  );
   const approved = rows.filter((r) => r.approvedAt).length;
   const awaitingApproval = rows.filter((r) => r.signedAt && !r.approvedAt).length;
   const disputed = rows.filter((r) => r.disputed).length;
 
-  // THE QUICKSOLVE DESK'S HEADLINE: how many entries the signed reviews have
-  // left to key in, and how many reviews are signed off as fully entered.
-  // Derived the same way the desk and both emails derive it - one derivation.
-  const qspCorrections = await prisma.timesheetCorrection.findMany({
-    where: { timesheet: { batchId: batch.id, signedAt: { not: null } }, status: { not: "open" } },
-    select: {
-      id: true, timesheetId: true, kind: true, date: true, status: true,
-      choice: true, statedBreaks: true, question: true, timeOff: true,
-      qspMarks: { select: { fact: true } },
-    },
-  });
-  const qsp = { owed: 0, marked: 0, reviews: 0 };
-  {
-    const bySheet = new Map();
-    for (const c of qspCorrections) {
-      if (!bySheet.has(c.timesheetId)) bySheet.set(c.timesheetId, []);
-      bySheet.get(c.timesheetId).push(c);
-    }
-    for (const cs of bySheet.values()) {
-      const items = [...reviewChoices(cs), ...timeOffReviewItems(cs)];
-      const owed = items.reduce((n, it) => n + it.changes.length, 0);
-      if (!owed) continue;
-      qsp.reviews += 1;
-      qsp.owed += owed;
-      const marked = new Set(cs.flatMap((c) => c.qspMarks.map((m) => `${c.id}|${m.fact}`)));
-      qsp.marked += items.reduce(
-        (n, it) => n + it.changes.filter((ch) => marked.has(`${it.correctionId}|${ch.fact}`)).length,
-        0,
-      );
-    }
-  }
   const punchIssueRows = rows.filter((r) => r.punchIssues > 0).length;
   const punchOpenRows = rows.filter((r) => r.punchOpen > 0).length;
   const punchOpenDays = rows.reduce((n, r) => n + r.punchOpen, 0);
   const punchDays = rows.reduce((n, r) => n + r.punchIssues, 0);
-  // days on the schedule that were never worked, kept apart from days simply
-  // worked differently - the second is ordinary, the first is a missing day
-  const scheduleMissingRows = rows.filter((r) => r.scheduleMissing > 0).length;
-  const scheduleFlagRows = rows.filter((r) => r.scheduleFlags - r.scheduleMissing > 0).length;
-  const anyScheduleChecked = rows.some((r) => r.scheduleMatched);
-  const scheduleMatchedCount = rows.filter((r) => r.scheduleMatched).length;
-  const scheduleNotFound = rows.filter((r) => r.scheduleStatus === "name-not-found").length;
-  const scheduleFailed = rows.find((r) => r.scheduleStatus === "parse-failed");
   // RETIRED 2026-08-09: this page used to grade the premium total itself, in
   // recorded / corroborated / needs-somebody-to-look, beside a link to the
   // evidence page grading the SAME hours as witnessed / ruled / open. The two
@@ -392,13 +342,18 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     },
   })) > 0;
   const state = batchState(batch, { newerInPeriod });
-  const lockedOn = batch.lockedAt
-    ? companyDate(batch.lockedAt, {
-      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-    })
-    : null;
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
+
+  const workTotals = batchWorkTotals(batch.timesheets, ptoRows);
+  // The overview counts the questions currently shown to employees, including
+  // their editable Misc answers. A payroll classification alone settles a day.
+  const waiting = batch.timesheets.filter((t) => !answerProgress(
+    buildQuestions(t.data, {
+      restRows: batch.restsByDate || [], sourceName: t.sourceName,
+      reviewerSettled: reviewerSettledDates(t.overrides),
+    }), t.corrections,
+  ).settled).length;
 
   // WHY THE SEND IS SHUT, WRITTEN ONCE. Three things read it now: the panel's
   // amber block, the per-row button's confirm, and the banner a server refusal
@@ -416,14 +371,38 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   const unconfirmedCount = sp?.unconfirmed ? Number(sp.unconfirmed) : null;
 
   return (
-    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* back to whichever world this batch belongs to - the deep pages are
-            shared, the lists never mix */}
-        <BackLink href={batch.program === "DP" ? "/portal/admin/day-program" : "/portal/admin/timesheets"}>
-          {batch.program === "DP" ? "Back to Day program" : "Back to Timesheets"}
-        </BackLink>
-        <span className="flex flex-wrap items-center gap-2">
+    <section className="mx-auto max-w-7xl px-6 py-6 sm:py-8">
+      <BackLink href={batch.program === "DP" ? "/portal/admin/day-program" : "/portal/admin/timesheets"}>
+        {batch.program === "DP" ? "Back to Day program" : "Back to Timesheets"}
+      </BackLink>
+      <BatchOverview
+        batch={batch} state={state} newerInPeriod={newerInPeriod}
+        total={total} sent={sent} signed={signed} approved={approved}
+        sourceDocs={sourceDocs} uploadedByName={uploadedByName}
+        mode={mode} totals={workTotals} premium={premiumSplit.liveProjected} waiting={waiting}
+        sendControl={
+          <SendPanel
+            batchId={batch.id}
+            readyToSend={readyToSend}
+            alreadySent={sent}
+            send={sendTimesheets}
+            live={mode.live}
+            // SHUT UNTIL SOMEBODY SAYS THE PERIOD IS FINISHED. Not until the data
+            // looks finished - the schedule locks at 8pm on the last day and no
+            // export records it, so a full period is still only a precondition.
+            // Enforced in `sendTimesheets` as well since 2026-09-09; this prop is the
+            // explanation and the override, no longer the rule itself.
+            blocked={sendBlocked}
+            blockedWhy={blockedWhy}
+          />
+        }
+        actions={<>
+          <Link
+            href={`/portal/admin/timesheets/${batch.id}/legacy`}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Legacy →
+          </Link>
           <a
             href={`/portal/admin/timesheets/${batch.id}/penalties`}
             target="_blank"
@@ -489,411 +468,31 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           >
             QSClock attendance →
           </Link>
-        </span>
-      </div>
+        </>}
+      />
 
-      {/* the period names itself before anything else on the page. it used to
-          sit below the download card, so the first thing you read was a row of
-          buttons and the first thing you could NAME was three inches down. */}
-      <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-brand-dark">Pay period</p>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          {batch.periodFrom} to {batch.periodTo}
-        </h1>
-        <ProgramBadge batch={batch} />
-        <LiveBadge batch={batch} />
-        <VersionBadge newerInPeriod={newerInPeriod} />
-        {/* BESIDE the state, never instead of it - a rehearsal batch is still
-            live or final or superseded, and both facts matter. The address is
-            shown in full here: this is the page somebody is on when they decide
-            to send, and "where does it go" is the question at that moment. */}
-        <TestBatchBadge batch={batch} />
-      </div>
-      {/* WHAT IS ACTUALLY IN, rather than a number to trust. This is the screen
-          where the answer decides whether sixty people get emailed. */}
-      <div className={`mt-4 rounded-xl border border-border bg-surface p-4 border-l-4 ${state.edge}`}>
-        <p className="text-sm text-muted">
-          {state.key === "live" ? (
-            <>
-              The export reaches <span className="font-semibold text-foreground">{state.reach}</span>, and
-              the period runs to <span className="font-semibold text-foreground">{batch.periodTo}</span>.
-              {state.daysToCome ? ` ${state.daysToCome} day${state.daysToCome === 1 ? "" : "s"} still to come.` : ""}
-            </>
-          ) : state.key === "superseded" ? (
-            <>
-              A later upload of this pay period exists, and that one is the live copy.
-              This is kept as the record of what the export said at the time.
-            </>
-          ) : state.key === "needs-decision" ? (
-            <>The whole period is in the export, up to <span className="font-semibold text-foreground">{state.reach}</span>.</>
-          ) : (
-            <>Closed. Every day of the period is in and somebody has marked it final.</>
-          )}
-        </p>
-        <PeriodStrip batch={batch} />
-        {/* nothing to decide about a replaced export - the question belongs to
-            whichever upload is current */}
-        {state.key !== "superseded" && (
-          <LockPeriod
-            batchId={batch.id}
-            locked={!!batch.lockedAt}
-            lockedByName={batch.lockedByName}
-            lockedAt={lockedOn}
-            covered={state.covered}
-          />
-        )}
-      </div>
-      {/* two runs of the same dates are indistinguishable without this, and
-          nothing else on the page says when the export was pulled. */}
-      <p className="mt-2 text-sm text-muted">
-        Uploaded <span className="text-foreground">{uploadedOn}</span>
-        {uploadedByName && (
-          <>
-            {" by "}
-            <span className="text-foreground">{uploadedByName}</span>
-          </>
-        )}
-        {sourceDocs > 0 && ` · ${sourceDocs} source document${sourceDocs === 1 ? "" : "s"}`}
-      </p>
-
-      {/* THE TESTING ROW, up with the batch's own numbers rather than buried in
-          the downloads card three screens down - which is where this sat first,
-          and Mánu could not find it: "I don't see the test button."
-
-          Its neighbours matter. Next to Delete it read as another way to throw
-          the batch away; up here, beside the counts it is about to change, it
-          reads as what it is. SUPER only, same gate as the preview links. */}
-      {canPreview && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border-strong bg-surface-2 px-3 py-2">
-          <p className="text-xs text-muted">
-            <b className="text-foreground">Testing.</b> Answer as anyone from
-            their row below, then put every question back with this.
+      {punchOpenDays > 0 && (
+        <div className="mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40">
+          <p className="text-base font-semibold text-rose-900 dark:text-rose-200">
+            Check these before you send anything
           </p>
-          <ResetAnswersButton
-            batchId={batch.id}
-            answers={answersGiven}
-            signed={signed}
-          />
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <Stat label="employees" value={total} />
-        <Stat label="matched" value={matched} tone={unmatched ? "warn" : "ok"} />
-        <Stat label="sent" value={sent} />
-        <Stat label="signed" value={signed} tone={signed === total && total > 0 ? "ok" : undefined} />
-        <Stat label="approved" value={approved} tone={approved === signed && signed > 0 ? "ok" : undefined} />
-      </div>
-
-      <SendModeBanner mode={mode} />
-
-      {/* the corrected sheets themselves. these used to appear only once
-          somebody had signed, which is backwards - reading the batch over is
-          exactly what you want to do BEFORE anyone is emailed. */}
-      <div className="mt-4 rounded-lg border border-border bg-surface-2 p-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-          Download the corrected timesheets
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <a
-            href={`/portal/admin/timesheets/${batch.id}/download?all=1`}
-            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
-          >
-            All {total} as one PDF
-          </a>
-          <a
-            href={`/portal/admin/timesheets/${batch.id}/download-zip?all=1`}
-            className="rounded-md border border-brand bg-brand/10 px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-brand/20"
-          >
-            All {total} separately (.zip)
-          </a>
-          {signed > 0 && (
-            <>
-              <span className="text-xs text-faint">or signed only:</span>
-              <a
-                href={`/portal/admin/timesheets/${batch.id}/download`}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-              >
-                {signed} as one PDF
-              </a>
-              <a
-                href={`/portal/admin/timesheets/${batch.id}/download-zip`}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-              >
-                {signed} separately (.zip)
-              </a>
-            </>
-          )}
-        </div>
-        <p className="mt-2 text-xs text-muted">
-          Every sheet carries the break highlighting, the color key and the
-          premium section. Where someone has signed or been approved, that copy
-          is used instead of the blank one.
-        </p>
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
-          <p className="text-xs text-muted">
-            Uploaded the wrong export, or need to redo it after correcting QSP?
-          </p>
-          <DeleteBatchButton
-            batchId={batch.id}
-            period={`${batch.periodFrom} to ${batch.periodTo}`}
-          />
-        </div>
-
-      </div>
-
-      {(punchDays > 0 || batch.program === "DP") && (
-        <div
-          className={
-            punchOpenDays > 0
-              ? "mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40"
-              : "mt-4 rounded-lg border border-border bg-surface-2 p-4"
-          }
-        >
-          <p
-            className={
-              punchOpenDays > 0
-                ? "text-base font-semibold text-rose-900 dark:text-rose-200"
-                : "text-base font-semibold text-foreground"
-            }
-          >
-            {punchOpenDays > 0 ? "Check these before you send anything" : "Nothing here needs a decision"}
-          </p>
-          {/* built as strings rather than interleaved JSX - mixing expressions
-              and wrapped text is how "people have" and "punch entries" ended up
-              rendering as "havepunch". */}
-          <p
-            className={
-              punchOpenDays > 0
-                ? "mt-1 text-sm text-rose-800 dark:text-rose-200/90"
-                : "mt-1 text-sm text-muted"
-            }
-          >
-            {punchOpenDays > 0 ? (
-              <span className="block">
-                <strong>{punchOpenDays}</strong>
-                {` ${punchOpenDays === 1 ? "day needs" : "days need"} somebody to decide, across ${punchOpenRows} ${punchOpenRows === 1 ? "person" : "people"}. Nothing else can be settled from the records we hold.`}
-              </span>
-            ) : punchDays > 0 ? (
-              <span className="block">
-                {`Every one of the ${punchDays} flagged ${punchDays === 1 ? "day" : "days"} either has a repair the schedule confirms, or pays the same whichever way it is read.`}
-              </span>
-            ) : (
-              <span className="block">
-                No punch problems were found. The rest-break findings
-                {batch.dpAudit?.faults?.length
-                  ? ` and the ${batch.dpAudit.faults.length} rows the rest break audit flagged`
-                  : ""}
-                {" "}are on the checks screen.
-              </span>
-            )}
-            {punchDays > 0 && (
-              <span className="mt-1 block">
-                {`${punchDays} ${punchDays === 1 ? "day is" : "days are"} flagged in total, across ${punchIssueRows} ${punchIssueRows === 1 ? "person" : "people"} - a clock-out before the clock-in, or a stretch of 10+ hours that is almost certainly a rest break with the wrong AM/PM on it. Most are repairable or already corroborated.`}
-              </span>
-            )}
+          <p className="mt-1 text-sm text-rose-800 dark:text-rose-200/90">
+            <span className="block">
+              <strong>{punchOpenDays}</strong>
+              {` ${punchOpenDays === 1 ? "day needs" : "days need"} somebody to decide, across ${punchOpenRows} ${punchOpenRows === 1 ? "person" : "people"}. Nothing else can be settled from the records we hold.`}
+            </span>
+            <span className="mt-1 block">
+              {`${punchDays} ${punchDays === 1 ? "day is" : "days are"} flagged in total, across ${punchIssueRows} ${punchIssueRows === 1 ? "person" : "people"}.`}
+            </span>
           </p>
           <Link
             href={`/portal/admin/timesheets/${batch.id}/checks`}
-            className={
-              punchOpenDays > 0
-                ? "mt-3 inline-block rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
-                : "mt-3 inline-block rounded-md border border-border px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-3"
-            }
+            className="mt-3 inline-block rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
           >
-            See what looks wrong →
+            Data checks →
           </Link>
         </div>
       )}
-
-      {/* three different things, and they used to all read as "no schedule
-          uploaded" - which is useless when the truth is that one WAS given and
-          silently failed to parse. */}
-      {scheduleFailed ? (
-        <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-          <strong>A schedule PDF was uploaded but couldn&apos;t be read</strong>, so
-          the hours were only checked against themselves.
-          {scheduleFailed.scheduleError && (
-            <span className="mt-1 block font-mono text-xs opacity-80">
-              {scheduleFailed.scheduleError}
-            </span>
-          )}
-          <span className="mt-1 block">
-            It needs to be the QSP <em>Employee Schedules</em> export - the month
-            calendar with one page per person, not a payroll report.
-          </span>
-        </div>
-      ) : !anyScheduleChecked ? (
-        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          No schedule export reached the server with this batch, so the hours are
-          only checked against themselves. A punch typed into the wrong box stays
-          invisible that way.{" "}
-          <Link href="/portal/admin/timesheets/new" className="font-semibold underline underline-offset-4">
-            Upload again with the schedule PDF
-          </Link>{" "}
-          to get the second check.
-        </div>
-      ) : (
-        <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
-          Checked against the schedule: <strong>{scheduleMatchedCount}</strong> of{" "}
-          {total} matched to a schedule page.
-          {scheduleFlagRows > 0 && (
-            <span className="mt-1 block">
-              <strong>{scheduleFlagRows}</strong>
-              {` ${scheduleFlagRows === 1 ? "person" : "people"} worked hours that differ from what was scheduled. That is ordinary and nothing is wrong with it - the timesheet is what counts. It is listed on the checks screen only as context.`}
-            </span>
-          )}
-          {/* a day on the schedule that was never punched is NOT "worked
-              differently" - it is a day missing from the timesheet, and it is
-              the more serious of the two. it was being counted as the first. */}
-          {scheduleMissingRows > 0 && (
-            <span className="mt-1 block font-semibold">
-              {`${scheduleMissingRows} ${scheduleMissingRows === 1 ? "person was" : "people were"} scheduled on a day the timesheet has no punches for at all, so it pays nothing. Worth opening before you send.`}
-            </span>
-          )}
-          {scheduleNotFound > 0 && (
-            <span className="mt-1 block">
-              <strong>{scheduleNotFound}</strong> had no page in the schedule
-              export under a matching name, so those hours have no second opinion.
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* the thing management actually has to sign. this card no longer grades
-          the total itself - see the RETIRED note above readyToSend. it points
-          at the one screen that does. */}
-      {/* gated on the ORIGINAL figure, not the stored premiumHours column -
-          the stored column falls as people answer, and a card that vanishes
-          while the original says hours stand would be the old leak wearing a
-          different face. */}
-      {premiumSplit.originalProjected > 0 && (
-        <div className="mt-4 rounded-xl border border-border bg-surface p-5">
-          <p className="text-sm font-semibold text-foreground">
-            Premium hours, by what stands behind them
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            {premiumSplit.originalProjected.toFixed(2)} hours across this pay period. Nobody should
-            sign off on that figure without reading one of these.
-          </p>
-
-          {/* TWO FIGURES, SIMPLIFIED BY MÁNU 2026-08-17, replacing the
-              projected/settled pair and a short-lived third tile. The FIRST
-              is the original: every fault the reports show, unmoved by an
-              employee's own answers, signed or not - the number that stands
-              if nobody signs off. Only a reviewer settling an hour, or a
-              re-upload, moves it. The SECOND is the live one: same number,
-              moving up or down as sign-offs land, and it is what the payout
-              report and the penalty roster pay. */}
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-border bg-surface-2 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                Projected premium
-              </p>
-              <p className="mt-1 text-2xl font-semibold text-foreground">
-                {premiumSplit.originalProjected.toFixed(2)}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                Every fault the reports show, taken literally, with its penalty.
-                This is the number that stands if nobody signs off.
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-border bg-surface-2 p-3">
-              {/* THE LIVE PILL SITS HERE: this is the figure that moves as
-                  people sign, so the light belongs beside the number it
-                  describes. */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                  Live premium
-                </p>
-                <SignatureBadge sent={sent} signed={signed} size="sm" />
-              </div>
-              <p className="mt-1 text-2xl font-semibold text-foreground">
-                {premiumSplit.liveProjected.toFixed(2)}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                The projected figure with every sign-off applied, moving as
-                they land. This is what the payout report and the penalty
-                hours PDF pay.
-              </p>
-            </div>
-          </div>
-
-          {/* what each premium rests on, and which ones nobody has settled.
-              this is the question that decides whether any of them can be sent,
-              so it leads. */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
-            <p className="text-xs text-muted">
-              What each premium rests on: witnessed by a document, settled by a
-              ruling, or still waiting on a person.
-            </p>
-            <Link
-              href={`/portal/admin/timesheets/${batch.id}/evidence`}
-              className="shrink-0 rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
-            >
-              What they rest on →
-            </Link>
-          </div>
-
-          {/* and the other question people ask straight afterwards: where the
-              hours fall, who carries them, and what caused each one. */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
-            <p className="text-xs text-muted">
-              Where the {premiumSplit.liveProjected.toFixed(2)} hours fall, who carries them,
-              and the reason behind every one.
-            </p>
-            <Link
-              href={`/portal/admin/timesheets/${batch.id}/penalty-hours`}
-              className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
-            >
-              View the breakdown →
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* THE CLOCK EXPORT, WHICH IS NOT PART OF THE PAYROLL. It is optional, it
-          moves no figure on this page, and it answers a different question from
-          everything above: not what anybody is owed, but whether the times on
-          the record were clocked or typed. Its own card for that reason, and
-          the only card here that says something when it is empty - a period
-          uploaded without the export has no attendance record at all, and that
-          is worth seeing rather than guessing at. */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
-        <p className="text-xs text-muted">
-          {batch.clockFindings
-            ? `${batch.clockFindings.shifts} shifts from the clock export, rostered against what was `
-              + `actually clocked, with the location and the 3.5 hour cap beside them.`
-            : "No clock export on this pay period, so there is no record of who clocked in, who "
-              + "clocked out, or where they were."}
-        </p>
-        <Link
-          href={`/portal/admin/timesheets/${batch.id}/attendance`}
-          className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
-        >
-          QSClock Time and Attendance →
-        </Link>
-      </div>
-
-      {/* THE QUICKSOLVE CORRECTIONS DESK. What the signed reviews have left to
-          key into QuickSolve, worked entry by entry and signed off per review.
-          Its own card because it is the office's follow-through on every
-          signature above. */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
-        <p className="text-xs text-muted">
-          {qsp.reviews === 0
-            ? "No signed review has left entries to change in QuickSolve yet."
-            : `${qsp.owed - qsp.marked} of ${qsp.owed} entries still to add in QuickSolve, ` +
-              `across ${qsp.reviews} signed ${qsp.reviews === 1 ? "review" : "reviews"}.`}
-        </p>
-        <Link
-          href={`/portal/admin/timesheets/${batch.id}/qsp`}
-          className="shrink-0 rounded-md border border-border-strong px-4 py-2 text-sm font-semibold transition hover:bg-surface-3"
-        >
-          Corrections to make in QuickSolve →
-        </Link>
-      </div>
 
       {disputed > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -952,20 +551,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         </div>
       )}
 
-      <SendPanel
-        batchId={batch.id}
-        readyToSend={readyToSend}
-        alreadySent={sent}
-        send={sendTimesheets}
-        live={mode.live}
-        // SHUT UNTIL SOMEBODY SAYS THE PERIOD IS FINISHED. Not until the data
-        // looks finished - the schedule locks at 8pm on the last day and no
-        // export records it, so a full period is still only a precondition.
-        // Enforced in `sendTimesheets` as well since 2026-09-09; this prop is the
-        // explanation and the override, no longer the rule itself.
-        blocked={sendBlocked}
-        blockedWhy={blockedWhy}
-      />
+      <BatchViews batchId={batch.id} count={rows.length} />
 
       <ReviewTable
         rows={rows}
@@ -976,24 +562,11 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
         send={sendTimesheets}
         hasSource={!!batch.sourceUrl}
         hasSchedule={!!batch.scheduleUrl}
+        periodLabel={`${batchPeriodLabels(batch.periodFrom, batch.periodTo).title} · ${batch.program === "DP" ? "Day Program" : "ILS"}`}
         blocked={sendBlocked}
         blockedWhy={blockedWhy}
       />
     </section>
-  );
-}
-
-function Stat({ label, value, tone }) {
-  const cls =
-    tone === "ok"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300"
-      : tone === "warn"
-        ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
-        : "border-border bg-surface text-muted";
-  return (
-    <span className={`rounded-md border px-2.5 py-1 ${cls}`}>
-      {label} <b className="font-semibold">{value}</b>
-    </span>
   );
 }
 

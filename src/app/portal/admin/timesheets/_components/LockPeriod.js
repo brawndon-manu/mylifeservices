@@ -13,7 +13,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setBatchLocked } from "../actions";
 
-export default function LockPeriod({ batchId, locked, lockedByName, lockedAt, covered }) {
+export default function LockPeriod({ batchId, locked, lockedByName, lockedAt, covered, showStatus = true }) {
   const [pending, start] = useTransition();
   const [reopening, setReopening] = useState(false);
   const [err, setErr] = useState(null);
@@ -29,11 +29,11 @@ export default function LockPeriod({ batchId, locked, lockedByName, lockedAt, co
 
   if (locked) {
     return (
-      <div className="mt-3 border-t border-border pt-3">
-        <p className="text-sm text-muted">
+      <div className={showStatus ? "mt-3 border-t border-border pt-3" : "mt-3"}>
+        {showStatus && <p className="text-sm text-muted">
           Marked final{lockedByName ? <> by <b className="text-foreground">{lockedByName}</b></> : null}
           {lockedAt ? <> · {lockedAt}</> : null}.
-        </p>
+        </p>}
         {!reopening ? (
           <button
             type="button"

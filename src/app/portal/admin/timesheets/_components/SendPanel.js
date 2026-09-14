@@ -23,7 +23,9 @@
 // `send-gate.test.mjs` pins all of that in source and explains each failure.
 // The same props go to `ReviewTable`, because the per-row Send button needs them
 // too: it used to send one person on a single click while this panel was shut.
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Send, X } from "lucide-react";
+import styles from "./BatchOverview.module.css";
 import DatePicker from "@/components/DatePicker";
 
 export default function SendPanel({
@@ -33,7 +35,7 @@ export default function SendPanel({
   // locks at 8pm and no export records that it happened.
   blocked = false, blockedWhy = null,
 }) {
-  const [open, setOpen] = useState(false);
+  const dialog = useRef(null);
   // the override is deliberate rather than absent: a wall with no door means
   // somebody eventually needs one at 6pm on payroll day and has to edit the
   // database to get it. Two clicks and it says out loud what is being ignored.
@@ -43,26 +45,24 @@ export default function SendPanel({
   if (readyToSend === 0 && alreadySent === 0) return null;
 
   return (
-    <div className="mt-6 rounded-xl border border-border bg-surface p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-foreground">Send to everyone</p>
-          <p className="mt-1 text-sm text-muted">
-            {readyToSend > 0
-              ? `${readyToSend} matched timesheet${readyToSend === 1 ? "" : "s"} ready to go out.`
-              : "Everyone matched has already been sent."}
-          </p>
+    <>
+      <button type="button" className={styles.primary} aria-haspopup="dialog"
+        disabled={readyToSend === 0} onClick={() => dialog.current.showModal()}>
+        <Send size={16} aria-hidden="true" />Send {readyToSend}
+      </button>
+      <dialog ref={dialog} aria-labelledby="send-timesheets-title"
+        onClose={() => setOverride(false)}
+        className="m-auto max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border bg-surface p-6 text-foreground shadow-xl backdrop:bg-background/60">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="send-timesheets-title" className="text-xl font-semibold">Send timesheets</h2>
+            <p className="mt-1 text-sm text-muted">
+              {readyToSend} matched timesheet{readyToSend === 1 ? "" : "s"} selected.
+            </p>
+          </div>
+          <button type="button" aria-label="Close send timesheets" onClick={() => dialog.current.close()}
+            className={styles.button}><X size={18} aria-hidden="true" /></button>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          disabled={readyToSend === 0 || shut}
-          title={shut ? blockedWhy || undefined : undefined}
-          className="rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:opacity-50"
-        >
-          {open ? "Cancel" : `Send all (${readyToSend})`}
-        </button>
-      </div>
 
       {shut && (
         <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
@@ -70,8 +70,8 @@ export default function SendPanel({
             {blockedWhy || "This pay period is not finished yet."}
           </p>
           <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-            Mark the period final above once the schedule is locked, and this opens
-            on its own.
+            Mark the period final in Period details once the schedule is locked,
+            then use Send at the top of the page. To send early, choose the option below.
           </p>
           <button
             type="button"
@@ -89,7 +89,7 @@ export default function SendPanel({
         </p>
       )}
 
-      {open && (
+      {!shut && (
         <form
           action={send.bind(null, batchId)}
           onSubmit={(e) => {
@@ -147,6 +147,7 @@ Send anyway?`)) e.preventDefault();
           </button>
         </form>
       )}
-    </div>
+      </dialog>
+    </>
   );
 }

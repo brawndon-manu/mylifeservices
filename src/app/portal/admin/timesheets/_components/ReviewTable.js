@@ -9,9 +9,10 @@ import EmployeePicker from "./EmployeePicker";
 import RowDocuments from "./RowDocuments";
 import SheetMenu from "./SheetMenu";
 import { companyDate } from "@/lib/company-time";
+import { EmployeeHours, EmployeePayDetails, EmployeeDownloads, TimesheetReviewButton } from "./EmployeeCardDetails";
+import styles from "./EmployeeCard.module.css";
 import { unconfirmedMatch } from "@/lib/timesheet/match-confirm";
 
-const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 const dt = (iso) =>
   iso ? companyDate(iso, { month: "short", day: "numeric" }) : null;
 
@@ -31,6 +32,7 @@ export default function ReviewTable({
   send,
   hasSource,
   hasSchedule,
+  periodLabel,
   // THE PERIOD GATE REACHES THE ROWS TOO (Mánu 2026-09-09). It used to live only
   // on `SendPanel`, so Send all was shut on an open period while the Send button
   // on every row beside it mailed one person on a single click. Same sentence,
@@ -39,6 +41,7 @@ export default function ReviewTable({
   blockedWhy = null,
 }) {
   const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
 
   const counts = {
     all: rows.length,
@@ -59,6 +62,9 @@ export default function ReviewTable({
     argued: rows.filter((r) => (r.questionsDeclined || 0) > 0).length,
   };
   const shown = rows.filter((r) => {
+    const term = query.trim().toLocaleLowerCase();
+    const searchable = [r.sourceName, r.user?.displayName, r.user?.name, r.user?.email, r.user?.phone].filter(Boolean).join(" ").toLocaleLowerCase();
+    if (term && !searchable.includes(term)) return false;
     if (filter === "needsMatch") return !r.user;
     if (filter === "unsent") return r.user && !r.sentAt;
     if (filter === "notSigned") return r.sentAt && !r.signedAt;
@@ -83,22 +89,12 @@ export default function ReviewTable({
   ];
 
   return (
-    <div className="mt-8">
-      <div className="flex flex-wrap gap-1.5">
-        {chips.map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setFilter(k)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-              filter === k
-                ? "border-brand-light bg-brand-light/10 text-brand-dark"
-                : "border-border text-muted hover:text-foreground"
-            }`}
-          >
-            {label} {counts[k === "all" ? "all" : k]}
-          </button>
-        ))}
+    <div className={`mt-8 ${styles.roster}`}>
+      <div className={styles.filters}>
+        <input type="search" aria-label="Search employees" placeholder="Search employees" value={query} onChange={(event) => setQuery(event.target.value)} className={styles.search} />
+        <select aria-label="Filter employees" value={filter} onChange={(event) => setFilter(event.target.value)} className={styles.filter}>
+          {chips.map(([key, label]) => <option key={key} value={key}>{key === "all" ? "All employees" : label} ({counts[key]})</option>)}
+        </select>
       </div>
 
       <ul className="mt-4 space-y-2.5">
@@ -112,18 +108,17 @@ export default function ReviewTable({
           return (
             <li
               key={r.id}
-              className={`rounded-xl border bg-surface p-4 shadow-sm ${
+              className={`${styles.card} border bg-surface shadow-sm ${
                 r.user ? "border-border" : "border-rose-300 dark:border-rose-900/60"
               }`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
+              <div className={styles.header}>
+                <div className={styles.identity}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">{r.sourceName}</span>
+                    <span className={styles.name}>{r.user?.displayName || r.sourceName.split(", ").reverse().join(" ")}</span>
                     {/* the office's per-sheet controls, beside the name on
-                        Mánu's call 2026-09-02 - the right edge belongs to the
-                        status chip and the document links, and the bottom row
-                        to delivery. Opens rightward from here. */}
+                        Mánu's call 2026-09-02 - the review button sits on the right, and the bottom row
+                        holds delivery. Opens rightward from here. */}
                     <SheetMenu
                       timesheetId={r.id}
                       held={r.held}
@@ -215,37 +210,8 @@ export default function ReviewTable({
                     )}
                   </div>
 
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-                    <span>
-                      QSP {fmt(r.rawHours)} → <b className="text-foreground">{fmt(r.paidHours)}</b> hrs
-                    </span>
-                    {r.otHours > 0 && <span>OT {fmt(r.otHours)}</span>}
-                    {r.doubleHours > 0 && <span>DT {fmt(r.doubleHours)}</span>}
-                    {r.premiumHours > 0 && (
-                      <span className="text-rose-600 dark:text-rose-400">
-                        premium {fmt(r.premiumHours)} hrs
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* RIGHT-ALIGNED AT EVERY WIDTH, on Mánu's call 2026-08-16.
-                    Tried left-aligning these once the row wraps on a phone, on
-                    the grounds that they then start in a different place from
-                    the name above them. He looked at it and wants them right:
-                    the four links are one block that reads as a block, and it
-                    should sit the same way on every screen.
-
-                    `items-end` ALONE DOES NOT DO THAT once the row wraps.
-                    `justify-between` puts the only item on the second line at
-                    flex-start, so the block sat at the card's LEFT edge and
-                    `items-end` right-aligned the links inside its own 166px
-                    box - 127px shy of the card edge on 59 of 59 July rows at
-                    375. `ml-auto` eats the free space before justify-content
-                    is consulted, so the block lands on the right edge on a
-                    wrapped line and nothing moves on an unwrapped one. This is
-                    what All employees has been doing all along. */}
-                <div className="ml-auto flex flex-none flex-col items-end gap-1.5">
+                  <p className={styles.period}>{periodLabel}</p>
+                  <div className={styles.status}>
                   {r.disputed ? (
                     <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                       Reported a problem
@@ -274,40 +240,15 @@ export default function ReviewTable({
                       Review &amp; approve →
                     </a>
                   )}
-                  {r.hasPdf && <SheetLinks r={r} />}
-                  <a
-                    href={`/portal/admin/timesheets/sheet/${r.id}/report`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-medium text-muted transition hover:text-brand"
-                  >
-                    Hours &amp; penalties →
-                  </a>
-                  {/* WHAT THIS PERSON SEES, opened as them. Only rendered when
-                      the server minted a token for it, which it only does for
-                      SUPER - see the note beside `canPreview`. Read-only on the
-                      far side: `?preview=1` blocks every write. */}
-                  {r.previewToken && (
-                    <>
-                      <a
-                        href={`/t/${r.previewToken}?preview=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-medium text-muted transition hover:text-brand"
-                      >
-                        Their timesheet review page →
-                      </a>
-                      <a
-                        href={`/t/${r.previewToken}/pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-medium text-muted transition hover:text-brand"
-                      >
-                        Their generated sheet →
-                      </a>
-                    </>
-                  )}
+                  </div>
                 </div>
+                <TimesheetReviewButton token={r.previewToken} />
+              </div>
+              <EmployeeHours row={r} />
+              <EmployeePayDetails pay={r.pay} />
+              <div className={styles.actions}>
+                <a href={`/portal/admin/timesheets/sheet/${r.id}/report`} target="_blank" rel="noopener noreferrer" className={styles.report}>Hours &amp; penalties</a>
+                <EmployeeDownloads row={r} batchId={batchId} hasSource={hasSource} hasSchedule={hasSchedule} />
               </div>
 
               {/* the two source documents, sitting with the figures they
@@ -319,16 +260,16 @@ export default function ReviewTable({
                 hasSchedule={hasSchedule}
               />
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-                <div className="flex min-w-0 items-center gap-2.5">
+              <div className={styles.contact}>
+                <div className={styles.contactIdentity}>
                   {r.user ? (
                     <>
                       <Avatar name={r.user.displayName} image={r.user.image} size={26} />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
+                      <div className={styles.contactText}>
+                        <p className="text-sm font-medium text-foreground">
                           {r.user.displayName}
                         </p>
-                        <p className="truncate text-xs text-muted">{r.user.email}</p>
+                        <p className="text-xs text-muted">{r.user.email}</p>
                         {/* UNDER THE EMAIL, ON ITS OWN LINE, AND IT NEVER
                             TRUNCATES. Both are the same lesson All employees
                             already learned: sharing a line with a work email
@@ -355,7 +296,7 @@ export default function ReviewTable({
                     controls are the second item in a wrapping justify-between
                     row, so without `ml-auto` they sat 107px shy of the card
                     edge on every row at 375. */}
-                <div className="ml-auto flex flex-none items-center gap-2">
+                <div className={styles.contactActions}>
                   <EmployeePicker
                     timesheetId={r.id}
                     candidates={candidates}
@@ -406,86 +347,6 @@ export default function ReviewTable({
           );
         })}
       </ul>
-    </div>
-  );
-}
-
-// THE DOCUMENTS FOR ONE PERSON, each carrying the total it opens.
-//
-// Mánu 2026-08-09 wanted them side by side. They differ by every premium the
-// engine assumed away - Aranda was 19.00 hours on one and 2.00 on another - so
-// the figure belongs on the link rather than behind it.
-//
-// "IF ASSUMPTIONS HOLD" IS GONE, dropped 2026-08-12 with the thing it described.
-// That basis existed because the engine APPLIED an assumption: an off-clock ten
-// was paid on sight, so there was a reading of the sheet where those assumptions
-// turned out right and a reading where they did not. The reversal the same day -
-// "only add the time once they confirm it was taken there" - means the engine
-// now assumes nothing, so the assumed and projected sheets are the same document
-// with two names on it. Mánu: "we should remove the if assumptions hold and
-// their generated sheet from the preview PDF."
-//
-// What is left is the honest pair: what the sheet says NOW, and what it says
-// once the corrections on record are applied.
-//
-// AN UNSIGNED ROW SHOWS ONE LINK, because until they sign there is nothing to
-// compare the projected sheet against. The old "where they agree, collapse to
-// one" rule went with the third document: it existed because ten of the 59 owed
-// nothing under any reading and got three identical links, which teaches people
-// that the labels do not mean anything.
-function SheetLinks({ r }) {
-  const base = `/portal/admin/timesheets/sheet/${r.id}/download`;
-  const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
-  // a signed or approved copy is a stored artefact of the sheet as it stood,
-  // and it is always the projected one. Say which it is.
-  const settled = r.approvedAt ? "Approved PDF" : r.signedAt ? "Signed PDF" : null;
-
-
-  const link = (href, label, muted) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`text-xs font-medium transition ${
-        muted ? "text-muted hover:text-brand" : "text-brand hover:text-brand-dark"
-      }`}
-    >
-      {label} →
-    </a>
-  );
-
-  // Nothing to compare against until they have signed, so a row with no
-  // signature is one link whatever the figures say.
-  if (!settled) {
-    return (
-      <div className="flex flex-col items-end">
-        {link(`${base}?basis=projected`, `projected ${f2(r.premiumProjected)}`)}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-end gap-0.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">
-        {settled ? "Timesheet" : "Preview PDF"}
-      </span>
-      {/* TWO DOCUMENTS, AND ONLY ONCE THERE ARE TWO. Mánu 2026-08-12: "i want
-          to keep the projected timesheet before corrections. i want a new
-          option for the final timesheet once theyve signed off on it."
-
-          FINAL is the stored signed or approved artefact - the plain base URL,
-          which the download route serves from the blob on the projected basis.
-          It is first because it is the only one carrying a signature.
-
-          PROJECTED is the sheet as it stood before any of their answers, kept
-          deliberately so payroll can see what changed.
-
-          The "as corrected" link that used to sit here is gone with it: it was a
-          generated mid-flight reading of a sheet that now has a final version,
-          and offering a third document differing from both was the thing that
-          made this column hard to read. */}
-      {link(base, r.approvedAt ? "Approved (final)" : "Final - signed")}
-      {link(`${base}?basis=projected&original=1`, `projected ${f2(r.premiumProjected)}`, true)}
     </div>
   );
 }

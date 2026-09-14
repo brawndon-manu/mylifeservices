@@ -1,3 +1,4 @@
+import BatchViews from "../../_components/BatchViews";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -139,6 +140,8 @@ export default async function CalendarPage({ params }) {
         time off against it. Time off is kept against the person and the pay period, so it
         survives a re-upload, and it is never added to worked hours or to overtime.
       </p>
+
+      <BatchViews batchId={batch.id} count={batch.timesheets.length} active="days" />
 
       <div className="mt-6 overflow-x-auto rounded-xl border border-border">
         <table className="w-full border-collapse text-sm">
