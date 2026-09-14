@@ -39,6 +39,8 @@ export default function BatchOverview({ batch, state, newerInPeriod, total, sent
         <div className={styles.toolbar}>
           {state.key !== "superseded" && sendControl}
           <Link className={styles.button} href={`/portal/admin/timesheets/${batch.id}/legacy#timesheet-documents`}>Documents</Link>
+          {/* Mánu 2026-09-14: "put it next to the date for now". */}
+          <Link className={styles.button} href={`/portal/admin/timesheets/${batch.id}/send-report`}>Email payroll</Link>
           <details className={styles.more}>
             <summary className={styles.button} aria-label="More period actions"><MoreHorizontal size={18} aria-hidden="true" /></summary>
             <nav className={styles.menu} aria-label="Period actions">{actions}</nav>

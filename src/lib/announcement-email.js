@@ -369,6 +369,70 @@ export function buildFormEmailHtml({
   });
 }
 
+// THE PAYROLL BUNDLE - Mánu 2026-09-14: "lets make the email look nice tho.
+// its so bad. lets do something similar to the other emails with have with the
+// logo". Same shell as the announcements and the form receipts, so payroll
+// opens something that looks like the rest of the portal rather than a plain
+// text list.
+//
+// The figures themselves are NOT repeated in the body. Four documents are
+// attached and a fifth is a link; a summary in the email is a fifth place the
+// same numbers live and the first one to go stale.
+export function buildPayrollEmailHtml({
+  logoUrl,
+  program,
+  span,
+  sentBy,
+  files = [],
+  signed = 0,
+  sheets = 0,
+  zipUrl,
+  locked = true,
+}) {
+  const subtitle = `
+    <div style="margin-top:12px;color:#334155;font-size:14px;">${esc(program)} payroll</div>
+    <div style="margin-top:4px;color:#64748b;font-size:13px;">Sent by ${esc(sentBy)}</div>`;
+
+  const rows = files
+    .map(
+      (f) => `<tr>
+        <td style="padding:8px 0;border-top:1px solid #e3e8ef;color:#33414f;font-size:14px;">${esc(f.label)}</td>
+        <td style="padding:8px 0;border-top:1px solid #e3e8ef;color:#8a93a0;font-size:13px;text-align:right;white-space:nowrap;">${esc(f.ext.toUpperCase())}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const attached = `
+    <div style="margin:0 0 20px;padding:14px 16px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:10px;">
+      <div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Attached to this email</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">${rows}</table>
+    </div>`;
+
+  // THE TIMESHEETS ARE A LINK AND THE EMAIL SAYS WHY. Measured: 61 of them are
+  // 24.30 MB, which is over what an inbox takes once encoded. Somebody who is
+  // told only "see the portal" goes looking for a button; this hands them one.
+  const timesheets = `
+    <p style="margin:0 0 6px;">The signed timesheets are too large to attach, so they are a download:</p>
+    <div style="margin:0 0 6px;"><a href="${zipUrl}" style="${BTN}">Download ${esc(String(signed))} signed timesheets</a></div>
+    <div style="margin:0 0 20px;color:#8a93a0;font-size:12px;">${esc(String(signed))} of ${esc(String(sheets))} signed. Opens the portal, so you will be asked to sign in.</div>`;
+
+  const notClosed = locked
+    ? ""
+    : `<div style="margin:0 0 20px;padding:14px 16px;background:#fdf6e3;border:1px solid #f0dca8;border-radius:10px;color:#7a5b09;font-size:14px;">
+         <strong style="display:block;margin-bottom:4px;">This period is not closed yet.</strong>
+         These figures can still change before it is finalised.
+       </div>`;
+
+  return emailShell({
+    logoUrl,
+    eyebrow: "Payroll",
+    title: span,
+    subtitle,
+    bodyHtml: `${notClosed}${attached}${timesheets}`,
+    footer: "My Life Services &middot; payroll reports",
+  });
+}
+
 export function buildAnnouncementEmailHtml({
   logoUrl,
   title,
