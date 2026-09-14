@@ -5,6 +5,7 @@
 // number has to be confirmed before it moves. the point of this screen is a
 // human deciding which record is right, and a button that agrees for you defeats
 // it.
+import styles from "./DataChecks.module.css";
 import { useState } from "react";
 import { overrideDayHours } from "@/app/portal/admin/timesheets/actions";
 import UndoDay from "@/app/portal/admin/timesheets/_components/UndoDay";
@@ -89,7 +90,7 @@ export default function CorrectDay({ timesheetId, date, timesheet, schedule, exi
   }
 
   return (
-    <div className="mt-2 rounded-md border border-border bg-surface p-3">
+    <div className={`${styles.correction} mt-2 rounded-md border border-border bg-surface p-3`}>
       <p className="text-xs text-muted">
         Timesheet says <span className="font-semibold text-foreground">{f2(timesheet)}</span>
         {schedule != null && (

@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { ArrowUpRight, CalendarDays, ChevronDown, ChevronRight, FileText, Info, Users } from "lucide-react";
+import { batchPeriodLabels } from "@/lib/timesheet/batch-overview";
+import styles from "./DataChecks.module.css";
+import BatchViews from "../../_components/BatchViews";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -6,8 +10,6 @@ import { canManageTimesheets } from "@/lib/roles";
 import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import { violationsFor, VIOLATION_KINDS } from "@/lib/timesheet/violations";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
-import { complianceFor, complianceCounts, attendanceOf, COMPLIANCE_KINDS, CAP_MINUTES } from "@/lib/timesheet/compliance";
-import { preferredName } from "@/lib/contacts";
 import { markKeyOf, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
@@ -183,48 +185,6 @@ export default async function ChecksPage({ params }) {
   // ask whether the break happened - so they belong in this total
   const needsPerson = counts.decide + counts.unworked + counts.violation;
 
-  // every scheduling finding in this period, worst first, with the person on it.
-  // Read per sheet through the same `complianceFor` the patterns page and the
-  // person cards ask, so the three cannot disagree about what one is.
-  const scheduling = (() => {
-    const rows = [];
-    for (const ts of batch.timesheets) {
-      const who = ts.user ? preferredName(ts.user) : ts.sourceName;
-      for (const f of complianceFor(ts.data, attendanceOf(batch, ts.sourceName))) rows.push({ ...f, who });
-    }
-    rows.sort((a, b) => b.minutes - a.minutes || String(a.who).localeCompare(String(b.who)));
-    const counts = complianceCounts(rows);
-
-    // GROUPED BY KIND, AND CAPPED, 2026-08-22. The first upload carrying a clock
-    // export took this panel from 54 rows to 458, and a flat 458 is the wall
-    // this screen already learned about once: "six kinds of finding interleaved
-    // by surname is a wall, not a screen". 123 missed clock-ins listed one per
-    // shift tell you nothing that "123, and here are the worst" does not.
-    //
-    // The cap is stated, never silent. A list that quietly stops at twelve reads
-    // as a complete list of twelve.
-    const SHOWN_PER_KIND = 12;
-    const groups = [];
-    for (const kind of Object.keys(COMPLIANCE_KINDS)) {
-      const mine = rows.filter((r) => r.kind === kind);
-      if (!mine.length) continue;
-      groups.push({
-        kind,
-        total: mine.length,
-        shown: mine.slice(0, SHOWN_PER_KIND),
-        more: Math.max(0, mine.length - SHOWN_PER_KIND),
-      });
-    }
-
-    return {
-      rows,
-      groups,
-      total: rows.length,
-      overCap: counts["booking-over-cap"] || 0,
-      overlap: counts["blocks-overlap"] || 0,
-    };
-  })();
-
   const notes = batchNotes(batch.timesheets);
 
   // the recompute prompt belongs to a SHEET, not a day, so it rides on the
@@ -237,62 +197,54 @@ export default async function ChecksPage({ params }) {
     }
   }
 
+  const period = batchPeriodLabels(batch.periodFrom, batch.periodTo);
+
   return (
-    <section className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
-      <BackLink href={`/portal/admin/timesheets/${batch.id}`}>Back to the batch</BackLink>
-
-      <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
-        Data checks
-      </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        {batch.periodFrom} to {batch.periodTo}
-      </h1>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
-        {/* This used to end "so everything below is a problem in the source data
-            rather than in the arithmetic", which stopped being true the moment
-            violations landed: on a missing lunch the source data is correct and
-            the rule is what was broken. The sentence described the whole page,
-            so adding a group to the page meant rewriting it. */}
-        Nothing here has changed anybody&apos;s hours. The engine reproduces what
-        QSP exported to the hundredth of an hour, so nothing below is an
-        arithmetic fault: either the source data disagrees with itself, or it
-        agrees and records a break somebody did not get.{" "}
-        {entries.length === 0 ? (
-          "Nothing was flagged in this batch."
-        ) : (
-          <>
-            <span className="font-semibold text-foreground">
-              {needsPerson} of these need a person.
-            </span>{" "}
-            The rest are here so you can audit them.
-          </>
-        )}
-      </p>
-
-      {/* EVERYBODY, not just the people with a finding. This list is the ones
-          something is wrong with, so on the August batch 14 of 60 appear on no
-          screen at all and there was no way to reach one of them from here. */}
-      <Link
-        href={`/portal/admin/timesheets/${batch.id}/people`}
-        className="card-lift mt-5 inline-block rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-brand shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-      >
-        View all employees
-      </Link>
+    <section className={styles.page}>
+      <BackLink href={`/portal/admin/timesheets/${batch.id}`}>Back to pay period</BackLink>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.period}>{period.eyebrow} · {batch.program === "DP" ? "Day program" : "ILS"}</p>
+          <h1>Data checks</h1>
+          <p className={styles.subtitle}>{period.title}</p>
+        </div>
+        <Link href={`/portal/admin/timesheets/${batch.id}/people`} className={styles.button}>
+          <Users size={16} aria-hidden="true" /> View all employees
+        </Link>
+      </header>
+      <BatchViews batchId={batch.id} count={batch.timesheets.length} active="checks" />
+      <div className={styles.overview}>
+        <div className={styles.reviewSummary}>
+          <span className={styles.reviewCount}>{needsPerson}</span>
+          <div><p>Need a person to review</p><span>The remaining findings are here to audit.</span></div>
+        </div>
+        <details className={styles.about}>
+          <summary><Info size={16} aria-hidden="true" /> About these checks <ChevronDown size={14} aria-hidden="true" /></summary>
+          <p>
+            Nothing here has changed anybody&apos;s hours. The engine reproduces what
+            QSP exported to the hundredth of an hour, so nothing below is an
+            arithmetic fault: either the source data disagrees with itself, or it
+            agrees and records a break somebody did not get.
+            {entries.length === 0 && " Nothing was flagged in this batch."}
+          </p>
+        </details>
+      </div>
 
       {/* WHAT THE REST BREAK AUDIT FLAGGED - day program batches only. The
           audit xlsx is hand-maintained and it shows; these are its rows read
           back with everything the reader could not make sense of. Fixes
           happen in the spreadsheet, then the period is uploaded again. */}
       {(batch.dpAudit?.faults?.length || 0) > 0 && (
-        <details className="mt-6 rounded-xl border border-border bg-surface p-5">
-          <summary className="cursor-pointer list-none text-base font-semibold tracking-tight text-foreground">
-            <span className="mr-1.5 inline-block text-[10px] text-faint">&#9656;</span>
+        <details className={styles.contextPanel}>
+          <summary className={styles.contextSummary}>
+            <CalendarDays size={18} aria-hidden="true" />
             What the rest break audit flagged
-            <span className="ml-2 rounded-full border border-border-strong bg-surface-2 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-muted">
+            <span className={styles.count}>
               {batch.dpAudit.faults.length}
             </span>
+            <ChevronDown size={16} className={styles.chevron} aria-hidden="true" />
           </summary>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
+          <p className={styles.contextCopy}>
             Rows the audit spreadsheet marked or the reader could not make sense
             of. They print on the sheets exactly as the file shows them; the fix
             is in the spreadsheet itself, then upload the period again.
@@ -300,7 +252,7 @@ export default async function ChecksPage({ params }) {
           <ul className="mt-4 space-y-1.5">
             {batch.dpAudit.faults.map((f, i) => (
               <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border/60 pt-1.5 text-sm first:border-0 first:pt-0">
-                <span className="min-w-[13rem] font-medium text-foreground">{f.person}</span>
+                <span className="min-w-0 font-medium text-foreground sm:min-w-52">{f.person}</span>
                 <span className="font-mono text-xs text-muted">{f.date}</span>
                 <span className="text-muted">{f.detail}</span>
                 {f.text && <span className="font-mono text-xs text-faint">[{f.text}]</span>}
@@ -310,86 +262,8 @@ export default async function ChecksPage({ params }) {
         </details>
       )}
 
-      {/* HOW THE SCHEDULE WAS BUILT, for this period.
-          Deliberately NOT folded into the findings list above. Every row there
-          is a day somebody has to decide about - confirm the break, correct the
-          punch, mark them contacted - and carries the control to do it. These
-          have no such answer: the booking was already rostered and worked, so
-          nobody can resolve one from this screen, and dropping unanswerable
-          rows into a list of questions is how the anomaly pile stopped being
-          readable. The fix is in QuickSolve before the next period is built,
-          and the trend lives on Repeat patterns. */}
-      {scheduling.total > 0 && (
-        <details className="mt-6 rounded-xl border border-sky-300 bg-sky-50/60 p-5 dark:border-sky-800/70 dark:bg-sky-950/30">
-          <summary className="cursor-pointer list-none text-base font-semibold tracking-tight text-foreground">
-            <span className="mr-1.5 inline-block text-[10px] text-faint">&#9656;</span>
-            Scheduling to stop
-            <span className="ml-2 rounded-full border border-sky-300 bg-sky-100 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
-              {scheduling.total}
-            </span>
-          </summary>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Nobody is owed anything for these and none of them reaches a sheet
-            anyone signs. They are rules broken by how the schedule was{" "}
-            <em>built</em>, before the shift was worked, so the fix is in
-            QuickSolve rather than here.{" "}
-            {scheduling.overCap > 0 && (
-              <>
-                <strong>{scheduling.overCap}</strong>{" "}
-                {scheduling.overCap === 1 ? "booking runs" : "bookings run"} past{" "}
-                {CAP_MINUTES / 60} hours.{" "}
-              </>
-            )}
-            {scheduling.overlap > 0 && (
-              <>
-                <strong>{scheduling.overlap}</strong>{" "}
-                {scheduling.overlap === 1 ? "day has" : "days have"} blocks over
-                each other, and every overlapping minute bills twice.
-              </>
-            )}
-          </p>
-          {scheduling.groups.map((g) => (
-            <div key={g.kind} className="mt-5">
-              <p className="text-sm font-semibold text-foreground">
-                {COMPLIANCE_KINDS[g.kind].label}
-                <span className="ml-2 rounded-full border border-sky-300 bg-sky-100 px-2 py-0.5 font-mono text-[11px] text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
-                  {g.total}
-                </span>
-              </p>
-              <p className="mt-0.5 text-xs text-muted">{COMPLIANCE_KINDS[g.kind].action}</p>
-              <ul className="mt-2 space-y-1.5">
-                {g.shown.map((f, i) => (
-                  <li
-                    key={`${f.who}-${f.date}-${f.kind}-${i}`}
-                    className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-t border-border/60 pt-1.5 text-sm first:border-0 first:pt-0"
-                  >
-                    <span className="min-w-[13rem] font-medium text-foreground">{f.who}</span>
-                    <span className="font-mono text-xs text-muted">{f.date}</span>
-                    <span className="text-muted">{COMPLIANCE_KINDS[f.kind].describe(f)}</span>
-                  </li>
-                ))}
-              </ul>
-              {/* said out loud rather than silently truncated */}
-              {g.more > 0 && (
-                <p className="mt-1.5 text-xs text-muted">
-                  and {g.more} more - the whole picture, per person and across
-                  periods, is on{" "}
-                  <Link
-                    href={`/portal/admin/timesheets/patterns?program=${batch.program}`}
-                    className="font-medium text-brand hover:underline"
-                  >
-                    Repeat patterns
-                  </Link>
-                  .
-                </p>
-              )}
-            </div>
-          ))}
-        </details>
-      )}
-
       {!anySchedule && (
-        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+        <div className={styles.warning}>
           No schedule export was uploaded with this batch, so the hours could only
           be checked against themselves. A punch typed into the wrong box is
           invisible that way - especially when two of them cancel out and leave a
@@ -399,7 +273,7 @@ export default async function ChecksPage({ params }) {
       )}
 
       {entries.length === 0 ? (
-        <p className="mt-10 rounded-xl border border-emerald-300/60 bg-emerald-50 p-6 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <p className={styles.empty}>
           Nothing looks wrong in this batch. Every punch pair runs forwards, no
           stretch on the clock is impossibly long, and
           {anySchedule
@@ -414,61 +288,56 @@ export default async function ChecksPage({ params }) {
           notes={notes}
         >
           {entries.map((e) =>
-            // A PERSON ROW, NOT A DAY ROW. It carries no lead, no day picture
-            // and no evidence panel, because all three are on their own page -
-            // repeating them here is what made the per-day version 118 cards
-            // long. What it needs is the name, what kinds they have, and a way
-            // in. The flag stays, keyed on the person, so "I have called them"
-            // is recordable without a schema change.
+            // Keep violations grouped by person, with their affected days
+            // available inline through the same lazy preview as other groups.
             e.kind === "violation" ? (
-              <Link
+              <div
                 key={e.rowKey}
-                href={`/portal/admin/timesheets/${batch.id}/person/${e.timesheetId}`}
-                className="block rounded-lg border border-border bg-surface p-4 border-l-4 border-l-fuchsia-500 transition hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_var(--color-brand-light)]"
+                className={styles.personRow}
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <div className={styles.rowHeading}>
                   <p className="text-sm font-semibold text-foreground">{e.who}</p>
-                  <p className={`text-sm font-semibold ${e.d.tone}`}>{e.d.head}</p>
+                  <p className={styles.findingValue} data-group={e.d.group}>{e.d.head}</p>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   {e.v.kinds.map((k) => (
                     <span
                       key={k}
-                      className="rounded-full border border-fuchsia-300 bg-fuchsia-50 px-2 py-0.5 text-[11px] font-medium text-fuchsia-700 dark:border-fuchsia-900/60 dark:bg-fuchsia-950/40 dark:text-fuchsia-300"
+                      className={styles.kindTag}
                     >
                       {VIOLATION_KINDS[k].label}
                     </span>
                   ))}
-                  <span className="ml-auto text-xs font-semibold text-brand">
-                    View their day by day →
-                  </span>
+                  <Link href={`/portal/admin/timesheets/${batch.id}/person/${e.timesheetId}`} className={styles.personLink}>
+                    View their day by day <ChevronRight size={14} aria-hidden="true" />
+                  </Link>
                 </div>
-              </Link>
+                <DayPeek days={e.v.flagged.map(({ day, list }) => ({
+                  ...(dayViews.get(`${e.timesheetId}|${day.date}`) || { day: { date: day.date } }),
+                  summary: list.map((v) => VIOLATION_KINDS[v.kind].label).join(" · "),
+                  bookedMeal: list.some((v) => ["meal-in-shift", "meal-movable", "meal-short"].includes(v.kind)),
+                }))} />
+              </div>
             ) : (
             <div
               key={e.rowKey}
-              className={`rounded-lg border border-border bg-surface p-4 border-l-4 ${
-                e.d.group === "decide"
-                  ? "border-l-rose-500"
-                  : e.d.group === "unworked"
-                    ? "border-l-amber-500"
-                    : "border-l-emerald-600/70"
-              }`}
+              className={styles.findingRow}
+              data-group={e.d.group}
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <div className={styles.rowHeading}>
                 <p className="text-sm">
                   <span className="font-semibold text-foreground">{e.who}</span>
-                  <span className="ml-2 text-xs text-faint">{e.date}</span>
+                  <span className={styles.date}>{e.date}</span>
                 </p>
-                <p className={`text-sm font-semibold ${e.d.tone}`}>{e.d.head}</p>
+                <p className={styles.findingValue} data-group={e.d.group}>{e.d.head}</p>
               </div>
 
-              <p className="mt-1.5 text-sm leading-relaxed text-muted">{e.d.lead}</p>
+              <p className={styles.findingLead}>{e.d.lead}</p>
 
               {/* the day this row is about, drawn the way the employee's own
                   sheet draws it. Every row here names a person and a date and
                   the picture is what the sentence is describing. */}
-              <DayPeek {...(dayViews.get(`${e.timesheetId}|${e.date}`) || {})} />
+              <DayPeek {...(dayViews.get(`${e.timesheetId}|${e.date}`) || { day: { date: e.date } })} />
 
               {/* A WAY THROUGH TO THE PERSON, on every row and not only the
                   violation ones.
@@ -481,15 +350,15 @@ export default async function ChecksPage({ params }) {
                   NOT A WRAPPING LINK. This card holds a flag button and two
                   expandable panels, and nesting those inside an anchor makes
                   them unreachable by keyboard and unpredictable by mouse. The
-                  violation row can wrap because it holds nothing but text.
+                  violation row likewise uses a separate link for its preview.
                   A rest report row that matched NO timesheet has no person to
                   open - the report can name somebody the export never did - so
                   the link is conditional rather than pointing at /person/null. */}
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <div className={styles.rowActions}>
                 {e.timesheetId ? (
                   <Link
                     href={`/portal/admin/timesheets/${batch.id}/person/${e.timesheetId}`}
-                    className="text-xs font-semibold text-brand underline underline-offset-4"
+                    className={styles.textLink}
                   >
                     View their day by day →
                   </Link>
@@ -501,7 +370,7 @@ export default async function ChecksPage({ params }) {
                 {/* the state as a label, then the way to change it. They used
                     to be one control and split on 2026-08-13, so that marking
                     somebody a second time has somewhere to happen. */}
-                <span className="flex items-center gap-2">
+                <span className={styles.markActions}>
                   <CheckStatusChip flag={flags.get(markKeyOf(e)) || null} reach={reach} />
                   <FlagButton
                     batchId={batch.id}
@@ -514,14 +383,13 @@ export default async function ChecksPage({ params }) {
                 </span>
               </div>
 
-              <details className="group mt-2">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-brand">
-                  <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-                    ▶
-                  </span>
+              <details className={styles.documents}>
+                <summary>
+                  <FileText size={15} aria-hidden="true" />
                   What the documents say
+                  <ChevronDown size={14} className={styles.chevron} aria-hidden="true" />
                 </summary>
-                <div className="mt-2 rounded-md border border-border bg-surface-2 p-3">
+                <div className={styles.documentBody}>
                   {/* the raw punches and what the schedule booked, for both
                       kinds - an overlap row still has to show its evidence, and
                       it is the same evidence */}
@@ -620,7 +488,7 @@ export default async function ChecksPage({ params }) {
                   />
                 )}
 
-              <div className="mt-2 flex flex-wrap items-center gap-4">
+              <div className={styles.rowFooter}>
                 {/* a rest-report name that matched no timesheet has no sheet to
                     open. say which name did not match rather than linking to
                     /sheet/null/download. */}
@@ -629,9 +497,9 @@ export default async function ChecksPage({ params }) {
                     href={`/portal/admin/timesheets/sheet/${e.timesheetId}/download`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs font-medium text-brand hover:text-brand-dark"
+                    className={styles.textLink}
                   >
-                    Open their sheet →
+                    Open their sheet <ArrowUpRight size={14} aria-hidden="true" />
                   </a>
                 ) : (
                   <span className="text-xs text-amber-700 dark:text-amber-400">
@@ -651,7 +519,7 @@ export default async function ChecksPage({ params }) {
         </ChecksFilter>
       )}
 
-      <div className="mt-8 rounded-lg border border-border bg-surface-2 p-4 text-sm text-muted">
+      <div className={styles.footer}>
         <p className="font-semibold text-foreground">Fixing these</p>
         <p className="mt-1">
           Correct the entries in QSP, then upload the period again. Nothing on

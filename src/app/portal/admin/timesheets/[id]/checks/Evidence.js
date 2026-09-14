@@ -1,3 +1,4 @@
+import styles from "./DataChecks.module.css";
 import { hm } from "@/lib/timesheet/anomalies";
 
 // The three sources behind one day, each collapsed until asked for.
@@ -82,7 +83,7 @@ export default function Evidence({
   const sourcePages = day?.pages || [];
 
   return (
-    <div className="mt-2 overflow-hidden rounded-md border border-border bg-surface">
+    <div className={`${styles.sources} mt-2 overflow-hidden rounded-md border border-border bg-surface`}>
       <Snippet
         title="QSP timesheet"
         pages={sourcePages}

@@ -1,5 +1,6 @@
 "use client";
 
+import styles from "./DataChecks.module.css";
 import { useState, useTransition } from "react";
 import ContactViaIcon from "@/components/ContactViaIcon";
 import { setCheckFlag } from "./flag-actions";
@@ -77,7 +78,7 @@ export default function FlagButton({
         type="button"
         onClick={() => setOpen(true)}
         disabled={pending || !!readOnly}
-        className="inline-flex items-center gap-1 rounded-full border border-dashed border-border-strong px-2.5 py-1 text-[11px] font-semibold text-faint transition hover:border-brand hover:text-brand disabled:opacity-50"
+        className={`${styles.markControl} inline-flex items-center gap-1 rounded-full border border-dashed border-border-strong px-2.5 py-1 text-[11px] font-semibold text-faint transition hover:border-brand hover:text-brand disabled:opacity-50`}
       >
         <span aria-hidden="true" className="text-sm leading-none">+</span>
         {pending ? "Saving..." : marked ? "Mark again" : "Mark"}
@@ -95,7 +96,7 @@ export default function FlagButton({
             type="button"
             onClick={() => write(asking, v.key)}
             disabled={pending}
-            className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 disabled:opacity-50 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300"
+            className={`${styles.markControl} inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 disabled:opacity-50 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300`}
           >
             <ContactViaIcon via={v.key} />
             {v.label}
@@ -104,7 +105,7 @@ export default function FlagButton({
         <button
           type="button"
           onClick={() => setAsking(null)}
-          className="px-1.5 text-[11px] font-medium text-faint hover:text-foreground"
+          className={`${styles.markControl} px-1.5 text-[11px] font-medium text-faint hover:text-foreground`}
         >
           back
         </button>
@@ -125,7 +126,7 @@ export default function FlagButton({
           onClick={() => choose(s.key)}
           disabled={pending}
           aria-pressed={current === statusAfter(s.key)}
-          className={`rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
+          className={`${styles.markControl} rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
             current === statusAfter(s.key) ? s.chip : "border-border-strong text-muted hover:text-foreground"
           }`}
         >
@@ -135,7 +136,7 @@ export default function FlagButton({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="px-1.5 text-[11px] font-medium text-faint hover:text-foreground"
+        className={`${styles.markControl} px-1.5 text-[11px] font-medium text-faint hover:text-foreground`}
       >
         cancel
       </button>
