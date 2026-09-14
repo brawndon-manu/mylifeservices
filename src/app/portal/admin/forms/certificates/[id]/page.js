@@ -7,7 +7,8 @@ import { companyDate } from "@/lib/company-time";
 import { printedDate } from "@/lib/certificates/render";
 import BackLink from "@/components/BackLink";
 import DeleteBatch from "./DeleteBatch";
-import { deleteCertificateBatch } from "../actions";
+import BatchTitle from "./BatchTitle";
+import { deleteCertificateBatch, renameCertificateBatch } from "../actions";
 
 export const metadata = { title: "Certificates", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export default async function CertificateBatchPage({ params }) {
         </div>
       </div>
 
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">{batch.title}</h1>
+      <BatchTitle batchId={batch.id} title={batch.title} action={renameCertificateBatch} />
       <p className="mt-3 text-sm text-muted">
         {batch.certificates.length} issued
         {batch.issuedOn ? ` · dated ${printedDate(batch.issuedOn)}` : ""}

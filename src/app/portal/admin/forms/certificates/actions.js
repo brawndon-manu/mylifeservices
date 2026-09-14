@@ -18,6 +18,7 @@ import { canViewFormRecords } from "@/lib/roles";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { randomBytes } from "node:crypto";
 import { renderCertificate, DEFAULT_SIZE, MIN_SIZE, MAX_SIZE } from "@/lib/certificates/render";
+import { cleanTitle } from "@/lib/certificates/title";
 
 async function requireAccess() {
   const user = await getCurrentUser();
@@ -50,7 +51,7 @@ export async function createCertificates(formData) {
     plans = [];
   }
   if (!Array.isArray(plans) || !plans.length) return { ok: false, error: "notemplate" };
-  if (plans.some((t) => !String(t?.title || "").trim())) return { ok: false, error: "notitle" };
+  if (plans.some((t) => !cleanTitle(t?.title))) return { ok: false, error: "notitle" };
   if (plans.some((t) => !(Number(t?.x) >= 0) || !(Number(t?.y) >= 0))) return { ok: false, error: "noplace" };
 
   const files = formData.getAll("template").filter((f) => f && typeof f === "object" && f.size > 0);
@@ -142,7 +143,7 @@ export async function createCertificates(formData) {
     try {
       const batch = await prisma.certificateBatch.create({
         data: {
-          title: String(plan.title).trim(),
+          title: cleanTitle(plan.title),
           templateUrl: stored.url,
           templateName: typeof file.name === "string" ? file.name.slice(0, 200) : null,
           page, x, y, size, align,
@@ -164,6 +165,35 @@ export async function createCertificates(formData) {
 
   revalidatePath("/portal/admin/forms", "layout");
   return { ok: true, runId, batchIds: madeIds, batches: madeIds.length, issued };
+}
+
+// RENAMING A RUN AFTER IT IS PRINTED - Mánu 2026-09-13: "can i have option to
+// rename". The builder names a batch after the file it was uploaded from, so a
+// run printed from "BLANK HIPPA Omnibus Rule 13.pdf" is listed under that name
+// until somebody says otherwise.
+//
+// NOTHING IS REDRAWN. The title is never printed on a certificate - only the
+// name and the optional date are - and the download names are built from the
+// title at request time, so the heading, the list row, both zips and the
+// single PDF all follow from this one update.
+export async function renameCertificateBatch(batchId, title) {
+  await requireAccess();
+
+  const clean = cleanTitle(title);
+  if (!clean) return { ok: false, error: "notitle" };
+
+  try {
+    await prisma.certificateBatch.update({
+      where: { id: String(batchId) },
+      data: { title: clean },
+    });
+  } catch (e) {
+    console.error("certificate batch rename failed:", e);
+    return { ok: false, error: "save" };
+  }
+
+  revalidatePath("/portal/admin/forms", "layout");
+  return { ok: true, title: clean };
 }
 
 // A CERTIFICATE THAT WENT TO THE WRONG PERSON, or a batch printed twice. The

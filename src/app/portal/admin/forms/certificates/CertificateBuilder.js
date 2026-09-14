@@ -485,7 +485,7 @@ export default function CertificateBuilder({ candidates, action }) {
             rows={4}
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
-            placeholder={"Maria Lopez, RBT\nSomebody With No Account"}
+            placeholder={"Brandon Uribe\nSomebody With No Account"}
             className="mt-2 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-foreground"
           />
           <span className="mt-1 block text-xs text-muted">Printed exactly as written.</span>
