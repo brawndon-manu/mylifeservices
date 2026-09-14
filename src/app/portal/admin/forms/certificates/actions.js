@@ -15,7 +15,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
-import { hasBlobStorage, putBlob } from "@/lib/blob";
+import { hasBlobStorage, putBlob, delBlob } from "@/lib/blob";
 import { randomBytes } from "node:crypto";
 import { renderCertificate, DEFAULT_SIZE, MIN_SIZE, MAX_SIZE } from "@/lib/certificates/render";
 import { cleanTitle } from "@/lib/certificates/title";
@@ -196,11 +196,131 @@ export async function renameCertificateBatch(batchId, title) {
   return { ok: true, title: clean };
 }
 
+// GOING BACK TO A PLACEMENT - Mánu 2026-09-13: "is there a way we can make it
+// so we can go back and edit the certificate placement and regenerate them".
+//
+// NOTHING NEEDS RE-UPLOADING, because the blank template was kept at
+// templateUrl when the batch was made and each certificate row still holds the
+// name and the date that were drawn on it. So this re-draws the SAME people
+// with the SAME dates at a new spot.
+//
+// PLACEMENT ONLY, HIS CALL. Who got one and what date it carries are the
+// record of what was issued; moving a name is fixing how the document looks,
+// which is a different act from changing what it says.
+export async function regenerateCertificateBatch(batchId, plan) {
+  await requireAccess();
+  if (!hasBlobStorage()) return { ok: false, error: "noblob" };
+
+  const batch = await prisma.certificateBatch.findUnique({
+    where: { id: String(batchId) },
+    select: {
+      id: true, templateUrl: true,
+      certificates: { select: { id: true, printedName: true, issuedOn: true, pdfUrl: true } },
+    },
+  });
+  if (!batch) return { ok: false, error: "gone" };
+  if (!batch.certificates.length) return { ok: false, error: "nopeople" };
+
+  const page = Math.max(0, Math.round(num(plan?.page)));
+  const x = num(plan?.x, -1);
+  const y = num(plan?.y, -1);
+  if (!(x >= 0) || !(y >= 0)) return { ok: false, error: "noplace" };
+  const size = Math.min(Math.max(num(plan?.size, DEFAULT_SIZE), MIN_SIZE), MAX_SIZE);
+  const align = plan?.align === "left" ? "left" : "center";
+  const hasDate = plan?.dateX != null && plan?.dateY != null;
+  const datePage = hasDate ? Math.max(0, Math.round(num(plan.datePage))) : null;
+  const dateX = hasDate ? num(plan.dateX, -1) : null;
+  const dateY = hasDate ? num(plan.dateY, -1) : null;
+  const dateSize = hasDate ? Math.min(Math.max(num(plan.dateSize, 14), MIN_SIZE), MAX_SIZE) : null;
+  const dateAlign = hasDate ? (plan.dateAlign === "left" ? "left" : "center") : null;
+
+  let templateBytes;
+  try {
+    const res = await fetch(batch.templateUrl);
+    if (!res.ok) throw new Error(`template fetch ${res.status}`);
+    templateBytes = Buffer.from(await res.arrayBuffer());
+  } catch (e) {
+    console.error("certificate template fetch failed:", e);
+    return { ok: false, error: "notemplate" };
+  }
+
+  // RENDER EVERY ONE BEFORE REPLACING ANY, the same rule the run itself
+  // follows. A template that cannot be drawn on stops this before the batch is
+  // left half at the old spot and half at the new one.
+  const made = [];
+  for (const c of batch.certificates) {
+    let bytes;
+    try {
+      bytes = await renderCertificate(templateBytes, {
+        name: c.printedName, page, x, y, size, align,
+        date: c.issuedOn, datePage, dateX, dateY, dateSize, dateAlign,
+      });
+    } catch (e) {
+      console.error("certificate render failed:", e);
+      return { ok: false, error: "badtemplate" };
+    }
+    const put = await putBlob(
+      `certificates/${randomBytes(12).toString("hex")}.pdf`,
+      bytes,
+      { access: "public", contentType: "application/pdf" },
+    );
+    made.push({ id: c.id, was: c.pdfUrl, now: put.url });
+  }
+
+  try {
+    await prisma.$transaction([
+      prisma.certificateBatch.update({
+        where: { id: batch.id },
+        data: { page, x, y, size, align, datePage, dateX, dateY, dateSize, dateAlign },
+      }),
+      ...made.map((m) => prisma.certificate.update({ where: { id: m.id }, data: { pdfUrl: m.now } })),
+    ]);
+  } catch (e) {
+    console.error("certificate batch regenerate save failed:", e);
+    return { ok: false, error: "save" };
+  }
+
+  // THE REPLACED FILES GO, AFTER the record points at the new ones - Mánu
+  // 2026-09-13 chose this over letting them pile up. Nudging a placement twice
+  // on a run of six by eighteen would otherwise strand 216 PDFs. A failure
+  // here costs storage, never the batch, so it is logged rather than returned.
+  try {
+    await delBlob(made.map((m) => m.was));
+  } catch (e) {
+    console.error("old certificate files could not be removed:", e);
+  }
+
+  revalidatePath("/portal/admin/forms", "layout");
+  return { ok: true, redrawn: made.length };
+}
+
 // A CERTIFICATE THAT WENT TO THE WRONG PERSON, or a batch printed twice. The
 // whole batch goes, because a certificate is only meaningful as one of a run.
+//
+// ITS FILES GO WITH IT. Deleting the rows used to leave every PDF and the
+// stored template in blob storage with nothing able to reach them. The
+// template blob belongs to this batch alone - the run uploads its own copy per
+// certificate type - so both are safe to remove.
 export async function deleteCertificateBatch(batchId) {
   await requireAccess();
-  await prisma.certificateBatch.delete({ where: { id: String(batchId) } });
+
+  const batch = await prisma.certificateBatch.findUnique({
+    where: { id: String(batchId) },
+    select: { id: true, templateUrl: true, certificates: { select: { pdfUrl: true } } },
+  });
+  if (!batch) redirect("/portal/admin/forms/certificates");
+
+  await prisma.certificateBatch.delete({ where: { id: batch.id } });
+
+  const files = [...batch.certificates.map((c) => c.pdfUrl), batch.templateUrl].filter(Boolean);
+  if (files.length && hasBlobStorage()) {
+    try {
+      await delBlob(files);
+    } catch (e) {
+      console.error("certificate files could not be removed:", e);
+    }
+  }
+
   revalidatePath("/portal/admin/forms", "layout");
   redirect("/portal/admin/forms/certificates");
 }

@@ -14,8 +14,10 @@
 import { useState } from "react";
 import DatePicker from "@/components/DatePicker";
 import { printedDate } from "@/lib/certificates/render";
+import { toPoints } from "@/lib/certificates/placement";
+import PlacementPanel from "./_components/PlacementPanel";
+import { renderPages } from "./_components/render-pages";
 
-const WORKER_SRC = "/pdf.worker.min.mjs";
 const DEFAULT_SIZE = 28;
 
 export default function CertificateBuilder({ candidates, action }) {
@@ -53,30 +55,7 @@ export default function CertificateBuilder({ candidates, action }) {
   // a file becomes a template: its pages rendered once, and a title taken from
   // the filename so six of them are not six blank boxes to fill in
   async function readTemplate(file) {
-    const buf = await file.arrayBuffer();
-    const pdfjs = await import("pdfjs-dist");
-    pdfjs.GlobalWorkerOptions.workerSrc = WORKER_SRC;
-    const pdf = await pdfjs.getDocument({ data: buf.slice(0) }).promise;
-    const W = 700;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const pages = [];
-    for (let n = 1; n <= pdf.numPages; n += 1) {
-      const page = await pdf.getPage(n);
-      const base = page.getViewport({ scale: 1 });
-      const scale = W / base.width;
-      const vp = page.getViewport({ scale: scale * dpr });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(vp.width);
-      canvas.height = Math.ceil(vp.height);
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
-      pages.push({
-        url: canvas.toDataURL("image/png"),
-        w: base.width * scale,
-        h: base.height * scale,
-        pdfW: base.width,
-        pdfH: base.height,
-      });
-    }
+    const pages = await renderPages(await file.arrayBuffer());
     return {
       file,
       fileName: file.name,
@@ -151,16 +130,16 @@ export default function CertificateBuilder({ candidates, action }) {
       const plan = {
         title: t.title.trim(),
         page: t.spot.page,
-        x: t.spot.xPct * np.pdfW,
-        y: (1 - t.spot.yPct) * np.pdfH,
+        ...toPoints({ xPct: t.spot.xPct, yPct: t.spot.yPct, pdfW: np.pdfW, pdfH: np.pdfH }),
         size: t.size,
         align: t.align,
       };
       if (t.dateSpot) {
         const dp = t.pages[t.dateSpot.page];
+        const d = toPoints({ xPct: t.dateSpot.xPct, yPct: t.dateSpot.yPct, pdfW: dp.pdfW, pdfH: dp.pdfH });
         plan.datePage = t.dateSpot.page;
-        plan.dateX = t.dateSpot.xPct * dp.pdfW;
-        plan.dateY = (1 - t.dateSpot.yPct) * dp.pdfH;
+        plan.dateX = d.x;
+        plan.dateY = d.y;
         plan.dateSize = t.dateSize;
         plan.dateAlign = t.align;
       }
@@ -269,140 +248,12 @@ export default function CertificateBuilder({ candidates, action }) {
             </button>
           </div>
 
-          <p className="mt-4 text-sm font-semibold text-foreground">Click where the name goes</p>
-          <p className="mt-1 text-xs text-muted">
-            Each certificate is placed on its own. The name below is drawn at the size it
-            will print.
-          </p>
-
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-xs text-muted">
-              Size
-              <input
-                type="range"
-                min="8"
-                max="96"
-                value={placing === "date" ? cur.dateSize : cur.size}
-                onChange={(e) =>
-                  patch(at, placing === "date"
-                    ? { dateSize: Number(e.target.value) }
-                    : { size: Number(e.target.value) })
-                }
-                className="w-36"
-              />
-              <span className="w-8 tabular-nums text-foreground">
-                {placing === "date" ? cur.dateSize : cur.size}
-              </span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
-              <input type="checkbox" checked={guides} onChange={(e) => setGuides(e.target.checked)} />
-              Centre guides
-            </label>
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-muted">Clicking places</span>
-              {[["name", "the name"], ["date", "the date"]].map(([k, label]) => (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={placing === k}
-                  onClick={() => setPlacing(k)}
-                  className={`rounded-md border px-2.5 py-1 font-medium transition ${
-                    placing === k ? "border-brand bg-brand-light text-white" : "border-border-strong text-muted"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-              {cur.dateSpot && (
-                <button
-                  type="button"
-                  onClick={() => patch(at, { dateSpot: null })}
-                  className="font-semibold text-brand underline underline-offset-4"
-                >
-                  Take the date off
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs">
-              {["center", "left"].map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  aria-pressed={cur.align === a}
-                  onClick={() => patch(at, { align: a })}
-                  className={`rounded-md border px-2.5 py-1 font-medium transition ${
-                    cur.align === a ? "border-brand bg-brand-light text-white" : "border-border-strong text-muted"
-                  }`}
-                >
-                  {a === "center" ? "Centred on the point" : "Starts at the point"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-4">
-            {cur.pages.map((p, i) => (
-              <div
-                key={i}
-                onClick={(e) => onPick(e, i)}
-                className="relative mx-auto cursor-crosshair select-none border border-border"
-                style={{ width: p.w, height: p.h }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.url} alt={`Page ${i + 1}`} width={p.w} height={p.h} draggable={false} />
-                {guides && (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2"
-                      style={{
-                        backgroundImage:
-                          "repeating-linear-gradient(to bottom, rgba(15,23,42,.55) 0 6px, transparent 6px 12px)",
-                        boxShadow: "0 0 0 1px rgba(255,255,255,.5)",
-                      }}
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2"
-                      style={{
-                        backgroundImage:
-                          "repeating-linear-gradient(to right, rgba(15,23,42,.55) 0 6px, transparent 6px 12px)",
-                        boxShadow: "0 0 0 1px rgba(255,255,255,.5)",
-                      }}
-                    />
-                  </>
-                )}
-                {cur.dateSpot?.page === i && (
-                  <span
-                    className="pointer-events-none absolute whitespace-nowrap text-[#0f172a]"
-                    style={{
-                      left: `${cur.dateSpot.xPct * 100}%`,
-                      top: `${cur.dateSpot.yPct * 100}%`,
-                      transform: `translate(${cur.align === "center" ? "-50%" : "0"}, -100%)`,
-                      fontSize: cur.dateSize * (p.w / p.pdfW),
-                      fontFamily: "Helvetica, Arial, sans-serif",
-                    }}
-                  >
-                    {printedDate(batchDate) || "Sep 13, 2026"}
-                  </span>
-                )}
-                {cur.spot?.page === i && (
-                  <span
-                    className="pointer-events-none absolute whitespace-nowrap font-bold text-[#0f172a]"
-                    style={{
-                      left: `${cur.spot.xPct * 100}%`,
-                      top: `${cur.spot.yPct * 100}%`,
-                      transform: `translate(${cur.align === "center" ? "-50%" : "0"}, -100%)`,
-                      fontSize: cur.size * (p.w / p.pdfW),
-                      fontFamily: "Helvetica, Arial, sans-serif",
-                    }}
-                  >
-                    {sample}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+          <PlacementPanel
+            value={cur}
+            onChange={(fields) => patch(at, fields)}
+            sample={sample}
+            dateSample={printedDate(batchDate) || "Sep 13, 2026"}
+          />
         </div>
       )}
 

@@ -72,6 +72,13 @@ export default async function CertificateBatchPage({ params }) {
         {` · made ${companyDate(batch.createdAt)}`}
         {batch.templateName ? ` · from ${batch.templateName}` : ""}
       </p>
+      <a
+        href={`/portal/admin/forms/certificates/${batch.id}/placement`}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+      >
+        Change where the name goes
+      </a>
+
       {offRoll > 0 && (
         <p className="mt-2 text-sm text-muted">
           {offRoll} {offRoll === 1 ? "was" : "were"} typed in rather than picked from the

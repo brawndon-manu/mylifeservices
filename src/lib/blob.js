@@ -1,4 +1,4 @@
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 
 // always hand @vercel/blob the store token explicitly.
 //
@@ -19,4 +19,18 @@ export function hasBlobStorage() {
 // drop-in replacement for put() that pins the token.
 export async function putBlob(key, body, opts = {}) {
   return put(key, body, { token: blobToken(), ...opts });
+}
+
+// REMOVING A FILE NOTHING POINTS AT ANY MORE.
+//
+// Two callers need it. Regenerating a batch replaces every certificate PDF in
+// it, and deleting a batch takes its certificates and its stored template with
+// it. Without this the store keeps a copy of every version that was ever made,
+// reachable by nothing - nudging a placement twice on a run of six by eighteen
+// strands 216 files.
+//
+// Takes one URL or a list of them. A file that is already gone is not an
+// error worth stopping for, so callers delete AFTER the record is written.
+export async function delBlob(urlOrUrls) {
+  return del(urlOrUrls, { token: blobToken() });
 }

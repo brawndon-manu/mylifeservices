@@ -124,9 +124,11 @@ test("the guides are the picker's, and never the certificate's", async () => {
   }
   assert.equal((src.match(/drawText\(/g) || []).length, 1, "one thing is drawn: the name");
 
-  // and the guides do exist, in the preview
+  // and the guides do exist, in the preview. That preview moved out of
+  // CertificateBuilder when going back to edit a placement needed the same
+  // panel, so this now watches the one both screens use.
   const picker = fs.readFileSync(
-    path.join(process.cwd(), "src/app/portal/admin/forms/certificates/CertificateBuilder.js"),
+    path.join(process.cwd(), "src/app/portal/admin/forms/certificates/_components/PlacementPanel.js"),
     "utf8",
   );
   assert.match(picker, /Centre guides/);
