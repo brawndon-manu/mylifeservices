@@ -4,6 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, ChevronRight } from "lucide-react";
 import ThemeMenu from "./ThemeMenu";
+import PortalBrand from "./PortalBrand";
+import frame from "./PortalFrame.module.css";
+import { PortalNavigationToggle } from "./PortalNavigation";
 
 // the desktop toolbar: a Portal › Section breadcrumb on the left, the
 // appearance pill and the bell on the right, one shared glass surface. it
@@ -32,27 +35,31 @@ export default function PortalToolbar({ elevated, unread }) {
   const section = SECTIONS.find(([href]) => pathname.startsWith(href));
 
   return (
-    <div className="glass sticky top-0 z-30 hidden items-center justify-between border-b px-6 py-2 lg:flex">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[13.5px] font-medium">
-        {section ? (
-          <>
-            <Link
-              href="/portal"
-              className="rounded text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-            >
-              Portal
-            </Link>
-            <ChevronRight size={13} aria-hidden="true" className="text-faint" />
+    <div className={`portal-chrome-tone ${frame.header} sticky top-0 z-30 hidden items-center justify-between min-h-16 border-b px-6 py-2 lg:flex`}>
+      <div className="flex items-center gap-3">
+        <PortalNavigationToggle />
+        <PortalBrand />
+        <nav aria-label="Breadcrumb" className="ml-5 flex items-center gap-1.5 text-[13.5px] font-medium">
+          {section ? (
+            <>
+              <Link
+                href="/portal"
+                className="rounded text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Portal
+              </Link>
+              <ChevronRight size={13} aria-hidden="true" className="text-faint" />
+              <span aria-current="page" className="font-semibold text-foreground">
+                {section[1]}
+              </span>
+            </>
+          ) : (
             <span aria-current="page" className="font-semibold text-foreground">
-              {section[1]}
+              Portal
             </span>
-          </>
-        ) : (
-          <span aria-current="page" className="font-semibold text-foreground">
-            Portal
-          </span>
-        )}
-      </nav>
+          )}
+        </nav>
+      </div>
       <div className="flex items-center gap-2">
         <ThemeMenu />
         {elevated && (

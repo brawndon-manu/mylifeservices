@@ -1,0 +1,16 @@
+.title, .sectionTitle { color: var(--accent-strong); }
+.tool { border-radius: 10px; }
+.tool:hover, .tool:focus-visible { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tool:hover .toolTitle, .tool:focus-visible .toolTitle { color: var(--accent-strong); }
+.icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent-strong);
+}
+.chevron { color: var(--accent-strong); }

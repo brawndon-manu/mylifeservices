@@ -26,6 +26,7 @@
   --accent-strong: #0e5379;
   --calendar-month: #c9363d;
   --status-positive: #357347;
+  --leave-pto: #7656a2;
   --status-caution: #946a14;
   --status-danger: #bd2838;
   /* the two premium series, and they mean what the signed timesheet's colour
@@ -47,6 +48,13 @@
   --glass: rgba(246, 247, 250, 0.78);
   --glass-edge: rgba(255, 255, 255, 0.55);
   --sidebar: rgba(238, 240, 244, 0.9);
+  --portal-canvas: #14273c;
+  --portal-canvas-haze: #4386b74a;
+  --navigation-glass: rgba(242, 246, 250, 0.65);
+  --navigation-edge: rgba(255, 255, 255, 0.85);
+  --navigation-selected: #ffffff;
+  --navigation-selected-ink: #172b40;
+  --navigation-shadow: rgba(20, 35, 50, 0.16);
 }
 
 /* Dim: soft, layered dark grays. the default dark appearance, surfaces step
@@ -65,6 +73,7 @@
   --accent-strong: #7dd3fc;
   --calendar-month: #ff7a80;
   --status-positive: #8bcba0;
+  --leave-pto: #c7b1ed;
   --status-caution: #dabc6d;
   --status-danger: #ff8089;
   /* the same two hues, stepped for a dark surface rather than flipped */
@@ -76,6 +85,11 @@
   --glass: rgba(24, 26, 31, 0.72);
   --glass-edge: rgba(255, 255, 255, 0.08);
   --sidebar: rgba(22, 24, 29, 0.9);
+  --navigation-glass: rgba(35, 63, 87, 0.55);
+  --navigation-edge: rgba(194, 217, 237, 0.19);
+  --navigation-selected: #eef4ff;
+  --navigation-selected-ink: #102339;
+  --navigation-shadow: rgba(0, 0, 0, 0.3);
 }
 
 /* Night: pure OLED black. layered on top of .dark, overriding just the
@@ -91,6 +105,7 @@
   --glass: rgba(10, 10, 12, 0.72);
   --glass-edge: rgba(255, 255, 255, 0.09);
   --sidebar: rgba(8, 8, 10, 0.92);
+  --navigation-glass: rgba(15, 27, 39, 0.65);
 }
 
 @theme inline {
@@ -105,6 +120,10 @@
   --color-faint: var(--faint);
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
+  --color-leave-pto: var(--leave-pto);
+  --color-portal-canvas: var(--portal-canvas);
+  --color-navigation-glass: var(--navigation-glass);
+  --color-navigation-selected: var(--navigation-selected);
   --color-fill: var(--fill);
   --color-fill-2: var(--fill-2);
   --color-sep: var(--sep);
@@ -154,9 +173,8 @@ body {
   --border: #232327;
 }
 
-/* the one blurred material. toolbar and tab bar share it; nothing else gets
-   backdrop-filter, both for performance and so glass stays a functional-layer
-   signal rather than a default surface. */
+/* Shared toolbar and tab-bar material. The floating navigation uses its own
+   material tokens so page content remains visible beneath it. */
 .glass {
   background: var(--glass);
   border-color: var(--glass-edge);
@@ -620,4 +638,23 @@ html.a11y-reduce-motion .maint-el {
 }
 html.a11y-reduce-motion .hazard-tape {
   animation: none;
+}
+
+/* The approved blue belongs to navigation and the canvas, across appearances.
+   Page content keeps the user's Light / Dim / Night surface tokens. */
+.portal-chrome-tone {
+  --foreground: #e1ebf4;
+  --muted: #aabed1;
+  --faint: #aabed1;
+  --accent: #7dd3fc;
+  --accent-strong: #7dd3fc;
+  --surface: #1d2c3e;
+  --fill: #ffffff0e;
+  --fill-2: #ffffff1a;
+  --sep: #c2d9ed30;
+  --navigation-glass: #233f578c;
+  --navigation-edge: #c2d9ed30;
+  --navigation-selected: #eef4ff;
+  --navigation-selected-ink: #102339;
+  --navigation-shadow: #0000004d;
 }

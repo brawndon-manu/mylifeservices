@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import styles from "./AdminTools.module.css";
 import {
   Clock,
   Calendar,
@@ -64,7 +65,7 @@ export default function AdminTools({ columns, maintenance, toggleMaintenance }) 
     <>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[26px] font-semibold tracking-tight text-foreground">Admin</h1>
+          <h1 className={`${styles.title} text-[26px] font-semibold tracking-tight`}>Admin</h1>
           <p className="mt-1 text-sm text-muted">People, services, and daily operations.</p>
         </div>
         <label className="flex w-full items-center gap-2 rounded-lg bg-fill px-3 py-2 transition-colors focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-brand sm:w-64">
@@ -88,7 +89,7 @@ export default function AdminTools({ columns, maintenance, toggleMaintenance }) 
             <div key={i} className="min-w-0">
               {groups.map((g) => (
                 <section key={g.label} className="mb-8">
-                  <h2 className="text-[17px] font-semibold tracking-tight text-foreground">
+                  <h2 className={`${styles.sectionTitle} text-[17px] font-semibold tracking-tight`}>
                     {g.label}
                   </h2>
                   <div className="mt-1 divide-y divide-sep">
@@ -98,16 +99,13 @@ export default function AdminTools({ columns, maintenance, toggleMaintenance }) 
                         <Link
                           key={r.href}
                           href={r.href}
-                          className="flex items-center gap-3.5 py-3.5 pr-1 transition-colors hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+                          className={`${styles.tool} flex items-center gap-3.5 py-3.5 pr-1 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand`}
                         >
-                          <Icon
-                            size={18}
-                            strokeWidth={1.7}
-                            aria-hidden="true"
-                            className="flex-none text-muted"
-                          />
+                          <span className={styles.icon}>
+                            <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+                          </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-[15px] font-semibold text-foreground">
+                            <span className={`${styles.toolTitle} block text-[15px] font-semibold text-foreground`}>
                               {r.title}
                             </span>
                             <span className="block text-[13px] text-muted">{r.body}</span>
@@ -115,7 +113,7 @@ export default function AdminTools({ columns, maintenance, toggleMaintenance }) 
                           <ChevronRight
                             size={16}
                             aria-hidden="true"
-                            className="flex-none text-faint"
+                            className={`${styles.chevron} flex-none`}
                           />
                         </Link>
                       );

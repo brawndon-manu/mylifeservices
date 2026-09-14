@@ -1,0 +1,23 @@
+.frame {
+  min-height: 100vh;
+  padding-bottom: 24px;
+  background: radial-gradient(ellipse at 0 35%, var(--portal-canvas-haze), transparent 58%), var(--portal-canvas);
+}
+.header {
+  background: var(--portal-canvas);
+  border-color: var(--navigation-edge);
+}
+.content {
+  margin: 16px 24px 0;
+  min-height: calc(100vh - 104px);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--background);
+}
+@media (max-width: 1023px) {
+  .content { margin: 12px 12px 0; border-radius: 16px; }
+}
+@media print {
+  .frame { padding: 0; background: var(--background); }
+  .content { margin: 0; border: 0; border-radius: 0; }
+}
