@@ -64,6 +64,12 @@ const CANCELLED_RX =
 const REMOTE_RX =
   /\*{2,}Supervisor|over the phone|by phone only|via (phone|text|zoom|facetime)(?!.*accompan)|was in contact with (the )?client('s parent)? via phone|phone contact only|left (a )?(message|voicemail)(?!.*(accompan|took|drove|went|met))/i;
 
+// A NOTE FILED THIS FAR FROM THE CLOCK OUT IS WORTH A LOOK - Mánu 2026-09-14,
+// "over 10 minutes of the clock out time". Ordinary filing is a few minutes
+// early: the median on the current period is 3 minutes before clock out and
+// p75 is 0, so ten leaves the ordinary case alone and takes the tail.
+export const FILED_GAP_MIN = 10;
+
 export const AUTO_FLAG_RULES = [
   {
     key: "above-clock",
@@ -91,6 +97,22 @@ export const AUTO_FLAG_RULES = [
     label: "no DSN",
     phrase: "no DSN",
     test: (r) => (r.reasons || []).some((x) => x.kind === "no-note"),
+  },
+  {
+    // THE NOTE WAS WRITTEN BEFORE THE WORK WAS DONE - Mánu 2026-09-14: "for
+    // example a shift 9am-12pm clocked 9am-12pm and dsn filed at 10am". The
+    // gap is against the CLOCK OUT rather than the note's own end time,
+    // because the note claims the full shift either way: on 167 of the 168
+    // rows outside ten minutes, the note's own end matches the clock out to
+    // within two minutes and the stamp is hours earlier.
+    //
+    // Both directions. 165 of the 168 on the current period are early, which
+    // is the thing he described; the 3 late ones are paperwork finished the
+    // next day and are worth the same second look.
+    key: "filed-off-clock",
+    label: "DSN filed away from the clock out",
+    phrase: `the DSN was filed more than ${FILED_GAP_MIN} minutes from the clock out`,
+    test: (r) => r.note?.filedGapMin != null && Math.abs(r.note.filedGapMin) > FILED_GAP_MIN,
   },
   {
     key: "no-clock-out",

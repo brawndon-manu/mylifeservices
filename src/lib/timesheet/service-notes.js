@@ -22,6 +22,7 @@
 // the test runner and by one-off scripts outside Next, where the alias is not
 // resolvable
 import { getPdfjs } from "../pdf-globals.js";
+import { noteMinute } from "./note-minute.js";
 
 // "8/5/2026 10:00 AM - 12:00 PM"
 const SHIFT_TIMES =
@@ -29,13 +30,9 @@ const SHIFT_TIMES =
 // "Taylor Adams 8/5/2026 12:04 PM"
 const SIGNATURE = /^(.+?)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2}\s*[AP]M)$/i;
 
-export function noteMinute(v) {
-  const m = /^(\d{1,2}):(\d{2})\s*([AP])M$/i.exec(String(v ?? "").trim());
-  if (!m) return null;
-  let h = Number(m[1]) % 12;
-  if (m[3].toUpperCase() === "P") h += 12;
-  return h * 60 + Number(m[2]);
-}
+// re-exported so every existing caller is untouched; the implementation moved
+// to a module with no imports so the browser can have it too
+export { noteMinute };
 
 // the notes print "8/5/2026"; every other export in this folder prints "08/05/26"
 export function noteDate(v) {

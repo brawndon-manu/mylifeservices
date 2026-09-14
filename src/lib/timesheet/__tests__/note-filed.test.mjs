@@ -13,7 +13,7 @@
 // the current period.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filedLine, filedParts } from "../note-filed.js";
+import { filedLine, filedParts, filedGapMin } from "../note-filed.js";
 
 // a real one off the current period
 // the fields keep the parser's names; signedBy is the Employee Name column
@@ -83,4 +83,55 @@ test("a day filed BEFORE the shift is marked too, not just a late one", () => {
   const p = filedParts({ signedDate: "08/31/26", signedAt: "9:00 PM" }, "09/01/26");
   assert.equal(p.otherDay, true);
   assert.equal(p.date, "08/31/26");
+});
+
+// ---- how far the filed stamp sits from the clock out ----
+// Mánu 2026-09-14: "lets make the auto flag pick up dsn filed time if its over
+// 10 minutes of the clock out time ... for example a shift 9am-12pm clocked
+// 9am-12pm and dsn filed at 10am"
+
+const NOON = 12 * 60;
+
+test("his own example: a 9-12 shift with the note filed at 10am is two hours early", () => {
+  const gap = filedGapMin({ signedAt: "10:00 AM", signedDate: "09/01/26" }, "09/01/26", NOON);
+  assert.equal(gap, -120);
+});
+
+test("filed at the clock out is nothing at all", () => {
+  assert.equal(filedGapMin({ signedAt: "12:00 PM", signedDate: "09/01/26" }, "09/01/26", NOON), 0);
+});
+
+test("the ordinary case stays small, and must not fire a ten minute rule", () => {
+  // the median on the current period is 3 minutes before clock out
+  const gap = filedGapMin({ signedAt: "11:57 AM", signedDate: "09/01/26" }, "09/01/26", NOON);
+  assert.equal(gap, -3);
+  assert.ok(Math.abs(gap) <= 10);
+});
+
+test("a note filed the next day carries the day, not just the clock", () => {
+  // 9:00 AM the following day against a noon clock out is 21 hours, not 3 early
+  const gap = filedGapMin({ signedAt: "9:00 AM", signedDate: "09/02/26" }, "09/01/26", NOON);
+  assert.equal(gap, 1440 - 180);
+});
+
+test("no clock out means no gap rather than a gap against nothing", () => {
+  assert.equal(filedGapMin({ signedAt: "10:00 AM", signedDate: "09/01/26" }, "09/01/26", null), null);
+  assert.equal(filedGapMin({ signedAt: "10:00 AM", signedDate: "09/01/26" }, "09/01/26", undefined), null);
+});
+
+test("a note with no stamp has no gap", () => {
+  assert.equal(filedGapMin(xls, "09/01/26", NOON), null);
+  assert.equal(filedGapMin({}, "09/01/26", NOON), null);
+  assert.equal(filedGapMin(null, "09/01/26", NOON), null);
+});
+
+test("an unreadable date is refused rather than guessed as the same day", () => {
+  // guessing zero would call a next-day filing an on-time one
+  assert.equal(filedGapMin({ signedAt: "10:00 AM", signedDate: "nonsense" }, "09/01/26", NOON), null);
+  assert.equal(filedGapMin({ signedAt: "10:00 AM", signedDate: "09/01/26" }, "nonsense", NOON), null);
+});
+
+test("midnight and noon are not confused", () => {
+  assert.equal(filedGapMin({ signedAt: "12:00 AM", signedDate: "09/01/26" }, "09/01/26", 0), 0);
+  assert.equal(filedGapMin({ signedAt: "12:30 AM", signedDate: "09/01/26" }, "09/01/26", 0), 30);
 });

@@ -13,6 +13,7 @@ import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import { splitSharedSessions } from "@/lib/timesheet/session-split";
+import { filedGapMin } from "@/lib/timesheet/note-filed";
 import { stampOverlaps } from "@/lib/timesheet/audit-overlaps";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
 import { periodDates } from "@/lib/timesheet/period-of";
@@ -578,6 +579,11 @@ export async function buildAudit(id) {
           // supervisor .xls notes, where the screen keeps the flat reading
           sections: note.sections || null, highPriority: !!note.highPriority,
           signedAt: note.signedAt, signedDate: note.signedDate, signedAfterMin: note.signedAfterMin,
+          // how far the filed stamp sits from the CLOCK OUT, which the note
+          // cannot know on its own - signedAfterMin is measured against the
+          // note's own end time. Computed here, where the note and the shift
+          // are already joined, so the rules stay pure and client-safe.
+          filedGapMin: filedGapMin(note, shift.date, shift.noOut ? null : shift.actualTo ?? null),
           miles: note.miles, page: note.page,
           source: note.source,
         }
