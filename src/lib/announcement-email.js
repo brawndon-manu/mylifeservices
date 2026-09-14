@@ -390,7 +390,7 @@ export function buildPayrollEmailHtml({
   locked = true,
 }) {
   const subtitle = `
-    <div style="margin-top:12px;color:#334155;font-size:14px;">${esc(program)} payroll</div>
+    <div style="margin-top:12px;color:#334155;font-size:14px;">${esc(program)}</div>
     <div style="margin-top:4px;color:#64748b;font-size:13px;">Sent by ${esc(sentBy)}</div>`;
 
   const rows = files

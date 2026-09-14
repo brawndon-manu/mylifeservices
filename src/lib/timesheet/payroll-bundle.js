@@ -37,10 +37,17 @@ export const BUNDLE_FILES = [
   { key: "penalties", label: "Break penalty hours", ext: "pdf", type: "application/pdf" },
 ];
 
+// WHAT THIS PAYROLL IS CALLED. Every other screen in the timesheets tree says
+// "ILS"; this said "Agency", which was mine alone and nobody else's word -
+// Mánu 2026-09-14: "it should say ILS Payroll as well as in the subject".
+export function programLabel(program) {
+  return program === "DP" ? "Day Program" : "ILS";
+}
+
 // a filename payroll can file without renaming it
 export function bundleName(batch, part, ext) {
   const span = `${String(batch?.periodFrom || "").replace(/\//g, "-")}_${String(batch?.periodTo || "").replace(/\//g, "-")}`;
-  const program = batch?.program === "DP" ? "Day Program" : "Agency";
+  const program = programLabel(batch?.program);
   return `${program} ${span} ${part}.${ext}`;
 }
 

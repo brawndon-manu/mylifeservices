@@ -23,7 +23,7 @@ export default async function SendReportPage({ params }) {
         Send the payroll reports
       </h1>
       <p className="mt-3 text-sm text-muted">
-        {preview.program === "DP" ? "Day Program" : "Agency"} · {preview.periodFrom} to {preview.periodTo}
+        {preview.program === "DP" ? "Day Program" : "ILS"} · {preview.periodFrom} to {preview.periodTo}
         {preview.locked ? " · closed" : " · not closed"}
       </p>
       <SendReport batchId={id} preview={preview} action={sendPayrollBundle} />

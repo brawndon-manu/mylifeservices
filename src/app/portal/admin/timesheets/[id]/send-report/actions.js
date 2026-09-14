@@ -22,7 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { resolveFormRecipients } from "@/lib/timesheet-mode";
-import { buildPayrollBundle, onTheWire, BUNDLE_TO, BUNDLE_CC } from "@/lib/timesheet/payroll-bundle";
+import { buildPayrollBundle, onTheWire, programLabel, BUNDLE_TO, BUNDLE_CC } from "@/lib/timesheet/payroll-bundle";
 import { buildPayrollEmailHtml } from "@/lib/announcement-email";
 
 async function requireAccess() {
@@ -88,7 +88,7 @@ export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
   const zipUrl = `${base}/portal/admin/timesheets/${batch.id}/download-zip`;
   const signed = batch.timesheets.filter((t) => t.signedAt).length;
   const span = `${batch.periodFrom} to ${batch.periodTo}`;
-  const program = batch.program === "DP" ? "Day Program" : "Agency";
+  const program = `${programLabel(batch.program)} Payroll`;
 
   const route = resolveFormRecipients(BUNDLE_TO.email, BUNDLE_CC.map((c) => c.email));
   const subject = `${program} payroll ${span}${batch.lockedAt ? "" : " (period not closed)"}`;
@@ -108,7 +108,7 @@ export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
 
   // the plain-text half, for a client that will not render the HTML
   const lines = [
-    `${program} payroll for ${span}.`,
+    `${program} for ${span}.`,
     "",
     "Attached:",
     ...files.map((f) => `  ${f.label} - ${f.filename}`),
