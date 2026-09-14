@@ -9,6 +9,7 @@
 //
 // Shared by the card fold-out and Focused review so the two can never
 // disagree about what a note says.
+import { filedLine } from "@/lib/timesheet/note-filed";
 import styles from "../audit.module.css";
 
 export default function NoteBody({ note }) {
@@ -70,12 +71,20 @@ export default function NoteBody({ note }) {
   );
 }
 
+// GUARDED, AND IT WAS NOT. This printed "Signed" followed by two spaces on
+// every note whose export carries no signature - 368 of the 1,029 notes on the
+// current period, and all 312 of them on a period with no DSN upload at all.
+// Only the DSN carries a filed time; the supervisor .xls sets the three fields
+// to null deliberately. It reads FILED rather than signed because the export's
+// Signature column is empty on all 661 notes - see note-filed.js.
 function NoteFoot({ note }) {
-  return (
-    <p className="mt-3 text-xs text-faint">
-      Signed {note.signedDate} {note.signedAt}
-      {note.miles ? " · miles claimed" : ""}
-      {note.page ? ` · page ${note.page} of the export` : ""}
-    </p>
-  );
+  // the fold-out keeps the day, because it is the detailed reading
+  const filed = filedLine(note);
+  const bits = [
+    filed ? `Filed ${filed}` : null,
+    note.miles ? "miles claimed" : null,
+    note.page ? `page ${note.page} of the export` : null,
+  ].filter(Boolean);
+  if (!bits.length) return null;
+  return <p className="mt-3 text-xs text-faint">{bits.join(" · ")}</p>;
 }

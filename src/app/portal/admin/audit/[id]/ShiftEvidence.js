@@ -1,5 +1,6 @@
 import { CircleAlert } from "lucide-react";
 import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
+import { filedParts } from "@/lib/timesheet/note-filed";
 import styles from "../audit.module.css";
 
 // "3.00" big with a small quiet "h" beside it - Mánu 2026-09-06, off his
@@ -49,6 +50,7 @@ export default function ShiftEvidence({ row }) {
       <div><dt>Note</dt>
         {note?.source === "dsn" ? <>
           <dd className={styles.noteValue}><span className={styles.noteTag}>DSN</span>{note.words} words</dd>
+          <Filed note={note} on={row.date} />
           {!row.scheduleNote && <dd className={styles.figureSub}>No schedule note</dd>}
         </> : <>
           <dd className={styles.bad}><strong className="inline-flex items-center gap-1.5"><CircleAlert size={14} aria-hidden="true" /> No DSN</strong></dd>
@@ -61,6 +63,36 @@ export default function ShiftEvidence({ row }) {
     </dl>
     <p className={styles.legend}>Scheduled: QSP booking · Billed: timesheet hours · Clocked: recorded punches</p>
   </div>;
+}
+
+// WHEN THE NOTE WAS FILED, on the face of the card rather than only inside
+// the fold-out - Mánu 2026-09-14: "i want to add signed at under note DSN x
+// words".
+//
+// THE DAY IS RED WHEN IT APPEARS, because it only appears when the note was
+// filed on some day other than the shift's - 3 of 661 on the current period.
+//
+// THE DAY IS PRINTED ONLY WHEN IT IS NOT THE SHIFT'S OWN. Measured on the
+// current period: 658 of 661 DSN notes were signed on the day of the shift
+// they describe, so printing the date every time is noise on 99.5% of cards
+// and the whole story on the other three.
+//
+// Guarded, because a line reading "Filed" with nothing after it says
+// something untrue. Only the DSN export carries a signature at all; the
+// supervisor .xls sets all three fields to null on purpose. It says FILED and
+// not signed because the export's Signature column is blank on all 661 - see
+// note-filed.js.
+function Filed({ note, on }) {
+  const f = filedParts(note, on);
+  if (!f) return null;
+  return <dd className={styles.figureSub}>
+    Filed{" "}
+    {f.date && <><span
+      className={f.otherDay ? styles.bad : undefined}
+      title={f.otherDay ? "Filed on a different day from the shift" : undefined}
+    >{f.date}</span>{f.time ? " " : ""}</>}
+    {f.time}
+  </dd>;
 }
 
 function Punch({ row, end }) {
