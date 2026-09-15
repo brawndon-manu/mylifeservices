@@ -137,3 +137,30 @@ test("session ids are minted on the server, never taken off the form", () => {
   assert.match(build[0], /seriesId = label \? randomUUID\(\) : null/,
     "an unnamed group stays seriesId null, or a plain two-date meeting renders as a nameless series");
 });
+
+test("the record editor never writes a field the form did not post", () => {
+  // THIS ONE ACTUALLY HAPPENED. A meeting with several dates renders a topics
+  // box per SERIES and no meeting-level box at all, so formData.get returned
+  // null, asTopics turned that into [], and saving an unrelated change - four
+  // uploaded PDFs - wrote [] over the meeting's own list. Every session without
+  // topics of its own falls back to that list, so they would have printed
+  // nothing. It survived only because the per-series boxes had been pre-filled
+  // with the fallback and wrote it back.
+  // scoped to the UPDATE, because creating a record legitimately writes the
+  // field - the whole point there is that the form carries it
+  const whole = read("src/app/portal/admin/meeting-attendance/past-meeting-actions.js");
+  const src = whole.slice(whole.indexOf("export async function updateMeetingRecord"));
+
+  assert.match(src, /const rawTopics = formData\.get\("meetingTopics"\);/,
+    "the raw value has to be kept, because null and empty mean different things");
+  assert.match(src, /\.\.\.\(rawTopics === null \? \{\} : \{ meetingTopics: asTopics\(rawTopics\) \}\)/,
+    "a field the form did not post must not be written at all");
+  assert.ok(
+    !/meetingTopics: topics,/.test(src),
+    "writing it unconditionally is the bug this pins",
+  );
+
+  // and the same rule already holds one level down, for a session
+  assert.match(src, /if \(raw === null\) return o;/,
+    "a session the form did not post is left exactly as it was");
+});

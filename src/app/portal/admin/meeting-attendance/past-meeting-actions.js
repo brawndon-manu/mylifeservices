@@ -278,7 +278,12 @@ export async function updateMeetingRecord(postId, formData) {
       .filter(Boolean)
       .slice(0, 40);
 
-  const topics = asTopics(formData.get("meetingTopics"));
+  // A FIELD THE FORM DID NOT POST IS A FIELD THIS MUST NOT TOUCH, and that goes
+  // for the meeting's own list too - the rule was applied to the sessions below
+  // and forgotten here. A meeting with several dates renders the per-series
+  // boxes and no meetingTopics box at all, so reading it gave "" and the save
+  // wrote [] over the fallback every session without its own topics depends on.
+  const rawTopics = formData.get("meetingTopics");
 
   // TOPICS BELONG TO A SERIES, not a date. Mánu 2026-09-14: "each series is
   // the same info for topics covered" - a series is one training offered on
@@ -307,7 +312,7 @@ export async function updateMeetingRecord(postId, formData) {
   await prisma.announcement.update({
     where: { id: postId },
     data: {
-      meetingTopics: topics,
+      ...(rawTopics === null ? {} : { meetingTopics: asTopics(rawTopics) }),
       attachments,
       ...(meetingOptions ? { meetingOptions } : {}),
       // the title and the source are only editable on a record. A live
