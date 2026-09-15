@@ -1,5 +1,8 @@
 "use client";
 
+// the labelling rule lives apart so it can be tested - see block-label.js
+import { blockFor } from "@/lib/timesheet/block-label";
+
 import { shiftsOf } from "@/lib/timesheet/questions";
 // the holes between punch pairs, and which of them the roster calls a meal
 import { gapsOf } from "@/lib/timesheet/day-gaps";
@@ -327,19 +330,6 @@ function dayWindow(day, shifts, extras = [], scheduled = []) {
 // stretch all over this batch. The longest overlap wins, so a shift spanning two
 // bookings is named after the one it mostly was.
 //
-// MEAL BLOCKS ARE SKIPPED. They live in the same list and they are not a service
-// - a shift that runs across a rostered lunch would otherwise come back labelled
-// "Meal Break", which is both wrong and the opposite of what it is.
-function blockFor(scheduled, shift) {
-  let best = null;
-  let bestOverlap = 0;
-  for (const b of scheduled || []) {
-    if (b.meal) continue;
-    const overlap = Math.min(b.to, shift.to) - Math.max(b.from, shift.from);
-    if (overlap > bestOverlap) { bestOverlap = overlap; best = b; }
-  }
-  return bestOverlap > 0 ? best : null;
-}
 // the service alone, which is all most of this file wants
 const serviceFor = (scheduled, shift) => blockFor(scheduled, shift)?.service || null;
 
