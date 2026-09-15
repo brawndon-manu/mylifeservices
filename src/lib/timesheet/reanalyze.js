@@ -50,6 +50,7 @@ const INJECTED = [
   "restsAlreadyPaid",
   "restSourceAvailable",
   "dsnSigned",
+  "dsnSourceAvailable",
 ];
 
 function withoutInjected(day) {
@@ -70,15 +71,19 @@ function withoutInjected(day) {
 // not owed. Keeping the stored answer is the honest outcome, and `skipped` says
 // how often it happened rather than letting it pass unremarked.
 // `dsnSignedFor(date)` answers whether this person signed a Daily Service Note
-// that day - the evidence half of the rest attestation. It defaults to "no",
-// which is the careful answer everywhere else in this file, but a caller that
-// forgets it re-analyses a whole September period into rest premiums the signed
-// notes had cleared. The upload path and `rebuildSheetFor` both pass it.
+// that day, and `dsnSourceAvailable` whether the batch collected any signed
+// notes AT ALL - the evidence half of the rest attestation, and the two halves
+// have to travel together. Both default to "no", which here means "no source",
+// and a batch with no source attests everybody rather than charging them: see
+// rest-attestation.js. A caller that passes the dates and forgets the source
+// flag attests the whole period; one that passes neither leaves it where it
+// was. The upload path and `rebuildSheetFor` both pass both.
 export function reanalyzeDays(days, {
   scheduleByDate = null,
   restTimesFor = () => null,
   restSourceAvailable = false,
   dsnSignedFor = () => false,
+  dsnSourceAvailable = false,
   overrides = null,
 } = {}) {
   const out = [];
@@ -111,6 +116,7 @@ export function reanalyzeDays(days, {
       restTimes: restTimesFor(d.date),
       restSourceAvailable,
       dsnSigned: dsnSignedFor(d.date) === true,
+      dsnSourceAvailable,
       miscWorked: answered.miscWorked === true || d.miscWorked === true,
       // the classification, for the same reason as `miscWorked` above: a
       // client cancellation cuts its block out of the stretches entirely, and
@@ -166,7 +172,9 @@ export function reanalyzeDays(days, {
 // the day handed to `analyzeDay`, with the dropped inputs put back. Split out so
 // the list of what gets rebuilt is readable in one place and the test can assert
 // against it.
-function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, dsnSigned, miscWorked, miscKind }) {
+function analyzeDayInput(d, {
+  shifts, restTimes, restSourceAvailable, dsnSigned, dsnSourceAvailable, miscWorked, miscKind,
+}) {
   return {
     ...d,
     scheduleBlocks: scheduleBlocks(shifts),
@@ -180,6 +188,7 @@ function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, dsnSigned,
     // turns it into `restAttested`; `withoutInjected` takes it straight back off
     // so it never rides into the stored projection.
     dsnSigned,
+    dsnSourceAvailable,
     miscWorked,
     miscKind,
   };

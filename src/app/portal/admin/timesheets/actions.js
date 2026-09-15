@@ -813,6 +813,12 @@ export async function uploadBatch(formData) {
   // `analyzeDay` can reach, and injected per day like every other such input.
   const whoKey = buildWhoKey(staff);
   const dsnByPerson = signedDsnDates(mergedNotes, whoKey);
+  // DID THIS BATCH COLLECT ANY SIGNATURES AT ALL. A fact about the upload, not
+  // about a person, and the difference between the two is a period of rest
+  // premiums - see rest-attestation.js. Read off the notes rather than off
+  // `notesFile`, so a PDF that arrived and failed to parse counts as the
+  // nothing it actually produced.
+  const dsnSourceAvailable = mergedNotes.some((n) => n?.source === "dsn");
   // SAY HOW FAR THE EVIDENCE REACHED. A name join that resolves nobody reads
   // exactly like a period nobody attested to, and the difference is about a
   // hundred and fifty rest premiums - so the count goes in the log next to
@@ -1067,6 +1073,7 @@ export async function uploadBatch(formData) {
           // note covers the WHOLE day including its admin hours, which is why
           // this is a fact about the date rather than about a shift.
           dsnSigned: signedDsn(d.date),
+          dsnSourceAvailable,
         };
       }),
     };
@@ -3631,9 +3638,8 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
       select: { name: true, preferredFirstName: true, preferredLastName: true },
     });
     const rbWhoKey = buildWhoKey(rbStaff);
-    const signedDsn = dsnSignedFor(
-      signedDsnDates(noteRow?.notes || [], rbWhoKey), rbWhoKey, ts.sourceName,
-    );
+    const rbNotes = noteRow?.notes || [];
+    const signedDsn = dsnSignedFor(signedDsnDates(rbNotes, rbWhoKey), rbWhoKey, ts.sourceName);
     const res = reanalyzeDays(days, {
       scheduleByDate: stored.scheduleCheck?.byDate || null,
       restTimesFor: (date) => windows.get(date) || null,
@@ -3642,6 +3648,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
       // means no break was recorded, which is a premium.
       restSourceAvailable: !!ts.batch?.restsUrl,
       dsnSignedFor: signedDsn,
+      dsnSourceAvailable: rbNotes.some((n) => n?.source === "dsn"),
       overrides,
     });
     analysed = res.days;

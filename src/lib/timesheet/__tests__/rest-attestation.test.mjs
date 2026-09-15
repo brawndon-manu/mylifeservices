@@ -40,15 +40,33 @@ test("the date half turns on at the effective date and not before", () => {
   assert.equal(attestationInEffect("2026-09-02"), false);
 });
 
-test("the rule needs BOTH halves: a governed date and a signed note", () => {
-  assert.equal(restAttestedOn("09/02/26", true), true);
+test("the rule needs a governed date, a source, and a signature on the day", () => {
+  const on = (date, signed) => restAttestedOn(date, { signed, sourceAvailable: true });
+  assert.equal(on("09/02/26", true), true);
   // a governed date with no note is the whole point of the evidence half -
   // this is the admin-only day, and it documents its tens
-  assert.equal(restAttestedOn("09/02/26", false), false);
-  assert.equal(restAttestedOn("09/02/26", undefined), false);
+  assert.equal(on("09/02/26", false), false);
+  assert.equal(on("09/02/26", undefined), false);
   // and a note before the date rule changes nothing, because there was no
   // attestation question to answer in August
-  assert.equal(restAttestedOn("08/31/26", true), false);
+  assert.equal(on("08/31/26", true), false);
+});
+
+test("a batch that collected no signatures charges nobody", () => {
+  // NO SOURCE IS NOT THE SAME AS NOBODY SIGNING. This is the Day Program: it
+  // runs the same engine with no service notes export wired in, so nothing
+  // there can attest - and 24 rest premiums across 11 people would have
+  // appeared on its next upload if absence were read as a person's failure.
+  const noSource = (signed) => restAttestedOn("09/02/26", { signed, sourceAvailable: false });
+  assert.equal(noSource(false), true, "no source must not charge");
+  assert.equal(noSource(undefined), true);
+  assert.equal(restAttestedOn("09/02/26", {}), true, "a caller passing nothing must not charge");
+  assert.equal(restAttestedOn("09/02/26"), true);
+  // the date rule still comes first - August was never covered either way
+  assert.equal(restAttestedOn("08/31/26", { signed: false, sourceAvailable: false }), false);
+  // and the whole thing must be able to fail: WITH a source, the same
+  // unsigned day is not attested
+  assert.equal(restAttestedOn("09/02/26", { signed: false, sourceAvailable: true }), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -127,7 +145,10 @@ test("analyzeDay: a signed day keeps its entitlement and drops the violation", (
   // 8:00a-4:30p, report says zero rests - the classic two-rests-owed day
   const punches = [at(8), at(16, 30)];
   const day = (date, dsnSigned) =>
-    analyzeDay({ date, punches, printed: null, restRecorded: 0, dsnSigned });
+    analyzeDay({
+      date, punches, printed: null, restRecorded: 0,
+      dsnSigned, dsnSourceAvailable: true,
+    });
 
   const august = day("08/28/26", true);
   assert.equal(august.restViolation, true, "pre-attestation day still charges");
@@ -148,6 +169,14 @@ test("analyzeDay: a signed day keeps its entitlement and drops the violation", (
   assert.equal(adminOnly.restAttested, false);
   assert.equal(adminOnly.restViolation, true, "an unsigned September day still charges");
   assert.equal(adminOnly.restRequired, 2);
+
+  // THE DAY PROGRAM SHAPE. Same engine, no notes export, so no source flag -
+  // and the identical day comes back covered rather than charged.
+  const noSource = analyzeDay({
+    date: "09/02/26", punches, printed: null, restRecorded: 0, dsnSigned: false,
+  });
+  assert.equal(noSource.restAttested, true);
+  assert.equal(noSource.restViolation, false, "a batch with no notes charges nobody");
 });
 
 test("reentitle carries the same gate off the day's own flag", () => {

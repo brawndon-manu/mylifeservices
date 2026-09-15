@@ -1585,15 +1585,20 @@ export function analyzeDay(day) {
     // the entitlement is a fact about the hours, only the charge is off.
     // See rest-attestation.js; `reentitle` carries the same gate.
     //
-    // `dsnSigned` is an INJECTED input like `restSourceAvailable` beside it:
-    // whether this person signed a Daily Service Note on this date, worked out
-    // where the notes and the accounts both are. It is stored as `restAttested`
-    // so every screen reads one answer instead of thirty deciding separately,
-    // and so a day analysed before the evidence existed is visibly not attested
-    // rather than quietly assumed to be.
-    restAttested: restAttestedOn(day.date, day.dsnSigned),
+    // TWO INJECTED INPUTS, like `restSourceAvailable` beside them and for the
+    // same reason. `dsnSourceAvailable` is whether this BATCH collected any
+    // signed notes at all; `dsnSigned` is whether THIS person signed one on
+    // this date. A batch with no source charges nobody - see rest-attestation.js
+    // - because absence of a document is not evidence against a person. Stored
+    // as `restAttested` so every screen reads one answer instead of thirty
+    // deciding separately.
+    restAttested: restAttestedOn(day.date, {
+      signed: day.dsnSigned, sourceAvailable: day.dsnSourceAvailable,
+    }),
     restViolation:
-      !restAttestedOn(day.date, day.dsnSigned) && !restUnknown && restTaken < restRequired,
+      !restAttestedOn(day.date, {
+        signed: day.dsnSigned, sourceAvailable: day.dsnSourceAvailable,
+      }) && !restUnknown && restTaken < restRequired,
   };
 }
 

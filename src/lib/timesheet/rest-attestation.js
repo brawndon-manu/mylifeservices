@@ -60,20 +60,34 @@ export function attestationInEffect(date) {
   return d != null && eff != null && d >= eff;
 }
 
-// WAS THIS DAY ATTESTED? The whole rule: the date is governed AND this person
-// signed a DSN on it.
+// WAS THIS DAY ATTESTED? The date is governed, a source of signatures was
+// collected, and this person signed one on the day.
 //
-// `dsnSigned` is worked out where the notes and the accounts both are - see
+// `signed` is worked out where the notes and the accounts both are - see
 // dsn-attestation.js - and injected into `analyzeDay` the way every other
-// rebuilt input is. It is deliberately a plain boolean so this file can stay
-// importable from the browser.
+// rebuilt input is. Plain booleans, so this file stays importable by the
+// browser.
 //
-// MISSING EVIDENCE READS AS NOT ATTESTED, and callers must not lean on that to
-// mean anything. A batch with no Daily Service Notes PDF has no evidence for
-// anybody, which would silently charge a whole period; that case is refused at
-// the batch rather than answered here.
-export function restAttestedOn(date, dsnSigned) {
-  return attestationInEffect(date) && dsnSigned === true;
+// NO SOURCE AT ALL IS NOT THE SAME AS NOBODY SIGNING, and conflating the two
+// charges a whole period for a missing upload. It is the same distinction
+// `restSourceAvailable` already draws next door: whether a report was collected
+// is a fact about the BATCH, whether it covers somebody is a fact about the
+// person, and only the second one can be held against them.
+//
+// SO A BATCH WITH NO SIGNATURES IN IT CHARGES NOBODY. The day comes back
+// covered, because the alternative is billing a rest premium on the strength of
+// a document nobody uploaded. The batch is where that gets said out loud - it
+// should refuse to run rather than quietly produce a period of premiums - and
+// until it does, this is the answer that cannot cost anyone money wrongly.
+//
+// THE DAY PROGRAM IS EXACTLY THAT CASE TODAY. It runs this same engine and has
+// no service notes export wired in, so nothing there can attest and nothing
+// there should be charged for failing to. Measured before this line existed: 24
+// rest premiums across 11 people would have appeared on the next DP upload.
+export function restAttestedOn(date, { signed, sourceAvailable } = {}) {
+  if (!attestationInEffect(date)) return false;
+  if (sourceAvailable !== true) return true;
+  return signed === true;
 }
 
 // THE DAYS OF ONE SHEET THAT WERE ATTESTED, as a set of date keys.
