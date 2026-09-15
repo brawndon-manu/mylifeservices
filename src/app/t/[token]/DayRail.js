@@ -19,8 +19,18 @@ import { useDayDone, DayNavProvider } from "./TimesheetQuestion";
 // on screen.
 export default function DayRail({ days, children, stacked = false }) {
   const flow = useReviewFlow();
-  const first = flow ? 0 : Math.max(0, days.findIndex((d) => d.needs && !d.done));
-  const [sel, setSel] = useState(first === -1 ? 0 : first);
+  // IT OPENS ON THE FIRST DAY OF THE PERIOD, so somebody can start at the top
+  // and press Next all the way through.
+  //
+  // It used to land on the first day that still needed something, which reads
+  // as the page having skipped ahead - and the days it skipped are exactly the
+  // ones nobody then looks at, on a document they are about to sign. Nothing
+  // is lost by starting at the beginning: the panel above still lists what
+  // needs answering and still jumps straight to it.
+  //
+  // A DEEP LINK STILL WINS. The #day-<date> handler below runs on mount, so a
+  // link into one day selects that day rather than this one.
+  const [sel, setSel] = useState(0);
   const boxRef = useRef(null);
   const afterRef = useRef(null);
   const paneRefs = useRef([]);
