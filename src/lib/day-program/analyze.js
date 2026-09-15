@@ -28,7 +28,7 @@ import { restKey, restRowTimes, clockMin, serviceFit } from "../timesheet/rests.
 import { dayProgramRestRows } from "./rest-xls.js";
 import { restWindowsByDate } from "../timesheet/reanalyze.js";
 import { parseServiceNotesPdf } from "../timesheet/service-notes.js";
-import { signedDsnDates, dsnSignedFor, attestationReach } from "../timesheet/dsn-attestation.js";
+import { signedDsnDates, dsnSignedFor, attestationReach, isSignedDsn } from "../timesheet/dsn-attestation.js";
 import { buildWhoKey } from "../timesheet/people.js";
 import { parseSchedulePdf, compareToSchedule, scheduleBlocks } from "../timesheet/schedule.js";
 import { storedDay, totalsFromDays } from "../timesheet/stored.js";
@@ -159,7 +159,7 @@ export async function analyzeDayProgram({
     }
   }
   const dsnByPerson = signedDsnDates(dsnNotes, whoKey);
-  const dsnSourceAvailable = dsnNotes.some((n) => n?.source === "dsn");
+  const dsnSourceAvailable = dsnNotes.some(isSignedDsn);
   if (dsnSourceAvailable) {
     const reach = attestationReach(dsnByPerson, whoKey, sheets.map((x) => x.employee));
     console.log(

@@ -26,12 +26,32 @@
 // at least one signed note where a naive first-last flip resolves 52.
 const SIGNED_SOURCE = "dsn";
 
+// CAN THIS NOTE ATTEST? One predicate, because the answer is asked in three
+// places - here, the upload, and the re-analysis - and three copies of it is
+// how they start disagreeing.
+//
+// A NOTE WRITTEN BEFORE THE TAG EXISTED STILL COUNTS, and that is not
+// generosity, it is the only correct reading. `parseServiceNotesPdf` did not
+// set `source` until 205688d, so every note stored before then carries none -
+// 270 of them on the day program batch alone. And the .xls reader has always
+// set `source: "xls"` and `signedAt: null` in the same object literal,
+// unconditionally, so a note that is SIGNED AND UNTAGGED can only have come
+// off the PDF. There is nothing else it could be.
+//
+// WITHOUT THIS, RECALCULATE CANNOT HELP THOSE BATCHES. It rebuilds from the
+// notes already stored rather than re-reading the document, so an untagged set
+// would re-analyse to the same nothing and only a fresh upload would fix it -
+// which is exactly the case the button exists for.
+export function isSignedDsn(note) {
+  if (!note?.signedAt || !note?.signedDate) return false;
+  return note.source === SIGNED_SOURCE || !note.source;
+}
+
 // -> Map<whoKey, Set<"MM/DD/YY">>
 export function signedDsnDates(notes, whoKey) {
   const out = new Map();
   for (const n of notes || []) {
-    if (n?.source !== SIGNED_SOURCE) continue;
-    if (!n.signedAt || !n.signedDate || !n.date) continue;
+    if (!isSignedDsn(n) || !n.date) continue;
     const key = whoKey(n.employee);
     if (!key) continue;
     if (!out.has(key)) out.set(key, new Set());

@@ -19,7 +19,7 @@ import fs from "node:fs";
 import {
   attestationInEffect, restAttestedOn, attestedDates, REST_ATTESTATION_EFFECTIVE,
 } from "../rest-attestation.js";
-import { signedDsnDates, dsnSignedFor, attestationReach } from "../dsn-attestation.js";
+import { signedDsnDates, dsnSignedFor, attestationReach, isSignedDsn } from "../dsn-attestation.js";
 import { analyzeDay, reentitle } from "../parse.js";
 import { buildQuestions } from "../questions.js";
 import { splitPremium, applyAssumptions, premiumsFromDays } from "../premium-split.js";
@@ -354,7 +354,30 @@ test("a note carries its source from the moment it is read, not only once merged
   const notes = [{ source: "dsn", employee: "Devin Bass", date: "09/02/26", signedAt: "4:00 PM", signedDate: "09/02/26" }];
   const key = (n) => String(n || "").toLowerCase();
   assert.equal(signedDsnDates(notes, key).get("devin bass")?.size, 1);
-  // untagged is the failure, and it must read as no evidence rather than as evidence
-  const untagged = notes.map(({ source, ...rest }) => rest);
-  assert.equal(signedDsnDates(untagged, key).size, 0, "an untagged note attests nothing");
+});
+
+test("a note stored before the tag existed still attests, and only the PDF can be one", () => {
+  // 270 notes on the day program batch and 668 on older agency ones were
+  // stored before `source` was set, and Recalculate rebuilds from the stored
+  // notes rather than re-reading the document - so without this those batches
+  // could only ever be fixed by a fresh upload, which is the exact case the
+  // Recalculate button exists to avoid.
+  //
+  // IT IS SAFE BECAUSE THE .XLS READER CANNOT PRODUCE THIS SHAPE. It sets
+  // `source: "xls"` and `signedAt: null` in the same object literal, with no
+  // condition on either, so signed-and-untagged can only have come off the PDF.
+  const signedUntagged = { employee: "Devin Bass", date: "09/02/26", signedAt: "4:00 PM", signedDate: "09/02/26" };
+  assert.equal(isSignedDsn(signedUntagged), true);
+  assert.equal(isSignedDsn({ ...signedUntagged, source: "dsn" }), true);
+  // a field supervisor's note is tagged AND unsigned, and fails on both counts
+  assert.equal(isSignedDsn({ ...signedUntagged, source: "xls", signedAt: null, signedDate: null }), false);
+  // the guard that keeps this from becoming "anything attests": no signature,
+  // no attestation, tagged or not
+  assert.equal(isSignedDsn({ employee: "Devin Bass", date: "09/02/26" }), false);
+  assert.equal(isSignedDsn({ ...signedUntagged, signedAt: null }), false);
+  assert.equal(isSignedDsn(null), false);
+
+  const key = (n) => String(n || "").toLowerCase();
+  assert.equal(signedDsnDates([signedUntagged], key).get("devin bass")?.size, 1,
+    "an untagged signed note must reach the map, or Recalculate cannot fix a stored batch");
 });

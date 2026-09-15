@@ -52,7 +52,7 @@ import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { parsePayrollReport, payrollTotals, payrollKey } from "@/lib/timesheet/payroll";
 import { parseServiceNotesPdf } from "@/lib/timesheet/service-notes";
 import { parseServiceNotesXls, mergeNotes } from "@/lib/timesheet/service-notes-xls";
-import { signedDsnDates, dsnSignedFor, attestationReach } from "@/lib/timesheet/dsn-attestation";
+import { signedDsnDates, dsnSignedFor, attestationReach, isSignedDsn } from "@/lib/timesheet/dsn-attestation";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { premiumsFromDays } from "@/lib/timesheet/premium-split";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
@@ -818,7 +818,7 @@ export async function uploadBatch(formData) {
   // premiums - see rest-attestation.js. Read off the notes rather than off
   // `notesFile`, so a PDF that arrived and failed to parse counts as the
   // nothing it actually produced.
-  const dsnSourceAvailable = mergedNotes.some((n) => n?.source === "dsn");
+  const dsnSourceAvailable = mergedNotes.some(isSignedDsn);
   // SAY HOW FAR THE EVIDENCE REACHED. A name join that resolves nobody reads
   // exactly like a period nobody attested to, and the difference is about a
   // hundred and fifty rest premiums - so the count goes in the log next to
@@ -3648,7 +3648,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
       // means no break was recorded, which is a premium.
       restSourceAvailable: !!ts.batch?.restsUrl,
       dsnSignedFor: signedDsn,
-      dsnSourceAvailable: rbNotes.some((n) => n?.source === "dsn"),
+      dsnSourceAvailable: rbNotes.some(isSignedDsn),
       overrides,
     });
     analysed = res.days;
