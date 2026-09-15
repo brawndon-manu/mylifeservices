@@ -109,3 +109,22 @@ test("the announcement edit page selects every editable meeting field", () => {
     `the edit page does not load these, so opening an edit and saving CLEARS them: ${missing.join(", ")}`,
   );
 });
+
+test("next.config.mjs declares outputFileTracingIncludes exactly once", async () => {
+  // A REPEATED KEY IN AN OBJECT LITERAL IS NOT MERGED, IT IS OVERWRITTEN. This
+  // was written twice for two months: the certificate fonts entry lost to the
+  // pdfjs worker entry below it and had never once taken effect. It went
+  // unnoticed because the fonts were being traced anyway, by Turbopack
+  // following the runtime path in certificates/render.js - so the config was
+  // inert AND the thing it guarded was safe, which is the combination that
+  // teaches the next person to trust it.
+  const src = read("next.config.mjs");
+  const declared = (src.match(/^\s*outputFileTracingIncludes:/gm) || []).length;
+  assert.equal(declared, 1, `outputFileTracingIncludes is declared ${declared} times; all but the last are silently dropped`);
+
+  // and every route it names still resolves to something in the build config
+  const cfg = (await import("../../../next.config.mjs")).default;
+  const keys = Object.keys(cfg.outputFileTracingIncludes || {});
+  assert.ok(keys.includes("/portal/admin/forms/certificates/**"), "the certificate fonts entry went missing again");
+  assert.ok(keys.includes("/portal/admin/timesheets/**"), "the pdfjs worker entry went missing");
+});

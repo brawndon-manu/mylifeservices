@@ -23,14 +23,6 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  // THE CERTIFICATE FONTS HAVE TO REACH THE FUNCTION. render.js reads the two
-  // shipped faces off disk, and the tracer does not follow a path built at
-  // runtime, so a deploy without this renders a certificate in Great Vibes
-  // perfectly on localhost and throws ENOENT in production.
-  outputFileTracingIncludes: {
-    "/portal/admin/forms/certificates/**": ["./public/fonts/*.ttf"],
-  },
-
   // bump server action body size so hub post images (up to ~4MB) fit.
   //
   // RAISED TO 50MB ON 2026-08-27 for the timesheet upload, which now carries
@@ -73,7 +65,18 @@ const nextConfig = {
   // parse dies with "Cannot find module .../pdf.worker.mjs" the moment anyone
   // uploads. force it into the trace. verify after any pdfjs bump with:
   //   grep -rl "pdf.worker.mjs" .next/server --include=*.nft.json
+  // ONE OBJECT, AND IT HAS TO STAY ONE. This key was written twice - the
+  // certificate fonts above the pdfjs worker - and a repeated key in an object
+  // literal is not merged, it is overwritten. The fonts entry had been dead
+  // since the day it was added, and nobody noticed because the certificates
+  // still carried their .ttf files: Turbopack's tracer follows
+  // `path.join(process.cwd(), "public", "fonts", file)` on its own. So the
+  // config was doing nothing and the thing it was insurance against was being
+  // handled elsewhere - which is the worst of both, because the next person to
+  // rely on it gets no warning. A test now fails if a second key appears.
   outputFileTracingIncludes: {
+    // read off disk by certificates/render.js through a runtime-built path
+    "/portal/admin/forms/certificates/**": ["./public/fonts/*.ttf"],
     "/portal/admin/timesheets/**": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],
