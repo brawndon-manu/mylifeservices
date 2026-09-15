@@ -72,7 +72,7 @@ function fit(s, maxW, font, size) {
 }
 
 export async function renderAttendanceReport(
-  { meetingTitle, mandatory, metaLine, office, stats, groups, single, cantAll, noResponse },
+  { meetingTitle, mandatory, metaLine, recordNote, office, stats, groups, single, cantAll, noResponse },
   opts = {},
 ) {
   const doc = await PDFDocument.create();
@@ -110,20 +110,31 @@ export async function renderAttendanceReport(
       y -= logoH + 15;
       text(meetingTitle || "(untitled meeting)", L, y, { size: 12, f: bold });
       y -= 13;
-      const sub = [metaLine, mandatory ? "Mandatory" : null, office ? `${office} office` : null]
+      // the record note rides in the subtitle rather than as a badge: a sheet
+      // printed off this page is the one that leaves the building, and it must
+      // not read as a roll call taken in the room when it was not.
+      const sub = [metaLine, mandatory ? "Mandatory" : null, recordNote, office ? `${office} office` : null]
         .filter(Boolean)
         .join(" · ");
       if (sub) { text(sub, L, y, { size: 8.5, color: MUTED }); y -= 12; }
       // the headline the board shows, as one strip
-      text(`Responded ${stats.responded} of ${stats.invited} invited (${stats.pct}%)`, L, y, {
-        size: 9, f: bold,
-      });
+      // A RECORD HAS NO RESPONSE RATE. Nobody answered a backfilled meeting
+      // and nobody wrote down who was invited, so "62% responded" on a printed
+      // document is a figure with no source. What it holds is the count.
+      text(
+        stats.backfilled
+          ? `${stats.invited} ${stats.invited === 1 ? "person" : "people"} on the record`
+          : `Responded ${stats.responded} of ${stats.invited} invited (${stats.pct}%)`,
+        L, y, { size: 9, f: bold },
+      );
       y -= 12;
-      const bits = [
-        [`Attending ${stats.going}`, INK],
-        [`${stats.cantLabel} ${stats.cantCount}`, INK],
-        [`No response ${stats.noResponseCount}`, INK],
-      ];
+      const bits = stats.backfilled
+        ? []
+        : [
+            [`Attending ${stats.going}`, INK],
+            [`${stats.cantLabel} ${stats.cantCount}`, INK],
+            [`No response ${stats.noResponseCount}`, INK],
+          ];
       if (stats.showRollCall) {
         bits.push(
           [`Present ${stats.present}`, GREEN],

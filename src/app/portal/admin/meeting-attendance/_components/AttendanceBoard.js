@@ -79,6 +79,9 @@ function Chip({ tone, children }) {
     mandatory: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
     series: "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300",
     due: "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300",
+    // quiet on purpose: it says where the figures came from, it is not a
+    // status anybody has to act on
+    record: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
   }[tone];
   return (
     <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${cls}`}>
@@ -186,6 +189,11 @@ function MeetingCard({ m, officeQs = "" }) {
             </span>
             {m.mandatory && <Chip tone="mandatory">Mandatory</Chip>}
             {m.isSeries && <Chip tone="series">{m.seriesCount} series</Chip>}
+            {/* NOBODY RSVPd TO THIS ONE. Every name on it was entered by an
+                admin from whatever the meeting was recorded on, so the counts
+                below read the same as a live meeting's and did not come from
+                one. The chip is the only thing that says so. */}
+            {m.recordNote && <Chip tone="record">{m.recordNote}</Chip>}
           </div>
           <p className="mt-1.5 text-sm text-muted">{m.metaLine}</p>
           {m.dueLabel && (
@@ -196,13 +204,22 @@ function MeetingCard({ m, officeQs = "" }) {
         </div>
 
         <div className="flex flex-col gap-2.5 sm:flex-[1_1_54%]">
+          {/* A RATE NEEDS A DENOMINATOR SOMEBODY KNOWS. On a backfilled
+              meeting nobody responded and nobody recorded who was invited -
+              only who the old sheet says turned up - so a percentage here
+              would be the portal making one up. What it knows is the count. */}
           <div className="flex items-baseline justify-between text-sm">
-            <span className="text-muted">Responded</span>
+            <span className="text-muted">{m.backfilled ? "On the record" : "Responded"}</span>
             <span className="font-semibold text-foreground">
-              {m.responded} / {m.invited} · {m.pct}%
+              {m.backfilled
+                ? `${m.invited} ${m.invited === 1 ? "person" : "people"}`
+                : `${m.responded} / ${m.invited} · ${m.pct}%`}
             </span>
           </div>
-          <Bar pct={m.pct} full={m.invited > 0 && m.responded >= m.invited} />
+          <Bar
+            pct={m.backfilled ? 100 : m.pct}
+            full={m.backfilled || (m.invited > 0 && m.responded >= m.invited)}
+          />
         </div>
       </div>
 

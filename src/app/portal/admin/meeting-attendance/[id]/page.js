@@ -5,7 +5,7 @@ import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
-import { ackAudienceWhere, isCompanyMeeting } from "@/lib/announcements";
+import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
 import { buildRoster, meetingMeta } from "../roster";
 import MeetingBreakdown from "../_components/MeetingBreakdown";
 import OfficeFilter from "@/components/OfficeFilter";
@@ -58,6 +58,8 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
       meetingOptions: true,
       meetingResponseDueAt: true,
       meetingResponseDueTz: true,
+      meetingBackfilled: true,
+      meetingRecordSource: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
@@ -72,7 +74,8 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
 
   const [audienceUsers, choices, responses, allActive] = await Promise.all([
     prisma.user.findMany({
-      where: ackAudienceWhere(m),
+      // a record of a past meeting keeps the people who have since left
+      where: ackAudienceWhere(m, { includeInactive: !!m.meetingBackfilled }),
       select: {
         id: true,
         name: true,
@@ -116,6 +119,7 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
     : audienceUsers;
   const r = buildRoster(m, roster, choices, responses);
   const meta = meetingMeta(m, r);
+  const recordNote = recordNoteOf(m);
 
   // invitee-manager data: everyone not already invited + the added-by-hand people.
   const audIds = new Set(audienceUsers.map((u) => u.id));
@@ -178,6 +182,12 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
         {r.isSeries && (
           <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
             {r.seriesGroups.length} series
+          </span>
+        )}
+        {/* every name below was typed in by an admin, not chosen by the person */}
+        {recordNote && (
+          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            {recordNote}
           </span>
         )}
       </div>

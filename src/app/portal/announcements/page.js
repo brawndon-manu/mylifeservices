@@ -53,7 +53,12 @@ export default async function AnnouncementsPage({ searchParams }) {
 
   // only published posts in the feed - drafts (publishedAt null) live in preview
   // until the author publishes them.
-  const where = { deletedAt: null, publishedAt: { not: null } };
+  // A BACKFILLED MEETING NEVER REACHES THE FEED. It is published only because
+  // the attendance report reads published meetings, not because anybody is
+  // meant to read it - it happened months ago and was recorded somewhere else.
+  // Filtered in the query rather than left to canSeeAnnouncement below, so it
+  // does not eat one of the 50 rows the feed takes.
+  const where = { deletedAt: null, publishedAt: { not: null }, meetingBackfilled: false };
   const cutoff = windowCutoff(windowVal);
   if (cutoff) {
     where.createdAt = { gte: cutoff };

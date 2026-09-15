@@ -3,10 +3,12 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import BackLink from "@/components/BackLink";
-import { ackAudienceWhere, COMPANY_MEETING_TAG } from "@/lib/announcements";
+import { ackAudienceWhere, COMPANY_MEETING_TAG, recordNoteOf } from "@/lib/announcements";
 import { buildRoster, meetingMeta } from "./roster";
 import AttendanceBoard from "./_components/AttendanceBoard";
 import OfficeFilter from "@/components/OfficeFilter";
+import PastMeetingSheet from "./_components/PastMeetingSheet";
+import { preferredName } from "@/lib/contacts";
 import { officeFromSearch } from "@/lib/positions";
 
 export const metadata = {
@@ -26,6 +28,25 @@ export default async function MeetingAttendancePage({ searchParams }) {
   const office = officeFromSearch(await searchParams);
   const officeQs = office ? `?office=${office}` : "";
 
+  // WHAT THE PAST-MEETING SHEET NEEDS: everyone who could have been in the
+  // room, and every document that could have been shown. Both are small and
+  // both are read once for the page rather than per meeting.
+  const [staffRows, libraryDocs] = await Promise.all([
+    prisma.user.findMany({
+      where: { deactivatedAt: null },
+      select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, title: true },
+      orderBy: [{ preferredFirstName: "asc" }, { name: "asc" }],
+    }),
+    // the ATTACHABLE set, not the ack-eligible one: a training deck is not
+    // fillable and has nowhere to submit to, and it is exactly what a meeting
+    // was run from
+    prisma.form.findMany({
+      select: { id: true, title: true, category: true },
+      orderBy: [{ category: "asc" }, { title: "asc" }],
+    }),
+  ]);
+  const staff = staffRows.map((u) => ({ id: u.id, name: preferredName(u), title: u.title || "" }));
+
   const meetings = await prisma.announcement.findMany({
     where: { tag: COMPANY_MEETING_TAG, deletedAt: null, publishedAt: { not: null } },
     select: {
@@ -37,6 +58,11 @@ export default async function MeetingAttendancePage({ searchParams }) {
       meetingOptions: true,
       meetingResponseDueAt: true,
       meetingResponseDueTz: true,
+      // a meeting brought in after the fact, and where its attendance was kept
+      // before it got here. Left off this select the card cannot tell a record
+      // typed in months later from a roll call taken in the room.
+      meetingBackfilled: true,
+      meetingRecordSource: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
@@ -48,7 +74,8 @@ export default async function MeetingAttendancePage({ searchParams }) {
       const [audienceUsers, choices, responses] = await Promise.all([
         prisma.user.findMany({
           where: {
-            ...ackAudienceWhere(m),
+            // a record of a past meeting keeps the people who have since left
+            ...ackAudienceWhere(m, { includeInactive: !!m.meetingBackfilled }),
             ...(office ? { offices: { has: office } } : {}),
           },
           select: {
@@ -79,6 +106,8 @@ export default async function MeetingAttendancePage({ searchParams }) {
         id: m.id,
         title: m.title || "(untitled meeting)",
         mandatory: m.meetingMandatory,
+        recordNote: recordNoteOf(m),
+        backfilled: !!m.meetingBackfilled,
         isSeries: r.isSeries,
         seriesCount: r.seriesGroups.length,
         responded: r.responded,
@@ -114,6 +143,10 @@ export default async function MeetingAttendancePage({ searchParams }) {
       </p>
 
       <OfficeFilter basePath="/portal/admin/meeting-attendance" current={office} />
+
+      <div className="mt-5">
+        <PastMeetingSheet staff={staff} docs={libraryDocs} />
+      </div>
 
       <AttendanceBoard
         officeQs={officeQs}

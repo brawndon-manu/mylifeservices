@@ -453,6 +453,21 @@ model Announcement {
   meetingKind                 String? // Training | Team meeting | All-hands | Orientation | Other
   meetingFormat               String? // zoom | in_person | hybrid
   meetingMandatory            Boolean                       @default(false)
+  // A MEETING THAT RAN BEFORE THE PORTAL HELD MEETINGS. The ones done on paper
+  // or in a Google Doc, brought in so the attendance has somewhere to live -
+  // attendance is only ever stored against an announcement, so there is no
+  // other home for it.
+  //
+  // It is a record, not a post. Set, it keeps the meeting out of the staff
+  // feed, out of every staff member's view, and out of the meeting-jobs cron
+  // entirely. That last one matters: the response-due second notice has no
+  // upper bound on how late it fires, so a past deadline with no notice stamp
+  // would email the whole audience the moment the cron next ran.
+  meetingBackfilled           Boolean                       @default(false)
+  // where the attendance was actually kept before this - a Google Doc, a
+  // sign-in sheet. Free text because there is no list to pick from, and the
+  // report says it rather than implying the portal was there.
+  meetingRecordSource         String?
   zoomLink                    String?
   zoomCode                    String?
   meetingAddress              String?

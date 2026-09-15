@@ -303,6 +303,12 @@ export default function MeetingFields({
   // mandatory drives the RSVP requirement: when on, we ask for a "Response needed
   // by" date. responding to the meeting is itself the acknowledgment.
   const [mandatory, setMandatory] = useState(!!d.meetingMandatory);
+  // NOT SETTABLE HERE. A past meeting is created from the attendance page,
+  // which is where somebody typing up an old sign-in sheet already is. This
+  // form only ever CARRIES the flag, through the hidden inputs below, because
+  // an edit form that does not post a field back is an edit form that clears
+  // it - and clearing this one puts a months-old meeting into the staff feed.
+  const backfilled = !!d.meetingBackfilled;
   const initTz = d.meetingTimezone || DEFAULT_TZ;
 
   // single-meeting time block (used when NOT offering sessions).
@@ -598,7 +604,7 @@ export default function MeetingFields({
         </span>
       </label>
 
-      {mandatory && (
+      {mandatory && !backfilled && (
         <div>
           <label className={LABEL}>
             Response needed by <span className="text-faint">(optional)</span>
@@ -618,6 +624,7 @@ export default function MeetingFields({
         </div>
       )}
 
+      {!backfilled && (
       <div>
         <label className={LABEL}>Reminder</label>
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
@@ -646,6 +653,7 @@ export default function MeetingFields({
           </span>
         </label>
       </div>
+      )}
 
       {signing && (
         <div className="border-t border-border pt-4">

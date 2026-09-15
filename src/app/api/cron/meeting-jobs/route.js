@@ -201,6 +201,15 @@ export async function GET(request) {
       // author nudge, the response-due notice and the attestation are all noise
       // for the same reason the reminders were wrong.
       publishedAt: { not: null },
+      // A BACKFILLED MEETING IS NOT A MEETING THIS CRON HAS ANY BUSINESS IN.
+      // It already happened, often months ago, and none of the four jobs mean
+      // anything for it. Three of them are bounded and would fall through on
+      // their own - the reminder stops 30 minutes after the session, the
+      // night-before wants nowDate < sessDate, the author nudge wants
+      // now < earliest. The response-due notice below is NOT bounded: a past
+      // deadline with no notice stamp emails the whole audience "Second notice"
+      // on the next pass. Excluded here so no backfill can ever arm it.
+      meetingBackfilled: false,
     },
     select: {
       id: true,

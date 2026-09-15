@@ -32,8 +32,19 @@ export function titleSegmentMatch(title) {
 // the ack box, the roster denominator, and the email send all hit the exact
 // same people. always active users only. takes a post-ish object carrying
 // ackEveryone / ackTitles / ackUserIds.
-export function ackAudienceWhere(post) {
-  const where = { deactivatedAt: null };
+export function ackAudienceWhere(post, { includeInactive = false } = {}) {
+  // ACTIVE STAFF ONLY, EXCEPT ON A RECORD OF SOMETHING THAT ALREADY HAPPENED.
+  //
+  // Every live use of this wants current staff: who to email, who owes a
+  // signature, who is on a roster for a meeting still to come. A backfilled
+  // meeting is the opposite - it says who was in a room in June, and five of
+  // the people on those lists have since left. Filtering them out would make
+  // the record disagree with the email it was typed from, and quietly: the
+  // count would just be short.
+  //
+  // Opt-in rather than keyed off the post, so nothing that emails or chases
+  // anybody can pick this up by accident.
+  const where = includeInactive ? {} : { deactivatedAt: null };
   if (
     post.ackEveryone ||
     (!post.ackTitles?.length && !post.ackUserIds?.length)
@@ -91,6 +102,11 @@ export function isExemptOnPost(post, userId) {
 export function canSeeAnnouncement(post, user) {
   if (!user) return false;
   if (isElevated(user.role)) return true;
+  // A BACKFILLED MEETING IS A RECORD, NOT A POST. It is a meeting that already
+  // happened somewhere the portal was not, brought in so its attendance has a
+  // home. Nobody below the oversight tier has anything to do with it - not even
+  // whoever is named as the author, who did not write it here.
+  if (post.meetingBackfilled) return false;
   if (post.authorId && post.authorId === user.id) return true;
   // only meetings + ack-required posts are gated; anything else is public.
   const restricted = isCompanyMeeting(post.tag) || post.requireAck;
@@ -127,6 +143,23 @@ export const COMPANY_MEETING_TAG = "Company Meeting";
 
 export function isCompanyMeeting(tag) {
   return tag === COMPANY_MEETING_TAG;
+}
+
+// WHAT A BACKFILLED MEETING SAYS ABOUT ITSELF. One sentence, three surfaces -
+// the attendance report card, the meeting page and the printed PDF - because
+// three copies of it is three chances for them to stop agreeing.
+//
+// HERE AND NOT IN roster.js, which is where it started. It is a pure function
+// and roster.js is server-only: the same trap printedDate and noteMinute each
+// sprang, where something small and pure sits in a module nothing else can
+// reach. This file already promises no db and no prisma.
+//
+// Null on an ordinary meeting, which is every meeting the portal itself ran.
+export function recordNoteOf(m) {
+  if (!m?.meetingBackfilled) return null;
+  return m.meetingRecordSource
+    ? `Recorded from ${m.meetingRecordSource}`
+    : "Recorded afterwards";
 }
 
 export function isValidAnnouncementTag(tag) {

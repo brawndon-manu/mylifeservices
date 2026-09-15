@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
-import { ackAudienceWhere, isCompanyMeeting } from "@/lib/announcements";
+import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
 import { officeFromSearch } from "@/lib/positions";
@@ -36,6 +36,8 @@ export async function GET(req, { params }) {
       meetingOptions: true,
       meetingResponseDueAt: true,
       meetingResponseDueTz: true,
+      meetingBackfilled: true,
+      meetingRecordSource: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
@@ -52,7 +54,8 @@ export async function GET(req, { params }) {
   const [audienceUsers, choices, responses] = await Promise.all([
     prisma.user.findMany({
       where: {
-        ...ackAudienceWhere(m),
+        // a record of a past meeting keeps the people who have since left
+        ...ackAudienceWhere(m, { includeInactive: !!m.meetingBackfilled }),
         ...(office ? { offices: { has: office } } : {}),
       },
       select: {
@@ -98,8 +101,10 @@ export async function GET(req, { params }) {
         meetingTitle: m.title,
         mandatory: !!m.meetingMandatory,
         metaLine: meta.metaLine,
+        recordNote: recordNoteOf(m),
         office: office || null,
         stats: {
+          backfilled: !!m.meetingBackfilled,
           invited: r.invited,
           responded: r.responded,
           pct: meta.pct,

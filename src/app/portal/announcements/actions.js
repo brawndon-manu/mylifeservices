@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
+import { resolveAttachments } from "@/lib/announcement-attach-server";
 import { sendSlotAlert } from "@/lib/slot-alert-email";
 import {
   addedSessions, canTake, sortSessionOptions, sessionStarted } from "@/lib/meeting-slots";
@@ -52,10 +53,6 @@ import {
   isValidAnnouncementTag,
   isChangelog,
   isCompanyMeeting,
-  ATTACH_ACCEPT,
-  ATTACH_MAX_BYTES,
-  ATTACH_MAX_COUNT,
-  cleanAttachment,
   attachmentsOf,
   emailAttachmentsOf,
   inlineImageUrlsIn,
@@ -308,12 +305,20 @@ function parseMeetingFields(formData, tag) {
     return t > 0 ? t : null;
   };
 
+  // A MEETING BEING BROUGHT IN AFTER THE FACT. Everything that only makes
+  // sense before a meeting happens is forced off here rather than left to the
+  // form to remember: a reminder for a date in June, a response deadline that
+  // has already passed, a link to join something that is over. The cron skips
+  // backfills entirely, so this is the belt to that braces - the values are
+  // wrong on their face and should not be stored whatever reads them next.
+  const backfilled = formData.get("meetingBackfilled") === "on";
+
   return {
     meetingKind: isValidMeetingKind(kind) ? kind : "Other",
     meetingFormat: isValidMeetingFormat(format) ? format : "zoom",
     meetingMandatory: formData.get("meetingMandatory") === "on",
-    zoomLink: online ? trim(formData.get("zoomLink"), 500) : null,
-    zoomCode: online ? trim(formData.get("zoomCode"), 60) : null,
+    zoomLink: online && !backfilled ? trim(formData.get("zoomLink"), 500) : null,
+    zoomCode: online && !backfilled ? trim(formData.get("zoomCode"), 60) : null,
     meetingAddress: addr ? trim(formData.get("meetingAddress"), 300) : null,
     meetingOptions,
     meetingMultiPick,
@@ -358,81 +363,6 @@ async function resolveAttestationFormId(formData, tag) {
   return form.id;
 }
 
-// PDFs UPLOADED STRAIGHT ONTO A POST. Same store and same cleanup as the image,
-// a different prefix so the two are tellable apart in the bucket.
-async function uploadAttachment(file) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error("Attachments arent configured yet. Create a Blob store in Vercel.");
-  }
-  const key = `announcements/docs/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.pdf`;
-  const blob = await put(key, file, { access: "public", contentType: "application/pdf" });
-  return blob.url;
-}
-
-// WHAT ENDS UP ON THE POST, from both sources.
-//
-// A library pick arrives as a Form id and is LOOKED UP - the url and the name
-// come from the row, never from the posted value, or a crafted form could
-// attach any url it liked under a friendly name. An upload is checked for type
-// and size before it reaches the store.
-//
-// `redirectOn` is the page to bounce back to, so create and edit report their
-// errors in the right place.
-async function resolveAttachments(formData, redirectOn) {
-  const out = [];
-
-  // ALREADY ON THE POST, and not ticked for removal. An uploaded PDF exists
-  // only here, so an edit that silently dropped it would lose the file - the
-  // library picks below can always be re-picked, these cannot.
-  for (const raw of formData.getAll("keepAttachments")) {
-    if (typeof raw !== "string" || !raw) continue;
-    try {
-      const a = cleanAttachment(JSON.parse(raw));
-      if (a) out.push(a);
-    } catch {
-      // a mangled hidden field drops that one attachment rather than the post
-    }
-  }
-
-  const ids = formData
-    .getAll("attachFormIds")
-    .filter((v) => typeof v === "string" && v);
-  if (ids.length) {
-    const rows = await prisma.form.findMany({
-      where: { id: { in: ids.slice(0, ATTACH_MAX_COUNT) } },
-      select: { id: true, title: true, fileUrl: true },
-    });
-    // keep the order the picker showed them in rather than the database's
-    for (const id of ids) {
-      const f = rows.find((r) => r.id === id);
-      if (f) out.push({ name: f.title, url: f.fileUrl, formId: f.id, bytes: null });
-    }
-  }
-
-  const files = formData
-    .getAll("attachments")
-    .filter((f) => f && typeof f === "object" && "size" in f && f.size > 0);
-  for (const file of files) {
-    if (!ATTACH_ACCEPT.includes(file.type)) redirect(`${redirectOn}?error=attachType`);
-    if (file.size > ATTACH_MAX_BYTES) redirect(`${redirectOn}?error=attachSize`);
-    if (out.length >= ATTACH_MAX_COUNT) redirect(`${redirectOn}?error=attachCount`);
-    let url;
-    try {
-      url = await uploadAttachment(file);
-    } catch {
-      redirect(`${redirectOn}?error=attachUpload`);
-    }
-    out.push({
-      name: (file.name || "Document").replace(/\.pdf$/i, "").slice(0, 120),
-      url,
-      formId: null,
-      bytes: file.size,
-    });
-  }
-
-  if (out.length > ATTACH_MAX_COUNT) redirect(`${redirectOn}?error=attachCount`);
-  return out.length ? out.map(cleanAttachment).filter(Boolean) : null;
-}
 
 async function uploadImage(file) {
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -572,6 +502,8 @@ export async function createPost(formData) {
     }
   }
 
+  const meetingFields = parseMeetingFields(formData, tag);
+
   const post = await prisma.announcement.create({
     data: {
       authorId,
@@ -589,14 +521,25 @@ export async function createPost(formData) {
       ackUserIds,
       ackExemptUserIds: parseExemptUserIds(formData),
       formId,
-      ...parseMeetingFields(formData, tag),
+      ...meetingFields,
+      // A BACKFILL IS PUBLISHED AS IT IS CREATED, and that is the only reason
+      // it is published at all: the attendance report reads
+      // `publishedAt: { not: null }`, so a draft would be markable on its own
+      // page and absent from the report and its PDF - the two places the
+      // record is actually for.
+      //
+      // Publishing it here also means it never passes through the publish
+      // dialog, which is the only thing in this file that can email an
+      // audience. A meeting that happened in June cannot announce itself.
+      ...(meetingFields.meetingBackfilled ? { publishedAt: new Date() } : {}),
       meetingAttestationFormId,
       ...parseEventFields(formData, tag),
     },
   });
 
-  // created as a DRAFT (publishedAt stays null). it isn't in the feed and no
-  // email goes out yet - the author lands on the preview and publishes from there.
+  // created as a DRAFT (publishedAt stays null) unless it is a backfill, which
+  // is stamped above. a draft isn't in the feed and no email goes out yet - the
+  // author lands on the preview and publishes from there.
   revalidatePath("/portal/announcements");
   redirect(`/portal/announcements/${post.id}`);
 }
