@@ -22,6 +22,7 @@ import ReviewTable from "../_components/ReviewTable";
 import { signTimesheetToken } from "@/lib/timesheet-token";
 import { isSuper } from "@/lib/roles";
 import SendPanel from "../_components/SendPanel";
+import RecomputeBatchButton from "../_components/RecomputeBatchButton";
 import { batchState } from "@/lib/timesheet/batch-state";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
 
@@ -470,6 +471,18 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
           </Link>
         </>}
       />
+
+      {/* RE-RUN THE ENGINE OVER THE WHOLE PERIOD. Here rather than on Legacy
+          because it moves premium hours across every sheet, and this is the
+          page somebody is on when that matters. SUPER only, matching the
+          refusal the action itself makes - hiding a control the server would
+          refuse is the honest pairing. Off a superseded upload entirely, which
+          is read only for the same reason the re-upload door is missing there. */}
+      {isSuper(user?.role) && state.key !== "superseded" && (
+        <div className="mt-4 flex justify-end">
+          <RecomputeBatchButton batchId={batch.id} />
+        </div>
+      )}
 
       {punchOpenDays > 0 && (
         <div className="mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-950/40">

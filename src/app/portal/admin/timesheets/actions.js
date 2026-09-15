@@ -54,6 +54,7 @@ import { parseServiceNotesPdf } from "@/lib/timesheet/service-notes";
 import { parseServiceNotesXls, mergeNotes } from "@/lib/timesheet/service-notes-xls";
 import { signedDsnDates, dsnSignedFor, attestationReach } from "@/lib/timesheet/dsn-attestation";
 import { buildWhoKey } from "@/lib/timesheet/people";
+import { premiumsFromDays } from "@/lib/timesheet/premium-split";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -3335,6 +3336,118 @@ export async function resetTimesheetAnswers(timesheetId) {
 // - `signed` is the destructive half: a rebuild clears the signature. The
 //   corrections screen shows this control on signed sheets, so the warning has
 //   to be conditional on the sheet in front of them and not on a general note.
+// RE-RUN THE ENGINE OVER A WHOLE PERIOD, KEEPING EVERY ANSWER.
+//
+// `recomputeTimesheet` below does one sheet, and that is the loop somebody is
+// in while working through a person. This is for a RULE that landed after the
+// upload: the days were analysed under the old one, and `reanalyze.js` exists
+// precisely because nothing on any screen moves until they are analysed again.
+//
+// A SHEET AT A TIME IS THE WRONG SHAPE FOR THAT. A re-analysis is triggered by
+// any correction or override, so without this the period drifts onto the new
+// rule one person at a time as people happen to touch them - the premium total
+// creeping for days, with no moment where anybody decided it. The rest-break
+// attestation moving to evidence is what this was built for: 35 rest premiums
+// across 14 people on 09/01-09/15, and they should all appear at once.
+//
+// IT DELETES NOTHING, which is the whole difference between this and
+// `resetBatchAnswers` above. Overrides and answers ride through exactly as the
+// single-sheet recompute carries them.
+//
+// TWO KINDS OF SHEET ARE LEFT BEHIND ON PURPOSE. A signed or approved one is
+// refused by `rebuildSheetFor` itself, because re-analysing it would rewrite a
+// document somebody put their name to. One with open corrections is skipped
+// because it is about to change anyway, and it catches up on its own when the
+// correction resolves. Both are counted, so the result says how much of the
+// period did NOT move rather than implying all of it did.
+export async function batchRecomputeImpact(batchId) {
+  await requireTimesheetAccess();
+  const sheets = await prisma.timesheet.findMany({
+    where: { batchId },
+    select: {
+      id: true, signedAt: true, approvedAt: true, data: true,
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  let restHours = 0;
+  let mealHours = 0;
+  for (const t of sheets) {
+    const p = premiumsFromDays(t.data?.days || []);
+    restHours += p.restHours;
+    mealHours += p.mealHours;
+  }
+  return {
+    sheets: sheets.length,
+    frozen: sheets.filter((t) => t.signedAt || t.approvedAt).length,
+    openItems: sheets.filter((t) => t.corrections.length > 0).length,
+    restHours: r2(restHours),
+    mealHours: r2(mealHours),
+  };
+}
+
+export async function recomputeBatch(batchId) {
+  const user = await requireTimesheetAccess();
+  if (!isSuper(user?.role)) return { ok: false, error: "auth" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
+  // because hiding a control is a suggestion and this has to be a rule.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
+
+  const sheets = await prisma.timesheet.findMany({
+    where: { batchId },
+    // `restsUrl` is here because the re-analysis reads it. A column left off a
+    // select comes back undefined, which is indistinguishable from "this batch
+    // has no rest report" - and that reads as restUnknown, which is the
+    // difference between charging somebody and not.
+    include: {
+      batch: { select: { id: true, periodFrom: true, periodTo: true, restsByDate: true, restsUrl: true, program: true } },
+      corrections: { where: { status: "open" }, select: { id: true } },
+    },
+  });
+  if (!sheets.length) return { ok: false, error: "notfound" };
+
+  const totals = (list) => {
+    let rest = 0;
+    let meal = 0;
+    for (const d of list) {
+      const p = premiumsFromDays(d || []);
+      rest += p.restHours;
+      meal += p.mealHours;
+    }
+    return { rest: r2(rest), meal: r2(meal) };
+  };
+  const before = totals(sheets.map((t) => t.data?.days || []));
+
+  let rebuilt = 0;
+  let failed = 0;
+  let frozen = 0;
+  let openItems = 0;
+  for (const ts of sheets) {
+    if (ts.signedAt || ts.approvedAt) { frozen++; continue; }
+    if (ts.corrections.length) { openItems++; continue; }
+    // `ts.overrides` and not `{}` - this keeps the answers, which is the whole
+    // difference between this and the reset
+    const res = await rebuildSheetFor(ts, ts.overrides);
+    if (res?.ok) rebuilt++;
+    else failed++;
+  }
+
+  const after = await prisma.timesheet.findMany({ where: { batchId }, select: { data: true } });
+  const now = totals(after.map((t) => t.data?.days || []));
+
+  revalidatePath(`/portal/admin/timesheets/${batchId}`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/corrections`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/penalty-hours`);
+  return {
+    ok: true, rebuilt, failed, frozen, openItems,
+    restBefore: before.rest, restAfter: now.rest,
+    mealBefore: before.meal, mealAfter: now.meal,
+  };
+}
+
 export async function timesheetRecomputeImpact(timesheetId) {
   await requireTimesheetAccess();
   const ts = await prisma.timesheet.findUnique({
