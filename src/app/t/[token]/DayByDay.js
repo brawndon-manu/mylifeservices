@@ -691,7 +691,10 @@ export default function DayByDay({
   // child, so the half-typed time gets to them through here
   return (
     <StagedTimesProvider>
-    <DayDoneProvider>
+    {/* the tail of the token keys the walked-days memory per sheet - long
+        enough that two sheets cannot collide, and nothing the address bar was
+        not already showing. See DayDoneProvider. */}
+    <DayDoneProvider sheetKey={typeof token === "string" ? token.slice(-24) : null}>
     <div className="mt-5">
       {/* ABOVE EVERYTHING, INCLUDING THE BATCHED HEADING. That heading was the
           only thing over the day list, so on a long sheet it read as the

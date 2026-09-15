@@ -79,14 +79,57 @@ export function useDayDone() {
   return (date) => !!done?.readyOn?.(date);
 }
 
-export function DayDoneProvider({ children }) {
+// WHICH DAYS THEY HAVE WORKED THROUGH, KEPT ACROSS A RELOAD.
+//
+// It lived for the life of the page, so somebody who got halfway down a
+// fortnight and refreshed - or closed the tab and came back to finish - lost
+// every tick and started again with no idea where they had stopped.
+//
+// IN THE BROWSER, NOT ON THE SHEET. This is a reading aid: it says where they
+// are, not what they attested to. Writing it to the record would put "scrolled
+// past this day" on a payroll document, which is a claim about somebody that
+// nothing here is entitled to make. So it follows the device rather than the
+// person - open the same sheet on a phone and the walk starts again, which is
+// the honest cost of not recording it.
+//
+// KEYED PER SHEET off the token, which is already in the address bar, so this
+// adds no exposure that opening the link did not. Two people on one machine get
+// separate keys.
+//
+// HYDRATED IN AN EFFECT, never in the initialiser: this tree renders on the
+// server, where `localStorage` does not exist. And every read and write is
+// wrapped - a private window or blocked site data throws rather than returning
+// empty, and a lost tick must never take the page down with it.
+export function DayDoneProvider({ children, sheetKey = null }) {
   const [ready, setReady] = useState(() => new Set());
+  const storeKey = sheetKey ? `mls.daysWalked.${sheetKey}` : null;
+
+  useEffect(() => {
+    if (!storeKey) return;
+    try {
+      const raw = window.localStorage.getItem(storeKey);
+      const dates = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(dates) && dates.length) setReady(new Set(dates.filter((d) => typeof d === "string")));
+    } catch {
+      // unreadable or unavailable - the walk simply starts fresh
+    }
+  }, [storeKey]);
+
+  useEffect(() => {
+    if (!storeKey) return;
+    try {
+      window.localStorage.setItem(storeKey, JSON.stringify([...ready]));
+    } catch {
+      // storage full or blocked - the ticks still work for this page's life
+    }
+  }, [ready, storeKey]);
+
   return (
     <DayDoneCtx.Provider
       value={{
         ready,
         readyOn: (date) => ready.has(date),
-        markReady: (date) => setReady((r) => new Set(r).add(date)),
+        markReady: (date) => setReady((r) => (r.has(date) ? r : new Set(r).add(date))),
         unmarkReady: (date) => setReady((r) => { const n = new Set(r); n.delete(date); return n; }),
       }}
     >
