@@ -20,7 +20,6 @@
 // rebuild that trusted a stale stored flag kept charging rest premiums the
 // attestation had already retired (10 hours on the September batch's
 // unrebuildable days). It drags nothing into the bundle.
-import { restAttested } from "./rest-attestation.js";
 // AND A SECOND EXCEPTION on the same terms: work-slots.js is slot geometry
 // whose only import is loose-time.js, which imports nothing at all. No pdf and
 // no parse, so the review page's bundle is unchanged.
@@ -155,11 +154,11 @@ export function correctionEffect(kind, day, claimedHours) {
     // categories are not offered on an attested day any more, so this is what
     // a claim made before the attestation reads as now.
     case "rest_missed":
-      return restAttested(day?.date)
+      return day?.restAttested === true
         ? "No change - rest breaks are covered by the attestation."
         : "Owes a 1 hr rest premium for this day.";
     case "rest_taken":
-      return restAttested(day?.date)
+      return day?.restAttested === true
         ? "No change - rest breaks are covered by the attestation."
         : "Removes the 1 hr rest premium for this day.";
     case "day_missing":
@@ -522,7 +521,7 @@ export function recomputeSheet({ days, payPeriod, overrides }, applyOvertime, re
   // schedule rows) keeps `restViolation: true` forever, and this sum is what
   // decides the money on every rebuild. Same date rule as splitPremium.
   const restDays = withOt
-    .filter((d) => d.restViolation && !restAttested(d.date))
+    .filter((d) => d.restViolation && d.restAttested !== true)
     .map((d) => d.date);
 
   return {

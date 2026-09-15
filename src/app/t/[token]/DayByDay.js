@@ -1,7 +1,7 @@
 import { parseLooseTime } from "@/lib/loose-time";
 import { movesHours, shiftsOf } from "@/lib/timesheet/questions";
 import { Calendar, ChevronDown } from "lucide-react";
-import { restAttested } from "@/lib/timesheet/rest-attestation";
+import { attestedDates } from "@/lib/timesheet/rest-attestation";
 import { confirmedReviewDay } from "@/lib/timesheet/review-days";
 import DayCalendar from "./DayCalendar";
 import { DayReport, ReportedDayVisual } from "./ReviewFlow";
@@ -359,7 +359,7 @@ export default function DayByDay({
     // a day whose only item is a fix still has something on it
     // an acknowledged backwards entry stops counting, so a day whose only item
     // was that one drops off the page like any other finished day
-    || (!restAttested(day.date) && (restsByDate.get(day.date) || [])
+    || (day.restAttested !== true && (restsByDate.get(day.date) || [])
       .some((b) => b.attention && !ackOn?.has?.(`${day.date}|${b.min}`)));
 
   // EVERY DAY IS ON THE RAIL NOW, 2026-09-08. The 2026-08-15 rule - a quiet
@@ -378,10 +378,12 @@ export default function DayByDay({
   //
   // A backwards entry counts until it is acknowledged, and a reason still owed
   // counts too: a day is not finished with while either is outstanding.
+  // keyed by date because this one is handed a date rather than a day
+  const attested = attestedDates(days);
   const plainBlockedOn = (date) =>
     (anchored.get(date) || []).some((g) => !answers?.[g[0].id])
     || (asksByDate.get(date) || []).length > 0
-    || (!restAttested(date) && (restsByDate.get(date) || [])
+    || (!attested.has(date) && (restsByDate.get(date) || [])
       .some((b) => b.attention && !ackOn?.has?.(`${date}|${b.min}`)));
 
   // "07/16/26" -> "Thu, Jul 16" for the rail, "Thursday, July 16" for the
@@ -597,7 +599,7 @@ export default function DayByDay({
                     sentence to point at. */}
                 <NeedsFixing
                   items={(restsByDate.get(day.date) || [])
-                    .filter((b) => b.attention && !restAttested(day.date))
+                    .filter((b) => b.attention && day.restAttested !== true)
                     .map((b) => ({ ...b, date: day.date }))}
                   token={token}
                   ackOn={ackOn}

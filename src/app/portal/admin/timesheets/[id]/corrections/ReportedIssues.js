@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { resolveCorrection } from "@/app/portal/admin/timesheets/actions";
 import { reportQueue, reportDate, reportTimestamp, reportSlotCheck, validReportSlots } from "@/lib/timesheet/reported-issues";
 import { clockLabel } from "@/lib/timesheet/work-slots";
-import { restAttested } from "@/lib/timesheet/rest-attestation";
 import RecomputeButton from "./RecomputeButton";
 import styles from "./ReportedIssues.module.css";
 
@@ -117,8 +116,8 @@ function IssueDetail({ sheet, correction: c, batchId }) {
         <p className={styles.caption}>
           What the punches say: {hours(c.original.paidHours)} hrs · {c.original.mealCount > 0 ? "meal punched" : "no meal punched"}
           {c.original.mealViolation && " · meal premium currently owed"}
-          {!restAttested(c.date) && ` · ${c.original.restCount || 0}/${c.original.restRequired || 0} rest breaks`}
-          {!restAttested(c.date) && c.original.restViolation && " · rest premium currently owed"}
+          {c.original.restAttested !== true && ` · ${c.original.restCount || 0}/${c.original.restRequired || 0} rest breaks`}
+          {c.original.restAttested !== true && c.original.restViolation && " · rest premium currently owed"}
         </p>
       )}
       {c.claimedHours != null && (

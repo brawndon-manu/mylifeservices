@@ -35,7 +35,6 @@
 // modules are read by `node --test`, which has no bundler to guess with.
 import { mealWindows, mealBookedInside, mealBookedShort } from "./questions.js";
 // the DSN rest-break attestation - covered days list no rest violation.
-import { restAttested } from "./rest-attestation.js";
 
 export const VIOLATION_KINDS = {
   "rest-not-taken": {
@@ -127,7 +126,7 @@ export function dayViolations(d, entry = null) {
   const out = [];
   // the DSN rest-break attestation: a covered day lists no rest violation,
   // whatever a flag stored under the old rules says. See rest-attestation.js.
-  if (d.restViolation && !restAttested(d.date)) {
+  if (d.restViolation && d.restAttested !== true) {
     const short = (d.restRequired || 0) - (d.restTaken || 0);
     out.push({
       kind: "rest-not-taken",

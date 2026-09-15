@@ -13,7 +13,6 @@
 
 import { restKey, restNameFor, isMealLengthRest } from "./rests.js";
 // the DSN rest-break attestation - covered days list no rest rows here.
-import { restAttested } from "./rest-attestation.js";
 import { shortTime, recordedBreaksFor } from "./recorded-breaks.js";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -109,7 +108,7 @@ export function buildEmployeeChecks(data, { restRows, sourceName, confirmed } = 
   const noGap = [];
   for (const d of days) {
     if (!d.restViolation) continue;
-    if (restAttested(d.date)) continue; // the DSN attestation covers the day
+    if (d.restAttested === true) continue; // the DSN attestation covers the day
     const gaps = scheduleGaps(byDate[d.date]);
     const row = {
       date: d.date,

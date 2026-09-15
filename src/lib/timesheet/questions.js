@@ -40,7 +40,7 @@ import {
 } from "./rests.js";
 // the DSN rest-break attestation - covered days ask no rest-only questions.
 // The date rule and the story live in one file.
-import { restAttested } from "./rest-attestation.js";
+import { attestedDates } from "./rest-attestation.js";
 import { shortTime, rosteredMeal } from "./recorded-breaks.js";
 // the same loose reading the time boxes run on, for reading a slot's own
 // `known` times back into minutes - see collidesWithRecorded
@@ -64,7 +64,8 @@ export function questionPolicyApplies(q, data) {
   }
   const restOnly = ["repair", "restNoTimes", "restTooLongOffClock",
     "restOutsideScheduled", "shortMealRest", "nothingDocumentedRest"];
-  return !restOnly.includes(q.kind) || dates.every((date) => !restAttested(date));
+  const attested = attestedDates(data?.days);
+  return !restOnly.includes(q.kind) || dates.every((date) => !attested.has(date));
 }
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -677,6 +678,9 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   // - see `restNameFor`. Resolved here rather than at the five call sites, since
   // every one of them already hands over the `data` that holds the answer.
   const mineKey = restKey(restNameFor(sourceName, data));
+  // the days the DSN attestation covered. A rest report row carries a name and
+  // a date and no day, so the four loops below match back to the day by date.
+  const attested = attestedDates(data?.days);
   const mine = (restRows || []).filter(
     (r) => restKey(r.name) === mineKey && dates.has(r.date),
   );
@@ -756,7 +760,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   // attestation says nothing about. Recorded rests still draw on the sheet
   // and the day view. The rule and the date live in rest-attestation.js.
   for (const r of mine) {
-    if (restAttested(r.date)) continue;
+    if (attested.has(r.date)) continue;
     if (!r.repair || mealReadingWins(r)) continue;
     // `both` moves the whole row twelve hours - see `proposeRepair`. Reading it
     // as a single-field fix would leave the untouched end at its recorded value
@@ -912,7 +916,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //    whenever a time is missing, and it asks for the start rather than a yes
   //    or no, because there is nothing to agree or disagree with.
   for (const r of mine) {
-    if (restAttested(r.date)) continue; // attested - see the repair loop's note
+    if (attested.has(r.date)) continue; // attested - see the repair loop's note
     if (r.repair || mealReadingWins(r)) continue;
     const missing = [
       String(r.out || "").trim() ? null : "out",
@@ -962,7 +966,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //    the repair question, and a meal-shaped row on a day missing its meal goes
   //    to the meal question. This is what is left.
   for (const r of mine) {
-    if (restAttested(r.date)) continue; // attested - see the repair loop's note
+    if (attested.has(r.date)) continue; // attested - see the repair loop's note
     if (r.counted || r.repair || mealReadingWins(r)) continue;
     if (!(Number(r.minutes) > REST_LONG_MAX_MIN)) continue;
     const d = dayOf(r.date);
@@ -1041,7 +1045,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //                   as taken, which can put a premium on the day.
   const offClockRows = [];
   for (const r of mine) {
-    if (restAttested(r.date)) continue; // attested - see the repair loop's note
+    if (attested.has(r.date)) continue; // attested - see the repair loop's note
     if (!r.counted || r.repair || mealReadingWins(r)) continue;
     const d = dayOf(r.date);
     if (!d) continue;
@@ -1178,7 +1182,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   //    cleared a violation puts the premium back.
   const shortMeal = days.filter(
     // attested days out - the credit is moot where no rest premium can exist
-    (d) => (d.restsFromShortMeals || 0) > 0 && !restAttested(d.date),
+    (d) => (d.restsFromShortMeals || 0) > 0 && d.restAttested !== true,
   );
   if (shortMeal.length) {
     const restores = shortMeal.filter(
@@ -1254,10 +1258,11 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
   }
 
   const mealUndocumented = days.filter((d) => d.mealViolation && !d.mealLate);
-  // `restViolation` is already gated at analysis, but a stored day can carry
-  // an old truth - the same date rule holds here so an attested day is never
-  // asked to document a rest whatever its stored flag says.
-  const restUndocumented = days.filter((d) => d.restViolation && !restAttested(d.date));
+  // `restViolation` is already gated at analysis, and the day's own
+  // `restAttested` is the second half of the same belt - a stored day can carry
+  // an old truth, and one analysed before the evidence rule carries neither
+  // flag, which reads as the old answer rather than as a premium.
+  const restUndocumented = days.filter((d) => d.restViolation && d.restAttested !== true);
   if (mealUndocumented.length || restUndocumented.length) {
     const dates = [...new Set([
       ...mealUndocumented.map((d) => d.date),

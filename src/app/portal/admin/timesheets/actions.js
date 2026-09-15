@@ -52,6 +52,8 @@ import { reanalyzeDays, restWindowsByDate } from "@/lib/timesheet/reanalyze";
 import { parsePayrollReport, payrollTotals, payrollKey } from "@/lib/timesheet/payroll";
 import { parseServiceNotesPdf } from "@/lib/timesheet/service-notes";
 import { parseServiceNotesXls, mergeNotes } from "@/lib/timesheet/service-notes-xls";
+import { signedDsnDates, dsnSignedFor, attestationReach } from "@/lib/timesheet/dsn-attestation";
+import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
 import { indexByAccount, lookupAcross, suggestAlias } from "@/lib/timesheet/identity";
 import { renderCorrected } from "@/lib/timesheet/render";
@@ -803,6 +805,25 @@ export async function uploadBatch(formData) {
     select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, timesheetExempt: true },
   });
 
+  // WHICH DAYS EACH PERSON ATTESTED TO THEIR REST BREAKS ON, off the signed
+  // Daily Service Notes. The evidence half of the rest attestation - see
+  // rest-attestation.js for the rule and dsn-attestation.js for the join. Built
+  // here because it needs the accounts and the notes, neither of which
+  // `analyzeDay` can reach, and injected per day like every other such input.
+  const whoKey = buildWhoKey(staff);
+  const dsnByPerson = signedDsnDates(mergedNotes, whoKey);
+  // SAY HOW FAR THE EVIDENCE REACHED. A name join that resolves nobody reads
+  // exactly like a period nobody attested to, and the difference is about a
+  // hundred and fifty rest premiums - so the count goes in the log next to
+  // every other parse figure rather than being discovered later.
+  {
+    const reach = attestationReach(dsnByPerson, whoKey, withHours.map((x) => x.employee));
+    console.log(
+      `rest attestation: ${reach.matched}/${reach.of} people carry a signed DSN, ` +
+      `${reach.days} attested days, from ${mergedNotes.length} notes`,
+    );
+  }
+
   // ---- does this schedule actually cover the people on the timesheet? ----
   //
   // On 2026-08-09 a schedule export holding ONE employee was uploaded against a
@@ -1001,6 +1022,7 @@ export async function uploadBatch(formData) {
       : { value: null, via: null };
     const sched = schedHit.value;
     const schedDay = new Map((sched?.days || []).map((d) => [d.date, d]));
+    const signedDsn = dsnSignedFor(dsnByPerson, whoKey, raw.employee);
 
     const withRests = {
       ...raw,
@@ -1040,6 +1062,10 @@ export async function uploadBatch(formData) {
           // the report has no row for them, in which case there is nothing to
           // find under either name.
           restTimes: restWindows.get(`${restKey(rest?.name || raw.employee)}|${d.date}`) || null,
+          // did this person sign a Daily Service Note on this day. One signed
+          // note covers the WHOLE day including its admin hours, which is why
+          // this is a fact about the date rather than about a shift.
+          dsnSigned: signedDsn(d.date),
         };
       }),
     };
@@ -3478,6 +3504,23 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
   let analysed = days;
   if (!frozen) {
     const windows = restWindowsByDate(restRowsForSheet, { restRowTimes, clockMin, serviceFit });
+    // THE ATTESTATION EVIDENCE, RE-DERIVED FROM THE NOTES rather than taken off
+    // the stored day. A day analysed before the evidence rule carries no
+    // `restAttested` at all, and reading that absence as "not attested" would
+    // charge a rest premium on the strength of a flag that was never computed,
+    // while the signed note sat in the batch the whole time. Two reads, on a
+    // path that already does plenty and is not hot.
+    const noteRow = await client.batchServiceNotes.findUnique({
+      where: { batchId: ts.batchId },
+      select: { notes: true },
+    });
+    const rbStaff = await client.user.findMany({
+      select: { name: true, preferredFirstName: true, preferredLastName: true },
+    });
+    const rbWhoKey = buildWhoKey(rbStaff);
+    const signedDsn = dsnSignedFor(
+      signedDsnDates(noteRow?.notes || [], rbWhoKey), rbWhoKey, ts.sourceName,
+    );
     const res = reanalyzeDays(days, {
       scheduleByDate: stored.scheduleCheck?.byDate || null,
       restTimesFor: (date) => windows.get(date) || null,
@@ -3485,6 +3528,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
       // decides `restUnknown`. Not whether it covers this person: uncovered
       // means no break was recorded, which is a premium.
       restSourceAvailable: !!ts.batch?.restsUrl,
+      dsnSignedFor: signedDsn,
       overrides,
     });
     analysed = res.days;

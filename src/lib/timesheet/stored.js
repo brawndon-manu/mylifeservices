@@ -47,6 +47,12 @@ export const REQUIRED_DAY_FIELDS = [
   "workGroups", "miscBlocks", "miscMin", "miscWorked",
   "miscBreaks", "restsFromMiscBreaks",
   "restRequired", "restViolation", "restCount", "restRecorded", "restTaken", "restSource",
+  // whether the DSN attestation covered this day. Stored rather than re-decided
+  // per screen because the evidence it rests on - this person's signed notes -
+  // is not reachable from a rendering component. Absent means a day analysed
+  // before the rule, which reads as not attested and keeps whatever
+  // `restViolation` already said.
+  "restAttested",
   "restUnknown", "compressedDay", "onSiteMin",
   "seventhDay", "weekPartial", "mealMin", "restMin", "workedMin", "punches", "breaks",
   // these two travel together and MUST NOT be separated. `printed` is what
@@ -95,6 +101,7 @@ export function storedDay(d) {
     doubleHours: r2(d.doubleHours),
     mealViolation: d.mealViolation,
     restViolation: d.restViolation,
+    restAttested: d.restAttested === true,
     // the on-duty meal agreement (day program only). stored for the same
     // reason miscWorked is: reentitle reads it off the day, and a recompute
     // that lost it would start charging meals the upload exempted.

@@ -1,15 +1,24 @@
-// THE DSN REST-BREAK ATTESTATION (2026-09-08).
+// THE DSN REST-BREAK ATTESTATION.
 //
 // Days it covers charge no rest premium, ask no rest-only question, and put no
 // rest anomaly row on the checks screen - staff no longer document their tens,
-// the attestation riding with the DSN says they were taken. Days before the
-// effective date keep every old rule, so an August re-upload still charges
-// August honestly. The rule and the date live in rest-attestation.js; these
-// pins hold the gate at each of its choke points.
+// the attestation riding with the DSN says they were taken.
+//
+// TWO HALVES, AND BOTH ARE PINNED HERE. The date half: nothing before the
+// effective date is covered, so an August re-upload still charges August
+// honestly. The evidence half: a day is only covered if that person actually
+// signed a Daily Service Note on it, because only ILS Service and Self
+// Determination shifts are clocked and only they produce one. A whole day of
+// admin hours never carried an attestation and still documents its tens.
+//
+// The rule lives in rest-attestation.js, the join in dsn-attestation.js.
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { restAttested, REST_ATTESTATION_EFFECTIVE } from "../rest-attestation.js";
+import {
+  attestationInEffect, restAttestedOn, attestedDates, REST_ATTESTATION_EFFECTIVE,
+} from "../rest-attestation.js";
+import { signedDsnDates, dsnSignedFor, attestationReach } from "../dsn-attestation.js";
 import { analyzeDay, reentitle } from "../parse.js";
 import { buildQuestions } from "../questions.js";
 import { splitPremium, applyAssumptions, premiumsFromDays } from "../premium-split.js";
@@ -19,89 +28,190 @@ import { applyOvertime } from "../parse.js";
 
 const at = (h, m = 0) => ({ min: h * 60 + m });
 
-test("restAttested turns on at the effective date and not before", () => {
+test("the date half turns on at the effective date and not before", () => {
   assert.equal(REST_ATTESTATION_EFFECTIVE, "09/01/26");
-  assert.equal(restAttested("08/31/26"), false);
-  assert.equal(restAttested("09/01/26"), true);
-  assert.equal(restAttested("09/02/26"), true);
-  assert.equal(restAttested("12/31/27"), true);
+  assert.equal(attestationInEffect("08/31/26"), false);
+  assert.equal(attestationInEffect("09/01/26"), true);
+  assert.equal(attestationInEffect("09/02/26"), true);
+  assert.equal(attestationInEffect("12/31/27"), true);
   // an unreadable date is NOT covered - old rules are the careful default
-  assert.equal(restAttested(null), false);
-  assert.equal(restAttested(""), false);
-  assert.equal(restAttested("2026-09-02"), false);
+  assert.equal(attestationInEffect(null), false);
+  assert.equal(attestationInEffect(""), false);
+  assert.equal(attestationInEffect("2026-09-02"), false);
 });
 
-test("analyzeDay: an attested day keeps its entitlement and drops the violation", () => {
+test("the rule needs BOTH halves: a governed date and a signed note", () => {
+  assert.equal(restAttestedOn("09/02/26", true), true);
+  // a governed date with no note is the whole point of the evidence half -
+  // this is the admin-only day, and it documents its tens
+  assert.equal(restAttestedOn("09/02/26", false), false);
+  assert.equal(restAttestedOn("09/02/26", undefined), false);
+  // and a note before the date rule changes nothing, because there was no
+  // attestation question to answer in August
+  assert.equal(restAttestedOn("08/31/26", true), false);
+});
+
+// ---------------------------------------------------------------------------
+// THE EVIDENCE: which notes attest, and the name join that decides who they
+// belong to.
+
+const dsn = (employee, date) => ({
+  source: "dsn", employee, date, signedBy: employee,
+  signedDate: date, signedAt: "4:02 PM",
+});
+// the Employee Service Notes .xls carries no signature at all - it sets all
+// three fields to null outright. This is what a Field Supervisor files.
+const xls = (employee, date) => ({
+  source: "xls", employee, date, signedBy: null, signedDate: null, signedAt: null,
+});
+// the resolver, standing in for buildWhoKey: "Aranda, Jennifer" resolves to the
+// same key as "Jennifer Aranda", which is the join that returns zero when wrong
+const whoKey = (n) => {
+  const t = String(n || "").trim();
+  const m = /^([^,]+),\s*(.+)$/.exec(t);
+  return (m ? `${m[2]} ${m[1]}` : t).toLowerCase().replace(/\s+/g, " ");
+};
+
+test("only a signed note off the PDF attests, and it attests the day WORKED", () => {
+  const notes = [
+    dsn("Jennifer Aranda", "09/02/26"),
+    xls("Ilean Solorzano", "09/02/26"),
+    // signed four days late: still attests the shift it describes
+    { ...dsn("Derek Baldwin", "09/03/26"), signedDate: "09/07/26" },
+    // came off the PDF but carries no signature, so there is nothing to lean on
+    { ...dsn("Kristy Hatt", "09/04/26"), signedAt: null },
+  ];
+  const map = signedDsnDates(notes, whoKey);
+
+  const aranda = dsnSignedFor(map, whoKey, "Aranda, Jennifer");
+  assert.equal(aranda("09/02/26"), true, "the two name formats must join");
+  assert.equal(aranda("09/03/26"), false, "a different day is not attested");
+
+  assert.equal(dsnSignedFor(map, whoKey, "Solorzano, Ilean")("09/02/26"), false,
+    "an .xls note documents the work and cannot attest the breaks");
+  assert.equal(dsnSignedFor(map, whoKey, "Baldwin, Derek")("09/03/26"), true,
+    "a late signature still attests the day worked");
+  assert.equal(dsnSignedFor(map, whoKey, "Hatt, Kristy")("09/04/26"), false,
+    "no signature, no attestation");
+  assert.equal(dsnSignedFor(map, whoKey, "Nobody, At All")("09/02/26"), false);
+});
+
+test("the reach is reported, because a join resolving nobody looks like a period nobody attested", () => {
+  const notes = [dsn("Jennifer Aranda", "09/02/26"), dsn("Derek Baldwin", "09/02/26")];
+  const map = signedDsnDates(notes, whoKey);
+  const good = attestationReach(map, whoKey, ["Aranda, Jennifer", "Baldwin, Derek", "Hatt, Kristy"]);
+  assert.deepEqual(good, { matched: 2, of: 3, days: 2 });
+  // THE FAILURE THIS EXISTS TO CATCH: join the two spellings raw and every
+  // person resolves to nothing, which reads as nobody being attested rather
+  // than as a bug. It cost a measurement pass here already.
+  const raw = (n) => String(n || "").toLowerCase();
+  const broken = attestationReach(signedDsnDates(notes, raw), raw, ["Aranda, Jennifer", "Baldwin, Derek"]);
+  assert.equal(broken.matched, 0, "the naive join must be visibly zero, not quietly wrong");
+});
+
+test("attestedDates reads the days of one sheet and ignores the rest", () => {
+  const set = attestedDates([
+    { date: "09/01/26", restAttested: true },
+    { date: "09/02/26", restAttested: false },
+    { date: "09/03/26" },
+    { restAttested: true },
+  ]);
+  assert.deepEqual([...set], ["09/01/26"]);
+  assert.deepEqual([...attestedDates(null)], []);
+});
+
+// ---------------------------------------------------------------------------
+// THE ENGINE.
+
+test("analyzeDay: a signed day keeps its entitlement and drops the violation", () => {
   // 8:00a-4:30p, report says zero rests - the classic two-rests-owed day
   const punches = [at(8), at(16, 30)];
-  const before = analyzeDay({ date: "08/28/26", punches, printed: null, restRecorded: 0 });
-  assert.equal(before.restViolation, true, "pre-attestation day still charges");
-  assert.equal(before.restRequired, 2);
+  const day = (date, dsnSigned) =>
+    analyzeDay({ date, punches, printed: null, restRecorded: 0, dsnSigned });
 
-  const after = analyzeDay({ date: "09/02/26", punches, printed: null, restRecorded: 0 });
-  assert.equal(after.restViolation, false, "attested day charges nothing");
+  const august = day("08/28/26", true);
+  assert.equal(august.restViolation, true, "pre-attestation day still charges");
+  assert.equal(august.restAttested, false);
+  assert.equal(august.restRequired, 2);
+
+  const signed = day("09/02/26", true);
+  assert.equal(signed.restViolation, false, "an attested day charges nothing");
+  assert.equal(signed.restAttested, true);
   // the entitlement is a fact about the hours and stays truthful
-  assert.equal(after.restRequired, 2);
-  assert.equal(after.restTaken, 0);
+  assert.equal(signed.restRequired, 2);
+  assert.equal(signed.restTaken, 0);
+
+  // THE NEW HALF. A whole day of admin hours produced no DSN, so it is not
+  // attested and its tens are still documented. Drop the evidence check and
+  // this one goes green wrongly.
+  const adminOnly = day("09/02/26", false);
+  assert.equal(adminOnly.restAttested, false);
+  assert.equal(adminOnly.restViolation, true, "an unsigned September day still charges");
+  assert.equal(adminOnly.restRequired, 2);
 });
 
-test("reentitle carries the same gate, so an answer's recompute cannot revive the premium", () => {
+test("reentitle carries the same gate off the day's own flag", () => {
   const stored = { restUnknown: false, restTaken: 0, workGroups: null };
-  const before = reentitle({ ...stored, date: "08/28/26" }, 8);
+  const before = reentitle({ ...stored, date: "08/28/26", restAttested: false }, 8);
   assert.equal(before.restViolation, true);
   assert.equal(before.restRequired, 2);
 
-  const after = reentitle({ ...stored, date: "09/02/26" }, 8);
+  const after = reentitle({ ...stored, date: "09/02/26", restAttested: true }, 8);
   assert.equal(after.restViolation, false);
   assert.equal(after.restRequired, 2);
+  assert.equal(after.restAttested, true);
+
+  // a September day nobody signed for recomputes back into a violation
+  const unsigned = reentitle({ ...stored, date: "09/02/26", restAttested: false }, 8);
+  assert.equal(unsigned.restViolation, true);
 });
 
-test("a stale stored restViolation on an attested day moves no money and lists nowhere", () => {
-  // The September payroll batch was analysed before the attestation shipped
-  // and carries restViolation: true on days the attestation covers. Every
-  // stored-flag consumer asks the date rule itself rather than trusting the
-  // flag, so a stale batch pays and lists exactly what a re-analysed one would.
-  const stale = (date) => ({
+test("every stored-flag consumer reads the day's attestation, not its date", () => {
+  // A day analysed under the old rule carries restViolation and no attestation
+  // flag. It reads as NOT attested, which is the old answer and is exactly what
+  // its stored restViolation already said - so nothing moves until the sheet is
+  // re-analysed against the notes.
+  const stale = (date, restAttested) => ({
     date, paidHours: 8, restViolation: true, restTaken: 0, restRequired: 2,
-    mealViolation: false, punches: [],
+    mealViolation: false, punches: [], ...(restAttested === undefined ? {} : { restAttested }),
   });
-  const before = stale("08/28/26");
-  const after = stale("09/02/26");
+  const owed = stale("09/02/26", false);
+  const covered = stale("09/02/26", true);
 
-  assert.equal(splitPremium([before]).rows.filter((r) => r.kind === "rest").length, 1);
-  assert.equal(splitPremium([after]).rows.filter((r) => r.kind === "rest").length, 0);
+  assert.equal(splitPremium([owed]).rows.filter((r) => r.kind === "rest").length, 1);
+  assert.equal(splitPremium([covered]).rows.filter((r) => r.kind === "rest").length, 0);
 
-  assert.deepEqual(premiumsFromDays([before]).restDays, ["08/28/26"]);
-  assert.deepEqual(premiumsFromDays([after]).restDays, []);
-  assert.equal(premiumsFromDays([after]).restHours, 0);
+  assert.deepEqual(premiumsFromDays([owed]).restDays, ["09/02/26"]);
+  assert.deepEqual(premiumsFromDays([covered]).restDays, []);
+  assert.equal(premiumsFromDays([covered]).restHours, 0);
 
-  assert.equal(dayViolations(before).some((v) => v.kind === "rest-not-taken"), true);
-  assert.equal(dayViolations(after).some((v) => v.kind === "rest-not-taken"), false);
+  assert.equal(dayViolations(owed).some((v) => v.kind === "rest-not-taken"), true);
+  assert.equal(dayViolations(covered).some((v) => v.kind === "rest-not-taken"), false);
 
   // and the projection stamps no "assumed" note on a day that owes nothing
-  const projected = applyAssumptions([after], { confirmed: new Set(), answers: {}, pastDue: true });
+  const projected = applyAssumptions([covered], { confirmed: new Set(), answers: {}, pastDue: true });
   assert.equal(projected[0].premiumNote?.rest ?? null, null);
 
-  // recomputeSheet's own premium sum is the money on every rebuild, and it
-  // must ask the date too - a day reanalyzeDays cannot rebuild keeps its
-  // stale flag forever, and this is what kept 10 rest hours alive on the
-  // September batch's first rerun.
+  // recomputeSheet's own premium sum is the money on every rebuild, and a day
+  // reanalyzeDays cannot rebuild keeps its stored flag forever
   const full = (d) => ({ ...d, rawHours: 8, regularHours: 8, otHours: 0, doubleHours: 0, addedHours: 0 });
   const period = { from: "08/16/26", to: "09/15/26" };
-  const beforeSheet = recomputeSheet({ days: [full(before)], payPeriod: period, overrides: null }, applyOvertime, null);
-  assert.deepEqual(beforeSheet.premiums.restDays, ["08/28/26"]);
-  const afterSheet = recomputeSheet({ days: [full(after)], payPeriod: period, overrides: null }, applyOvertime, null);
-  assert.deepEqual(afterSheet.premiums.restDays, []);
+  const owedSheet = recomputeSheet({ days: [full(owed)], payPeriod: period, overrides: null }, applyOvertime, null);
+  assert.deepEqual(owedSheet.premiums.restDays, ["09/02/26"]);
+  const coveredSheet = recomputeSheet({ days: [full(covered)], payPeriod: period, overrides: null }, applyOvertime, null);
+  assert.deepEqual(coveredSheet.premiums.restDays, []);
 });
 
-// The question builders. One malformed-rest fixture, run on either side of the
-// date: the rest-only kinds exist before and vanish after, while the one ask
-// that moves the MEAL premium keeps firing on both sides.
+// ---------------------------------------------------------------------------
+// The question builders. One malformed-rest fixture, run signed and unsigned:
+// the rest-only kinds exist on an unsigned day and vanish on a signed one,
+// while the one ask that moves the MEAL premium keeps firing on both.
 const NAME = "Uribe, Brandon";
 
-const restOnlyData = (date) => ({
+const restOnlyData = (date, restAttested) => ({
   days: [{
     date,
+    restAttested,
     paidHours: 8,
     punches: [at(8), at(16, 30)],
     restTaken: 0,
@@ -130,23 +240,31 @@ const REST_ONLY_KINDS = [
   "repair", "restNoTimes", "restTooLongOffClock", "restOutsideScheduled", "shortMealRest",
 ];
 
-test("buildQuestions: the rest-only asks fire on a pre-attestation day", () => {
-  const date = "08/20/26";
-  const kinds = buildQuestions(restOnlyData(date), {
+const kindsFor = (date, restAttested) =>
+  buildQuestions(restOnlyData(date, restAttested), {
     restRows: restOnlyRows(date), sourceName: NAME,
   }).map((q) => q.kind);
+
+test("buildQuestions: the rest-only asks fire on a pre-attestation day", () => {
+  const kinds = kindsFor("08/20/26", false);
   for (const k of REST_ONLY_KINDS) {
     assert.ok(kinds.includes(k), `${k} should be asked before the attestation (got ${kinds.join(", ")})`);
   }
 });
 
 test("buildQuestions: an attested day asks none of them", () => {
-  const date = "09/02/26";
-  const kinds = buildQuestions(restOnlyData(date), {
-    restRows: restOnlyRows(date), sourceName: NAME,
-  }).map((q) => q.kind);
+  const kinds = kindsFor("09/02/26", true);
   for (const k of REST_ONLY_KINDS) {
     assert.ok(!kinds.includes(k), `${k} must not be asked on an attested day (got ${kinds.join(", ")})`);
+  }
+});
+
+test("buildQuestions: a September day nobody signed for is asked all of them again", () => {
+  // the admin-only day. Under the date-only rule this went silent, and nobody
+  // who had not clocked out of a service shift ever documented their tens.
+  const kinds = kindsFor("09/02/26", false);
+  for (const k of REST_ONLY_KINDS) {
+    assert.ok(kinds.includes(k), `${k} should be asked on an unsigned September day (got ${kinds.join(", ")})`);
   }
 });
 
@@ -154,6 +272,7 @@ test("buildQuestions: restIsMealLength still asks on an attested day - it moves 
   const mealData = (date) => ({
     days: [{
       date,
+      restAttested: true,
       paidHours: 8,
       punches: [at(8), at(16, 30)],
       restTaken: 1,

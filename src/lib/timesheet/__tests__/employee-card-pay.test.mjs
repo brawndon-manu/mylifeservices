@@ -17,12 +17,22 @@ test("recorded calendar leave stays separate from included leave and reported cl
   assert.equal(employeeCardPay({ ...sheet, userId: null }, calendar).pto, 0);
 });
 
-test("historical rest premiums survive, attested dates never resurrect stored rest flags", () => {
-  const days = [{ date: "08/31/26", restViolation: true }, { date: "09/01/26", restViolation: true, mealViolation: true }, { date: "09/02/26", restViolation: true, mealLate: true }];
+test("historical rest premiums survive, an attested day never resurrects a stored rest flag", () => {
+  // the attestation is a fact about the DAY now, not about its date: only a day
+  // carrying a signed Daily Service Note is covered, so an admin-only September
+  // day charges exactly like an August one. See rest-attestation.js.
+  const days = [
+    { date: "08/31/26", restViolation: true },
+    { date: "09/01/26", restViolation: true, restAttested: true, mealViolation: true },
+    { date: "09/02/26", restViolation: true, restAttested: true, mealLate: true },
+  ];
   const pay = employeeCardPay({ paidHours: 24, data: { days } });
   assert.equal(pay.rest, 1);
   assert.equal(pay.meal, 2);
   assert.equal(employeeCardPay({ data: { days: days.slice(1) } }).rest, 0);
+  // and the September day nobody signed for is still owed
+  const unsigned = [{ date: "09/02/26", restViolation: true, restAttested: false }];
+  assert.equal(employeeCardPay({ paidHours: 8, data: { days: unsigned } }).rest, 1);
 });
 
 test("nominal day-program PTO and rounded sick minutes keep their recorded categories", () => {

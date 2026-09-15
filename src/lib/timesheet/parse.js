@@ -15,7 +15,7 @@
 import { getPdfjs } from "../pdf-globals.js";
 // the DSN rest-break attestation: days it covers charge no rest premium and
 // ask no rest questions. The date rule and the story live in one file.
-import { restAttested } from "./rest-attestation.js";
+import { restAttestedOn } from "./rest-attestation.js";
 
 // ---- rules (tune in one place) ----
 //
@@ -616,9 +616,16 @@ export function reentitle(day, paidHours) {
     // THE ATTESTATION GATE RIDES EVERY RECOMPUTE TOO. An answer that moves the
     // hours re-derives the violation through here, and a gate that only lived
     // in analyzeDay would put the premium back on the exact day an answer
-    // touched. Same expression as analyzeDay's - see rest-attestation.js.
+    // touched.
+    //
+    // IT READS THE DAY'S OWN FLAG rather than deciding again from the date,
+    // because the evidence - did this person sign a DSN that day - is not
+    // reachable from here. `analyzeDay` worked it out and stored it; a day
+    // arriving without one predates the rule and reads as not attested, which
+    // is the old answer and is what its stored `restViolation` already says.
+    restAttested: day.restAttested === true,
     restViolation:
-      !restAttested(day.date) && !day.restUnknown && (day.restTaken ?? 0) < restRequired,
+      day.restAttested !== true && !day.restUnknown && (day.restTaken ?? 0) < restRequired,
   };
 }
 
@@ -1577,7 +1584,16 @@ export function analyzeDay(day) {
     // the count reads. `restRequired` and `restTaken` above stay truthful -
     // the entitlement is a fact about the hours, only the charge is off.
     // See rest-attestation.js; `reentitle` carries the same gate.
-    restViolation: !restAttested(day.date) && !restUnknown && restTaken < restRequired,
+    //
+    // `dsnSigned` is an INJECTED input like `restSourceAvailable` beside it:
+    // whether this person signed a Daily Service Note on this date, worked out
+    // where the notes and the accounts both are. It is stored as `restAttested`
+    // so every screen reads one answer instead of thirty deciding separately,
+    // and so a day analysed before the evidence existed is visibly not attested
+    // rather than quietly assumed to be.
+    restAttested: restAttestedOn(day.date, day.dsnSigned),
+    restViolation:
+      !restAttestedOn(day.date, day.dsnSigned) && !restUnknown && restTaken < restRequired,
   };
 }
 

@@ -115,11 +115,16 @@ test("saved questions obey current Misc and rest policies without suppressing me
   for (const min of [120, 121]) {
     assert.equal(questionPolicyApplies({ kind: "miscTime", date }, { days: [{ date, miscMin: min }] }), min > 120);
   }
+  // the rest-only kinds stop applying on a day the attestation covered, which
+  // means a signed Daily Service Note and not merely a September date
+  const attested = { days: [{ date, restAttested: true }] };
+  const unsigned = { days: [{ date, restAttested: false }] };
   for (const kind of ["repair", "restNoTimes", "restTooLongOffClock", "restOutsideScheduled", "shortMealRest", "nothingDocumentedRest"]) {
-    assert.equal(questionPolicyApplies({ kind, date }), false, kind);
+    assert.equal(questionPolicyApplies({ kind, date }, attested), false, kind);
+    assert.equal(questionPolicyApplies({ kind, date }, unsigned), true, `${kind} on an unsigned September day`);
     assert.equal(questionPolicyApplies({ kind, date: "08/31/26" }), true, kind);
   }
   for (const kind of ["restIsMealLength", "nothingDocumentedMeal", "mealLate"]) {
-    assert.equal(questionPolicyApplies({ kind, date }), true, kind);
+    assert.equal(questionPolicyApplies({ kind, date }, attested), true, kind);
   }
 });

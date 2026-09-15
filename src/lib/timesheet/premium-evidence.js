@@ -23,7 +23,6 @@ export const WAIVER_MAX_HOURS = 6;
 const MEAL_GAP_MIN = 21;
 // the DSN rest-break attestation - covered days put no hour in a rest bucket,
 // whatever a flag stored under the old rules says. See rest-attestation.js.
-import { restAttested } from "./rest-attestation.js";
 
 const MEAL_GAP_MAX = 90;
 
@@ -78,7 +77,7 @@ export function premiumEvidence(sheets) {
     for (const d of days) {
       const m = mealBucket(d);
       if (m) { by[m].days++; by[m].people.add(name); }
-      if (d.restViolation && !restAttested(d.date)) {
+      if (d.restViolation && d.restAttested !== true) {
         const code = d.restSource === "none" ? "R2" : "R1";
         by[code].days++; by[code].people.add(name);
       }

@@ -14,7 +14,6 @@ import { createPortal } from "react-dom";
 import { useReviewFlow } from "./ReviewFlow";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON } from "@/lib/timesheet/corrections";
 // the attestation covers the tens now - see rest-attestation.js
-import { restAttested } from "@/lib/timesheet/rest-attestation";
 // the same loose reading the question cards use, so "331" means 3:31 here too
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 // the period's own day list, the same one the time-off card offers - a
@@ -48,11 +47,10 @@ function kindsForDay(day) {
   // on this page that still asked, and rest_missed was the worse of the pair:
   // it promised a premium every money path now ignores by the day's own date.
   //
-  // BY THE DAY'S DATE, like every other gate in this policy, so an August
-  // re-upload still offers them and the code behind the gate stays whole - his
-  // standing reason, "keep the code just in case David switches up like he
-  // always does".
-  if (!restAttested(day.date)) {
+  // BY THE DAY'S OWN FLAG, like every other gate in this policy, so an August
+  // re-upload still offers them and the code behind the gate stays whole. The
+  // standing reason is that this has to survive the rule being switched back.
+  if (day.restAttested !== true) {
     if (day.restCount > 0) out.push("rest_missed");
     if (day.restViolation) out.push("rest_taken");
   }

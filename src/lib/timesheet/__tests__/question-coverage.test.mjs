@@ -179,27 +179,33 @@ test("the kinds are a known set, so a new one cannot arrive unnoticed", () => {
 });
 
 test("the same shape raises the same question on any date, in any period", () => {
-  // the whole point of Mánu's question: nothing about this is tied to the batch
-  // it was written against. ONE exception exists now, and it is dated policy
-  // rather than batch: the DSN rest-break attestation (rest-attestation.js)
-  // quiets the rest asks for the days it covers. So the promise holds per
-  // policy era - any two days under the same policy raise the same kinds -
-  // and the boundary moves exactly the rest side, never the meal side.
-  const shape = (date) => [day({ date, mealViolation: true, restViolation: true })];
-  const kindsOn = (date) =>
-    buildQuestions({ days: shape(date) }, { restRows: [], sourceName: "X" })
+  // the whole point of the question: nothing about this is tied to the batch it
+  // was written against. ONE exception exists now, and it is not the batch and
+  // not the date either: the DSN rest-break attestation (rest-attestation.js)
+  // quiets the rest asks on a day somebody signed a note for. So the promise
+  // holds for every day nobody attested to, whatever its date, and the
+  // boundary moves exactly the rest side, never the meal side.
+  const shape = (date, restAttested) =>
+    [day({ date, mealViolation: true, restViolation: true, restAttested })];
+  const kindsOn = (date, restAttested = false) =>
+    buildQuestions({ days: shape(date, restAttested) }, { restRows: [], sourceName: "X" })
       .map((q) => q.kind)
       .sort();
   const july = kindsOn("07/20/26");
   for (const other of ["01/01/26", "04/02/26", "08/01/26", "08/31/26"]) {
     assert.deepEqual(kindsOn(other), july, `a ${other} day should raise what a 07/20/26 day raises`);
   }
-  const attested = kindsOn("09/02/26");
+  const attested = kindsOn("09/02/26", true);
   for (const other of ["01/01/27", "12/31/28", "02/29/28"]) {
-    assert.deepEqual(kindsOn(other), attested, `a ${other} day should raise what a 09/02/26 day raises`);
+    assert.deepEqual(kindsOn(other, true), attested, `an attested ${other} day should raise what an attested 09/02/26 day raises`);
   }
   assert.deepEqual(july, ["nothingDocumentedMeal", "nothingDocumentedRest"]);
   assert.deepEqual(attested, ["nothingDocumentedMeal"]);
+  // AND THE EXCEPTION IS THE EVIDENCE, NOT THE ERA. A September day carrying no
+  // signed Daily Service Note raises exactly what a July day raises, which is
+  // the whole promise holding again outside the days somebody attested to.
+  assert.deepEqual(kindsOn("09/02/26", false), july,
+    "an unsigned September day should raise what a 07/20/26 day raises");
 });
 
 // ---------------------------------------------------------------------------

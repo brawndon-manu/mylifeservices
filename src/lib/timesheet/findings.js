@@ -23,7 +23,7 @@
 import { restKey, restNameFor, clockMin, countsAsTaken, FULL_REST_MIN } from "./rests.js";
 // the DSN rest-break attestation - covered days surface no rest anomaly rows.
 // The recorded rests still draw on the day calendars; see rest-attestation.js.
-import { restAttested } from "./rest-attestation.js";
+import { attestedDates } from "./rest-attestation.js";
 import { workedBeforeMin, RULES } from "./parse.js";
 import { describePunchIssue, scheduledPaidHours } from "./anomalies.js";
 import { blockTimes, serviceOf, clientOf } from "./schedule.js";
@@ -416,15 +416,23 @@ export function buildFindings(batch) {
   const restByName = new Map(
     batch.timesheets.map((t) => [restKey(restNameFor(t.sourceName, t.data)), t]),
   );
+  // THE DAYS THE ATTESTATION COVERED, keyed the way the rest report names
+  // people so a report ROW can ask about the day it belongs to. The evidence is
+  // a fact about somebody's day, and a rest row only carries a name and a date.
+  const attestedRest = new Set();
+  for (const t of batch.timesheets) {
+    const k = restKey(restNameFor(t.sourceName, t.data));
+    for (const date of attestedDates(t.data?.days)) attestedRest.add(`${k}|${date}`);
+  }
   // WE ARE NOT ACCOUNTING FOR THE TEN RIGHT NOW (Mánu 2026-09-10), so the screen
   // stops asking about it. Every other rest path on this page was already gated
-  // on `restAttested` - the day loop below opens with the same `continue` - and
+  // on the attestation - the day loop below opens with the same `continue` - and
   // this report loop was the one that was not, which is why a fully attested
   // period still raised eight rows about ten minute breaks: under ten, over the
   // limit, no times recorded, a time mis-picked. Nobody is asked about a ten any
   // more, so a row about the length of one is bookkeeping with nothing behind it.
   //
-  // THE CODE STAYS WHOLE, on purpose, and this is a date gate rather than a
+  // THE CODE STAYS WHOLE, on purpose, and this is a gate rather than a
   // deletion. `describeRestRow` below still knows all eight cases, the kinds keep
   // their labels, and every batch from before the effective date still shows them.
   // Setting REST_ATTESTATION_EFFECTIVE to null in rest-attestation.js brings the
@@ -433,7 +441,9 @@ export function buildFindings(batch) {
   //
   // Recorded rests still DRAW wherever a day is drawn. This is about what the
   // checks screen asks somebody to go and fix, not about hiding the record.
-  for (const r of (batch.restsByDate || []).filter((x) => x.kind && !restAttested(x.date))) {
+  for (const r of (batch.restsByDate || []).filter(
+    (x) => x.kind && !attestedRest.has(`${restKey(x.name)}|${x.date}`),
+  )) {
     const t = restByName.get(restKey(r.name));
     entries.push({
       // the real sheet, so "Open their sheet" works. rest rows are keyed on the
@@ -479,7 +489,9 @@ export function buildFindings(batch) {
     return null;
   };
 
-  for (const r of (batch.restsByDate || []).filter((x) => x.offOwnShift && !restAttested(x.date))) {
+  for (const r of (batch.restsByDate || []).filter(
+    (x) => x.offOwnShift && !attestedRest.has(`${restKey(x.name)}|${x.date}`),
+  )) {
     const t = restByName.get(restKey(r.name));
     const day = (t?.data?.days || []).find((x) => x.date === r.date);
     const seg = day ? segmentAround(day, clockMin(r.out), clockMin(r.in)) : null;
@@ -550,7 +562,7 @@ export function buildFindings(batch) {
   }
   for (const [k, out] of firstRestAt) {
     const [name, date] = k.split("|");
-    if (restAttested(date)) continue; // attested day - no rest rows at all
+    if (attestedRest.has(`${name}|${date}`)) continue; // attested day - no rest rows at all
     const t = restByName.get(name);
     const day = (t?.data?.days || []).find((x) => x.date === date);
     if (!day) continue;
@@ -753,7 +765,7 @@ export function buildFindings(batch) {
       // meal-as-rest, tacked - so the DSN attestation quiets the whole loop
       // for the days it covers. The recorded rests still draw on the calendar
       // built above. See rest-attestation.js.
-      if (restAttested(d.date)) continue;
+      if (d.restAttested === true) continue;
       // A rest logged before clock-in or after clock-out. It was not a rest
       // taken during work, and it STILL COUNTS - Mánu's call was to surface it
       // rather than move premiums on the engine's say-so. Which makes saying it

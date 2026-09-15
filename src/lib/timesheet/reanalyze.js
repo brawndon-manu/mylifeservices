@@ -19,6 +19,12 @@
 //   restSourceAvailable  <- whether a rest report was collected at all
 //   mealWaiverOnFile     <- never stored; the RULES default applies, as at upload
 //   restsOffClockConfirmed / miscWorked <- answer state, carried on the day
+//   dsnSigned            <- whether this person signed a Daily Service Note on
+//                           the day, off the batch's own stored notes. Added
+//                           with the evidence half of the rest attestation:
+//                           without it every September day re-analyses as not
+//                           attested and the period grows ~150 rest premiums
+//                           that the signed notes had cleared.
 //
 // MISS TWO OF THEM AND IT LOOKS LIKE IT WORKED. Rebuilding only
 // `scheduleBlocks` - which is what the 08-12 handoff said was the only one -
@@ -43,6 +49,7 @@ const INJECTED = [
   "restTimes",
   "restsAlreadyPaid",
   "restSourceAvailable",
+  "dsnSigned",
 ];
 
 function withoutInjected(day) {
@@ -62,10 +69,16 @@ function withoutInjected(day) {
 // judging the whole day as one lump - charging breaks the two new rules say are
 // not owed. Keeping the stored answer is the honest outcome, and `skipped` says
 // how often it happened rather than letting it pass unremarked.
+// `dsnSignedFor(date)` answers whether this person signed a Daily Service Note
+// that day - the evidence half of the rest attestation. It defaults to "no",
+// which is the careful answer everywhere else in this file, but a caller that
+// forgets it re-analyses a whole September period into rest premiums the signed
+// notes had cleared. The upload path and `rebuildSheetFor` both pass it.
 export function reanalyzeDays(days, {
   scheduleByDate = null,
   restTimesFor = () => null,
   restSourceAvailable = false,
+  dsnSignedFor = () => false,
   overrides = null,
 } = {}) {
   const out = [];
@@ -97,6 +110,7 @@ export function reanalyzeDays(days, {
       shifts,
       restTimes: restTimesFor(d.date),
       restSourceAvailable,
+      dsnSigned: dsnSignedFor(d.date) === true,
       miscWorked: answered.miscWorked === true || d.miscWorked === true,
       // the classification, for the same reason as `miscWorked` above: a
       // client cancellation cuts its block out of the stretches entirely, and
@@ -152,7 +166,7 @@ export function reanalyzeDays(days, {
 // the day handed to `analyzeDay`, with the dropped inputs put back. Split out so
 // the list of what gets rebuilt is readable in one place and the test can assert
 // against it.
-function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, miscWorked, miscKind }) {
+function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, dsnSigned, miscWorked, miscKind }) {
   return {
     ...d,
     scheduleBlocks: scheduleBlocks(shifts),
@@ -162,6 +176,10 @@ function analyzeDayInput(d, { shifts, restTimes, restSourceAvailable, miscWorked
     // twice, which is the 84-day drift described at the top.
     restsAlreadyPaid: true,
     restSourceAvailable,
+    // the signed Daily Service Note for this day, if there was one. `analyzeDay`
+    // turns it into `restAttested`; `withoutInjected` takes it straight back off
+    // so it never rides into the stored projection.
+    dsnSigned,
     miscWorked,
     miscKind,
   };
