@@ -25,6 +25,10 @@ export default function MeetingRecordEditor({
   postId,
   title,
   topics = [],
+  // [{ key, label, dateLabel, topics }] - one per SERIES, because a series is
+  // one training offered twice and both dates covered the same ground. Empty on
+  // a single-date record, which keeps using the meeting's own list.
+  sessions = [],
   attachments = [],
   recordSource = "",
   backfilled = false,
@@ -32,6 +36,9 @@ export default function MeetingRecordEditor({
 }) {
   const [open, setOpen] = useState(false);
   const [kept, setKept] = useState(attachments);
+
+  const perSession = sessions.length > 1;
+  const anyTopics = perSession ? sessions.some((x) => (x.topics || []).length) : topics.length;
 
   if (!open) {
     return (
@@ -41,7 +48,7 @@ export default function MeetingRecordEditor({
         className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
       >
         <Pencil size={14} aria-hidden="true" />
-        {topics.length || attachments.length ? "Edit topics & documents" : "Add topics & documents"}
+        {anyTopics || attachments.length ? "Edit topics & documents" : "Add topics & documents"}
       </button>
     );
   }
@@ -106,23 +113,58 @@ export default function MeetingRecordEditor({
             </div>
           )}
 
-          <div>
-            <label htmlFor="mr-topics" className={LABEL}>
-              Topics covered <span className="font-normal text-faint">(optional)</span>
-            </label>
-            <textarea
-              id="mr-topics"
-              name="meetingTopics"
-              rows={5}
-              defaultValue={topics.join("\n")}
-              placeholder={"Call-outs and missed sessions\nDocumenting a visit in QSP"}
-              className={INPUT}
-            />
-            <p className="mt-1 text-xs text-muted">
-              One topic per line. They print on the attendance report under what
-              was covered.
-            </p>
-          </div>
+          {/* ONE BOX PER DATE once a meeting has more than one. The sessions of
+              a series do not cover the same ground - July 9 was Special Incident
+              Reports and workers' compensation while the rest of that series was
+              not - and one list on the meeting cannot say which belonged to
+              which. */}
+          {perSession ? (
+            <div>
+              <span className={LABEL}>
+                Topics covered <span className="font-normal text-faint">(one per series)</span>
+              </span>
+              <div className="mt-2 space-y-3">
+                {sessions.map((x) => (
+                  <div key={x.key} className="rounded-xl border border-border bg-surface-2 p-3">
+                    <label htmlFor={`mr-t-${x.key}`} className="block text-[13px] font-semibold text-foreground">
+                      {x.label}
+                      <span className="ml-2 font-normal text-muted">{x.dateLabel}</span>
+                    </label>
+                    <textarea
+                      id={`mr-t-${x.key}`}
+                      name={x.key}
+                      rows={3}
+                      defaultValue={(x.topics || []).join("\n")}
+                      placeholder="What this series covered, one per line"
+                      className="mt-1.5 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-muted">
+                One topic per line. Every date in a series prints the same list
+                under what was covered on the attendance report.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label htmlFor="mr-topics" className={LABEL}>
+                Topics covered <span className="font-normal text-faint">(optional)</span>
+              </label>
+              <textarea
+                id="mr-topics"
+                name="meetingTopics"
+                rows={5}
+                defaultValue={topics.join("\n")}
+                placeholder={"Call-outs and missed sessions\nDocumenting a visit in QSP"}
+                className={INPUT}
+              />
+              <p className="mt-1 text-xs text-muted">
+                One topic per line. They print on the attendance report under what
+                was covered.
+              </p>
+            </div>
+          )}
 
           <div>
             <span className={LABEL}>

@@ -145,6 +145,27 @@ export function isCompanyMeeting(tag) {
   return tag === COMPANY_MEETING_TAG;
 }
 
+// WHAT ONE SESSION COVERED.
+//
+// Mánu 2026-09-14 gave topics per DATE - July 9 was Special Incident Reports
+// and workers' compensation while the rest of that series was something else -
+// and a single list on the meeting cannot say that. So a session carries its
+// own, stored on its option beside its label and time, and the meeting's list
+// is the fallback for anything that has not been split out. A single-date
+// record has no options at all and only ever uses the meeting's.
+export function topicsForSession(meeting, option) {
+  const own = option && Array.isArray(option.topics) ? option.topics.filter(Boolean) : [];
+  if (own.length) return own;
+  return Array.isArray(meeting?.meetingTopics) ? meeting.meetingTopics : [];
+}
+
+// true when any session carries topics of its own, so a screen knows whether to
+// offer one box or one per date
+export function hasSessionTopics(meeting) {
+  const opts = Array.isArray(meeting?.meetingOptions) ? meeting.meetingOptions : [];
+  return opts.some((o) => Array.isArray(o?.topics) && o.topics.filter(Boolean).length);
+}
+
 // WHAT A BACKFILLED MEETING SAYS ABOUT ITSELF. One sentence, three surfaces -
 // the attendance report card, the meeting page and the printed PDF - because
 // three copies of it is three chances for them to stop agreeing.

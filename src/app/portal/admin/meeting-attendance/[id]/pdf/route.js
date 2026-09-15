@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
-import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
+import { ackAudienceWhere, isCompanyMeeting, recordNoteOf, topicsForSession } from "@/lib/announcements";
 import { loadMeetingMaterials } from "@/lib/meeting-materials";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
@@ -107,7 +107,6 @@ export async function GET(req, { params }) {
         mandatory: !!m.meetingMandatory,
         metaLine: meta.metaLine,
         recordNote: recordNoteOf(m),
-        topics: m.meetingTopics || [],
         materials: await loadMeetingMaterials(m),
         office: office || null,
         stats: {
@@ -125,30 +124,29 @@ export async function GET(req, { params }) {
           // marks exist or the meeting is over - matches the board's stat strip
           showRollCall: meta.isPast || r.present > 0 || r.absent > 0,
         },
-        single: r.hasSessions ? null : r.singleGoing.map(slimP),
-        groups: r.isSeries
-          ? r.seriesGroups.map((g) => ({
-              heading: g.label,
-              sessions: g.sessions.map((s) => ({
-                label: s.label,
-                dateLabel: s.dateLabel,
-                people: s.going.map(slimP),
-              })),
-              cant: g.cant.map(slimP),
+        // ONE SECTION PER DATE, always - a single-date meeting is a list of
+        // one, so the renderer has no second path. The series name rides the
+        // section label rather than standing alone above the first of its
+        // sessions, and each section carries the topics for ITS date.
+        sections: r.hasSessions
+          ? (r.isSeries
+              ? r.seriesGroups.flatMap((g) =>
+                  g.sessions.map((sn) => ({ ...sn, heading: g.label })))
+              : r.sessions.map((sn) => ({ ...sn, heading: null }))
+            ).map((sn) => ({
+              label: [sn.heading, sn.label].filter(Boolean).join(" · "),
+              dateLabel: sn.dateLabel,
+              topics: topicsForSession(m, (m.meetingOptions || []).find((o) => o.id === sn.id)),
+              people: sn.going.map(slimP),
             }))
-          : r.hasSessions
-            ? [
-                {
-                  heading: null,
-                  sessions: r.sessions.map((s) => ({
-                    label: s.label,
-                    dateLabel: s.dateLabel,
-                    people: s.going.map(slimP),
-                  })),
-                  cant: [],
-                },
-              ]
-            : [],
+          : [
+              {
+                label: m.title || "Meeting",
+                dateLabel: meta.metaLine,
+                topics: m.meetingTopics || [],
+                people: r.singleGoing.map(slimP),
+              },
+            ],
         // a series meeting's per-series decliners already print inside their
         // series block - the flat list is for single/multi meetings
         cantAll: r.isSeries ? [] : r.cantAll.map(slimP),

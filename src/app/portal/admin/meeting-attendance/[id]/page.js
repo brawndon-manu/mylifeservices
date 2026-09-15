@@ -6,9 +6,9 @@ import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import MeetingRecordEditor from "../_components/MeetingRecordEditor";
-import { attachmentsOf } from "@/lib/announcements";
+import { attachmentsOf, topicsForSession } from "@/lib/announcements";
 import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
-import { buildRoster, meetingMeta } from "../roster";
+import { buildRoster, meetingMeta, fmtSession } from "../roster";
 import MeetingBreakdown from "../_components/MeetingBreakdown";
 import OfficeFilter from "@/components/OfficeFilter";
 import { officeFromSearch } from "@/lib/positions";
@@ -220,19 +220,41 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
 
       {(m.meetingTopics?.length > 0 || materials.length > 0) && (
         <div className="mt-5 rounded-xl border border-border bg-surface p-4">
-          {m.meetingTopics?.length > 0 && (
+          {(sessionList.length > 1
+            ? sessionList.some((x) => x.topics.length)
+            : m.meetingTopics?.length > 0) && (
             <>
               <h2 className="text-xs font-semibold uppercase tracking-wider text-faint">
                 What was covered
               </h2>
-              <ul className="mt-2 space-y-1">
-                {m.meetingTopics.map((t) => (
-                  <li key={t} className="flex gap-2 text-sm text-foreground">
-                    <span aria-hidden="true" className="text-faint">-</span>
-                    <span>{t}</span>
-                  </li>
-                ))}
-              </ul>
+              {sessionList.length > 1 ? (
+                <div className="mt-2 space-y-3">
+                  {sessionList.filter((x) => x.topics.length).map((x) => (
+                    <div key={x.key}>
+                      <p className="text-[13px] font-semibold text-foreground">
+                        {x.label} <span className="font-normal text-muted">{x.dateLabel}</span>
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {x.topics.map((t) => (
+                          <li key={t} className="flex gap-2 text-sm text-foreground">
+                            <span aria-hidden="true" className="text-faint">-</span>
+                            <span>{t}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ul className="mt-2 space-y-1">
+                  {m.meetingTopics.map((t) => (
+                    <li key={t} className="flex gap-2 text-sm text-foreground">
+                      <span aria-hidden="true" className="text-faint">-</span>
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           )}
           {materials.length > 0 && (
@@ -262,6 +284,7 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
           postId={m.id}
           title={m.title || ""}
           topics={m.meetingTopics || []}
+          sessions={sessionList}
           attachments={materials}
           recordSource={m.meetingRecordSource || ""}
           backfilled={!!m.meetingBackfilled}

@@ -257,7 +257,7 @@ export async function updateMeetingRecord(postId, formData) {
 
   const post = await prisma.announcement.findUnique({
     where: { id: postId },
-    select: { id: true, tag: true, deletedAt: true, meetingBackfilled: true },
+    select: { id: true, tag: true, deletedAt: true, meetingBackfilled: true, meetingOptions: true },
   });
   if (!post || post.deletedAt || post.tag !== COMPANY_MEETING_TAG) redirect(BACK);
 
@@ -281,6 +281,7 @@ export async function updateMeetingRecord(postId, formData) {
     data: {
       meetingTopics: topics,
       attachments,
+      ...(meetingOptions ? { meetingOptions } : {}),
       // the title and the source are only editable on a record. A live
       // meeting's title belongs to the post staff were invited to, and
       // changing it from a roster screen would rename what they were sent.

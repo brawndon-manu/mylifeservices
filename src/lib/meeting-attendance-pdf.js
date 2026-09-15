@@ -72,8 +72,10 @@ function fit(s, maxW, font, size) {
 }
 
 export async function renderAttendanceReport(
-  { meetingTitle, mandatory, metaLine, recordNote, office, stats, groups, single, cantAll, noResponse,
-    topics = [], materials = [] },
+  { meetingTitle, mandatory, metaLine, recordNote, office, stats, cantAll, noResponse,
+    // ONE ENTRY PER DATE: { label, dateLabel, topics, people }. A single-date
+    // meeting is a list of one, so there is no second path through here.
+    sections = [], materials = [] },
   opts = {},
 ) {
   const doc = await PDFDocument.create();
@@ -185,54 +187,36 @@ export async function renderAttendanceReport(
 
   const rollCall = { present: ["Present", GREEN], absent: ["Absent", RED] };
 
-  // WHAT THE MEETING WAS ABOUT, BEFORE WHO WAS AT IT. The acknowledgment
-  // report puts the post's own text above its roster for the same reason: a
-  // record of attendance that does not say what was attended is a list of
-  // names. Both sections are optional and neither draws a heading it has
-  // nothing to put under.
-  const section = (label) => {
-    need(46);
-    text(label, L, y, { size: 10.5, f: bold, color: BRAND });
+  // THE COVER SAYS WHAT IS IN THE REPORT. Topics and documents used to print
+  // here in one block for the whole meeting; they belong to a date now, so
+  // each section carries its own and this lists the sections instead.
+  const drawContents = () => {
+    if (sections.length < 2) return;
+    need(40);
+    text(`${sections.length} sessions`, L, y, { size: 10.5, f: bold, color: BRAND });
     y -= 15;
+    for (const sec of sections) {
+      need(14);
+      text(fit(sec.label || "Session", 250, font, 9), L + 2, y, { size: 9 });
+      text(sec.dateLabel || "", L + 260, y, { size: 9, color: MUTED });
+      const n = `${sec.people.length} ${sec.people.length === 1 ? "person" : "people"}`;
+      text(n, R - font.widthOfTextAtSize(n, 9), y, { size: 9, color: MUTED });
+      y -= 13;
+    }
+    y -= 6;
+    if (materials.length) {
+      need(30);
+      text("Documents used", L, y, { size: 10.5, f: bold, color: BRAND });
+      y -= 15;
+      for (const m of materials) {
+        need(13);
+        text(fit(`- ${m.name}`, R - L - 120, font, 9), L + 2, y, { size: 9 });
+        const tail = m.bytes ? "included at the end" : "in the portal";
+        text(tail, R - font.widthOfTextAtSize(tail, 8), y, { size: 8, color: MUTED });
+        y -= 13;
+      }
+    }
   };
-
-  if (topics.length) {
-    section("What was covered");
-    for (const t of topics) {
-      // a topic can be a sentence, so it wraps rather than being cut
-      const lines = wrapAt(t, R - L - 14, font, 9);
-      need(lines.length * 11 + 6);
-      lines.forEach((ln, i) => {
-        if (i === 0) text("-", L + 2, y, { size: 9, color: MUTED });
-        text(ln, L + 14, y, { size: 9 });
-        y -= 11;
-      });
-      y -= 2;
-    }
-    y -= 8;
-  }
-
-  if (materials.length) {
-    section("Materials used");
-    const anyBytes = materials.some((m) => m.bytes);
-    for (const m of materials) {
-      need(14);
-      text("-", L + 2, y, { size: 9, color: MUTED });
-      text(fit(m.name, R - L - 150, font, 9), L + 14, y, { size: 9 });
-      // a document that could not be read is still named, because the meeting
-      // was run from it either way
-      const tail = m.note || (m.bytes ? "included below" : "in the portal");
-      text(tail, R - font.widthOfTextAtSize(tail, 8), y, { size: 8, color: MUTED });
-      y -= 13;
-    }
-    if (anyBytes) {
-      y -= 4;
-      need(14);
-      text("The documents follow this report in full.", L, y, { size: 8, color: MUTED });
-      y -= 13;
-    }
-    y -= 8;
-  }
 
   const peopleTable = (cols, rows) => {
     tableHead(cols);
@@ -285,50 +269,64 @@ export async function renderAttendanceReport(
       ];
     });
 
-  // every section starts on its own page - Mánu 2026-09-03 - except the first,
-  // which rides under the summary header on page 1
-  let sections = 0;
-  const sectionBreak = () => {
-    if (sections++) newPage();
+  // EVERY SECTION STARTS ITS OWN PAGE - Mánu 2026-09-14, "a report with title
+  // pages for each section like the acknowledgment one" - so a meeting with
+  // several dates opens on a cover that indexes them, then a page each.
+  //
+  // A MEETING WITH ONE DATE HAS NOTHING TO INDEX. Breaking there produced a
+  // cover carrying the title and the time, then a second page repeating both
+  // before saying anything - a wasted sheet on a document people print. The
+  // one section rides the cover instead, which is where he expected it.
+  const onlySection = sections.length === 1;
+  const sectionBreak = () => { if (!onlySection) newPage(); };
+
+  const bullets = (label, items) => {
+    if (!items.length) return;
+    need(30);
+    text(label, L, y, { size: 9, f: bold, color: BRAND });
+    y -= 13;
+    for (const it of items) {
+      const lines = wrapAt(it, R - L - 14, font, 9);
+      need(lines.length * 11 + 4);
+      lines.forEach((ln, i) => {
+        if (i === 0) text("-", L + 2, y, { size: 9, color: MUTED });
+        text(ln, L + 14, y, { size: 9 });
+        y -= 11;
+      });
+    }
+    y -= 8;
   };
 
-  const session = (s, prefix) => {
+  const session = (s) => {
     sectionBreak();
-    heading(
-      [prefix, s.label, s.dateLabel].filter(Boolean).join(" · ") || "Session",
-      s.people.length,
-    );
+    // NO TITLE BLOCK WHEN IT IS THE ONLY SECTION: the masthead above it already
+    // carries the meeting's name, its date and its time, and printing them
+    // again two inches lower says nothing the reader has not just read.
+    if (!onlySection) {
+      text(s.label || "Session", L, y, { size: 13, f: bold, color: BRAND });
+      y -= 17;
+      if (s.dateLabel) { text(s.dateLabel, L, y, { size: 9.5, color: MUTED }); y -= 12; }
+      page.drawLine({ start: { x: L, y }, end: { x: R, y }, thickness: 0.8, color: GRID });
+      y -= 16;
+    }
+
+    bullets("What was covered", s.topics || []);
+    // the documents are the meeting's, and each date was run from them, so each
+    // section names them rather than making the reader page back to a list
+    bullets("Documents used", materials.map((m) => m.name));
+
+    heading("Attendance", s.people.length);
     if (!s.people.length) {
-      text("No one picked this session.", L, y, { size: 8.5, color: MUTED });
+      text("Nobody is recorded for this date.", L, y, { size: 8.5, color: MUTED });
       y -= 18;
       return;
     }
     peopleTable(GOING_COLS, goingRows(s.people));
   };
 
-  if (single) {
-    sectionBreak();
-    heading("Attending", single.length);
-    if (single.length) peopleTable(GOING_COLS, goingRows(single));
-    else { text("No one has said they are attending.", L, y, { size: 8.5, color: MUTED }); y -= 18; }
-  }
-  for (const g of groups || []) {
-    // one session per page, so the series label rides each session's heading
-    // instead of standing alone above the first one
-    for (const s of g.sessions) session(s, g.heading);
-    if (g.cant?.length) {
-      sectionBreak();
-      heading([g.heading, "Can't attend this series"].filter(Boolean).join(" · "), g.cant.length);
-      peopleTable(
-        CANT_COLS,
-        g.cant.map((p) => [
-          { s: p.name, f: bold, extra: p.preferred },
-          { s: p.title || "", color: MUTED },
-          { s: p.reason || "", color: MUTED },
-        ]),
-      );
-    }
-  }
+  drawContents();
+
+  for (const sec of sections) session(sec);
 
   if (cantAll?.length) {
     sectionBreak();

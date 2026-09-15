@@ -262,14 +262,12 @@ export function meetingMeta(m, r) {
   if (r.opts.length) parts.push(`${r.opts.length} session${r.opts.length > 1 ? "s" : ""}`);
   if (earliest)
     parts.push(
-      // A RECORD KNOWS THE DAY AND NOT THE HOUR. A backfilled meeting is
-      // stored at noon so it sorts and compares like any other, but the old
-      // sheet almost never says what time the room filled - printing "12:00 PM"
-      // would be the portal inventing a detail nobody recorded.
-      m.meetingBackfilled
-        ? fmtDate(new Date(earliest).toISOString(), PACIFIC)
-        : (r.opts.length ? "starts " : "") +
-          formatInstant(new Date(earliest).toISOString(), PACIFIC),
+      // THE HOUR IS REAL NOW. These were stored at noon as a placeholder and
+      // printed date-only, because inventing a time the old sheet never gave
+      // would have been worse than saying nothing. Mánu 2026-09-14 supplied it
+      // - "9:00am for all" - so it is stored and shown like any other meeting.
+      (r.opts.length ? "starts " : "") +
+        formatInstant(new Date(earliest).toISOString(), PACIFIC),
     );
   else if (!r.opts.length) parts.push("No date set");
   if (m.meetingFormat) parts.push(MEETING_FORMAT_LABELS[m.meetingFormat]);
