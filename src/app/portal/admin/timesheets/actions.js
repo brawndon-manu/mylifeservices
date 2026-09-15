@@ -803,7 +803,7 @@ export async function uploadBatch(formData) {
   const staff = await prisma.user.findMany({
     where: { deactivatedAt: null },
     // timesheetExempt rides along so matchEmployee can drop those accounts
-    select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, timesheetExempt: true },
+    select: { id: true, name: true, preferredFirstName: true, preferredLastName: true, timesheetExempt: true, salariedExempt: true },
   });
 
   // WHICH DAYS EACH PERSON ATTESTED TO THEIR REST BREAKS ON, off the signed
@@ -813,6 +813,11 @@ export async function uploadBatch(formData) {
   // `analyzeDay` can reach, and injected per day like every other such input.
   const whoKey = buildWhoKey(staff);
   const dsnByPerson = signedDsnDates(mergedNotes, whoKey);
+  // SALARIED AND EXEMPT: owed no meal or rest period, signs nothing, is emailed
+  // nothing, and stays on every payout report. By id off the matched account,
+  // never by name - an unmatched sheet must not become exempt by resembling
+  // somebody who is.
+  const exemptIds = new Set(staff.filter((u) => u.salariedExempt).map((u) => u.id));
   // DID THIS BATCH COLLECT ANY SIGNATURES AT ALL. A fact about the upload, not
   // about a person, and the difference between the two is a period of rest
   // premiums - see rest-attestation.js. Read off the notes rather than off
@@ -1030,6 +1035,7 @@ export async function uploadBatch(formData) {
     const sched = schedHit.value;
     const schedDay = new Map((sched?.days || []).map((d) => [d.date, d]));
     const signedDsn = dsnSignedFor(dsnByPerson, whoKey, raw.employee);
+    const salariedExempt = !!m.userId && exemptIds.has(m.userId);
 
     const withRests = {
       ...raw,
@@ -1074,6 +1080,8 @@ export async function uploadBatch(formData) {
           // this is a fact about the date rather than about a shift.
           dsnSigned: signedDsn(d.date),
           dsnSourceAvailable,
+          // salaried and exempt: owed no meal or rest period at all
+          salariedExempt,
         };
       }),
     };
@@ -2030,6 +2038,13 @@ export async function sendTimesheets(batchId, formData) {
     batchId,
     userId: { not: null },
     renderOk: true,
+    // A SALARIED EXEMPT PERSON IS NEVER EMAILED. Meal and rest periods do not
+    // apply to them, their sheet asks for no signature, and an email asking for
+    // one is a request nobody can act on. Their hours still reach every payout
+    // report - this drops them from the SEND, not from the payroll. To email
+    // somebody anyway, take the flag off their account: a deliberate exception
+    // should be a deliberate change, not a quiet special case here.
+    user: { salariedExempt: false },
   };
   if (onlyId) where.id = onlyId.toString();
   else if (!resend) where.sentAt = null;

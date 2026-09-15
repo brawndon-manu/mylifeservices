@@ -139,7 +139,7 @@ export async function uploadDayProgramBatch(formData) {
       mileageBytes,
       notesBytes,
       staff: await prisma.user.findMany({
-        select: { name: true, preferredFirstName: true, preferredLastName: true },
+        select: { name: true, preferredFirstName: true, preferredLastName: true, salariedExempt: true },
       }),
       partial: wantPartial ? { from: partialFromInput, to: partialToInput } : null,
     });

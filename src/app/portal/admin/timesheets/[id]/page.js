@@ -61,6 +61,10 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
             select: {
               id: true, email: true, name: true,
               preferredFirstName: true, preferredLastName: true, title: true, image: true,
+              // salaried and exempt: no premium, no signature, no email. The
+              // row reads it so the send count does not promise a message that
+              // `sendTimesheets` will refuse to send.
+              salariedExempt: true,
               // ON THE ROW BECAUSE THE ROW IS WHERE YOU DECIDE TO RING SOMEBODY.
               // This screen is behind `canManageTimesheets`, and All employees -
               // one click away, same batch, same people - has shown the number
@@ -170,6 +174,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       ? {
         id: t.user.id, displayName: preferredName(t.user),
         email: t.user.email, phone: t.user.phone || null, image: t.user.image,
+        salariedExempt: t.user.salariedExempt === true,
       }
       : null,
     rawHours: t.rawHours,
@@ -318,7 +323,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // understated the next one. `renderOk` is a non-null Boolean, so `hasPdf`
   // already matches the send's own `renderOk: true`.
   const readyToSend = rows.filter(
-    (r) => r.user && r.hasPdf && !r.sentAt && r.matchMethod !== "fuzzy",
+    (r) => r.user && !r.user.salariedExempt && r.hasPdf && !r.sentAt && r.matchMethod !== "fuzzy",
   ).length;
 
   // LIVE / NEEDS A DECISION / FINAL, worked out once and read by both the badge

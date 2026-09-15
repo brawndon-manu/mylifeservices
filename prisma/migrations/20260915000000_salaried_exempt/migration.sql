@@ -1,0 +1,13 @@
+-- AN EXEMPT (SALARIED) EMPLOYEE. Meal and rest periods do not apply to them, so
+-- no premium is ever owed, their sheet asks for no signature, and no email goes
+-- out asking for one. Their hours still reach the payout reports like anybody
+-- else's - this is about breaks and signing, not about being off the payroll.
+--
+-- NOT `timesheetExempt`, which sits two columns up and means the opposite kind
+-- of thing: that account never holds a timesheet at all and is dropped from
+-- every matching pool. Reusing it here would have deleted these people from the
+-- payout, which is the one thing they must stay on.
+--
+-- Additive: defaults false, so all 117 existing rows keep exactly the behaviour
+-- they have today.
+ALTER TABLE "User" ADD COLUMN "salariedExempt" BOOLEAN NOT NULL DEFAULT false;

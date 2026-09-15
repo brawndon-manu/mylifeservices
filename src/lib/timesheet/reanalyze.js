@@ -51,6 +51,7 @@ const INJECTED = [
   "restSourceAvailable",
   "dsnSigned",
   "dsnSourceAvailable",
+  "salariedExempt",
 ];
 
 function withoutInjected(day) {
@@ -84,6 +85,9 @@ export function reanalyzeDays(days, {
   restSourceAvailable = false,
   dsnSignedFor = () => false,
   dsnSourceAvailable = false,
+  // the person is salaried and exempt. Read off the day it is rebuilding rather
+  // than passed per sheet, because it is already stored there and a caller that
+  // forgot it would hand an exempt person their entitlement back.
   overrides = null,
 } = {}) {
   const out = [];
@@ -117,6 +121,7 @@ export function reanalyzeDays(days, {
       restSourceAvailable,
       dsnSigned: dsnSignedFor(d.date) === true,
       dsnSourceAvailable,
+      salariedExempt: d.salariedExempt === true,
       miscWorked: answered.miscWorked === true || d.miscWorked === true,
       // the classification, for the same reason as `miscWorked` above: a
       // client cancellation cuts its block out of the stretches entirely, and
@@ -173,7 +178,8 @@ export function reanalyzeDays(days, {
 // the list of what gets rebuilt is readable in one place and the test can assert
 // against it.
 function analyzeDayInput(d, {
-  shifts, restTimes, restSourceAvailable, dsnSigned, dsnSourceAvailable, miscWorked, miscKind,
+  shifts, restTimes, restSourceAvailable, dsnSigned, dsnSourceAvailable, salariedExempt,
+  miscWorked, miscKind,
 }) {
   return {
     ...d,
@@ -189,6 +195,7 @@ function analyzeDayInput(d, {
     // so it never rides into the stored projection.
     dsnSigned,
     dsnSourceAvailable,
+    salariedExempt,
     miscWorked,
     miscKind,
   };

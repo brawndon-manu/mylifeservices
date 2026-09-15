@@ -182,6 +182,11 @@ export async function analyzeDayProgram({
   // NO NOTES MEANS NO SOURCE, and a batch with no source charges nobody. See
   // rest-attestation.js; the flag below is what carries that.
   const whoKey = buildWhoKey(staff);
+  // SALARIED AND EXEMPT - see parse.js. Resolved by name here rather than by
+  // account id, because this flow builds its days before anything is matched.
+  const exemptKeys = new Set(
+    staff.filter((u) => u?.salariedExempt).map((u) => whoKey(u.name)).filter(Boolean),
+  );
   let dsnNotes = [];
   if (notesBytes) {
     try {
@@ -261,6 +266,7 @@ export async function analyzeDayProgram({
     const personRows = restsFor.get(key) || [];
     const windows = restWindowsByDate(personRows, { restRowTimes, clockMin, serviceFit });
     const signedDsn = dsnSignedFor(dsnByPerson, whoKey, s.employee);
+    const salariedExempt = exemptKeys.has(whoKey(s.employee));
 
 
     // the report's own per-date count, the same figure the MLS upload feeds as
@@ -352,6 +358,7 @@ export async function analyzeDayProgram({
         // rather than charging them for a document that is not there.
         dsnSigned: signedDsn(d.date),
         dsnSourceAvailable,
+        salariedExempt,
       };
     });
 
