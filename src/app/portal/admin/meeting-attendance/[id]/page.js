@@ -5,6 +5,8 @@ import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
+import MeetingRecordEditor from "../_components/MeetingRecordEditor";
+import { attachmentsOf } from "@/lib/announcements";
 import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
 import { buildRoster, meetingMeta } from "../roster";
 import MeetingBreakdown from "../_components/MeetingBreakdown";
@@ -61,6 +63,7 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
       meetingBackfilled: true,
       meetingRecordSource: true,
       meetingTopics: true,
+      attachments: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
@@ -121,6 +124,13 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
   const r = buildRoster(m, roster, choices, responses);
   const meta = meetingMeta(m, r);
   const recordNote = recordNoteOf(m);
+  const materials = attachmentsOf(m);
+  // restricted forms are never attachable - see announcement-attach-server
+  const libraryDocs = await prisma.form.findMany({
+    where: { minRole: null },
+    select: { id: true, title: true, category: true },
+    orderBy: [{ category: "asc" }, { title: "asc" }],
+  });
 
   // invitee-manager data: everyone not already invited + the added-by-hand people.
   const audIds = new Set(audienceUsers.map((u) => u.id));
@@ -159,12 +169,17 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
           >
             Download PDF
           </a>
-          <Link
-            href={`/portal/announcements/${m.id}?from=meetingDetail`}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
-          >
-            View announcement →
-          </Link>
+          {/* A RECORD HAS NO POST WORTH OPENING. It was never written to be
+              read - no body, nobody it went to - so the link would land on an
+              empty page. Live meetings keep it. */}
+          {!m.meetingBackfilled && (
+            <Link
+              href={`/portal/announcements/${m.id}?from=meetingDetail`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+            >
+              View announcement →
+            </Link>
+          )}
         </div>
       </div>
 
@@ -203,11 +218,66 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
 
       <OfficeFilter basePath={`/portal/admin/meeting-attendance/${m.id}`} current={office} />
 
+      {(m.meetingTopics?.length > 0 || materials.length > 0) && (
+        <div className="mt-5 rounded-xl border border-border bg-surface p-4">
+          {m.meetingTopics?.length > 0 && (
+            <>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-faint">
+                What was covered
+              </h2>
+              <ul className="mt-2 space-y-1">
+                {m.meetingTopics.map((t) => (
+                  <li key={t} className="flex gap-2 text-sm text-foreground">
+                    <span aria-hidden="true" className="text-faint">-</span>
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {materials.length > 0 && (
+            <div className={m.meetingTopics?.length > 0 ? "mt-4 border-t border-border pt-4" : ""}>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-faint">
+                Materials used
+              </h2>
+              <ul className="mt-2 space-y-1">
+                {materials.map((a) => (
+                  <li key={a.url} className="text-sm text-foreground">
+                    <a href={a.url} target="_blank" rel="noopener noreferrer" className="hover:text-brand hover:underline">
+                      {a.name}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-muted">
+                Carried inside the attendance report in full.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-4">
+        <MeetingRecordEditor
+          postId={m.id}
+          title={m.title || ""}
+          topics={m.meetingTopics || []}
+          attachments={materials}
+          recordSource={m.meetingRecordSource || ""}
+          backfilled={!!m.meetingBackfilled}
+          docs={libraryDocs}
+        />
+      </div>
+
       <div className="mt-5 rounded-xl border border-border bg-surface p-4">
+        {/* nobody responded to a record and nobody wrote down who was
+            invited, so a percentage here would be invented */}
         <div className="flex items-baseline justify-between text-sm">
-          <span className="text-muted">Responded</span>
+          <span className="text-muted">{m.meetingBackfilled ? "On the record" : "Responded"}</span>
           <span className="font-semibold text-foreground">
-            {r.responded} / {r.invited} · {meta.pct}%
+            {m.meetingBackfilled
+              ? `${r.invited} ${r.invited === 1 ? "person" : "people"}`
+              : `${r.responded} / ${r.invited} · ${meta.pct}%`}
           </span>
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded-full border border-border bg-background">

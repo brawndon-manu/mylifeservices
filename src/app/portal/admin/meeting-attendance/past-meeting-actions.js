@@ -238,3 +238,59 @@ export async function createPastMeeting(formData) {
   revalidatePath(BACK);
   redirect(`${BACK}/${post.id}`);
 }
+
+// EDITING A MEETING FROM THE ATTENDANCE PAGE.
+//
+// Mánu 2026-09-14: "there should be an option to add in the topics and add in
+// pdfs". A record typed up from an old email is entered before anybody has
+// gone looking for what was covered or which deck was shown, so it has to be
+// possible to come back to it.
+//
+// ONLY THE TWO THINGS IT OWNS, plus the title and where the record came from.
+// It does not post the dates, the audience, the kind or anything the roster
+// reads, so an edit here cannot quietly clear a field it never showed - the
+// exact failure the announcement edit form's own guard exists for. Whatever is
+// not in the form is not in the update.
+export async function updateMeetingRecord(postId, formData) {
+  const user = await getCurrentUser();
+  if (!isAdminUp(user?.role)) redirect("/portal");
+
+  const post = await prisma.announcement.findUnique({
+    where: { id: postId },
+    select: { id: true, tag: true, deletedAt: true, meetingBackfilled: true },
+  });
+  if (!post || post.deletedAt || post.tag !== COMPANY_MEETING_TAG) redirect(BACK);
+
+  const here = `${BACK}/${postId}`;
+  // resolveAttachments returns null for "none left", which is a real answer -
+  // somebody removing the last document means the record carries none, not
+  // that the field was untouched.
+  const attachments = await resolveAttachments(formData, here);
+
+  const topics = clean(formData.get("meetingTopics"), 8000)
+    .split(/\r?\n/)
+    .map((t) => t.trim().slice(0, 200))
+    .filter(Boolean)
+    .slice(0, 40);
+
+  const title = clean(formData.get("title"), 200);
+  const source = clean(formData.get("meetingRecordSource"), 120);
+
+  await prisma.announcement.update({
+    where: { id: postId },
+    data: {
+      meetingTopics: topics,
+      attachments,
+      // the title and the source are only editable on a record. A live
+      // meeting's title belongs to the post staff were invited to, and
+      // changing it from a roster screen would rename what they were sent.
+      ...(post.meetingBackfilled
+        ? { ...(title ? { title } : {}), meetingRecordSource: source || null }
+        : {}),
+    },
+  });
+
+  revalidatePath(here);
+  revalidatePath(BACK);
+  redirect(`${here}?saved=1`);
+}
