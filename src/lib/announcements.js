@@ -4,6 +4,9 @@
 
 import { ACK_EXEMPT_TITLE, POSITION_SEP, titleHasSegment } from "./positions.js";
 import { isElevated } from "./roles.js";
+// re-exported further down as well; imported here because a re-export creates
+// no local binding and `attachmentsForSession` calls both.
+import { attachmentsOf, cleanAttachment } from "./announcement-attachments.js";
 
 // the Owner/Director doesn't acknowledge - everyone else does.
 export function isAckExempt(user) {
@@ -157,6 +160,35 @@ export function topicsForSession(meeting, option) {
   const own = option && Array.isArray(option.topics) ? option.topics.filter(Boolean) : [];
   if (own.length) return own;
   return Array.isArray(meeting?.meetingTopics) ? meeting.meetingTopics : [];
+}
+
+// WHAT ONE SESSION WAS RUN FROM.
+//
+// The same shape as `topicsForSession` above and for the same reason: the
+// documents of one training are not the documents of the next. The September
+// zoom trainings carry three ILS service note files that belong to week one
+// alone, and one list on the meeting cannot say that.
+//
+// A series with none of its own falls back to the meeting's list, which is what
+// lets every meeting that predates this keep printing exactly what it printed
+// before - five of them carry documents and more than one series today.
+// THROUGH THE SAME TRUST BOUNDARY AS THE MEETING'S OWN LIST. `cleanAttachment`
+// is what refuses a url pointing off-site - the way an attachment becomes a
+// phishing link with the company's name on it - and a series' documents render
+// in exactly the places the meeting's do. Writes already clean, so this is the
+// second half of the same check rather than a new one.
+export function attachmentsForSession(meeting, option) {
+  const own = Array.isArray(option?.attachments)
+    ? option.attachments.map(cleanAttachment).filter(Boolean)
+    : [];
+  if (own.length) return own;
+  return attachmentsOf(meeting);
+}
+
+// true when any session carries documents of its own
+export function hasSessionAttachments(meeting) {
+  const opts = Array.isArray(meeting?.meetingOptions) ? meeting.meetingOptions : [];
+  return opts.some((o) => Array.isArray(o?.attachments) && o.attachments.filter(Boolean).length);
 }
 
 // true when any session carries topics of its own, so a screen knows whether to

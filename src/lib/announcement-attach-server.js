@@ -38,13 +38,23 @@ export async function uploadAttachment(file) {
 //
 // `redirectOn` is the page to bounce back to, so create and edit report their
 // errors in the right place.
-export async function resolveAttachments(formData, redirectOn, { allowRestricted = false } = {}) {
+// `key` READS ONE SERIES' FIELDS INSTEAD OF THE MEETING'S. The documents of a
+// training are not the documents of the training after it - the September zoom
+// trainings carry three ILS service note files that belong to week one and to
+// nothing else - so a series names its own, posted under the same three field
+// names with the series key appended. No key is the meeting-wide list, which is
+// what every series without its own falls back to, and what every other caller
+// has always posted.
+export async function resolveAttachments(
+  formData, redirectOn, { allowRestricted = false, key = "" } = {},
+) {
+  const field = (name) => (key ? `${name}:${key}` : name);
   const out = [];
 
   // ALREADY ON THE POST, and not ticked for removal. An uploaded PDF exists
   // only here, so an edit that silently dropped it would lose the file - the
   // library picks below can always be re-picked, these cannot.
-  for (const raw of formData.getAll("keepAttachments")) {
+  for (const raw of formData.getAll(field("keepAttachments"))) {
     if (typeof raw !== "string" || !raw) continue;
     try {
       const a = cleanAttachment(JSON.parse(raw));
@@ -55,7 +65,7 @@ export async function resolveAttachments(formData, redirectOn, { allowRestricted
   }
 
   const ids = formData
-    .getAll("attachFormIds")
+    .getAll(field("attachFormIds"))
     .filter((v) => typeof v === "string" && v);
   if (ids.length) {
     // A RESTRICTED FORM CANNOT RIDE ON A POST. An announcement's attachments
@@ -86,7 +96,7 @@ export async function resolveAttachments(formData, redirectOn, { allowRestricted
   }
 
   const files = formData
-    .getAll("attachments")
+    .getAll(field("attachments"))
     .filter((f) => f && typeof f === "object" && "size" in f && f.size > 0);
   for (const file of files) {
     if (!ATTACH_ACCEPT.includes(file.type)) redirect(`${redirectOn}?error=attachType`);

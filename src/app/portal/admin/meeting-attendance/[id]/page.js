@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import MeetingRecordEditor from "../_components/MeetingRecordEditor";
-import { attachmentsOf, topicsForSession } from "@/lib/announcements";
+import { attachmentsOf, topicsForSession, attachmentsForSession } from "@/lib/announcements";
 import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
 import { buildRoster, meetingMeta, fmtSession } from "../roster";
 import MeetingBreakdown from "../_components/MeetingBreakdown";
@@ -130,19 +130,32 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
   // editor asks once. A session with no series is its own group.
   const seriesGroups = [];
   for (const o of (Array.isArray(m.meetingOptions) ? m.meetingOptions : [])) {
-    const key = o.seriesId ? `topics:${o.seriesId}` : `topics:solo:${o.id}`;
+    // the bare series key. The topics box has posted under `topics:<key>` since
+    // it was built, and the documents block posts under the same key, so the
+    // two halves of one series can never drift apart.
+    const docsKey = o.seriesId ? String(o.seriesId) : `solo:${o.id}`;
+    const key = `topics:${docsKey}`;
     let g = seriesGroups.find((x) => x.key === key);
     if (!g) {
-      g = { key, label: o.seriesLabel || o.label, dates: [], topics: topicsForSession(m, o) };
+      g = {
+        key, docsKey, label: o.seriesLabel || o.label, dates: [],
+        topics: topicsForSession(m, o),
+        // ITS OWN, not the fallback. The editor has to show what this series
+        // actually carries, or saving would write the meeting's list onto it
+        // and every series would quietly gain documents it never had.
+        ownAttachments: Array.isArray(o.attachments) ? o.attachments.filter(Boolean) : [],
+      };
       seriesGroups.push(g);
     }
     g.dates.push(fmtSession(o));
   }
   const sessionList = seriesGroups.map((g) => ({
     key: g.key,
+    docsKey: g.docsKey,
     label: g.label,
     dateLabel: g.dates.join("  and  "),
     topics: g.topics,
+    attachments: g.ownAttachments,
   }));
   // A RECORD MAY OFFER THE RESTRICTED ONES, because it is never in the feed and
   // no staff member can open it - see announcement-attach-server. Everyone who

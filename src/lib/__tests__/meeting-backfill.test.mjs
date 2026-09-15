@@ -161,6 +161,84 @@ test("the record editor never writes a field the form did not post", () => {
   );
 
   // and the same rule already holds one level down, for a session
-  assert.match(src, /if \(raw === null\) return o;/,
+  assert.match(src, /const raw = formData\.get\(`topics:\$\{k\}`\);/,
+    "a session reads its own key");
+  assert.match(src, /if \(raw !== null\) \{/,
     "a session the form did not post is left exactly as it was");
+
+  // DOCUMENTS NEEDED A DIFFERENT TEST FOR THE SAME RULE, and that is the part
+  // worth pinning. A textarea that is not on the page posts nothing, so absence
+  // means "not posted". A file input posts even when empty, so absence proves
+  // nothing - and a series whose block was never drawn would have had its
+  // documents wiped by exactly the bug above wearing a different hat. So the
+  // form names each series it drew a block for, and the action believes that
+  // rather than the presence of a field.
+  assert.match(src, /formData\.getAll\("docsFor"\)/,
+    "the form has to say which series it drew a documents block for");
+  const guard = src.indexOf("if (drewDocsFor.has(k))");
+  const write = src.indexOf("attachments: docsBySeries.get(k)");
+  assert.ok(guard > 0, "the guard has to exist");
+  assert.ok(write > guard, "and the write has to sit behind it, not before it");
+});
+
+// ---------------------------------------------------------------------------
+// DOCUMENTS BELONG TO A SERIES.
+//
+// The September zoom trainings carry three ILS service note files that belong
+// to week one and to neither week after it, and one list on the meeting cannot
+// say that. Same shape as topics: a series names its own, and one that names
+// none falls back to the meeting's - which is what lets the five meetings that
+// already carry documents keep printing exactly what they printed before.
+test("a series reads its own documents, and falls back to the meeting's", async () => {
+  const { attachmentsForSession, hasSessionAttachments } = await import("../announcements.js");
+  const week1 = { id: "a", seriesId: "w1", attachments: [{ name: "ILS Quick Reference", url: "https://blob.example/u1.pdf" }] };
+  const week2 = { id: "b", seriesId: "w2" };
+  const meeting = {
+    attachments: [{ name: "SIR Policy", url: "https://blob.example/u0.pdf" }],
+    meetingOptions: [week1, week2],
+  };
+  assert.deepEqual(attachmentsForSession(meeting, week1).map((a) => a.name), ["ILS Quick Reference"]);
+  assert.deepEqual(attachmentsForSession(meeting, week2).map((a) => a.name), ["SIR Policy"],
+    "a series with none of its own prints the meeting's");
+  assert.equal(hasSessionAttachments(meeting), true);
+  assert.equal(hasSessionAttachments({ meetingOptions: [week2] }), false);
+  // an empty list is not the same as none: it still falls back rather than
+  // printing nothing, because removing the last document means this series
+  // carries none of its own
+  assert.deepEqual(
+    attachmentsForSession(meeting, { id: "c", attachments: [] }).map((a) => a.name),
+    ["SIR Policy"],
+  );
+});
+
+test("the report loads every series' documents once, not once per series", async () => {
+  const { loadMeetingMaterials } = await import("../meeting-materials.js");
+  // two series naming the SAME file, plus one of their own each
+  const shared = { name: "Shared deck", url: "https://blob.example/same.pdf" };
+  const post = {
+    attachments: [{ name: "Meeting-wide", url: "https://blob.example/m.pdf" }],
+    meetingOptions: [
+      { id: "a", seriesId: "w1", attachments: [shared, { name: "Week one only", url: "https://blob.example/w1.pdf" }] },
+      { id: "b", seriesId: "w2", attachments: [shared] },
+    ],
+  };
+  const loaded = await loadMeetingMaterials(post, { withBytes: false });
+  assert.deepEqual(loaded.map((x) => x.name),
+    ["Meeting-wide", "Shared deck", "Week one only"],
+    "the union, deduped by url, meeting first");
+  assert.ok(loaded.every((x) => x.url), "each carries its url so a section can find its own");
+
+  // AND THE BOUNDARY HOLDS ON A SERIES TOO. cleanAttachment is what refuses a
+  // url pointing off-site, and a series' documents render exactly where the
+  // meeting's do - so a bare or off-site one is dropped rather than printed.
+  const { attachmentsForSession } = await import("../announcements.js");
+  assert.deepEqual(
+    attachmentsForSession({ attachments: [] }, { attachments: [
+      { name: "Off site", url: "https://evil.example/x.pdf" },
+      { name: "Protocol relative", url: "//evil.example/x.pdf" },
+      { name: "Bare", url: "nope" },
+    ] }).map((a) => a.name),
+    ["Off site"],
+    "https is allowed, protocol-relative and bare are not - same rule as the meeting's",
+  );
 });

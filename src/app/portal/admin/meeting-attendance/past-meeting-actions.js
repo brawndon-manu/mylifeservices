@@ -294,15 +294,51 @@ export async function updateMeetingRecord(postId, formData) {
   // the report reads per section and it keeps one shape for a solo session too.
   // Posted as `topics:<seriesId>`, or `topics:solo:<optionId>` where there is
   // no series. A group the form did not post is left exactly as it was.
+  //
+  // DOCUMENTS BELONG TO A SERIES TOO, and for the sharper reason: the files of
+  // one training are usually not the files of the next. The September zoom
+  // trainings carry three ILS service note documents that belong to week one
+  // and to neither of the weeks after it.
+  //
+  // WHICH SERIES THE FORM ACTUALLY RENDERED, said out loud. Topics can use "the
+  // field is absent" to mean "not posted", because a textarea that is not on
+  // the page posts nothing. A file input cannot: an empty one still posts, so
+  // absence proves nothing and a series whose block was never drawn would have
+  // its documents wiped. The form names each series it drew a block for, and a
+  // series it did not name is left exactly as it was.
+  const drewDocsFor = new Set(
+    formData.getAll("docsFor").filter((v) => typeof v === "string" && v),
+  );
+  const seriesKey = (o) => (o.seriesId ? String(o.seriesId) : `solo:${o.id}`);
+
   let meetingOptions;
   const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
   if (opts.length) {
-    const keyOf = (o) => (o.seriesId ? `topics:${o.seriesId}` : `topics:solo:${o.id}`);
+    // RESOLVED ONCE PER SERIES, not once per option. Two dates of one series
+    // share a key, and resolving per option would upload the same file twice
+    // and bill the second copy to a post nobody asked for.
+    const docsBySeries = new Map();
+    for (const k of drewDocsFor) {
+      docsBySeries.set(k, await resolveAttachments(formData, here, {
+        allowRestricted: !!post.meetingBackfilled,
+        key: k,
+      }));
+    }
     meetingOptions = opts.map((o) => {
-      const raw = formData.get(keyOf(o));
-      if (raw === null) return o;
-      const own = asTopics(raw);
-      return { ...o, topics: own.length ? own : null };
+      const k = seriesKey(o);
+      let next = o;
+      const raw = formData.get(`topics:${k}`);
+      if (raw !== null) {
+        const own = asTopics(raw);
+        next = { ...next, topics: own.length ? own : null };
+      }
+      if (drewDocsFor.has(k)) {
+        // null is a real answer here, the same as it is for the meeting's own
+        // list: removing the last document means this series carries none and
+        // falls back to the meeting's, not that the field went untouched.
+        next = { ...next, attachments: docsBySeries.get(k) };
+      }
+      return next;
     });
   }
 

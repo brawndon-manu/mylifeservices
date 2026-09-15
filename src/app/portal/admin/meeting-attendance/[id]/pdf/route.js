@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
-import { ackAudienceWhere, isCompanyMeeting, recordNoteOf, topicsForSession } from "@/lib/announcements";
+import {
+  ackAudienceWhere, isCompanyMeeting, recordNoteOf, topicsForSession, attachmentsForSession,
+} from "@/lib/announcements";
 import { loadMeetingMaterials } from "@/lib/meeting-materials";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
@@ -99,6 +101,11 @@ export async function GET(req, { params }) {
     };
   };
 
+  // Loaded ONCE for the whole report: the union across every series, deduped by
+  // url, so a document two series share is read and embedded a single time.
+  // Each section then picks its own out of this by url.
+  const loaded = await loadMeetingMaterials(m);
+
   let bytes;
   try {
     const out = await renderAttendanceReport(
@@ -107,7 +114,7 @@ export async function GET(req, { params }) {
         mandatory: !!m.meetingMandatory,
         metaLine: meta.metaLine,
         recordNote: recordNoteOf(m),
-        materials: await loadMeetingMaterials(m),
+        materials: loaded,
         office: office || null,
         stats: {
           backfilled: !!m.meetingBackfilled,
@@ -137,6 +144,12 @@ export async function GET(req, { params }) {
               label: [sn.heading, sn.label].filter(Boolean).join(" · "),
               dateLabel: sn.dateLabel,
               topics: topicsForSession(m, (m.meetingOptions || []).find((o) => o.id === sn.id)),
+              // WHAT THIS DATE WAS RUN FROM, which is its series' documents and
+              // not the meeting's whole shelf. Matched back to the loaded list
+              // by url so the bytes are read once however many series share it.
+              materials: attachmentsForSession(
+                m, (m.meetingOptions || []).find((o) => o.id === sn.id),
+              ).map((a) => loaded.find((x) => x.url === a.url)).filter(Boolean),
               people: sn.going.map(slimP),
             }))
           : [
@@ -144,6 +157,7 @@ export async function GET(req, { params }) {
                 label: m.title || "Meeting",
                 dateLabel: meta.metaLine,
                 topics: m.meetingTopics || [],
+                materials: loaded,
                 people: r.singleGoing.map(slimP),
               },
             ],

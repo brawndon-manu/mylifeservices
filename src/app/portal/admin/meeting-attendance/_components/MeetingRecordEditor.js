@@ -21,6 +21,102 @@ const INPUT =
   "mt-1 w-full rounded-lg border border-border-strong bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const LABEL = "block text-xs font-semibold text-foreground";
 
+// ONE DOCUMENTS BLOCK, used for a series and for the meeting.
+//
+// `fieldKey` is the series it belongs to, and it appends itself to all three
+// field names so one form can carry several independent lists. No key is the
+// meeting-wide block every series without its own falls back to.
+//
+// AND IT SAYS IT WAS DRAWN. A file input posts even when empty, so the action
+// cannot tell "this series has no documents" from "this series was never on the
+// page" - and the second one would wipe what it has. The hidden field is how
+// the form tells it which is which.
+function DocumentsBlock({ fieldKey = "", kept, setKept, docs, emptyNote = "" }) {
+  // NOT `f`: the library picker below maps over `(f) => ...` and would shadow
+  // it, so `name={fieldName("attachFormIds")}` would call the form row instead.
+  const fieldName = (n) => (fieldKey ? `${n}:${fieldKey}` : n);
+  return (
+    <>
+      {fieldKey && <input type="hidden" name="docsFor" value={fieldKey} />}
+        {/* WHAT IS ALREADY ON IT. Each one posts itself back as a hidden
+            field, because resolveAttachments builds the whole list from
+            what it is given - anything not posted is removed, which is
+            what makes Remove work and what would silently drop the lot if
+            these were left out. */}
+        {kept.length > 0 ? (
+          <ul className="mt-2 space-y-1.5">
+            {kept.map((a) => (
+              <li
+                key={a.url}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2"
+              >
+                <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                  <FileText size={14} aria-hidden="true" className="shrink-0 text-faint" />
+                  <span className="truncate">{a.name}</span>
+                  <span className="shrink-0 text-xs text-muted">
+                    {a.formId ? "from the forms library" : "uploaded here"}
+                  </span>
+                </span>
+                <input type="hidden" name={fieldName("keepAttachments")} value={JSON.stringify(a)} />
+                <button
+                  type="button"
+                  onClick={() => setKept((k) => k.filter((x) => x.url !== a.url))}
+                  className="shrink-0 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : emptyNote ? (
+          <p className="mt-2 text-xs text-faint">{emptyNote}</p>
+        ) : null}
+
+        {docs.length > 0 && (
+          <details className="mt-2 rounded-lg border border-border bg-surface-2 px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-foreground">
+              <Plus size={13} aria-hidden="true" className="mr-1 inline" />
+              Attach from the forms library
+            </summary>
+            <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+              {docs
+                .filter((f) => !kept.some((k) => k.formId === f.id))
+                .map((f) => (
+                  <label key={f.id} className="flex items-start gap-2 text-sm text-muted">
+                    <input
+                      type="checkbox"
+                      name={fieldName("attachFormIds")}
+                      value={f.id}
+                      className="mt-0.5 h-4 w-4 accent-brand"
+                    />
+                    <span>
+                      {f.title}
+                      {f.category && (
+                        <span className="ml-2 text-xs text-faint">{f.category}</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+            </div>
+          </details>
+        )}
+
+        <input
+          name={fieldName("attachments")}
+          type="file"
+          multiple
+          accept={ATTACH_ACCEPT.join(",")}
+          className="mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
+        />
+        <p className="mt-1 text-xs text-muted">
+          PDF only, up to {Math.round(ATTACH_MAX_BYTES / (1024 * 1024))} MB each
+          and {ATTACH_MAX_COUNT} in total. They are carried inside the
+          attendance report, not just linked from it.
+        </p>
+    </>
+  );
+}
+
 export default function MeetingRecordEditor({
   postId,
   title,
@@ -36,6 +132,13 @@ export default function MeetingRecordEditor({
 }) {
   const [open, setOpen] = useState(false);
   const [kept, setKept] = useState(attachments);
+  // one list per series, keyed the way the fields are. Seeded from what each
+  // series actually carries rather than from the fallback, or saving would
+  // write the meeting's documents onto every series that was only inheriting.
+  const [seriesDocs, setSeriesDocs] = useState(() =>
+    Object.fromEntries(sessions.map((x) => [x.docsKey, x.attachments || []])));
+  const setDocsFor = (k) => (fn) =>
+    setSeriesDocs((m) => ({ ...m, [k]: fn(m[k] || []) }));
 
   const perSession = sessions.length > 1;
   const anyTopics = perSession ? sessions.some((x) => (x.topics || []).length) : topics.length;
@@ -138,6 +241,23 @@ export default function MeetingRecordEditor({
                       placeholder="What this series covered, one per line"
                       className="mt-1.5 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                     />
+
+                    {/* A HAIRLINE RATHER THAN A SECOND CARD. The series is
+                        already a card, and a box inside it would be the
+                        card-in-card the gate warns off - spacing and a rule do
+                        the grouping instead. */}
+                    <div className="mt-3.5 border-t border-sep pt-3">
+                      <span className="block text-xs font-semibold text-muted">
+                        Documents for this series
+                      </span>
+                      <DocumentsBlock
+                        fieldKey={x.docsKey}
+                        kept={seriesDocs[x.docsKey] || []}
+                        setKept={setDocsFor(x.docsKey)}
+                        docs={docs}
+                        emptyNote="None yet. This series prints the meeting's documents below."
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -168,77 +288,13 @@ export default function MeetingRecordEditor({
 
           <div>
             <span className={LABEL}>
-              Slides and handouts <span className="font-normal text-faint">(optional)</span>
+              Documents for the whole meeting{" "}
+              <span className="font-normal text-faint">(optional)</span>
             </span>
-
-            {/* WHAT IS ALREADY ON IT. Each one posts itself back as a hidden
-                field, because resolveAttachments builds the whole list from
-                what it is given - anything not posted is removed, which is
-                what makes Remove work and what would silently drop the lot if
-                these were left out. */}
-            {kept.length > 0 && (
-              <ul className="mt-2 space-y-1.5">
-                {kept.map((a) => (
-                  <li
-                    key={a.url}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2"
-                  >
-                    <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                      <FileText size={14} aria-hidden="true" className="shrink-0 text-faint" />
-                      <span className="truncate">{a.name}</span>
-                      <span className="shrink-0 text-xs text-muted">
-                        {a.formId ? "from the forms library" : "uploaded here"}
-                      </span>
-                    </span>
-                    <input type="hidden" name="keepAttachments" value={JSON.stringify(a)} />
-                    <button
-                      type="button"
-                      onClick={() => setKept((k) => k.filter((x) => x.url !== a.url))}
-                      className="shrink-0 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {docs.length > 0 && (
-              <details className="mt-2 rounded-lg border border-border bg-surface-2 px-3 py-2">
-                <summary className="cursor-pointer text-sm font-medium text-foreground">
-                  <Plus size={13} aria-hidden="true" className="mr-1 inline" />
-                  Attach from the forms library
-                </summary>
-                <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
-                  {docs
-                    .filter((f) => !kept.some((k) => k.formId === f.id))
-                    .map((f) => (
-                      <label key={f.id} className="flex items-start gap-2 text-sm text-muted">
-                        <input
-                          type="checkbox"
-                          name="attachFormIds"
-                          value={f.id}
-                          className="mt-0.5 h-4 w-4 accent-brand"
-                        />
-                        <span>
-                          {f.title}
-                          {f.category && (
-                            <span className="ml-2 text-xs text-faint">{f.category}</span>
-                          )}
-                        </span>
-                      </label>
-                    ))}
-                </div>
-              </details>
-            )}
-
-            <input
-              name="attachments"
-              type="file"
-              multiple
-              accept={ATTACH_ACCEPT.join(",")}
-              className="mt-2 block w-full text-sm text-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-light file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-brand"
-            />
+            <p className="mt-1 text-xs text-muted">
+              Used by any series that has none of its own.
+            </p>
+            <DocumentsBlock kept={kept} setKept={setKept} docs={docs} />
             <p className="mt-1 text-xs text-muted">
               PDF only, up to {Math.round(ATTACH_MAX_BYTES / (1024 * 1024))} MB each
               and {ATTACH_MAX_COUNT} in total. They are carried inside the

@@ -311,9 +311,10 @@ export async function renderAttendanceReport(
     }
 
     bullets("What was covered", s.topics || []);
-    // the documents are the meeting's, and each date was run from them, so each
-    // section names them rather than making the reader page back to a list
-    bullets("Documents used", materials.map((m) => m.name));
+    // ITS OWN documents, because a series is run from its own. The meeting's
+    // list is the fallback for a series that names none, resolved before this
+    // ever sees it - see attachmentsForSession.
+    bullets("Documents used", (s.materials || materials).map((m) => m.name));
 
     heading("Attendance", s.people.length);
     if (!s.people.length) {

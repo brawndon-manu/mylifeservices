@@ -83,9 +83,12 @@ test("only a record of a past meeting may attach a restricted form", () => {
   const src = read("src/lib/announcement-attach-server.js");
   assert.match(
     src,
-    /resolveAttachments\(formData, redirectOn, \{ allowRestricted = false \} = \{\}\)/,
+    /allowRestricted = false/,
     "the exception must be opt-in, so anything that forgets gets the refusal",
   );
+  // and it is still a default on the options object rather than a positional
+  // argument somebody can pass by accident
+  assert.match(src, /\{ allowRestricted = false, key = "" \} = \{\}/);
   assert.match(src, /allowRestricted \? \{\} : \{ minRole: null \}/);
 
   // and exactly one caller opts in
