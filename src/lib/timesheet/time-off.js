@@ -71,6 +71,51 @@ export function timeOffTotals(entries) {
   return { pto: r2(pto), sick: r2(sick), total: r2(pto + sick) };
 }
 
+// WHAT THE PAYOUT PAYS AS TIME OFF, from every record of it at once.
+//
+// THREE SOURCES AND THEY ARE NOT THE SAME KIND OF THING, which is the whole
+// reason this is one function rather than a sum at four call sites:
+//
+//   misc      classified inside the sheet's own hours. Already paid in QSP's
+//             printed figures, so it MOVES columns - out of worked, into
+//             PTO/Sick - and Total payable cannot change by construction.
+//   calendar  PtoEntry rows, typed on the Calendar screen. Nothing else knows
+//             about them, so they ADD.
+//   QSP       the SickHr and PTO columns of the payroll report, or the
+//             timesheet's own name line where no payroll report was uploaded.
+//             `payroll.js` builds `paid` from regular, overtime and double
+//             only, so these sit OUTSIDE paid hours and they ADD too.
+//
+// THE CALENDAR WINS WHERE IT EXISTS. A typed entry is somebody deciding, and
+// the automatic figure is a default - the same precedence `qspSick` itself
+// already uses, where the payroll report beats the name line. Summing them
+// instead would pay twice for one absence the first time anybody records in
+// the calendar what QuickSolve already reports.
+//
+// WHY QSP JOINED THIS AT ALL: the payout read the calendar and nothing else,
+// and the calendar is a day program screen with no agency route into it. So an
+// agency period showed 0.00 sick pay while 15 people had 167.37 hours of it
+// printed on the timesheets they signed. The note on the query used to say the
+// calendar carried this "until QSP catches up"; on sick it has.
+export function payoutTimeOff(sheet, cal = null) {
+  const misc = miscTimeOffHours(sheet?.data?.days);
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const calPto = n(cal?.pto);
+  const calSick = n(cal?.sick);
+  const addedPto = calPto > 0 ? calPto : n(sheet?.data?.qspPto);
+  const addedSick = calSick > 0 ? calSick : n(sheet?.data?.qspSick);
+  return {
+    pto: r2(misc.pto + addedPto),
+    sick: r2(misc.sick + addedSick),
+    total: r2(misc.total + addedPto + addedSick),
+    // already inside the sheet's paid hours, so the surfaces subtract it from
+    // worked rather than adding it to the bill
+    moved: misc.total,
+    // outside them, so this is what Total payable grows by
+    added: r2(addedPto + addedSick),
+  };
+}
+
 export const isTimeOffType = (k) =>
   Object.prototype.hasOwnProperty.call(TIME_OFF_TYPES, k);
 

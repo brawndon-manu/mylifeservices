@@ -4,15 +4,7 @@
 // them - a drifted wording is a different statement to the office.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  periodDates,
-  cleanTimeOffEntries,
-  checkTimeOffEntries,
-  timeOffProblem,
-  timeOffAnswerOf,
-  timeOffReviewItems,
-  TIME_OFF_KIND,
-} from "../time-off.js";
+import { periodDates, cleanTimeOffEntries, checkTimeOffEntries, timeOffProblem, timeOffAnswerOf, timeOffReviewItems, TIME_OFF_KIND, payoutTimeOff } from "../time-off.js";
 
 test("periodDates walks the period in the sheet's own format", () => {
   const days = periodDates("08/16/26", "08/31/26");
@@ -203,4 +195,57 @@ test("every refusal has words, and they name the day", () => {
   // an unknown code still says something useful rather than nothing
   assert.equal(timeOffProblem({}), "Check the days you entered.");
   assert.equal(timeOffProblem(), "Check the days you entered.");
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE PAYOUT PAYS AS TIME OFF.
+//
+// The payout read the calendar and nothing else, and the calendar is a day
+// program screen with no agency route into it - so an agency period reported
+// 0.00 sick pay while 15 people had 167.37 hours of it printed on the
+// timesheets they had signed. Three records feed it now, and they are not the
+// same kind of thing, which is the whole reason it is one function.
+test("payoutTimeOff: QSP's figure reaches the payout and is ADDED, not moved", () => {
+  const sheet = { data: { qspSick: 21, qspPto: 0, days: [] } };
+  const r = payoutTimeOff(sheet, null);
+  assert.equal(r.sick, 21);
+  assert.equal(r.added, 21, "sick sits outside QSP's paid hours, so payable grows");
+  assert.equal(r.moved, 0, "and nothing comes out of worked");
+});
+
+test("payoutTimeOff: misc-classified time MOVES columns and never changes payable", () => {
+  // two hours of Misc answered as sick, already inside the paid figures
+  const sheet = { data: { qspSick: 0, days: [{ miscKind: "sick", miscMin: 120 }] } };
+  const r = payoutTimeOff(sheet, null);
+  assert.equal(r.sick, 2);
+  assert.equal(r.moved, 2, "it comes out of worked");
+  assert.equal(r.added, 0, "and must not be billed a second time");
+});
+
+test("payoutTimeOff: a calendar entry overrides QSP rather than adding to it", () => {
+  const sheet = { data: { qspSick: 21, days: [] } };
+  const both = payoutTimeOff(sheet, { pto: 0, sick: 8 });
+  assert.equal(both.sick, 8, "the typed entry is somebody deciding; QSP is the default");
+  assert.equal(both.added, 8);
+  // THE FAILURE THIS PREVENTS: summing them pays 29 hours for one absence
+  assert.notEqual(both.sick, 29);
+  // and with nothing typed, QSP still comes through
+  assert.equal(payoutTimeOff(sheet, { pto: 0, sick: 0 }).sick, 21);
+});
+
+test("payoutTimeOff: the three sources stack correctly per kind", () => {
+  const sheet = { data: { qspSick: 4, qspPto: 3, days: [{ miscKind: "pto", miscMin: 60 }] } };
+  const r = payoutTimeOff(sheet, { pto: 0, sick: 0 });
+  assert.equal(r.pto, 4, "1 misc + 3 from QSP");
+  assert.equal(r.sick, 4);
+  assert.equal(r.moved, 1, "only the misc hour was already paid");
+  assert.equal(r.added, 7);
+  assert.equal(r.total, 8);
+});
+
+test("payoutTimeOff: nothing anywhere is zero, not a crash", () => {
+  for (const s of [null, {}, { data: {} }, { data: { days: null } }]) {
+    const r = payoutTimeOff(s, null);
+    assert.deepEqual([r.pto, r.sick, r.total, r.moved, r.added], [0, 0, 0, 0, 0]);
+  }
 });

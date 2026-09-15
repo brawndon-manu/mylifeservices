@@ -312,6 +312,12 @@ export async function analyzeDayProgram({
 
     people.push({
       sourceName: s.employee,
+      // THE TIME OFF PRINTED ON THE NAME LINE. The day program has no payroll
+      // report, so the timesheet's own line is the only place QuickSolve tells
+      // it how much sick time somebody used - and it was parsed off the name
+      // and then dropped, so a day program sheet could never show any and the
+      // payout reported zero for everybody.
+      qspTimeOff: s.qspTimeOff || null,
       // the same punch review every MLS sheet gets: reversed pairs, the
       // 10-plus-hour stretches that are almost always a wrong AM/PM. this fed
       // the checks screen empty for a day, which is why the batch page had no

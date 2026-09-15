@@ -11,7 +11,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { payrollName, preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
-import { miscTimeOffHours } from "@/lib/timesheet/time-off";
+import { payoutTimeOff } from "@/lib/timesheet/time-off";
 
 export const metadata = { title: "Payout report", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -72,29 +72,28 @@ export default async function PayoutReportPage({ params }) {
   }
 
   const rows = batch.timesheets.map((t) => {
-    // Misc time classified as PTO/sick sits INSIDE the QSP-paid figures, so
-    // it moves columns here rather than adding - worked shrinks by exactly
-    // what PTO/Sick gain, and payable is untouched by construction.
-    const misc = miscTimeOffHours(t.data?.days);
+    // Every record of this person's time off at once - see payoutTimeOff.
+    // `moved` is already inside the QSP-paid figures so worked shrinks by it
+    // and payable cannot change; `added` is what payable grows by.
+    const off = payoutTimeOff(t, (t.userId && timeOffBy.get(t.userId)) || null);
     return {
     id: t.id,
     who: payrollName(t.user, t.sourceName),
     preferred: preferredLabel(t.user),
     sourceName: t.sourceName,
     matched: !!t.userId,
-    regularHours: Math.max(0, (t.regularHours || 0) - misc.total),
+    regularHours: Math.max(0, (t.regularHours || 0) - off.moved),
     otHours: t.otHours,
     doubleHours: t.doubleHours,
-    paidHours: Math.max(0, (t.paidHours || 0) - misc.total),
+    paidHours: Math.max(0, (t.paidHours || 0) - off.moved),
     premiumHours: standing.byId[t.id]?.charged ?? 0,
     assumptionHours: standing.byId[t.id]?.assumptions ?? 0,
-    ptoHours: ((t.userId && timeOffBy.get(t.userId)?.pto) || 0) + misc.pto,
-    sickHours: ((t.userId && timeOffBy.get(t.userId)?.sick) || 0) + misc.sick,
+    ptoHours: off.pto,
+    sickHours: off.sick,
     payable:
       (t.paidHours || 0)
       + (standing.byId[t.id]?.charged ?? 0)
-      + ((t.userId && timeOffBy.get(t.userId)?.pto) || 0)
-      + ((t.userId && timeOffBy.get(t.userId)?.sick) || 0),
+      + off.added,
     // MILES DRIVEN, from the payroll report's own column, stored on the sheet
     // at upload. Null where that report was not uploaded or predates the
     // column - which is not zero miles, so the cell says nothing rather than

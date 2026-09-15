@@ -6,7 +6,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { payrollName } from "@/lib/contacts";
 import { renderPayoutReport } from "@/lib/timesheet/payout-pdf";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
-import { miscTimeOffHours } from "@/lib/timesheet/time-off";
+import { payoutTimeOff } from "@/lib/timesheet/time-off";
 
 // same figures as the payout page and its CSV, as a document. built on demand so
 // it can never disagree with the screen.
@@ -54,11 +54,17 @@ export async function GET(_req, { params }) {
       periodFrom: batch.periodFrom,
       periodTo: batch.periodTo,
     },
-    select: { personKey: true, hours: true },
+    select: { personKey: true, hours: true, kind: true },
   });
+  // KEPT SPLIT even though the print shows one column, because `payoutTimeOff`
+  // decides PTO and sick separately - the calendar overrides QSP per kind, and
+  // a flat total cannot say which kind it was overriding.
   const timeOffBy = new Map();
   for (const p of ptoRows) {
-    timeOffBy.set(p.personKey, (timeOffBy.get(p.personKey) || 0) + (p.hours || 0));
+    const cur = timeOffBy.get(p.personKey) || { pto: 0, sick: 0 };
+    if (p.kind === "sick") cur.sick += p.hours || 0;
+    else cur.pto += p.hours || 0;
+    timeOffBy.set(p.personKey, cur);
   }
 
   let bytes;
@@ -71,16 +77,16 @@ export async function GET(_req, { params }) {
           // Misc-classified PTO/sick moves out of worked and into Time off -
           // payable is untouched: (paid - misc) + premium + (calendar + misc)
           // equals what it always was.
-          const misc = miscTimeOffHours(t.data?.days);
+          const off = payoutTimeOff(t, (t.userId && timeOffBy.get(t.userId)) || null);
           return {
           who: payrollName(t.user, t.sourceName),
           matched: !!t.userId,
-          regularHours: Math.max(0, (t.regularHours || 0) - misc.total),
+          regularHours: Math.max(0, (t.regularHours || 0) - off.moved),
           otHours: t.otHours,
           doubleHours: t.doubleHours,
-          paidHours: Math.max(0, (t.paidHours || 0) - misc.total),
+          paidHours: Math.max(0, (t.paidHours || 0) - off.moved),
           premiumHours: standing.byId[t.id]?.charged ?? 0,
-          timeOffHours: ((t.userId && timeOffBy.get(t.userId)) || 0) + misc.total,
+          timeOffHours: off.total,
           // mileage off the payroll report, and whether the sheet has been
           // signed - Mánu 2026-08-17. Both read at request time, so a download
           // taken after somebody signs shows it.

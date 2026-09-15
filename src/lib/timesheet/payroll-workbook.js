@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
-import { miscTimeOffHours } from "@/lib/timesheet/time-off";
+import { payoutTimeOff } from "@/lib/timesheet/time-off";
 import { parsePayrollReport, payrollKey, reconcile } from "@/lib/timesheet/payroll";
 
 // THE WHOLE PAYROLL PACKAGE AS ONE WORKBOOK, Mánu 2026-09-03: "can we make
@@ -68,20 +68,20 @@ export async function buildPayrollWorkbook(id) {
   // columns, payable untouched by construction
   const rows = batch.timesheets.map((t) => {
     const charged = standing.byId[t.id]?.charged ?? 0;
-    const cal = (t.userId && timeOffBy.get(t.userId)) || { pto: 0, sick: 0 };
-    const misc = miscTimeOffHours(t.data?.days);
+    // every record of this person's time off at once - see payoutTimeOff
+    const off = payoutTimeOff(t, (t.userId && timeOffBy.get(t.userId)) || null);
     return {
       who: payrollName(t.user, t.sourceName),
       sourceName: t.sourceName,
       matched: !!t.userId,
-      reg: r2(Math.max(0, (t.regularHours || 0) - misc.total)),
+      reg: r2(Math.max(0, (t.regularHours || 0) - off.moved)),
       ot: r2(t.otHours),
       dbl: r2(t.doubleHours),
-      worked: r2(Math.max(0, (t.paidHours || 0) - misc.total)),
+      worked: r2(Math.max(0, (t.paidHours || 0) - off.moved)),
       premium: r2(charged),
-      pto: r2(cal.pto + misc.pto),
-      sick: r2(cal.sick + misc.sick),
-      payable: r2((t.paidHours || 0) + charged + cal.pto + cal.sick),
+      pto: r2(off.pto),
+      sick: r2(off.sick),
+      payable: r2((t.paidHours || 0) + charged + off.added),
       miles: t.data?.qspMiles ?? null,
       status: t.corrections.some((c) => c.status === "open")
         ? "Reported a problem"

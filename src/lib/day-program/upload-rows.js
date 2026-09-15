@@ -54,6 +54,10 @@ export async function buildDayProgramSheetRows(result, users, generatedOn, onShe
       // drops the mileage clause from the paragraph they sign, so nobody is
       // ever asked to attest to a figure we did not receive.
       qspMiles: p.miles ?? null,
+      // the same two fields the agency stores, so `payoutTimeOff` and
+      // `renderSheet` read one shape whichever office a sheet came from
+      qspSick: p.qspTimeOff?.sick ?? null,
+      qspPto: p.qspTimeOff?.pto ?? null,
       sourcePages: p.pages || [],
       schedulePages: p.schedulePages || [],
       // the evidence block, holding what this batch actually has: a rest

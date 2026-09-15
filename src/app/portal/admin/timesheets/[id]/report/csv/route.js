@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
-import { miscTimeOffHours } from "@/lib/timesheet/time-off";
+import { payoutTimeOff } from "@/lib/timesheet/time-off";
 
 // the payout figures as data. payroll keys these in somewhere else, and typing
 // them off a PDF is how a digit goes missing.
@@ -95,16 +95,13 @@ export async function GET(_req, { params }) {
   for (const ts of batch.timesheets) {
     const charged = standing.byId[ts.id]?.charged ?? 0;
     const assumptions = standing.byId[ts.id]?.assumptions ?? 0;
-    const cal = (ts.userId && timeOffBy.get(ts.userId)) || { pto: 0, sick: 0 };
-    // Misc time classified as PTO/sick moves columns rather than adding -
-    // it is already inside the QSP-paid figures, so worked shrinks by what
-    // the PTO/Sick columns gain and payable is untouched by construction.
-    const misc = miscTimeOffHours(ts.data?.days);
-    const workedReg = Math.max(0, (ts.regularHours || 0) - misc.total);
-    const worked = Math.max(0, (ts.paidHours || 0) - misc.total);
-    const pto = cal.pto + misc.pto;
-    const sick = cal.sick + misc.sick;
-    const payable = (ts.paidHours || 0) + charged + cal.pto + cal.sick;
+    // every record of this person's time off at once - see payoutTimeOff
+    const off = payoutTimeOff(ts, (ts.userId && timeOffBy.get(ts.userId)) || null);
+    const workedReg = Math.max(0, (ts.regularHours || 0) - off.moved);
+    const worked = Math.max(0, (ts.paidHours || 0) - off.moved);
+    const pto = off.pto;
+    const sick = off.sick;
+    const payable = (ts.paidHours || 0) + charged + off.added;
     t.reg += workedReg;
     t.ot += ts.otHours || 0;
     t.dbl += ts.doubleHours || 0;
