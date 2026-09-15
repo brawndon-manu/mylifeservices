@@ -7,9 +7,7 @@
 // shape the attendance board uses. Pressing the active mark clears it.
 import { createContext, useContext, useState, useTransition } from "react";
 import { markAttendance } from "../actions";
-
-const BTN =
-  "rounded-md border px-2 py-0.5 text-[11px] font-semibold transition";
+import AttendanceMarkControl from "./AttendanceMarkControl";
 
 // THE COUNT LINE MOVES WITH THE CLICKS - Mánu 2026-09-04: "why does it say 6
 // present when ive clicked them all but one." And NOT as a running delta on
@@ -40,15 +38,20 @@ export function RollCallCounts({ users }) {
   );
 }
 
-export default function RollCallButtons({ postId, userId, optionId = null, attended = null }) {
+export default function RollCallButtons({
+  postId,
+  userId,
+  optionId = null,
+  attended = null,
+  personName,
+}) {
   const [localAtt, setLocalAtt] = useState(attended);
   const ctx = useContext(RollCtx);
   // one source of truth per person: the shared map when a provider is above,
   // so the buttons and the count line can never disagree
   const att = ctx && userId in (ctx.marks || {}) ? ctx.marks[userId] : ctx ? attended : localAtt;
   const [, start] = useTransition();
-  const press = (status) => {
-    const next = att === status ? "" : status;
+  const press = (next) => {
     if (ctx) ctx.set(userId, next || null);
     else setLocalAtt(next || null);
     start(async () => {
@@ -56,30 +59,7 @@ export default function RollCallButtons({ postId, userId, optionId = null, atten
     });
   };
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => press("present")}
-        className={`${BTN} ${
-          att === "present"
-            ? "border-green-500 bg-green-500 text-white"
-            : "border-border-strong text-muted hover:border-green-500 hover:text-green-600"
-        }`}
-      >
-        Present
-      </button>
-      <button
-        type="button"
-        onClick={() => press("absent")}
-        className={`${BTN} ${
-          att === "absent"
-            ? "border-rose-500 bg-rose-500 text-white"
-            : "border-border-strong text-muted hover:border-rose-500 hover:text-rose-600"
-        }`}
-      >
-        Absent
-      </button>
-    </>
+    <AttendanceMarkControl value={att} onChange={press} personName={personName} />
   );
 }
 

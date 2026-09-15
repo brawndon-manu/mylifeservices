@@ -1,0 +1,126 @@
+.control {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--fill-2);
+  box-shadow: inset 0 0 0 1px var(--sep);
+}
+
+.option {
+  display: inline-flex;
+  min-width: 82px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+
+.option:hover {
+  background: var(--fill);
+  color: var(--foreground);
+}
+
+.option:active {
+  transform: scale(0.98);
+}
+
+.option:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.option[data-selected="true"] {
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.12),
+    inset 0 0 0 1px var(--sep);
+}
+
+.option[data-tone="present"][data-selected="true"] {
+  background: color-mix(in srgb, var(--status-positive) 12%, var(--surface));
+  color: var(--status-positive);
+}
+
+.option[data-tone="absent"][data-selected="true"] {
+  background: color-mix(in srgb, var(--status-danger) 10%, var(--surface));
+  color: var(--status-danger);
+}
+
+.icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.personRow {
+  container-type: inline-size;
+  break-inside: avoid-column;
+}
+
+.rosterList {
+  column-count: 1;
+}
+
+@media (min-width: 640px) {
+  .rosterList {
+    column-count: var(--roster-cols, 2);
+    column-gap: 24px;
+  }
+}
+
+.personActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+@container (max-width: 430px) {
+  .personActions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    padding-left: 40px;
+  }
+}
+
+:global(.dark) .option[data-selected="true"] {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px var(--sep);
+}
+
+@media (max-width: 639px) {
+  .control {
+    width: 100%;
+  }
+
+  .option {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option {
+    transition: none;
+  }
+}

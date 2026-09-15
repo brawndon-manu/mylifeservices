@@ -21,6 +21,8 @@ import {
   adminRemoveInvitee,
 } from "@/app/portal/announcements/actions";
 import ConcludeSession from "./ConcludeSession";
+import AttendanceMarkControl from "@/app/portal/announcements/_components/AttendanceMarkControl";
+import attendanceStyles from "@/app/portal/announcements/_components/AttendanceMarkControl.module.css";
 import {
   PersonKebab,
   AddToSession,
@@ -102,28 +104,33 @@ export default function MeetingBreakdown({ m }) {
     <OverrideProvider>
       <AttendanceCtx.Provider value={{ attendedOf, mark }}>
         <ToolsCtx.Provider value={tools}>
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-            <span className="flex items-center gap-2">
-              <span className="text-xs text-faint">People view</span>
-              <span className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+          <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <span className="text-xs font-medium text-muted">People view</span>
+              <span className="mt-1 flex rounded-[10px] bg-fill-2 p-[3px] shadow-[inset_0_0_0_1px_var(--sep)]">
                 {VIEWS.map((v) => (
                   <button
                     key={v.key}
                     type="button"
+                    aria-pressed={view === v.key}
                     onClick={() => pick(v.key)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    className={`min-h-8 rounded-[7px] px-3 text-xs transition active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                       view === v.key
-                        ? "bg-brand-light text-white"
-                        : "text-muted hover:text-foreground"
+                        ? "seg-on font-semibold text-foreground"
+                        : "font-medium text-muted hover:bg-fill hover:text-foreground"
                     }`}
                   >
                     {v.label}
                   </button>
                 ))}
               </span>
-            </span>
+            </div>
             <OverrideToggle />
           </div>
+
+          <p className="mt-3 text-xs leading-relaxed text-faint">
+            Select a status to mark attendance. Select it again to clear the mark.
+          </p>
 
           <div className="mt-4 space-y-2.5">
             {m.isSeries ? (
@@ -216,14 +223,13 @@ function ViaEmailTag() {
 function PersonLine({ user, postId, showDot, extra }) {
   const { attendedOf, mark } = useAttendance();
   const att = postId ? attendedOf(postId, user) : user.attended || null;
-  const rollBtn = "rounded-md border px-2 py-0.5 text-xs font-medium transition";
   return (
-    <div className="flex items-center gap-2.5 py-1">
+    <div className={`${attendanceStyles.personRow} flex flex-wrap items-center gap-x-2.5 gap-y-2 py-2`}>
       {showDot && (
         <span className={`h-2 w-2 flex-none rounded-full ${STATUS_DOT[att || "unmarked"]}`} />
       )}
       <Avatar name={user.displayName} image={user.image} size={26} />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <NameHover user={user} className="block truncate text-sm font-medium text-foreground" />
         {user.title && <div className="truncate text-xs text-muted">{user.title}</div>}
       </div>
@@ -231,33 +237,18 @@ function PersonLine({ user, postId, showDot, extra }) {
       {postId ? (
         // going row: roll-call is always visible; the kebab (move / remove) only
         // shows once Manual override is on.
-        <span className="ml-auto flex flex-none items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => mark(postId, user.id, att === "present" ? "" : "present", user.optionId)}
-            className={`${rollBtn} ${
-              att === "present"
-                ? "border-emerald-500 bg-emerald-500 text-white"
-                : "border-border-strong text-muted hover:border-emerald-500 hover:text-emerald-600"
-            }`}
-          >
-            Present
-          </button>
-          <button
-            type="button"
-            onClick={() => mark(postId, user.id, att === "absent" ? "" : "absent", user.optionId)}
-            className={`${rollBtn} ${
-              att === "absent"
-                ? "border-rose-500 bg-rose-500 text-white"
-                : "border-border-strong text-muted hover:border-rose-500 hover:text-rose-600"
-            }`}
-          >
-            Absent
-          </button>
+        <div className={attendanceStyles.personActions}>
+          <AttendanceMarkControl
+            value={att}
+            personName={user.displayName}
+            onChange={(status) => mark(postId, user.id, status, user.optionId)}
+          />
           <GoingKebab user={user} />
-        </span>
+        </div>
       ) : extra ? (
-        <span className="ml-auto flex flex-none items-center gap-1.5">{extra}</span>
+        <div className={attendanceStyles.personActions}>
+          {extra}
+        </div>
       ) : (
         user.reason && (
           <span className="ml-auto rounded-md border border-rose-300/40 bg-rose-50 px-2 py-0.5 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
@@ -344,7 +335,7 @@ function GroupedView({ going, postId }) {
 function StatusGroup({ dot, label, users, postId, open }) {
   if (users.length === 0) return null;
   return (
-    <details open={open} className="rounded-lg border border-border bg-background/60 px-3 py-2">
+    <details open={open} className="rounded-lg bg-fill px-3 py-2">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
         <span className={`h-2 w-2 rounded-full ${dot}`} />
         {label} <span className="text-faint">({users.length})</span>

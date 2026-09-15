@@ -54,6 +54,7 @@ import MeetingTime from "../_components/MeetingTime";
 import MeetingResponse from "../_components/MeetingResponse";
 import ConcludeMeeting from "../_components/ConcludeMeeting";
 import RollCallButtons, { RollCallProvider, RollCallCounts, RosterColumns } from "../_components/RollCallButtons";
+import attendanceStyles from "../_components/AttendanceMarkControl.module.css";
 import SlotAlertsToggle from "../_components/SlotAlertsToggle";
 import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
@@ -137,9 +138,9 @@ const PROSE =
 function PersonRow({ user, reason, rollPostId, optionId = null, extra = null }) {
   const att = user.attended || null;
   return (
-    <div className="flex items-center gap-2.5 py-1">
+    <div className={`${attendanceStyles.personRow} flex flex-wrap items-center gap-x-2.5 gap-y-2 py-2`}>
       <Avatar name={preferredName(user)} image={user.image} size={30} />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <NameHover user={nhUser(user)} className="block truncate text-sm font-medium text-foreground" />
         {user.title && (
           <div className="truncate text-xs text-muted">{user.title}</div>
@@ -151,7 +152,7 @@ function PersonRow({ user, reason, rollPostId, optionId = null, extra = null }) 
         </span>
       )}
       {(rollPostId || extra) && (
-        <span className="ml-auto flex flex-none items-center gap-1.5">
+        <div className={attendanceStyles.personActions}>
           {rollPostId && (
             <>
               {/* optimistic, no page reload - "its so damn slow" 2026-09-04 */}
@@ -160,11 +161,12 @@ function PersonRow({ user, reason, rollPostId, optionId = null, extra = null }) 
                 userId={user.id}
                 optionId={optionId}
                 attended={att}
+                personName={preferredName(user)}
               />
             </>
           )}
           {extra}
-        </span>
+        </div>
       )}
     </div>
   );
@@ -1287,7 +1289,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                               {users.length === 0 ? (
                                 <p className="py-1 text-xs text-faint">nobody yet</p>
                               ) : (
-                                <div className="sm:grid sm:gap-x-6 sm:[grid-template-columns:repeat(var(--roster-cols,2),minmax(0,1fr))]">
+                                <div className={attendanceStyles.rosterList}>
                                 {users.map((u) => (
                                   <PersonRow
                                     key={u.id}
