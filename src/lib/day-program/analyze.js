@@ -66,7 +66,19 @@ import { parseMileageReport, anyMilesDriven } from "./mileage.js";
 // take my break 12-12:10") is a STATED MISSED BREAK and stays a note. The
 // range, the 2-20 minute length and the overlap-with-recorded filter
 // constrain everything else, same as always.
-const NOTE_LABEL = /(?:break\s*#?\s*2|2nd\s+break|second\s+break|break\s+taken|break)\s*(?:at\s*)?[:\-]?\s*/i;
+// "REST PERIOD" IS THE TENTH SPELLING, and it is the one the day program
+// actually uses most: 21 notes name a second break that way and not one of them
+// was read. Dutwiler writes "2nd rest period" every time and was charged three
+// premiums for breaks her own notes documented; Zermeno has nine more in
+// August. The word "break" never appears in any of them.
+//
+// A SEMICOLON SEPARATES IT SOMETIMES - "2nd rest period; 1:20-1:30" - which is
+// a colon one shift-key slip away, the same typo the range already forgives
+// between digits.
+const NOTE_LABEL =
+  /(?:break\s*#?\s*2|2nd\s+break|second\s+break|break\s+taken|1st\s+rest\s*period|2nd\s+rest\s*period|second\s+rest\s*period|rest\s*period\s*#?\s*2|rest\s*period|break)\s*(?:at\s*)?[:;\-]?\s*/i;
+// the same pattern, scanned across the whole note - see noteBreaks
+const NOTE_LABEL_G = new RegExp(NOTE_LABEL.source, "gi");
 const NEGATED = /(?:\bno|\bnot|\bnever|\bmiss(?:ed|ing)?|\bskip(?:ped)?|\bunable[^.]{0,20}|\bwithout|\bdidn.?t(?:\s+\w+)?)\s*$/i;
 // `[:;]` because ; is : one shift-key slip away, and "12;20" between digits
 // is a colon typo every time - Matias 08/25, the one day of her fortnight
@@ -74,17 +86,39 @@ const NEGATED = /(?:\bno|\bnot|\bnever|\bmiss(?:ed|ing)?|\bskip(?:ped)?|\bunable
 // used as an actual separator has no digit on both sides and stays one.
 const NOTE_RANGE = /(\d{1,2}(?:[:;]\d{2})?\s*(?:am|pm)?)\s*[-–—]\s*(\d{1,2}(?:[:;]\d{2})?\s*(?:am|pm)?)/i;
 
-export function noteBreak(scheduleNotes) {
+// EVERY LABELLED RANGE IN THE NOTE, not just the first.
+//
+// It returned one, and that was fine while the only spellings were second-break
+// ones - people wrote the ten the report had missed and nothing else. The rest
+// period spellings come in pairs: "1st rest period: 10:00-10:10" on one line and
+// "2nd Rest Period: 1:00-1:10" on the next. Taking the first would hand back the
+// ten the report ALREADY has, which the stitch downstream then drops as a
+// duplicate - losing the second one and crediting nothing.
+//
+// Returning both is safe because that same overlap filter is what decides: a
+// noted window covering a recorded break credits nothing, and one the report
+// never saw credits a ten. 14 notes name more than one.
+export function noteBreaks(scheduleNotes) {
   const notes = String(scheduleNotes || "");
-  const label = NOTE_LABEL.exec(notes);
-  if (!label) return null;
-  if (NEGATED.test(notes.slice(0, label.index))) return null;
-  const after = notes.slice(label.index + label[0].length, label.index + label[0].length + 40);
-  const range = NOTE_RANGE.exec(after);
-  if (!range) return null;
-  const r = resolveRange(range[1].trim().replace(";", ":"), range[2].trim().replace(";", ":"));
-  if (!r || r.minutes < 2 || r.minutes > 20) return null;
-  return { out: r.from, in: r.to };
+  const out = [];
+  for (const label of notes.matchAll(NOTE_LABEL_G)) {
+    // a stated MISSED break stays a note - "unable to take my break 12-12:10"
+    if (NEGATED.test(notes.slice(0, label.index))) continue;
+    const from = label.index + label[0].length;
+    const range = NOTE_RANGE.exec(notes.slice(from, from + 40));
+    if (!range) continue;
+    const r = resolveRange(range[1].trim().replace(";", ":"), range[2].trim().replace(";", ":"));
+    if (!r || r.minutes < 2 || r.minutes > 20) continue;
+    if (out.some((x) => x.out === r.from && x.in === r.to)) continue;
+    out.push({ out: r.from, in: r.to });
+  }
+  return out;
+}
+
+// the single-break reading, kept because it is what reads naturally at a call
+// site that only wants to know whether a note names one at all
+export function noteBreak(scheduleNotes) {
+  return noteBreaks(scheduleNotes)[0] || null;
 }
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -241,8 +275,15 @@ export async function analyzeDayProgram({
     // the 2nd breaks this person's own schedule notes name, per date
     const noted = new Map();
     for (const row of personRows) {
-      const nb = noteBreak(row.scheduleNotes);
-      if (nb && row.date && !noted.has(row.date)) noted.set(row.date, nb);
+      if (!row.date) continue;
+      for (const nb of noteBreaks(row.scheduleNotes)) {
+        const list = noted.get(row.date) || [];
+        // the report repeats the same note on every row of a day, so the same
+        // window arrives several times over
+        if (list.some((x) => x.out === nb.out && x.in === nb.in)) continue;
+        list.push(nb);
+        noted.set(row.date, list);
+      }
     }
 
     // stitch the two sources per day: the report's own windows, then any break
@@ -262,8 +303,7 @@ export async function analyzeDayProgram({
     const days = s.days.map((d) => {
       const sd = schedDay.get(d.date) || null;
       const own = windows.get(d.date) || [];
-      const fromNote = [noted.get(d.date)]
-        .filter(Boolean)
+      const fromNote = (noted.get(d.date) || [])
         .filter((w) => !own.some((o) => overlaps(o, w)))
         .map((w) => ({ ...w, fit: null, source: "note" }));
       const soFar = [...own, ...fromNote];
