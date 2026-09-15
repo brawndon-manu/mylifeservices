@@ -158,11 +158,28 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   // is nothing to move forward to yet - and still offers the way back.
   if (blocked) {
     return (
-      <div className={`${flow ? "" : "mt-3"} flex items-center gap-3`}>
+      <div className={`${flow ? "" : "mt-3"} flex flex-wrap items-center gap-3`}>
         {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
         <p className="ml-auto text-xs text-muted">
           Answer everything on this day to finish with it.
         </p>
+        {/* MOVING ON AND FINISHING ARE TWO DIFFERENT THINGS, and one button was
+            doing both - so gating the second gated the first, and a day with a
+            question owing had no way forward at all. On a real fortnight that
+            was twelve of thirteen days: somebody could only ever go BACK.
+            This one only navigates. It does not mark the day finished and does
+            not tick its ring, so the sentence beside it stays true and the day
+            stays amber until its questions are actually answered. */}
+        {nav?.go && nav.index < (nav.dates?.length ?? 0) - 1 && (
+          <button
+            type="button"
+            disabled={!!flow?.editorTarget}
+            onClick={() => nav.go(nav.index + 1)}
+            className={`min-h-[44px] rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${flow ? reviewStyles.primary : ""}`}
+          >
+            Next
+          </button>
+        )}
       </div>
     );
   }
