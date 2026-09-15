@@ -296,5 +296,13 @@ export async function parseServiceNotesPdf(bytes) {
   }
   const notes = readNotePages(pages);
   if (!notes.length) throw new Error("no DSNs found in that PDF");
-  return notes;
+  // A NOTE SAYS WHICH REPORT IT CAME OFF, HERE, not only when it is merged
+  // with the .xls. `mergeNotes` used to be the only thing that set this, so a
+  // batch uploaded with this PDF and no Employee Service Notes file produced
+  // notes carrying no source at all - and the rest attestation, which will only
+  // trust a signature that came off the DSN, then trusted none of them. It
+  // failed safe, because a batch with no usable signatures charges nobody, but
+  // silently: 270 signed notes and not one attested day. Tagging it at the
+  // point of reading means every caller gets it, merged or not.
+  return notes.map((n) => ({ ...n, source: "dsn" }));
 }

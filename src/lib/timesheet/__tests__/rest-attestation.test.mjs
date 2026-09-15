@@ -339,3 +339,22 @@ test("buildQuestions: restIsMealLength still asks on an attested day - it moves 
     );
   }
 });
+
+test("a note carries its source from the moment it is read, not only once merged", () => {
+  // THE BUG THIS PINS. `source` used to be set only by `mergeNotes`, so a batch
+  // uploaded with the Daily Service Notes PDF and no Employee Service Notes
+  // .xls produced notes with no source at all - and `signedDsnDates`, which
+  // will only trust a signature that came off the DSN, threw every one of them
+  // away. 270 signed notes, zero attested days, and nothing said so because a
+  // batch with no usable signatures charges nobody by design.
+  const src = fs.readFileSync("src/lib/timesheet/service-notes.js", "utf8");
+  assert.match(src, /return notes\.map\(\(n\) => \(\{ \.\.\.n, source: "dsn" \}\)\);/,
+    "parseServiceNotesPdf must tag its own output");
+  // and the consumer has to actually accept that shape
+  const notes = [{ source: "dsn", employee: "Devin Bass", date: "09/02/26", signedAt: "4:00 PM", signedDate: "09/02/26" }];
+  const key = (n) => String(n || "").toLowerCase();
+  assert.equal(signedDsnDates(notes, key).get("devin bass")?.size, 1);
+  // untagged is the failure, and it must read as no evidence rather than as evidence
+  const untagged = notes.map(({ source, ...rest }) => rest);
+  assert.equal(signedDsnDates(untagged, key).size, 0, "an untagged note attests nothing");
+});
