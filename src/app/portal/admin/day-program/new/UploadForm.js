@@ -55,6 +55,8 @@ export default function UploadForm({ action, into = null }) {
     { role: "Rest breaks", kind: "xls", name: names.rests },
     { role: "Schedule", kind: "pdf", name: names.schedule },
     { role: "Mileage", kind: "xls", name: names.mileage },
+    { role: "Service notes", kind: "pdf", name: names.notes },
+    { role: "Clock", kind: "xls", name: names.clock },
   ];
 
   return (
@@ -83,7 +85,7 @@ export default function UploadForm({ action, into = null }) {
       </p>
       {unplaced.length > 0 && (
         <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
-          Not one of the four exports, so it was not placed: {unplaced.join(", ")}
+          Not one of the six exports, so it was not placed: {unplaced.join(", ")}
         </p>
       )}
       <FilePick
@@ -115,6 +117,20 @@ export default function UploadForm({ action, into = null }) {
         hint="QSP > Reports > Employee Mileage Tracking. The day program has no payroll report to carry a mileage column, so this is the only place miles come from. Leave it out and the sheet says nothing about mileage, rather than printing a 0.00 nobody should have to attest to."
         accept=".xls,application/vnd.ms-excel"
         onPick={pick("mileage")}
+      />
+      <FilePick
+        id="notes"
+        label="Employee Detailed Daily Service Notes (.pdf) - optional"
+        hint="QSP > Reports > Employee Detailed Daily Service Notes, run for All Offices. This is the only export carrying a signature, and the rest break attestation is read off it: a day somebody signed a note on owes no rest premium for a ten nobody wrote down. Leave it out and no day is attested, and none is charged for it either."
+        accept=".pdf,application/pdf"
+        onPick={pick("notes")}
+      />
+      <FilePick
+        id="clock"
+        label="QSClock Time and Attendance Report (.xls) - optional"
+        hint="QSP > Reports > QSClock Time and Attendance. The only source that tells a punch somebody clocked from one typed in afterwards. Kept with the batch and read; the per-sheet punch checks the MLS batches get are not built here yet."
+        accept=".xls,application/vnd.ms-excel"
+        onPick={pick("clock")}
       />
       {/* deliberately last: the upload refuses a file holding days nobody
           has worked, and this is the way past that check, so it should read

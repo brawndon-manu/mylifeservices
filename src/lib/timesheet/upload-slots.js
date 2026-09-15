@@ -18,14 +18,26 @@ export const UPLOAD_SLOTS = [
   { id: "scheduleNotes", match: /employee schedule notes/i, ext: /\.xls$/i },
 ];
 
-// THE DAY PROGRAM'S FOUR, same idea, its own picker ids. Its Simple
-// Timesheet and Rest Periods exports share QSP's names with the MLS ones -
-// only which form they are dropped on decides which batch they feed.
+// THE DAY PROGRAM'S SIX, same idea, its own picker ids. Its Simple Timesheet
+// and Rest Periods exports share QSP's names with the MLS ones - only which
+// form they are dropped on decides which batch they feed.
+//
+// THE NOTES AND THE CLOCK WERE ADDED LAST, and the notes one is not a
+// convenience. The day program runs the same engine as the agency, so it is
+// under the same rest-break attestation - and with no signatures to read, no
+// day program day could ever be attested. The same export covers both offices,
+// so this is a slot rather than a new document.
+//
+// ORDER MATTERS where names nest, exactly as above: "Employee Detailed Daily
+// Service Notes" would match a plainer service-notes rule, so the specific one
+// sits first and the extension has to agree.
 export const DP_UPLOAD_SLOTS = [
   { id: "timesheet", match: /simple timesheet/i, ext: /\.pdf$/i },
   { id: "rests", match: /rest periods report/i, ext: /\.xls$/i },
   { id: "schedule", match: /employee schedules/i, ext: /\.pdf$/i },
   { id: "mileage", match: /mileage tracking/i, ext: /\.xls$/i },
+  { id: "notes", match: /detailed daily service notes/i, ext: /\.pdf$/i },
+  { id: "clock", match: /qsclock|time and attendance/i, ext: /\.xls$/i },
 ];
 
 // -> slot id, or null for a file that is not one of the form's exports

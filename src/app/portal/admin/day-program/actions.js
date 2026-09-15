@@ -96,6 +96,21 @@ export async function uploadDayProgramBatch(formData) {
   const mileageFile = formData.get("mileage");
   const hasMileage = present(mileageFile);
 
+  // THE DAILY SERVICE NOTES PDF, optional but load-bearing: it is the only
+  // document carrying a signature, and the rest-break attestation is read off
+  // it. Without one no day program day can be attested - which the engine
+  // treats as "no source" and charges nobody for, rather than as a period in
+  // which nobody signed. The same export covers both offices.
+  const notesFile = formData.get("notes");
+  const hasNotes = present(notesFile);
+
+  // The QSClock Time and Attendance export, optional: the only source that
+  // separates a punch somebody clocked from one typed in afterwards. Stored and
+  // parsed here; the per-sheet findings the agency builds from it are not wired
+  // into the day program yet.
+  const clockFile = formData.get("clock");
+  const hasClock = present(clockFile);
+
   // MID-PERIOD UPLOADS, same option the MLS upload has. The day program runs
   // these several times a day right through the period, so the refusal of
   // future days needs the same way past it: keep the window, drop the rest.
@@ -112,6 +127,8 @@ export async function uploadDayProgramBatch(formData) {
   const restsBytes = Buffer.from(await restsFile.arrayBuffer());
   const scheduleBytes = hasSched ? new Uint8Array(await schedFile.arrayBuffer()) : null;
   const mileageBytes = hasMileage ? Buffer.from(await mileageFile.arrayBuffer()) : null;
+  const notesBytes = hasNotes ? new Uint8Array(await notesFile.arrayBuffer()) : null;
+  const clockBytes = hasClock ? Buffer.from(await clockFile.arrayBuffer()) : null;
 
   let result;
   try {
@@ -120,6 +137,10 @@ export async function uploadDayProgramBatch(formData) {
       restsBytes,
       scheduleBytes,
       mileageBytes,
+      notesBytes,
+      staff: await prisma.user.findMany({
+        select: { name: true, preferredFirstName: true, preferredLastName: true },
+      }),
       partial: wantPartial ? { from: partialFromInput, to: partialToInput } : null,
     });
   } catch (e) {
@@ -332,13 +353,19 @@ export async function uploadDayProgramBatch(formData) {
     const blob = await putBlob(key, body, { access: "public", contentType });
     return blob.url;
   };
-  let sourceUrl, restsUrl, scheduleUrl = null, mileageUrl = null;
+  let sourceUrl, restsUrl, scheduleUrl = null, mileageUrl = null, notesUrl = null, clockUrl = null;
   try {
     const tag = () => randomBytes(10).toString("hex");
     sourceUrl = await store(`timesheets/source/${tag()}.pdf`, Buffer.from(timesheetBytes), "application/pdf");
     restsUrl = await store(`timesheets/rests/${tag()}.xls`, restsBytes, "application/vnd.ms-excel");
     if (scheduleBytes) {
       scheduleUrl = await store(`timesheets/schedule/${tag()}.pdf`, Buffer.from(scheduleBytes), "application/pdf");
+    }
+    if (notesBytes) {
+      notesUrl = await store(`timesheets/notes/${tag()}.pdf`, Buffer.from(notesBytes), "application/pdf");
+    }
+    if (clockBytes) {
+      clockUrl = await store(`timesheets/clock/${tag()}.xls`, clockBytes, "application/vnd.ms-excel");
     }
     if (mileageBytes) {
       mileageUrl = await store(
@@ -368,6 +395,10 @@ export async function uploadDayProgramBatch(formData) {
           restsName: String(restsFile.name || "rest-periods.xls"),
           scheduleUrl,
           scheduleName: hasSched ? String(schedFile.name || "schedule.pdf") : null,
+          notesUrl,
+          notesName: hasNotes ? String(notesFile.name || "service-notes.pdf") : null,
+          clockUrl,
+          clockName: hasClock ? String(clockFile.name || "clock.xls") : null,
           dpMileageUrl: mileageUrl,
           dpMileageName: hasMileage ? String(mileageFile.name || "mileage.xls") : null,
           restsByDate: result.restRows,
@@ -386,6 +417,20 @@ export async function uploadDayProgramBatch(formData) {
       await tx.timesheet.createMany({
         data: sheetRows.map((row) => ({ ...row, batchId: b.id })),
       });
+      // the parsed notes ride on their own row, the same shape and for the same
+      // reason as the agency's: reading them back off the batch JSON costs
+      // 1.5 seconds against this table's 68ms.
+      if (result.notes?.length) {
+        await tx.batchServiceNotes.create({
+          data: {
+            batchId: b.id,
+            notes: result.notes,
+            noteCount: result.notes.length,
+            pdfCount: result.notes.length,
+            serviceCount: 0,
+          },
+        });
+      }
       return b;
     }, { timeout: 120_000, maxWait: 20_000 });
   } catch (e) {

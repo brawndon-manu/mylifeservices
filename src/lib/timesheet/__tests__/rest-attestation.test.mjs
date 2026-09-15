@@ -14,6 +14,7 @@
 // The rule lives in rest-attestation.js, the join in dsn-attestation.js.
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import {
   attestationInEffect, restAttestedOn, attestedDates, REST_ATTESTATION_EFFECTIVE,
@@ -67,6 +68,21 @@ test("a batch that collected no signatures charges nobody", () => {
   // and the whole thing must be able to fail: WITH a source, the same
   // unsigned day is not attested
   assert.equal(restAttestedOn("09/02/26", { signed: false, sourceAvailable: true }), false);
+});
+
+test("the day program feeds the engine both attestation inputs", () => {
+  // It runs the same analyzeDay as the agency, so a day program day that
+  // arrives without these is judged with no evidence at all. The gate makes
+  // that harmless rather than expensive, but harmless is not the goal - the
+  // day program is under the same rule and should be answering it.
+  const dp = fs.readFileSync("src/lib/day-program/analyze.js", "utf8");
+  assert.match(dp, /dsnSigned: signedDsn\(d\.date\)/, "the per-day signature");
+  assert.match(dp, /dsnSourceAvailable,/, "whether the batch collected any at all");
+  assert.match(dp, /parseServiceNotesPdf\(notesBytes\)/, "and it reads the notes itself");
+  // the upload has to offer somewhere to put them, or none of the above runs
+  const slots = fs.readFileSync("src/lib/timesheet/upload-slots.js", "utf8");
+  const dpBlock = slots.slice(slots.indexOf("DP_UPLOAD_SLOTS"));
+  assert.match(dpBlock, /id: "notes"/, "the day program form takes the notes PDF");
 });
 
 // ---------------------------------------------------------------------------

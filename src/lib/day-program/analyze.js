@@ -27,6 +27,9 @@ import { reviewSheet } from "../timesheet/anomalies.js";
 import { restKey, restRowTimes, clockMin, serviceFit } from "../timesheet/rests.js";
 import { dayProgramRestRows } from "./rest-xls.js";
 import { restWindowsByDate } from "../timesheet/reanalyze.js";
+import { parseServiceNotesPdf } from "../timesheet/service-notes.js";
+import { signedDsnDates, dsnSignedFor, attestationReach } from "../timesheet/dsn-attestation.js";
+import { buildWhoKey } from "../timesheet/people.js";
 import { parseSchedulePdf, compareToSchedule, scheduleBlocks } from "../timesheet/schedule.js";
 import { storedDay, totalsFromDays } from "../timesheet/stored.js";
 // clockLabel and resolveRange only: `parseRestReport` in that file read the
@@ -121,7 +124,11 @@ const tokenKey = (name) =>
 const overlaps = (a, b) => a.out < b.in && b.out < a.in;
 
 export async function analyzeDayProgram({
-  timesheetBytes, restsBytes, scheduleBytes, mileageBytes,
+  timesheetBytes, restsBytes, scheduleBytes, mileageBytes, notesBytes,
+  // the portal accounts, so the notes can be joined to the sheets. The two
+  // documents spell people differently and `buildWhoKey` is the resolver the
+  // agency and the audit already share - see dsn-attestation.js.
+  staff = [],
   // MID-PERIOD UPLOADS, same contract as the MLS side. Null refuses a file
   // holding days nobody has worked yet; { from, to } (either end optional)
   // keeps the window and drops the rest. The day program runs these several
@@ -131,6 +138,35 @@ export async function analyzeDayProgram({
   partial = null,
 }) {
   let sheets = (await parseTimesheetPdf(timesheetBytes)).filter((s) => !s.empty);
+
+  // THE REST-BREAK ATTESTATION, on the same terms as the agency. The day
+  // program runs this same engine and is under the same rule, so without the
+  // Daily Service Notes it had no signatures to read and no day could be
+  // attested - which is not "nobody signed", it is "nobody was asked". The
+  // export covers both offices, so this is the same document, not a new one.
+  //
+  // NO NOTES MEANS NO SOURCE, and a batch with no source charges nobody. See
+  // rest-attestation.js; the flag below is what carries that.
+  const whoKey = buildWhoKey(staff);
+  let dsnNotes = [];
+  if (notesBytes) {
+    try {
+      dsnNotes = await parseServiceNotesPdf(notesBytes);
+      console.log(`day program service notes parsed: ${dsnNotes.length} notes`);
+    } catch (e) {
+      console.error("day program service notes parse failed:", e);
+      dsnNotes = [];
+    }
+  }
+  const dsnByPerson = signedDsnDates(dsnNotes, whoKey);
+  const dsnSourceAvailable = dsnNotes.some((n) => n?.source === "dsn");
+  if (dsnSourceAvailable) {
+    const reach = attestationReach(dsnByPerson, whoKey, sheets.map((x) => x.employee));
+    console.log(
+      `day program rest attestation: ${reach.matched}/${reach.of} people carry a signed DSN, ` +
+      `${reach.days} attested days`,
+    );
+  }
 
   // ONE DEFINITION OF "FUTURE", the same futureDates/trimDays pair the MLS
   // upload runs - see ../timesheet/partial.js for why the guard and the trim
@@ -190,6 +226,7 @@ export async function analyzeDayProgram({
     const key = aliasKey(s.employee);
     const personRows = restsFor.get(key) || [];
     const windows = restWindowsByDate(personRows, { restRowTimes, clockMin, serviceFit });
+    const signedDsn = dsnSignedFor(dsnByPerson, whoKey, s.employee);
 
 
     // the report's own per-date count, the same figure the MLS upload feeds as
@@ -249,6 +286,12 @@ export async function analyzeDayProgram({
         // run without it - so a day with nothing recorded is a real zero
         // rather than an unanswerable.
         restSourceAvailable: true,
+        // did this person sign a Daily Service Note on this day, and did the
+        // batch collect any signatures at all. One signed note covers the whole
+        // day. Both false when no notes were uploaded, which attests everybody
+        // rather than charging them for a document that is not there.
+        dsnSigned: signedDsn(d.date),
+        dsnSourceAvailable,
       };
     });
 
@@ -339,6 +382,15 @@ export async function analyzeDayProgram({
     mileage: mileage
       ? { people: mileage.size, anyMiles: anyMilesDriven(mileage), unmatched: unmatchedMileage }
       : null,
+    // the parsed notes, handed back so the caller can store them on the batch
+    // the way the agency does, plus how far the name join actually reached. A
+    // join that resolves nobody reads exactly like a period nobody attested,
+    // which is why the number is reported rather than discovered later.
+    notes: dsnNotes,
+    attestation: {
+      sourceAvailable: dsnSourceAvailable,
+      ...attestationReach(dsnByPerson, whoKey, sheets.map((x) => x.employee)),
+    },
   };
 }
 
