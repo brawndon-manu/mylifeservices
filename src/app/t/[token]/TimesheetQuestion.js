@@ -138,7 +138,17 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
         disabled={!!flow?.editorTarget || (flow?.readOnly && nav?.index === nav?.dates?.length - 1)}
         onClick={() => {
           flow?.markReviewed(date);
-          if (hasQuestions) done.markReady(date);
+          // A DAY WITH NOTHING TO CHECK IS STILL A DAY YOU FINISHED.
+          //
+          // This was `if (hasQuestions)`, so pressing Next on a quiet day
+          // marked nothing and its ring stayed an empty circle - somebody
+          // working through a fortnight got no sign they had been anywhere,
+          // and on most days of most periods there is nothing to answer.
+          //
+          // Unconditional changes nothing for a day that asks something: that
+          // branch already called this. The only day that behaves differently
+          // is the one that used to record nothing at all.
+          done.markReady(date);
           if (nav?.go) nav.go(nav.index + 1);
         }}
         className={`ml-auto min-h-[44px] rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${flow ? reviewStyles.primary : ""}`}

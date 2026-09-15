@@ -30,3 +30,31 @@ test("a deep link into one day still wins over the opening day", () => {
   assert.match(RAIL, /window\.addEventListener\("hashchange", onHash\);\s*\n\s*onHash\(\);/,
     "and still runs on mount, not only on a later hash change");
 });
+
+// ---------------------------------------------------------------------------
+// PRESSING NEXT MARKS THE DAY FINISHED, EVEN A QUIET ONE.
+//
+// It used to be `if (hasQuestions) done.markReady(date)`, so a day with nothing
+// to check recorded nothing and its ring stayed an empty circle however many
+// times you pressed Next. On most days of most periods there is nothing to
+// answer, so somebody reading a fortnight through got no sign of progress at
+// all - which is the whole point of walking it day by day.
+const QUESTION = fs.readFileSync("src/app/t/[token]/TimesheetQuestion.js", "utf8");
+
+test("Next marks the day finished whether or not it asked anything", () => {
+  assert.match(QUESTION, /flow\?\.markReviewed\(date\);/);
+  assert.ok(
+    !/if \(hasQuestions\) done\.markReady\(date\);/.test(QUESTION),
+    "a quiet day must not be the one day Next records nothing for",
+  );
+  assert.match(QUESTION, /\n\s*done\.markReady\(date\);/,
+    "it is called unconditionally now");
+});
+
+test("the answered counter still counts questions, not days walked past", () => {
+  // marking quiet days finished must not turn "1 of 2 days answered" into
+  // "1 of 12" - that line is about questions and has to stay about questions
+  assert.match(RAIL, /const need = days\.filter\(\(d\) => d\.needs\);/,
+    "the counter is scoped to days that need an answer");
+  assert.match(RAIL, /\{done\} of \{need\.length\} day/);
+});
