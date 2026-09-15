@@ -181,6 +181,21 @@ function parseEventFields(formData, tag) {
   };
 }
 
+// TOPICS ARRIVE AS A TEXTAREA, one per line, and leave as an array. Split
+// here rather than storing the blob, because the attendance report prints
+// them as a list and a reader should not be shown somebody's line breaks.
+// Blank lines drop, so a stray return at the end does not become an empty
+// bullet on a document that goes in a file.
+const TOPIC_MAX = 40;
+function parseTopics(raw) {
+  if (typeof raw !== 'string') return [];
+  return raw
+    .split(/\r?\n/)
+    .map((t) => t.trim().slice(0, 200))
+    .filter(Boolean)
+    .slice(0, TOPIC_MAX);
+}
+
 function parseMeetingFields(formData, tag) {
   const blank = {
     meetingKind: null,
@@ -203,6 +218,9 @@ function parseMeetingFields(formData, tag) {
     meetingAttestationFormId: null,
     meetingAttestationSubject: null,
     meetingAttestationBody: null,
+    meetingBackfilled: false,
+    meetingRecordSource: null,
+    meetingTopics: [],
   };
   const trim = (s, max) => {
     const v = typeof s === "string" ? s.trim() : "";
@@ -326,15 +344,21 @@ function parseMeetingFields(formData, tag) {
     meetingTimezone: meetingAt ? trim(formData.get("meetingTimezone"), 60) : null,
     meetingDurationFromMin: durMin("meetingDurFromHrs", "meetingDurFromMin"),
     meetingDurationToMin: durMin("meetingDurToHrs", "meetingDurToMin"),
-    meetingResponseDueAt: parseDateField(formData.get("meetingResponseDueAt")),
-    meetingResponseDueTz:
-      trim(formData.get("meetingResponseDueTz"), 60) || null,
-    zoomLinkTbd: online ? formData.get("zoomLinkTbd") === "on" : false,
-    meetingNightBefore: formData.get("meetingNightBefore") === "on",
+    meetingResponseDueAt: backfilled ? null : parseDateField(formData.get("meetingResponseDueAt")),
+    meetingResponseDueTz: backfilled
+      ? null
+      : trim(formData.get("meetingResponseDueTz"), 60) || null,
+    zoomLinkTbd: online && !backfilled ? formData.get("zoomLinkTbd") === "on" : false,
+    meetingNightBefore: backfilled ? false : formData.get("meetingNightBefore") === "on",
     meetingReminderLeadMin: (() => {
       const n = parseInt(formData.get("meetingReminderLeadMin"), 10);
       return Number.isFinite(n) && n >= 0 && n <= 1440 ? n : 10;
     })(),
+    meetingBackfilled: backfilled,
+    meetingRecordSource: backfilled ? trim(formData.get("meetingRecordSource"), 120) : null,
+    // every meeting, not only the backfilled ones - a meeting posted today can
+    // carry its agenda and its report reads the same either way
+    meetingTopics: parseTopics(formData.get("meetingTopics")),
     // the wording for the attestation mail. the form ID itself is resolved
     // separately and asynchronously - see resolveAttestationFormId - because a
     // posted id has to be checked against the database before it is trusted.

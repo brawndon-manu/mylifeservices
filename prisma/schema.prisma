@@ -468,6 +468,14 @@ model Announcement {
   // sign-in sheet. Free text because there is no list to pick from, and the
   // report says it rather than implying the portal was there.
   meetingRecordSource         String?
+  // WHAT THE MEETING ACTUALLY COVERED, one topic per entry. Every meeting, not
+  // only the ones brought in afterwards: a meeting posted today can carry its
+  // agenda, and the attendance report then reads the same either way.
+  //
+  // Its own column rather than reusing `content`, because a backfilled meeting
+  // has no body to put it in, and a record somebody reads later wants a list
+  // rather than prose with the topics buried in it.
+  meetingTopics               String[]                      @default([])
   zoomLink                    String?
   zoomCode                    String?
   meetingAddress              String?

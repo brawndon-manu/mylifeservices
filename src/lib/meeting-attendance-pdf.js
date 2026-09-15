@@ -72,7 +72,8 @@ function fit(s, maxW, font, size) {
 }
 
 export async function renderAttendanceReport(
-  { meetingTitle, mandatory, metaLine, recordNote, office, stats, groups, single, cantAll, noResponse },
+  { meetingTitle, mandatory, metaLine, recordNote, office, stats, groups, single, cantAll, noResponse,
+    topics = [], materials = [] },
   opts = {},
 ) {
   const doc = await PDFDocument.create();
@@ -183,6 +184,55 @@ export async function renderAttendanceReport(
   };
 
   const rollCall = { present: ["Present", GREEN], absent: ["Absent", RED] };
+
+  // WHAT THE MEETING WAS ABOUT, BEFORE WHO WAS AT IT. The acknowledgment
+  // report puts the post's own text above its roster for the same reason: a
+  // record of attendance that does not say what was attended is a list of
+  // names. Both sections are optional and neither draws a heading it has
+  // nothing to put under.
+  const section = (label) => {
+    need(46);
+    text(label, L, y, { size: 10.5, f: bold, color: BRAND });
+    y -= 15;
+  };
+
+  if (topics.length) {
+    section("What was covered");
+    for (const t of topics) {
+      // a topic can be a sentence, so it wraps rather than being cut
+      const lines = wrapAt(t, R - L - 14, font, 9);
+      need(lines.length * 11 + 6);
+      lines.forEach((ln, i) => {
+        if (i === 0) text("-", L + 2, y, { size: 9, color: MUTED });
+        text(ln, L + 14, y, { size: 9 });
+        y -= 11;
+      });
+      y -= 2;
+    }
+    y -= 8;
+  }
+
+  if (materials.length) {
+    section("Materials used");
+    const anyBytes = materials.some((m) => m.bytes);
+    for (const m of materials) {
+      need(14);
+      text("-", L + 2, y, { size: 9, color: MUTED });
+      text(fit(m.name, R - L - 150, font, 9), L + 14, y, { size: 9 });
+      // a document that could not be read is still named, because the meeting
+      // was run from it either way
+      const tail = m.note || (m.bytes ? "included below" : "in the portal");
+      text(tail, R - font.widthOfTextAtSize(tail, 8), y, { size: 8, color: MUTED });
+      y -= 13;
+    }
+    if (anyBytes) {
+      y -= 4;
+      need(14);
+      text("The documents follow this report in full.", L, y, { size: 8, color: MUTED });
+      y -= 13;
+    }
+    y -= 8;
+  }
 
   const peopleTable = (cols, rows) => {
     tableHead(cols);
@@ -317,9 +367,14 @@ export async function renderAttendanceReport(
     y -= 9.5;
   }
 
-  const all = doc.getPages();
-  all.forEach((pg, i) => {
-    pg.drawText(`Page ${i + 1} of ${all.length}`, {
+  // NUMBERED BEFORE THE MATERIALS ARE APPENDED, so "Page 2 of 3" counts the
+  // report and not somebody's slide deck. The appended pages are left exactly
+  // as they were made - a footer stamped across a slide at an unknown page
+  // size is how a clean document gets ruined, and the report has already said
+  // which documents follow and in what order.
+  const own = doc.getPages();
+  own.forEach((pg, i) => {
+    pg.drawText(`Page ${i + 1} of ${own.length}`, {
       x: R - 60, y: 28, size: 7.5, font, color: MUTED,
     });
     if (opts.generatedOn) {
@@ -328,6 +383,21 @@ export async function renderAttendanceReport(
       });
     }
   });
+
+  // the documents themselves, in the order the report listed them. A file that
+  // will not parse is skipped rather than failing the whole download: the
+  // attendance is the thing somebody came for, and the list above already
+  // names every document either way.
+  for (const m of materials) {
+    if (!m.bytes) continue;
+    try {
+      const src = await PDFDocument.load(m.bytes, { ignoreEncryption: true });
+      const pages = await doc.copyPages(src, src.getPageIndices());
+      for (const pg of pages) doc.addPage(pg);
+    } catch {
+      // unreadable or encrypted beyond ignoreEncryption - listed, not attached
+    }
+  }
 
   return { bytes: await doc.save() };
 }

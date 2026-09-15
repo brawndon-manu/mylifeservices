@@ -77,6 +77,10 @@ const nextConfig = {
   outputFileTracingIncludes: {
     // read off disk by certificates/render.js through a runtime-built path
     "/portal/admin/forms/certificates/**": ["./public/fonts/*.ttf"],
+    // the attendance report carries the documents a meeting was run from, and
+    // meeting-materials.js reads a library pick straight out of public/ - the
+    // same runtime-built path, the same reason it is named here
+    "/portal/admin/meeting-attendance/**": ["./public/forms/*.pdf"],
     "/portal/admin/timesheets/**": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],

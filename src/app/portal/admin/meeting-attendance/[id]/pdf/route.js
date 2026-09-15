@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 import { ackAudienceWhere, isCompanyMeeting, recordNoteOf } from "@/lib/announcements";
+import { loadMeetingMaterials } from "@/lib/meeting-materials";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
 import { officeFromSearch } from "@/lib/positions";
@@ -38,6 +39,10 @@ export async function GET(req, { params }) {
       meetingResponseDueTz: true,
       meetingBackfilled: true,
       meetingRecordSource: true,
+      meetingTopics: true,
+      // the documents the meeting was run from, so they can ride inside the
+      // report rather than be linked from it
+      attachments: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
@@ -102,6 +107,8 @@ export async function GET(req, { params }) {
         mandatory: !!m.meetingMandatory,
         metaLine: meta.metaLine,
         recordNote: recordNoteOf(m),
+        topics: m.meetingTopics || [],
+        materials: await loadMeetingMaterials(m),
         office: office || null,
         stats: {
           backfilled: !!m.meetingBackfilled,

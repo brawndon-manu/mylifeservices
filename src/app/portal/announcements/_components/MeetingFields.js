@@ -497,6 +497,40 @@ export default function MeetingFields({
     <div className="space-y-5 rounded-md border border-border bg-surface-2 p-4">
       <p className="text-sm font-semibold text-foreground">Meeting details</p>
 
+      {backfilled && (
+        <>
+          <input type="hidden" name="meetingBackfilled" value="on" />
+          <input
+            type="hidden"
+            name="meetingRecordSource"
+            value={d.meetingRecordSource || ""}
+          />
+          <p className="rounded-md bg-surface px-3 py-2 text-xs text-muted">
+            This meeting happened before the portal held it. Staff never see it
+            and no email or reminder goes out. Who attended is edited on the
+            attendance page.
+          </p>
+        </>
+      )}
+
+      <div>
+        <label htmlFor="meetingTopics" className={LABEL}>
+          Topics covered <span className="text-faint">(optional)</span>
+        </label>
+        <textarea
+          id="meetingTopics"
+          name="meetingTopics"
+          rows={4}
+          defaultValue={(d.meetingTopics || []).join("\n")}
+          placeholder={"Call-outs and missed sessions\nDocumenting a visit in QSP\nWhat a service note has to say"}
+          className={INPUT}
+        />
+        <p className="mt-1 text-xs text-muted">
+          One topic per line. They print on the attendance report under what was
+          covered.
+        </p>
+      </div>
+
       <div>
         <label htmlFor="meetingKind" className={LABEL}>
           Kind of meeting

@@ -77,6 +77,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       meetingResponseDueTz: true,
       meetingBackfilled: true,
       meetingRecordSource: true,
+      meetingTopics: true,
       meetingReminderLeadMin: true,
       meetingNightBefore: true,
       // the post-meeting attestation. HAS to be listed: this page selects meeting

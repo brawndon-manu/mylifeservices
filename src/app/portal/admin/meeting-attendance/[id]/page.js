@@ -60,6 +60,7 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
       meetingResponseDueTz: true,
       meetingBackfilled: true,
       meetingRecordSource: true,
+      meetingTopics: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,
