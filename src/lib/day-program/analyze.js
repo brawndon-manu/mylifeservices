@@ -326,6 +326,26 @@ export async function analyzeDayProgram({
         // run without it - so a day with nothing recorded is a real zero
         // rather than an unanswerable.
         restSourceAvailable: true,
+        // A REST BREAK IS INSIDE THE SHIFT, so there is nothing to add.
+        //
+        // QSP used to DEDUCT rest breaks from worked time, and the engine added
+        // them back to pay them. That stopped on 2026-08-06 - the agency was
+        // switched over then and its comment records the add-back costing
+        // +23.58 hours over one July period. The day program never was, so it
+        // has been adding a break onto hours that already contain it.
+        //
+        // WHAT IT ACTUALLY PAID FOR was not the recorded break at all. The
+        // engine calls any punch gap of a few minutes a rest, so a clock-out
+        // between two blocks got paid: 2:45-3:00 on a day whose recorded break
+        // was 11:23, and one gap of THREE minutes. Every one of them ended on a
+        // shift boundary. The 2026-08-12 ruling already says the engine must
+        // not add hours for a break logged off the clock until somebody
+        // confirms it was taken there - `paidOffClockMin` is that path, and it
+        // stays open. This only stops the silent version.
+        //
+        // Measured: 2.91 hours across every day program batch, 1.13 of it in
+        // 09/01-09/15, on days where our figure beat what QuickSolve printed.
+        restsAlreadyPaid: true,
         // did this person sign a Daily Service Note on this day, and did the
         // batch collect any signatures at all. One signed note covers the whole
         // day. Both false when no notes were uploaded, which attests everybody
