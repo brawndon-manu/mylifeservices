@@ -26,6 +26,26 @@ import { scheduleKey } from "./schedule.js";
 // those names to match until we get that sorted."
 export const NAME_FIXES = [
   {
+    // ONE PERSON, TWO FIRST NAMES, AND ONLY ONE ACCOUNT.
+    //
+    // QSP prints her on the timesheet as "Ramirez, Patricia". Her Daily Service
+    // Note is signed "Yesenia Ramirez". The portal holds exactly one Ramirez
+    // account - named Yesenia Ramirez, with the address
+    // pramirez.mylifeservices@gmail.com, whose own prefix is the other name.
+    //
+    // WITHOUT THIS THEY ARE TWO PEOPLE TO EVERY JOIN IN THE SYSTEM. Her signed
+    // note on 09/10 never reached her timesheet, so the rest attestation read
+    // her as somebody who had signed nothing and charged a premium for a day
+    // she had documented. The day program's rest-report matcher already carried
+    // this alias locally; here it reaches everything.
+    //
+    // Canonical is the spelling the ACCOUNT uses, because that is what every
+    // other portal surface calls her.
+    canonical: "Ramirez, Yesenia",
+    also: ["Ramirez, Patricia"],
+    why: "QSP's timesheet says Patricia, her signed DSN and her portal account say Yesenia, and there is one account",
+  },
+  {
     // ONE MISSING "n", AND THE DOCUMENTS THAT STILL CARRY IT ARE FROZEN.
     //
     // QSP was corrected somewhere between the 08/01 and 08/16 exports: the
