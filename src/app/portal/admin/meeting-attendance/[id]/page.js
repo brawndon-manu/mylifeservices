@@ -125,9 +125,31 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
   const meta = meetingMeta(m, r);
   const recordNote = recordNoteOf(m);
   const materials = attachmentsOf(m);
-  // restricted forms are never attachable - see announcement-attach-server
+  // ONE ENTRY PER SERIES, not per date. A series is one training offered on two
+  // dates with staff picking one, so both covered the same ground and the
+  // editor asks once. A session with no series is its own group.
+  const seriesGroups = [];
+  for (const o of (Array.isArray(m.meetingOptions) ? m.meetingOptions : [])) {
+    const key = o.seriesId ? `topics:${o.seriesId}` : `topics:solo:${o.id}`;
+    let g = seriesGroups.find((x) => x.key === key);
+    if (!g) {
+      g = { key, label: o.seriesLabel || o.label, dates: [], topics: topicsForSession(m, o) };
+      seriesGroups.push(g);
+    }
+    g.dates.push(fmtSession(o));
+  }
+  const sessionList = seriesGroups.map((g) => ({
+    key: g.key,
+    label: g.label,
+    dateLabel: g.dates.join("  and  "),
+    topics: g.topics,
+  }));
+  // A RECORD MAY OFFER THE RESTRICTED ONES, because it is never in the feed and
+  // no staff member can open it - see announcement-attach-server. Everyone who
+  // reaches this page is isAdminUp and clears every floor, so the picker shows
+  // what they can already see in the library. A live meeting keeps the refusal.
   const libraryDocs = await prisma.form.findMany({
-    where: { minRole: null },
+    where: m.meetingBackfilled ? {} : { minRole: null },
     select: { id: true, title: true, category: true },
     orderBy: [{ category: "asc" }, { title: "asc" }],
   });

@@ -5,6 +5,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { canSeeForm, visibleFormsWhere, formFileHref, mayShare } from "../form-visibility.js";
+import fs from "node:fs";
+import path from "node:path";
+
+const read = (p) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
 
 const open = { id: "f1", minRole: null, fileUrl: "/forms/handbook.pdf" };
 const sup = { id: "f2", minRole: "SUPERVISOR", fileUrl: "https://blob/x.pdf" };
@@ -67,4 +71,29 @@ test("a restricted form is fetched through the route, an open one from its own u
 test("a restricted form can never carry a public share link", () => {
   assert.equal(mayShare(open), true);
   assert.equal(mayShare(sup), false);
+});
+
+test("only a record of a past meeting may attach a restricted form", () => {
+  // THE DEFAULT HAS TO STAY A REFUSAL. An announcement's attachments render on
+  // a page staff read and are emailed to all of them, so a restricted form on
+  // one would undo the floor where nobody would look. A backfilled record is
+  // the single exception, because it is never in the feed, no staff member can
+  // open it and nothing about it is emailed - and the August 3 field supervisor
+  // training was RUN FROM the four restricted documents.
+  const src = read("src/lib/announcement-attach-server.js");
+  assert.match(
+    src,
+    /resolveAttachments\(formData, redirectOn, \{ allowRestricted = false \} = \{\}\)/,
+    "the exception must be opt-in, so anything that forgets gets the refusal",
+  );
+  assert.match(src, /allowRestricted \? \{\} : \{ minRole: null \}/);
+
+  // and exactly one caller opts in
+  const action = read("src/app/portal/admin/meeting-attendance/past-meeting-actions.js");
+  assert.match(action, /allowRestricted: !!post\.meetingBackfilled/);
+  const announcements = read("src/app/portal/announcements/actions.js");
+  assert.ok(
+    !/allowRestricted/.test(announcements),
+    "nothing that posts to an audience may opt in",
+  );
 });

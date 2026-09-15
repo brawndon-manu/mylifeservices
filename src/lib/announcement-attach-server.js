@@ -38,7 +38,7 @@ export async function uploadAttachment(file) {
 //
 // `redirectOn` is the page to bounce back to, so create and edit report their
 // errors in the right place.
-export async function resolveAttachments(formData, redirectOn) {
+export async function resolveAttachments(formData, redirectOn, { allowRestricted = false } = {}) {
   const out = [];
 
   // ALREADY ON THE POST, and not ticked for removal. An uploaded PDF exists
@@ -64,8 +64,18 @@ export async function resolveAttachments(formData, redirectOn) {
     // whoever holds it - so attaching one would undo the role floor in the one
     // place nobody would think to look. The pickers already leave them out;
     // this is the lock on the id itself, which is what actually arrives.
+    //
+    // THE ONE EXCEPTION IS A RECORD OF A PAST MEETING, and only because the
+    // premise above does not hold for one: it is never in the feed, no staff
+    // member can open it, and nothing about it is emailed. The August 3 field
+    // supervisor training was RUN FROM the four restricted documents, so a
+    // record of it that cannot name them is missing the point. Callers opt in
+    // explicitly; nothing that posts to an audience does.
     const rows = await prisma.form.findMany({
-      where: { id: { in: ids.slice(0, ATTACH_MAX_COUNT) }, minRole: null },
+      where: {
+        id: { in: ids.slice(0, ATTACH_MAX_COUNT) },
+        ...(allowRestricted ? {} : { minRole: null }),
+      },
       select: { id: true, title: true, fileUrl: true },
     });
     // keep the order the picker showed them in rather than the database's

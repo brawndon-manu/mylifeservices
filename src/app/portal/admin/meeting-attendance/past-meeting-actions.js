@@ -265,13 +265,41 @@ export async function updateMeetingRecord(postId, formData) {
   // resolveAttachments returns null for "none left", which is a real answer -
   // somebody removing the last document means the record carries none, not
   // that the field was untouched.
-  const attachments = await resolveAttachments(formData, here);
+  // a record is never read by staff and never emailed, so it may carry the
+  // restricted documents the meeting was actually run from
+  const attachments = await resolveAttachments(formData, here, {
+    allowRestricted: !!post.meetingBackfilled,
+  });
 
-  const topics = clean(formData.get("meetingTopics"), 8000)
-    .split(/\r?\n/)
-    .map((t) => t.trim().slice(0, 200))
-    .filter(Boolean)
-    .slice(0, 40);
+  const asTopics = (raw) =>
+    clean(raw, 8000)
+      .split(/\r?\n/)
+      .map((t) => t.trim().slice(0, 200))
+      .filter(Boolean)
+      .slice(0, 40);
+
+  const topics = asTopics(formData.get("meetingTopics"));
+
+  // TOPICS BELONG TO A SERIES, not a date. Mánu 2026-09-14: "each series is
+  // the same info for topics covered" - a series is one training offered on
+  // two dates and staff pick one, so both covered the same ground and nobody
+  // should have to type it twice.
+  //
+  // Written onto every option in the series all the same, because that is what
+  // the report reads per section and it keeps one shape for a solo session too.
+  // Posted as `topics:<seriesId>`, or `topics:solo:<optionId>` where there is
+  // no series. A group the form did not post is left exactly as it was.
+  let meetingOptions;
+  const opts = Array.isArray(post.meetingOptions) ? post.meetingOptions : [];
+  if (opts.length) {
+    const keyOf = (o) => (o.seriesId ? `topics:${o.seriesId}` : `topics:solo:${o.id}`);
+    meetingOptions = opts.map((o) => {
+      const raw = formData.get(keyOf(o));
+      if (raw === null) return o;
+      const own = asTopics(raw);
+      return { ...o, topics: own.length ? own : null };
+    });
+  }
 
   const title = clean(formData.get("title"), 200);
   const source = clean(formData.get("meetingRecordSource"), 120);
