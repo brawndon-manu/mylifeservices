@@ -81,6 +81,9 @@ const nextConfig = {
     // meeting-materials.js reads a library pick straight out of public/ - the
     // same runtime-built path, the same reason it is named here
     "/portal/admin/meeting-attendance/**": ["./public/forms/*.pdf"],
+    // the gated forms route reads a library pick off disk the same way, so it
+    // needs the same directory traced or it ENOENTs only once deployed
+    "/portal/forms/**": ["./public/forms/*.pdf"],
     "/portal/admin/timesheets/**": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],

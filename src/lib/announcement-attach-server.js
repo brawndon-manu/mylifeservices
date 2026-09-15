@@ -58,8 +58,14 @@ export async function resolveAttachments(formData, redirectOn) {
     .getAll("attachFormIds")
     .filter((v) => typeof v === "string" && v);
   if (ids.length) {
+    // A RESTRICTED FORM CANNOT RIDE ON A POST. An announcement's attachments
+    // are rendered on a page staff read and emailed to every one of them, and
+    // the stored url of a restricted form is a blob address that works for
+    // whoever holds it - so attaching one would undo the role floor in the one
+    // place nobody would think to look. The pickers already leave them out;
+    // this is the lock on the id itself, which is what actually arrives.
     const rows = await prisma.form.findMany({
-      where: { id: { in: ids.slice(0, ATTACH_MAX_COUNT) } },
+      where: { id: { in: ids.slice(0, ATTACH_MAX_COUNT) }, minRole: null },
       select: { id: true, title: true, fileUrl: true },
     });
     // keep the order the picker showed them in rather than the database's

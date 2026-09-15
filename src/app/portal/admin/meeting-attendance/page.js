@@ -41,6 +41,8 @@ export default async function MeetingAttendancePage({ searchParams }) {
     // fillable and has nowhere to submit to, and it is exactly what a meeting
     // was run from
     prisma.form.findMany({
+      // restricted forms are never attachable - see announcement-attach-server
+      where: { minRole: null },
       select: { id: true, title: true, category: true },
       orderBy: [{ category: "asc" }, { title: "asc" }],
     }),

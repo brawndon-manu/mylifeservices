@@ -31,9 +31,13 @@ export default async function PublicFillPage({ params, searchParams }) {
 
   const form = await prisma.form.findUnique({
     where: { shareSlug: slug },
-    select: { id: true, title: true, fileUrl: true, fillable: true },
+    select: { id: true, title: true, fileUrl: true, fillable: true, minRole: true },
   });
-  if (!form || !form.fillable) notFound();
+  // A RESTRICTED FORM HAS NO BUSINESS ON THIS PAGE AT ALL. Everything here
+  // answers with no session - that is the whole point of a share link - so a
+  // form with a role floor must never resolve, whatever slug is presented.
+  // Nothing mints a slug for one, and this is the second lock on that.
+  if (!form || !form.fillable || form.minRole) notFound();
 
   // ARRIVED FROM AN ANNOUNCEMENT that wants this form signed. Carried through
   // so a signature given without logging in still completes that person's

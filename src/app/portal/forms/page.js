@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import BackLink from "@/components/BackLink";
 import FormsLibrary from "./FormsLibrary";
+import { visibleFormsWhere, formFileHref } from "@/lib/form-visibility";
 
 export const metadata = {
   title: "Forms · MLS Portal",
@@ -9,9 +10,12 @@ export const metadata = {
 };
 
 export default async function FormsPage() {
-  await getCurrentUser();
+  const user = await getCurrentUser();
 
-  const forms = await prisma.form.findMany({
+  const rows = await prisma.form.findMany({
+    // WHO IS LOOKING. Until the field supervisor set went in, every form here
+    // was visible to everybody and this query had no `where` at all.
+    where: visibleFormsWhere(user?.role),
     orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { title: "asc" }],
     select: {
       id: true,
@@ -20,8 +24,18 @@ export default async function FormsPage() {
       description: true,
       fileUrl: true,
       fillable: true,
+      minRole: true,
     },
   });
+
+  // THE PAGE NEVER SEES A RESTRICTED FORM'S REAL URL. That address is a blob
+  // one, which works for anyone holding it, so the link is swapped server-side
+  // for the route that re-checks the role. fileUrl is dropped on the way out.
+  const forms = rows.map(({ fileUrl, minRole, ...rest }) => ({
+    ...rest,
+    href: formFileHref({ ...rest, fileUrl, minRole }),
+    restricted: !!minRole,
+  }));
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-10 sm:py-14">

@@ -127,7 +127,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       getStaffByTitle(),
       getAudienceTotals(),
       prisma.form.findMany({
-        where: { fillable: true },
+        where: { fillable: true, minRole: null },
         select: { id: true, title: true },
         orderBy: { title: "asc" },
       }),
@@ -135,6 +135,8 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       // fillable and has nowhere to submit to, but it is exactly the kind of
       // thing a post needs to carry.
       prisma.form.findMany({
+        // restricted forms are never attachable - see announcement-attach-server
+        where: { minRole: null },
         select: { id: true, title: true, category: true, fillable: true },
         orderBy: [{ category: "asc" }, { title: "asc" }],
       }),

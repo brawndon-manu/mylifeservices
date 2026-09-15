@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { canSeeForm, formFileHref } from "@/lib/form-visibility";
 import { getCurrentUser } from "@/lib/current-user";
 import { formEmailRoute } from "@/lib/forms";
 import { getRecipientOptions } from "@/lib/form-recipients";
@@ -16,13 +17,17 @@ export const metadata = {
 export default async function FillFormPage({ params, searchParams }) {
   const { id } = await params;
   const sp = await searchParams;
-  await getCurrentUser();
+  const user = await getCurrentUser();
 
   const form = await prisma.form.findUnique({
     where: { id },
-    select: { id: true, title: true, fileUrl: true, fillable: true, shareSlug: true },
+    // minRole or the check below reads undefined and admits everybody
+    select: { id: true, title: true, fileUrl: true, fillable: true, shareSlug: true, minRole: true },
   });
-  if (!form) notFound();
+  // THE SAME ANSWER FOR MISSING AND FORBIDDEN. A 403 here would tell a staff
+  // member which documents exist above them, which is half of what the
+  // restriction is for.
+  if (!form || !canSeeForm(form, user?.role)) notFound();
   if (!form.fillable) redirect("/portal/forms");
 
   // arrived here to complete an announcement's acknowledgment - only honor it if
@@ -78,7 +83,7 @@ export default async function FillFormPage({ params, searchParams }) {
         </p>
       )}
       <FormFiller
-        fileUrl={form.fileUrl}
+        fileUrl={formFileHref(form)}
         title={form.title}
         formId={form.id}
         reviewTeam={reviewTeam}

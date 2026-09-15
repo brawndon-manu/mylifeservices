@@ -113,7 +113,7 @@ function FormCard({ form }) {
           </Link>
         )}
         <a
-          href={form.fileUrl}
+          href={form.href}
           download
           className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:bg-surface-2"
         >
