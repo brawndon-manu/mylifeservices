@@ -48,13 +48,10 @@ export default async function AdminPage() {
           title: "Timesheets",
           body: "Agency payroll and staff signatures.",
         },
-        {
-          show: canManageTimesheets(role),
-          href: "/portal/admin/day-program",
-          icon: "calendar",
-          title: "Day program",
-          body: "Separate payroll for the day program.",
-        },
+        // THE DAY PROGRAM HAS NO ROW HERE ANY MORE. Both payroll screens carry
+        // the Office switch, which navigates between them rather than filtering
+        // one list, so this was a second door into a screen the row above
+        // already reaches in one click. Its own page and route are untouched.
         {
           show: isAdminUp(role),
           href: "/portal/admin/audit",
