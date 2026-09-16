@@ -158,11 +158,14 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   // is nothing to move forward to yet - and still offers the way back.
   if (blocked) {
     return (
-      <div className={`${flow ? "" : "mt-3"} flex flex-wrap items-center gap-3`}>
-        {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
-        <p className="ml-auto text-xs text-muted">
+      <div className={`${flow ? "" : "mt-3"} flex flex-col gap-2`}>
+        {/* the sentence on its own line, Back and Next together under it -
+            Mánu 2026-09-15, the day program's arrangement for both */}
+        <p className="text-xs text-muted">
           Answer everything on this day to finish with it.
         </p>
+        <div className="flex items-center justify-end gap-3">
+        {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
         {/* MOVING ON AND FINISHING ARE TWO DIFFERENT THINGS, and one button was
             doing both - so gating the second gated the first, and a day with a
             question owing had no way forward at all. On a real fortnight that
@@ -180,6 +183,7 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
             Next
           </button>
         )}
+        </div>
       </div>
     );
   }

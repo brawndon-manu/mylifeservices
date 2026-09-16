@@ -674,7 +674,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     // no-focus-zoom: every field here is text-sm, and a field under 16px makes
     // iOS Safari magnify the page and stay there. See the rule in globals.css.
     <div className="portal-shell bg-background">
-    <section className={`no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 ${isDayProgram ? reviewStyles.dayProgram : ""}`}>
+    <section className={`no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 ${reviewStyles.review}`}>
       {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
           reaches this page within a few seconds, without either of them saying
           reload - which is the difference between fixing something while an
@@ -821,12 +821,17 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               the stages it names are the ones the page already enforces:
               questions first, the document generates once every one has an
               answer (see the signer), the signature last. */}
-          <ReviewFlow enabled={isDayProgram} ready={readyToGenerate} initialReports={openCorrections} reports={
+          {/* THE DAY PROGRAM'S FLOW, FOR EVERY PROGRAM - Mánu 2026-09-15: "i
+              like the day program flow way better. the way back and next are
+              next to each other and the way every day has report a problem".
+              Three steps for ILS, four for the day program: the PTO & sick
+              pay stage is the day program's alone - "remove pto and sick pay
+              option for ils", same day. */}
+          <ReviewFlow enabled leave={isDayProgram} ready={readyToGenerate} initialReports={openCorrections} reports={
             <ReportProblem token={token} days={ts.data?.days || []}
               period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
               submitAction={act(submitTimesheetCorrections)} />
           }>
-          {!isDayProgram && <Stepper ready={readyToGenerate} />}
           <ReviewStage name="days">
           {/* TWO ARRANGEMENTS OF THE SAME QUESTIONS. "Day by day" walks the
               period with each day drawn on a time axis; "All questions" is the
@@ -1184,49 +1189,3 @@ function PeriodTile({ from, to }) {
   );
 }
 
-// the three stages, named. Step one is done the moment everything is answered,
-// which is also the moment step two unlocks - the page's own gates decide, this
-// only reads them.
-function Stepper({ ready }) {
-  const steps = [
-    { n: 1, label: "Review days", state: ready ? "done" : "current" },
-    { n: 2, label: "Generate", state: ready ? "current" : "todo" },
-    { n: 3, label: "Sign", state: "todo" },
-  ];
-  return (
-    <ol className="mt-6 flex flex-wrap items-center gap-2 text-[13px]">
-      {steps.map((s, i) => (
-        <li key={s.n} className="flex items-center gap-2">
-          {i > 0 && (
-            <span aria-hidden="true" className="mx-1 text-faint">
-              ›
-            </span>
-          )}
-          <span
-            aria-hidden="true"
-            className={`flex h-[22px] w-[22px] items-center justify-center rounded-full text-[11.5px] font-semibold ${
-              s.state === "current"
-                ? "bg-brand text-white"
-                : s.state === "done"
-                  ? "accent-fill-soft"
-                  : "bg-fill text-muted"
-            }`}
-          >
-            {s.n}
-          </span>
-          <span
-            className={
-              s.state === "current"
-                ? "font-semibold text-accent"
-                : s.state === "done"
-                  ? "font-medium text-foreground"
-                  : "text-muted"
-            }
-          >
-            {s.label}
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}

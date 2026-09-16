@@ -1,4 +1,7 @@
-.dayProgram {
+/* THE REVIEW PAGE'S OWN ACCENT, both programs. It was the day program's alone
+   until 2026-09-15, when Mánu said he liked that flow better: "the colors for
+   the hours under the month and day". */
+.review {
   --accent: #196e93;
   --calendar-month: #b8333d;
   --review-on-accent: #ffffff;
@@ -6,7 +9,7 @@
   --review-work-fill: #eaf3f8;
 }
 
-:global(.dark) .dayProgram {
+:global(.dark) .review {
   --accent: #7dd3fc;
   --calendar-month: #ff919b;
   --review-on-accent: #14161b;
@@ -41,11 +44,11 @@
   color: var(--status-caution);
 }
 
-.dayProgram .hours {
+.review .hours {
   color: var(--review-work-ink);
 }
 
-.dayProgram .calendar {
+.review .calendar {
   max-width: none;
 }
 
@@ -95,8 +98,8 @@
   border-radius: 8px;
 }
 
-.dayProgram .workShift,
-.dayProgram .workShift > span {
+.review .workShift,
+.review .workShift > span {
   color: var(--review-work-ink);
 }
 

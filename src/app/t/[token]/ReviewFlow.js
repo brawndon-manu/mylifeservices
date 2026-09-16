@@ -12,7 +12,11 @@ const ReviewContext = createContext(null);
 export const useReviewFlow = () => useContext(ReviewContext);
 const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40";
 
-export default function ReviewFlow({ enabled, ready, reports, children, initialReports = [], readOnly = false }) {
+// `leave`: whether the PTO & sick pay stage is in the flow. The day program's
+// time off is a claim its employees make here; ILS time off is not (Mánu
+// 2026-09-15: "remove pto and sick pay option for ils"), so the ILS flow is
+// three steps and the stage is skipped in both directions.
+export default function ReviewFlow({ enabled, ready, reports, children, initialReports = [], readOnly = false, leave = true }) {
   const [stage, setStage] = useState("days");
   // reports already sent arrive as the list, marked sent: not drafts, not
   // editable, and since 2026-09-09 no longer a hold on the signature - what
@@ -54,9 +58,14 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
   const hold = editorTarget ? "Add this report or cancel it before continuing."
     : leaveEditing ? "Save your answer or cancel before continuing."
     : draftsUnsent && stage !== "days" ? "Review and send your reports before generating your timesheet."
-    : stage === "leave" && !ready ? "Answer the remaining questions to generate your document."
+    : (stage === "leave" || (!leave && stage === "reports")) && !ready ? "Answer the remaining questions to generate your document."
     : null;
-  const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? 3 : 2;
+  // the strip: four steps with the leave stage, three without; the step after
+  // the reports stage is the leave stage when there is one, else the document
+  const steps = leave ? ["Review days", "PTO & sick pay", "Generate", "Sign"] : ["Review days", "Generate", "Sign"];
+  const afterReports = leave ? "leave" : "document";
+  const generateStep = leave ? 2 : 1;
+  const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? generateStep + 1 : generateStep;
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly,
     reviewedDays, markReviewed,
     generated, setGenerated, editorTarget, setEditorTarget, activeDate,
@@ -66,11 +75,11 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
     <ReviewContext.Provider value={value}>
       {enabled && !readOnly && (
         <ol ref={headingRef} aria-label="Timesheet progress" className="mt-6 grid scroll-mt-24 grid-cols-2 gap-2 border-b border-sep pb-5 sm:flex sm:flex-wrap sm:gap-5">
-          {["Review days", "PTO & sick pay", "Generate", "Sign"].map((label, i) => (
+          {steps.map((label, i) => (
             <li key={label}>
               <button type="button" aria-current={i === current ? "step" : undefined}
-                disabled={!!editorTarget || leaveEditing || leaveBusy || (i >= 2 && !canGenerate) || (i === 3 && !generated)}
-                onClick={() => go(i === 0 ? "days" : i === 1 ? "leave" : "document")}
+                disabled={!!editorTarget || leaveEditing || leaveBusy || (i >= generateStep && !canGenerate) || (i === generateStep + 1 && !generated)}
+                onClick={() => go(i === 0 ? "days" : leave && i === 1 ? "leave" : "document")}
                 className={`flex min-h-[44px] items-center gap-2 text-[13px] disabled:opacity-50 ${i === current ? "font-semibold text-accent" : "text-muted"}`}>
                 <span className={`grid h-6 w-6 place-items-center rounded-full text-xs ${i === current ? styles.activeStep : "bg-fill"}`}>{i + 1}</span>{label}
               </button>
@@ -85,12 +94,12 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
           {hold && <p className="mb-3 text-xs text-muted">{hold}</p>}
           {stage === "days" ? <div className="flex justify-end"><button type="button" className={button} disabled={!!editorTarget} onClick={() => go("reports")}>Review reports ({items.length})</button></div> : <div className="flex items-center justify-between gap-3">
             <button type="button" className={button} disabled={!!editorTarget || leaveEditing || leaveBusy}
-              onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : "leave")}>Back</button>
+              onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : leave ? "leave" : "reports")}>Back</button>
             {stage !== "document" && <button type="button" className={`${button} ${styles.primary}`}
-              disabled={!!editorTarget || leaveEditing || leaveBusy || (stage === "reports" && draftsUnsent) || (stage === "leave" && !canGenerate)}
-              onClick={() => go(stage === "reports" ? "leave" : "document")}>Next</button>}
+              disabled={!!editorTarget || leaveEditing || leaveBusy || (stage === "reports" && (draftsUnsent || (!leave && !canGenerate))) || (stage === "leave" && !canGenerate)}
+              onClick={() => go(stage === "reports" ? afterReports : "document")}>Next</button>}
           </div>}
-          {stage !== "days" && stage !== "document" && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" ? "PTO & sick pay" : "Generate"}</p>}
+          {stage !== "days" && stage !== "document" && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" && leave ? "PTO & sick pay" : "Generate"}</p>}
         </div>
       )}
     </ReviewContext.Provider>
