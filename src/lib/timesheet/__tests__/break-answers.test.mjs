@@ -156,6 +156,22 @@ test("nothing to say prints nothing, and took-it never prints", () => {
   );
 });
 
+// THE OTHER WAY ROUND. The office heard "took it" on the phone, then the
+// employee answered Missed it on their link and typed why. The correction
+// charges the hour, and the seeded-box write leaves the row as took-it with
+// their words beside ours, so the filter above threw the day away and the
+// signed sheet charged a break with no reason under it. Their words print;
+// the office's took-it note is not a reason for anything and stays off.
+test("a took-it we recorded, contradicted in their own words, prints their words alone", () => {
+  const lines = formatBreakComments([
+    { answer: "took-it", kind: "rest", date: "07/24/26", reason: "test",
+      confirmedText: "Client would not settle and I could not leave them." },
+  ]);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^1\) 07\/24\/26 rest period not taken: "Client would not settle and I could not leave them\."  \[in the employee's own words\]$/);
+  assert.doesNotMatch(lines[0], /correction|recorded from a call/);
+});
+
 // ------------------------------- every answer the day actually allows
 
 import { answerOptionsFor, answerSummary, stillMissing } from "../break-answers.js";

@@ -256,8 +256,16 @@ export function breakFindingKind(findingKey) {
 export function formatBreakComments(answers = [], startAt = 0) {
   const out = [];
   let n = startAt;
+  // A TOOK-IT WE RECORDED, CONTRADICTED IN THEIR OWN WORDS, 2026-09-15. The
+  // office heard "took it" on the phone; the employee answered Missed it on
+  // their link and typed why. The correction charges the hour, and the write
+  // in actions.js leaves the row as took-it with their words in confirmedText
+  // beside ours - so this filter dropped the day, and the sheet they sign
+  // charged a break with no reason under it. Their words are the reason. Our
+  // took-it note is not a reason for anything and still stays off the page.
+  const contradicted = (a) => a.answer === "took-it" && !!a.confirmedText && a.confirmedText !== a.reason;
   const rows = [...answers]
-    .filter((a) => a && a.answer === "not-taken" && (a.reason || a.confirmedText))
+    .filter((a) => a && ((a.answer === "not-taken" && (a.reason || a.confirmedText)) || contradicted(a)))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 
   for (const a of rows) {
@@ -269,8 +277,9 @@ export function formatBreakComments(answers = [], startAt = 0) {
     // `render-sheet.js`, which marks these lines - and the quotes are here, so
     // every surface printing this text keeps them.
     const quoted = (s) => `"${String(s).replace(/^["']+|["']+$/g, "")}"`;
-    // ours, when we took one
-    if (a.reason) {
+    // ours, when we took one - and not when ours was "took it", which is not
+    // a reason for a break being missed
+    if (a.reason && a.answer === "not-taken") {
       // NO TAG ON THE ORDINARY CASE. Mánu 2026-08-17: take "confirmed by
       // employee" off the line. On the sheet they put their name to, saying a
       // sentence was confirmed by the person signing under it is the one piece
@@ -290,7 +299,7 @@ export function formatBreakComments(answers = [], startAt = 0) {
     }
     // theirs, when it differs - either a correction to ours, or the only one
     if (a.confirmedText && a.confirmedText !== a.reason) {
-      const label = a.reason ? "employee correction" : `${kind} not taken`;
+      const label = a.reason && a.answer === "not-taken" ? "employee correction" : `${kind} not taken`;
       out.push(`${++n}) ${when}${label}: ${quoted(a.confirmedText)}  [in the employee's own words]`);
     }
   }
