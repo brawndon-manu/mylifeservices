@@ -2027,10 +2027,27 @@ export function breakLabel(q) {
 // The children are still built on the server either way. Not rendering them is a
 // display decision, not a saving of work, and it keeps this to one small
 // component rather than moving the day list into the client.
-export function DayShell({ date, summary = null, children }) {
+export function DayShell({ date, summary = null, blocked = false, children }) {
   const done = useContext(DayDoneCtx);
   const ctx = useContext(BatchCtx);
-  if (!done?.readyOn?.(date)) return children;
+  // WALKING PAST A DAY IS NOT ANSWERING IT - the second half. 6ea73c7 stopped
+  // the rail calling a walked day answered; this shell still did. Carminia
+  // Suarez, 2026-09-16: every day on her sheet was walked, none of her three
+  // meal questions was on record, and this drew "Answered" under a green tick
+  // over the question she had not answered - with the confirm below counting
+  // it as still owing and the footer saying the day was not finished. "Change
+  // this" reopened it, she answered, Next walked it again, and the next load
+  // hid the question behind "Answered" once more: the walk lives on the sheet
+  // and a staged answer lives in the tab, so a reload keeps one and loses the
+  // other.
+  //
+  // The same test the footer applies: a day collapses only when nothing on it
+  // is still owing. `blocked` is the server's reading of the plain cards, the
+  // acks and the break reasons - see `plainBlockedOn` - and the batched rows
+  // are asked directly, because they stage here and the server cannot see them.
+  const hasBatchRow = !!ctx?.byDay?.some?.((d) => d.date === date);
+  const open = blocked || (hasBatchRow && !!ctx?.blockedOn?.(date));
+  if (!done?.readyOn?.(date) || open) return children;
   // THE DATE AND THE HOURS STAY OFF THIS ROW since 2026-09-08 - the shell sits
   // under the day pane's own heading now, which already says both.
   return (
@@ -2386,6 +2403,11 @@ export function BatchProvider({
   const missed = chosen.filter((x) => x.v === "no" || x.v === "partial");
   const took = chosen.filter((x) => x.v === "yes");
   const undecided = chosen.filter((x) => !x.v);
+  // AND WHICH DAYS THEY ARE ON. One card holds a fortnight and the day view
+  // shows one day at a time, so "2 questions here" named nothing anyone could
+  // go to - Carminia's two were on days she had already walked past. One chip
+  // per day, the same as the missing times.
+  const undecidedDates = [...new Set(undecided.map(({ q }) => q.date).filter(Boolean))];
   // WHAT A FINISHED DAY SAYS ON ITS ONE LINE. The answer in their words, plus
   // any time they gave, so a collapsed day is still checkable at a glance.
   const summaryFor = (date) => chosen
@@ -2805,7 +2827,7 @@ export function BatchProvider({
       value={{
         renderToggle, renderTimes, renderReason, missingLabel, noRoom, titleFor, partWord, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
-        dirty, missingTimes, missingTimeDates, missingReasons, undecided, missed, took, hours, base, answeredAll,
+        dirty, missingTimes, missingTimeDates, missingReasons, undecided, undecidedDates, missed, took, hours, base, answeredAll,
         ready,
         readyOn: (date) => ready.has(date),
         blockedOn,
@@ -2919,7 +2941,7 @@ export function BatchConfirm() {
   if (!ctx) return null;
   const {
     list, copy, pending, err, confirming, setConfirming, commit,
-    dirty, missingTimes, missingTimeDates, missingReasons, undecided, missed, took, hours, base, answeredAll,
+    dirty, missingTimes, missingTimeDates, missingReasons, undecided, undecidedDates, missed, took, hours, base, answeredAll,
     ready, byDay,
   } = ctx;
   // HOW MANY DAYS THEY HAVE FINISHED WITH, and how many are left.
@@ -3019,6 +3041,16 @@ export function BatchConfirm() {
                 </b>{" "}
                 They are saved together, so none of them is recorded until all of them
                 have one.
+                {undecidedDates.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => jumpToDay(d)}
+                    className="ml-2 inline-flex rounded-[7px] bg-amber-500/15 px-2 py-0.5 align-baseline font-mono text-xs font-semibold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
+                  >
+                    {chipLabel(d)}
+                  </button>
+                ))}
               </span>
             </p>
           )}
@@ -3043,10 +3075,7 @@ export function BatchConfirm() {
                   <button
                     key={d}
                     type="button"
-                    onClick={() => {
-                      const el = document.getElementById(dayAnchorId(d));
-                      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                    }}
+                    onClick={() => jumpToDay(d)}
                     className="ml-2 inline-flex rounded-[7px] bg-amber-500/15 px-2 py-0.5 align-baseline font-mono text-xs font-semibold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
                   >
                     {chipLabel(d)}
@@ -3127,6 +3156,18 @@ export function BatchConfirm() {
 // send somebody to it. Digits only - "07/16/26" carries slashes, which are not
 // valid in an id.
 const dayAnchorId = (date) => `break-day-${String(date || "").replace(/[^0-9]/g, "")}`;
+// THE CHIP OPENS THE DAY. The rail selects whichever day the address bar names
+// - the #day-<date> handler in DayRail - so the chip says the day and the rail
+// does the moving; a hash already set fires no event, so that case is fired by
+// hand. The stacked view has no rail to select on, so it scrolls to the row.
+// Scrolling alone was what the times chips did, which in the rail view found a
+// hidden pane and moved nothing.
+const jumpToDay = (date) => {
+  const want = `#day-${date}`;
+  if (window.location.hash === want) window.dispatchEvent(new HashChangeEvent("hashchange"));
+  else window.location.hash = want;
+  document.getElementById(dayAnchorId(date))?.scrollIntoView({ behavior: "smooth", block: "center" });
+};
 
 export default function TimesheetQuestion({
   token, questions, answers, partials, answerTimes, choices, waiting, disturbs, standing, submitAction,

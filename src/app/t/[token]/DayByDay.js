@@ -601,6 +601,10 @@ export default function DayByDay({
                   tall empty box beside the rail. */}
               <DayShell
                 date={day.date}
+                /* the server's reading of what is still owing on the plain
+                   cards, the acks and the break reasons - the shell must not
+                   collapse a day with any of it open, walked or not */
+                blocked={plainBlockedOn(day.date)}
                 /* a day with no batched row has no staged summary to show, so
                    the plain cards say what was settled instead */
                 summary={(anchored.get(day.date) || [])
