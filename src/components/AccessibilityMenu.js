@@ -54,13 +54,40 @@ export default function AccessibilityMenu({ align = "right", openUp = false, var
     };
   }, [open]);
 
+  // WHICH WAY THE PANEL HANGS, DECIDED BY WHERE THE BUTTON ACTUALLY IS.
+  //
+  // `openUp` and `align` are the caller's guess, and they were right while this
+  // only ever sat in the bottom-right corner. The timesheet review puts it at the
+  // TOP LEFT (Mánu 2026-09-16), where opening upward would send the panel off the
+  // top of the screen and hanging it from the right would push it off the side.
+  // Measured at the moment it opens, so the props stay as the default and the
+  // real position wins - and any future corner works without being told about.
+  const [place, setPlace] = useState(null);
+  const btnRef = useRef(null);
+  const toggle = () => {
+    setOpen((was) => {
+      const next = !was;
+      if (next && btnRef.current) {
+        const r = btnRef.current.getBoundingClientRect();
+        setPlace({
+          up: r.top > window.innerHeight / 2,
+          right: r.left + r.width / 2 > window.innerWidth / 2,
+        });
+      }
+      return next;
+    });
+  };
+  const hangsUp = place ? place.up : openUp;
+  const hangsRight = place ? place.right : align === "right";
+
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         type="button"
         aria-label="Accessibility options"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         className={
           variant === "fab"
             ? "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface text-muted shadow-lg transition hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
@@ -73,8 +100,8 @@ export default function AccessibilityMenu({ align = "right", openUp = false, var
         <div
           role="menu"
           className={`absolute z-50 max-h-[80vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-lg ${
-            openUp ? "bottom-full mb-2" : "top-full mt-2"
-          } ${align === "right" ? "right-0" : "left-0"}`}
+            hangsUp ? "bottom-full mb-2" : "top-full mt-2"
+          } ${hangsRight ? "right-0" : "left-0"}`}
         >
           <AccessibilityControls />
         </div>

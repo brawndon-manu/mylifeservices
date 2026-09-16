@@ -331,19 +331,31 @@ input[type="number"]::-webkit-inner-spin-button {
    bottom-right corner. A marker that comes and goes cannot hold a button still.
    It is keyed to the page now, which is there for all four steps.
 
-   BELOW THE HEADER AND BELOW THE PHONE HINT, which is two things to clear, both
-   measured at 375. The header is 68 tall and carries the phone button at the top
-   right (x 221-364), so a button at top 16 lands on that - the same collision one
-   corner up. And the hint that hangs under it, "Text or call this number if you
-   have any issue", runs x 92-359 and y 76-109, so top 84 lands on that instead.
-   It is aria-hidden and folds itself away after ten seconds, but those ten
-   seconds are exactly when somebody opens their link. 109 and 15 to breathe.
+   TOP LEFT, IN A STRIP OF ITS OWN, which is the spot he drew a circle around.
+   Everything else at the top is taken: the header is 68 tall with the phone
+   button at its right (x 221-364), and the hint that hangs under it, "Text or
+   call this number if you have any issue", runs x 92-359 and y 76-109. The left
+   of that line is the one place nothing else wants.
 
-   Both ends set: the wrapper carries Tailwind's `bottom-4`, so `top` alone would
-   leave it pinned to both. */
+   AND THE PAGE MAKES ROOM RATHER THAN THE BUTTON HOVERING OVER SOMETHING. On the
+   employee's own view the kicker sits at y 108-127 and the header ends at 68, so
+   the gap is 40px and the target is 44 - it does not fit, and putting it there
+   anyway would have it sitting on "Mánu Uribe · Employee timesheet". The page
+   takes 24px more at the top here, which turns a collision into a margin. That is
+   the whole difference between this and the last three attempts: a place of its
+   own, not a gap between other people's things.
+
+   All three ends set: the wrapper carries Tailwind's `bottom-4 right-4`, so `top`
+   and `left` alone would leave it pinned to all four. */
 body:has([data-timesheet-review]) .corner-fab {
-  top: calc(env(safe-area-inset-top) + 7.75rem);
+  top: calc(env(safe-area-inset-top) + 4.75rem);
+  left: 1rem;
+  right: auto;
   bottom: auto;
+}
+
+[data-timesheet-review] {
+  padding-top: 1.5rem;
 }
 
 /* AND IT SETTLES BACK once somebody has seen it - Mánu 2026-09-16: "can we make
