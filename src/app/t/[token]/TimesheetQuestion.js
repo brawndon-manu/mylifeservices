@@ -16,13 +16,15 @@
 //
 // COLOUR CARRIES THE SAME MEANING AS THE SHEET: amber while we are still asking,
 // green once an answer has left the figures alone, plain once it has not.
-import { createContext, useContext, useEffect, useState, useTransition, Fragment } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useReviewFlow } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
 import { dayChipLabel } from "@/lib/timesheet/review-days";
+// whether a day folds to its one line - a press, not a keystroke, decides it
+import { shellFolds } from "@/lib/timesheet/day-shell";
 // the five sentences, already written and already counting correctly - see the
 // note on `renderReason`. Client-safe: break-answers.js imports nothing.
 import {
@@ -129,6 +131,11 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
   // server holds; the state here is the optimistic copy, so a ring ticks the
   // moment it is pressed and the write catches up behind it.
   const [ready, setReady] = useState(() => new Set(walked || []));
+  // HOW MANY TIMES EACH DAY HAS BEEN PRESSED FINISHED IN THIS TAB. The set above
+  // cannot say, because a day walked on another day is already in it and a
+  // second press changes nothing there. The shell reads this to fold a day on a
+  // press and never on a keystroke - see `shellFolds`.
+  const [presses, setPresses] = useState({});
 
   // the sheet's own list wins whenever it changes under us - another device, or
   // this one after a refresh. A date pressed here and not yet written is kept,
@@ -161,9 +168,11 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
       value={{
         ready,
         readyOn: (date) => ready.has(date),
+        pressesOn: (date) => presses[date] || 0,
         finishesDay: (date, id) => !!id && finishers?.[date] === id,
         markReady: (date) => {
           setReady((r) => (r.has(date) ? r : new Set(r).add(date)));
+          setPresses((p) => ({ ...p, [date]: (p[date] || 0) + 1 }));
           write(date);
         },
         unmarkReady: (date) => {
@@ -2059,7 +2068,22 @@ export function DayShell({ date, summary = null, blocked = false, children }) {
   // are asked directly, because they stage here and the server cannot see them.
   const hasBatchRow = !!ctx?.byDay?.some?.((d) => d.date === date);
   const open = blocked || (hasBatchRow && !!ctx?.blockedOn?.(date));
-  if (!done?.readyOn?.(date) || open) return children;
+  // AND NOTHING FOLDS UNDER SOMEBODY'S FINGERS. `open` is read live off the
+  // staged answers, so on a day walked before its question was answered it
+  // first goes false on the FIRST CHARACTER of a required reason, or the first
+  // time that parses - and this folded the day to its one line with the box
+  // gone from under the person typing in it, 2026-09-16. The letter survived in
+  // the tab, which is how a one-letter reason reached a signed sheet.
+  //
+  // So a fold takes a press. The provider counts them per day; a day shown open
+  // while already marked remembers the count, and folds only once it has moved.
+  // A day marked before this tab opened, with nothing owing, folds as it did.
+  const ready = !!done?.readyOn?.(date);
+  const presses = done?.pressesOn?.(date) ?? 0;
+  const shownOpenAt = useRef(null);
+  const folds = shellFolds({ ready, open, presses, pressesWhenShownOpen: shownOpenAt.current });
+  useEffect(() => { shownOpenAt.current = ready && !folds ? presses : null; });
+  if (!folds) return children;
   // THE DATE AND THE HOURS STAY OFF THIS ROW since 2026-09-08 - the shell sits
   // under the day pane's own heading now, which already says both.
   return (

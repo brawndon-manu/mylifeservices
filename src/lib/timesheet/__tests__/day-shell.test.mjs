@@ -20,7 +20,8 @@ test("a walked day with something still owing shows its questions, not Answered"
   // the same test the footer applies: the server's reading of the plain cards
   // plus the batched rows staged in the tab
   assert.match(shell, /const open = blocked \|\| \(hasBatchRow && !!ctx\?\.blockedOn\?\.\(date\)\);/);
-  assert.match(shell, /if \(!done\?\.readyOn\?\.\(date\) \|\| open\) return children;/);
+  // the fold itself takes a press since 2026-09-16 - see day-shell-press.test.mjs
+  assert.match(shell, /if \(!folds\) return children;/);
 });
 
 test("the day view hands the shell the server's reading of what is still open", () => {
