@@ -15,10 +15,15 @@
 // way the renderer laid them out. Coordinates that ride the bytes cannot
 // disagree with the bytes.
 import { PDFArray, decodePDFRawStream } from "pdf-lib";
+import { APPROVAL_LINE, APPROVAL_LINE_OLD } from "./approval-line.js";
 
 // pdf-lib writes standard-font text hex-encoded, and Helvetica's encoding for
 // ASCII is the ASCII bytes, so the label is findable as plain hex.
 const LABEL_HEX = Buffer.from("Approval Signature:", "latin1").toString("hex").toUpperCase();
+// the one-line layout (2026-09-15) prints "Approved by:" on the same line; a
+// sheet rendered before it has no such label, and its line has no name field
+const NAME_HEX = Buffer.from(APPROVAL_LINE.nameLabel, "latin1").toString("hex").toUpperCase();
+const TM = /1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm/g;
 
 // every drawing op on one page, decompressed and concatenated. A page's
 // Contents can be a single stream or an array of them (the signing filler
@@ -55,14 +60,29 @@ export function findApprovalAnchor(doc) {
     const at = text.indexOf(`<${LABEL_HEX}>`);
     if (at < 0) continue;
     // the Tm that positioned the label is the last one before its Tj
-    const m = [...text.slice(Math.max(0, at - 400), at).matchAll(/1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm/g)].pop();
+    const m = [...text.slice(Math.max(0, at - 400), at).matchAll(TM)].pop();
     if (!m) continue;
-    const L = Number(m[1]) - 6;
+    const labelX = Number(m[1]);
     const y = Number(m[2]) - 4;
+    // WHICH LAYOUT: the name label on the same line, or nothing there
+    const nameAt = text.indexOf(`<${NAME_HEX}>`);
+    const nm = nameAt < 0 ? null : [...text.slice(Math.max(0, nameAt - 400), nameAt).matchAll(TM)].pop();
+    if (nm && Math.abs(Number(nm[2]) - Number(m[2])) < 0.5) {
+      const A = APPROVAL_LINE;
+      const L = labelX - A.sigLabelX;
+      return {
+        pageIndex: pi, layout: "line",
+        x: L + A.sigX, y, width: A.sigWidth, height: A.height,
+        dateX: L + A.dateX, dateY: y, dateWidth: A.dateWidth,
+        nameX: L + A.nameX, nameY: y, nameWidth: A.nameWidth,
+      };
+    }
+    const O = APPROVAL_LINE_OLD;
+    const L = labelX - O.sigLabelX;
     return {
-      pageIndex: pi,
-      x: L + 100, y, width: 200, height: 15,
-      dateX: L + 356, dateY: y, dateWidth: 180,
+      pageIndex: pi, layout: "old",
+      x: L + O.sigX, y, width: O.sigWidth, height: O.height,
+      dateX: L + O.dateX, dateY: y, dateWidth: O.dateWidth,
     };
   }
   return null;

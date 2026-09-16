@@ -2163,9 +2163,10 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   // signature on an unattested document
   if (!ts.signedAt) return { ok: false, error: "notsigned" };
   if (ts.approvedAt) return { ok: false, error: "already" };
-  if (!ts.qspSignedOffAt && qspItemsOf(ts.corrections, await loadBreakReasons(ts)).some((it) => it.changes.length)) {
-    return { ok: false, error: "qsp" };
-  }
+  // NO QUICKSOLVE HOLD ANY MORE. Mánu 2026-09-15, after approving his own
+  // sheet: "if we go to sign off on it we dont have to say we did it on qsp.
+  // thats just for us to use as a tool." The desk keeps its sign-off as a
+  // tool; the approval no longer waits on it. (His 2026-09-09 rule, reversed.)
   if (typeof signatureDataUrl !== "string" || !signatureDataUrl.startsWith("data:image")) {
     return { ok: false, error: "nosignature" };
   }

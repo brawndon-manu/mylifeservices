@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { renderSheet } from "../render-sheet.js";
 import { findApprovalAnchor } from "../approval-anchor.js";
 
@@ -45,6 +45,29 @@ test("the anchor read off the rendered bytes is the rect the renderer reported",
   close(found.dateY, r.approvalRect.dateY, "dateY");
   assert.equal(found.width, r.approvalRect.width);
   assert.equal(found.dateWidth, r.approvalRect.dateWidth);
+  // the one-line layout's name field, read back the same way
+  assert.equal(found.layout, "line");
+  close(found.nameX, r.approvalRect.nameX, "nameX");
+  close(found.nameY, r.approvalRect.nameY, "nameY");
+  assert.equal(found.nameWidth, r.approvalRect.nameWidth);
+});
+
+// A SHEET FROM BEFORE THE ONE-LINE LAYOUT: signature label at the margin, no
+// "Approved by:" on the line. Every copy signed before 2026-09-15 looks like
+// this, and it still has to take an approval.
+test("a sheet rendered before the one-line layout still resolves its signature and date", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("Approval Signature:", { x: 34, y: 100, size: 8.5, font });
+  page.drawText("Date:", { x: 350, y: 100, size: 8.5, font });
+  const found = findApprovalAnchor(await PDFDocument.load(await doc.save()));
+  assert.ok(found);
+  assert.equal(found.layout, "old");
+  close(found.x, 128, "x");
+  close(found.y, 96, "y");
+  close(found.dateX, 384, "dateX");
+  assert.equal(found.nameX, undefined, "no name field on the old line");
 });
 
 test("the anchor follows the document when the mileage line moves the block", async () => {

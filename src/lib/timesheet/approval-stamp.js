@@ -36,9 +36,16 @@ export async function stampApproval(doc, { rect, signatureDataUrl, approvedOn, a
   const font = await doc.embedFont(StandardFonts.Helvetica);
   page.drawText(approvedOn, { x: rect.dateX + 4, y: rect.dateY + 4, size: 9, font });
   const name = String(approvedBy || "").trim();
-  if (name) {
-    page.drawText(APPROVED_BY_LABEL, { x: rect.x - LABEL_DX, y: rect.y + NAME_DY, size: NAME_SIZE, font });
-    page.drawText(name, { x: rect.x, y: rect.y + NAME_DY, size: NAME_SIZE, font });
+  if (!name) return { name: null, nameY: null };
+  // THE LINE HAS A FIELD FOR IT since 2026-09-15: "Approved by:" is printed by
+  // the renderer and the name fills in beside it, the way the date does. A
+  // sheet rendered before that has no field, so its name goes on the free line
+  // above the signature with its own label.
+  if (rect.nameX != null) {
+    page.drawText(name, { x: rect.nameX + 4, y: rect.nameY + 4, size: 9, font });
+    return { name, nameY: rect.nameY + 4 };
   }
-  return { name: name || null, nameY: name ? rect.y + NAME_DY : null };
+  page.drawText(APPROVED_BY_LABEL, { x: rect.x - LABEL_DX, y: rect.y + NAME_DY, size: NAME_SIZE, font });
+  page.drawText(name, { x: rect.x, y: rect.y + NAME_DY, size: NAME_SIZE, font });
+  return { name, nameY: rect.y + NAME_DY };
 }

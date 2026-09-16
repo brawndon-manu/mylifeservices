@@ -10,6 +10,7 @@
 // them which days it was paying them a premium for. the colour key moved for
 // the same reason - it explains the punch cells, so it belongs under them.
 import fs from "node:fs";
+import { APPROVAL_LINE } from "./approval-line.js";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { recordedBreaksFor, insertRecordedBreaks, withStatedRest, withStatedBreaks } from "./recorded-breaks.js";
@@ -1405,7 +1406,23 @@ export async function renderCorrected(sheet, opts = {}) {
 
   // the signable trailer's geometry, filled by whichever branch draws it: the
   // ordinary document puts it under the table, the pending one on its own page.
-  let sigRect, dateRect, sigPage, apprRect, apprDateRect, apprPage;
+  let sigRect, dateRect, sigPage, apprRect, apprDateRect, apprNameRect, apprPage;
+  // ONE LINE, THREE FIELDS - Mánu 2026-09-15: "Approved by: ____ Approval
+  // Signature ____ Date: ____". Name and date fill at approval; the signature
+  // is drawn. The offsets live in approval-line.js, shared with the anchor
+  // that reads the line back off the signed bytes, so they cannot drift.
+  const drawApprovalLine = (lineY) => {
+    const A = APPROVAL_LINE;
+    text(A.nameLabel, L + A.nameLabelX, lineY, { size: 8.5 });
+    text(A.sigLabel, L + A.sigLabelX, lineY, { size: 8.5 });
+    text(A.dateLabel, L + A.dateLabelX, lineY, { size: 8.5 });
+    const field = (x, width) => ({ x: L + x, y: lineY - 4, width, height: A.height });
+    return {
+      apprNameRect: field(A.nameX, A.nameWidth),
+      apprRect: field(A.sigX, A.sigWidth),
+      apprDateRect: field(A.dateX, A.dateWidth),
+    };
+  };
   let decision = null;
   const TRAILER_H = 158;
 
@@ -1519,12 +1536,9 @@ export async function renderCorrected(sheet, opts = {}) {
   // aimed at payroll anyway, and payroll reads the payout report - which still
   // carries every figure.
   const apprY = y - adminBoxH + 12;
-  text("Approval Signature:", L + 6, apprY, { size: 8.5 });
-  text("Date:", L + 322, apprY, { size: 8.5 });
-  // fillable, like the employee block - management signs off in the portal once
-  // the employee has signed, and the approved copy is what gets filed.
-  apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
-  apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
+  // management signs off in the portal once the employee has signed, and the
+  // approved copy is what gets filed
+  ({ apprNameRect, apprRect, apprDateRect } = drawApprovalLine(apprY));
   apprPage = page;
   y = adminBoxTop - adminBoxH - 16;
   }
@@ -1690,10 +1704,7 @@ export async function renderCorrected(sheet, opts = {}) {
     // the approval line keeps the ordinary document's exact geometry: the
     // stamp finds it by this label and derives the rects from it
     const apprY = y - boxH + 12;
-    text("Approval Signature:", L + 6, apprY, { size: 8.5 });
-    text("Date:", L + 322, apprY, { size: 8.5 });
-    apprRect = { x: L + 100, y: apprY - 4, width: 200, height: 15 };
-    apprDateRect = { x: L + 356, y: apprY - 4, width: 180, height: 15 };
+    ({ apprNameRect, apprRect, apprDateRect } = drawApprovalLine(apprY));
     apprPage = page;
     decision = {
       pageIndex: pages.length - 1,
@@ -1789,6 +1800,9 @@ export async function renderCorrected(sheet, opts = {}) {
     dateX: apprDateRect.x,
     dateY: apprDateRect.y,
     dateWidth: apprDateRect.width,
+    nameX: apprNameRect.x,
+    nameY: apprNameRect.y,
+    nameWidth: apprNameRect.width,
   };
 
   // `decision` is the pending document's two boxes, for the step that ticks
