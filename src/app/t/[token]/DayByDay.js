@@ -12,6 +12,7 @@ import { ViewToggle } from "./TimesheetViews";
 import AcknowledgeFix from "./AcknowledgeFix";
 import BreakReason from "./BreakReason";
 import { StagedTimesProvider } from "./StagedTimes";
+import { dayStillOpen, finisherFor } from "@/lib/timesheet/day-open";
 import TimesheetQuestion, {
   BatchProvider,
   BatchDays,
@@ -380,11 +381,29 @@ export default function DayByDay({
   // counts too: a day is not finished with while either is outstanding.
   // keyed by date because this one is handed a date rather than a day
   const attested = attestedDates(days);
-  const plainBlockedOn = (date) =>
-    (anchored.get(date) || []).some((g) => !answers?.[g[0].id])
-    || (asksByDate.get(date) || []).length > 0
-    || (!attested.has(date) && (restsByDate.get(date) || [])
-      .some((b) => b.attention && !ackOn?.has?.(`${date}|${b.min}`)));
+  // ONE RULE, TWO READINGS - see day-open.js. "Is anything still open on this
+  // day" and "would anything be open if that one question were answered" are the
+  // same question asked one answer apart, and writing them twice here is how the
+  // screen and the card would come to disagree about a finished day.
+  const openInput = (date) => ({
+    groups: anchored.get(date) || [],
+    batched: asksByDate.get(date) || [],
+    rests: (restsByDate.get(date) || []).map((b) => ({ ...b, key: `${date}|${b.min}` })),
+    attested: attested.has(date),
+    answers,
+    acked: ackOn,
+  });
+  const plainBlockedOn = (date) => dayStillOpen(openInput(date));
+  // WHICH ONE ANSWER WOULD FINISH EACH DAY - Mánu 2026-09-16: "all questions
+  // should get a different option from next cause it doesnt make much sense
+  // scrolling down hitting next each time."
+  //
+  // A map rather than the function it started as: this file is a server
+  // component and the card is a client one, so a function cannot be handed
+  // across. Dates to ids, and the card compares its own id against it.
+  const dayFinishers = Object.fromEntries(
+    days.map((d) => [d.date, finisherFor(openInput(d.date))]).filter(([, id]) => id),
+  );
 
   // "07/16/26" -> "Thu, Jul 16" for the rail, "Thursday, July 16" for the
   // pane heading. The mm/dd/yy spelling stays everywhere answers are keyed
@@ -694,7 +713,7 @@ export default function DayByDay({
     {/* the tail of the token keys the walked-days memory per sheet - long
         enough that two sheets cannot collide, and nothing the address bar was
         not already showing. See DayDoneProvider. */}
-    <DayDoneProvider sheetKey={typeof token === "string" ? token.slice(-24) : null}>
+    <DayDoneProvider sheetKey={typeof token === "string" ? token.slice(-24) : null} finishers={dayFinishers}>
     <div className="mt-5">
       {/* ABOVE EVERYTHING, INCLUDING THE BATCHED HEADING. That heading was the
           only thing over the day list, so on a long sheet it read as the

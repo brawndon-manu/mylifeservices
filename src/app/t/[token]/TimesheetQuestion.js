@@ -100,7 +100,7 @@ export function useDayDone() {
 // server, where `localStorage` does not exist. And every read and write is
 // wrapped - a private window or blocked site data throws rather than returning
 // empty, and a lost tick must never take the page down with it.
-export function DayDoneProvider({ children, sheetKey = null }) {
+export function DayDoneProvider({ children, sheetKey = null, finishers = null }) {
   const [ready, setReady] = useState(() => new Set());
   const storeKey = sheetKey ? `mls.daysWalked.${sheetKey}` : null;
 
@@ -129,6 +129,12 @@ export function DayDoneProvider({ children, sheetKey = null }) {
       value={{
         ready,
         readyOn: (date) => ready.has(date),
+        // `finishers`: date -> the id of the ONE question whose answer would
+        // finish that day, handed in by the page, which is the only place that
+        // knows what else is open on it (see `finisherFor`). A MAP rather than
+        // the function it started as: the page is a server component and this is
+        // a client one, and a function cannot cross that line.
+        finishesDay: (date, id) => !!id && finishers?.[date] === id,
         markReady: (date) => setReady((r) => (r.has(date) ? r : new Set(r).add(date))),
         unmarkReady: (date) => setReady((r) => { const n = new Set(r); n.delete(date); return n; }),
       }}
@@ -1273,6 +1279,13 @@ function OneQuestion({
   // summary kept the old hours AND `answer` stayed stale - so the card had no
   // idea it had been answered and would not let him change it.
   const router = useRouter();
+  // ANSWERING THE LAST THING OPEN ON A DAY IS FINISHING WITH THAT DAY, so the
+  // confirm carries them on rather than leaving a separate Next at the far side
+  // of the calendar - see `dayFinishesOn`. Read before any early return: a hook
+  // cannot be called conditionally.
+  const nav = useContext(DayNavCtx);
+  const done = useContext(DayDoneCtx);
+  const flow = useReviewFlow();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [at, setAt] = useState("");
@@ -1451,8 +1464,16 @@ function OneQuestion({
     })
     .filter(Boolean);
 
+  // TAKING AN ANSWER OFF FINISHES NOTHING, so `choice === null` never moves. And
+  // the last day of a sheet has nowhere to go, so it keeps the plain confirm.
+  const movesOn =
+    !!proposed && proposed.choice !== null
+    && !!nav?.go && nav.index < (nav.dates?.length ?? 0) - 1
+    && !!done?.finishesDay?.(q.date, q.id);
+
   function commit() {
     if (!proposed || timeBlocked || reasonBlocked || blockBlocked) return;
+    const moving = movesOn;
     setErr(null);
     start(async () => {
       const res = await submitAction({
@@ -1474,6 +1495,14 @@ function OneQuestion({
       else {
         setHeld({ choice: proposed.choice, answerThen: answer, savedThen: savedChoice });
         setProposed(null); setAt(""); setSlotAt({}); setReason(null); setBlock(""); setEditing(false); router.refresh();
+        // the day is finished BECAUSE this was answered, so it is marked here
+        // rather than waiting for a press that no longer exists. Both halves,
+        // the same pair Next sets: the ring and the flow's own count.
+        if (moving) {
+          flow?.markReviewed?.(q.date);
+          done?.markReady?.(q.date);
+          nav.go(nav.index + 1);
+        }
       }
     });
   }
@@ -1902,7 +1931,7 @@ function OneQuestion({
                 "bg-brand"
               }`}
             >
-              {proposed.choice === null ? "Take it off" : "Yes, confirm"}
+              {proposed.choice === null ? "Take it off" : movesOn ? "Confirm and move on" : "Yes, confirm"}
             </button>
             <button
               type="button"
