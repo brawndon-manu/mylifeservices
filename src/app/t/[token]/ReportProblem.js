@@ -247,8 +247,19 @@ export default function ReportProblem({ token, days, submitAction, period = null
     return (
       <section className="mt-7">
         <h2 className="text-2xl font-semibold tracking-tight text-foreground">Your reports</h2>
-        <p className="mt-2 text-sm text-muted">Review these before moving to PTO &amp; sick pay.</p>
-        {!items.length && <p className="mt-6 text-sm text-muted">No problems reported.</p>}
+        {/* THE LINE HAS TO SAY THE TRUE THING IN BOTH CASES - Mánu 2026-09-16,
+            on an ILS sheet of his own: it named a step ILS does not have (the
+            PTO stage is the day program's alone since 7581540), and under an
+            empty list "review these" sat above "No problems reported", which he
+            read as off. Empty says so and stops; a list says what comes next,
+            and what comes next depends on the program. Wording his. */}
+        <p className="mt-2 text-sm text-muted">
+          {items.length === 0
+            ? "Nothing reported on this timesheet."
+            : flow?.leave
+              ? "Review these before moving to PTO & sick pay."
+              : "Review these before you generate your document."}
+        </p>
         <ul className="mt-5 divide-y divide-sep">
           {items.map((item, index) => {
             const before = days.find((day) => day.date === item.date);

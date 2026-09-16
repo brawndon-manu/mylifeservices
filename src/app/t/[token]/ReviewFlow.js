@@ -76,7 +76,7 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
   const afterReports = leave ? "leave" : "document";
   const generateStep = leave ? 2 : 1;
   const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? generateStep + 1 : generateStep;
-  const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly,
+  const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly, leave,
     reviewedDays, markReviewed,
     generated, setGenerated, editorTarget, setEditorTarget, activeDate,
     reportRef, targets, report, leaveEditing, setLeaveEditing, leaveBusy, setLeaveBusy } : null;
