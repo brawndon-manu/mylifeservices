@@ -22,6 +22,7 @@ import { useReviewFlow } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
+import { dayChipLabel } from "@/lib/timesheet/review-days";
 // the five sentences, already written and already counting correctly - see the
 // note on `renderReason`. Client-safe: break-answers.js imports nothing.
 import {
@@ -41,6 +42,17 @@ import { useStagedPublisher } from "./StagedTimes";
 // Both views mount exactly one provider, so there is still one staged answer
 // and one commit however the rows are arranged.
 const BatchCtx = createContext(null);
+
+// WHAT THE RAIL NEEDS TO KNOW BEFORE IT LETS SOMEBODY LEAVE THE DAYS. The
+// batched card stages its answers in the tab and writes them in one press, and
+// that press sat after the last day - which is exactly where Next on the last
+// day used to jump away from. See `leaveDays` in DayRail. Null outside the
+// provider, so a sheet with no batched card is unchanged.
+export function useBatchSave() {
+  const ctx = useContext(BatchCtx);
+  if (!ctx) return null;
+  return { needsSave: ctx.needsSave, canSave: ctx.canSave, openConfirm: ctx.openConfirm };
+}
 
 // DAYS SOMEBODY HAS FINISHED WITH.
 //
@@ -2177,6 +2189,10 @@ export function BatchProvider({
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [picked, setPicked] = useState({});
+  // WHERE TO GO ONCE THE SAVE LANDS. Set only by the last day's Next - see
+  // `openConfirm` - so a save pressed from the panel itself stays put.
+  const flow = useReviewFlow();
+  const [afterSave, setAfterSave] = useState(null);
   // WHY THEY MISSED IT, one per question. Required on a "no" - Mánu 2026-08-14 -
   // because a "no" IS the violation and the why is the one half no QSP export
   // has a field for. Leaving the whole question alone is still fine and still
@@ -2442,6 +2458,16 @@ export function BatchProvider({
   const onRecord = (q) => (held && q.id in held.picked ? held.picked[q.id] : savedValue(q));
   const dirty = chosen.filter(({ q, v }) => v !== onRecord(q));
   const cleared = dirty.filter(({ v }) => !v);
+  // IS ANYTHING ON THIS CARD STILL OFF THE RECORD - staged and unsaved, or
+  // not answered at all, or answered but owing a time or a reason. The rail
+  // asks before it lets the last day's Next leave the days: Elizabeth Matias,
+  // 2026-09-16, walked her fortnight with five rest questions unanswered,
+  // pressed Next off the last day, and met "Answer the remaining questions" on
+  // the PTO step with nothing on screen saying which, or where the save was.
+  const needsSave = dirty.length > 0 || undecided.length > 0 || missingTimes > 0 || missingReasons > 0;
+  // and whether the one press would go through right now
+  const canSave = dirty.length > 0 && undecided.length === 0 && missingTimes === 0 && missingReasons === 0;
+  const openConfirm = (then = null) => { setAfterSave(then); setConfirming(true); };
 
   function commit() {
     setErr(null);
@@ -2476,6 +2502,10 @@ export function BatchProvider({
       else {
         setHeld({ picked: Object.fromEntries(chosen.filter((x) => x.v).map(({ q, v }) => [q.id, v])), answersThen: answers });
         setConfirming(false); setPicked({}); setTimes({}); setReasons({}); router.refresh();
+        // the last day's Next was what opened this confirm, so the save is the
+        // step it stood for and the walk carries on from here
+        if (afterSave === "reports") flow?.go?.("reports");
+        setAfterSave(null);
       }
     });
   }
@@ -2828,6 +2858,7 @@ export function BatchProvider({
         renderToggle, renderTimes, renderReason, missingLabel, noRoom, titleFor, partWord, byDay, list, copy,
         pending, err, confirming, setConfirming, commit,
         dirty, missingTimes, missingTimeDates, missingReasons, undecided, undecidedDates, missed, took, hours, base, answeredAll,
+        needsSave, canSave, openConfirm,
         ready,
         readyOn: (date) => ready.has(date),
         blockedOn,
@@ -2904,16 +2935,9 @@ export function BatchDays({ dates }) {
 // THE ONE CONFIRM FOR THE WHOLE BATCH, wherever its rows ended up. Rendered once
 // per provider: after the list in "All questions", after the last day in "Day by
 // day". It still spells out the total before anything is written.
-// "07/16/26" -> "Thu, Jul 16" for the missing-time chips - the same label the
-// day rail wears, so the chip and the row it scrolls to read alike.
-const DAY_WORDS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTH_WORDS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const chipLabel = (date) => {
-  const [m, d, y] = String(date || "").split("/").map(Number);
-  if (!m || !d || !y) return date;
-  const at = new Date(2000 + y, m - 1, d);
-  return `${DAY_WORDS[at.getDay()]}, ${MONTH_WORDS[m - 1]} ${d}`;
-};
+// the day chips read "Thu, Jul 16", the label the rail wears - `dayChipLabel`
+// in review-days, which the flow's hold line draws from too.
+const chipLabel = dayChipLabel;
 
 // "13:31" + 10 -> "13:41", for reading a break's span back
 const addMinutes = (hhmm, add) => {
@@ -2942,7 +2966,7 @@ export function BatchConfirm() {
   const {
     list, copy, pending, err, confirming, setConfirming, commit,
     dirty, missingTimes, missingTimeDates, missingReasons, undecided, undecidedDates, missed, took, hours, base, answeredAll,
-    ready, byDay,
+    ready, byDay, openConfirm,
   } = ctx;
   // HOW MANY DAYS THEY HAVE FINISHED WITH, and how many are left.
   //
@@ -3002,7 +3026,7 @@ export function BatchConfirm() {
             // SAYS SO, in the lines below and in the label, rather than the
             // button going dead with the explanation somewhere off screen.
             disabled={pending}
-            onClick={() => { if (!undecided.length) setConfirming(true); }}
+            onClick={() => { if (!undecided.length) openConfirm(null); }}
             aria-disabled={undecided.length > 0}
             className="flex-none rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >

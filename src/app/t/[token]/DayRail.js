@@ -5,7 +5,7 @@ import { Check, CircleAlert } from "lucide-react";
 import { reportedReviewDay } from "@/lib/timesheet/review-days";
 import styles from "./ReviewFlow.module.css";
 import { useReviewFlow } from "./ReviewFlow";
-import { useDayDone, DayNavProvider } from "./TimesheetQuestion";
+import { useDayDone, DayNavProvider, useBatchSave } from "./TimesheetQuestion";
 
 // THE DAY RAIL: the period's days down the left, one day's work shown at a
 // time. Presentation only - every pane stays MOUNTED and the unselected ones
@@ -19,6 +19,7 @@ import { useDayDone, DayNavProvider } from "./TimesheetQuestion";
 // on screen.
 export default function DayRail({ days, children, stacked = false }) {
   const flow = useReviewFlow();
+  const batch = useBatchSave();
   // IT OPENS ON THE FIRST DAY OF THE PERIOD, so somebody can start at the top
   // and press Next all the way through.
   //
@@ -81,6 +82,30 @@ export default function DayRail({ days, children, stacked = false }) {
 
   const panes = Array.isArray(children) ? children : [children];
 
+  // NEXT ON THE LAST DAY IS NOT ALLOWED TO WALK AWAY FROM AN UNSAVED CARD.
+  //
+  // The batched card writes every day in one press, and that press sits after
+  // the last day - which is exactly what Next on the last day jumped over on
+  // its way to the reports. Elizabeth Matias, 2026-09-16: five rest questions
+  // unanswered, fourteen days walked, and the PTO step saying "Answer the
+  // remaining questions" with the days, the questions and the save all hidden
+  // behind a stage she had left.
+  //
+  // So the last Next asks the card first. Nothing off the record: on to the
+  // reports as before. Answers typed and complete: the confirm opens and the
+  // page lands on it, and the save is what carries the walk on - see
+  // `afterSave` in BatchProvider. Something still owing: the page lands on the
+  // panel, which names the days.
+  const leaveDays = () => {
+    if (batch?.needsSave) {
+      if (batch.canSave) batch.openConfirm("reports");
+      afterRef.current?.focus({ preventScroll: true });
+      afterRef.current?.scrollIntoView({ block: "start" });
+      return;
+    }
+    flow.go("reports");
+  };
+
   if (stacked) return (
     <>
       <div className="mt-3 divide-y divide-sep overflow-hidden rounded-xl bg-surface shadow-sm night:ring-1 night:ring-border">
@@ -88,7 +113,7 @@ export default function DayRail({ days, children, stacked = false }) {
           <div key={days[i]?.date ?? i} ref={(el) => { paneRefs.current[i] = el; }} tabIndex={-1} className="scroll-mt-24">
             <DayNavProvider dates={days.map((d) => d.date)} index={i} go={(next) => {
               if (flow?.editorTarget) return;
-              if (next === days.length && flow) { flow.go("reports"); return; }
+              if (next === days.length && flow) { leaveDays(); return; }
               const target = next === days.length ? afterRef.current : paneRefs.current[next];
               target?.focus({ preventScroll: true });
               target?.scrollIntoView({ block: "start" });
@@ -179,7 +204,7 @@ export default function DayRail({ days, children, stacked = false }) {
               index={i}
               go={(next) => {
                 if (flow?.editorTarget) return;
-                if (next === days.length && flow) { flow.go("reports"); return; }
+                if (next === days.length && flow) { leaveDays(); return; }
                 if (next === days.length) {
                   afterRef.current?.focus({ preventScroll: true });
                   afterRef.current?.scrollIntoView({ block: "start" });

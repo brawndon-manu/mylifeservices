@@ -68,3 +68,16 @@ export function reportedReviewDay(day, reports = []) {
     reviewReported: true, reviewRecordedHours: day.paidHours || 0,
   };
 }
+
+// "07/16/26" -> "Thu, Jul 16": what a day chip says, the same label the rail
+// wears, so a chip and the day it opens read alike. Shared here because the
+// flow's hold line and the batch confirm both draw them, and the flow cannot
+// import from the card without a cycle.
+const DAY_WORDS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_WORDS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function dayChipLabel(date) {
+  const [m, d, y] = String(date || "").split("/").map(Number);
+  if (!m || !d || !y) return date;
+  const at = new Date(2000 + y, m - 1, d);
+  return `${DAY_WORDS[at.getDay()]}, ${MONTH_WORDS[m - 1]} ${d}`;
+}

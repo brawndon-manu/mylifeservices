@@ -179,7 +179,9 @@ test("the other view keeps them too", () => {
 // somewhere off screen. So this blocks without going dead: the label counts what
 // is left and a line above says the same thing.
 test("the batch confirm will not open while a day is unanswered", () => {
-  assert.match(CARD, /if \(!undecided\.length\) setConfirming\(true\)/);
+  // `openConfirm` since 2026-09-16 - it also remembers whether the last day's
+  // Next opened it - and the guard in front of it is the same
+  assert.match(CARD, /if \(!undecided\.length\) openConfirm\(null\)/);
 });
 
 test("and it says so rather than going dead", () => {

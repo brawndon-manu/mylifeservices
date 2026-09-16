@@ -2,13 +2,20 @@
 
 import { createContext, useContext, useRef, useState } from "react";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
-import { reportedReviewDay } from "@/lib/timesheet/review-days";
+import { reportedReviewDay, dayChipLabel } from "@/lib/timesheet/review-days";
 import { checkWorkSlots, clockLabel } from "@/lib/timesheet/work-slots";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 import DayCalendar from "./DayCalendar";
 import styles from "./ReviewFlow.module.css";
 
 const ReviewContext = createContext(null);
+// the rail selects whichever day the address bar names - its #day-<date>
+// handler - and a hash already set fires no event, so that case is fired by hand
+const selectDay = (date) => {
+  const want = `#day-${date}`;
+  if (window.location.hash === want) window.dispatchEvent(new HashChangeEvent("hashchange"));
+  else window.location.hash = want;
+};
 export const useReviewFlow = () => useContext(ReviewContext);
 const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40";
 
@@ -16,7 +23,7 @@ const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-me
 // time off is a claim its employees make here; ILS time off is not (Mánu
 // 2026-09-15: "remove pto and sick pay option for ils"), so the ILS flow is
 // three steps and the stage is skipped in both directions.
-export default function ReviewFlow({ enabled, ready, reports, children, initialReports = [], readOnly = false, leave = true }) {
+export default function ReviewFlow({ enabled, ready, reports, children, initialReports = [], readOnly = false, leave = true, openDays = [] }) {
   const [stage, setStage] = useState("days");
   // reports already sent arrive as the list, marked sent: not drafts, not
   // editable, and since 2026-09-09 no longer a hold on the signature - what
@@ -55,6 +62,13 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
   // report on the 3rd, pressed Next without sending it, and found Next dead on
   // the PTO step with the reason printed under the fold. The reports step holds
   // now, where the Send button is, and every hold says why in the one place.
+  // THE DAYS THE HOLD IS WAITING ON, so "answer the remaining questions" can
+  // point somewhere. The days stage is hidden from here, and so are its rail,
+  // its questions and its save - the sentence on its own was all a person had.
+  // A chip goes back to the days and opens that one; the rail selects whichever
+  // day the address bar names.
+  const askingDays = (stage === "leave" || (!leave && stage === "reports")) && !ready;
+  const openDay = (date) => { go("days"); selectDay(date); };
   const hold = editorTarget ? "Add this report or cancel it before continuing."
     : leaveEditing ? "Save your answer or cancel before continuing."
     : draftsUnsent && stage !== "days" ? "Review and send your reports before generating your timesheet."
@@ -101,7 +115,19 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
       <div hidden={enabled && stage !== "reports"}>{reports}</div>
       {enabled && !readOnly && (stage !== "days" || items.length > 0 || editorTarget) && (
         <div className="mt-6 border-t border-sep pt-5">
-          {hold && <p className="mb-3 text-xs text-muted">{hold}</p>}
+          {hold && <p className="mb-3 text-xs text-muted">
+            {hold}
+            {askingDays && openDays.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => openDay(d)}
+                className="ml-2 inline-flex rounded-[7px] bg-amber-500/15 px-2 py-0.5 align-baseline font-mono text-xs font-semibold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
+              >
+                {dayChipLabel(d)}
+              </button>
+            ))}
+          </p>}
           {stage === "days" ? <div className="flex justify-end"><button type="button" className={button} disabled={!!editorTarget} onClick={() => go("reports")}>Review reports ({items.length})</button></div> : <div className="flex items-center justify-between gap-3">
             <button type="button" className={button} disabled={!!editorTarget || leaveEditing || leaveBusy}
               onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : leave ? "leave" : "reports")}>Back</button>

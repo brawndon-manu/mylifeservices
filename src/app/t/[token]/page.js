@@ -402,6 +402,17 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       }))
     : [];
   const breakAsks = breakAnswers.filter((r) => r.mode);
+  // THE DAYS STILL WAITING ON SOMETHING, for the flow's hold line: a question
+  // with no answer on record, or a break reason still owed. In period order,
+  // because the questions come out by day and the asks are appended after.
+  const isOnRecord = (q) => answered.some(
+    (c) => c.kind === `q_${q.kind}` && (q.dates || [q.date]).includes(c.date),
+  );
+  const dateKey = (d) => { const [m, dd, y] = String(d).split("/").map(Number); return y * 10000 + m * 100 + dd; };
+  const openDays = [...new Set([
+    ...questions.filter((q) => !isOnRecord(q)).flatMap((q) => q.dates || [q.date]),
+    ...breakAsks.map((r) => r.date),
+  ].filter(Boolean))].sort((a, b) => dateKey(a) - dateKey(b));
   // THEIR OWN WORDS, BY THE DAY AND THE BREAK THEY ARE ABOUT.
   //
   // `confirmedText` is what the employee typed. `reason` may be ours, taken off
@@ -842,7 +853,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               Three steps for ILS, four for the day program: the PTO & sick
               pay stage is the day program's alone - "remove pto and sick pay
               option for ils", same day. */}
-          <ReviewFlow enabled leave={isDayProgram} ready={readyToGenerate} initialReports={openCorrections} reports={
+          <ReviewFlow enabled leave={isDayProgram} ready={readyToGenerate} openDays={openDays} initialReports={openCorrections} reports={
             <ReportProblem token={token} days={ts.data?.days || []}
               period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
               submitAction={act(submitTimesheetCorrections)} />

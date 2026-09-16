@@ -23,7 +23,7 @@ test("the flow and the scope are on for every program; the leave stage only for 
 
 test("without the leave stage the strip is three steps and reports go straight to the document", () => {
   const flow = read("../../../app/t/[token]/ReviewFlow.js");
-  assert.match(flow, /leave = true \}\) \{/);
+  assert.match(flow, /leave = true, openDays = \[\] \}\) \{/);
   assert.match(flow, /const steps = leave \? \["Review days", "PTO & sick pay", "Generate", "Sign"\] : \["Review days", "Generate", "Sign"\];/);
   assert.match(flow, /const afterReports = leave \? "leave" : "document";/);
   assert.match(flow, /onClick=\{\(\) => go\(stage === "reports" \? afterReports : "document"\)\}>Next/);
