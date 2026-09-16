@@ -151,6 +151,7 @@ export default function TimesheetSigner({
             : "Check the hours and breaks below, sign at the bottom, then submit. Your signed copy goes to payroll and is kept on file."
         }
         signMode={!gated}
+        signaturePlace="This is added to your timesheet above."
       />
 
       {asking && (

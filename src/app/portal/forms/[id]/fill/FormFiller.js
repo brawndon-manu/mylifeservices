@@ -108,6 +108,10 @@ export default function FormFiller({
   // not demand more than the paper does. Everything not named here is still
   // required, so the timesheet's single signature behaves exactly as before.
   optionalSignatures = [],
+  // WHAT THE SIGNING CARD SAYS THE SIGNATURE IS FOR. The timesheet names itself,
+  // his wording; every other single-signature document says "the document"
+  // rather than guessing at a noun it does not know.
+  signaturePlace = "This is added to the document above.",
   // A FIELD WHOSE VALUE COMES BACK AS payload.employeeName. The attestation
   // form has a "Supervisor name (print)" box; whoever signs from the emailed
   // link types their name there anyway, and the row's audit trail wants the
@@ -871,6 +875,51 @@ export default function FormFiller({
             </div>
           ) : (
             <>
+            {/* SOMEWHERE TO SIGN THAT IS NOT EIGHT PIXELS TALL.
+                Mánu 2026-09-16: "should we change the way we sign it? instead of
+                pressing sign what if we have it how it is to sign the approval
+                one?"
+
+                The signature box drawn on the document is the real field, at the
+                real place the signature lands, and at 375 the timesheet's is 112
+                by 8 - measured in the 09/15 audit. That is the tap target for the
+                most consequential press on the page. The approve page has had the
+                answer all along: read the document above, sign in a card beneath
+                it. Same pad, same field, same spot on the paper.
+
+                ONLY WHEN THERE IS EXACTLY ONE SIGNATURE, his pick. The client
+                attestation carries two and only one is required, so a single card
+                cannot say which it is signing; those keep the boxes on the
+                document, which is where the distinction is visible. */}
+            {signMode && sigFields.length === 1 && (
+              <div className="mt-5 rounded-xl border border-border bg-surface p-5">
+                <p className="text-sm font-medium text-foreground">Your signature</p>
+                <p className="mt-1 text-xs text-muted">{signaturePlace}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSigning(sigFields[0].name)}
+                    className="flex h-16 w-56 items-center justify-center rounded-md border border-dashed border-brand-light/60 bg-background transition hover:bg-brand-light/5"
+                  >
+                    {values[sigFields[0].name] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={values[sigFields[0].name]} alt="Your signature" className="max-h-14 max-w-full" />
+                    ) : (
+                      <span className="text-sm font-medium text-brand-light">Tap to sign</span>
+                    )}
+                  </button>
+                  {values[sigFields[0].name] && (
+                    <button
+                      type="button"
+                      onClick={() => setVal(sigFields[0].name, "")}
+                      className="text-xs font-medium text-muted transition hover:text-foreground"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-5">
               {signMode ? (
                 <button
