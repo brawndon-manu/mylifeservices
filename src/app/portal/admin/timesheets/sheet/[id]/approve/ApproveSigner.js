@@ -21,7 +21,7 @@ const ERRORS = {
   store: "Couldn't save the approved copy. Try again.",
 };
 
-export default function ApproveSigner({ timesheetId, fileUrl, submitAction, backHref }) {
+export default function ApproveSigner({ timesheetId, fileUrl, submitAction, backHref, approverName = null }) {
   const router = useRouter();
   const [signing, setSigning] = useState(false);
   const [sig, setSig] = useState(null);
@@ -56,6 +56,12 @@ export default function ApproveSigner({ timesheetId, fileUrl, submitAction, back
         <p className="mt-1 text-xs text-muted">
           This is added to the approval line on the employee&apos;s signed copy.
         </p>
+        {/* WHAT WILL PRINT BESIDE IT, so nobody signs under the wrong name: the
+            legal name on the signed-in account, not the preferred one. Mánu
+            2026-09-15, wording his. */}
+        {approverName && (
+          <p className="mt-1 text-xs text-muted">Prints as <b className="text-foreground">{approverName}</b></p>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button

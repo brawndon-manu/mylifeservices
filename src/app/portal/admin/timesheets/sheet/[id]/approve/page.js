@@ -172,6 +172,7 @@ export default async function ApproveTimesheetPage({ params }) {
             . Review the hours below, then sign the approval line at the bottom.
           </p>
           <ApproveSigner
+            approverName={user?.name || null}
             timesheetId={ts.id}
             fileUrl={`/portal/admin/timesheets/sheet/${ts.id}/download`}
             submitAction={approveTimesheet}

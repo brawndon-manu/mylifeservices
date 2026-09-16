@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { futureDates, trimDays, isoDate } from "@/lib/timesheet/partial";
@@ -38,6 +38,7 @@ import { storedDay, totalsFromDays } from "@/lib/timesheet/stored";
 // the approval stamp's placement, read off the signed bytes themselves - see
 // the note in approval-anchor.js for why the stored rect cannot be trusted
 import { findApprovalAnchor } from "@/lib/timesheet/approval-anchor";
+import { stampApproval } from "@/lib/timesheet/approval-stamp";
 import { questionNoun } from "@/lib/timesheet/question-nouns";
 // asked before the upload writes anything, because the database's own answer to
 // this arrives as an error code with no person attached
@@ -2186,19 +2187,6 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
     // signature, so say that plainly instead of approving without one.
     const rect = findApprovalAnchor(doc) || ts.data?.approvalRect;
     if (!rect) return { ok: false, error: "norect" };
-    const page = doc.getPages()[rect.pageIndex] || doc.getPages()[0];
-    const png = await doc.embedPng(signatureDataUrl);
-    // fit inside the line without distorting the drawing
-    const k = Math.min(rect.width / png.width, rect.height / png.height);
-    const w = png.width * k;
-    const h = png.height * k;
-    page.drawImage(png, {
-      x: rect.x + (rect.width - w) / 2,
-      y: rect.y + (rect.height - h) / 2,
-      width: w,
-      height: h,
-    });
-    const font = await doc.embedFont(StandardFonts.Helvetica);
     // pinned to Pacific, not the server clock. Vercel runs UTC, so an approval
     // signed at 11:30pm Pacific would otherwise print tomorrow's date on a
     // payroll document - and disagree with the employee's date, which their
@@ -2206,12 +2194,10 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
     const approvedOn = new Date().toLocaleDateString("en-US", {
       timeZone: "America/Los_Angeles",
     });
-    page.drawText(approvedOn, {
-      x: rect.dateX + 4,
-      y: rect.dateY + 4,
-      size: 9,
-      font,
-    });
+    // the signature, the date, and WHO APPROVED - the legal name on the
+    // signed-in account, printed above the signature line (Mánu 2026-09-15).
+    // See approval-stamp.js, which is tested on a rendered sheet.
+    await stampApproval(doc, { rect, signatureDataUrl, approvedOn, approvedBy: user.name || null });
     pdfBase64 = Buffer.from(await doc.save()).toString("base64");
   } catch (e) {
     console.error("approval stamp failed:", e);
