@@ -319,22 +319,31 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 }
 
-/* THE SAME RULE FOR THE TIMESHEET REVIEW'S DAY BAR - Mánu 2026-09-16: "we need
-   to move the accessibility button for the timesheets cause it gets in the way
-   of the next button."
+/* ON THE TIMESHEET REVIEW THE BUTTON GOES TO THE TOP - Mánu 2026-09-16, with a
+   photograph of it sitting on Next: "we just gotta move the accessbility button
+   adjacent to the top of the screen to where it is on the botton right
+   currently. it in the way."
 
-   The bar carries Back, Next and Report a problem along the bottom of a phone
-   screen, and the button sat on top of Next: a DOM click moved the day and a
-   real tap opened the accessibility panel. The bar was shortened to dodge it,
-   which cost it 68px of width for no reason once the button can simply move.
+   IT WAS LIFTED ABOVE THE DAY BAR FIRST AND THAT WAS NOT ENOUGH, which the
+   photograph shows and the reason is worth keeping: the lift was keyed to
+   `[data-day-bar]`, the day cards LEAVE THE DOM on the reports step, so the rule
+   stopped applying at exactly the step whose own footer puts Next in the
+   bottom-right corner. A marker that comes and goes cannot hold a button still.
+   It is keyed to the page now, which is there for all four steps.
 
-   Keyed off the bar's own presence, like the tab bar above, so it cannot drift
-   out of step with which pages have one. The bar is 62px tall and sits 12 above
-   the safe area, so the button clears it at safe + 86. */
-@media (max-width: 639px) {
-  body:has([data-day-bar]) .corner-fab {
-    bottom: calc(env(safe-area-inset-bottom) + 5.375rem);
-  }
+   BELOW THE HEADER AND BELOW THE PHONE HINT, which is two things to clear, both
+   measured at 375. The header is 68 tall and carries the phone button at the top
+   right (x 221-364), so a button at top 16 lands on that - the same collision one
+   corner up. And the hint that hangs under it, "Text or call this number if you
+   have any issue", runs x 92-359 and y 76-109, so top 84 lands on that instead.
+   It is aria-hidden and folds itself away after ten seconds, but those ten
+   seconds are exactly when somebody opens their link. 109 and 15 to breathe.
+
+   Both ends set: the wrapper carries Tailwind's `bottom-4`, so `top` alone would
+   leave it pinned to both. */
+body:has([data-timesheet-review]) .corner-fab {
+  top: calc(env(safe-area-inset-top) + 7.75rem);
+  bottom: auto;
 }
 
 /* AND IT SETTLES BACK once somebody has seen it - Mánu 2026-09-16: "can we make

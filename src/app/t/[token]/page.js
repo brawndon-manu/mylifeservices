@@ -674,7 +674,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     // text at roughly 7 pixels tall.
     // no-focus-zoom: every field here is text-sm, and a field under 16px makes
     // iOS Safari magnify the page and stay there. See the rule in globals.css.
-    <div className="portal-shell bg-background">
+    // THE WHOLE REVIEW, MARKED ONCE - see `[data-timesheet-review]` in
+    // globals.css, which moves the accessibility button off the bottom-right
+    // corner here. Marked on the page rather than on the day bar: the day cards
+    // leave the DOM on the reports step, so a rule keyed to them stopped
+    // applying exactly where the footer's own Next sits, which is the collision
+    // he photographed.
+    <div data-timesheet-review="" className="portal-shell bg-background">
     <section className={`no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 ${reviewStyles.review}`}>
       {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
           reaches this page within a few seconds, without either of them saying

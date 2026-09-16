@@ -191,13 +191,12 @@
   .dayBar {
     position: fixed;
     left: 16px;
-    /* FULL WIDTH AGAIN. This stopped 68px short of the edge to dodge the
-       accessibility button, which is fixed at bottom 16 right 16 with z-index
-       50 and landed on top of Next - a DOM click moved the day and a real tap
-       opened the accessibility panel. Mánu 2026-09-16: "we need to move the
-       accessibility button for the timesheets cause it gets in the way of the
-       next button." It lifts above the bar now (see `[data-day-bar]` in
-       globals.css), so the bar can have its width back. */
+    /* FULL WIDTH. This stopped 68px short of the edge to dodge the accessibility
+       button, which used to be fixed at bottom 16 right 16 with z-index 50 and
+       landed on top of Next - a DOM click moved the day and a real tap opened
+       the accessibility panel. On this page that button now sits at the top
+       instead (see `[data-timesheet-review]` in globals.css), so nothing down
+       here has to make room for it. */
     right: 16px;
     bottom: calc(12px + env(safe-area-inset-bottom));
     z-index: 30;
