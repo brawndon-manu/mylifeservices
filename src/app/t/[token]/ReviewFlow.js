@@ -63,6 +63,16 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
   // the strip: four steps with the leave stage, three without; the step after
   // the reports stage is the leave stage when there is one, else the document
   const steps = leave ? ["Review days", "PTO & sick pay", "Generate", "Sign"] : ["Review days", "Generate", "Sign"];
+  // THREE ACROSS ON A PHONE, FOUR IN A SQUARE - Mánu 2026-09-16: "on mobile the
+  // numbers can also be side by side cause it looks awkward with 1 review days
+  // 2 generate and 3 sign on its own row alone."
+  //
+  // The two column grid is right for the day program's four and wrong for ILS's
+  // three, which it breaks 2 + 1 with Sign alone underneath. Measured at 375:
+  // three steps in a row take 245px against a 343px budget, four take exactly
+  // 343 and wrap "Review days" onto two lines. So the COUNT decides it, not the
+  // width - a media query would have to guess which flow it is in.
+  const stripClass = steps.length > 3 ? "grid grid-cols-2 gap-2" : "flex gap-3";
   const afterReports = leave ? "leave" : "document";
   const generateStep = leave ? 2 : 1;
   const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? generateStep + 1 : generateStep;
@@ -74,7 +84,7 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
   return (
     <ReviewContext.Provider value={value}>
       {enabled && !readOnly && (
-        <ol ref={headingRef} aria-label="Timesheet progress" className="mt-6 grid scroll-mt-24 grid-cols-2 gap-2 border-b border-sep pb-5 sm:flex sm:flex-wrap sm:gap-5">
+        <ol ref={headingRef} aria-label="Timesheet progress" className={`mt-6 scroll-mt-24 border-b border-sep pb-5 sm:flex sm:flex-wrap sm:gap-5 ${stripClass}`}>
           {steps.map((label, i) => (
             <li key={label}>
               <button type="button" aria-current={i === current ? "step" : undefined}
