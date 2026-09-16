@@ -8,6 +8,7 @@ import { preferredName } from "@/lib/contacts";
 import { isCheckStatus, isContactVia, asksHow, statusAfter, isMarkAction } from "@/lib/timesheet/check-status";
 import { bumpBatchVersion, bumpSheetVersion } from "@/lib/timesheet-presence";
 import { isBreakAnswer, isHeardVia } from "@/lib/timesheet/break-answers";
+import { cleanNoteBody } from "@/lib/timesheet/check-notes";
 import { supersededBy, supersededByForTimesheet, refusal } from "@/lib/timesheet/superseded";
 
 // WHERE A PERSON HAS GOT TO, set from any of the three screens that list them.
@@ -291,6 +292,84 @@ export async function deleteRowComment(id) {
   revalidatePath(`/portal/admin/timesheets/${row.batchId}/checks`);
   revalidatePath(`/portal/admin/timesheets/${row.batchId}/people`);
   return { ok: true };
+}
+
+// THE ONE NOTE ON A FINDING, written or rewritten - see check-notes.js.
+//
+// SHARED, LIKE THE MARK. Anybody who may manage timesheets may edit anybody's,
+// and the row records who touched it last. The comment above is somebody's own
+// sentence and only its author may take it down; this is one line of working
+// state about the finding, and a note only its author can fix goes stale on a
+// list two people work.
+//
+// EMPTY IS THE DELETE. Clearing the box and saving, and pressing Delete note,
+// are the same act and take the same path - a note with nothing in it is the
+// absence of a note, and giving that two implementations is how they come to
+// disagree.
+export async function setCheckNote({ batchId, personKey, findingKey, body }) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "forbidden" };
+  // BOTH HALVES OF THE KEY OR NOTHING. A row that matched nobody on the
+  // timesheet has no person behind it, and a note keyed on the finding alone
+  // would be shared with every other unmatched row carrying it. The screen does
+  // not offer the control on those rows; this is the same rule on the server,
+  // where it is a rule rather than a suggestion.
+  if (!batchId || !personKey || !findingKey) return { ok: false, error: "missing" };
+  // A REPLACED UPLOAD IS READ ONLY - see superseded.js.
+  {
+    const newer = await supersededBy(batchId);
+    if (newer) return refusal(newer);
+  }
+
+  // THE PERIOD COMES OFF THE BATCH, NOT OFF THE CLIENT. The key has to be the
+  // one the screen reads by, and the screen reads by the batch's own period, so
+  // taking it from the browser is one more place for the two to drift.
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: { program: true, periodFrom: true, periodTo: true },
+  });
+  if (!batch?.periodFrom || !batch?.periodTo) return { ok: false, error: "noperiod" };
+
+  const where = {
+    program_periodFrom_periodTo_personKey_findingKey: {
+      program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo,
+      personKey, findingKey,
+    },
+  };
+  const text = cleanNoteBody(body);
+
+  if (!text) {
+    // deleteMany rather than delete: clearing a note that was never written is a
+    // no-op, not an error, and that is exactly what a stray Save on an empty box
+    // is.
+    await prisma.timesheetCheckNote.deleteMany({
+      where: {
+        program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo,
+        personKey, findingKey,
+      },
+    });
+  } else {
+    const who = {
+      lastEditedById: user.id,
+      lastEditedByName: preferredName(user) || user.name || user.email || null,
+      lastEditedByImage: user.image || null,
+    };
+    await prisma.timesheetCheckNote.upsert({
+      where,
+      create: {
+        program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo,
+        personKey, findingKey, body: text, batchId, ...who,
+      },
+      // batchId moves to the upload it was last written on, which is what makes
+      // it an audit of when rather than a way to find the note
+      update: { body: text, batchId, ...who },
+    });
+  }
+
+  // tell anybody else's open tab that something moved, so their poll picks it up
+  await bumpBatchVersion(batchId);
+  revalidatePath(`/portal/admin/timesheets/${batchId}/checks`);
+  return { ok: true, body: text };
 }
 
 // WHAT THEY SAID ABOUT A BREAK THEY DID NOT TAKE.

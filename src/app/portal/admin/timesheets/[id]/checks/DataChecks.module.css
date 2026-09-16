@@ -79,6 +79,40 @@
 .documents > summary:hover { color: var(--foreground); }
 .documentBody { padding: 16px; margin-top: 8px; background: var(--surface-2); border-radius: var(--checks-control-radius); overflow-wrap: anywhere; }
 .rowFooter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 4px; }
+
+/* THE NOTE ON A FINDING. No surface of its own: the row already carries the day
+   panel and the documents panel on one, and a third would be a card in a card.
+   A hairline and the spacing say where it starts. */
+.note { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.noteBody { max-width: 85ch; font-size: 13px; line-height: 1.7; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
+.noteMeta { margin-top: 6px; font-size: 11px; color: var(--faint); }
+.noteMeta button { color: var(--accent-strong); font-size: 11px; font-weight: 500; }
+.noteMeta button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.noteAdd { display: inline-flex; align-items: center; min-height: 32px; margin-top: 4px; color: var(--accent-strong); font-size: 12px; font-weight: 500; }
+.noteAdd:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.noteAdd:disabled { color: var(--faint); }
+.noteEdit { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.noteBox {
+  display: block; width: 100%; max-width: 85ch; min-height: 72px; padding: 10px 12px; resize: vertical;
+  border: 1px solid var(--border-strong); border-radius: var(--checks-control-radius);
+  background: var(--surface-2); color: var(--foreground); font: inherit; font-size: 13px; line-height: 1.7;
+}
+.noteBox::placeholder { color: var(--faint); }
+.noteBox:disabled { opacity: .6; }
+.noteActions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.noteSave {
+  min-height: 32px; padding: 6px 14px; border-radius: var(--checks-control-radius);
+  background: var(--accent); color: var(--surface); font-size: 12px; font-weight: 600;
+}
+.noteSave:disabled { opacity: .5; }
+.noteCancel {
+  min-height: 32px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--checks-control-radius);
+  background: var(--surface-2); color: var(--foreground); font-size: 12px; font-weight: 500;
+}
+.noteDelete { margin-left: auto; min-height: 32px; color: var(--faint); font-size: 11px; }
+.noteDelete:hover:not(:disabled) { color: var(--status-danger); }
+.noteHint { margin-top: 8px; max-width: 85ch; font-size: 11px; line-height: 1.6; color: var(--faint); }
+.noteError { margin-top: 8px; font-size: 11px; color: var(--status-danger); }
 .footer { margin-top: 32px; padding-block: 24px 8px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); line-height: 1.7; }
 .footer > p { max-width: 85ch; }
 .periodNotes { margin-bottom: 20px; padding: 20px; border-radius: var(--checks-radius); background: var(--surface-2); }

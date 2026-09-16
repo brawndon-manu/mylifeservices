@@ -11,10 +11,12 @@ import { anomalyLabel, ANOMALY_KINDS } from "@/lib/timesheet/anomalies";
 import { violationsFor, VIOLATION_KINDS } from "@/lib/timesheet/violations";
 import { buildFindings, kindOf } from "@/lib/timesheet/findings";
 import { markKeyOf, marksByKey, batchReach } from "@/lib/timesheet/mark-key";
+import { notesByKey, noteKeyOf, canHoldNote } from "@/lib/timesheet/check-notes";
 import BackLink from "@/components/BackLink";
 import CorrectDay from "./CorrectDay";
 import DayPeek from "./DayPeek";
 import FlagButton from "./FlagButton";
+import CheckNote from "./CheckNote";
 import CheckStatusChip from "@/components/CheckStatusChip";
 import Evidence from "./Evidence";
 import ChecksFilter from "./ChecksFilter";
@@ -157,6 +159,32 @@ export default async function ChecksPage({ params }) {
       },
     }))
   );
+
+  // WHAT SOMEBODY WORKED OUT ABOUT A FINDING, one note per row - see
+  // check-notes.js. BY THE PERIOD, for the same reason the marks are: this
+  // period is uploaded again several times a day while corrections go back into
+  // QuickSolve, and a note keyed on the upload dies with it.
+  const checkNotes = notesByKey(await prisma.timesheetCheckNote.findMany({
+    where: { program: batch.program, periodFrom: batch.periodFrom, periodTo: batch.periodTo },
+    select: { personKey: true, findingKey: true, body: true, lastEditedByName: true, updatedAt: true },
+  }));
+
+  // formatted here, in Pacific, for the same reason every other timestamp on
+  // these screens is: two people share this list, so "3:40pm" has to be one
+  // time rather than whatever the reading browser thinks it is.
+  const noteFor = (e) => {
+    if (!canHoldNote(e)) return null;
+    const n = checkNotes.get(noteKeyOf(e));
+    if (!n) return null;
+    return {
+      body: n.body,
+      by: n.lastEditedByName,
+      when: n.updatedAt.toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit",
+      }),
+    };
+  };
 
   // HOW FAR THIS SCREEN'S DATA GOES. Stamped on any mark set from here, so
   // "contacted" records what was actually in front of the reviewer rather
@@ -317,6 +345,14 @@ export default async function ChecksPage({ params }) {
                   summary: list.map((v) => VIOLATION_KINDS[v.kind].label).join(" · "),
                   bookedMeal: list.some((v) => ["meal-in-shift", "meal-movable", "meal-short"].includes(v.kind)),
                 }))} />
+                {canHoldNote(e) && (
+                  <CheckNote
+                    batchId={batch.id}
+                    personKey={e.personKey}
+                    findingKey={e.findingKey}
+                    note={noteFor(e)}
+                  />
+                )}
               </div>
             ) : (
             <div
@@ -513,6 +549,19 @@ export default async function ChecksPage({ params }) {
                   />
                 )}
               </div>
+
+              {/* LAST IN THE ROW. The finding and its evidence are the record;
+                  the mark and the note are what we have done about it. A row
+                  that matched nobody has no person to key a note on and gets
+                  none - see check-notes.js. */}
+              {canHoldNote(e) && (
+                <CheckNote
+                  batchId={batch.id}
+                  personKey={e.personKey}
+                  findingKey={e.findingKey}
+                  note={noteFor(e)}
+                />
+              )}
             </div>
             ),
           )}

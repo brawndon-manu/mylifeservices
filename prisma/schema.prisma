@@ -1388,6 +1388,48 @@ model TimesheetContactLog {
   @@index([periodFrom, periodTo, personKey])
 }
 
+// WHAT SOMEBODY WORKED OUT ABOUT ONE FINDING - see check-notes.js for the whole
+// reasoning. One note per finding, edited in place, shared by everybody working
+// the list.
+//
+// KEYED LIKE THE MARK, NOT LIKE THE COMMENT. `TimesheetRowComment` above is
+// keyed on (batch, row), and one of the four notes ever written on it is already
+// invisible because a later upload replaced its batch. The period is re-uploaded
+// several times a day while corrections go back into QuickSolve, so this is
+// keyed on the period, the person and the finding, none of which an upload
+// remakes.
+//
+// `batchId` is the upload it was last written on, kept for the audit of when
+// rather than to find it by. Nothing reads a note through it.
+model TimesheetCheckNote {
+  id String @id @default(cuid())
+
+  // the same four parts the mark uses. Required here, unlike on
+  // TimesheetCheckFlag, where they are nullable only because they were
+  // backfilled onto rows that predated them.
+  program    String @default("MLS")
+  periodFrom String
+  periodTo   String
+  personKey  String
+  findingKey String
+
+  body String
+
+  batchId String?
+
+  // copied at the moment, so the note keeps saying who last touched it even if
+  // that person later changes their photo or leaves
+  lastEditedById    String
+  lastEditedByName  String?
+  lastEditedByImage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([program, periodFrom, periodTo, personKey, findingKey])
+  @@index([program, periodFrom, periodTo])
+}
+
 model TimesheetCorrection {
   id           String    @id @default(cuid())
   timesheetId  String
