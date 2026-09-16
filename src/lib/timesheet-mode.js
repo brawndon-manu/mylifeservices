@@ -24,7 +24,7 @@
 // opposite is 60 people receiving payroll documents from somebody's laptop.
 
 const LIVE_PHRASE = "yes-send-to-real-staff";
-const FALLBACK_TEST_INBOX = "brawndonu@gmail.com";
+const FALLBACK_TEST_INBOX = "brandon@mylifeservicesinc.com";
 
 // Is this the deployment staff actually use, or is it somebody's machine?
 //

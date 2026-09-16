@@ -63,7 +63,7 @@ test("a localhost sign link keeps it shut, however production it claims to be", 
 test("anything short of live redirects to Mánu, and live does not", () => {
   const shut = resolveAttestationRecipients("supervisor@example.com", PROD);
   assert.equal(shut.redirected, true);
-  assert.deepEqual(shut.to, ["brawndonu@gmail.com"]);
+  assert.deepEqual(shut.to, ["brandon@mylifeservicesinc.com"]);
   assert.equal(shut.intendedEmail, "supervisor@example.com", "the intended address rides along for the subject line");
   assert.ok(!shut.to.includes("supervisor@example.com"), "the real person is not on it");
 
@@ -77,7 +77,7 @@ test("the screen says which lock is shut", () => {
   assert.equal(attestationSendMode(PROD).reason, "not-live", "the phrase is missing");
   assert.equal(attestationSendMode({ ATTESTATIONS_LIVE_SEND: PHRASE }).reason, "local", "the phrase is set, this is not the site");
   // a shut mode always names where the mail will go instead
-  assert.deepEqual(attestationSendMode(PROD).recipients, ["brawndonu@gmail.com"]);
+  assert.deepEqual(attestationSendMode(PROD).recipients, ["brandon@mylifeservicesinc.com"]);
 });
 
 test("Send all asks before it sends, and says how many", () => {

@@ -23,16 +23,16 @@ test("a rehearsal batch beats a fully live environment", () => {
   assert.deepEqual(live.to, ["real.employee@example.com"], "the locks really are open");
 
   const forced = resolveRecipients("real.employee@example.com", LIVE, {
-    forceTo: "brawndonu@gmail.com",
+    forceTo: "brandon@mylifeservicesinc.com",
   });
-  assert.deepEqual(forced.to, ["brawndonu@gmail.com"]);
+  assert.deepEqual(forced.to, ["brandon@mylifeservicesinc.com"]);
 });
 
 test("it stays visibly a test send, so the inbox can tell", () => {
   // `redirected` drives the [TEST -> address] subject prefix and the banner in
   // the body. A rehearsal message that looked like an ordinary one would be
   // indistinguishable in the inbox it lands in.
-  const r = resolveRecipients("real.employee@example.com", LIVE, { forceTo: "brawndonu@gmail.com" });
+  const r = resolveRecipients("real.employee@example.com", LIVE, { forceTo: "brandon@mylifeservicesinc.com" });
   assert.equal(r.redirected, true);
   assert.equal(r.intendedEmail, "real.employee@example.com", "and it still says who it was for");
 });
@@ -53,7 +53,7 @@ test("flagged with nowhere to send forces nothing, rather than sending anyway", 
   // is left with the ordinary locks, which are the safe default.
   assert.equal(batchForceTo({ testOnly: true, testEmail: null }), null);
   assert.equal(batchForceTo({ testOnly: true, testEmail: "   " }), null);
-  assert.equal(batchForceTo({ testOnly: true, testEmail: "brawndonu@gmail.com" }), "brawndonu@gmail.com");
+  assert.equal(batchForceTo({ testOnly: true, testEmail: "brandon@mylifeservicesinc.com" }), "brandon@mylifeservicesinc.com");
 });
 
 // THE COLUMNS HAVE TO BE SELECTED OR THE FLAG READS FALSE.

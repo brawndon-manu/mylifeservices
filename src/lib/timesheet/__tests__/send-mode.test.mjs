@@ -47,7 +47,7 @@ test("the same phrase on a laptop cannot reach staff", () => {
   assert.equal(isProductionDeployment(LAPTOP), false);
   assert.equal(isLiveSend(LAPTOP), false, "and it still cannot send");
   const r = resolveRecipients("april@example.com", LAPTOP);
-  assert.deepEqual(r.to, ["brawndonu@gmail.com"]);
+  assert.deepEqual(r.to, ["brandon@mylifeservicesinc.com"]);
   assert.equal(r.redirected, true);
   assert.equal(r.intendedEmail, "april@example.com", "who it was meant for is kept");
 });
@@ -65,7 +65,7 @@ test("production is proved, never assumed: anything short of it is local", () =>
   };
   for (const [name, env] of Object.entries(cases)) {
     assert.equal(isLiveSend(env), false, `${name} must not send to staff`);
-    assert.deepEqual(resolveRecipients("april@example.com", env).to, ["brawndonu@gmail.com"], name);
+    assert.deepEqual(resolveRecipients("april@example.com", env).to, ["brandon@mylifeservicesinc.com"], name);
   }
   // and the control: with none of those changes it DOES send, so the loop above
   // is not passing because everything is locked
@@ -90,7 +90,7 @@ test("off the deployment, the local inbox list wins outright", () => {
   // TIMESHEET_TEST_RECIPIENTS is for production dry runs. Pointing it at a
   // colleague must not also redirect a laptop's mail to them.
   const env = { ...LAPTOP, TIMESHEET_TEST_RECIPIENTS: "someone.else@example.com" };
-  assert.deepEqual(testRecipients(env), ["brawndonu@gmail.com"]);
+  assert.deepEqual(testRecipients(env), ["brandon@mylifeservicesinc.com"]);
 
   // his own list is the one that works locally
   const two = { ...LAPTOP, TIMESHEET_LOCAL_INBOXES: "brandon@a.com, brandon@b.com" };
@@ -117,7 +117,7 @@ test("the banner says WHICH lock is shut", () => {
   assert.equal(held.live, false);
   assert.equal(held.reason, "local");
   assert.match(held.label, /not the live site/i);
-  assert.deepEqual(held.recipients, ["brawndonu@gmail.com"]);
+  assert.deepEqual(held.recipients, ["brandon@mylifeservicesinc.com"]);
 
   // phrase simply not set
   const off = sendModeSummary({ ...PROD, TIMESHEET_LIVE_SEND: "" });

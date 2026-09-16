@@ -26,7 +26,7 @@
 // "can only export async functions, found object", which is exactly what it did.
 export const BUNDLE_TO = { name: "David Zermeno", email: "mylifeservicesinc@gmail.com" };
 export const BUNDLE_CC = [
-  { name: "Brandon Uribe", email: "brandonuribe.mylifeservices@gmail.com" },
+  { name: "Brandon Uribe", email: "brandon@mylifeservicesinc.com" },
   { name: "Gabriel Miranda", email: "gabemirandamls@gmail.com" },
 ];
 

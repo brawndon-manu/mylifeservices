@@ -36,7 +36,7 @@ test("off the real deployment it is redirected and the reviewer is NOT on it", (
     assert.equal(r.redirected, true, `should redirect for ${JSON.stringify(env)}`);
     assert.ok(!r.to.includes(REVIEWER), "the reviewer must not be on the TO line");
     assert.ok(!r.cc.includes(COLLEAGUE), "a redirected copy must not cc anyone");
-    assert.deepEqual(r.to, ["brawndonu@gmail.com"]);
+    assert.deepEqual(r.to, ["brandon@mylifeservicesinc.com"]);
     // the intended address still comes back, so the mail can say where it would
     // have gone
     assert.equal(r.intendedEmail, REVIEWER);
@@ -49,7 +49,7 @@ test("the local inbox list is its own setting and cannot be aimed at staff", () 
   const r = resolveFormRecipients(REVIEWER, [], {
     TIMESHEET_TEST_RECIPIENTS: COLLEAGUE,
   });
-  assert.deepEqual(r.to, ["brawndonu@gmail.com"]);
+  assert.deepEqual(r.to, ["brandon@mylifeservicesinc.com"]);
   assert.ok(!r.to.includes(COLLEAGUE));
 });
 
@@ -74,7 +74,7 @@ test("off the real deployment no employee is on the line", () => {
     const r = resolveAnnouncementRecipients("staff.member@example.com", env);
     assert.equal(r.redirected, true, `should redirect for ${JSON.stringify(env)}`);
     assert.ok(!r.to.includes("staff.member@example.com"), "staff must not be on the TO line");
-    assert.deepEqual(r.to, ["brawndonu@gmail.com"]);
+    assert.deepEqual(r.to, ["brandon@mylifeservicesinc.com"]);
     assert.equal(r.intendedEmail, "staff.member@example.com");
   }
 });
