@@ -162,4 +162,50 @@
     gap: 8px;
     padding: 16px 8px;
   }
+
+  /* THE DAY'S OWN CONTROLS, WITHIN REACH - Mánu 2026-09-16, off his own sheet:
+     twelve days, none of which ask anything, and the only way to finish one is
+     at the far side of a calendar you have no question about. Measured at 375:
+     pressing Next lands you on the next day's heading and that day's Next sits
+     370px further down, so a fortnight is about 4,400px of scrolling to say
+     nothing twelve times.
+
+     FIXED, AND STICKY WAS TRIED FIRST. Sticky is the honest shape - it stays in
+     the day's own flow - and it cannot work here twice over: the row's parent
+     box is 87px tall against a 1,072px card, so there is nothing to travel
+     inside, and the card's own rounded container carries overflow:hidden, which
+     kills sticky outright whatever the heights are. Measured both, then fixed,
+     which lands 12px off the bottom with no transformed ancestor in the way.
+
+     ONLY ONE BAR IS EVER ON SCREEN because only one day card is: the rest are
+     display:none, and a fixed box inside one of those renders nothing.
+
+     `.dayBarHost` keeps the space the row used to take, so nothing is trapped
+     under the bar once it leaves the flow.
+
+     Phones only. On a desktop the row is already on screen. */
+  .dayBarHost {
+    min-height: 72px;
+  }
+
+  .dayBar {
+    position: fixed;
+    left: 16px;
+    /* CLEAR OF THE ACCESSIBILITY BUTTON, which is fixed at bottom 16 right 16,
+       is 44 across and carries z-index 50. Next landed underneath it: a DOM
+       click moved the day and a real tap opened the accessibility panel, which
+       is the whole feature dead on a phone and invisible to anything but a real
+       press. 16 for its inset, 44 for its width, 8 to breathe. */
+    right: calc(16px + 44px + 8px);
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 30;
+    margin-top: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--glass-edge);
+    border-radius: 16px;
+    background: var(--glass);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  }
 }
