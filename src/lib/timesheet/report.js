@@ -269,13 +269,13 @@ export async function renderComplianceReport(sheet, opts = {}) {
     const mealOwed = (d.paidHours || 0) > 5;
     const violations = [];
     if (mealDays.has(d.date)) violations.push(d.mealLate ? "Meal began late" : "No meal period");
-    if (restDays.has(d.date)) violations.push(`Rest ${d.restCount || 0} of ${d.restRequired || 0}`);
+    if (restDays.has(d.date)) violations.push(`Rest ${d.restTaken ?? 0} of ${d.restRequired || 0}`);
     const premium = (mealDays.has(d.date) ? 1 : 0) + (restDays.has(d.date) ? 1 : 0);
 
     const cells = [
       d.date,
       f2(d.paidHours),
-      `${d.restCount || 0} / ${d.restRequired || 0}`,
+      `${d.restTaken ?? 0} / ${d.restRequired || 0}`,
       d.mealCount > 0 ? "Yes" : mealOwed ? "No" : "n/a",
       d.mealCount > 0 ? intoShift(d.mealStartedAfterMin) : mealOwed ? "-" : "n/a",
       violations.length ? violations.join(", ") : "Compliant",
