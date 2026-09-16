@@ -85,58 +85,79 @@ export function useDayDone() {
 // fortnight and refreshed - or closed the tab and came back to finish - lost
 // every tick and started again with no idea where they had stopped.
 //
-// IN THE BROWSER, NOT ON THE SHEET. This is a reading aid: it says where they
-// are, not what they attested to. Writing it to the record would put "scrolled
-// past this day" on a payroll document, which is a claim about somebody that
-// nothing here is entitled to make. So it follows the device rather than the
-// person - open the same sheet on a phone and the walk starts again, which is
-// the honest cost of not recording it.
+// ON THE SHEET NOW, AND IT USED TO BE IN THE BROWSER ON PURPOSE.
 //
-// KEYED PER SHEET off the token, which is already in the address bar, so this
-// adds no exposure that opening the link did not. Two people on one machine get
-// separate keys.
+// The argument for localStorage was a good one and is worth keeping: a walk says
+// where somebody has got to, not what they attested to, and writing "scrolled
+// past this day" onto a payroll record is a claim about a person that nothing
+// here is entitled to make. The cost was the other half of it - open the same
+// link on a laptop after starting on a phone and every ring was empty again.
 //
-// HYDRATED IN AN EFFECT, never in the initialiser: this tree renders on the
-// server, where `localStorage` does not exist. And every read and write is
-// wrapped - a private window or blocked site data throws rather than returning
-// empty, and a lost tick must never take the page down with it.
-export function DayDoneProvider({ children, sheetKey = null, finishers = null }) {
-  const [ready, setReady] = useState(() => new Set());
-  const storeKey = sheetKey ? `mls.daysWalked.${sheetKey}` : null;
+// Mánu 2026-09-16 weighed the two and moved it: the press is the evidence that
+// somebody looked at a day, and evidence that cannot leave the browser it was
+// made in is evidence of nothing.
+//
+// SO THE BOUNDARY MOVES INTO THE COLUMN INSTEAD. `walkedDays` is a bare list of
+// dates. It is not an answer, not a correction and not a claim; it moves no
+// figure, and nothing prints it, emails it or shows it to payroll as something
+// the person said. If it ever starts reading as one of those, this is the note
+// that says it was not meant to.
+// `finishers`: date -> the id of the ONE question whose answer would finish that
+// day, from the page, which is the only place that knows what else is open on it
+// (see `finisherFor`). It is what lets a confirm carry somebody to the next day
+// instead of leaving them to find Next at the far side of the calendar.
+//
+// A MAP RATHER THAN THE FUNCTION IT STARTED AS. The page is a server component
+// and this is a client one, and a function cannot cross that line - it throws
+// "Functions cannot be passed directly to Client Components", which is how this
+// was found. Dates to ids serialize, and the card only ever wanted to compare
+// its own id against one.
+export function DayDoneProvider({ children, token = null, finishers = null, walked = null, walkAction = null }) {
+  // SEEDED FROM THE SHEET, not from this browser. `walked` is the list the
+  // server holds; the state here is the optimistic copy, so a ring ticks the
+  // moment it is pressed and the write catches up behind it.
+  const [ready, setReady] = useState(() => new Set(walked || []));
 
+  // the sheet's own list wins whenever it changes under us - another device, or
+  // this one after a refresh. A date pressed here and not yet written is kept,
+  // or a slow write would visibly untick the ring somebody just pressed.
+  const fromSheet = (walked || []).join("|");
   useEffect(() => {
-    if (!storeKey) return;
-    try {
-      const raw = window.localStorage.getItem(storeKey);
-      const dates = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(dates) && dates.length) setReady(new Set(dates.filter((d) => typeof d === "string")));
-    } catch {
-      // unreadable or unavailable - the walk simply starts fresh
-    }
-  }, [storeKey]);
+    if (!fromSheet) return;
+    setReady((r) => new Set([...r, ...fromSheet.split("|")]));
+  }, [fromSheet]);
 
-  useEffect(() => {
-    if (!storeKey) return;
+  // BEST EFFORT, AND NEVER IN THE WAY. The ring has already moved by the time
+  // this is called; a failed write costs the trail on the next device, never the
+  // press. It is deliberately not awaited and deliberately does not refresh.
+  // THE TOKEN GOES WITH IT, because that is what the action authenticates on.
+  // Left off, `markDayWalked` refuses with "auth" and returns it quietly, which
+  // is exactly what happened the first time: the ring ticked, the day turned,
+  // and the column stayed empty. A silent no is what a best-effort write buys,
+  // so the payload has to be right rather than merely accepted.
+  const write = (date, undo = false) => {
+    if (!walkAction || !token) return;
     try {
-      window.localStorage.setItem(storeKey, JSON.stringify([...ready]));
+      Promise.resolve(walkAction({ token, date, undo })).catch(() => {});
     } catch {
-      // storage full or blocked - the ticks still work for this page's life
+      // an action that cannot even be called must not take the page down
     }
-  }, [ready, storeKey]);
+  };
 
   return (
     <DayDoneCtx.Provider
       value={{
         ready,
         readyOn: (date) => ready.has(date),
-        // `finishers`: date -> the id of the ONE question whose answer would
-        // finish that day, handed in by the page, which is the only place that
-        // knows what else is open on it (see `finisherFor`). A MAP rather than
-        // the function it started as: the page is a server component and this is
-        // a client one, and a function cannot cross that line.
         finishesDay: (date, id) => !!id && finishers?.[date] === id,
-        markReady: (date) => setReady((r) => (r.has(date) ? r : new Set(r).add(date))),
-        unmarkReady: (date) => setReady((r) => { const n = new Set(r); n.delete(date); return n; }),
+        markReady: (date) => {
+          setReady((r) => (r.has(date) ? r : new Set(r).add(date)));
+          write(date);
+        },
+        unmarkReady: (date) => {
+          setReady((r) => { const n = new Set(r); n.delete(date); return n; });
+          write(date, true);
+        },
       }}
     >
       {children}

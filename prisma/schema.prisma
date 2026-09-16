@@ -1062,6 +1062,19 @@ model Timesheet {
   // how the match happened: exact | fuzzy | manual | unmatched
   matchMethod String         @default("unmatched")
 
+  // THE DAYS THEY HAVE WALKED THROUGH, as QSP prints them ("09/03/26").
+  //
+  // Mánu 2026-09-16, off the flow review: the walk lived in `localStorage` keyed
+  // to the link, so opening the same link on a laptop after starting on a phone
+  // showed every ring empty again. The press is the evidence somebody looked at
+  // a day, and evidence that does not survive changing device is evidence of
+  // nothing. So it belongs on the sheet.
+  //
+  // NOT AN ANSWER AND NOT A CLAIM. It moves no figure, reaches no document and
+  // no email. It is the trail of what they have been through, which is why it is
+  // a bare list of dates rather than rows of its own.
+  walkedDays String[] @default([])
+
   // computed figures (also in `data`, duplicated here for lists + sorting)
   rawHours     Float   @default(0) // as exported by QSP
   paidHours    Float   @default(0) // corrected: rest breaks counted as worked

@@ -20,6 +20,7 @@ import {
   answerTimesheetQuestion,
   answerTimeOff,
   acknowledgeSpan,
+  markDayWalked,
 } from "@/app/portal/admin/timesheets/actions";
 import TimeOffCard from "./TimeOffCard";
 import ReviewFlow, { ReviewStage } from "./ReviewFlow";
@@ -872,6 +873,10 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 /* backwards entries somebody has taken on - see `acknowledgeSpan` */
                 ackOn={ackOn}
                 ackAction={act(acknowledgeSpan)}
+                /* the days already walked, off the sheet, and the write that
+                   records the next one - see `markDayWalked` */
+                walkedDays={ts.walkedDays}
+                walkAction={act(markDayWalked)}
               />
             }
             detailed={
@@ -903,6 +908,10 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 saidById={saidById}
                 ackOn={ackOn}
                 ackAction={act(acknowledgeSpan)}
+                /* the days already walked, off the sheet, and the write that
+                   records the next one - see `markDayWalked` */
+                walkedDays={ts.walkedDays}
+                walkAction={act(markDayWalked)}
               />
             }
           />

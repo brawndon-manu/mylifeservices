@@ -4939,6 +4939,48 @@ export async function acknowledgeSpan({ token, date, min, undo = false }) {
   return { ok: true };
 }
 
+// A DAY THEY HAVE BEEN THROUGH, RECORDED ON THE SHEET RATHER THAN IN THE BROWSER.
+//
+// Mánu 2026-09-16: the walk lived in localStorage keyed to the link, so starting
+// on a phone and opening the same link on a laptop showed every ring empty
+// again. The press is the evidence somebody looked at a day.
+//
+// NOTHING IS REVALIDATED AND NOTHING IS BUMPED. Every other write here rebuilds
+// the page because it moves a figure; this one moves nothing, and a refresh on
+// every day press is the exact lag he asked to be rid of. The ring ticks in the
+// browser and this is the copy that outlives it.
+//
+// ATOMIC AND IDEMPOTENT IN ONE STATEMENT. Two tabs reading the list, appending
+// and writing it back would lose whichever finished first; `array_append` behind
+// a NOT EXISTS guard cannot. It also means a second press is free rather than a
+// duplicate.
+//
+// NO SUPERSEDED CHECK, deliberately. It would put a second query in front of
+// every day press to guard a write that records nothing anybody acts on, and the
+// page is already read only on a replaced sheet.
+export async function markDayWalked({ token, date, undo = false }) {
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const id = verifyTimesheetToken(token);
+  if (!id) return { ok: false, error: "auth" };
+  if (!date || typeof date !== "string") return { ok: false, error: "missing" };
+
+  const ts = await prisma.timesheet.findUnique({ where: { id }, select: { id: true, signedAt: true } });
+  if (!ts) return { ok: false, error: "notfound" };
+  // a signed sheet is finished with; its walk is whatever it was on the day
+  if (ts.signedAt) return { ok: false, error: "signed" };
+
+  if (undo) {
+    await prisma.$executeRaw`
+      UPDATE "Timesheet" SET "walkedDays" = array_remove("walkedDays", ${date})
+      WHERE "id" = ${ts.id}`;
+  } else {
+    await prisma.$executeRaw`
+      UPDATE "Timesheet" SET "walkedDays" = array_append("walkedDays", ${date})
+      WHERE "id" = ${ts.id} AND NOT (${date} = ANY("walkedDays"))`;
+  }
+  return { ok: true };
+}
+
 export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);

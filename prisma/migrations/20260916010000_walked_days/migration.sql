@@ -1,0 +1,12 @@
+-- additive: the days somebody has walked through on their review, so the walk
+-- survives changing device.
+--
+-- It lived in localStorage keyed to the link, which meant starting on a phone
+-- and opening the same link on a laptop showed every ring empty again. The press
+-- is the evidence that somebody looked at a day; evidence that does not leave
+-- the browser it was made in is evidence of nothing.
+--
+-- Defaults to empty, so every existing sheet reads exactly as it does today:
+-- nobody has walked anything until they press, and the browser's own copy keeps
+-- the current page's ticks until then.
+ALTER TABLE "Timesheet" ADD COLUMN "walkedDays" TEXT[] NOT NULL DEFAULT '{}';

@@ -142,6 +142,9 @@ export default function DayByDay({
   // calendar folded behind its recorded-intervals line. Same questions, same
   // components, same rows in the database either way.
   stacked = false, periodFrom = null, readOnly = false,
+  // THE DAYS THEY HAVE ALREADY BEEN THROUGH, off the sheet rather than out of
+  // this browser, and the action that records the next one. See DayDoneProvider.
+  walkedDays = null, walkAction = null,
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -710,10 +713,10 @@ export default function DayByDay({
   // child, so the half-typed time gets to them through here
   return (
     <StagedTimesProvider>
-    {/* the tail of the token keys the walked-days memory per sheet - long
-        enough that two sheets cannot collide, and nothing the address bar was
-        not already showing. See DayDoneProvider. */}
-    <DayDoneProvider sheetKey={typeof token === "string" ? token.slice(-24) : null} finishers={dayFinishers}>
+    {/* the walk comes off the sheet and goes back to it - see DayDoneProvider.
+        It was keyed off the token in localStorage until 2026-09-16, which is
+        why the token is no longer needed here. */}
+    <DayDoneProvider token={token} finishers={dayFinishers} walked={walkedDays} walkAction={walkAction}>
     <div className="mt-5">
       {/* ABOVE EVERYTHING, INCLUDING THE BATCHED HEADING. That heading was the
           only thing over the day list, so on a long sheet it read as the
