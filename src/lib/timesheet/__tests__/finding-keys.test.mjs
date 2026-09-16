@@ -46,6 +46,16 @@ const batch = {
               { text: "12:00 PM - 4:00 PM", minutes: 240 },
             ] },
           },
+          // THE BRANCH THIS FIXTURE NEVER REACHED. The tests below assert every
+          // row carries a key and no two rows share one, and both passed for
+          // months while the schedule-against-timesheet rows built here carried
+          // neither - because nothing in here ever built one. Two dates, so a
+          // key that is the same for both shows up as a collision rather than
+          // as a row that merely looks fine on its own.
+          flagged: [
+            { date: "08/05/26", timesheet: 6, schedule: 9.63 },
+            { date: "08/06/26", timesheet: 6.5, schedule: 8.9 },
+          ],
         },
       },
     },

@@ -399,7 +399,24 @@ export function buildFindings(batch) {
       });
     }
     for (const f of sched.flagged || []) {
-      entries.push({ ...common, kind: "flag", date: f.date, f, d: describeFlagRow(f) });
+      // KEYED LIKE EVERYTHING ELSE HERE, which it was not. This was the one push
+      // site the sweep above missed, and it cost these rows both halves: the
+      // mark write is refused on the server when `rowKey` is missing, so the
+      // button on them did nothing at all, and the key the screen groups by fell
+      // back to `<person>|-`, so one person's 09/03, 09/04 and 09/14 rows were a
+      // single row as far as any mark was concerned. 20 rows over the 12 newest
+      // batches, two people, all of them in Settled today - but the same branch
+      // builds the "scheduled but never worked" rows, whose whole sentence is to
+      // go and ask somebody.
+      entries.push({
+        ...common,
+        kind: "flag",
+        rowKey: `flag-${t.id}-${f.date}`,
+        findingKey: `flag-${f.date}`,
+        date: f.date,
+        f,
+        d: describeFlagRow(f),
+      });
     }
   }
 
