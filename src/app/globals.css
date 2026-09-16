@@ -346,8 +346,16 @@ input[type="number"]::-webkit-inner-spin-button {
    own, not a gap between other people's things.
 
    All three ends set: the wrapper carries Tailwind's `bottom-4 right-4`, so `top`
-   and `left` alone would leave it pinned to all four. */
+   and `left` alone would leave it pinned to all four.
+
+   AND IT STAYS PUT - Mánu 2026-09-16: "can we make it so it just doesnt follow
+   the screen as you scroll up or down?" Absolute rather than fixed, so it sits in
+   its strip at the top of the document and scrolls away with everything else.
+   Once it is gone it cannot be over anything, which is the whole complaint. The
+   wrapper is a direct child of <body> and nothing above it is positioned, so this
+   resolves against the document rather than the viewport. */
 body:has([data-timesheet-review]) .corner-fab {
+  position: absolute;
   top: calc(env(safe-area-inset-top) + 4.75rem);
   left: 1rem;
   right: auto;

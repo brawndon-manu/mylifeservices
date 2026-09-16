@@ -725,7 +725,15 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           it had five ("their own page", "the employee page", "the corrections
           page", "the signing page", "the sign-off page") and no way to say which
           screen anybody meant. */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* THE PERIOD TILE HOLDS ITS PLACE AND THE WORDS GIVE WAY - Mánu
+          2026-09-16: "i want to prioritize keeping the little calendar next to
+          review your timesheet cause it gets messed up when the screen gets
+          smaller but i think the text should shift over to a new line".
+          It was `flex-wrap`, so a narrow screen dropped the tile below the
+          sentence instead of wrapping the sentence. The tile is `flex-none` and
+          this column is `min-w-0`, so with the wrap off the text is the thing
+          that gives, which is the way round he wants it. */}
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[12.5px] font-medium text-muted">{who} · Employee timesheet</p>
           <h1 className="mt-1 text-[26px] font-semibold tracking-tight text-foreground sm:text-[28px]">
