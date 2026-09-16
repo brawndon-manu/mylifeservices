@@ -38,7 +38,9 @@ export async function buildPayrollWorkbook(id) {
       timesheets: {
         orderBy: { sourceName: "asc" },
         include: {
-          user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+          // salariedExempt: the status column reads "Exempt" for them rather
+          // than saying whether they signed - see PayoutTable
+          user: { select: { name: true, preferredFirstName: true, preferredLastName: true, salariedExempt: true } },
           corrections: {
             where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
             select: { id: true, kind: true, date: true, status: true },
@@ -85,7 +87,8 @@ export async function buildPayrollWorkbook(id) {
       miles: t.data?.qspMiles ?? null,
       status: t.corrections.some((c) => c.status === "open")
         ? "Reported a problem"
-        : t.approvedAt ? "Approved" : t.signedAt ? "Signed" : "Not signed",
+        : t.user?.salariedExempt === true ? "Exempt"
+          : t.approvedAt ? "Approved" : t.signedAt ? "Signed" : "Not signed",
       corrected: t.recomputedAt ? "yes" : "no",
     };
   });

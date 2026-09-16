@@ -83,6 +83,10 @@
 .rowStatus small { display: block; margin-top: 4px; font-size: 11px; }
 .rowStatus [data-status="issue"] { color: var(--status-caution); }
 .rowStatus [data-status="complete"] { color: var(--status-positive); }
+/* nothing to do, rather than done or wrong, so it keeps the column's own grey
+   instead of reading green like Approved. Stated rather than left to fall
+   through, so it is not "fixed" into a colour later. */
+.rowStatus [data-status="exempt"] { color: var(--muted); }
 .table tfoot { background: var(--surface-2); font-weight: 500; }
 .table tfoot td, .table tfoot th { position: sticky; bottom: 0; background: var(--surface-2); z-index: 2; border-top: 1px solid var(--border-strong); border-bottom: 0; }
 .table tfoot th:first-child { z-index: 3; background: var(--surface-2); }

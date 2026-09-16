@@ -27,7 +27,11 @@ export async function GET(_req, { params }) {
         orderBy: { sourceName: "asc" },
         include: {
           user: {
-            select: { name: true, preferredFirstName: true, preferredLastName: true },
+            // SALARIED EXEMPT, because the status column reads "Exempt" for them
+            // rather than saying whether they signed. Left off the select it
+            // comes back undefined, which reads as not exempt, and the column
+            // would go back to asking a question nobody can answer.
+            select: { name: true, preferredFirstName: true, preferredLastName: true, salariedExempt: true },
           },
           corrections: {
             where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
@@ -93,6 +97,8 @@ export async function GET(_req, { params }) {
           miles: t.data?.qspMiles ?? 0,
           signedAt: t.signedAt,
           approvedAt: t.approvedAt,
+          // the Signed column prints "Exempt" for them - see payout-pdf.js
+          salariedExempt: t.user?.salariedExempt === true,
           partialWeek: t.partialWeek,
           // ONLY the open ones. The query now also returns the `q_` answers, and
           // counting those would mark everybody as having reported a problem.

@@ -75,14 +75,23 @@ export default function PayoutTable({ rows, totals, periodTitle }) {
                 <Td strong>{fmt(r.payable)}</Td>
                 <Td>{fmt(r.miles || 0)}</Td>
                 <td className={styles.rowStatus}>
-                  <span data-status={r.disputed ? "issue" : r.approvedAt || r.signedAt ? "complete" : "pending"}>
+                  {/* EXEMPT BEATS EVERY SIGNATURE STATE AND NOTHING ELSE. A
+                      reported problem still shows, because that is a thing
+                      somebody has to deal with; the signature states go,
+                      because they describe a job this person was never given.
+                      Its own status value on purpose - it is neither good news
+                      nor a problem, so it reads muted like "Not signed" did
+                      rather than green like Approved. */}
+                  <span data-status={r.disputed ? "issue" : r.salariedExempt ? "exempt" : r.approvedAt || r.signedAt ? "complete" : "pending"}>
                   {r.disputed
                     ? "Reported a problem"
-                    : r.approvedAt
-                      ? "Approved"
-                      : r.signedAt
-                        ? "Signed"
-                        : "Not signed"}
+                    : r.salariedExempt
+                      ? "Exempt"
+                      : r.approvedAt
+                        ? "Approved"
+                        : r.signedAt
+                          ? "Signed"
+                          : "Not signed"}
                   </span>
                   {r.recomputed && <small>Corrected</small>}
                 </td>

@@ -34,7 +34,11 @@ export async function GET(_req, { params }) {
         orderBy: { sourceName: "asc" },
         include: {
           user: {
-            select: { name: true, preferredFirstName: true, preferredLastName: true },
+            // SALARIED EXEMPT, because the status column reads "Exempt" for them
+            // rather than saying whether they signed. Left off the select it
+            // comes back undefined, which reads as not exempt, and the column
+            // would go back to asking a question nobody can answer.
+            select: { name: true, preferredFirstName: true, preferredLastName: true, salariedExempt: true },
           },
           corrections: {
             where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
@@ -131,13 +135,17 @@ export async function GET(_req, { params }) {
         r2(payable),
         r2(ts.data?.qspMiles),
         ts.partialWeek ? "yes" : "no",
+        // the same order the screen reads in: a reported problem still shows,
+        // and "exempt" replaces every signature state - see PayoutTable
         ts.corrections.some((c) => c.status === "open")
           ? "reported a problem"
-          : ts.approvedAt
-            ? "approved"
-            : ts.signedAt
-              ? "signed"
-              : "not signed",
+          : ts.user?.salariedExempt === true
+            ? "exempt"
+            : ts.approvedAt
+              ? "approved"
+              : ts.signedAt
+                ? "signed"
+                : "not signed",
         ts.recomputedAt ? "yes" : "no",
       ]
         .map(cell)

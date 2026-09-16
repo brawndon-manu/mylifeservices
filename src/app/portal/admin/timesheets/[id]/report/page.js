@@ -30,7 +30,11 @@ export default async function PayoutReportPage({ params }) {
         orderBy: { sourceName: "asc" },
         include: {
           user: {
-            select: { name: true, preferredFirstName: true, preferredLastName: true },
+            // SALARIED EXEMPT, because the status column reads "Exempt" for them
+            // rather than saying whether they signed. Left off the select it
+            // comes back undefined, which reads as not exempt, and the column
+            // would go back to asking a question nobody can answer.
+            select: { name: true, preferredFirstName: true, preferredLastName: true, salariedExempt: true },
           },
           corrections: {
             where: { OR: [{ status: "open" }, { kind: { startsWith: "q_" } }] },
@@ -101,6 +105,14 @@ export default async function PayoutReportPage({ params }) {
     miles: t.data?.qspMiles ?? null,
     signedAt: t.signedAt,
     approvedAt: t.approvedAt,
+    // THE STATUS COLUMN SAYS "EXEMPT" INSTEAD OF WHETHER THEY SIGNED - Mánu
+    // 2026-09-16: "for the payout report too it would just say exempt if they
+    // signed or not". They are never emailed and their sheet asks for no
+    // signature, so "Not signed" was reading as an outstanding job on three
+    // people who have nothing to do. April and Kristy DID sign in August,
+    // before the flag existed, and the column says Exempt on those too - his
+    // wording, and the signature is not what the row is about any more.
+    salariedExempt: t.user?.salariedExempt === true,
     // ONLY the open ones - a `q_` row is an ANSWER, not a reported problem
     disputed: t.corrections.some((c) => c.status === "open"),
     recomputed: !!t.recomputedAt,

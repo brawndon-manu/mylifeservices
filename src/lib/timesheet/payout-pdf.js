@@ -220,7 +220,10 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       f2(r.miles),
       // APPROVED IS ALSO SIGNED. A sheet management has signed off was signed
       // by the employee first, so reading "no" against it would be false.
-      r.approvedAt ? "Approved" : r.signedAt ? "Yes" : "No",
+      // EXEMPT INSTEAD OF YES OR NO - Mánu 2026-09-16. Their sheet asks for no
+      // signature and no email goes out for one, so "No" was printing an
+      // outstanding job against three people who have nothing to do.
+      r.salariedExempt ? "Exempt" : r.approvedAt ? "Approved" : r.signedAt ? "Yes" : "No",
     ];
 
     let x = L;
@@ -228,6 +231,8 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       const [, w, numeric] = COLS[i];
       const isPrem = i === I_PREMIUM && (r.premiumHours || 0) > 0;
       const isTotal = i === I_PAYABLE;
+      // muted in both cases, for opposite reasons: an unsigned row is one
+      // payroll may need to chase, an exempt one is a row with nothing to chase
       const unsigned = i === I_SIGNED && !r.signedAt && !r.approvedAt;
       const f = isTotal || isPrem ? bold : font;
       const size = 8.5;
@@ -250,6 +255,10 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
   page.drawRectangle({ x: L, y: y - boxH + 10, width: R - L, height: boxH, color: TOTALBG });
   let x = L;
   const signedCount = rows.filter((r) => r.signedAt || r.approvedAt).length;
+  // AND THE DENOMINATOR DROPS THEM TOO, or the document argues with itself: a
+  // column reading "Exempt" while the total counts those rows as still owing a
+  // signature. It is how many signatures are actually outstanding.
+  const owingSignature = rows.filter((r) => !r.salariedExempt).length;
   const totalCells = [
     `TOTAL (${rows.length})`,
     f2(totals.regularHours),
@@ -262,7 +271,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     f2(totals.miles),
     // how many of them are signed, which is the question this column exists to
     // answer at a glance
-    `${signedCount}/${rows.length}`,
+    `${signedCount}/${owingSignature}`,
   ];
   totalCells.forEach((c, i) => {
     const [, w, numeric] = COLS[i];

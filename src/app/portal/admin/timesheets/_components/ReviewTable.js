@@ -361,11 +361,23 @@ export default function ReviewTable({
 // a signature they already gave.
 function SendOneButton({ send, batchId, row, blocked = false, blockedWhy = null }) {
   const [state, setState] = useState("idle");
+  // GREYED OUT, NOT HIDDEN - Mánu 2026-09-16: "lets grey out their ability to
+  // send". `sendTimesheets` already refuses a salaried exempt person by its own
+  // where clause, so the live button here was a press that could only ever do
+  // nothing and then report that it had sent something. Disabled and saying why
+  // is the honest version; hiding it would leave a blank cell that reads as a
+  // row still waiting to be sent.
+  // ON `row.user`, NOT ON THE ROW. The page builds the flag inside the matched
+  // account (see the `user:` block in [id]/page.js), and the first version of
+  // this read `row.salariedExempt`, which is undefined on every row - so the
+  // button stayed live and the pin I wrote for it passed on nothing.
+  const exempt = row.user?.salariedExempt === true;
   // pinned when the click happens - the revalidate stamps sentAt onto the row,
   // and the receipt must keep saying what the click did
   const [doneLabel, setDoneLabel] = useState("Sent");
-  const label =
-    state === "busy"
+  const label = exempt
+    ? "Exempt"
+    : state === "busy"
       ? "Sending..."
       : state === "done"
         ? doneLabel
@@ -374,8 +386,9 @@ function SendOneButton({ send, batchId, row, blocked = false, blockedWhy = null 
           : row.sentAt
             ? "Resend"
             : "Send";
-  const cls =
-    state === "done"
+  const cls = exempt
+    ? "bg-fill text-faint"
+    : state === "done"
       ? "bg-emerald-600 text-white"
       : state === "fail"
         ? "bg-rose-600 text-white hover:bg-rose-700"
@@ -383,7 +396,8 @@ function SendOneButton({ send, batchId, row, blocked = false, blockedWhy = null 
   return (
     <button
       type="button"
-      disabled={state === "busy"}
+      disabled={exempt || state === "busy"}
+      title={exempt ? "Salaried and exempt: no signature is asked for, so no email goes out." : undefined}
       onClick={async () => {
         if (
           row.signedAt &&
