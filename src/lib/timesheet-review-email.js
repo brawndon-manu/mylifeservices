@@ -24,11 +24,13 @@ import { buildTimesheetShell } from "@/lib/announcement-email";
 import { resolveRecipients } from "@/lib/timesheet-mode";
 import { reviewCorrectionsSubject } from "@/lib/timesheet-subjects";
 
-// the five people, TO first. Names, not addresses - see above. Mánu joined
+// the two people, TO only. Names, not addresses - see above. Mánu joined
 // the TO line 2026-09-01: "me and gabe have to make their corrctions in qsp",
 // so the two people making the edits are the two the mail is addressed to.
 const TO_NAMES = ["Brandon Uribe", "Gabriel Miranda"];
-const CC_NAMES = ["Kristy Hatt", "April Martinez", "David Zermeno"];
+// Kristy, April and David came off the CC line 2026-09-15: "just me and gabe
+// this time around". The loop stays so a name can go back with one edit.
+const CC_NAMES = [];
 
 // PRISMA COMES IN WHEN A SEND ASKS FOR IT, not when this file is imported.
 // The Tests card renders the body below to show what goes out, and importing
