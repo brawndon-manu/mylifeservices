@@ -112,9 +112,22 @@ export default function DayRail({ days, children, stacked = false }) {
       >
         {days.map((d, i) => {
           const on = i === sel;
-          const answered = d.done || readyOn(d.date);
-          const needsAnswer = d.needs && !answered;
-          const reviewed = !needsAnswer && (answered || flow?.reviewedDays.has(d.date));
+          // WALKING PAST A DAY IS NOT ANSWERING IT - Mánu 2026-09-16, Carminia
+          // Suarez: "cant proceed with her timesheet and i dont know why".
+          //
+          // These two were one value. `d.done` is the day's questions actually
+          // answered on the server; `readyOn` is the walk - "I have been here".
+          // ORed together, being there cleared `needsAnswer`, so her three days
+          // with an unanswered meal question went from "Needs answers" to
+          // "Reviewed" the moment she pressed Next past them. Eleven green days,
+          // a Generate that refuses, and nothing on the page pointing at the
+          // three it is waiting for.
+          //
+          // It was a browser-session quirk until the walk moved onto the sheet
+          // on 2026-09-16, which made it survive every reload.
+          const walked = readyOn(d.date) || !!flow?.reviewedDays.has(d.date);
+          const needsAnswer = !!d.needs && !d.done;
+          const reviewed = !needsAnswer && (d.done || walked);
           const hasReport = flow?.items.some((item) => item.date === d.date);
           const display = reportedReviewDay({ date: d.date, paidHours: Number(d.hrs) }, flow?.items);
           return (
@@ -196,7 +209,9 @@ export function DaysAnsweredCount({ days }) {
   if (flow) return null;
   const need = days.filter((d) => d.needs);
   if (!need.length) return null;
-  const done = need.filter((d) => d.done || readyOn(d.date)).length;
+  // the same rule as the rail above: a day that asks something is answered when
+  // it is answered, not when somebody has walked past it
+  const done = need.filter((d) => d.done).length;
   return (
     <p className="mt-0.5 text-[12.5px] text-faint">
       {done} of {need.length} day{need.length === 1 ? "" : "s"} answered
