@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets, isSuper } from "@/lib/roles";
 import { splitPremiumForSheets, confirmedFromAnswers } from "@/lib/timesheet/premium-split";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+import { loadBreakReasonsForBatch } from "@/lib/timesheet/load-break-reasons";
 import { timeOffReviewItems } from "@/lib/timesheet/time-off";
 import { batchPeriodLabels } from "@/lib/timesheet/batch-overview";
 import BackLink from "@/components/BackLink";
@@ -89,8 +90,10 @@ export default async function TimesheetLegacyPage({ params }) {
       if (!bySheet.has(c.timesheetId)) bySheet.set(c.timesheetId, []);
       bySheet.get(c.timesheetId).push(c);
     }
-    for (const cs of bySheet.values()) {
-      const items = [...reviewChoices(cs), ...timeOffReviewItems(cs)];
+    const userBySheet = new Map(batch.timesheets.map((t) => [t.id, t.userId]));
+    const reasonsByPerson = await loadBreakReasonsForBatch(batch, batch.timesheets.map((t) => t.userId));
+    for (const [sheetId, cs] of bySheet) {
+      const items = [...reviewChoices(cs, reasonsByPerson.get(userBySheet.get(sheetId)) || []), ...timeOffReviewItems(cs)];
       const owed = items.reduce((n, it) => n + it.changes.length, 0);
       if (!owed) continue;
       qsp.reviews += 1;

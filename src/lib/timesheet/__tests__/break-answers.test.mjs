@@ -336,3 +336,41 @@ test("break comments are marked italic, and QSP's notes are not", () => {
     "QSP's own notes go in unflagged",
   );
 });
+
+// THE ROW IS ITS OWN TELL. Only the employee's missed or partial answer with a
+// reason writes confirmedText onto a took-it row (actions.js, the seeded-box
+// write), so a took-it carrying different words than ours is a contradiction
+// and every surface summarising the row can say so without a second query.
+import { contradicted, breakSlotOfKind } from "../break-answers.js";
+
+test("a took-it carrying their own words is a contradiction; the rest are not", () => {
+  assert.equal(contradicted({ answer: "took-it", reason: "test", confirmedText: "I never got it." }), true);
+  assert.equal(contradicted({ answer: "took-it", reason: "test", confirmedText: null }), false);
+  assert.equal(contradicted({ answer: "took-it", reason: "test", confirmedText: "test" }), false);
+  assert.equal(contradicted({ answer: "not-taken", reason: "x", confirmedText: "y" }), false);
+  assert.equal(contradicted(null), false);
+});
+
+test("the chip says they say it was not taken", () => {
+  assert.equal(answerSummary({ answer: "took-it", kind: "rest", missingCount: 1, reason: "test", confirmedText: "I never got it." }), "They say it was not taken");
+  assert.match(answerSummary({ answer: "took-it", kind: "rest", missingCount: 1, reason: "test" }), /took|punch/i);
+});
+
+test("a question kind names the break it is about", () => {
+  assert.equal(breakSlotOfKind("q_nothingDocumentedRest"), "rest");
+  assert.equal(breakSlotOfKind("q_nothingDocumentedMeal"), "meal");
+  assert.equal(breakSlotOfKind("q_mealInShift"), "meal");
+  assert.equal(breakSlotOfKind("q_repair"), "rest");
+  assert.equal(breakSlotOfKind("q_miscTime"), null);
+});
+
+// the chip is a client component, so it is pinned as text: it reads the row's
+// own tell and hides the "next upload is the evidence" line when they have
+// said otherwise, or the person page would tell the office the opposite of
+// what the desk tells it
+test("the chip reads the contradiction off the row and drops the next-upload line for it", () => {
+  const src = fs.readFileSync(new URL("../../../app/portal/admin/timesheets/[id]/checks/BreakAnswer.js", import.meta.url), "utf8");
+  assert.match(src, /const flipped = contradicted\(answer\)/);
+  assert.match(src, /\{!flipped && \(\s*<p className="mt-2 max-w-\[78ch\] text-xs text-muted">/);
+  assert.match(src, /in the employee&rsquo;s own words/);
+});

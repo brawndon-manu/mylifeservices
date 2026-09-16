@@ -5,6 +5,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import BackLink from "@/components/BackLink";
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+import { loadBreakReasonsForBatch } from "@/lib/timesheet/load-break-reasons";
 import { timeOffReviewItems } from "@/lib/timesheet/time-off";
 import { markQspEntry, signOffQsp } from "@/app/portal/admin/timesheets/actions";
 import QspDesk from "./QspDesk";
@@ -33,12 +34,12 @@ export default async function QspDeskPage({ params }) {
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     select: {
-      id: true, periodFrom: true, periodTo: true,
+      id: true, program: true, periodFrom: true, periodTo: true,
       timesheets: {
         where: { signedAt: { not: null } },
         orderBy: { signedAt: "desc" },
         select: {
-          id: true, sourceName: true, signedAt: true,
+          id: true, userId: true, sourceName: true, signedAt: true,
           approvedAt: true,
           // the office's sign-off that QuickSolve matches - see signOffQsp
           qspSignedOffAt: true, qspSignedOffByName: true,
@@ -57,6 +58,8 @@ export default async function QspDeskPage({ params }) {
     },
   });
   if (!batch) notFound();
+  // the office's took-it rows, for the missed-over-took-it item
+  const reasonsByPerson = await loadBreakReasonsForBatch(batch, batch.timesheets.map((t) => t.userId));
 
   const fmt = (d) =>
     new Date(d).toLocaleString("en-US", {
@@ -68,7 +71,7 @@ export default async function QspDeskPage({ params }) {
     const marksByRow = new Map(
       t.corrections.map((c) => [c.id, new Map(c.qspMarks.map((m) => [m.fact, m]))]),
     );
-    const items = [...reviewChoices(t.corrections), ...timeOffReviewItems(t.corrections)]
+    const items = [...reviewChoices(t.corrections, reasonsByPerson.get(t.userId) || []), ...timeOffReviewItems(t.corrections)]
       .map((it) => ({
         date: it.date,
         said: it.said || null,

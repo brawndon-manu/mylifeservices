@@ -16,6 +16,7 @@ import { employeeResolution } from "@/lib/timesheet/corrections";
 // the entries the review left to key into QuickSolve - approval waits on the
 // desk's sign-off while any exist (Mánu 2026-09-09)
 import { reviewChoices } from "@/lib/timesheet/qsp-changes";
+import { loadBreakReasons } from "@/lib/timesheet/load-break-reasons";
 import { timeOffReviewItems } from "@/lib/timesheet/time-off";
 
 export const metadata = { title: "Approve timesheet", robots: { index: false, follow: false } };
@@ -29,7 +30,7 @@ export default async function ApproveTimesheetPage({ params }) {
   const ts = await prisma.timesheet.findUnique({
     where: { id },
     include: {
-      batch: { select: { id: true, periodFrom: true, periodTo: true } },
+      batch: { select: { id: true, program: true, periodFrom: true, periodTo: true } },
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       approvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       corrections: {
@@ -53,7 +54,7 @@ export default async function ApproveTimesheetPage({ params }) {
     where: { timesheetId: ts.id, status: { not: "open" } },
     select: { kind: true, date: true, status: true, choice: true, statedBreaks: true, question: true, timeOff: true },
   });
-  const qspOwed = [...reviewChoices(decided), ...timeOffReviewItems(decided)]
+  const qspOwed = [...reviewChoices(decided, await loadBreakReasons(ts)), ...timeOffReviewItems(decided)]
     .reduce((n, it) => n + it.changes.length, 0);
   const qspHold = qspOwed > 0 && !ts.qspSignedOffAt;
 

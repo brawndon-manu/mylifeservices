@@ -19,7 +19,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import { setBreakAnswer } from "./flag-actions";
-import { HEARD_VIA, answerOptionsFor, answerSummary, stillMissing } from "@/lib/timesheet/break-answers";
+import { HEARD_VIA, answerOptionsFor, answerSummary, contradicted, stillMissing } from "@/lib/timesheet/break-answers";
 import { useReadOnly } from "../ReadOnly";
 
 export default function BreakAnswer({
@@ -64,11 +64,17 @@ export default function BreakAnswer({
   // ALREADY ANSWERED
   if (answer && !asking) {
     const left = stillMissing(answer);
+    // THEY SAY IT WAS NOT TAKEN, over our took-it (Mánu 2026-09-15). The row
+    // carries their words, so the chip says so, in amber because it is a thing
+    // still needing a hand: the desk carries the punch not to make, or to undo.
+    const flipped = contradicted(answer);
     const meta = {
       settled: answerSummary(answer),
-      chip: left
-        ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300"
-        : "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300",
+      chip: flipped
+        ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/40 dark:text-amber-300"
+        : left
+          ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300"
+          : "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300",
     };
     return (
       <div className="mt-3 border-t border-border pt-3">
@@ -87,13 +93,20 @@ export default function BreakAnswer({
           )}
         </div>
 
-        {answer.reason && (
+        {flipped && (
+          <p className="mt-2 border-l-[3px] border-amber-300 pl-3 text-sm italic text-muted">
+            &ldquo;{answer.confirmedText}&rdquo;
+            <span className="ml-1 not-italic font-semibold text-amber-700 dark:text-amber-400">· in the employee&rsquo;s own words</span>
+          </p>
+        )}
+        {!flipped && answer.reason && (
           <p className="mt-2 border-l-[3px] border-emerald-300 pl-3 text-sm italic text-muted">
             &ldquo;{answer.reason}&rdquo;
             {answer.confirmedAt && <span className="ml-1 not-italic font-semibold text-emerald-700 dark:text-emerald-400">· confirmed by them</span>}
           </p>
         )}
 
+        {!flipped && (
         <p className="mt-2 max-w-[78ch] text-xs text-muted">
           {left > 0 ? (
             answer.reason
@@ -103,6 +116,7 @@ export default function BreakAnswer({
             <>The next upload is the evidence. We cannot change their schedule, so it is theirs to do.</>
           )}
         </p>
+        )}
 
         <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold">
           <button type="button" onClick={() => { setAsking("not-taken"); setReason(answer.reason || ""); }} className="text-brand">

@@ -30,6 +30,8 @@
 // reaches directly - so this stays testable the same way as
 // timesheet-subjects.js.
 import { employeeResolution } from "./corrections.js";
+// and break-answers.js for which break a question is about; dependency-free too
+import { breakFindingKey, breakSlotOfKind } from "./break-answers.js";
 
 // minutes past midnight -> "12:10p", the same short form the sheet prints
 function shortClock(min) {
@@ -43,7 +45,7 @@ const kindWord = (kindOf) => (kindOf === "meal" ? "lunch" : "rest break");
 
 // every edit ONE row implies, as [{ date, fact, action }]. The rules live here
 // once; both shapes below are built from them.
-function changesForRow(c) {
+function changesForRow(c, tookIt = null) {
   const out = [];
   const kind = String(c.kind || "");
 
@@ -138,6 +140,23 @@ function changesForRow(c) {
     }
   }
 
+  // A BREAK WE HEARD WAS TAKEN, AND THEY SAY IT WAS NOT (Mánu 2026-09-15). The
+  // office recorded "took it" off a call; the employee answered Missed it on
+  // their link. The correction already charges the hour, but a "no" is no edit
+  // on its own, and the office's row still read "needs punching" - so the desk
+  // said nothing while the punch that would erase the premium on the next
+  // export had nothing telling the office not to make it. Office list only:
+  // `tookIt` is handed in by reviewChoices and never by qspChanges, because
+  // from the employee's side a missed break needs no edit.
+  if (tookIt && c.choice === "no") {
+    const slot = breakSlotOfKind(kind);
+    const row = slot ? tookIt.get(breakFindingKey(slot, c.date)) : null;
+    if (row && row.answer === "took-it") {
+      out.push({ date: c.date,
+        fact: `The ${kindWord(slot)} we recorded as taken was not taken.`,
+        action: "Do not punch it in. If it was punched in off the call, take it out." });
+    }
+  }
   return out.filter((x) => x.date && x.fact);
 }
 
@@ -175,14 +194,16 @@ export function qspChanges(corrections) {
 // that grew an edit.
 //
 // -> [{ date, said, changes: [{ fact, action }] }], sorted by date.
-export function reviewChoices(corrections) {
+export function reviewChoices(corrections, breakAnswers = []) {
+  // the office's rows for this person and period, by finding key
+  const tookIt = new Map((breakAnswers || []).filter((r) => r && r.findingKey).map((r) => [r.findingKey, r]));
   const out = [];
   const seen = new Set();
   for (const c of corrections || []) {
     if (!c || c.status === "open") continue;
     const said = employeeResolution(c, c.question || null);
     const changes = [];
-    for (const x of changesForRow(c)) {
+    for (const x of changesForRow(c, tookIt)) {
       const key = `${x.date}|${x.fact}`;
       if (seen.has(key)) continue;
       seen.add(key);

@@ -78,7 +78,7 @@ import { checkWorkSlots, kindTakesSlots } from "@/lib/timesheet/work-slots";
 import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
 import { claimsOf, decideSignature, signedClaimSnapshot, allClaimsDecided, CLAIM_SELECT } from "@/lib/timesheet/claim-signing";
-import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
+import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
 import { pushRecent } from "@/lib/timesheet-stages";
 import { companyDate } from "@/lib/company-time";
@@ -2145,6 +2145,7 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
     select: {
       id: true, batchId: true, signedAt: true, approvedAt: true,
       signedPdfUrl: true, pdfUrl: true, data: true,
+      userId: true, batch: { select: { program: true, periodFrom: true, periodTo: true } },
       // THE OFFICE SIGNS OFF ONCE QUICKSOLVE MATCHES (Mánu 2026-09-09: "I can
       // only sign off on their signed sheet once the numbers have moved to
       // what the timesheet says"). A review that left entries to key waits on
@@ -2161,7 +2162,7 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   // signature on an unattested document
   if (!ts.signedAt) return { ok: false, error: "notsigned" };
   if (ts.approvedAt) return { ok: false, error: "already" };
-  if (!ts.qspSignedOffAt && qspItemsOf(ts.corrections).some((it) => it.changes.length)) {
+  if (!ts.qspSignedOffAt && qspItemsOf(ts.corrections, await loadBreakReasons(ts)).some((it) => it.changes.length)) {
     return { ok: false, error: "qsp" };
   }
   if (typeof signatureDataUrl !== "string" || !signatureDataUrl.startsWith("data:image")) {
@@ -5091,7 +5092,7 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // the time-off days join the review record: the employee's copy states each
   // as a fact, the office copy carries the add-to-schedule action. Sorted back
   // together so the office reads one list in day order.
-  const reviewItems = [...reviewChoices(decided), ...timeOffReviewItems(decided)]
+  const reviewItems = [...reviewChoices(decided, await loadBreakReasons(ts)), ...timeOffReviewItems(decided)]
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const employeeName = (ts.user ? preferredName(ts.user) : null) || ts.sourceName;
   const periodLabel = `${ts.batch.periodFrom} to ${ts.batch.periodTo}`;
@@ -5430,8 +5431,11 @@ export async function recordOfflineSignature(timesheetId, formData) {
 
 // the entries one signed review owes QuickSolve, derived the same way both
 // review emails derive theirs - one derivation, three surfaces
-function qspItemsOf(corrections) {
-  return [...reviewChoices(corrections), ...timeOffReviewItems(corrections)];
+// `breakAnswers` are the office's rows for this person and period - the desk
+// item for a missed-over-took-it needs them, and so does every guard and mark
+// that has to agree with the desk
+function qspItemsOf(corrections, breakAnswers = []) {
+  return [...reviewChoices(corrections, breakAnswers), ...timeOffReviewItems(corrections)];
 }
 
 // THE OFFICE'S OWN SIGN-OFF ON A SIGNED REVIEW - qspSignedOffAt, declared
@@ -5445,6 +5449,7 @@ export async function signOffQsp({ timesheetId, undo = false }) {
     where: { id: String(timesheetId || "") },
     select: {
       id: true, batchId: true, signedAt: true, qspSignedOffAt: true,
+      userId: true, batch: { select: { program: true, periodFrom: true, periodTo: true } },
       corrections: {
         where: { status: { not: "open" } },
         select: {
@@ -5463,7 +5468,7 @@ export async function signOffQsp({ timesheetId, undo = false }) {
       data: { qspSignedOffAt: null, qspSignedOffById: null, qspSignedOffByName: null },
     });
   } else {
-    const owed = qspItemsOf(ts.corrections).flatMap((it) =>
+    const owed = qspItemsOf(ts.corrections, await loadBreakReasons(ts)).flatMap((it) =>
       it.changes.map((ch) => ({ correctionId: it.correctionId, fact: ch.fact })),
     );
     if (!owed.length) return { ok: false, error: "nothing" };
@@ -5492,13 +5497,13 @@ export async function markQspEntry({ correctionId, fact, done }) {
   const c = await prisma.timesheetCorrection.findUnique({
     where: { id: String(correctionId || "") },
     include: {
-      timesheet: { select: { id: true, batchId: true, signedAt: true } },
+      timesheet: { select: { id: true, batchId: true, signedAt: true, userId: true, batch: { select: { program: true, periodFrom: true, periodTo: true } } } },
     },
   });
   if (!c || !c.timesheet.signedAt) return { ok: false, error: "notsigned" };
 
   const wanted = String(fact || "");
-  const owed = qspItemsOf([c]).flatMap((it) => it.changes.map((ch) => ch.fact));
+  const owed = qspItemsOf([c], await loadBreakReasons(c.timesheet)).flatMap((it) => it.changes.map((ch) => ch.fact));
   if (!owed.includes(wanted)) return { ok: false, error: "unknown" };
 
   if (done === false) {

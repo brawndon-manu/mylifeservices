@@ -117,6 +117,14 @@ export function breakFindingKey(kind, date) {
   return `break-${slot}-${date}`;
 }
 
+// WHICH BREAK A QUESTION IS ABOUT, by the same slot map the reasons file under,
+// so a "no" on any missed-break kind can find the office's row for that day.
+// A late lunch is not a missed one, so it is not a slot here.
+export function breakSlotOfKind(kind) {
+  const slot = REASON_SLOT[String(kind || "").replace(/^q_/, "")];
+  return slot === "rest" || slot === "meal" ? slot : null;
+}
+
 // WHICH ANSWERS OWE A SENTENCE, IN ONE PLACE.
 //
 // The browser and the action both enforce this, and they used to hold a copy of
@@ -253,6 +261,15 @@ export function breakFindingKind(findingKey) {
 // PROVENANCE ON EVERY LINE. A reason taken off a phone call and a reason the
 // employee typed are different kinds of evidence, and a sheet somebody signs
 // should not blur them.
+// A TOOK-IT CARRYING THEIR OWN WORDS. Only the employee's missed or partial
+// answer, with its reason, writes confirmedText onto a took-it row (the
+// seeded-box write in actions.js), so a took-it whose words differ from ours is
+// the employee contradicting what we heard - and the row says so on its own,
+// which is what lets the chip, the desk and the printed sheet agree without a
+// second query.
+export const contradicted = (a) =>
+  !!a && a.answer === "took-it" && !!a.confirmedText && a.confirmedText !== a.reason;
+
 export function formatBreakComments(answers = [], startAt = 0) {
   const out = [];
   let n = startAt;
@@ -263,7 +280,6 @@ export function formatBreakComments(answers = [], startAt = 0) {
   // beside ours - so this filter dropped the day, and the sheet they sign
   // charged a break with no reason under it. Their words are the reason. Our
   // took-it note is not a reason for anything and still stays off the page.
-  const contradicted = (a) => a.answer === "took-it" && !!a.confirmedText && a.confirmedText !== a.reason;
   const rows = [...answers]
     .filter((a) => a && ((a.answer === "not-taken" && (a.reason || a.confirmedText)) || contradicted(a)))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
@@ -400,6 +416,8 @@ export function answerOptionsFor({ kind, missing = 1, noRoom = false }) {
 // what the card says once it is answered, with the count in it
 export function answerSummary(a) {
   if (!a) return null;
+  // over our took-it - Mánu 2026-09-15, wording his
+  if (contradicted(a)) return "They say it was not taken";
   const n = a.missingCount || 1;
   const took = a.takenCount ?? (a.answer === "took-it" ? n : 0);
   const thing = a.kind === "rest" ? "rest period"

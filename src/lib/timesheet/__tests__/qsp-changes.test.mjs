@@ -211,3 +211,41 @@ test("a statement-only ten grows no edit line at all", () => {
     "The rest break taken from 10a to 10:10a has nothing recorded for it. Log it.",
   );
 });
+
+// A BREAK WE HEARD WAS TAKEN, AND THEY SAY IT WAS NOT (Mánu 2026-09-15). The
+// office recorded "took it" off a call; the employee answered Missed it on
+// their link. The correction already charges the hour, but a "no" is no edit
+// on its own, and the office's row still read "needs punching" - so the desk
+// said nothing and the punch that would erase the premium on the next export
+// had nothing telling the office not to make it. The office list carries it
+// now; the employee's own list stays silent, because from their side a missed
+// break needs no edit.
+const tookIt = (slot, date) => [{ findingKey: `break-${slot}-${date}`, answer: "took-it", reason: "test" }];
+
+test("their missed over our took-it is a change on the office list, in the approved words", () => {
+  const rows = [{ id: "c1", kind: "q_nothingDocumentedRest", date: "07/24/26", status: "declined", choice: "no" }];
+  const [it] = reviewChoices(rows, tookIt("rest", "07/24/26"));
+  assert.equal(it.correctionId, "c1");
+  assert.equal(it.changes.length, 1);
+  assert.equal(it.changes[0].fact, "The rest break we recorded as taken was not taken.");
+  assert.equal(it.changes[0].action, "Do not punch it in. If it was punched in off the call, take it out.");
+});
+
+test("a lunch says lunch", () => {
+  const rows = [{ id: "c2", kind: "q_nothingDocumentedMeal", date: "07/17/26", status: "declined", choice: "no" }];
+  const [it] = reviewChoices(rows, tookIt("meal", "07/17/26"));
+  assert.equal(it.changes[0].fact, "The lunch we recorded as taken was not taken.");
+});
+
+test("without a took-it on record, or with a yes, a no is still no edit", () => {
+  const no = [{ id: "c3", kind: "q_nothingDocumentedRest", date: "07/24/26", status: "declined", choice: "no" }];
+  assert.equal(reviewChoices(no, []).flatMap((it) => it.changes).length, 0);
+  assert.equal(reviewChoices(no, tookIt("rest", "07/25/26")).flatMap((it) => it.changes).length, 0, "a different day's row does not count");
+  const yes = [{ id: "c4", kind: "q_nothingDocumentedRest", date: "07/24/26", status: "accepted", choice: "yes" }];
+  assert.equal(reviewChoices(yes, tookIt("rest", "07/24/26")).flatMap((it) => it.changes).length, 0);
+});
+
+test("the employee's own list never carries it", () => {
+  const rows = [{ id: "c5", kind: "q_nothingDocumentedRest", date: "07/24/26", status: "declined", choice: "no" }];
+  assert.equal(qspChanges(rows).length, 0);
+});

@@ -50,3 +50,23 @@ export async function loadTimeOffFor(ts, client = prisma) {
     orderBy: { date: "asc" },
   });
 }
+
+// THE SAME ROWS FOR A WHOLE BATCH, one query, grouped by person. The desk and
+// the legacy page walk every signed sheet, and one fetch per sheet would be one
+// per person for nothing.
+export async function loadBreakReasonsForBatch(batch, personKeys = []) {
+  const keys = [...new Set((personKeys || []).filter(Boolean))];
+  const by = new Map(keys.map((k) => [k, []]));
+  if (!batch?.periodFrom || !keys.length) return by;
+  const rows = await prisma.timesheetBreakAnswer.findMany({
+    where: {
+      program: batch.program || "MLS",
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+      personKey: { in: keys },
+    },
+    orderBy: { date: "asc" },
+  });
+  for (const r of rows) by.get(r.personKey)?.push(r);
+  return by;
+}
