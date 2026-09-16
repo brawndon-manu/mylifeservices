@@ -319,6 +319,24 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 }
 
+/* THE SAME RULE FOR THE TIMESHEET REVIEW'S DAY BAR - Mánu 2026-09-16: "we need
+   to move the accessibility button for the timesheets cause it gets in the way
+   of the next button."
+
+   The bar carries Back, Next and Report a problem along the bottom of a phone
+   screen, and the button sat on top of Next: a DOM click moved the day and a
+   real tap opened the accessibility panel. The bar was shortened to dodge it,
+   which cost it 68px of width for no reason once the button can simply move.
+
+   Keyed off the bar's own presence, like the tab bar above, so it cannot drift
+   out of step with which pages have one. The bar is 62px tall and sits 12 above
+   the safe area, so the button clears it at safe + 86. */
+@media (max-width: 639px) {
+  body:has([data-day-bar]) .corner-fab {
+    bottom: calc(env(safe-area-inset-bottom) + 5.375rem);
+  }
+}
+
 /* THE PUSH TRANSITION'S CSS IS NOT HERE, AND IT CANNOT BE.
    `::view-transition-old(root)` and friends are dropped by this project's CSS
    pipeline - measured 2026-08-17: the rules directly above and below this

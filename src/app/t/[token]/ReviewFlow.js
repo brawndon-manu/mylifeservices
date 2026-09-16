@@ -145,7 +145,7 @@ export function DayReport({ date, navigation }) {
       {/* the whole row rides the bottom of a phone screen, not just Back and
           Next: it is the arrangement he settled on 2026-09-08 and Report a
           problem is the one thing on it somebody reaches for mid-calendar. */}
-      <div className={`flex items-center justify-between gap-3 ${styles.dayBar}`}>
+      <div data-day-bar className={`flex items-center justify-between gap-3 ${styles.dayBar}`}>
         <button type="button" disabled={!!flow.editorTarget || flow.reported}
           onClick={() => flow.report(date)} className="min-h-[44px] shrink-0 text-[13px] font-medium text-accent disabled:opacity-40">Report a problem</button>
         {navigation}
