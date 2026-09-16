@@ -24,6 +24,7 @@ import { isSuper } from "@/lib/roles";
 import SendPanel from "../_components/SendPanel";
 import RecomputeBatchButton from "../_components/RecomputeBatchButton";
 import { batchState } from "@/lib/timesheet/batch-state";
+import { supersededBy } from "@/lib/timesheet/superseded";
 import { assignTimesheet, clearTimesheetAssignment, sendTimesheets } from "../actions";
 
 // the tab is where the name is most visible, and "Timesheet batch" told you
@@ -332,21 +333,23 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
   // IS THERE A NEWER UPLOAD OF THIS SAME FORTNIGHT? This page loads one batch,
   // so unlike the list it has to ask. One count, and it decides whether the
   // header claims to be the live copy.
-  const newerInPeriod = (await prisma.timesheetBatch.count({
-    where: {
-      periodFrom: batch.periodFrom,
-      periodTo: batch.periodTo,
-      // SAME PROGRAM ONLY, the same rule `supersededBy` and `groupByPeriod`
-      // already hold. Both payrolls run the same fortnights, so counting across
-      // them made a day program upload read as a newer version of the agency's
-      // export: SUPERSEDED beats every other state, which took the live batch
-      // read-only and hid the lock control on sixty sheets that were out for
-      // signature. This count is the page's own - it loads one batch and cannot
-      // use the list's helper - which is why the filter had to be added twice.
-      program: batch.program,
-      createdAt: { gt: batch.createdAt },
-    },
-  })) > 0;
+  // ONE RULE, ASKED OF THE PLACE THAT OWNS IT. This was the page's own count and
+  // it had to be taught the rule a filter at a time: first the program, because
+  // the day program's fortnight read as a newer version of ILS's, and then
+  // 2026-09-16 the audit flag, because it never knew about that one at all.
+  //
+  // Mánu: "why does it say superseded if this is the latest version". His 3:45am
+  // ILS export was the live batch and his 3:52am AUDIT copy was seven minutes
+  // newer, so the count found 1 and the header called the live batch replaced -
+  // which hides the send control and takes the whole period read-only. Two live
+  // payroll batches were mislabelled at the time, the current fortnight and
+  // 08/16-08/31.
+  //
+  // `supersededBy` has held both halves of the rule since it was written: same
+  // program, same KIND, and a monthly period match for audit copies. A third
+  // copy of a rule is a third chance to be one filter short, so the page asks it
+  // instead of counting for itself.
+  const newerInPeriod = !!(await supersededBy(batch.id));
   const state = batchState(batch, { newerInPeriod });
   const missingPdf = rows.filter((r) => !r.hasPdf).length;
   const mode = sendModeSummary();
