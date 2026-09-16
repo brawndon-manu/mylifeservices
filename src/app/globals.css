@@ -337,6 +337,41 @@ input[type="number"]::-webkit-inner-spin-button {
   }
 }
 
+/* AND IT SETTLES BACK once somebody has seen it - Mánu 2026-09-16: "can we make
+   the accessibility card go transparent after a bit so its not in your face".
+
+   On the review screen it sits over a fortnight somebody is reading, so it
+   shows itself for a few seconds and then drops to a third. DIMMED, NEVER GONE:
+   it is the control that people who need it come looking for, so it stays drawn,
+   stays the same size and stays pressable the whole time. It comes back to full
+   on hover, on keyboard focus and while its own menu is open.
+
+   NOT UNDER REDUCED MOTION. Somebody who has asked for less movement is the last
+   person who should have a control fading under them, so there it simply stays
+   as it is.
+
+   Only where the day bar is. Everywhere else the button is out of the way
+   already, and a control that hides itself on a page nobody complained about is
+   a change nobody asked for. */
+@media (prefers-reduced-motion: no-preference) {
+  body:has([data-day-bar]) .corner-fab {
+    animation: fab-settle 400ms ease 3500ms forwards;
+  }
+
+  body:has([data-day-bar]) .corner-fab:hover,
+  body:has([data-day-bar]) .corner-fab:focus-within,
+  body:has([data-day-bar]) .corner-fab:has([aria-expanded="true"]) {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+@keyframes fab-settle {
+  to {
+    opacity: 0.35;
+  }
+}
+
 /* THE PUSH TRANSITION'S CSS IS NOT HERE, AND IT CANNOT BE.
    `::view-transition-old(root)` and friends are dropped by this project's CSS
    pipeline - measured 2026-08-17: the rules directly above and below this
