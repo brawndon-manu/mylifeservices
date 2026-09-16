@@ -1303,6 +1303,12 @@ function OneQuestion({
   // "are you sure" before reopening an answer that others were derived from
   const [warning, setWarning] = useState(false);
   const [proposed, setProposed] = useState(null);
+  // WHAT THEY JUST SAVED, HELD ON SCREEN. The server takes the answer in a
+  // second or two and the page re-renders a beat later; between the two this
+  // card used to fall back to the old props, so the answer visibly came undone
+  // and then came back. Measured 2026-09-15: gone at 1.4s, back at 1.9s. Held
+  // from the moment the save returns, dropped the moment the props move.
+  const [held, setHeld] = useState(null);
   // WHETHER THE BOXES ARE SHOWING, worked out before the early return below so
   // the publisher hooks can sit above it. `needsTime` further down is the same
   // condition and stays the one the rendering uses.
@@ -1335,7 +1341,15 @@ function OneQuestion({
   const c = copyFor(q, standing);
   if (!c) return null;
 
-  const answered = answer === "accepted" || answer === "declined";
+  // the answer as it stands in THIS tab: what was just saved counts from the
+  // moment the server took it, not from the moment the page caught up
+  const answerNow = held
+    ? (held.choice === null ? null : held.choice === "yes" ? "accepted" : "declined")
+    : answer;
+  const answered = answerNow === "accepted" || answerNow === "declined";
+  useEffect(() => {
+    if (held && (answer !== held.answerThen || savedChoice !== held.savedThen)) setHeld(null);
+  }, [held, answer, savedChoice]);
   const typedHHMM = parseLooseTime(at, { assumeWorkday: true });
   // WHAT IS CURRENTLY SHOWING, staged or saved. Clicking whichever one that is
   // takes it back off - staged answers just clear, and a SAVED one stages a
@@ -1353,6 +1367,7 @@ function OneQuestion({
   // column existed, where it is still the best reading available.
   const shown = proposed
     ? proposed.choice
+    : held ? held.choice
     : savedChoice ? savedChoice
       : answer === "accepted" ? "yes"
         : answer === "declined" ? (c.third && !answerHasTimes ? c.third.value : "no")
@@ -1452,7 +1467,10 @@ function OneQuestion({
         block: wantsBlock ? block.trim() || null : null,
       });
       if (!res?.ok) setErr(res || { error: "failed" });
-      else { setProposed(null); setAt(""); setSlotAt({}); setReason(null); setBlock(""); setEditing(false); router.refresh(); }
+      else {
+        setHeld({ choice: proposed.choice, answerThen: answer, savedThen: savedChoice });
+        setProposed(null); setAt(""); setSlotAt({}); setReason(null); setBlock(""); setEditing(false); router.refresh();
+      }
     });
   }
 
@@ -1468,8 +1486,8 @@ function OneQuestion({
             <b className="text-foreground">{chosenLabel}</b>
             {" - "}
             {q.kind === "duplicateDay"
-              ? (answer === "accepted" ? c.yesEffect : c.noEffect)
-              : answer === "accepted" ? "thank you." : "your timesheet has been rebuilt."}
+              ? (answerNow === "accepted" ? c.yesEffect : c.noEffect)
+              : answerNow === "accepted" ? "thank you." : "your timesheet has been rebuilt."}
           </p>
           {/* what is still theirs to do once the answer is in - see `afterYes` */}
           {answer === "accepted" && c.afterYes && (
@@ -2096,6 +2114,16 @@ export function BatchProvider({
   // { [questionId]: { [slot]: "raw text the person typed" } }
   const [times, setTimes] = useState({});
   const [confirming, setConfirming] = useState(false);
+  // WHAT THEY JUST SAVED, HELD ON SCREEN until the refreshed `answers` carry
+  // it. Clearing the picks on success and waiting for the page put every
+  // toggle back to unanswered and the panel back to "N questions still need an
+  // answer" for the length of the re-render, which read as the save not
+  // working. The hold is keyed on the props object itself: a refresh hands
+  // this component a new one, and that is the moment the hold is redundant.
+  const [held, setHeld] = useState(null);
+  useEffect(() => {
+    if (held && answers !== held.answersThen) setHeld(null);
+  }, [held, answers]);
   // DAYS THEY HAVE FINISHED WITH.
   //
   // NOT A SAVE. The card still commits every day in one write at the end - see
@@ -2109,7 +2137,7 @@ export function BatchProvider({
   const [ready, setReady] = useState(() => new Set());
 
   const base = standing?.charged || 0;
-  const answeredAll = list.every((q) => answers?.[q.id]);
+  const answeredAll = list.every((q) => answers?.[q.id] || (held && q.id in held.picked));
   // an answer already on record shows as the current setting, so changing your
   // mind is editing what you said rather than starting again
   //
@@ -2140,7 +2168,7 @@ export function BatchProvider({
   // the only thing left to collect is why. See `noRoom`.
   const valueFor = (q) => {
     if (noRoom(q)) return "no";
-    return q.id in picked ? picked[q.id] : savedValue(q);
+    return q.id in picked ? picked[q.id] : held && q.id in held.picked ? held.picked[q.id] : savedValue(q);
   };
 
   // WHAT IS ALREADY ON RECORD FOR THIS SLOT.
@@ -2334,7 +2362,9 @@ export function BatchProvider({
   // only the days whose answer differs from what is already stored need writing.
   // A CLEARED ONE COUNTS AS A CHANGE - unclicking a saved answer has to be able
   // to take it off the record, or the box unhighlights and nothing happens.
-  const dirty = chosen.filter(({ q, v }) => v !== savedValue(q));
+  // what is on record as far as this tab knows: the hold counts as saved
+  const onRecord = (q) => (held && q.id in held.picked ? held.picked[q.id] : savedValue(q));
+  const dirty = chosen.filter(({ q, v }) => v !== onRecord(q));
   const cleared = dirty.filter(({ v }) => !v);
 
   function commit() {
@@ -2367,7 +2397,10 @@ export function BatchProvider({
         })),
       });
       if (!res?.ok) setErr(res || { error: "failed" });
-      else { setConfirming(false); setPicked({}); setTimes({}); setReasons({}); router.refresh(); }
+      else {
+        setHeld({ picked: Object.fromEntries(chosen.filter((x) => x.v).map(({ q, v }) => [q.id, v])), answersThen: answers });
+        setConfirming(false); setPicked({}); setTimes({}); setReasons({}); router.refresh();
+      }
     });
   }
 
@@ -3022,6 +3055,9 @@ export function BatchConfirm() {
         </div>
       )}
 
+      {/* the single card has said this since August; the batched confirm sat
+          silent for the two to four seconds the save takes */}
+      {pending && <p className="mt-3 text-sm text-muted">Saving your answers…</p>}
       {err && <Refusal err={err} />}
 
       {copy.footnote && (
