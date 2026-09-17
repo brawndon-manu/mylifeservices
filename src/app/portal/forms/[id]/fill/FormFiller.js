@@ -16,6 +16,7 @@ import {
   StandardFonts,
 } from "pdf-lib";
 import SignaturePad from "./SignaturePad";
+import { signerNameField } from "@/lib/forms";
 
 const RICH_TEXT_FLAG = 1 << 25;
 const WORKER_SRC = "/pdf.worker.min.mjs";
@@ -117,6 +118,21 @@ export default function FormFiller({
   // link types their name there anyway, and the row's audit trail wants the
   // same name without asking twice. Null leaves the payload exactly as it was.
   nameFrom = null,
+  // WHO THE LINK WAS CUT FOR, filled into the document's name box so somebody
+  // opening their own emailed link does not type a name we already know. The
+  // token carries the account id, so this is the account's name, not a guess
+  // off the page.
+  //
+  // ONLY WHERE THERE IS EXACTLY ONE NAME BOX TO PUT IT IN. A form with two
+  // ("Employee Name" and "Supervisor name") gives no way to tell which belongs
+  // to the reader, and filling the wrong one puts a name against somebody
+  // else's signature - the same reason the signing card only appears on a
+  // document with exactly one signature. Null, or none, or more than one, and
+  // nothing is filled and the box is typed as before.
+  //
+  // It is a STARTING value, never a locked one: the field stays editable, and
+  // anything already typed wins.
+  signerName = null,
   // PARTIAL SIGNING: only these fields are offered, and the built PDF stamps
   // exactly them onto the page - value drawn as content, field removed - and
   // DOES NOT flatten the rest. That is what keeps the remaining fields live for
@@ -311,6 +327,13 @@ export default function FormFiller({
             for (const p of pls) {
               if (p.kind === "text" && /date/i.test(p.name)) dated[p.name] = today;
             }
+            // and the name the link already knows - see signerNameField for why
+            // it fills one box or none at all
+            if (signerName) {
+              const into = signerNameField(pls);
+              if (into) dated[into] = signerName;
+            }
+            // `...v` last on purpose: anything already typed beats both.
             if (Object.keys(dated).length) setValues((v) => ({ ...dated, ...v }));
           }
           setStatus("ready");
@@ -327,7 +350,7 @@ export default function FormFiller({
     // array would be a new identity every render - depended on directly it
     // refetches the document forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileUrl, signMode, onlyFields ? onlyFields.join("|") : null]);
+  }, [fileUrl, signMode, signerName, onlyFields ? onlyFields.join("|") : null]);
 
   function setVal(name, v) {
     setValues((prev) => ({ ...prev, [name]: v }));

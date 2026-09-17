@@ -128,6 +128,9 @@ export default async function SignFromLinkPage({ params }) {
           formId={post.form.id}
           reviewTeam={reviewTeam}
           signMode
+          // the link was cut for exactly this account, so the name box starts
+          // filled rather than asking for something the token already carries
+          signerName={preferredName(user)}
           signIntro={`Read the material, then complete and sign "${post.form.title}". Your signed copy goes to HR and is kept on file.`}
           submitAction={submitSignedByToken.bind(null, token)}
         />

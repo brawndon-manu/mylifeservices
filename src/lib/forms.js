@@ -87,3 +87,25 @@ export function fieldLabel(name) {
   if (s.length > 90) s = s.slice(0, 90) + "…";
   return s || "Field";
 }
+
+// WHICH BOX THE SIGNER'S OWN NAME GOES IN, or none.
+//
+// Somebody opening their own emailed link should not type a name the token
+// already knows. But a form can carry several name boxes - "Employee Name" and
+// "Supervisor name (print)" on the attestation - and there is nothing on the
+// page that says which one belongs to the reader. Filling the wrong one puts a
+// name against somebody else's signature.
+//
+// So: exactly one candidate, or nothing. The same shape of rule as the signing
+// card, which only appears on a document with exactly one signature.
+//
+// A DATE BOX IS NOT A NAME BOX even when it says so ("Name and date"), and a
+// signature box is not one either - those are drawn, not typed. `placements`
+// is FormFiller's own list: { name, kind }.
+export function signerNameField(placements) {
+  const hits = (placements || []).filter((p) => p
+    && p.kind === "text"
+    && /\bnames?\b/i.test(p.name || "")
+    && !/date/i.test(p.name || ""));
+  return hits.length === 1 ? hits[0].name : null;
+}
