@@ -66,14 +66,16 @@ export const FORM_EMAIL_ROUTES = [
   {
     key: "driver-accident-protocol",
     // "Day Program Driver Accident Protocol" - the acknowledgment on its last
-    // page. Signed copies come back to Mánu for now, at his word, because this
-    // one is being tested before it reaches any driver. Both holders of the
-    // title are his own accounts, so it cannot resolve to anybody else.
+    // page. Signed copies come to Mánu, asked and answered twice: once for the
+    // test, and again when told the others all go to the HR Administrator who
+    // keeps the record. His call, not a placeholder.
     //
-    // THIS IS THE TEST ROUTE, NOT THE REAL ONE. Every other acknowledgment here
-    // goes to the HR Administrator, who keeps the record; signed driver
-    // protocols landing with the web developer is not where they belong once
-    // drivers are actually signing them. Change the title below, not the match.
+    // ROUTED BY TITLE LIKE THE REST, which is the one thing to know about it:
+    // both holders of "Web Developer" are his own accounts today, so it cannot
+    // resolve to anybody else - but it follows the TITLE, not him. Give that
+    // title to a new hire and their inbox starts receiving signed driver
+    // protocols. If that ever stops being wanted, change the title here rather
+    // than the match.
     match: (title) => /driver accident protocol/i.test(title || ""),
     recipientTitle: "Web Developer",
   },
