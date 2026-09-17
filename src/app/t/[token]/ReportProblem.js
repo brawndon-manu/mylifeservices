@@ -13,6 +13,7 @@ import { useImperativeHandle, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReviewFlow } from "./ReviewFlow";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON } from "@/lib/timesheet/corrections";
+import { kindsForDay } from "@/lib/timesheet/report-kinds";
 // the attestation covers the tens now - see rest-attestation.js
 // the same loose reading the question cards use, so "331" means 3:31 here too
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
@@ -33,30 +34,6 @@ import {
   MAX_SLOTS,
 } from "@/lib/timesheet/work-slots";
 
-function kindsForDay(day) {
-  if (!day) return ["other"];
-  const out = ["hours"];
-  if (day.mealCount > 0) out.push("meal_missed");
-  // "it isn't punched" only fits a day with no meal at all. a late meal was
-  // punched, so the honest claim there is that the punch time is wrong.
-  if (day.mealLate) out.push("meal_ontime");
-  else if (day.mealViolation) out.push("meal_taken");
-  // NOBODY IS ASKED ABOUT A TEN ANY MORE. Mánu 2026-09-08: "they dont need to
-  // be asked about 10 minute rest breaks at all anymore. the attestations are
-  // for stating they took their breaks." The two rest kinds were the last place
-  // on this page that still asked, and rest_missed was the worse of the pair:
-  // it promised a premium every money path now ignores by the day's own date.
-  //
-  // BY THE DAY'S OWN FLAG, like every other gate in this policy, so an August
-  // re-upload still offers them and the code behind the gate stays whole. The
-  // standing reason is that this has to survive the rule being switched back.
-  if (day.restAttested !== true) {
-    if (day.restCount > 0) out.push("rest_missed");
-    if (day.restViolation) out.push("rest_taken");
-  }
-  out.push("day_extra", "other");
-  return out;
-}
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
 
