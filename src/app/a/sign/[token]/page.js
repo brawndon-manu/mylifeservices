@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
+import { renderMarkdown, PROSE } from "@/lib/markdown";
 import { getRecipientOptions } from "@/lib/form-recipients";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { attachmentsOf } from "@/lib/announcement-attachments";
@@ -60,6 +61,7 @@ export default async function SignFromLinkPage({ params }) {
     ccNames: (route?.cc || []).map((c) => c.name),
   };
   const others = attachmentsOf(post).filter((a) => a.formId !== post.form.id);
+  const bodyHtml = renderMarkdown(post.content);
 
   return (
     <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
@@ -74,6 +76,16 @@ export default async function SignFromLinkPage({ params }) {
         <b className="text-foreground">{preferredName(user)}</b> ({user.email}). Nothing to
         type - the link you came from is what identifies you.
       </p>
+
+      {/* THE ANNOUNCEMENT ITSELF, not just its title. This page is where the
+          emailed "Review and sign" button lands now, so it has to BE the
+          announcement - somebody asked to sign a document is owed what the
+          document is about, on the same screen, without a login. `content` was
+          already being read here and thrown away. Same renderer and same
+          classes as the portal page, so one body cannot read two ways. */}
+      {bodyHtml && (
+        <div className={`mt-6 max-w-2xl ${PROSE}`} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+      )}
 
       {others.length > 0 && (
         <div className="mt-5 rounded-xl border border-border bg-surface p-4">

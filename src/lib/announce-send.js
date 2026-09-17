@@ -196,8 +196,14 @@ export async function emailAnnouncement(
     // a meeting gets one-click RSVP buttons (responding also records the ack, so
     // no separate ack button); everything else gets the ack link + a "go to post"
     // button. both are signed per recipient so the link needs no login.
-    const ackUrl =
-      post.requireAck && !isMeeting ? `${base}/a/ack/${signAckToken(post.id, r.id)}` : null;
+    // A FORM POST GOES STRAIGHT TO THE DOCUMENT. The ack page in between was a
+    // button that recorded an open and then handed them on, and 25 of the 113
+    // people who pressed it never signed - it reads as the finish line when it
+    // is the doorway. /a/sign carries the announcement now, needs no login, and
+    // opening it records the same open the button used to.
+    const ackUrl = post.requireAck && !isMeeting
+      ? `${base}/a/${post.formId ? "sign" : "ack"}/${signAckToken(post.id, r.id)}`
+      : null;
     // THE POST IN THE PORTAL. Mánu 2026-08-10: this button points at
     // /portal/announcements/<id> and that is deliberate. Signed in, you land on
     // the announcement; not signed in, the proxy shows you the login screen.

@@ -2079,7 +2079,9 @@ export async function sendAckEmails(postId) {
   const nudge = ackNudgeCopy(post);
   const subject = nudge.subject;
   const messages = recipients.map((r) => {
-    const url = `${base}/a/ack/${signAckToken(postId, r.id)}`;
+    // the same door the first email uses - a form post owes a signature, so
+    // the chase has to land on the document, not on a button beside it
+    const url = `${base}/a/${post.formId ? "sign" : "ack"}/${signAckToken(postId, r.id)}`;
     const firstName = firstNameOf(r) || "there";
     // AND THE LOCK. This was the last sender in this file without one: pressed
     // from a laptop it mailed real staff for real, with every acknowledge link

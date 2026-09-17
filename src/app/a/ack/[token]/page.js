@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf } from "@/lib/contacts";
@@ -28,6 +29,7 @@ export default async function AckPage({ params, searchParams }) {
   let valid = false;
   let acked = false;
   let needsSign = false;
+  let signed = false;
   let firstName = "there";
   let title = "";
   let announcementId = null;
@@ -71,6 +73,11 @@ export default async function AckPage({ params, searchParams }) {
       title = announcement.title || (announcement.content || "").slice(0, 80);
       announcementId = announcement.id;
       needsSign = !!(announcement.formId && announcement.form?.fillable);
+      // the signature, not the tick, is what finishes a form post
+      signed = needsSign && !!(await prisma.formSubmission.findFirst({
+        where: { announcementId: announcement.id, userId: user.id },
+        select: { id: true },
+      }));
       // someone who already acknowledged - through this link, the portal or a
       // meeting RSVP - goes straight to the thanks screen rather than being
       // asked to press a button they have already pressed
@@ -85,6 +92,15 @@ export default async function AckPage({ params, searchParams }) {
       }));
     }
   }
+
+  // A LINK ALREADY IN AN INBOX STILL WORKS, AND STILL LANDS ON THE DOCUMENT.
+  // Emails sent before the send started pointing at /a/sign are out there, and
+  // this page used to dead-end the people they were most owed to: `done` was
+  // read off the ack row alone, so anybody who pressed the button and drifted
+  // off got "You have acknowledged this!" with no route back to the form they
+  // still owed. 25 people are in exactly that state. A signature is the finish
+  // line on a form post, so an unsigned one goes to the document instead.
+  if (valid && needsSign && !signed) redirect(`/a/sign/${token}`);
 
   const done = acked || sp?.done === "1";
 
