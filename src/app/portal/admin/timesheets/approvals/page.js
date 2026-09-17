@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { preferredName } from "@/lib/contacts";
 import { supersededBy } from "@/lib/timesheet/superseded";
 import { batchPeriodLabels } from "@/lib/timesheet/batch-overview";
 import BackLink from "@/components/BackLink";
@@ -138,7 +137,13 @@ export default async function ApprovalsPage() {
       <ApprovalsList
         groups={groups}
         approve={approveTimesheet}
-        approverName={preferredName(user) || user.name || ""}
+        // THE LEGAL NAME, BECAUSE THAT IS WHAT THE STAMP PRINTS. approveTimesheet
+        // draws `user.name` above the line and the single-sheet approve page
+        // labels itself with the same field. This said the preferred name for one
+        // night: the documents were right and the sentence over them was wrong,
+        // which is worse than either - it described a payroll document
+        // incorrectly at the moment somebody was deciding to sign 41 of them.
+        approverName={user?.name || ""}
       />
 
       <p className="mt-8 text-xs leading-relaxed text-faint">

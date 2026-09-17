@@ -82,3 +82,19 @@ test("one request per sheet, and a failure is named rather than swallowed", () =
   // and what failed stays ticked so a second press retries exactly it
   assert.match(list, /setPicked\(new Set\(chosen\.filter\(\(r\) => failedNames\.has\(r\.name\)\)/);
 });
+
+test("the label over the signature names the field the STAMP prints", () => {
+  // This was wrong for one night: the page said "Prints as <preferred name>"
+  // while approveTimesheet drew the legal name onto the document. The documents
+  // were right and the sentence over them was not, which is the worse way round
+  // - it described a payroll document incorrectly to the person about to sign 41.
+  assert.match(page, /approverName=\{user\?\.name \|\| ""\}/);
+  assert.ok(!/approverName=\{preferredName/.test(page), "the preferred name is not what is stamped");
+
+  // the stamp's own field, so this test fails if either side moves
+  assert.match(actions, /stampApproval\(doc, \{ rect, signatureDataUrl, approvedOn, approvedBy: user\.name \|\| null \}\)/);
+
+  // and the single-sheet page has always labelled itself the same way
+  const single = strip(read("src/app/portal/admin/timesheets/sheet/[id]/approve/page.js"));
+  assert.match(single, /approverName=\{user\?\.name \|\| null\}/);
+});
