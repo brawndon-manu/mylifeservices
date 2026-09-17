@@ -64,6 +64,20 @@ export const FORM_EMAIL_ROUTES = [
     recipientTitle: "HR Administrator",
   },
   {
+    key: "driver-accident-protocol",
+    // "Day Program Driver Accident Protocol" - the acknowledgment on its last
+    // page. Signed copies come back to Mánu for now, at his word, because this
+    // one is being tested before it reaches any driver. Both holders of the
+    // title are his own accounts, so it cannot resolve to anybody else.
+    //
+    // THIS IS THE TEST ROUTE, NOT THE REAL ONE. Every other acknowledgment here
+    // goes to the HR Administrator, who keeps the record; signed driver
+    // protocols landing with the web developer is not where they belong once
+    // drivers are actually signing them. Change the title below, not the match.
+    match: (title) => /driver accident protocol/i.test(title || ""),
+    recipientTitle: "Web Developer",
+  },
+  {
     key: "ils-attestation",
     // "ILS Service Note Documentation Training Attestation" - the September
     // ILS documentation training. signed copies go to Britny, who keeps the
