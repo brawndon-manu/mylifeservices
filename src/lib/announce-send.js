@@ -209,9 +209,18 @@ export async function emailAnnouncement(
     // the announcement; not signed in, the proxy shows you the login screen.
     // That is the intended behaviour, not a wall to route around - "Review and
     // sign" is the button that works without a login.
+    //
+    // A FORM POST GETS ONE BUTTON, at his word. Review and sign now lands on the
+    // announcement itself - its body, its attachments and the document to sign,
+    // all on one page and no login - so a second button beside it offering "the
+    // announcement" points at a worse copy of where the first one already goes,
+    // and gives somebody a door that can end at a login screen instead. The
+    // ordinary post keeps both, because there its two buttons do two things.
     const ctaHtml = isMeeting
       ? buildRsvpButtons(post, `${base}/a/rsvp/${signRsvpToken(post.id, r.id, "pick")}`)
-      : postButton(`${base}/portal/announcements/${post.id}`, "Go to the announcement");
+      : post.requireAck && post.formId
+        ? ""
+        : postButton(`${base}/portal/announcements/${post.id}`, "Go to the announcement");
     const html = buildAnnouncementEmailHtml({
       logoUrl,
       title,

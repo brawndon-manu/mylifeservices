@@ -76,3 +76,14 @@ test("the open action refuses anything that is not a live form post", () => {
   assert.match(signActions, /if \(!user \|\| user\.deactivatedAt\) return \{ ok: false \}/);
   assert.match(signActions, /if \(!parsed\) return \{ ok: false \}/);
 });
+
+test("a form post's email carries one button, and only a form post's", () => {
+  // the ternary has to fall through to "" for a form post, and to the portal
+  // button for everything else that is not a meeting
+  assert.match(send, /post\.requireAck && post\.formId\s*\?\s*""\s*:\s*postButton\(/,
+    "a form post gets no second button");
+  // the meeting branch is untouched - its buttons are the RSVP ones
+  assert.match(send, /isMeeting\s*\?\s*buildRsvpButtons\(/);
+  // and the ordinary post still gets its own
+  assert.match(send, /postButton\(`\$\{base\}\/portal\/announcements\/\$\{post\.id\}`, "Go to the announcement"\)/);
+});
