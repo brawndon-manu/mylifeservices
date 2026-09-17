@@ -78,7 +78,7 @@ import { TIME_OFF_KIND, TIME_OFF_STATUS, checkTimeOffEntries, timeOffReviewItems
 import { checkWorkSlots, kindTakesSlots } from "@/lib/timesheet/work-slots";
 import { sendReviewCorrections, resolveReviewRecipients } from "@/lib/timesheet-review-email";
 import { notifyOversight } from "@/lib/notify";
-import { claimsOf, decideSignature, signedClaimSnapshot, allClaimsDecided, CLAIM_SELECT } from "@/lib/timesheet/claim-signing";
+import { claimsOf, decideSignature, signedClaimSnapshot, allClaimsDecided, clearsSignature, CLAIM_SELECT } from "@/lib/timesheet/claim-signing";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
 import { pushRecent } from "@/lib/timesheet-stages";
@@ -2775,7 +2775,7 @@ export async function settleDecidedSheet(timesheetId) {
     where: { id: sheet.id },
     data: {
       disputedAt: null,
-      ...(sheet.signedAt && !signature.keep ? {
+      ...(clearsSignature(sheet.signedAt, signature) ? {
         signedAt: null, signedPdfUrl: null, signedName: null, signedIp: null, signedClaim: null,
         approvedAt: null, approvedById: null, approvedPdfUrl: null, sentAt: null,
       } : {}),
@@ -3751,7 +3751,10 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
       // they signed for: every reported change granted and nothing else moved
       // (Mánu 2026-09-09, the signature on a claim). Then it stands, and so
       // does everything that followed it.
-      ...(signature.keep ? {} : {
+      // ONLY WHERE THERE IS A SIGNATURE TO UNDO - see clearsSignature. An
+      // unsigned sheet reads { keep: false } too, and this whole set used to
+      // fire on one.
+      ...(clearsSignature(ts.signedAt, signature) ? {
         signedAt: null,
         signedPdfUrl: null,
         signedName: null,
@@ -3765,7 +3768,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
         // to sign that same sheet - clearing sentAt there would put them back on
         // the chase list for a document they are already looking at.
         ...(keepSent ? {} : { sentAt: null }),
-      }),
+      } : {}),
       ...(openClaims > 0 ? {} : { disputedAt: null }),
       recomputedAt: new Date(),
       data: {

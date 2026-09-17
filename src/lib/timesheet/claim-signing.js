@@ -172,6 +172,27 @@ export function decideSignature({ signedAt, signedClaim, corrections, days, next
   return signatureSurvives({ corrections, before, after: next, timeOff });
 }
 
+// IS THERE A SIGNATURE HERE TO UNDO?
+//
+// `decideSignature` answers { keep: false, why: "unsigned" } for a sheet nobody
+// signed, which is the same SHAPE as one a rebuild has just invalidated. A
+// caller reading `keep` on its own cannot tell those apart, so it undoes a
+// signature that never existed.
+//
+// On a sheet only ever sent, every field in that set is already null but
+// `sentAt` - and clearing that is the one thing the set can still break. It puts
+// the person back in the unsent list for the document they are working on, which
+// is exactly what the note beside `sentAt` says must not happen. Plancarte,
+// Martha 09/01-09/15: three reported days accepted, her `sentAt` cleared two
+// seconds after the last one, on a sheet she had walked end to end, reported on
+// and answered her time off for.
+//
+// Both writers ask this now, so the rebuild and the last-decision settle cannot
+// disagree about what a rebuild takes away.
+export function clearsSignature(signedAt, signature) {
+  return !!signedAt && !signature?.keep;
+}
+
 // DOES THE SIGNATURE SURVIVE THE REBUILD? The rebuild clears it unconditionally
 // today, with the note that a corrected sheet is a different document. That
 // stays true when the document changed under them, and stops being true when
