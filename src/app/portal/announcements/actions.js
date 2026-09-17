@@ -1988,19 +1988,41 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-function ackEmailHtml({ firstName, title, snippet, url, lead, cta, note }) {
-  // simple inline-styled email - trusted internal content, but escaped anyway.
-  return `
-  <div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; color: #1f2937;">
-    <p style="font-size: 15px;">Hi ${escapeHtml(firstName)},</p>
-    <p style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">${escapeHtml(title)}</p>
-    <p style="font-size: 14px; line-height: 1.6; color: #4b5563; white-space: pre-wrap;">${escapeHtml(snippet)}</p>
-    <p style="font-size: 14px; line-height: 1.6; color: #374151;">${escapeHtml(lead)}</p>
-    <p style="margin: 22px 0;">
-      <a href="${url}" style="display: inline-block; background: #2f6f4f; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-size: 15px; font-weight: 600;">${escapeHtml(cta)}</a>
-    </p>
-    <p style="font-size: 12px; color: #6b7280;">${escapeHtml(note)} If the button doesnt work, paste this into your browser:<br /><a href="${url}" style="color: #2f6f4f;">${url}</a></p>
-  </div>`;
+// THE CHASE EMAIL, IN THE SAME ENVELOPE AS THE PUBLISH ONE.
+//
+// This was its own hand-rolled div for a long time and it showed: no logo, no
+// header, no card, a GREEN button where the rest of the app is blue, the body
+// escaped and printed raw so markdown came through as asterisks, and the whole
+// thing cut at 240 characters - which landed on a real send mid-word, "The
+// checklist page i".
+//
+// It builds on the shared shell now, so the reminder looks like the thing it is
+// reminding you about. The button and the line under it come from the shell
+// too, and they are the same words `ackNudgeCopy` already carries: those were
+// deliberately matched to the publish email and the /a/ack page on 2026-09-08,
+// so all the doors read the same. Passing them twice was the only way they
+// could ever drift.
+//
+// What stays the nudge's own is the greeting and the lead: this email is
+// addressed to one person who still owes it, and says so above the post.
+function ackEmailHtml({ firstName, post, url, lead, logoUrl }) {
+  const greeting = `<p style="margin:0 0 14px;">Hi ${escapeHtml(firstName)},</p>`;
+  // the WHOLE post, rendered - not a slice of its source
+  const body = renderMarkdown(post.content, { email: true });
+  const why = `<p style="margin:18px 0 0;">${escapeHtml(lead)}</p>`;
+  return buildAnnouncementEmailHtml({
+    logoUrl,
+    title: post.title || "New announcement",
+    authorName: preferredName(post.author) || "My Life Services",
+    authorTitle: post.author?.title || "",
+    dateStr: new Date(post.createdAt).toLocaleDateString("en-US", {
+      year: "numeric", month: "long", day: "numeric", timeZone: EMAIL_TZ,
+    }),
+    requireAck: true,
+    ackNeedsSignature: !!post.formId,
+    ackUrl: url,
+    bodyHtml: `${greeting}${body}${why}`,
+  });
 }
 
 // "Send to staff by email" - emails an individualized link to every active
@@ -2030,6 +2052,9 @@ export async function sendAckEmails(postId) {
       ackTitles: true,
       ackUserIds: true,
       ackExemptUserIds: true,
+      // the header the shared shell prints - who wrote it and when
+      createdAt: true,
+      author: { select: EMAIL_AUTHOR_SELECT },
     },
   });
   if (!post || post.deletedAt || !post.requireAck) {
@@ -2038,6 +2063,9 @@ export async function sendAckEmails(postId) {
 
   const from = process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
   const base = (process.env.AUTH_URL || "").replace(/\/$/, "");
+  // same resolution as every other sender: the Blob-hosted mark when it is
+  // configured, else the one on the site
+  const logoUrl = process.env.EMAIL_LOGO_URL || `${base}/logo/treelogo_gradient.png`;
   if (!from || !base || !process.env.RESEND_API_KEY) {
     console.error(
       "ack email misconfigured - missing ANNOUNCEMENTS_FROM/AUTH_RESEND_FROM, AUTH_URL, or RESEND_API_KEY",
@@ -2073,7 +2101,6 @@ export async function sendAckEmails(postId) {
   }
 
   const title = post.title || "New announcement";
-  const snippet = (post.content || "").slice(0, 240);
   // THE WORDS FOLLOW THE DEBT. A form post owes a signature, so the nudge
   // cannot promise a one-click finish - see ackNudgeCopy.
   const nudge = ackNudgeCopy(post);
@@ -2097,8 +2124,9 @@ export async function sendAckEmails(postId) {
       subject: route.redirected
         ? `[TEST - would have gone to ${route.intendedEmail}] ${subject}`
         : subject,
-      html: ackEmailHtml({ firstName, title, snippet, url, lead: nudge.lead, cta: nudge.cta, note: nudge.note }),
-      text: `Hi ${firstName},\n\n${snippet}\n\n${nudge.textCta}: ${url}\n\n${nudge.note}`,
+      html: ackEmailHtml({ firstName, post, url, lead: nudge.lead, logoUrl }),
+      // the plain-text copy carries the whole post too, not a slice of it
+      text: `Hi ${firstName},\n\n${post.content || ""}\n\n${nudge.lead}\n\n${nudge.textCta}: ${url}\n\n${nudge.note}`,
     };
   });
 
