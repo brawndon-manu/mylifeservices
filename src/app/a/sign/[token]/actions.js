@@ -107,3 +107,46 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
   if (!result?.ok && !stored) return { ok: false, error: result?.error || "send" };
   return { ok: true, emailed: !!result?.ok, stored: !!stored };
 }
+
+// THE OPEN, RECORDED FROM THE BROWSER AND ONLY FROM THE BROWSER.
+//
+// The emailed button used to write this on its way past. Now the email lands on
+// the document itself, and this page deliberately records nothing on load: mail
+// scanners fetch every link in a message, so a server-side write here would mark
+// the whole audience as having looked at a document none of them opened. That is
+// the rule the ack page's own header sets, and it stands.
+//
+// So the client calls this once the document has actually rendered - see
+// FormFiller. A scanner does not run JavaScript, so it cannot reach this, and
+// what gets recorded is stronger than the old press was: the pages were drawn on
+// a real screen, not a button was clicked on the way to them.
+//
+// It is the SAME row the portal's own view writes (Mánu 2026-09-08, "just let us
+// know if someone has opened it in the portal"), so the roster's Opened column
+// covers both doors again. Signing writes it too, through storeFormSubmission,
+// and the write is an upsert - the first one wins and the timestamp is the
+// earliest look, which is what an Opened column should say.
+export async function recordOpenedByToken(token) {
+  const parsed = verifyAckToken(String(token || ""));
+  if (!parsed) return { ok: false };
+
+  const [post, user] = await Promise.all([
+    prisma.announcement.findUnique({
+      where: { id: parsed.announcementId },
+      select: { id: true, requireAck: true, deletedAt: true, formId: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: parsed.userId },
+      select: { id: true, deactivatedAt: true },
+    }),
+  ]);
+  // only a live, form-backed post that actually asks for an acknowledgment, and
+  // only for an account that still exists. Anything else records nothing rather
+  // than guessing.
+  if (!post || post.deletedAt || !post.requireAck || !post.formId) return { ok: false };
+  if (!user || user.deactivatedAt) return { ok: false };
+
+  const { recordAnnouncementAck } = await import("@/lib/announcement-ack");
+  await recordAnnouncementAck({ announcementId: post.id, userId: user.id, viaEmail: true });
+  return { ok: true };
+}

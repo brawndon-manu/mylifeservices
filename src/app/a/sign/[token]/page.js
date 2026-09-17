@@ -8,7 +8,7 @@ import { renderMarkdown, PROSE } from "@/lib/markdown";
 import { getRecipientOptions } from "@/lib/form-recipients";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { attachmentsOf } from "@/lib/announcement-attachments";
-import { submitSignedByToken } from "./actions";
+import { submitSignedByToken, recordOpenedByToken } from "./actions";
 
 // Sign the form an announcement asks for, from the emailed link, with or
 // without a login. Lives outside /portal so the proxy does not bounce it - the
@@ -143,6 +143,9 @@ export default async function SignFromLinkPage({ params }) {
           // the link was cut for exactly this account, so the name box starts
           // filled rather than asking for something the token already carries
           signerName={preferredName(user)}
+          // the open, once the document is really drawn - see
+          // recordOpenedByToken for why this cannot be done on the server
+          onOpened={recordOpenedByToken.bind(null, token)}
           signIntro={`Read the material, then complete and sign "${post.form.title}". Your signed copy goes to HR and is kept on file.`}
           submitAction={submitSignedByToken.bind(null, token)}
         />

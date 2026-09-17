@@ -133,6 +133,12 @@ export default function FormFiller({
   // It is a STARTING value, never a locked one: the field stays editable, and
   // anything already typed wins.
   signerName = null,
+  // CALLED ONCE THE DOCUMENT IS ACTUALLY ON A SCREEN. The emailed signing page
+  // records nothing on load, on purpose - mail scanners fetch every link in a
+  // message, and a server-side write there would mark people as having looked
+  // at something they never opened. A scanner does not run this. Optional:
+  // every other caller passes nothing and nothing is recorded.
+  onOpened = null,
   // PARTIAL SIGNING: only these fields are offered, and the built PDF stamps
   // exactly them onto the page - value drawn as content, field removed - and
   // DOES NOT flatten the rest. That is what keeps the remaining fields live for
@@ -149,6 +155,8 @@ export default function FormFiller({
   // only changes HOW it is put in front of somebody.
   const [cantDraw, setCantDraw] = useState(false);
   const [placements, setPlacements] = useState([]); // { name, kind, page, left, top, width, height, multiline }
+  // one open per mount, whatever the effect does
+  const openedRef = useRef(false);
   const [values, setValues] = useState({});
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState(null); // field name being signed
@@ -337,6 +345,13 @@ export default function FormFiller({
             if (Object.keys(dated).length) setValues((v) => ({ ...dated, ...v }));
           }
           setStatus("ready");
+          // the pages are drawn, in a browser, for this person. Fire and
+          // forget: a failed open-record must never cost somebody their
+          // signature, and the ref keeps a re-render from counting twice.
+          if (onOpened && !openedRef.current) {
+            openedRef.current = true;
+            Promise.resolve(onOpened()).catch(() => {});
+          }
         }
       } catch {
         if (active) setStatus("error");
