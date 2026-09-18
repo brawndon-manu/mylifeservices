@@ -29,6 +29,9 @@ export default function ReviewerBar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [about, setAbout] = useState(false);
   const [impact, setImpact] = useState(null);
+  // "first" asks about the answers and the signature; "confirm" only ever
+  // appears when there is an approval to take off as well
+  const [stage, setStage] = useState("first");
   const [checking, setChecking] = useState(false);
   const [err, setErr] = useState(null);
   const [pending, start] = useTransition();
@@ -206,40 +209,76 @@ export default function ReviewerBar({
 
       {impact && (
         <Overlay onClose={() => !pending && setImpact(null)} labelledBy="reset-title">
-          <p id="reset-title" className="text-lg font-semibold text-foreground">
-            {impact.answers + impact.reasons > 0
-              ? `Delete ${name}'s ${impact.answers + impact.reasons} answer${
-                  impact.answers + impact.reasons === 1 ? "" : "s"
-                }?`
-              : `Rebuild ${name}'s sheet from the upload?`}
-          </p>
-          <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
-            <li>Their sheet goes back to the figures the upload produced.</li>
-            {impact.reasons > 0 && (
-              /* WHOSE WORDS GO AND WHOSE STAY. A reason a reviewer took off a
-                 phone call is not the employee's to delete and not this
-                 button's either, so it keeps its sentence and loses only their
-                 tick - which puts it back to being a question for them. */
-              <li>
-                Anything <b className="text-foreground">they</b> wrote about a missed
-                break goes. A reason <b className="text-foreground">we</b> recorded
-                stays, and goes back to waiting on them to check it.
-              </li>
-            )}
-            {impact.signed && (
-              <li>
-                <b className="text-foreground">Their signature goes too</b> &mdash; a
-                rebuild un-signs, because the signed copy quotes figures that are
-                about to change.
-              </li>
-            )}
-            <li>Nobody else on the batch is touched.</li>
-          </ul>
+          {/* WHAT THIS ACTUALLY TAKES, SAID PER SHEET - Mánu 2026-09-18, after
+              pressing it on a signed AND approved one and finding nothing had
+              happened: "i think the prompt shoiuld change on the circumstance.
+              they signed? their signature will be removed. if they did that and
+              we approve as well then another promp because it is supposed to
+              fully reset the timesheet."
+
+              So there are two steps, and the second only exists when there is an
+              approval to undo. An approval is the office's own name on a payroll
+              document, and taking it off is not the same act as clearing an
+              employee's answers - it should not ride along on one press. */}
+          {stage === "confirm" ? (
+            <>
+              <p id="reset-title" className="text-lg font-semibold text-foreground">
+                Also remove your approval of {name}&apos;s sheet?
+              </p>
+              <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
+                <li>
+                  You approved this sheet. A full reset takes{" "}
+                  <b className="text-foreground">your approval off it too</b>, with the
+                  approved copy.
+                </li>
+                <li>It goes back to unsent, so it has to be sent again before anyone can sign it.</li>
+                <li>Nobody else on the batch is touched.</li>
+              </ul>
+            </>
+          ) : (
+            <>
+              <p id="reset-title" className="text-lg font-semibold text-foreground">
+                {impact.answers + impact.reasons > 0
+                  ? `Delete ${name}'s ${impact.answers + impact.reasons} answer${
+                      impact.answers + impact.reasons === 1 ? "" : "s"
+                    }?`
+                  : `Rebuild ${name}'s sheet from the upload?`}
+              </p>
+              <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
+                <li>Their sheet goes back to the figures the upload produced.</li>
+                {impact.reasons > 0 && (
+                  /* WHOSE WORDS GO AND WHOSE STAY. A reason a reviewer took off a
+                     phone call is not the employee's to delete and not this
+                     button's either, so it keeps its sentence and loses only their
+                     tick - which puts it back to being a question for them. */
+                  <li>
+                    Anything <b className="text-foreground">they</b> wrote about a missed
+                    break goes. A reason <b className="text-foreground">we</b> recorded
+                    stays, and goes back to waiting on them to check it.
+                  </li>
+                )}
+                {impact.signed && (
+                  <li>
+                    <b className="text-foreground">Their signature will be removed</b> &mdash;
+                    a rebuild un-signs, because the signed copy quotes figures that are
+                    about to change.
+                  </li>
+                )}
+                {impact.approved && (
+                  <li>
+                    You have also <b className="text-foreground">approved</b> this one.
+                    That takes one more press.
+                  </li>
+                )}
+                <li>Nobody else on the batch is touched.</li>
+              </ul>
+            </>
+          )}
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             <button
               type="button"
               disabled={pending}
-              onClick={() => setImpact(null)}
+              onClick={() => { setImpact(null); setStage("first"); }}
               className="rounded-[9px] px-4 py-2 text-[13.5px] font-medium text-muted transition-colors hover:bg-fill disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               Cancel
@@ -247,11 +286,18 @@ export default function ReviewerBar({
             <button
               type="button"
               disabled={pending}
-              onClick={() =>
+              onClick={() => {
+                // an approved sheet asks again before anything is sent, so the
+                // approval never comes off on the same press as the answers
+                if (impact.approved && stage === "first") { setStage("confirm"); return; }
                 start(async () => {
-                  const res = await resetTimesheetAnswers(timesheetId);
+                  const res = await resetTimesheetAnswers(timesheetId, {
+                    confirmUnsign: !!impact.signed,
+                    confirmUnapprove: !!impact.approved,
+                  });
                   if (res?.ok) {
                     setImpact(null);
+                    setStage("first");
                     // the page is built from the sheet that just changed, so it
                     // has to be re-fetched rather than left showing the old
                     // questions
@@ -259,12 +305,19 @@ export default function ReviewerBar({
                   } else {
                     setErr(res?.error || "failed");
                     setImpact(null);
+                    setStage("first");
                   }
-                })
-              }
+                });
+              }}
               className="rounded-[9px] bg-rose-700 px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
             >
-              {pending ? "Resetting…" : "Yes, reset it"}
+              {pending
+                ? "Resetting…"
+                : impact.approved && stage === "first"
+                  ? "Continue"
+                  : impact.approved
+                    ? "Yes, reset it and remove my approval"
+                    : "Yes, reset it"}
             </button>
           </div>
         </Overlay>

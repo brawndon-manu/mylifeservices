@@ -3229,13 +3229,18 @@ export async function timesheetResetImpact(timesheetId) {
       id: true,
       userId: true,
       signedAt: true,
+      // APPROVED IS ITS OWN STEP in what this asks. Mánu 2026-09-18, after a
+      // reset on a signed AND approved sheet did nothing: the prompt has to say
+      // what will actually happen, and un-doing an approval is a bigger act
+      // than un-doing a signature.
+      approvedAt: true,
       // `program` is what the break-answer filter below reads. Left out, that
       // filter falls back to MLS and this dialog counts the OTHER payroll's
       // rows while the reset itself touches none of them.
       batch: { select: { periodFrom: true, periodTo: true, program: true } },
     },
   });
-  if (!ts) return { answers: 0, reasons: 0, signed: false };
+  if (!ts) return { answers: 0, reasons: 0, signed: false, approved: false };
 
   const answers = await prisma.timesheetCorrection.count({
     where: {
@@ -3257,10 +3262,15 @@ export async function timesheetResetImpact(timesheetId) {
     });
     reasons = rows.filter((r) => resetAction(r, ts.userId)).length;
   }
-  return { answers, reasons, signed: !!ts.signedAt };
+  return { answers, reasons, signed: !!ts.signedAt, approved: !!ts.approvedAt };
 }
 
-export async function resetTimesheetAnswers(timesheetId) {
+// `confirmUnsign` / `confirmUnapprove`: the caller saying it has told somebody
+// what this will take with it. THE SERVER HOLDS THE RULE, not the dialog -
+// hiding a control is a suggestion, and a signature coming off a payroll
+// document has to be something that cannot happen by accident. A reset on an
+// unsigned sheet needs neither.
+export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false, confirmUnapprove = false } = {}) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
   // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
@@ -3310,7 +3320,16 @@ export async function resetTimesheetAnswers(timesheetId) {
     }
     reasons = drop.length + unconfirm.length;
   }
-  const res = await rebuildSheetFor({ ...ts, overrides: {} }, {});
+  // WHAT THIS IS ABOUT TO UNDO, checked against what the caller was told. Each
+  // refusal names itself so the page can put the right prompt up rather than
+  // guess which one it missed.
+  if (ts.signedAt && !confirmUnsign) return { ok: false, error: "needsunsign" };
+  if (ts.approvedAt && !confirmUnapprove) return { ok: false, error: "needsunapprove" };
+
+  // a full reset ONLY when there is something to undo. On an ordinary unsigned
+  // sheet this is the rebuild it has always been, with both guards standing.
+  const full = !!(ts.signedAt || ts.approvedAt);
+  const res = await rebuildSheetFor({ ...ts, overrides: {} }, {}, { fullReset: full });
   if (!res?.ok) return res;
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
@@ -3513,7 +3532,20 @@ export async function recomputeTimesheet(timesheetId) {
 // and the single write below have to run on the same client or the rebuild
 // computes from a view that does not include the answer it was called for.
 // Defaults to `prisma`, so every other caller is unchanged.
-async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prisma } = {}) {
+// `fullReset`: this rebuild is somebody deliberately putting a sheet back to the
+// upload, not a correction landing on it. Two guards stand in the way of that
+// and both are right for every OTHER caller:
+//
+//   the freeze     a signed or approved sheet keeps its stored days, so nothing
+//                  can silently rewrite a document somebody put their name on
+//   the verdict    decideSignature keeps a signature when nothing moved, which
+//                  on a frozen sheet is always
+//
+// Together they made the reset a no-op on exactly the sheets it was offered
+// for: Mánu pressed it on a signed and approved one, the dialog promised the
+// signature would go, and nothing happened at all. So a full reset says so out
+// loud and passes both - and it is the only thing that may.
+async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prisma, fullReset = false } = {}) {
   const stored = ts.data || {};
   // RECOMPUTE FROM THE PRISTINE DAYS, NOT THE STORED ONES.
   //
@@ -3622,7 +3654,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
   // difference between a correction and rewriting somebody's signed document.
   // Whether it should instead re-analyse and surface the move is Mánu's call and
   // is still open.
-  const frozen = !!(ts.signedAt || ts.approvedAt);
+  const frozen = !fullReset && !!(ts.signedAt || ts.approvedAt);
   let reanalysis = { moved: [], skipped: 0, paidDrift: 0, ran: false };
   let analysed = days;
   if (!frozen) {
@@ -3754,7 +3786,7 @@ async function rebuildSheetFor(ts, overrides, { keepSent = false, client = prism
       // ONLY WHERE THERE IS A SIGNATURE TO UNDO - see clearsSignature. An
       // unsigned sheet reads { keep: false } too, and this whole set used to
       // fire on one.
-      ...(clearsSignature(ts.signedAt, signature) ? {
+      ...(fullReset || clearsSignature(ts.signedAt, signature) ? {
         signedAt: null,
         signedPdfUrl: null,
         signedName: null,
