@@ -9,7 +9,7 @@ import { employeeAsk, breakFindingKey, resetAction } from "@/lib/timesheet/break
 // the calendar's accepted time off, for the header's Time off and Paid hours
 // rows - same one-fetch rule as the sheet render routes
 import { loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
-import { timeOffTotals } from "@/lib/timesheet/time-off";
+import { timeOffTotals, payoutTimeOff } from "@/lib/timesheet/time-off";
 import { monthNameFor } from "@/lib/timesheet/mock-period";
 import ReportProblem from "./ReportProblem";
 import TimesheetViews from "./TimesheetViews";
@@ -23,7 +23,7 @@ import {
   markDayWalked,
 } from "@/app/portal/admin/timesheets/actions";
 import TimeOffCard from "./TimeOffCard";
-import ReviewFlow, { ReviewStage } from "./ReviewFlow";
+import ReviewFlow, { ReviewStage, ReviewTotals, ReviewProvider } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { reviewDays } from "@/lib/timesheet/review-days";
 import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
@@ -377,8 +377,23 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // drops out, which is right for the cards asking a question and wrong for the
   // panel reading their answers back. That panel needs exactly the rows this one
   // throws away.
-  // recorded time off - the ACCEPTED calendar entries, never the claim
-  const timeOffHours = timeOffTotals(await loadTimeOffFor(ts)).total;
+  // TIME OFF FROM WHEREVER IT CAME, 2026-09-17. This read the calendar alone,
+  // so a person whose sick pay came off the QuickSolve export saw no time off
+  // at all on their own timesheet - eight hours of it on a December sheet and
+  // not a line about it. Mánu: "if they have any pto or sick pay ... meaning we
+  // got it from qsp or i manually put it in the portal then it should show
+  // here as well."
+  //
+  // `payoutTimeOff` is the rule the payout report already runs on, so the top
+  // of their sheet and what payroll pays cannot disagree, and the calendar
+  // still beats the export where somebody has typed a day.
+  //
+  // `added` AND NOT `total`, deliberately. The third source in there is Misc
+  // time inside the day, which QSP already paid and `paidHours` already holds -
+  // adding it would count those hours twice and "Hours worked" above would
+  // stop being the number it has always been. So this line is the two he
+  // named: the export's own figure, or the calendar where it exists.
+  const timeOffHours = payoutTimeOff(ts, timeOffTotals(await loadTimeOffFor(ts))).added;
 
   const breakAnswers = ts.userId
     ? (await prisma.timesheetBreakAnswer.findMany({
@@ -691,6 +706,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     // leave the DOM on the reports step, so a rule keyed to them stopped
     // applying exactly where the footer's own Next sits, which is the collision
     // he photographed.
+    <ReviewProvider
+      enabled
+      leave={isDayProgram}
+      ready={readyToGenerate}
+      openDays={openDays}
+      initialReports={openCorrections}
+    >
     <div data-timesheet-review="" className="portal-shell bg-background">
     <section className={`no-focus-zoom mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 ${reviewStyles.review}`}>
       {/* THE PAGE FOLLOWS THE SHEET. A change a reviewer makes on All employees
@@ -771,15 +793,24 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           never held. Only once an entry is ACCEPTED on the calendar - a claim
           is not a record - and never inside worked hours or overtime, which is
           what keeps a PTO day from inventing OT. */}
-      <div className="mt-6 divide-y divide-sep border-y border-sep">
-        <Figure label="Hours worked" value={ts.paidHours} strong />
-        {ts.otHours > 0 && <Figure label="Overtime" value={ts.otHours} />}
-        {ts.doubleHours > 0 && <Figure label="Double time" value={ts.doubleHours} />}
-        {timeOffHours > 0 && <Figure label="Time off" value={timeOffHours} />}
-        {timeOffHours > 0 && (
-          <Figure label="Paid hours" value={ts.paidHours + timeOffHours} strong />
-        )}
-      </div>
+      {/* THE HOURS THEY HAVE REPORTED MOVE THESE TOO, at his word 2026-09-17.
+          A drafted claim is client state, so the block is a client component -
+          the same lesson the day header taught. `dayHours` is what each day
+          holds on file, which is all it needs to work out the difference. */}
+      <ReviewTotals
+        dayHours={(ts.data?.days || []).map((d) => ({
+          date: d.date, paidHours: d.paidHours || 0,
+          // applyOvertime's partial-week pass reads QSP's own printed overtime,
+          // so a week cut by the period boundary keeps behaving as it does on
+          // the server rather than quietly losing that half of the rule
+          printed: d.printed || null,
+        }))}
+        payPeriod={ts.data?.payPeriod || null}
+        paidHours={ts.paidHours}
+        otHours={ts.otHours}
+        doubleHours={ts.doubleHours}
+        timeOffHours={timeOffHours}
+      />
 
       {ts.message && (
         <div className="mt-4 rounded-xl bg-surface px-4 py-3.5 text-sm leading-relaxed text-foreground shadow-sm night:ring-1 night:ring-border">
@@ -853,7 +884,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               Three steps for ILS, four for the day program: the PTO & sick
               pay stage is the day program's alone - "remove pto and sick pay
               option for ils", same day. */}
-          <ReviewFlow enabled leave={isDayProgram} ready={readyToGenerate} openDays={openDays} initialReports={openCorrections} reports={
+          <ReviewFlow reports={
             <ReportProblem token={token} days={ts.data?.days || []}
               period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
               submitAction={act(submitTimesheetCorrections)} />
@@ -989,7 +1020,13 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               </p>
               <ul className="mt-1.5 divide-y divide-sep">
                 {toldUs.map((c) => (
-                  <li key={`told-${c.kind}-${c.date}`} className="flex gap-4 py-2.5 text-[13px]">
+                  // KEYED ON THE ROW, not on kind and date. Nothing stops two
+                  // reports of the same kind on one day - `submitTimesheetCorrections`
+                  // createMany's whatever was sent - so the old key collided and
+                  // React warned that it may duplicate or omit rows. Found the
+                  // moment a second hours report was filed on one day, which is
+                  // exactly the case the struck-through figure is built for.
+                  <li key={c.id} className="flex gap-4 py-2.5 text-[13px]">
                     <span className="w-24 flex-none font-semibold text-foreground">
                       {c.date ? tellDay(c.date) : "This timesheet"}
                     </span>
@@ -1151,6 +1188,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
       )}
     </section>
     </div>
+    </ReviewProvider>
   );
 }
 
@@ -1164,31 +1202,6 @@ function tellDay(date) {
   return `${TELL_DAYS[at.getDay()]}, ${TELL_MONTHS[m - 1]} ${d}`;
 }
 
-function Figure({ label, value, strong, tone }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-3">
-      <span className={`text-sm ${strong ? "font-medium text-foreground" : "text-muted"}`}>
-        {label}
-      </span>
-      <span
-        className={
-          tone === "prem"
-            ? "text-sm font-semibold text-rose-600 dark:text-rose-400"
-            // noted, not charged - the same grey the sheet itself uses for a
-            // premium it assumed away rather than billed
-            : tone === "muted"
-              ? "text-sm font-semibold text-muted"
-              : strong
-                ? "text-[22px] font-semibold tracking-tight text-foreground"
-                : "text-sm font-semibold text-foreground"
-        }
-      >
-        <span className={tone ? undefined : reviewStyles.hours}>{(Math.round((value || 0) * 100) / 100).toFixed(2)}</span>
-        <span className="ml-1 text-[12px] font-normal text-faint">hrs</span>
-      </span>
-    </div>
-  );
-}
 
 // the period, as a small calendar-style tile in the header corner. "07/16/26
 // to 07/31/26" -> JUL / 16–31 / 2026; a period crossing months prints both

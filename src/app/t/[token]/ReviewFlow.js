@@ -3,6 +3,8 @@
 import { createContext, useContext, useRef, useState } from "react";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
 import { reportedReviewDay, dayChipLabel } from "@/lib/timesheet/review-days";
+// the engine's own overtime split, in a file a browser can import - see overtime.js
+import { applyOvertime } from "@/lib/timesheet/overtime";
 import { checkWorkSlots, clockLabel } from "@/lib/timesheet/work-slots";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 import DayCalendar from "./DayCalendar";
@@ -19,11 +21,20 @@ const selectDay = (date) => {
 export const useReviewFlow = () => useContext(ReviewContext);
 const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40";
 
-// `leave`: whether the PTO & sick pay stage is in the flow. The day program's
-// time off is a claim its employees make here; ILS time off is not (Mánu
-// 2026-09-15: "remove pto and sick pay option for ils"), so the ILS flow is
-// three steps and the stage is skipped in both directions.
-export default function ReviewFlow({ enabled, ready, reports, children, initialReports = [], readOnly = false, leave = true, openDays = [] }) {
+// THE STATE, LIFTED OUT OF THE VISUALS - 2026-09-17.
+//
+// It all used to live in `ReviewFlow`, which renders the step strip and the
+// footer and therefore sits partway down the page, inside the unsigned branch.
+// That was fine until the SUMMARY at the top needed to know about a drafted
+// report ("i want the hours above to change too"): a component above the
+// provider gets null from the hook and silently shows the unchanged figure.
+//
+// So the provider wraps the whole page and the strip stays where it was. Every
+// value the strip and footer derive is on the context now, so there is still
+// exactly one place that decides what stage the review is in.
+export function ReviewProvider({
+  enabled, readOnly = false, initialReports = [], leave = true, ready, openDays = [], children,
+}) {
   const [stage, setStage] = useState("days");
   // reports already sent arrive as the list, marked sent: not drafts, not
   // editable, and since 2026-09-09 no longer a hold on the signature - what
@@ -93,10 +104,28 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly, leave,
     reviewedDays, markReviewed,
     generated, setGenerated, editorTarget, setEditorTarget, activeDate,
-    reportRef, targets, report, leaveEditing, setLeaveEditing, leaveBusy, setLeaveBusy } : null;
+    reportRef, targets, report, leaveEditing, setLeaveEditing, leaveBusy, setLeaveBusy,
+    // what the strip and the footer draw from, so the visuals hold no rules
+    enabled, ready, openDays, draftsUnsent, canGenerate, hold, askingDays, openDay,
+    steps, stripClass, afterReports, generateStep, current, headingRef } : null;
+
+  return <ReviewContext.Provider value={value}>{children}</ReviewContext.Provider>;
+}
+
+// THE STEP STRIP AND THE FOOTER. Pure visuals now - every decision it draws is
+// read off the provider above, which is what lets the summary at the top of the
+// page see the same drafted report this does.
+export default function ReviewFlow({ children, reports }) {
+  const flow = useReviewFlow();
+  if (!flow) return <>{children}<div>{reports}</div></>;
+  const {
+    stage, go, items, readOnly, editorTarget, leaveEditing, leaveBusy, generated,
+    enabled, openDays, draftsUnsent, canGenerate, hold, askingDays, openDay,
+    steps, stripClass, afterReports, generateStep, current, headingRef, leave,
+  } = flow;
 
   return (
-    <ReviewContext.Provider value={value}>
+    <>
       {enabled && !readOnly && (
         <ol ref={headingRef} aria-label="Timesheet progress" className={`mt-6 scroll-mt-24 border-b border-sep pb-5 sm:flex sm:flex-wrap sm:gap-5 ${stripClass}`}>
           {steps.map((label, i) => (
@@ -138,7 +167,7 @@ export default function ReviewFlow({ enabled, ready, reports, children, initialR
           {stage !== "days" && stage !== "document" && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" && leave ? "PTO & sick pay" : "Generate"}</p>}
         </div>
       )}
-    </ReviewContext.Provider>
+    </>
   );
 }
 
@@ -180,6 +209,115 @@ export function DayReport({ date, navigation }) {
   );
 }
 
+// THE FIGURES AT THE TOP, WITH WHAT THEY HAVE REPORTED FOLDED IN.
+//
+// Mánu 2026-09-17: "i want the hours above to change too." I had asked and left
+// it out on purpose the first time round - the rule everywhere else here is
+// that a claim moves nothing on its own - and this is him answering it.
+//
+// WHAT MOVES AND WHAT DOES NOT. Hours worked and Paid hours move, struck the
+// same way the day header is, so the sentence reads alike in both places.
+// Overtime and double time DO NOT: whether a longer day crosses forty is the
+// overtime engine's answer, not arithmetic that can be redone in a browser, and
+// printing a guess next to a real figure is worse than leaving it. They settle
+// when the office accepts the report and the sheet rebuilds.
+//
+// STILL NOTHING BUT A PICTURE. The stored figures, the payroll total and the
+// document are untouched until that acceptance - this is the same screen-only
+// change `reportedReviewDay` has always made, carried up to the summary.
+export function ReviewTotals({ dayHours = [], paidHours = 0, otHours = 0, doubleHours = 0, timeOffHours = 0, payPeriod = null }) {
+  const flow = useReviewFlow();
+  const r2 = (n) => Math.round((n || 0) * 100) / 100;
+
+  // THE DAYS AS THEY WOULD BE IF WE ACCEPTED WHAT THEY HAVE REPORTED, each one
+  // through `reportedReviewDay` - the rule the day header draws from - so a
+  // claim the slots do not support is ignored here exactly as it is there,
+  // rather than moving the total and not the day.
+  let delta = 0;
+  const claimed = dayHours.map((d) => {
+    const shown = reportedReviewDay({ date: d.date, paidHours: d.paidHours || 0 }, flow?.items);
+    const hours = shown.reviewReported ? shown.paidHours : (d.paidHours || 0);
+    if (shown.reviewReported) delta += hours - (d.paidHours || 0);
+    return { date: d.date, paidHours: hours, printed: d.printed };
+  });
+  delta = r2(delta);
+  const changed = Math.abs(delta) > 0.005;
+
+  // AND THE OVERTIME THAT FALLS OUT OF THEM, from the engine's own rule.
+  //
+  // Mánu 2026-09-17: "why didnt ot change". It did not, because I had left it
+  // deferred - and on an 11.50 hour day that is not caution, it is a wrong
+  // number sitting beside a right one. Whether a day crosses eight is not a
+  // judgement call, it is `applyOvertime`, so the honest fix was to move that
+  // function somewhere a browser can run it rather than approximate it here.
+  // See overtime.js.
+  //
+  // Only when something is actually claimed: on an ordinary sheet these stay
+  // the figures the engine already stored, untouched.
+  let ot = otHours;
+  let dbl = doubleHours;
+  if (changed && claimed.length) {
+    const rerun = applyOvertime(claimed, payPeriod || null);
+    ot = r2(rerun.reduce((n, d) => n + (d.otHours || 0), 0));
+    dbl = r2(rerun.reduce((n, d) => n + (d.doubleHours || 0), 0));
+  }
+
+  const worked = r2(paidHours + delta);
+  const paid = r2(worked + timeOffHours);
+
+  return (
+    <div className="mt-6 divide-y divide-sep border-y border-sep">
+      <Figure label="Hours worked" value={worked} was={changed ? paidHours : null} strong />
+      {ot > 0 && <Figure label="Overtime" value={ot} was={changed && Math.abs(ot - otHours) > 0.005 ? otHours : null} />}
+      {dbl > 0 && <Figure label="Double time" value={dbl} was={changed && Math.abs(dbl - doubleHours) > 0.005 ? doubleHours : null} />}
+      {timeOffHours > 0 && <Figure label="Time off" value={timeOffHours} />}
+      {timeOffHours > 0 && (
+        <Figure label="Paid hours" value={paid} was={changed ? r2(paidHours + timeOffHours) : null} strong />
+      )}
+      {changed && (
+        <p className="py-3 text-[12px] leading-snug text-muted">
+          {flow?.reported
+            ? "This includes the hours you reported. We will check them before anything changes."
+            : "This includes the hours you have not sent yet."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// `was` is the figure before a report, struck beside the new one - the same
+// shape the day header uses, so one page does not have two ways of saying it
+function Figure({ label, value, strong, tone, was = null }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-3">
+      <span className={`text-sm ${strong ? "font-medium text-foreground" : "text-muted"}`}>
+        {label}
+      </span>
+      <span
+        className={
+          tone === "prem"
+            ? "text-sm font-semibold text-rose-600 dark:text-rose-400"
+            // noted, not charged - the same grey the sheet itself uses for a
+            // premium it assumed away rather than billed
+            : tone === "muted"
+              ? "text-sm font-semibold text-muted"
+              : strong
+                ? "text-[22px] font-semibold tracking-tight text-foreground"
+                : "text-sm font-semibold text-foreground"
+        }
+      >
+        {was != null && (
+          <span className={`align-baseline text-sm ${styles.wasFigure}`}>
+            {(Math.round(was * 100) / 100).toFixed(2)}
+          </span>
+        )}
+        <span className={was != null ? styles.nowFigure : (tone ? undefined : styles.hours)}>{(Math.round((value || 0) * 100) / 100).toFixed(2)}</span>
+        <span className="ml-1 text-[12px] font-normal text-faint">hrs</span>
+      </span>
+    </div>
+  );
+}
+
 export function ReportedDayVisual({ day, label, part, children }) {
   const flow = useReviewFlow();
   const display = reportedReviewDay(day, flow?.items);
@@ -193,9 +331,22 @@ export function ReportedDayVisual({ day, label, part, children }) {
   return <div>
     <div className="flex flex-wrap items-baseline justify-between gap-3">
       <h3 className="text-[17px] font-semibold tracking-tight"><span className="text-muted">{weekday}, </span><span className={styles.month}>{month.join(", ")}</span></h3>
-      <p className="text-sm text-muted"><span className={`font-semibold ${styles.hours}`}>{display.paidHours.toFixed(2)}</span> hrs reported</p>
+      {/* WHAT IT SAID, AND WHAT THEY SAY IT IS. Mánu 2026-09-17: "cross out
+          the current hours and next to it have the new total". It read as two
+          separate sentences before - "9.50 hrs reported" up here and "8.00
+          hours recorded" underneath - which is the same two numbers with the
+          relationship between them left to the reader.
+          `reviewRecordedHours` is the pre-claim figure, kept by
+          reportedReviewDay itself, so this cannot drift from what the rail
+          draws for the same day. */}
+      <p className="text-sm text-muted">
+        <span className={styles.wasFigure}>
+          {Number(display.reviewRecordedHours ?? day.paidHours ?? 0).toFixed(2)}
+        </span>
+        now <span className={`font-semibold ${styles.nowFigure}`}>{display.paidHours.toFixed(2)}</span> hrs
+      </p>
     </div>
     {!!slots.length && <p className="mt-1 text-[13px] text-muted">{clockLabel(slots[0].min)} to {clockLabel(slots.at(-1).min)}</p>}
-    <p className="mt-2 text-[13px] text-muted">{Number(day.paidHours || 0).toFixed(2)} hours recorded. {flow.reported ? "Awaiting payroll." : "Not sent."}</p>
+    <p className="mt-2 text-[13px] text-muted">{flow.reported ? "You reported this. We will check it before anything changes." : "Not sent yet."}</p>
   </div>;
 }

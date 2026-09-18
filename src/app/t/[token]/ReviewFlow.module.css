@@ -7,6 +7,13 @@
   --review-on-accent: #ffffff;
   --review-work-ink: #196e93;
   --review-work-fill: #eaf3f8;
+  /* A FIGURE A REPORT HAS CHANGED, and the one it replaced. His pick
+     2026-09-17, pointing at the Audit screen, which has drawn a corrected
+     figure this way since it was built: the old one struck and quiet, the new
+     one amber. Same values as audit.module.css so the two screens agree about
+     what "we have changed this" looks like - scoped here the same way that
+     workspace scopes its own, rather than a sixth global colour. */
+  --review-changed: #936000;
 }
 
 :global(.dark) .review {
@@ -15,6 +22,7 @@
   --review-on-accent: #14161b;
   --review-work-ink: #7dd3fc;
   --review-work-fill: #233642;
+  --review-changed: #e9b453;
 }
 
 .primary,
@@ -209,4 +217,19 @@
     -webkit-backdrop-filter: blur(22px) saturate(160%);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
   }
+}
+
+/* the pair, drawn the way the audit workspace draws it */
+.review .wasFigure {
+  color: var(--faint);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  margin-right: 8px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.review .nowFigure {
+  color: var(--review-changed);
+  font-variant-numeric: tabular-nums;
 }

@@ -10,7 +10,9 @@ const read = (p) => fs.readFileSync(new URL(p, import.meta.url), "utf8");
 
 test("the flow and the scope are on for every program; the leave stage only for the day program", () => {
   const page = read("../../../app/t/[token]/page.js");
-  assert.match(page, /<ReviewFlow enabled leave=\{isDayProgram\} ready=\{readyToGenerate\}/);
+  // the state props moved up to ReviewProvider on 2026-09-17, so the summary
+  // at the top of the page can see a drafted report - same values, one level up
+  assert.match(page, /<ReviewProvider\s+enabled\s+leave=\{isDayProgram\}\s+ready=\{readyToGenerate\}/);
   assert.doesNotMatch(page, /enabled=\{isDayProgram\}/);
   assert.doesNotMatch(page, /function Stepper\(/, "the three-step strip is gone");
   assert.match(page, /\$\{reviewStyles\.review\}/);
@@ -23,7 +25,7 @@ test("the flow and the scope are on for every program; the leave stage only for 
 
 test("without the leave stage the strip is three steps and reports go straight to the document", () => {
   const flow = read("../../../app/t/[token]/ReviewFlow.js");
-  assert.match(flow, /leave = true, openDays = \[\] \}\) \{/);
+  assert.match(flow, /leave = true, ready, openDays = \[\], children,\s*\}\) \{/);
   assert.match(flow, /const steps = leave \? \["Review days", "PTO & sick pay", "Generate", "Sign"\] : \["Review days", "Generate", "Sign"\];/);
   assert.match(flow, /const afterReports = leave \? "leave" : "document";/);
   assert.match(flow, /onClick=\{\(\) => go\(stage === "reports" \? afterReports : "document"\)\}>Next/);
