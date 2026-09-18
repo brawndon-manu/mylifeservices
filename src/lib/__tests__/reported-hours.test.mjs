@@ -135,10 +135,38 @@ test("two reports on one day do not collide as React keys", () => {
 test("the header's time off reads every source, not just the calendar", () => {
   // it read loadTimeOffFor alone, so sick pay off the QuickSolve export showed
   // nowhere on the employee's own timesheet
-  assert.match(page, /payoutTimeOff\(ts, timeOffTotals\(await loadTimeOffFor\(ts\)\)\)\.added/);
+  assert.match(page, /const timeOff = payoutTimeOff\(ts, timeOffTotals\(await loadTimeOffFor\(ts\)\)\);/);
+  assert.match(page, /const timeOffHours = timeOff\.added;/);
   // `added` and not `total`: the third source inside payoutTimeOff is Misc time
   // that `paidHours` already holds, and adding it would count those hours twice
   assert.ok(!/payoutTimeOff\([^)]*\)\.total/.test(page), "total would double-count the Misc hours");
+});
+
+test("PTO and sick pay are named, not lumped as time off", () => {
+  // Mánu 2026-09-17, having seen it as one line: "time off shoudnt be there.
+  // its just PTO Sick pay". Separate pay codes, separately tracked balances.
+  const timeOffLib = read("src/lib/timesheet/time-off.js");
+  // the split comes from the rule, not from a screen re-deriving it
+  assert.match(timeOffLib, /addedBy: \{ pto: r2\(addedPto\), sick: r2\(addedSick\) \}/);
+  assert.match(page, /pto=\{timeOff\.addedBy\.pto\}/);
+  assert.match(page, /sick=\{timeOff\.addedBy\.sick\}/);
+  assert.match(flowFile, /\{pto > 0 && <Figure label="PTO" value=\{pto\} \/>\}/);
+  assert.match(flowFile, /\{sick > 0 && <Figure label="Sick pay" value=\{sick\} \/>\}/);
+  assert.ok(!flowFile.includes('label="Time off"'), "the lumped row is gone");
+  // and `added` itself is untouched, so no payout surface moves
+  assert.match(timeOffLib, /added: r2\(addedPto \+ addedSick\),/);
+});
+
+test("the holiday row exists but draws nothing until there is a holiday", () => {
+  // HolHr is on the payroll report, the timesheet PDF has a Holiday column and
+  // render.js already prints one - and across 2,668 day rows in seven periods
+  // not one carries an hour. So the row is here and always zero, and holiday is
+  // deliberately NOT inside `added`: folding an always-zero third bucket into
+  // what Total payable grows by would be deciding a pay rule nobody has.
+  const timeOffLib = read("src/lib/timesheet/time-off.js");
+  assert.match(flowFile, /\{holiday > 0 && <Figure label="Holiday" value=\{holiday\} \/>\}/);
+  assert.match(page, /holiday=\{0\}/);
+  assert.ok(!/addedBy: \{[^}]*holiday/.test(timeOffLib), "holiday is not in the payable split yet");
 });
 
 test("a changed figure is drawn the way the audit screen draws one", () => {

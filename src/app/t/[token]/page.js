@@ -393,7 +393,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // adding it would count those hours twice and "Hours worked" above would
   // stop being the number it has always been. So this line is the two he
   // named: the export's own figure, or the calendar where it exists.
-  const timeOffHours = payoutTimeOff(ts, timeOffTotals(await loadTimeOffFor(ts))).added;
+  const timeOff = payoutTimeOff(ts, timeOffTotals(await loadTimeOffFor(ts)));
+  const timeOffHours = timeOff.added;
 
   const breakAnswers = ts.userId
     ? (await prisma.timesheetBreakAnswer.findMany({
@@ -809,6 +810,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
         paidHours={ts.paidHours}
         otHours={ts.otHours}
         doubleHours={ts.doubleHours}
+        pto={timeOff.addedBy.pto}
+        sick={timeOff.addedBy.sick}
+        /* nothing carries a holiday figure yet - the row is here so it draws
+           the day QuickSolve starts reporting one, and never before */
+        holiday={0}
         timeOffHours={timeOffHours}
       />
 

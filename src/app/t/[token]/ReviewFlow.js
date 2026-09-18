@@ -225,7 +225,14 @@ export function DayReport({ date, navigation }) {
 // STILL NOTHING BUT A PICTURE. The stored figures, the payroll total and the
 // document are untouched until that acceptance - this is the same screen-only
 // change `reportedReviewDay` has always made, carried up to the summary.
-export function ReviewTotals({ dayHours = [], paidHours = 0, otHours = 0, doubleHours = 0, timeOffHours = 0, payPeriod = null }) {
+export function ReviewTotals({
+  dayHours = [], paidHours = 0, otHours = 0, doubleHours = 0,
+  // the three kinds, each drawn only when it is above zero. `timeOffHours` is
+  // their sum and is what Paid hours grows by - kept as its own prop rather
+  // than re-added here, so this cannot disagree with what the page worked out.
+  pto = 0, sick = 0, holiday = 0, timeOffHours = 0,
+  payPeriod = null,
+}) {
   const flow = useReviewFlow();
   const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -270,7 +277,15 @@ export function ReviewTotals({ dayHours = [], paidHours = 0, otHours = 0, double
       <Figure label="Hours worked" value={worked} was={changed ? paidHours : null} strong />
       {ot > 0 && <Figure label="Overtime" value={ot} was={changed && Math.abs(ot - otHours) > 0.005 ? otHours : null} />}
       {dbl > 0 && <Figure label="Double time" value={dbl} was={changed && Math.abs(dbl - doubleHours) > 0.005 ? doubleHours : null} />}
-      {timeOffHours > 0 && <Figure label="Time off" value={timeOffHours} />}
+      {/* NAMED, NOT LUMPED - Mánu 2026-09-17, having seen it as one line:
+          "time off shoudnt be there. its just PTO Sick pay". They are paid under
+          separate codes and their balances track separately, so a person
+          reading their own sheet should see which is which. Holiday sits with
+          them ready for when QuickSolve starts reporting one - every row only
+          draws above zero, so today it never appears. */}
+      {pto > 0 && <Figure label="PTO" value={pto} />}
+      {sick > 0 && <Figure label="Sick pay" value={sick} />}
+      {holiday > 0 && <Figure label="Holiday" value={holiday} />}
       {timeOffHours > 0 && (
         <Figure label="Paid hours" value={paid} was={changed ? r2(paidHours + timeOffHours) : null} strong />
       )}

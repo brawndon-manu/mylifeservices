@@ -113,6 +113,20 @@ export function payoutTimeOff(sheet, cal = null) {
     moved: misc.total,
     // outside them, so this is what Total payable grows by
     added: r2(addedPto + addedSick),
+    // THE SAME `added`, SPLIT BY KIND. Mánu 2026-09-17: "its just PTO Sick pay"
+    // - his own timesheet names them separately rather than lumping them, and
+    // they are paid under separate codes with separately tracked balances, so
+    // the split has to come from here rather than be re-derived by a screen.
+    //
+    // NOTHING ELSE MOVES. This is a breakdown of a figure that already existed,
+    // so every payout surface reads exactly what it read before.
+    //
+    // HOLIDAY IS NOT IN IT YET, deliberately. `HolHr` exists on the payroll
+    // report, the timesheet PDF has a Holiday column and render.js already
+    // prints one - and across 2,668 day rows in seven periods not one carries
+    // an hour. Folding an always-zero third bucket into what Total payable
+    // grows by would be changing the pay rule for a case nobody has decided.
+    addedBy: { pto: r2(addedPto), sick: r2(addedSick) },
   };
 }
 
