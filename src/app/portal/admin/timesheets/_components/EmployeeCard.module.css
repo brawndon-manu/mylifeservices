@@ -32,7 +32,7 @@
 .meal { background: var(--card-accent); }
 .rest { background: var(--status-caution); }
 .pto { background: var(--leave-pto); }
-.sick { background: var(--status-positive); }
+.sick { background: var(--leave-sick); }
 .actions { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-top: 16px; }
 .report { color: var(--card-accent); font-size: 12px; padding-block: 8px; }
 .downloads { position: relative; }

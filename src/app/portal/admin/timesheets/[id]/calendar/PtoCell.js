@@ -51,10 +51,22 @@ export default function PtoCell({
   // WORKED TIME WINS THE CELL. A day somebody was actually on shift is the
   // fact that matters most at a glance, and PTO on the same day is unusual
   // enough that it should look unusual rather than blend in.
+  // SICK AND PTO ARE NOT THE SAME COLOUR ANY MORE. Both were sky, so a
+  // fortnight of leave read as one thing and only the word told them apart.
+  // Sick takes the stone grey; PTO keeps the blue it has always had.
+  //
+  // A heavier wash than PTO's on purpose - grey at a tenth sits too close to
+  // the empty cell beside it, which is the whole risk with a neutral.
+  //
+  // REPORTED STAYS AMBER whichever kind it is. That colour is not about sick
+  // or PTO, it is about a claim nobody has accepted yet, and it is the only
+  // thing on the row asking for a press.
   const tone = worked
     ? "border-border bg-surface-2 text-foreground"
     : pto
-      ? "border-sky-400/70 bg-sky-500/10 text-sky-800 dark:text-sky-300"
+      ? ptoKind === "sick"
+        ? "border-leave-sick/85 bg-leave-sick/20 text-leave-sick-ink"
+        : "border-sky-400/70 bg-sky-500/10 text-sky-800 dark:text-sky-300"
       : reported
         ? "border-amber-400/70 bg-amber-500/10 text-amber-800 dark:text-amber-300"
         : "border-border/60 bg-transparent text-faint";

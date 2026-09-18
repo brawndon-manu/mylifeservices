@@ -27,6 +27,13 @@
   --calendar-month: #c9363d;
   --status-positive: #357347;
   --leave-pto: #7656a2;
+  /* sick pay. warm stone, so it reads as leave beside the PTO purple without
+     joining the blue family every service block already uses. it used to borrow
+     --status-positive, which means settled/accepted/complete everywhere else. */
+  --leave-sick: #857d76;
+  /* the same colour is only 3.2:1 as text on its own wash, so text takes a
+     darker cut of it in light. the dark value is already light enough to read. */
+  --leave-sick-ink: #5c554f;
   --status-caution: #946a14;
   --status-danger: #bd2838;
   /* the two premium series, and they mean what the signed timesheet's colour
@@ -74,6 +81,11 @@
   --calendar-month: #ff7a80;
   --status-positive: #8bcba0;
   --leave-pto: #c7b1ed;
+  /* the pastel end of the stone, lightened the way leave-pto is. Night inherits
+     this - it only overrides backgrounds and borders - so one pair covers Dim
+     and Night both. 9:1 on Dim, 10.6:1 on Night, so text takes it as it is. */
+  --leave-sick: #c5bdb4;
+  --leave-sick-ink: #c5bdb4;
   --status-caution: #dabc6d;
   --status-danger: #ff8089;
   /* the same two hues, stepped for a dark surface rather than flipped */
@@ -121,6 +133,8 @@
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-leave-pto: var(--leave-pto);
+  --color-leave-sick: var(--leave-sick);
+  --color-leave-sick-ink: var(--leave-sick-ink);
   --color-portal-canvas: var(--portal-canvas);
   --color-navigation-glass: var(--navigation-glass);
   --color-navigation-selected: var(--navigation-selected);

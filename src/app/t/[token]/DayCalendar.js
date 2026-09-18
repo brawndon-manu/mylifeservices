@@ -69,8 +69,24 @@ const WORK_SHADES = [
   [/misc/i,           "#2563eb"],   // blue-600, a shade off the base
 ];
 const WORK_EDGE = "#3b82f6";        // blue-500, ILS Service and anything new
-const edgeFor = (service) =>
-  (WORK_SHADES.find(([re]) => re.test(service || ""))?.[1]) || WORK_EDGE;
+
+// A MISC BLOCK THAT TURNED OUT TO BE SICK TIME LEAVES THE BLUE FAMILY.
+//
+// The shades above are all one hue because they are all kinds of WORK, and the
+// point of the family was that nothing in the background could be mistaken for
+// a break. Sick time is not work at all, so it belongs outside the family
+// rather than as one more shade of it - the stone grey it carries on the day
+// grid and the employee card.
+//
+// KEYED ON THE DAY, NOT THE SERVICE. The roster string says "ILS Misc" either
+// way; what it turned out to be lives in `miscKind`, which is why this takes
+// the day. PTO stays blue - only sick was asked for.
+const SICK_EDGE = "var(--leave-sick)";
+const SICK_WASH = "color-mix(in srgb, var(--leave-sick) 30%, transparent)";
+const isSickDay = (day) => day?.miscKind === "sick";
+const edgeFor = (service, day = null) =>
+  (isMisc(service) && isSickDay(day) ? SICK_EDGE : null)
+  || (WORK_SHADES.find(([re]) => re.test(service || ""))?.[1]) || WORK_EDGE;
 
 // MISC GETS A HEAVIER WASH RATHER THAN A LOUDER HUE. On his 07/30 it is a ten
 // minute block, and at that size a shade of blue is not what makes it findable -
@@ -119,7 +135,12 @@ const miscBreakFor = (miscBreaks, s, booked) => {
   if (!isMisc(booked)) return null;
   return (miscBreaks || []).find((b) => b.start === s.from && b.end === s.to) || null;
 };
-const washFor = (service) => `${edgeFor(service)}${isMisc(service) ? "30" : "1a"}`;
+// the sick wash is already a color-mix, so it cannot take a hex alpha suffix
+// the way the work shades do - it carries its own 30%, the same weight misc has
+const washFor = (service, day = null) =>
+  (isMisc(service) && isSickDay(day)
+    ? SICK_WASH
+    : `${edgeFor(service)}${isMisc(service) ? "30" : "1a"}`);
 
 // TWO THINGS AT THE SAME MINUTE HAVE TO SIT BESIDE EACH OTHER, NOT ON TOP.
 //
@@ -840,9 +861,9 @@ export default function DayCalendar({
                 // width - the clash case is the only one that splits
                 left: `${(s.lane * 99) / s.lanes}%`,
                 width: s.lanes > 1 ? `calc(${99 / s.lanes}% - 6px)` : "99%",
-                borderLeftColor: miscBreak ? REST_EDGE : `var(--review-work-ink, ${edgeFor(booked)})`,
-                background: miscBreak ? `${REST}30` : `var(--review-work-fill, ${washFor(booked)})`,
-                "--shift-label-fill": miscBreak ? `${REST}30` : `var(--review-work-fill, ${washFor(booked)})`,
+                borderLeftColor: miscBreak ? REST_EDGE : `var(--review-work-ink, ${edgeFor(booked, day)})`,
+                background: miscBreak ? `${REST}30` : `var(--review-work-fill, ${washFor(booked, day)})`,
+                "--shift-label-fill": miscBreak ? `${REST}30` : `var(--review-work-fill, ${washFor(booked, day)})`,
               }}
             >
               {/* a service that could not borrow its extra height from a gap is

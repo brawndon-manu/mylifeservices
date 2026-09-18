@@ -159,6 +159,7 @@ export default function DayByDay({
     } : null)];
   }));
 
+
   const order = new Map(days.map((d, i) => [d.date, i]));
   const datesOf = (q) => q.dates || (q.date ? [q.date] : []);
   // the days whose rostered meal IS the question, so the calendar draws it as
@@ -497,10 +498,19 @@ export default function DayByDay({
                   NO PAY LANGUAGE. This is the employee's own page, so it names
                   the kind of time and stops. */}
               {(day.miscKind === "pto" || day.miscKind === "sick" || day.miscKind === "cancelled") && (
-                <p className="rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300">
+                <p className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                  // sick carries the stone grey it carries on every other
+                  // surface; PTO and a cancellation keep the blue chip
+                  day.miscKind === "sick"
+                    ? "border-leave-sick/70 bg-leave-sick/15 text-leave-sick-ink"
+                    : "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800/70 dark:bg-sky-950/40 dark:text-sky-300"
+                }`}>
                   {day.miscKind === "pto" ? "Misc PTO" : day.miscKind === "sick" ? "Misc Sick Pay" : "Misc Client Cancellation"}
                 </p>
               )}
+              {/* A REPORTED DAY NEVER REACHES THIS LINE. ReportedDayVisual
+                  replaces the whole header once a claim exists, and it is where
+                  the struck figure is drawn - see the note on it. */}
               {!emptyDay && <p className="text-sm text-muted">
                 <span className={`font-semibold text-foreground ${reviewStyles.hours}`}>
                   {(Math.round(onFile(day) * 100) / 100).toFixed(2)}
