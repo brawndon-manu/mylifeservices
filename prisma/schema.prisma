@@ -1971,6 +1971,12 @@ model PtoEntry {
   // with `day.date` without parsing on either side.
   date       String
   hours      Float
+  // THE HOURS OF THE DAY IT COVERED, where somebody recorded them. Added by
+  // 20260819010000_pto_span and applied to the database in August; the model
+  // never carried them, which is why this file and the database had drifted.
+  // Nullable because most entries are a number of hours and no more than that.
+  from       String?
+  to         String?
   // "pto" or "sick". One row per day either way - the unique key below already
   // says a day holds one time-off entry, and a day that was both is a day for
   // a person to sort out, not a schema case.
