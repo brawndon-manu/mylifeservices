@@ -48,6 +48,17 @@ export default async function AdminPage() {
           title: "Timesheets",
           body: "Agency payroll and staff signatures.",
         },
+        {
+          // A SHIFT THE CLOCK CANNOT EVIDENCE ON ITS OWN. Somebody could not
+          // clock in or out, the hours are still billable, and the record that
+          // supports the billing has to come from somewhere. Raised here when
+          // they ask, not swept up automatically.
+          show: canManageTimesheets(role),
+          href: "/portal/admin/clock-amendments",
+          icon: "clockAlert",
+          title: "Amend clocks in / out",
+          body: "Missed punches, signed for and approved.",
+        },
         // THE DAY PROGRAM HAS NO ROW HERE ANY MORE. Both payroll screens carry
         // the Office switch, which navigates between them rather than filtering
         // one list, so this was a second door into a screen the row above

@@ -5,6 +5,7 @@ import { useState } from "react";
 import styles from "./AdminTools.module.css";
 import {
   Clock,
+  ClockAlert,
   Calendar,
   ListChecks,
   Users,
@@ -25,6 +26,7 @@ import {
 // icons resolved here by name so the server page can pass plain data.
 const ICONS = {
   clock: Clock,
+  clockAlert: ClockAlert,
   calendar: Calendar,
   listChecks: ListChecks,
   users: Users,

@@ -86,6 +86,12 @@ model User {
   supervisorId                 String?
   supervisor                   User?                         @relation("StaffSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
   supervises                   User[]                        @relation("StaffSupervisor")
+  // the clock amendments this person is the subject of, was asked to fill in,
+  // approved, or raised - see ClockAmendment
+  clockAmendmentsAsStaff       ClockAmendment[]              @relation("ClockAmendmentStaff")
+  clockAmendmentsToFill        ClockAmendment[]              @relation("ClockAmendmentRecipient")
+  clockAmendmentsApproved      ClockAmendment[]              @relation("ClockAmendmentApprover")
+  clockAmendmentsCreated       ClockAmendment[]              @relation("ClockAmendmentCreatedBy")
   // contact phone for the team directory. self-editable in Settings,
   // admins can also set it. stored as the raw string the user typed.
   phone                        String?
@@ -2555,4 +2561,126 @@ model Certificate {
 
   @@index([batchId])
   @@index([userId])
+}
+
+// ONE SHIFT'S CLOCK RECORD, AMENDED AND SIGNED FOR.
+//
+// Mánu 2026-09-18: a staff member did not clock out, the hours are still
+// billable, and RCOC's own rule is that records must SUPPORT the billing. So
+// this is the source document for an hour that the clock export cannot evidence
+// on its own - who worked, for whom, when, and why the clock is wrong.
+//
+// MEASURED BEFORE IT WAS BUILT: 88 such shifts on 09/01-09/15, 44 of them with
+// no punch at either end. About six a day, which is why this is a standing
+// queue and not a period-close job.
+//
+// THE DOCUMENT IS NOT KEPT HERE. His call the same day: the signed PDF is built,
+// mailed to the office and the staff member, and not filed in the portal - a
+// Google Drive will take that job. What lives here is the RECORD: who it is
+// about, what was claimed, who signed and when. The inbox, the approval queue
+// and "has this come back yet" all read it, and none of them can work off an
+// email nobody can query.
+model ClockAmendment {
+  id String @id @default(cuid())
+
+  // WHOSE SHIFT IT IS. The account, so the finished form reaches them and so
+  // one person's amendments can be counted. Never the typed name: two people
+  // called Brandon already work here.
+  staffId String
+  staff   User   @relation("ClockAmendmentStaff", fields: [staffId], references: [id])
+
+  // WHO WAS ASKED TO FILL IT IN - the staff member themselves, or the field
+  // supervisor for their shift. Mánu 2026-09-18: "it can be me filling it out to
+  // send to a supervisor for a staffs shift or me just sending it out directly
+  // to staff."
+  //
+  // PICKED BY TYPING A NAME, not derived - `User.supervisorId` exists and 0 of
+  // 99 staff have one, so there is nothing to derive from. Whether they were a
+  // supervisor or the staff member themselves is on their own account; keeping
+  // a second copy of it here is one more thing to keep in step.
+  recipientId String
+  recipient   User   @relation("ClockAmendmentRecipient", fields: [recipientId], references: [id])
+
+  // THE SHIFT, AS THE OFFICE TYPES IT IN. Not joined to the clock export: the
+  // export is a fortnightly file and these are raised the day it happens, so
+  // the facts are entered rather than looked up. Plain strings for the same
+  // reason the timesheet keeps QSP's own spelling - this has to match the
+  // document an auditor would pull, not our tidied version of it.
+  clientName String
+  service    String
+  // the day of the shift, as the rest of this app writes one ("09/07/26")
+  shiftDate  String
+  // scheduled, and what the clock actually caught, if anything. Nullable
+  // because half of these have no punch at either end, and an empty string
+  // would read as a time somebody entered.
+  scheduledIn  String?
+  scheduledOut String?
+  clockedIn    String?
+  clockedOut   String?
+
+  // THEIR OWN SERVICE NOTE FOR THIS VISIT, AS IT READ WHEN THE FORM WAS MADE.
+  //
+  // Measured 2026-09-18 before this was built: of 64 ILS shifts with no
+  // clock-out, 29 already had a signed Detailed Daily Service Note for that
+  // exact staff member, client and day - and every one of them carried an end
+  // time, written before anybody knew the clock had failed. That is
+  // contemporaneous evidence created for another purpose, which is the
+  // strongest kind, and it means the form can ask somebody to CONFIRM a time
+  // rather than reconstruct one.
+  //
+  // COPIED, NOT JOINED. Same rule ClientAttestation keeps for the case worker:
+  // a note edited after the fact would change what a signed form says it was
+  // confirming, and that form is the document an auditor reads.
+  dsnStart   String?
+  dsnEnd     String?
+  dsnSummary String?
+
+  // WHAT COMES BACK. The reason from a fixed list plus their own words: a list
+  // makes 88 of these comparable and tells you whether it is a training problem
+  // or a coverage one, and the sentence is what an auditor actually reads.
+  reasonCode String?
+  reasonText String?
+  actualIn   String?
+  actualOut  String?
+
+  // THREE SIGNATURES, EACH WITH WHO AND WHEN AND FROM WHERE.
+  //
+  // The client's is collected IN PERSON on the filler's own device, not emailed:
+  // the Client model holds no address, 731 client attestations have been raised
+  // and not one has ever been signed by any route, and the visit is the moment
+  // somebody is standing there anyway. It is also the contemporaneous signature,
+  // which is the half of this that makes it worth having.
+  filledName   String?
+  filledAt     DateTime?
+  filledIp     String?
+  clientSigner String?
+  // "client" | "parent" | "conservator" | "representative" | "unavailable"
+  clientSignerKind String?
+  clientSignedAt   DateTime?
+  clientSignedIp   String?
+  // when nobody could sign: said out loud rather than left blank, because a
+  // missing signature with no reason reads as one somebody forgot to collect
+  clientUnavailableReason String?
+
+  approvedAt     DateTime?
+  approvedById   String?
+  approvedBy     User?     @relation("ClockAmendmentApprover", fields: [approvedById], references: [id])
+
+  // DELIVERY, the same shape the timesheets use
+  sentAt        DateTime?
+  sentToEmail   String?
+  intendedEmail String?
+  // when the finished copy went to the office and the staff member. There is no
+  // url beside it on purpose - see the note at the top.
+  mailedAt      DateTime?
+
+  createdById String
+  createdBy   User   @relation("ClockAmendmentCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([staffId])
+  @@index([recipientId])
+  @@index([approvedAt])
+  @@index([createdAt])
 }
