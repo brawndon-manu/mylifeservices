@@ -33,6 +33,14 @@ export function isTimesheetPath(pathname) {
   return p === "/t" || p.startsWith("/t/");
 }
 
+// the clock amendment form, opened from its own emailed link. same shape as
+// the timesheet link and treated the same way by the chrome: a form somebody
+// signs on a phone, not a page of the marketing site
+export function isAmendmentPath(pathname) {
+  const p = String(pathname || "");
+  return p === "/ca" || p.startsWith("/ca/");
+}
+
 // -> what the header's phone button says, links to, and offers alongside it.
 // `message` is null everywhere but the review page, and the header renders
 // nothing when it is null, so no other page grew a pill that can expand.

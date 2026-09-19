@@ -1,0 +1,403 @@
+"use client";
+
+import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import PersonPicker from "./PersonPicker";
+import { suggestedTimes, missingPunchText, firstLast } from "@/lib/clock-amendment/rules";
+import { tidyTime, anchorOf } from "@/lib/clock-amendment/typed-time";
+
+// RAISING ONE FROM THE DAY'S TWO FILES.
+//
+// Somebody rings the office about a punch they missed. The office drops that
+// day's clock export and service notes on this screen, reads them in, ticks
+// the shift, takes down what it was told on the call, and sends the form.
+// Nothing is typed that a file already says.
+//
+// WHAT HAPPENED IS TAKEN DOWN HERE, ON THE CALL, in their words - not picked
+// from a list. It is not the last word: the form the person who was there gets
+// prints it as "you told the office" and asks them to confirm or correct it
+// before they sign. Both versions are kept, and a correction shows on the
+// document.
+const ERRORS = {
+  auth: "You do not have access to raise one of these.",
+  noclock: "The clock export is needed. The service notes are optional, but they are the strongest thing on the form.",
+  read: "One of the files could not be read.",
+  nopicks: "Tick at least one shift.",
+  noaccount: "No account matches this name, so there is nobody to send it to.",
+  reason: "Say what they told you happened.",
+  times: "The missing time is needed, as a time of day.",
+  who: "Pick who it is going to.",
+  gone: "That shift is no longer in the file.",
+  failed: "Something went wrong. Please try again.",
+};
+
+const field =
+  "min-h-[44px] w-full rounded-[9px] border border-border-strong bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-brand";
+const lbl = "block text-[12.5px] font-medium text-muted";
+
+// which slot a file belongs in, by what it is
+const slotOf = (file) => (/\.xls$/i.test(file.name) ? "clock" : /\.pdf$/i.test(file.name) ? "notes" : null);
+
+// one of the two slots a dropped file lands in
+function Slot({ label, file, onClear }) {
+  return (
+    <div className="flex min-h-[44px] items-center gap-3 rounded-[9px] border border-border bg-background px-3 py-2">
+      <span className="w-28 shrink-0 text-[12px] font-medium text-muted">{label}</span>
+      {file ? (
+        <>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{file.name}</span>
+          <button type="button" onClick={onClear} className="shrink-0 rounded px-2 py-1 text-[11.5px] text-muted transition hover:bg-fill">Clear</button>
+        </>
+      ) : (
+        <span className="text-[13px] text-faint">not here yet</span>
+      )}
+    </div>
+  );
+}
+
+export default function RaiseFromFiles({ read, raise, search }) {
+  const picker = useRef(null);
+  const [files, setFiles] = useState({ clock: null, notes: null });
+  const [unplaced, setUnplaced] = useState([]);
+  const [dragging, setDragging] = useState(false);
+  const [found, setFound] = useState(null);
+  const [picks, setPicks] = useState({});
+  const [testOnly, setTestOnly] = useState(false);
+  const [done, setDone] = useState(null);
+  const [err, setErr] = useState(null);
+  const [pending, start] = useTransition();
+
+  // both files can land at once, dropped or picked together; each goes to its
+  // slot by its type, and anything else is named rather than silently dropped
+  const place = (list) => {
+    const next = { ...files };
+    const odd = [];
+    for (const f of list) {
+      const slot = slotOf(f);
+      if (slot) next[slot] = f;
+      else odd.push(f.name);
+    }
+    setFiles(next);
+    setUnplaced(odd);
+    setFound(null);
+    setDone(null);
+    setErr(null);
+  };
+
+  // the two files ride up with every request: they are small and the browser
+  // already holds them, so nothing has to be parked between the two steps
+  const filesForm = () => {
+    const fd = new FormData();
+    if (files.clock) fd.append("clock", files.clock);
+    if (files.notes) fd.append("notes", files.notes);
+    return fd;
+  };
+
+  const readFiles = () => {
+    setErr(null);
+    setDone(null);
+    start(async () => {
+      const res = await read(filesForm());
+      if (!res?.ok) {
+        setErr((ERRORS[res?.error] || ERRORS.failed) + (res?.detail ? ` (${res.detail})` : ""));
+        setFound(null);
+        return;
+      }
+      setFound(res);
+      const init = {};
+      for (const c of res.candidates) {
+        // what the times start at: their own note, then the schedule. never
+        // the clock, which is the thing that is wrong
+        const s = suggestedTimes({
+          dsnStart: c.note?.start, dsnEnd: c.note?.end,
+          scheduledIn: c.facts.scheduledIn, scheduledOut: c.facts.scheduledOut,
+        });
+        init[c.key] = {
+          on: res.candidates.length === 1,
+          reasonText: "",
+          actualIn: c.shift.noIn ? (s.in || "") : "",
+          actualOut: c.shift.noOut ? (s.out || "") : "",
+          recipientId: c.account?.id || "",
+          officeNote: "",
+        };
+      }
+      setPicks(init);
+    });
+  };
+
+  const set = (key, patch) => setPicks((p) => ({ ...p, [key]: { ...p[key], ...patch } }));
+  const chosen = found ? found.candidates.filter((c) => picks[c.key]?.on) : [];
+
+  const send = () => {
+    setErr(null);
+    start(async () => {
+      const fd = filesForm();
+      fd.append("picks", JSON.stringify(chosen.map((c) => ({ key: c.key, ...picks[c.key] }))));
+      if (testOnly) fd.append("testOnly", "1");
+      const res = await raise(fd);
+      if (!res?.ok) { setErr(ERRORS[res?.error] || ERRORS.failed); return; }
+      setDone(res.results);
+    });
+  };
+
+  const clearSlot = (slot) => { setFiles((f) => ({ ...f, [slot]: null })); setFound(null); };
+
+  return (
+    <div className="mt-7 space-y-7">
+      <div
+        className={`rounded-xl border bg-surface p-5 transition-colors ${dragging ? "border-brand" : "border-border"}`}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (e.dataTransfer?.files?.length) place([...e.dataTransfer.files]);
+        }}
+      >
+        <h2 className="text-[13px] font-semibold text-foreground">The day&apos;s files</h2>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-muted">
+          The QSClock Time and Attendance report and the Employee Detailed Daily Service Notes for the day.
+          The export says which shifts have a missing punch; the notes say what was written about the visit.
+        </p>
+        <p className="mt-4 rounded-lg border border-dashed border-border-strong px-3 py-2 text-xs text-muted">
+          Drag both files onto this card together. Each lands in its slot by what it is.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <Slot label="Clock export" file={files.clock} onClear={() => clearSlot("clock")} />
+          <Slot label="Service notes" file={files.notes} onClear={() => clearSlot("notes")} />
+        </div>
+        {unplaced.length > 0 && (
+          <p className="mt-2 text-xs font-semibold text-rose-600 dark:text-rose-400">
+            Not an .xls or a .pdf, so it was not placed: {unplaced.join(", ")}
+          </p>
+        )}
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          accept=".xls,.pdf,application/vnd.ms-excel,application/pdf"
+          className="hidden"
+          onChange={(e) => { if (e.target.files?.length) place([...e.target.files]); e.target.value = ""; }}
+        />
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+          {found && (
+            <p className="mr-auto text-[12px] text-muted">
+              {found.shifts} {found.shifts === 1 ? "shift" : "shifts"} on the export, {found.notes} {found.notes === 1 ? "note" : "notes"}.{" "}
+              <b className="text-foreground">{found.candidates.length} with a missing punch.</b>
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => picker.current?.click()}
+            className="min-h-[44px] rounded-[9px] border border-border-strong bg-fill px-4 py-2.5 text-[13.5px] font-medium text-foreground transition hover:bg-surface-2"
+          >
+            Choose the files
+          </button>
+          <button
+            type="button"
+            disabled={pending || !files.clock}
+            onClick={readFiles}
+            className="min-h-[44px] rounded-[9px] bg-brand px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-60"
+          >
+            {pending && !found ? "Reading…" : found ? "Read them again" : "Read the files"}
+          </button>
+        </div>
+      </div>
+
+      {found && found.candidates.length === 0 && (
+        <p className="rounded-xl border border-border bg-surface px-5 py-6 text-center text-sm text-muted">
+          Every shift on this export has both punches. Nothing to raise.
+        </p>
+      )}
+
+      {found && found.candidates.map((c) => {
+        const p = picks[c.key] || {};
+        const who = c.account?.label || firstLast(c.facts.staffName);
+        const inAnchor = anchorOf(c.facts.scheduledIn);
+        const outAnchor = anchorOf(c.facts.scheduledOut);
+        return (
+          <article key={c.key} className={`rounded-xl border bg-surface p-5 ${p.on ? "border-brand" : "border-border"}`}>
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+              <div>
+                <p className="text-[15px] font-semibold text-foreground">{who}</p>
+                <p className="mt-0.5 text-sm">
+                  <span className="font-semibold text-foreground">{firstLast(c.facts.client) || "no client on the booking"}</span>
+                  {c.facts.service && <span className="ml-3 text-muted">{c.facts.service}</span>}
+                </p>
+              </div>
+              <p className="font-mono text-[12px] text-muted">{c.facts.date}</p>
+            </div>
+
+            {/* THE THREE WITNESSES, on one line each: the schedule, the clock,
+                the note. What the form will print, so the office sees exactly
+                what the person will be asked to confirm. */}
+            <dl className="mt-4 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-faint">Scheduled</dt>
+                <dd className="mt-0.5 tabular-nums text-foreground">{c.facts.scheduledIn || "?"} to {c.facts.scheduledOut || "?"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-faint">Clocked</dt>
+                <dd className="mt-0.5 tabular-nums">
+                  <span className={c.facts.clockedIn ? "text-foreground" : "font-semibold text-rose-600 dark:text-rose-400"}>in {c.facts.clockedIn || "no punch"}</span>
+                  <span className="text-faint"> · </span>
+                  <span className={c.facts.clockedOut ? "text-foreground" : "font-semibold text-rose-600 dark:text-rose-400"}>out {c.facts.clockedOut || "no punch"}</span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-faint">Note says</dt>
+                <dd className="mt-0.5 tabular-nums">
+                  {c.note ? (
+                    <>
+                      <span className="text-foreground">{c.note.start} to {c.note.end}</span>
+                      {c.note.signedAt && <span className="text-muted">, filed {c.note.signedAt}</span>}
+                      <span className="text-faint"> · {c.note.words} words</span>
+                    </>
+                  ) : (
+                    <span className="font-semibold text-rose-600 dark:text-rose-400">no note found for this visit</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            {!c.account && (
+              <p className="mt-3 rounded-[9px] border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+                No account matches &ldquo;{c.facts.staffName}&rdquo;, so there is nobody to send this to. Check the spelling on their account.
+              </p>
+            )}
+
+            <label className="mt-4 flex min-h-[44px] cursor-pointer items-center gap-3 text-sm font-medium text-foreground">
+              <input
+                type="checkbox"
+                checked={!!p.on}
+                disabled={!c.account}
+                onChange={(e) => set(c.key, { on: e.target.checked })}
+                className="h-4 w-4 accent-brand"
+              />
+              Raise a form for this shift
+            </label>
+
+            {p.on && (
+              <div className="mt-2 space-y-4 border-t border-border pt-4">
+                <p className="text-[12px] leading-relaxed text-muted">
+                  What they told you on the phone. They will see it as &ldquo;you told the office&rdquo;, confirm or
+                  correct it, and sign.
+                </p>
+                <div>
+                  <label className={lbl} htmlFor={`words-${c.key}`}>What they said happened</label>
+                  <textarea
+                    id={`words-${c.key}`} rows={3} value={p.reasonText}
+                    onChange={(e) => set(c.key, { reasonText: e.target.value })}
+                    placeholder={`Why they ${missingPunchText({ clockedIn: c.facts.clockedIn, clockedOut: c.facts.clockedOut })}, in their words.`}
+                    className="mt-1.5 min-h-[84px] w-full rounded-[9px] border border-border-strong bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-brand"
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    {c.shift.noIn && (
+                      <div>
+                        <label className={lbl} htmlFor={`in-${c.key}`}>Service started</label>
+                        <input
+                          id={`in-${c.key}`} value={p.actualIn} inputMode="numeric"
+                          onChange={(e) => set(c.key, { actualIn: e.target.value })}
+                          onBlur={(e) => set(c.key, { actualIn: tidyTime(e.target.value, inAnchor) })}
+                          placeholder="9:00 AM" className={`mt-1.5 ${field} tabular-nums`}
+                        />
+                      </div>
+                    )}
+                    {c.shift.noOut && (
+                      <div>
+                        <label className={lbl} htmlFor={`out-${c.key}`}>Service ended</label>
+                        <input
+                          id={`out-${c.key}`} value={p.actualOut} inputMode="numeric"
+                          onChange={(e) => set(c.key, { actualOut: e.target.value })}
+                          onBlur={(e) => set(c.key, { actualOut: tidyTime(e.target.value, outAnchor) })}
+                          placeholder="1:00 PM" className={`mt-1.5 ${field} tabular-nums`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {c.note && (
+                    <p className="self-end pb-2 text-[11.5px] leading-relaxed text-faint">
+                      Their note says {c.note.start} to {c.note.end}{c.note.signedAt ? `, signed at ${c.note.signedAt}` : ""}. The time starts there for them to confirm.
+                    </p>
+                  )}
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <PersonPicker
+                    name={`recipient-${c.key}`}
+                    label="Send it to"
+                    hint="Them, or the supervisor who was there."
+                    search={search}
+                    initial={c.account}
+                    onPick={(r) => set(c.key, { recipientId: r?.id || "" })}
+                  />
+                  <div>
+                    <label className={lbl} htmlFor={`note-${c.key}`}>A line for the email (optional)</label>
+                    <input id={`note-${c.key}`} value={p.officeNote} onChange={(e) => set(c.key, { officeNote: e.target.value })} placeholder="As we discussed this morning." className={`mt-1.5 ${field}`} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </article>
+        );
+      })}
+
+      {found && found.candidates.length > 0 && !done && (
+        <div className="rounded-xl border border-border bg-surface p-5">
+          <label className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm text-foreground">
+            <input type="checkbox" checked={testOnly} onChange={(e) => setTestOnly(e.target.checked)} className="h-4 w-4 accent-brand" />
+            <span>
+              <b className="font-semibold">Test run.</b>{" "}
+              <span className="text-muted">Everything goes to your own inbox and the rows are marked as a rehearsal, kept out of every count and deletable.</span>
+            </span>
+          </label>
+          {err && (
+            <p className="mt-3 rounded-[9px] border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-[13px] text-rose-700 dark:text-rose-300">{err}</p>
+          )}
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+            <p className="mr-auto text-[11.5px] text-faint">
+              {chosen.length === 0 ? "Nothing ticked yet." : `${chosen.length} ${chosen.length === 1 ? "form" : "forms"} will be sent.`}
+            </p>
+            <button
+              type="button"
+              disabled={pending || chosen.length === 0}
+              onClick={send}
+              className="min-h-[44px] rounded-[9px] bg-brand px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-60"
+            >
+              {pending ? "Sending…" : chosen.length === 1 ? "Send the form" : `Send ${chosen.length} forms`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!found && err && (
+        <p className="rounded-[9px] border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-[13px] text-rose-700 dark:text-rose-300">{err}</p>
+      )}
+
+      {done && (
+        <div className="rounded-xl border border-border bg-surface p-5">
+          <h2 className="text-[13px] font-semibold text-foreground">Sent</h2>
+          <ul className="mt-3 divide-y divide-sep">
+            {done.map((r) => (
+              <li key={r.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-[13px]">
+                <span className="font-semibold text-foreground">{r.who}</span>
+                {r.ok && r.sent && (
+                  <span className={r.redirected ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}>
+                    {r.redirected ? `Test send, redirected to ${r.sentTo}` : `Sent to ${r.sentTo}`}
+                  </span>
+                )}
+                {r.ok && !r.sent && <span className="text-rose-700 dark:text-rose-300">Raised, but the email did not go ({r.error}). Chase it from the queue.</span>}
+                {!r.ok && <span className="text-rose-700 dark:text-rose-300">{ERRORS[r.error] || ERRORS.failed}</span>}
+                {r.id && <Link href={`/portal/admin/clock-amendments/${r.id}`} className="ml-auto text-[12.5px] font-semibold text-brand underline underline-offset-4">Open</Link>}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 flex justify-end">
+            <Link href="/portal/admin/clock-amendments" className="text-[13px] font-semibold text-brand underline underline-offset-4">Back to the queue</Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

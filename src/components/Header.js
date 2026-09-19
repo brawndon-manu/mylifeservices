@@ -8,7 +8,7 @@ import { PhoneIcon } from "@/components/Icons";
 import NavDropdown from "@/components/NavDropdown";
 // WHICH NUMBER THIS PAGE OFFERS - the rule lives in `src/lib` so the test can
 // call the same function this does. See the note there.
-import { contactForPath, isTimesheetPath, CONTACT_HOLD_MS } from "@/lib/timesheet-contact";
+import { contactForPath, isTimesheetPath, isAmendmentPath, CONTACT_HOLD_MS } from "@/lib/timesheet-contact";
 
 // floating "pill" header. on the homepage it starts translucent, sitting on top
 // of the dark gradient hero, then swaps to the solid surface pill once you
@@ -133,7 +133,9 @@ export default function Header() {
   // the phone number - no nav, no portal button, no menu. Somebody on their
   // review link is here to check a document, not to browse the site, and
   // every extra door is a way to wander off the one page their token opens.
-  const minimal = isTimesheetPath(pathname);
+  // the clock amendment form gets the same bare bar as the timesheet: a
+  // document somebody signs on a phone, not a page of the brochure
+  const minimal = isTimesheetPath(pathname) || isAmendmentPath(pathname);
   const sticky = minimal ? "relative" : "sticky top-0";
 
   return (

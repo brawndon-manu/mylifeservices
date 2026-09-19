@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
-import { amendmentStage, STAGE_LABELS, evidenceLevel, hasServiceNote } from "@/lib/clock-amendment/rules";
+import { amendmentStage, STAGE_LABELS, stageLine, evidenceLevel, hasServiceNote, firstLast } from "@/lib/clock-amendment/rules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock amendments", robots: { index: false, follow: false } };
@@ -35,7 +35,8 @@ export default async function ClockAmendmentsPage() {
       id: true, clientName: true, service: true, shiftDate: true,
       scheduledIn: true, scheduledOut: true, clockedIn: true, clockedOut: true,
       dsnStart: true, dsnEnd: true,
-      sentAt: true, filledAt: true, approvedAt: true, clientSignedAt: true,
+      sentAt: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
+      testOnly: true, chaseCount: true,
       createdAt: true,
       staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -98,9 +99,14 @@ export default async function ClockAmendmentsPage() {
                           {shown(r.staff)}
                         </span>
                         <span className="min-w-0 flex-1 text-[13px] text-muted">
-                          {r.clientName}
+                          {firstLast(r.clientName)}
                           <span className="ml-2 text-xs text-faint">{r.service}</span>
                         </span>
+                        {r.testOnly && (
+                          <span className="flex-none rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                            rehearsal
+                          </span>
+                        )}
                         <span className="flex-none font-mono text-[11.5px] text-muted">
                           {r.shiftDate}
                         </span>
@@ -126,7 +132,9 @@ export default async function ClockAmendmentsPage() {
                           </span>
                         )}
                         <span className="flex-none text-right text-[11.5px] text-faint">
-                          sent to {shown(r.recipient)}
+                          {stageLine(r)}
+                          {stage !== "approved" && <> · to {shown(r.recipient)}</>}
+                          {r.chaseCount > 0 && <> · reminded {r.chaseCount}×</>}
                         </span>
                       </Link>
                     </li>
@@ -139,7 +147,7 @@ export default async function ClockAmendmentsPage() {
       )}
 
       <p className="mt-8 max-w-2xl text-xs leading-relaxed text-faint">
-        The signed copy is emailed to the office and to the staff member. It is not filed here.
+        The approved document is emailed to the office and to the staff member, and kept on the record here.
       </p>
     </section>
   );

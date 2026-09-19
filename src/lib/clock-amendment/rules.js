@@ -1,48 +1,24 @@
 // WHAT A CLOCK AMENDMENT IS, AND WHAT IT MAY SAY.
 //
 // A staff member could not clock in or out. The hours are still billable, and
-// RCOC's rule is that records must SUPPORT the billing - so this is the source
-// document for an hour the clock export cannot evidence on its own.
+// the regional center's rule is that records must SUPPORT the billing - so this
+// is the source document for an hour the clock export cannot evidence on its
+// own.
 //
-// RAISED BY HAND, NOT DETECTED. Mánu 2026-09-18: "if someone needs their time
-// amended, they reach out to me. I generate the forms." Nothing here reads the
-// clock export looking for work; the office raises one when somebody asks. A
-// fortnight of exports was measured while this was being designed, and those
-// figures are quoted below only where they settle a design question - they are
-// not a queue this fills itself from.
+// RAISED BY HAND, NOT DETECTED. Somebody tells the office they could not clock
+// out; the office reads that day's clock export and service notes and raises
+// one for the shift they name. Nothing here reads an export looking for work.
 //
-// AND THE REASON IS THE POINT. Mánu, the same day: "the reason needs to be
-// asked, that's part of the reason we are building this." It is the one thing
-// no export holds and no signature substitutes for, so it is required, it is
-// asked of the person who was actually there, and "something else" cannot be
-// filed without saying what else.
-
-// WHY THE CLOCK RECORD IS WRONG. The whole point of the exercise.
+// AND THE REASON IS THE POINT. It is the one thing no export holds and no
+// signature substitutes for. It is their own account of what happened, in
+// their words and nothing else: the office takes it down on the call, the
+// person who was there confirms or corrects it, and their signature makes it
+// theirs. Both versions are kept, so a correction is visible rather than lost.
 //
-// A FIXED LIST AND A SENTENCE, not a sentence alone. The list is what turns a
-// pile of forms into a tally - whether this is a training problem or a
-// phone-coverage problem at particular homes is a question only a coded answer
-// can settle. The sentence is the half an auditor actually reads. Neither one
-// is enough on its own.
-//
-// `other` always last and always demanding the sentence - a list that cannot
-// express the real reason gets the nearest wrong one picked instead.
-export const REASON_CODES = [
-  { code: "nosignal", label: "No signal at the location" },
-  { code: "battery", label: "Phone battery died" },
-  { code: "app", label: "The app would not load" },
-  { code: "forgot", label: "Forgot to clock out" },
-  { code: "emergency", label: "Left in an emergency" },
-  { code: "other", label: "Something else" },
-];
-
-export const reasonLabel = (code) =>
-  REASON_CODES.find((r) => r.code === code)?.label || null;
-
-export const isReasonCode = (code) => REASON_CODES.some((r) => r.code === code);
-
-// `other` is the only one that cannot stand on its own
-export const reasonNeedsText = (code) => code === "other";
+// no imports beyond two other import-free modules: the token page is a client
+// component and the test runner loads this file directly
+import { noteMinute } from "../timesheet/note-minute.js";
+import { FILED_GAP_MIN } from "../timesheet/auto-flag.js";
 
 // WHO PUT THEIR NAME TO THE CLIENT HALF.
 //
@@ -72,11 +48,7 @@ export const signerIsPresent = (kind) => !!kind && kind !== "unavailable";
 //
 //   "partial"  a punch went in, so arrival is on record and only the departure
 //              is in question.
-//   "none"     neither punch. The signatures carry the whole visit, so the
-//              supervisor line stops being optional.
-//
-// Both happen often enough to be worth drawing differently: a fortnight of
-// exports read as an even split between them.
+//   "none"     neither punch. The signatures carry the whole visit.
 //
 // Read off the record rather than stored: a stored answer would be a second
 // copy of what the two time fields already say.
@@ -85,6 +57,32 @@ export function evidenceLevel(amendment) {
 }
 
 export const needsSupervisor = (amendment) => evidenceLevel(amendment) === "none";
+
+// the clock export prints people "Last, First"; a form and an email say
+// "First Last". a booking with several people on it keeps each one in order.
+export function firstLast(name) {
+  const s = String(name || "").trim();
+  if (!s) return "";
+  return s
+    .split(";")
+    .map((part) => {
+      const p = part.trim();
+      const i = p.indexOf(",");
+      if (i < 0) return p;
+      const last = p.slice(0, i).trim();
+      const first = p.slice(i + 1).trim();
+      return [first, last].filter(Boolean).join(" ");
+    })
+    .join("; ");
+}
+
+// the headline the form opens with, in plain words
+export function missingPunchText(a) {
+  if (!a) return "did not clock out";
+  if (!a.clockedIn && !a.clockedOut) return "did not clock in or out";
+  if (!a.clockedIn) return "did not clock in";
+  return "did not clock out";
+}
 
 // WHERE ONE IS IN ITS LIFE. One rule, so the inbox, the chase list and the
 // approvals queue cannot disagree about what a row is.
@@ -108,6 +106,29 @@ export const STAGE_LABELS = {
   approved: "Approved",
 };
 
+// the client half on its own: signed, honestly absent, or still to collect
+export function clientStage(a) {
+  if (a?.clientSignedAt) return "signed";
+  if (a?.clientUnavailableReason) return "unavailable";
+  return "waiting";
+}
+
+// what the queue prints on a row, finer than the stage where it matters
+export function stageLine(a) {
+  const stage = amendmentStage(a);
+  if (stage === "filled" && clientStage(a) === "waiting") return "Signed, waiting on the person served";
+  return STAGE_LABELS[stage];
+}
+
+// approval waits for the staff signature and for the client half to be either
+// signed or explained. it never waits for a signature that is legitimately
+// never coming.
+export function canApprove(a) {
+  if (!a || a.approvedAt) return false;
+  if (!a.filledAt) return false;
+  return clientStage(a) !== "waiting";
+}
+
 // WHAT THE FORM CAN ASK SOMEBODY TO CONFIRM RATHER THAN REMEMBER.
 //
 // Staff write a Detailed Daily Service Note for a visit, with a start and an
@@ -127,4 +148,117 @@ export function suggestedTimes(a) {
     return { in: a.scheduledIn || null, out: a.scheduledOut || null, from: "schedule" };
   }
   return { in: null, out: null, from: null };
+}
+
+// ---------------------------------------------------------- intake vs confirmed
+
+export const CLAIM_FIELDS = [
+  { field: "reasonText", label: "what happened" },
+  { field: "actualIn", label: "the start time" },
+  { field: "actualOut", label: "the end time" },
+];
+
+const norm = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
+
+// what the office took down on the call
+export function intakeOf(a) {
+  return {
+    reasonText: a?.intakeReasonText || null,
+    actualIn: a?.intakeActualIn || null,
+    actualOut: a?.intakeActualOut || null,
+  };
+}
+
+// what the person who was there put their name to. before they have, it is
+// the intake, so a screen can always print one answer.
+export function confirmedOf(a) {
+  if (!a?.filledAt) return intakeOf(a);
+  return {
+    reasonText: a.reasonText || null,
+    actualIn: a.actualIn || null,
+    actualOut: a.actualOut || null,
+  };
+}
+
+// every field they changed before signing, with both versions. empty until
+// they have signed, because an unsigned difference is a draft, not a correction
+export function correctionsOf(a) {
+  if (!a?.filledAt) return [];
+  const was = intakeOf(a);
+  const now = confirmedOf(a);
+  const out = [];
+  for (const { field, label } of CLAIM_FIELDS) {
+    if (norm(was[field]) === norm(now[field])) continue;
+    out.push({ field, label, was: was[field], now: now[field] });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ the checks
+
+// minutes from the note being filed to the end time claimed. positive means
+// the claim runs past the filing; null when either side is missing
+export function claimGap(a) {
+  const out = noteMinute(confirmedOf(a).actualOut);
+  const filed = noteMinute(a?.note?.signedAt);
+  if (out == null || filed == null) return null;
+  return out - filed;
+}
+
+// minutes the claimed end runs past the scheduled end, same shape
+export function scheduleGap(a) {
+  const out = noteMinute(confirmedOf(a).actualOut);
+  const sched = noteMinute(a?.scheduledOut);
+  if (out == null || sched == null) return null;
+  return out - sched;
+}
+
+// WHAT THE APPROVER IS TOLD BEFORE PRESSING APPROVE. Every one of these RANKS
+// and none concludes: a visit can legitimately run past the schedule, and a
+// note can legitimately be filed before the last ten minutes. The threshold is
+// the Audit engine's own, so the two screens cannot disagree about what "away
+// from the note" means.
+export function approvalFlags(a) {
+  const flags = [];
+  if (!a) return flags;
+  const gap = claimGap(a);
+  if (gap != null && gap > FILED_GAP_MIN) {
+    flags.push({ kind: "pastNote", text: `The end time is ${gap} minutes after the note was filed at ${a.note.signedAt}.` });
+  }
+  const sg = scheduleGap(a);
+  if (sg != null && sg > FILED_GAP_MIN) {
+    flags.push({ kind: "beyondSchedule", text: `The end time is ${sg} minutes after the scheduled end of ${a.scheduledOut}.` });
+  }
+  const corrections = correctionsOf(a);
+  if (corrections.length) {
+    flags.push({
+      kind: "corrected",
+      text: `They changed what the office took down: ${corrections.map((c) => `${c.label} was "${c.was || "-"}", now "${c.now || "-"}"`).join("; ")}.`,
+    });
+  }
+  if (evidenceLevel(a) === "none") {
+    flags.push({ kind: "noPunch", text: "Neither punch was recorded, so the signatures carry the whole visit." });
+  }
+  if (!a.note && !hasServiceNote(a)) {
+    flags.push({ kind: "noNote", text: "No service note was found for this person, client and day." });
+  }
+  if (a.filledAt && clientStage(a) === "waiting") {
+    flags.push({ kind: "noClient", text: "The person served has not signed yet." });
+  }
+  if (clientStage(a) === "unavailable") {
+    flags.push({ kind: "clientUnavailable", text: `Nobody was available to sign: ${a.clientUnavailableReason}` });
+  }
+  return flags;
+}
+
+// the number printed on the document. the day it was raised and the tail of
+// the record id, which is unique enough for a printed reference and never
+// changes once the row exists
+export function formNumber(a) {
+  const d = a?.createdAt ? new Date(a.createdAt) : null;
+  const day = d && !Number.isNaN(d.getTime())
+    ? `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`
+    : "000000";
+  const tail = String(a?.id || "").slice(-4).toUpperCase() || "0000";
+  return `CA-${day}-${tail}`;
 }

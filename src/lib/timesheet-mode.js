@@ -196,6 +196,25 @@ export function resolveAttestationRecipients(intendedEmail, env = process.env) {
   return { to: localInboxes(env), redirected: true, intendedEmail };
 }
 
+// CLOCK AMENDMENTS. Same two locks as the timesheets, with their own phrase:
+// the form goes to one member of staff by email and the approved document goes
+// to the office and to them, and neither may leave a laptop. A rehearsal row
+// (`ClockAmendment.testOnly`) forces its mail to one address the way a
+// rehearsal batch does, checked first for the same reason as above.
+export function amendmentLiveSendConfigured(env = process.env) {
+  return env.CLOCK_AMENDMENT_LIVE_SEND === LIVE_PHRASE;
+}
+
+export function amendmentLiveSend(env = process.env) {
+  return amendmentLiveSendConfigured(env) && isProductionDeployment(env);
+}
+
+export function resolveAmendmentRecipients(intendedEmail, env = process.env, { forceTo = null } = {}) {
+  if (forceTo) return { to: [forceTo], redirected: true, intendedEmail };
+  if (amendmentLiveSend(env)) return { to: [intendedEmail], redirected: false, intendedEmail };
+  return { to: localInboxes(env), redirected: true, intendedEmail };
+}
+
 // what the review screen shows, so the current mode is never implicit.
 // `reason` says WHICH lock is shut, because "test mode" on the real site with
 // the phrase missing looks like a bug until you know which one is holding.

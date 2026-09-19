@@ -55,12 +55,17 @@ export default auth(async (req) => {
   // as /t/ - an acknowledgment deadline does not pause for a maintenance window,
   // and the person may be reading their mail on a phone they have never signed
   // in on.
+  // /ca/<token> is a clock amendment form sent to one person to confirm and
+  // sign, and to hand to the person served. same argument as /t/: it is handed
+  // out by email to a phone that has never signed in, and a missed punch is
+  // usually being sorted out the same day.
   const isShareLink =
     pathname.startsWith("/f/") ||
     pathname.startsWith("/r/") ||
     pathname.startsWith("/t/") ||
     pathname.startsWith("/a/") ||
-    pathname.startsWith("/g/");
+    pathname.startsWith("/g/") ||
+    pathname.startsWith("/ca/");
 
   // 1. MAINTENANCE GATE - public pages only. the portal, the login page, the
   // maintenance splash, and shared /f/ + /r/ links are always exempt so staff

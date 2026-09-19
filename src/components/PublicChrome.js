@@ -9,11 +9,13 @@
 // ending in "Get in touch" - the page's own flag link is the contact path,
 // and the footer's invitation reads like a second door.
 import { usePathname } from "next/navigation";
-import { isTimesheetPath } from "@/lib/timesheet-contact";
+import { isTimesheetPath, isAmendmentPath } from "@/lib/timesheet-contact";
 
 export default function PublicChrome({ children, hideOnTimesheet = false }) {
   const pathname = usePathname();
   if (pathname?.startsWith("/portal") || pathname === "/maintenance") return null;
-  if (hideOnTimesheet && isTimesheetPath(pathname)) return null;
+  // the clock amendment form is signed on a phone from an emailed link, the
+  // same way the timesheet is, and ends in a signature, not "Get in touch"
+  if (hideOnTimesheet && (isTimesheetPath(pathname) || isAmendmentPath(pathname))) return null;
   return children;
 }

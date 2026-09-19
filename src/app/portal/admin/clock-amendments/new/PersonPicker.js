@@ -2,20 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// START TYPING AND THE PEOPLE COME UP. Mánu 2026-09-18: "we can just make it so
-// you start typing and the options come up of who to send thats all."
+// START TYPING AND THE PEOPLE COME UP.
 //
-// A LIST OF 117 IS NOT A SELECT. It is also not derivable: `User.supervisorId`
-// exists and is filled in for 0 of 99 staff, so there is nothing to pre-pick
-// from and the honest answer is to ask.
+// A ROSTER THIS SIZE IS NOT A SELECT. It is also not derivable: `User.supervisorId`
+// exists and is filled in for nobody, so there is nothing to pre-pick from and
+// the honest answer is to ask. `initial` starts it on somebody - the staff
+// member the clock row names - and the office changes it when a supervisor was
+// the one there.
 //
 // THE CHOSEN PERSON IS AN ID IN A HIDDEN FIELD, never the typed text. A form
-// that posts a name matches the wrong Brandon the first time two of them work
-// here, and two of them already do.
-export default function PersonPicker({ name, label, hint, search, onPick }) {
-  const [term, setTerm] = useState("");
+// that posts a name matches the wrong person the first time two people share
+// a first name, and two already do.
+export default function PersonPicker({ name, label, hint, search, onPick, initial = null }) {
+  const [term, setTerm] = useState(initial?.label || "");
   const [rows, setRows] = useState([]);
-  const [picked, setPicked] = useState(null);
+  const [picked, setPicked] = useState(initial || null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const box = useRef(null);
@@ -23,17 +24,18 @@ export default function PersonPicker({ name, label, hint, search, onPick }) {
   useEffect(() => {
     if (picked) return;
     const q = term.trim();
-    if (q.length < 2) { setRows([]); return; }
-    // one request per pause, not one per keystroke
+    // one request per pause, not one per keystroke. everything the effect
+    // decides happens inside the timer, so a keystroke never re-renders twice
     let live = true;
-    setBusy(true);
     const t = setTimeout(async () => {
+      if (q.length < 2) { if (live) setRows([]); return; }
+      setBusy(true);
       const found = await search(q);
       if (!live) return;
       setRows(found || []);
       setOpen(true);
       setBusy(false);
-    }, 220);
+    }, q.length < 2 ? 0 : 220);
     return () => { live = false; clearTimeout(t); };
   }, [term, picked, search]);
 

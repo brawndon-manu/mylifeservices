@@ -2565,21 +2565,21 @@ model Certificate {
 
 // ONE SHIFT'S CLOCK RECORD, AMENDED AND SIGNED FOR.
 //
-// Mánu 2026-09-18: a staff member did not clock out, the hours are still
-// billable, and RCOC's own rule is that records must SUPPORT the billing. So
-// this is the source document for an hour that the clock export cannot evidence
-// on its own - who worked, for whom, when, and why the clock is wrong.
+// A staff member did not clock in or out, the hours are still billable, and
+// the regional center's rule is that records must SUPPORT the billing. So this
+// is the source document for an hour that the clock export cannot evidence on
+// its own - who worked, for whom, when, why the clock is wrong, and what the
+// times actually were, said by the person who was there and signed for.
 //
-// MEASURED BEFORE IT WAS BUILT: 88 such shifts on 09/01-09/15, 44 of them with
-// no punch at either end. About six a day, which is why this is a standing
-// queue and not a period-close job.
+// RAISED BY HAND. Somebody tells the office they could not clock out and the
+// office raises one from that day's clock export and service notes. Nothing
+// reads the export looking for work, and nothing here is a queue that fills
+// itself.
 //
-// THE DOCUMENT IS NOT KEPT HERE. His call the same day: the signed PDF is built,
-// mailed to the office and the staff member, and not filed in the portal - a
-// Google Drive will take that job. What lives here is the RECORD: who it is
-// about, what was claimed, who signed and when. The inbox, the approval queue
-// and "has this come back yet" all read it, and none of them can work off an
-// email nobody can query.
+// THE RECORD AND THE DOCUMENT BOTH LIVE HERE. The inbox, the approval queue
+// and "has this come back yet" read the record, and the approved PDF sits
+// beside it so the row can open its own document. It is mailed to the office
+// and the staff member as well, and a shared drive can take a copy later.
 model ClockAmendment {
   id String @id @default(cuid())
 
@@ -2590,12 +2590,10 @@ model ClockAmendment {
   staff   User   @relation("ClockAmendmentStaff", fields: [staffId], references: [id])
 
   // WHO WAS ASKED TO FILL IT IN - the staff member themselves, or the field
-  // supervisor for their shift. Mánu 2026-09-18: "it can be me filling it out to
-  // send to a supervisor for a staffs shift or me just sending it out directly
-  // to staff."
+  // supervisor for their shift. The office decides which when it raises one.
   //
-  // PICKED BY TYPING A NAME, not derived - `User.supervisorId` exists and 0 of
-  // 99 staff have one, so there is nothing to derive from. Whether they were a
+  // PICKED BY NAME, not derived - `User.supervisorId` exists and is filled in
+  // for nobody, so there is nothing to derive from. Whether they were a
   // supervisor or the staff member themselves is on their own account; keeping
   // a second copy of it here is one more thing to keep in step.
   recipientId String
@@ -2670,9 +2668,57 @@ model ClockAmendment {
   sentAt        DateTime?
   sentToEmail   String?
   intendedEmail String?
-  // when the finished copy went to the office and the staff member. There is no
-  // url beside it on purpose - see the note at the top.
+  // when the finished copy went to the office and the staff member
   mailedAt      DateTime?
+
+  // WHAT THE OFFICE TOOK DOWN ON THE CALL, kept apart from what the person who
+  // was there confirmed. Decided 2026-09-18: the office hears the story first
+  // and types it, the staff member sees "you told the office" and confirms or
+  // corrects it, and their signature makes it their statement. Both versions
+  // stay, so a correction is visible on the document rather than lost.
+  intakeReasonCode String?
+  intakeReasonText String?
+  intakeActualIn   String?
+  intakeActualOut  String?
+
+  // THE TWO FILES, AS READ, AT THE MOMENT IT WAS RAISED. The clock row and the
+  // service note the engine paired with it, copied rather than joined: the
+  // export is re-pulled and the note can be edited, and a signed form has to
+  // keep saying what it said. `dsnPdfUrl` is the note's own pages cut out of
+  // the upload, so the document can carry them as an appendix.
+  clockRow  Json?
+  note      Json?
+  clockName String?
+  notesName String?
+  dsnPdfUrl String?
+
+  // the drawn signatures, one png each
+  staffSignatureUrl  String?
+  clientSignatureUrl String?
+
+  // WHAT THE APPROVER SAID AND DID. A claim that outruns the note gets flagged
+  // and the approval has to say why it was accepted anyway; and the form exists
+  // to back up a fix made in QSClock, so the fix itself is on the record.
+  approvalNote String?
+  qspFixedAt   DateTime?
+  qspFixedTo   String?
+  qspFixedBy   String?
+
+  // THE DOCUMENT, kept here as well as mailed - decided 2026-09-18, reversing
+  // the earlier call to keep it out of the portal. An approved row opens its
+  // own PDF, and "every amendment for one person in one month" is a query
+  // rather than a mailbox search. The hash is of the stored bytes, so a copy
+  // filed elsewhere can be checked against the record.
+  pdfUrl  String?
+  pdfHash String?
+
+  // reminders to whoever was asked and has not answered
+  chasedAt   DateTime?
+  chaseCount Int       @default(0)
+
+  // A REHEARSAL, raised by the office for itself to see the flow, kept out of
+  // every tally and deletable. Same idea as `TimesheetBatch.testOnly`.
+  testOnly Boolean @default(false)
 
   createdById String
   createdBy   User   @relation("ClockAmendmentCreatedBy", fields: [createdById], references: [id])

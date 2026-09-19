@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { isReasonCode, reasonNeedsText } from "@/lib/clock-amendment/rules";
+import { hasBlobStorage, putBlob } from "@/lib/blob";
+import { preferredName } from "@/lib/contacts";
+import { readDayFiles, cutPages } from "@/lib/clock-amendment/files";
+import { missingPunchText, firstLast } from "@/lib/clock-amendment/rules";
+import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
+import { signAmendmentToken } from "@/lib/clock-amendment/token";
+import { sendAmendmentForm } from "@/lib/clock-amendment/email";
 
 // THE DESK THAT RAISES THESE is the one that runs payroll - same people, same
 // job. A SUPERVISOR is not on it: they RECEIVE an amendment through a link the
@@ -15,12 +21,22 @@ async function requireDesk() {
   return user;
 }
 
-// WHO TO SEND IT TO, BY TYPING A NAME.
-//
-// Mánu 2026-09-18: "we can just make it so you start typing and the options
-// come up of who to send thats all." It is either the staff member themselves
-// or the field supervisor for their shift, and `User.supervisorId` is filled in
-// for 0 of 99 staff - so there is nothing to derive and the answer is to ask.
+const ROSTER_SELECT = { id: true, name: true, email: true, role: true, preferredFirstName: true, preferredLastName: true };
+
+// there is no `active` flag on this roster - a leaver carries a
+// `deactivatedAt`, and sending an amendment to one is sending it nowhere
+const roster = () => prisma.user.findMany({ where: { deactivatedAt: null }, select: ROSTER_SELECT });
+
+async function bytesOf(file) {
+  if (!file || typeof file.arrayBuffer !== "function" || !file.size) return null;
+  return Buffer.from(await file.arrayBuffer());
+}
+
+const shown = (u) => preferredName(u) || u?.name || u?.email || "";
+
+// WHO TO SEND IT TO, BY TYPING A NAME. Usually the staff member the clock row
+// names, and the picker starts on them; the office changes it to a supervisor
+// when that is who was there.
 //
 // SEARCHES THE PREFERRED NAME TOO. Half this roster is known by a name that is
 // not the one on their account, and a picker that only matches the legal name
@@ -31,8 +47,6 @@ export async function searchPeople(term) {
   if (q.length < 2) return [];
   const rows = await prisma.user.findMany({
     where: {
-      // there is no `active` flag on this roster - a leaver carries a
-      // `deactivatedAt`, and sending an amendment to one is sending it nowhere
       deactivatedAt: null,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
@@ -41,7 +55,7 @@ export async function searchPeople(term) {
         { email: { contains: q, mode: "insensitive" } },
       ],
     },
-    select: { id: true, name: true, email: true, role: true, preferredFirstName: true, preferredLastName: true },
+    select: ROSTER_SELECT,
     orderBy: { name: "asc" },
     take: 8,
   });
@@ -51,102 +65,152 @@ export async function searchPeople(term) {
     email: u.email,
     role: u.role,
     // what to show: the name they go by, with the account name behind it when
-    // they differ, so two people called Brandon are still tellable apart
-    label: [u.preferredFirstName, u.preferredLastName].filter(Boolean).join(" ") || u.name || u.email,
+    // they differ, so two people with the same first name are still tellable apart
+    label: shown(u),
   }));
 }
 
-// EVERYTHING THE OFFICE KNOWS, BEFORE ANYBODY IS ASKED ANYTHING.
+// STEP ONE: READ THE DAY'S TWO FILES and say which shifts a form could be
+// raised for. Nothing is written. The office ticks from this list.
+export async function readDayFilesAction(formData) {
+  if (!(await requireDesk())) return { ok: false, error: "auth" };
+  const clock = formData.get("clock");
+  const notes = formData.get("notes");
+  const xls = await bytesOf(clock);
+  const pdf = await bytesOf(notes);
+  if (!xls) return { ok: false, error: "noclock" };
+  try {
+    const read = await readDayFiles({ xlsBytes: xls, pdfBytes: pdf, users: await roster() });
+    return {
+      ok: true,
+      shifts: read.shifts.length,
+      notes: read.notes.length,
+      pageCount: read.pageCount,
+      clockName: clock?.name || null,
+      notesName: notes?.name || null,
+      candidates: read.candidates.map((c) => ({ ...c, account: c.account ? { ...c.account, label: shown(c.account) } : null })),
+    };
+  } catch (e) {
+    return { ok: false, error: "read", detail: String(e?.message || e) };
+  }
+}
+
+// STEP TWO: RAISE THE ONES THAT WERE TICKED. The files come back up with the
+// picks so nothing has to be parked anywhere between the two steps - they are
+// small, and the browser still holds them.
 //
-// The form is stronger the less of it somebody has to remember, so the create
-// screen carries the shift as the office holds it and the recipient confirms
-// rather than reconstructs.
-//
-// THE REASON IS NOT ON THIS SCREEN, and that is not the same as not being
-// asked. It is required on the form the person who was there fills in - see
-// `fillAmendment` - because they are the only one who knows it, and collecting
-// it is the point of the exercise rather than a field on the way to one.
-export async function createAmendment(form) {
+// What the office typed is stored as the INTAKE. The person asked confirms or
+// corrects it on the form and their signature makes it theirs - see rules.js.
+export async function raiseAmendments(formData) {
   const user = await requireDesk();
   if (!user) return { ok: false, error: "auth" };
 
-  const str = (k, max = 120) => String(form.get(k) ?? "").trim().slice(0, max) || null;
-  const staffId = str("staffId", 40);
-  const recipientId = str("recipientId", 40);
-  const clientName = str("clientName");
-  const service = str("service");
-  const shiftDate = str("shiftDate", 10);
+  let picks;
+  try { picks = JSON.parse(String(formData.get("picks") || "[]")); } catch { picks = null; }
+  if (!Array.isArray(picks) || !picks.length) return { ok: false, error: "nopicks" };
+  const testOnly = ["1", "on", "true"].includes(String(formData.get("testOnly") || ""));
 
-  if (!staffId || !recipientId) return { ok: false, error: "who" };
-  if (!clientName || !service || !shiftDate) return { ok: false, error: "shift" };
-  // the date the rest of this app writes, so a row here and a row on a
-  // timesheet are the same day without either side parsing
-  if (!/^\d{2}\/\d{2}\/\d{2}$/.test(shiftDate)) return { ok: false, error: "date" };
+  const clock = formData.get("clock");
+  const notes = formData.get("notes");
+  const xls = await bytesOf(clock);
+  const pdf = await bytesOf(notes);
+  if (!xls) return { ok: false, error: "noclock" };
 
-  // both have to be real accounts: the finished copy is mailed to the staff
-  // member, and the link goes to whoever was asked
-  const [staff, recipient] = await Promise.all([
-    prisma.user.findUnique({ where: { id: staffId }, select: { id: true } }),
-    prisma.user.findUnique({ where: { id: recipientId }, select: { id: true, email: true } }),
-  ]);
-  if (!staff || !recipient) return { ok: false, error: "who" };
+  let read;
+  try {
+    read = await readDayFiles({ xlsBytes: xls, pdfBytes: pdf, users: await roster() });
+  } catch (e) {
+    return { ok: false, error: "read", detail: String(e?.message || e) };
+  }
+  const byKey = new Map(read.candidates.map((c) => [c.key, c]));
+  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+  const str = (v, max = 300) => String(v ?? "").trim().slice(0, max) || null;
 
-  const a = await prisma.clockAmendment.create({
-    data: {
-      staffId, recipientId, clientName, service, shiftDate,
-      scheduledIn: str("scheduledIn", 12), scheduledOut: str("scheduledOut", 12),
-      clockedIn: str("clockedIn", 12), clockedOut: str("clockedOut", 12),
-      // their own service note for this visit, copied at creation rather than
-      // joined - a note edited later must not change what a signed form says
-      // it was confirming
-      dsnStart: str("dsnStart", 12), dsnEnd: str("dsnEnd", 12),
-      dsnSummary: str("dsnSummary", 2000),
-      createdById: user.id,
-    },
-    select: { id: true },
-  });
+  const results = [];
+  for (const p of picks) {
+    const c = byKey.get(p?.key);
+    if (!c) { results.push({ key: p?.key, ok: false, error: "gone" }); continue; }
+    const who = c.account ? shown(c.account) : c.facts.staffName;
+
+    // the finished copy is mailed to the staff member, so they need an account
+    if (!c.account) { results.push({ key: c.key, who, ok: false, error: "noaccount" }); continue; }
+
+    // what they told the office happened, in their words - the whole point
+    const intakeReasonText = str(p.reasonText, 2000);
+    if (!intakeReasonText) { results.push({ key: c.key, who, ok: false, error: "reason" }); continue; }
+    // the times, read the way the boxes read them, against the schedule
+    const f = c.facts;
+    const intakeActualIn = str(p.actualIn, 12) ? tidyTime(str(p.actualIn, 12), anchorOf(f.scheduledIn)) : null;
+    const intakeActualOut = str(p.actualOut, 12) ? tidyTime(str(p.actualOut, 12), anchorOf(f.scheduledOut)) : null;
+    // the missing side has to be said; a form that asks somebody to sign for a
+    // blank is a form that asks them to make a time up on the spot
+    if (c.shift.noOut && !intakeActualOut) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
+    if (c.shift.noIn && !intakeActualIn) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
+    if ((intakeActualIn && !isTime(intakeActualIn)) || (intakeActualOut && !isTime(intakeActualOut))) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
+
+    const recipientId = str(p.recipientId, 40) || c.account.id;
+    const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: ROSTER_SELECT });
+    if (!recipient?.email) { results.push({ key: c.key, who, ok: false, error: "who" }); continue; }
+
+    const n = c.note;
+    const row = await prisma.clockAmendment.create({
+      data: {
+        staffId: c.account.id,
+        recipientId: recipient.id,
+        clientName: firstLast(f.client) || "(no client on the booking)",
+        service: f.service || "",
+        shiftDate: f.date,
+        scheduledIn: f.scheduledIn, scheduledOut: f.scheduledOut,
+        clockedIn: f.clockedIn, clockedOut: f.clockedOut,
+        // the note as it read when the form was raised - copied, not joined
+        dsnStart: n?.start || null, dsnEnd: n?.end || null, dsnSummary: n?.summary || null,
+        clockRow: c.shift, note: n || undefined,
+        clockName: clock?.name || null, notesName: notes?.name || null,
+        intakeReasonText, intakeActualIn, intakeActualOut,
+        testOnly,
+        createdById: user.id,
+      },
+      select: { id: true },
+    });
+
+    // the note's own pages, cut out of the upload for the document's appendix
+    if (pdf && c.pages && hasBlobStorage()) {
+      try {
+        const pages = await cutPages(pdf, c.pages.from, c.pages.to);
+        const blob = await putBlob(`clock-amendments/${row.id}/dsn.pdf`, Buffer.from(pages), {
+          access: "public",
+          contentType: "application/pdf",
+        });
+        await prisma.clockAmendment.update({ where: { id: row.id }, data: { dsnPdfUrl: blob.url } });
+      } catch (e) {
+        console.error("clock amendment: dsn pages not stored:", e);
+      }
+    }
+
+    const url = `${base}/ca/${signAmendmentToken(row.id)}`;
+    const sent = await sendAmendmentForm({
+      intendedEmail: recipient.email,
+      // a rehearsal goes to the person raising it and nowhere else
+      forceTo: testOnly ? user.email : null,
+      recipientName: shown(recipient),
+      staffName: who,
+      clientName: firstLast(f.client) || "the person served",
+      service: f.service || "",
+      date: f.date,
+      scheduled: f.scheduledIn && f.scheduledOut ? `${f.scheduledIn} to ${f.scheduledOut}` : null,
+      missing: `The clock shows they ${missingPunchText({ clockedIn: f.clockedIn, clockedOut: f.clockedOut })}.`,
+      officeNote: str(p.officeNote, 1000),
+      formUrl: url,
+    });
+    if (sent.ok) {
+      await prisma.clockAmendment.update({
+        where: { id: row.id },
+        data: { sentAt: new Date(), sentToEmail: sent.sentTo, intendedEmail: recipient.email },
+      });
+    }
+    results.push({ key: c.key, who, ok: true, id: row.id, sent: sent.ok, sentTo: sent.ok ? sent.sentTo : null, redirected: !!sent.redirected, error: sent.ok ? null : sent.error });
+  }
 
   revalidatePath("/portal/admin/clock-amendments");
-  return { ok: true, id: a.id };
-}
-
-// WHAT THE RECIPIENT SENT BACK. Their signature, and the client's where one
-// could be collected.
-export async function fillAmendment(id, form) {
-  const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "auth" };
-  const a = await prisma.clockAmendment.findUnique({
-    where: { id: String(id || "") },
-    select: { id: true, recipientId: true, approvedAt: true },
-  });
-  if (!a) return { ok: false, error: "notfound" };
-  // only the person who was asked, and never after it has been approved - an
-  // approved amendment is a document somebody put their name to
-  if (a.recipientId !== user.id) return { ok: false, error: "auth" };
-  if (a.approvedAt) return { ok: false, error: "approved" };
-
-  const str = (k, max = 300) => String(form.get(k) ?? "").trim().slice(0, max) || null;
-  const reasonCode = str("reasonCode", 20);
-  const reasonText = str("reasonText", 2000);
-  if (!isReasonCode(reasonCode)) return { ok: false, error: "reason" };
-  // "something else" that does not say what else is not a reason
-  if (reasonNeedsText(reasonCode) && !reasonText) return { ok: false, error: "reasontext" };
-  const actualOut = str("actualOut", 12);
-  if (!actualOut) return { ok: false, error: "times" };
-
-  await prisma.clockAmendment.update({
-    where: { id: a.id },
-    data: {
-      reasonCode, reasonText,
-      actualIn: str("actualIn", 12), actualOut,
-      filledName: str("filledName", 120) || user.name,
-      filledAt: new Date(),
-      clientSigner: str("clientSigner", 120),
-      clientSignerKind: str("clientSignerKind", 20),
-      clientSignedAt: str("clientSigner", 120) ? new Date() : null,
-      clientUnavailableReason: str("clientUnavailableReason", 500),
-    },
-  });
-  revalidatePath("/portal/admin/clock-amendments");
-  return { ok: true };
+  return { ok: true, results };
 }
