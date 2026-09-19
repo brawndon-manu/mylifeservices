@@ -112,7 +112,20 @@ export function noteFromLines(lines) {
   }
 
   if (services >= 0) {
-    const stop = mileage > services ? mileage : texts.length;
+    // THE OBJECTIVES END WHERE THE NOTE'S OWN BODY ENDS: at the mileage
+    // question where there is one, otherwise at the signature block. Never on
+    // the page footer. Measured on the stored notes: 101 of 10,927 had run
+    // off the end - the objectives were followed by "Printed by: ..." and the
+    // signature page, the column anchor below landed on those lines, and the
+    // note came out as one nameless objective with the footer glued onto its
+    // comment and "Employee Name: Signature: Date:" read as a goal.
+    //
+    // The footer is FILTERED rather than used as a stop, because it prints at
+    // the foot of every page and a note whose objectives run onto a second
+    // page would otherwise lose the second page.
+    const signature = texts.findIndex((l, i) => i > services && l.startsWith("Employee Name:"));
+    const stop = [mileage, signature].filter((x) => x > services).sort((a, b) => a - b)[0] ?? texts.length;
+    const isFooter = (l) => /^Printed (by|on):/i.test(l);
     if (rich) {
       // MEASURED ON THE REAL EXPORT: goal names print in their own column
       // (x=45) left of the comments (x=60), a goal name that WRAPS puts its
@@ -120,7 +133,7 @@ export function noteFromLines(lines) {
       // uncommented one leaves the empty comment space (~40pt). So the
       // column tells goals from comments and the gap tells wraps from
       // fresh goals - no words are guessed at.
-      const slice = lines.slice(services + 1, stop);
+      const slice = lines.slice(services + 1, stop).filter((l) => !isFooter(l.text));
       const goalX = Math.min(...slice.map((l) => l.x));
       const sections = [];
       let mode = null;
@@ -131,7 +144,11 @@ export function noteFromLines(lines) {
           mode = "comment";
         } else if (l.x - goalX < 6) {
           const last = sections[sections.length - 1];
-          if (mode === "goal" && last && last.comment == null && last.y - l.y < 20) {
+          // a wrapped goal continues one line height BELOW the line before it.
+          // a jump upward is the next page, and the first goal on it is a goal
+          // of its own, not the tail of the last one on the page before
+          const dy = last ? last.y - l.y : null;
+          if (mode === "goal" && last && last.comment == null && dy > 0 && dy < 20) {
             last.goal += ` ${l.text}`;
             last.y = l.y;
           } else {
@@ -149,6 +166,7 @@ export function noteFromLines(lines) {
       // the flat reading plain strings allow: goals before the first comment,
       // and everything after rides the comment text
       for (const line of texts.slice(services + 1, stop)) {
+        if (isFooter(line)) continue;
         if (line.startsWith("Comments:")) note.comments.push(line.slice(9).trim());
         else if (note.comments.length) note.comments[note.comments.length - 1] += ` ${line}`;
         else note.categories.push(line);
