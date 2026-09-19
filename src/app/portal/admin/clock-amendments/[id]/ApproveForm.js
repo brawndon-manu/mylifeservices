@@ -32,7 +32,7 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export default function ApproveForm({ id, ready, flagged, defaultTo, unsigned, testOnly, approve, chase, remove }) {
+export default function ApproveForm({ id, ready, flagged, defaultTo, unsigned, neverSent = false, testOnly, approve, chase, remove }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
@@ -108,10 +108,10 @@ export default function ApproveForm({ id, ready, flagged, defaultTo, unsigned, t
 
       {unsigned && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface p-5">
-          <p className="mr-auto text-[13px] text-muted">They have not signed yet.</p>
+          <p className="mr-auto text-[13px] text-muted">{neverSent ? "It has not been sent yet." : "They have not signed yet."}</p>
           {err && !ready && <p className="w-full text-[13px] text-rose-700 dark:text-rose-300">{err}</p>}
-          <button type="button" disabled={pending} onClick={() => run(() => chase(id))} className="min-h-[44px] rounded-[9px] border border-border-strong bg-fill px-4 py-2 text-[13.5px] font-medium text-foreground transition hover:bg-surface-2 disabled:opacity-60">
-            {pending ? "Sending…" : "Send a reminder"}
+          <button type="button" disabled={pending} onClick={() => run(() => chase(id))} className={`min-h-[44px] rounded-[9px] px-4 py-2 text-[13.5px] transition disabled:opacity-60 ${neverSent ? "bg-brand font-semibold text-white shadow-sm hover:opacity-90" : "border border-border-strong bg-fill font-medium text-foreground hover:bg-surface-2"}`}>
+            {pending ? "Sending…" : neverSent ? "Send the form" : "Send a reminder"}
           </button>
         </div>
       )}

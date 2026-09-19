@@ -101,7 +101,7 @@ export default async function ClockAmendmentPage({ params }) {
             <p className="text-[12.5px] leading-relaxed text-muted">
               {a.sentAt
                 ? <>Sent to <b className="font-semibold text-foreground">{shownName(a.recipient)}</b> ({a.sentToEmail}) on {when(a.sentAt)}{a.chaseCount ? `, reminded ${a.chaseCount} ${a.chaseCount === 1 ? "time" : "times"}` : ""}. Not signed yet.</>
-                : <>Not sent. The email did not go when it was raised; send a reminder to try again.</>}
+                : <>Not sent yet. Send the form below and it goes to <b className="font-semibold text-foreground">{shownName(a.recipient)}</b>.</>}
             </p>
           )}
         </div>
@@ -160,6 +160,7 @@ export default async function ClockAmendmentPage({ params }) {
           flagged={flags.length > 0}
           defaultTo={confirmed.actualOut}
           unsigned={!a.filledAt && !a.approvedAt}
+          neverSent={!a.sentAt}
           testOnly={a.testOnly}
           approve={approveAmendment}
           chase={chaseAmendment}

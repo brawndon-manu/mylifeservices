@@ -1,12 +1,13 @@
 import { firstLast, stageLine, amendmentStage } from "@/lib/clock-amendment/rules";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP, the way the Audit card lines them
-// up: what was scheduled, what the clock caught, what the person who was there
-// wrote about the visit. Shared by the form the staff member signs and the
-// screen the office approves from, so the two can never disagree about what
-// the evidence says.
+// up: what was scheduled, what the clock caught, when the person who was there
+// filed their note. Shared by the form the staff member signs, the screen the
+// office approves from, and the upload screen where a form is raised, so none
+// of them can disagree about what the evidence says.
 //
-// No hooks, no client state: it renders on the server for both pages.
+// No hooks, no client state: it renders on the server for the two pages and
+// inside the client component on the third.
 
 const hrs = (min) => (min == null ? null : `${(min / 60).toFixed(2)}`);
 
@@ -18,10 +19,8 @@ const TONE = {
 };
 
 export default function AmendmentCard({ a, staffName, showNote = true, children = null }) {
-  const row = a.clockRow || {};
   const note = a.note || null;
   const stage = amendmentStage(a);
-  const scheduledMin = row.scheduledMin ?? null;
 
   return (
     <article className="rounded-xl border border-border bg-surface p-5 sm:p-6">
@@ -40,63 +39,72 @@ export default function AmendmentCard({ a, staffName, showNote = true, children 
         {a.service && <span className="ml-3 text-muted">{a.service}</span>}
       </p>
 
-      <div className="mt-5">
-        {/* THE THREE FIGURES: the booking, the two punches drawn the way the
-            Audit card draws them, and when the note was filed - the time is
-            the figure that matters here, so it gets the big type. */}
-        <dl className="grid grid-cols-3 gap-x-5 gap-y-3 pb-4">
-          <div>
-            <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Scheduled</dt>
-            <dd className="mt-1 text-[20px] font-medium leading-tight tabular-nums text-foreground sm:text-[23px]">
-              {scheduledMin != null ? <>{hrs(scheduledMin)}<span className="ml-0.5 text-[13px] font-medium text-muted">h</span></> : "—"}
-            </dd>
-            <dd className="mt-0.5 text-[11px] tabular-nums text-muted">{a.scheduledIn || "?"}–{a.scheduledOut || "?"}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Clock</dt>
-            <Punch end="in" time={a.clockedIn} gps={row.gpsIn} />
-            <Punch end="out" time={a.clockedOut} gps={row.gpsOut} />
-            {row.reason && <dd className="mt-1 text-[11px] text-muted">Reason on the export: {row.reason}</dd>}
-          </div>
-          <div>
-            <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">DSN submitted at</dt>
-            {note?.signedAt ? (
-              <>
-                <dd className="mt-1 text-[20px] font-medium leading-tight tabular-nums text-foreground sm:text-[23px]">
-                  {note.signedAt.replace(/\s*[AP]M$/i, "")}
-                  <span className="ml-1 text-[13px] font-medium text-muted">{(note.signedAt.match(/[AP]M$/i) || [""])[0]}</span>
-                </dd>
-                {note.signedDate && note.signedDate !== a.shiftDate && (
-                  <dd className="mt-0.5 text-[11px] tabular-nums text-rose-600 dark:text-rose-400">on {note.signedDate}</dd>
-                )}
-              </>
-            ) : note ? (
-              <dd className="mt-1 text-[13px] font-medium leading-snug text-rose-600 dark:text-rose-400">no signature on the note</dd>
-            ) : (
-              <dd className="mt-1 text-[13px] font-medium leading-snug text-rose-600 dark:text-rose-400">no note found</dd>
-            )}
-          </div>
-        </dl>
-
-        <dl className="border-t border-border pt-4">
-          <div>
-            <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Note</dt>
-            {note ? (
-              <dd className="mt-1 text-[16px] font-semibold text-foreground">
-                <span className="mr-2 text-[11px] tracking-wide text-emerald-700 dark:text-emerald-400">DSN</span>{note.words} words
-                {note.minutes != null && <span className="ml-2 text-[11px] font-normal text-muted">{hrs(note.minutes)}h documented</span>}
-              </dd>
-            ) : (
-              <dd className="mt-1 text-[13px] font-semibold text-rose-600 dark:text-rose-400">No DSN for this visit</dd>
-            )}
-          </div>
-        </dl>
-        <p className="mt-4 text-[10px] text-faint">Scheduled: QSP booking · Clock: recorded punches · DSN: their Daily Service Note for this visit</p>
-      </div>
+      <AmendmentFigures a={a} />
 
       {showNote && note && <NoteOpen note={note} shiftDate={a.shiftDate} />}
       {children}
     </article>
+  );
+}
+
+// THE FIGURES: the booking, the two punches drawn the way the Audit card draws
+// them, and when the note was filed - the time is the figure that matters
+// here, so it gets the big type. Then the note on its own line.
+export function AmendmentFigures({ a, className = "mt-5" }) {
+  const row = a.clockRow || {};
+  const note = a.note || null;
+  const scheduledMin = row.scheduledMin ?? null;
+
+  return (
+    <div className={className}>
+      <dl className="grid grid-cols-3 gap-x-5 gap-y-3 pb-4">
+        <div>
+          <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Scheduled</dt>
+          <dd className="mt-1 text-[20px] font-medium leading-tight tabular-nums text-foreground sm:text-[23px]">
+            {scheduledMin != null ? <>{hrs(scheduledMin)}<span className="ml-0.5 text-[13px] font-medium text-muted">h</span></> : "—"}
+          </dd>
+          <dd className="mt-0.5 text-[11px] tabular-nums text-muted">{a.scheduledIn || "?"}–{a.scheduledOut || "?"}</dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Clock</dt>
+          <Punch end="in" time={a.clockedIn} gps={row.gpsIn} />
+          <Punch end="out" time={a.clockedOut} gps={row.gpsOut} />
+          {row.reason && <dd className="mt-1 text-[11px] text-muted">Reason on the export: {row.reason}</dd>}
+        </div>
+        <div>
+          <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">DSN submitted at</dt>
+          {note?.signedAt ? (
+            <>
+              <dd className="mt-1 text-[20px] font-medium leading-tight tabular-nums text-foreground sm:text-[23px]">
+                {note.signedAt.replace(/\s*[AP]M$/i, "")}
+                <span className="ml-1 text-[13px] font-medium text-muted">{(note.signedAt.match(/[AP]M$/i) || [""])[0]}</span>
+              </dd>
+              {note.signedDate && note.signedDate !== a.shiftDate && (
+                <dd className="mt-0.5 text-[11px] tabular-nums text-rose-600 dark:text-rose-400">on {note.signedDate}</dd>
+              )}
+            </>
+          ) : note ? (
+            <dd className="mt-1 text-[13px] font-medium leading-snug text-rose-600 dark:text-rose-400">no signature on the note</dd>
+          ) : (
+            <dd className="mt-1 text-[13px] font-medium leading-snug text-rose-600 dark:text-rose-400">no note found</dd>
+          )}
+        </div>
+      </dl>
+
+      <dl className="border-t border-border pt-4">
+        <div>
+          <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Note</dt>
+          {note ? (
+            <dd className="mt-1 text-[16px] font-semibold text-foreground">
+              <span className="mr-2 text-[11px] tracking-wide text-emerald-700 dark:text-emerald-400">DSN</span>{note.words} words
+            </dd>
+          ) : (
+            <dd className="mt-1 text-[13px] font-semibold text-rose-600 dark:text-rose-400">No DSN for this visit</dd>
+          )}
+        </div>
+      </dl>
+      <p className="mt-4 text-[10px] text-faint">Scheduled: QSP booking · Clock: recorded punches · DSN: their Daily Service Note for this visit</p>
+    </div>
   );
 }
 
