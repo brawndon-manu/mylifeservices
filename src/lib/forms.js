@@ -7,6 +7,10 @@ export const FORM_CATEGORIES = [
   "HR & onboarding",
   "Client care",
   "Training",
+  // the september 2026 series: two trainings, each with its quick reference
+  // and a signable attestation. its own shelf so the current push is easy to
+  // find, rather than mixed into the older training documents.
+  "September Series Trainings 2026",
   "Other",
 ];
 
@@ -86,6 +90,23 @@ export const FORM_EMAIL_ROUTES = [
     // HR record and holds HR Administrator (Mánu 2026-09-04: "it just goes
     // to britny"), so this follows the title rather than her name.
     match: (title) => /ils service note.*attestation/i.test(title || ""),
+    recipientTitle: "HR Administrator",
+  },
+  {
+    key: "hospital-admission-attestation",
+    // "ILS Hospital Admission Staff Attestation" - the september 2026 series.
+    // signed copies go to the HR record like the other training attestations,
+    // so this follows HR Administrator too. the deck and the quick reference
+    // stay unrouted: nothing on them is submitted.
+    match: (title) => /hospital admission.*attestation/i.test(title || ""),
+    recipientTitle: "HR Administrator",
+  },
+  {
+    key: "staff-attendance-attestation",
+    // "Staff Attendance Quick Reference Guide & Attestation" - the attestation
+    // is page 2 of the quick reference, one document, so the title carries
+    // both words and the match wants both. same HR record as the others.
+    match: (title) => /staff attendance.*attestation/i.test(title || ""),
     recipientTitle: "HR Administrator",
   },
 ];
