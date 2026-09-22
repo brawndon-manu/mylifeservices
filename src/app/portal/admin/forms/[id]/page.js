@@ -126,6 +126,12 @@ export default async function FormRecordPage({ params, searchParams }) {
           >
             Download signed PDFs
           </a>
+          <a
+            href={`/portal/admin/forms/${form.id}/signed-zip${qs}`}
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-muted transition hover:border-brand hover:text-brand"
+          >
+            Download signed zip
+          </a>
         </div>
       </div>
       <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-brand-dark">
