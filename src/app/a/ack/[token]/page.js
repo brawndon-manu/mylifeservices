@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf } from "@/lib/contacts";
+import { unsignedFormIds } from "@/lib/announcement-sign";
 import { acknowledgeFromEmail } from "../actions";
 
 // the landing page for the email ack link. lives outside /portal so proxy.js
@@ -44,8 +45,10 @@ export default async function AckPage({ params, searchParams }) {
           content: true,
           requireAck: true,
           deletedAt: true,
-          // a post with a form is finished by SIGNING it, not by a tick
+          // a post with a form is finished by SIGNING it, not by a tick - and
+          // by signing every one of them when it carries several
           formId: true,
+          extraFormIds: true,
           form: { select: { fillable: true } },
         },
       }),
@@ -74,10 +77,18 @@ export default async function AckPage({ params, searchParams }) {
       announcementId = announcement.id;
       needsSign = !!(announcement.formId && announcement.form?.fillable);
       // the signature, not the tick, is what finishes a form post
-      signed = needsSign && !!(await prisma.formSubmission.findFirst({
-        where: { announcementId: announcement.id, userId: user.id },
-        select: { id: true },
-      }));
+      signed =
+        needsSign &&
+        unsignedFormIds(
+          announcement,
+          (
+            await prisma.formSubmission.findMany({
+              where: { announcementId: announcement.id, userId: user.id },
+              select: { formId: true },
+            })
+          ).map((s) => ({ userId: user.id, formId: s.formId })),
+          user.id,
+        ).length === 0;
       // someone who already acknowledged - through this link, the portal or a
       // meeting RSVP - goes straight to the thanks screen rather than being
       // asked to press a button they have already pressed

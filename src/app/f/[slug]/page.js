@@ -95,6 +95,7 @@ export default async function PublicFillPage({ params, searchParams }) {
         title={form.title}
         formId={form.id}
         reviewTeam={reviewTeam}
+        requireAll={!!route?.requireAll}
         announcementId={announcementId}
         publicMode
         submitAction={submitPublicFormByEmail}

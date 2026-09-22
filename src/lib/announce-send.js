@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { ACK_EXEMPT_TITLE } from "@/lib/positions";
 import { signAckToken } from "@/lib/ack-token";
+import { signFormIds } from "@/lib/announcement-sign";
 import { signRsvpToken } from "@/lib/rsvp-token";
 import { renderMarkdown } from "@/lib/markdown";
 import {
@@ -89,12 +90,21 @@ export async function emailAnnouncement(
   // the thing they were being asked to sign. Looked up here rather than trusted
   // off `post`, because emailAnnouncement is called with several different
   // selects and only some of them carry the form.
-  const signForm = post.formId
-    ? await prisma.form.findUnique({
-        where: { id: post.formId },
+  // AND THERE CAN BE SEVERAL (announcement-sign.js), so the row is read for the
+  // whole list: `post` may carry formId alone, or neither.
+  const signRow = await prisma.announcement.findUnique({
+    where: { id: post.id },
+    select: { formId: true, extraFormIds: true },
+  });
+  const signIds = signFormIds(signRow);
+  const signForms = signIds.length
+    ? await prisma.form.findMany({
+        where: { id: { in: signIds } },
         select: { id: true, title: true, fileUrl: true },
       })
-    : null;
+    : [];
+  // in signing order, not the database's
+  signForms.sort((a, b) => signIds.indexOf(a.id) - signIds.indexOf(b.id));
 
   // HAS THIS POST BEEN EMAILED BEFORE? Gmail threads on subject + sender and
   // hides the repeat behind "Show trimmed content", so a second send of the same
@@ -108,7 +118,7 @@ export async function emailAnnouncement(
   const priorSend = reminder ?? !!sendRow?.ackEmailSentAt;
 
   const files = [];
-  for (const a of emailAttachmentsOf(post, signForm)) {
+  for (const a of emailAttachmentsOf(post, signForms)) {
     try {
       const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
       const res = await fetch(url);

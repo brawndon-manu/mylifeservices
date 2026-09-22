@@ -17,6 +17,7 @@ import { verifyAckToken } from "@/lib/ack-token";
 import { checkRateLimit } from "@/lib/security";
 import { preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
+import { signFormIds } from "@/lib/announcement-sign";
 import { resolveRecipient, resolveDefaultRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
 import { storeFormSubmission } from "@/lib/form-store";
@@ -24,7 +25,7 @@ import { storeFormSubmission } from "@/lib/form-store";
 // `token` is bound by the page (submitSignedByToken.bind(null, token)) - an
 // inline closure in a server component is not a server action and cannot be
 // handed to a client component.
-export async function submitSignedByToken(token, { pdfBase64, pdfName, message, recipientId }) {
+export async function submitSignedByToken(token, { pdfBase64, pdfName, message, recipientId, formId }) {
   const parsed = verifyAckToken(token);
   if (!parsed) return { ok: false, error: "auth" };
 
@@ -38,7 +39,7 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
     prisma.announcement.findUnique({
       where: { id: parsed.announcementId },
       select: {
-        id: true, requireAck: true, deletedAt: true, formId: true,
+        id: true, requireAck: true, deletedAt: true, formId: true, extraFormIds: true,
         form: { select: { id: true, title: true, fillable: true } },
       },
     }),
@@ -56,7 +57,22 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
   if (!user || user.deactivatedAt) return { ok: false, error: "auth" };
   if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
 
-  const route = formEmailRoute(post.form.title);
+  // WHICH OF THE POST'S FORMS THIS IS. A post can ask for several now
+  // (announcement-sign.js); the page names the one it built, and it has to be
+  // one the post actually asks for. No name - an older page still open
+  // somewhere - means the first, exactly as before.
+  const ids = signFormIds(post);
+  const targetId = typeof formId === "string" && ids.includes(formId) ? formId : post.form.id;
+  const form =
+    targetId === post.form.id
+      ? post.form
+      : await prisma.form.findUnique({
+          where: { id: targetId },
+          select: { id: true, title: true, fillable: true },
+        });
+  if (!form?.fillable) return { ok: false, error: "auth" };
+
+  const route = formEmailRoute(form.title);
   if (!route?.recipientTitle) return { ok: false, error: "norecipients" };
   // NOBODY PICKS A RECIPIENT HERE. Sign mode has no dropdown - the signed
   // document goes back to whoever holds the route's title - so `recipientId`
@@ -71,7 +87,7 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
   const name = preferredName(user) || user.name || "Staff";
   const result = await sendFilledForm({
     route,
-    formTitle: post.form.title,
+    formTitle: form.title,
     recipientEmail: recipient.email,
     ccEmails: buildCc(await routeCcList(route), user.email, recipient.email),
     submitterName: name,
@@ -89,7 +105,7 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
   let stored = null;
   try {
     stored = await storeFormSubmission({
-      formId: post.form.id,
+      formId: form.id,
       pdfBase64,
       pdfName,
       submitterName: name,

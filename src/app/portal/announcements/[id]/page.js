@@ -60,6 +60,7 @@ import EventDetail from "../_components/EventDetail";
 import ZoomLinksDialog from "../_components/ZoomLinksDialog";
 import PublishBar from "../_components/PublishBar";
 import AckEmailAction from "../_components/AckEmailAction";
+import { signFormIds, signedAllByUser } from "@/lib/announcement-sign";
 import NameHover from "@/components/NameHover";
 
 // shape a db user into the {id,displayName,title,image,email,phone} the hover
@@ -330,13 +331,29 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
   // emailed link records the open and hands them to the document, so nearly
   // everyone arrives here already holding an ack. Keying the panel off the ack
   // alone hid the form from exactly the people who still owed a signature.
-  const mySignature = post.formId
-    ? await prisma.formSubmission.findFirst({
+  //
+  // AND ON A POST ASKING FOR SEVERAL FORMS, signed means all of them
+  // (announcement-sign.js): `mySigned` says which are in, `mySignature` is set
+  // only once every one is.
+  const mySubs = post.formId
+    ? await prisma.formSubmission.findMany({
         where: { announcementId: post.id, userId: user.id },
-        select: { createdAt: true },
-        orderBy: { createdAt: "desc" },
+        select: { formId: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
       })
-    : null;
+    : [];
+  const mySubRows = mySubs.map((s) => ({ ...s, userId: user.id }));
+  const mySigned = new Map();
+  for (const s of mySubRows) if (!mySigned.has(s.formId)) mySigned.set(s.formId, s.createdAt);
+  const mySignature = post.formId ? signedAllByUser(post, mySubRows).get(user.id) || null : null;
+  // every form the post asks for, in signing order, for the panel below
+  const signIds = signFormIds(post);
+  const signRows = signIds.length
+    ? await prisma.form.findMany({ where: { id: { in: signIds } }, select: { id: true, title: true } })
+    : [];
+  const signForms = signIds.map((fid) => signRows.find((r) => r.id === fid)).filter(Boolean);
+  const longDate = (d) =>
+    new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   // OPENING THE POST IS THE RECORD ON A FORM-BACKED ANNOUNCEMENT - Mánu
   // 2026-09-08: no acknowledge step there, "just let us know if someone has
   // opened it in the portal". Viewing writes the same open the emailed
@@ -405,7 +422,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
       post.formId
         ? prisma.formSubmission.findMany({
             where: { announcementId: id },
-            select: { id: true, userId: true, createdAt: true },
+            select: { id: true, userId: true, formId: true, createdAt: true },
             orderBy: { createdAt: "desc" },
           })
         : Promise.resolve([]),
@@ -423,7 +440,8 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
     // OPENED IS NOT SIGNED. On a post carrying a form the tick only says they
     // read it; the roster has to show what is still outstanding rather than
     // counting a read as done.
-    const signedMap = new Map(submissions.filter((x) => x.userId).map((x) => [x.userId, x]));
+    // and signed means EVERY form the post asks for, dated when the last landed
+    const signedMap = signedAllByUser(post, submissions);
     const acked = expectedUsers
       .filter((u) => ackMap.has(u.id))
       .map((u) => ({
@@ -1603,13 +1621,16 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                 <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
                   <HeartlessCheck className="h-5 w-5 shrink-0" />
                   <span>
-                    You signed &ldquo;{post.form?.title}&rdquo; on{" "}
-                    {new Date(mySignature.createdAt).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                    . Nothing else to do.
+                    You signed{" "}
+                    {signForms.length > 1
+                      ? signForms.map((f, i) => (
+                          <span key={f.id}>
+                            {i > 0 && (i === signForms.length - 1 ? " and " : ", ")}
+                            &ldquo;{f.title}&rdquo;
+                          </span>
+                        ))
+                      : <>&ldquo;{post.form?.title}&rdquo;</>}{" "}
+                    on {longDate(mySignature.createdAt)}. Nothing else to do.
                   </span>
                 </div>
               ) : (
@@ -1619,24 +1640,59 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                     <div className="flex-1">
                       <p className="text-sm font-medium text-brand-dark dark:text-sky-100">
                         {myAck
-                          ? `You opened this on ${new Date(myAck.createdAt).toLocaleDateString(
-                              "en-US",
-                              { month: "long", day: "numeric", year: "numeric" },
-                            )}. It still needs your signature.`
-                          : "This one needs the attached form filled out and submitted."}
+                          ? `You opened this on ${longDate(myAck.createdAt)}. It still needs your signature.`
+                          : signForms.length > 1
+                            ? "This one needs the attached forms filled out and submitted."
+                            : "This one needs the attached form filled out and submitted."}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-brand-dark/80 dark:text-sky-200/80">
-                        Opening this page records that you saw it. Submitting &ldquo;
-                        {post.form?.title}&rdquo; is what finishes it.
+                        Opening this page records that you saw it. Submitting{" "}
+                        {signForms.length > 1 ? (
+                          <>every form below</>
+                        ) : (
+                          <>&ldquo;{post.form?.title}&rdquo;</>
+                        )}{" "}
+                        is what finishes it.
                       </p>
                     </div>
                   </div>
-                  <Link
-                    href={`/portal/forms/${post.formId}/fill?announcementId=${post.id}`}
-                    className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand sm:w-auto"
-                  >
-                    Fill &amp; submit the form
-                  </Link>
+                  {/* SEVERAL FORMS: one row each, the signed ones say when and
+                      the rest open their fill page. One form keeps the single
+                      button it always had. */}
+                  {signForms.length > 1 ? (
+                    <ul className="mt-3 space-y-2">
+                      {signForms.map((f) => {
+                        const at = mySigned.get(f.id);
+                        return (
+                          <li
+                            key={f.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200/70 bg-surface px-3 py-2 dark:border-sky-900/60"
+                          >
+                            <span className="text-sm font-medium text-foreground">{f.title}</span>
+                            {at ? (
+                              <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                                Signed {longDate(at)}
+                              </span>
+                            ) : (
+                              <Link
+                                href={`/portal/forms/${f.id}/fill?announcementId=${post.id}`}
+                                className="inline-flex items-center justify-center rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand"
+                              >
+                                Fill &amp; submit
+                              </Link>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <Link
+                      href={`/portal/forms/${post.formId}/fill?announcementId=${post.id}`}
+                      className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-brand-light px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand sm:w-auto"
+                    >
+                      Fill &amp; submit the form
+                    </Link>
+                  )}
                 </div>
               )
             ) : myAck ? (

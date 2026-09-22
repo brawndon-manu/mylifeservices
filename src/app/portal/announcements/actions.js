@@ -73,6 +73,7 @@ import {
 } from "@/lib/announcements";
 // deadlines are end-of-day California, one definition - see the module note
 import { deadlineInstant, ackNudgeCopy } from "@/lib/announcement-deadline";
+import { missingSignatureWhere } from "@/lib/announcement-sign";
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -129,21 +130,30 @@ function ackAudienceEmpty({ ackEveryone, ackTitles, ackUserIds }) {
   return !ackEveryone && !ackTitles.length && !ackUserIds.length;
 }
 
-// the optional form attached to an ack-required post - completing it is what
-// records the acknowledgment (see AnnouncementForm's "Attach a form" picker).
-// only meaningful when requireAck is on; never trust the posted id blindly -
-// it has to be a real, fillable form with somewhere to send it.
-async function resolveFormId(formData, requireAck) {
-  if (!requireAck) return null;
-  const raw = formData.get("formId");
-  if (typeof raw !== "string" || !raw) return null;
-  const form = await prisma.form.findUnique({
-    where: { id: raw },
+// the forms a sign-mode post asks for - completing every one of them is what
+// finishes it (see AnnouncementForm's attestation picker and
+// announcement-sign.js). only meaningful when requireAck is on; never trust
+// the posted ids blindly - each has to be a real, fillable form with somewhere
+// to send it. The first becomes `formId` and the rest `extraFormIds`, in the
+// order they were picked; a lone `formId` field (an older client) still works.
+const SIGN_FORMS_MAX = 5;
+async function resolveSignFormIds(formData, requireAck) {
+  const none = { formId: null, extraFormIds: [] };
+  if (!requireAck) return none;
+  const raw = [...formData.getAll("formIds"), formData.get("formId")].filter(
+    (v) => typeof v === "string" && v,
+  );
+  const ids = [...new Set(raw)].slice(0, SIGN_FORMS_MAX);
+  if (!ids.length) return none;
+  const rows = await prisma.form.findMany({
+    where: { id: { in: ids } },
     select: { id: true, title: true, fillable: true },
   });
-  if (!form || !form.fillable) return null;
-  if (!formEmailRoute(form.title)?.recipientTitle) return null;
-  return form.id;
+  const ok = ids.filter((id) => {
+    const f = rows.find((r) => r.id === id);
+    return !!f && f.fillable && !!formEmailRoute(f.title)?.recipientTitle;
+  });
+  return { formId: ok[0] || null, extraFormIds: ok.slice(1) };
 }
 
 // the Company Meeting fields. only meaningful when tag = "Company Meeting";
@@ -501,7 +511,7 @@ export async function createPost(formData) {
     redirect(`/portal/announcements/new?error=${err}`);
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
-  const formId = await resolveFormId(formData, requireAck);
+  const { formId, extraFormIds } = await resolveSignFormIds(formData, requireAck);
   const meetingAttestationFormId = await resolveAttestationFormId(formData, tag);
 
   // DOCUMENTS THAT RIDE ALONG. Two sources, both validated here: ids picked
@@ -545,6 +555,7 @@ export async function createPost(formData) {
       ackUserIds,
       ackExemptUserIds: parseExemptUserIds(formData),
       formId,
+      extraFormIds,
       ...meetingFields,
       // A BACKFILL IS PUBLISHED AS IT IS CREATED, and that is the only reason
       // it is published at all: the attendance report reads
@@ -585,8 +596,10 @@ export async function publishAnnouncement(postId, formData) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
-      // and whether a signature is wanted, which changes the button
+      // and whether a signature is wanted, which changes the button - and
+      // every form it wants signed, which decides who still owes one
       formId: true,
+      extraFormIds: true,
       requireAck: true,
       createdAt: true,
       ackEveryone: true,
@@ -814,7 +827,7 @@ export async function editPost(postId, formData) {
     redirect(`/portal/announcements/${postId}/edit?error=${err}`);
   }
   const { ackEveryone, ackTitles, ackUserIds } = ackAudience;
-  const formId = await resolveFormId(formData, requireAck);
+  const { formId, extraFormIds } = await resolveSignFormIds(formData, requireAck);
   const meetingAttestationFormId = await resolveAttestationFormId(formData, tag);
 
   const meetingFields = parseMeetingFields(formData, tag);
@@ -842,6 +855,7 @@ export async function editPost(postId, formData) {
       ackUserIds,
       ackExemptUserIds: parseExemptUserIds(formData),
       formId,
+      extraFormIds,
       // A MOVED DEADLINE RE-ARMS ITS JOBS. Pushing the date (or clearing it)
       // makes the night-before chase and the missed-deadline bell meaningful
       // again, so the one-shot stamps come off and the cron fires them for
@@ -1897,8 +1911,10 @@ export async function adminAddInvitee(postId, userId, formData) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
-      // and whether a signature is wanted, which changes the button
+      // and whether a signature is wanted, which changes the button - and
+      // every form it wants signed, which decides who still owes one
       formId: true,
+      extraFormIds: true,
       createdAt: true,
       ackEveryone: true,
       ackTitles: true,
@@ -2044,8 +2060,10 @@ export async function sendAckEmails(postId) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
-      // and whether a signature is wanted, which changes the button
+      // and whether a signature is wanted, which changes the button - and
+      // every form it wants signed, which decides who still owes one
       formId: true,
+      extraFormIds: true,
       requireAck: true,
       deletedAt: true,
       ackEveryone: true,
@@ -2082,8 +2100,9 @@ export async function sendAckEmails(postId) {
     where: {
       AND: [
         ackOwedWhere(post),
+        // and on a post asking for several forms, missing ANY of them
         post.formId
-          ? { formSubmissions: { none: { announcementId: postId } } }
+          ? missingSignatureWhere(post)
           : { announcementAcks: { none: { announcementId: postId } } },
       ],
     },
@@ -2174,8 +2193,10 @@ export async function emailMeetingNoResponse(postId) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
-      // and whether a signature is wanted, which changes the button
+      // and whether a signature is wanted, which changes the button - and
+      // every form it wants signed, which decides who still owes one
       formId: true,
+      extraFormIds: true,
       requireAck: true,
       createdAt: true,
       deletedAt: true,
@@ -2239,8 +2260,10 @@ export async function sendAnnouncementEmail(postId, formData) {
       content: true,
       // the PDFs the post carries, so the email can attach them
       attachments: true,
-      // and whether a signature is wanted, which changes the button
+      // and whether a signature is wanted, which changes the button - and
+      // every form it wants signed, which decides who still owes one
       formId: true,
+      extraFormIds: true,
       requireAck: true,
       deletedAt: true,
       createdAt: true,

@@ -29,6 +29,9 @@ export const FORM_DESC_MAX = 300;
 //   - `cc`: fixed extra recipients (always copied). the submitter is also cc'd,
 //     added server-side.
 //   - `from`: overrides the sender for this form.
+//   - `requireAll`: every box on the form has to be filled in before it can be
+//     submitted. FormFiller marks each one with a red asterisk and refuses the
+//     send while any is empty. Off, a form submits with whatever was filled.
 export const FORM_EMAIL_ROUTES = [
   {
     key: "sir",
@@ -100,6 +103,10 @@ export const FORM_EMAIL_ROUTES = [
     // stay unrouted: nothing on them is submitted.
     match: (title) => /hospital admission.*attestation/i.test(title || ""),
     recipientTitle: "HR Administrator",
+    // nine initials, a name, two dates and a signature: an attestation with a
+    // blank initial is not one. Mánu 2026-09-21: "it cant be sent unless all
+    // is filled out".
+    requireAll: true,
   },
   {
     key: "staff-attendance-attestation",
@@ -108,6 +115,7 @@ export const FORM_EMAIL_ROUTES = [
     // both words and the match wants both. same HR record as the others.
     match: (title) => /staff attendance.*attestation/i.test(title || ""),
     recipientTitle: "HR Administrator",
+    requireAll: true,
   },
 ];
 

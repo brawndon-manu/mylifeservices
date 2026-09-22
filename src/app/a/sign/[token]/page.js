@@ -6,14 +6,19 @@ import { firstNameOf, preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
 import { renderMarkdown, PROSE } from "@/lib/markdown";
 import { getRecipientOptions } from "@/lib/form-recipients";
-import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { attachmentsOf } from "@/lib/announcement-attachments";
+import { signFormIds, unsignedFormIds } from "@/lib/announcement-sign";
+import SignSequence from "./SignSequence";
 import { submitSignedByToken, recordOpenedByToken } from "./actions";
 
 // Sign the form an announcement asks for, from the emailed link, with or
 // without a login. Lives outside /portal so the proxy does not bounce it - the
 // signed token IS the credential, and it unlocks exactly this one document for
 // exactly this one person.
+//
+// SEVERAL DOCUMENTS, ONE LINK, since 2026-09-21: a post can ask for more than
+// one form (announcement-sign.js), and this page walks the reader through the
+// ones they still owe, in order. A post with one form reads exactly as before.
 export const dynamic = "force-dynamic";
 
 export const metadata = {
@@ -31,7 +36,7 @@ export default async function SignFromLinkPage({ params }) {
       where: { id: parsed.announcementId },
       select: {
         id: true, title: true, content: true, requireAck: true, deletedAt: true,
-        attachments: true, formId: true,
+        attachments: true, formId: true, extraFormIds: true,
         form: { select: { id: true, title: true, fileUrl: true, fillable: true } },
       },
     }),
@@ -46,22 +51,62 @@ export default async function SignFromLinkPage({ params }) {
   if (!post || post.deletedAt || !post.requireAck || !post.form?.fillable) notFound();
   if (!user || user.deactivatedAt) notFound();
 
-  // already done? say so rather than letting somebody sign the same thing twice
-  const existing = await prisma.formSubmission.findFirst({
+  // every form the post asks for, in signing order. the first is already
+  // loaded; the rest are looked up, and one that is not fillable is skipped
+  // rather than dead-ending the link.
+  const ids = signFormIds(post);
+  const extraRows = ids.length > 1
+    ? await prisma.form.findMany({
+        where: { id: { in: ids.slice(1) }, fillable: true },
+        select: { id: true, title: true, fileUrl: true, fillable: true },
+      })
+    : [];
+  const forms = ids
+    .map((fid) => (fid === post.form.id ? post.form : extraRows.find((r) => r.id === fid)))
+    .filter(Boolean);
+
+  // what this person has already sent in, per form - so a second visit picks
+  // up where they left off rather than asking for a document twice
+  const mine = await prisma.formSubmission.findMany({
     where: { announcementId: post.id, userId: user.id },
-    select: { id: true, createdAt: true },
+    select: { formId: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
+  const owedIds = unsignedFormIds(
+    post,
+    mine.map((s) => ({ userId: user.id, formId: s.formId })),
+    user.id,
+  );
+  const todo = forms.filter((f) => owedIds.includes(f.id));
+  const done = forms.filter((f) => !owedIds.includes(f.id));
+  // already finished? say so rather than letting somebody sign the same thing twice
+  const existing = todo.length === 0 ? mine[0] || null : null;
 
-  const route = formEmailRoute(post.form.title);
-  const recipients = route?.recipientTitle ? await getRecipientOptions(route.recipientTitle) : [];
-  const reviewTeam = {
-    recipientLabel: route?.recipientTitle || "HR",
-    recipients,
-    ccNames: (route?.cc || []).map((c) => c.name),
-  };
-  const others = attachmentsOf(post).filter((a) => a.formId !== post.form.id);
+  // who each signed copy goes to: the route's title holders, per form
+  const withTeams = await Promise.all(
+    todo.map(async (f) => {
+      const route = formEmailRoute(f.title);
+      const recipients = route?.recipientTitle
+        ? await getRecipientOptions(route.recipientTitle)
+        : [];
+      return {
+        id: f.id,
+        title: f.title,
+        fileUrl: f.fileUrl,
+        requireAll: !!route?.requireAll,
+        reviewTeam: {
+          recipientLabel: route?.recipientTitle || "HR",
+          recipients,
+          ccNames: (route?.cc || []).map((c) => c.name),
+        },
+      };
+    }),
+  );
+  const signIds = new Set(forms.map((f) => f.id));
+  const others = attachmentsOf(post).filter((a) => !signIds.has(a.formId));
   const bodyHtml = renderMarkdown(post.content);
+  const longDate = (d) =>
+    new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
   return (
     <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
@@ -116,10 +161,9 @@ export default async function SignFromLinkPage({ params }) {
             You already signed this.
           </p>
           <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-200/80">
-            Submitted on{" "}
-            {new Date(existing.createdAt).toLocaleDateString("en-US", {
-              month: "long", day: "numeric", year: "numeric",
-            })}
+            {forms.length > 1
+              ? `All ${forms.length} documents were submitted, the last on ${longDate(existing.createdAt)}`
+              : `Submitted on ${longDate(existing.createdAt)}`}
             . Payroll and HR have the copy - there is nothing else to do.
           </p>
           {/* the portal copy, same as the ack page sends people to. signed in
@@ -134,19 +178,13 @@ export default async function SignFromLinkPage({ params }) {
           </Link>
         </div>
       ) : (
-        <FormFiller
-          fileUrl={post.form.fileUrl}
-          title={post.form.title}
-          formId={post.form.id}
-          reviewTeam={reviewTeam}
-          signMode
-          // the link was cut for exactly this account, so the name box starts
-          // filled rather than asking for something the token already carries
+        <SignSequence
+          forms={withTeams}
+          doneTitles={done.map((f) => f.title)}
           signerName={preferredName(user)}
           // the open, once the document is really drawn - see
           // recordOpenedByToken for why this cannot be done on the server
           onOpened={recordOpenedByToken.bind(null, token)}
-          signIntro={`Read the material, then complete and sign "${post.form.title}". Your signed copy goes to HR and is kept on file.`}
           submitAction={submitSignedByToken.bind(null, token)}
         />
       )}

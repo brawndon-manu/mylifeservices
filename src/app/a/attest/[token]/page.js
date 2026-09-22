@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { attachmentsOf } from "@/lib/announcement-attachments";
+import { formEmailRoute } from "@/lib/forms";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { submitAttestationByToken } from "./actions";
 
@@ -122,6 +123,7 @@ export default async function AttestFromLinkPage({ params }) {
             announcementId={post.id}
             announcementTitle={post.title}
             signMode
+            requireAll={!!formEmailRoute(form.title)?.requireAll}
             signLabel="Sign and submit"
             signIntro="Fill in anything that applies to you, sign at the bottom, then submit. A copy is filed against this meeting."
             submitAction={submitAttestationByToken.bind(null, token)}

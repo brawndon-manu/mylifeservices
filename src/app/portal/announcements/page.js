@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isModerator, isElevated, isSupervisorUp, canSeeRoles, isSuper, canSeePhones } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
+import { signedAllByUser, unsignedFormIds } from "@/lib/announcement-sign";
 import {
   TIME_WINDOWS,
   isValidWindow,
@@ -133,16 +134,29 @@ export default async function AnnouncementsPage({ searchParams }) {
   // nobody anything sinks below the fold when its date passes.
   const ackPost = (p) => p.requireAck && !isCompanyMeeting(p.tag) && !!p.publishedAt;
   const formPostIds = visible.filter((p) => ackPost(p) && p.formId).map((p) => p.id);
-  const mySignedIds = formPostIds.length
-    ? new Set(
-        (
-          await prisma.formSubmission.findMany({
-            where: { userId: user.id, announcementId: { in: formPostIds } },
-            select: { announcementId: true },
-          })
-        ).map((s) => s.announcementId),
+  const mySubs = formPostIds.length
+    ? await prisma.formSubmission.findMany({
+        where: { userId: user.id, announcementId: { in: formPostIds } },
+        select: { announcementId: true, formId: true },
+      })
+    : [];
+  // signed means every form the post asks for - a post with two attestations
+  // is still owed until the second one is in
+  const mySignedIds = new Set(
+    visible
+      .filter((p) => formPostIds.includes(p.id))
+      .filter(
+        (p) =>
+          unsignedFormIds(
+            p,
+            mySubs
+              .filter((s) => s.announcementId === p.id)
+              .map((s) => ({ userId: user.id, formId: s.formId })),
+            user.id,
+          ).length === 0,
       )
-    : new Set();
+      .map((p) => p.id),
+  );
   const oweOf = (p) =>
     ackPost(p) &&
     inAckAudience(p, user) &&
@@ -165,14 +179,16 @@ export default async function AnnouncementsPage({ searchParams }) {
         ? p.formId
           ? await prisma.formSubmission.findMany({
               where: { announcementId: p.id, userId: { in: ids } },
-              select: { userId: true },
+              select: { userId: true, formId: true },
             })
           : await prisma.announcementAck.findMany({
               where: { announcementId: p.id, userId: { in: ids } },
               select: { userId: true },
             })
         : [];
-      const done = new Set(doneRows.map((r) => r.userId));
+      const done = p.formId
+        ? new Set(signedAllByUser(p, doneRows).keys())
+        : new Set(doneRows.map((r) => r.userId));
       missedByPost.set(p.id, ids.filter((id) => !done.has(id)).length);
     }
   }

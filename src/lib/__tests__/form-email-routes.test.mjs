@@ -14,7 +14,12 @@ test("the september attestations route to the HR record", () => {
   assert.equal(key("Staff Attendance Quick Reference Guide & Attestation"), "staff-attendance-attestation");
   for (const t of ["ILS Hospital Admission Staff Attestation", "Staff Attendance Quick Reference Guide & Attestation"]) {
     assert.equal(formEmailRoute(t).recipientTitle, "HR Administrator");
+    // nine initials, a name, dates and a signature: none may stay blank
+    assert.equal(formEmailRoute(t).requireAll, true);
   }
+  // and nothing older started demanding every box
+  assert.equal(!!formEmailRoute("ILS Service Note Documentation Training Attestation").requireAll, false);
+  assert.equal(!!formEmailRoute("Special Incident Report (SIR)").requireAll, false);
 });
 
 test("the decks and the hospital quick reference have nowhere to send", () => {

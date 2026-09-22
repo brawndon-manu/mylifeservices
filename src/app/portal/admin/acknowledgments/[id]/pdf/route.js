@@ -32,6 +32,7 @@ export async function GET(req, { params }) {
       publishedAt: true,
       requireAck: true,
       formId: true,
+      extraFormIds: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,

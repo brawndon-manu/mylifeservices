@@ -55,6 +55,7 @@ export default async function EditAnnouncementPage({ params, searchParams }) {
       ackUserIds: true,
       ackExemptUserIds: true,
       formId: true,
+      extraFormIds: true,
       deletedAt: true,
       publishedAt: true,
       // meeting fields - so editing a draft/meeting reloads everything the author

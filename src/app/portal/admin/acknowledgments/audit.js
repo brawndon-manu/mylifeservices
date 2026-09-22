@@ -7,6 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { payrollName } from "@/lib/contacts";
 import { ackOwedWhere } from "@/lib/announcements";
+import { signedAllByUser } from "@/lib/announcement-sign";
 import { PACIFIC, fmtPosted } from "./roster";
 
 const stampFmt = new Intl.DateTimeFormat("en-US", {
@@ -60,7 +61,7 @@ export async function ackAuditPeople(p, { office = "" } = {}) {
     p.formId
       ? prisma.formSubmission.findMany({
           where: { announcementId: p.id },
-          select: { userId: true, createdAt: true },
+          select: { userId: true, formId: true, createdAt: true },
         })
       : [],
   ]);
@@ -101,9 +102,8 @@ export async function ackAuditPeople(p, { office = "" } = {}) {
   const recorderName = new Map(recorders.map((u) => [u.id, payrollName(u)]));
 
   const ackByUser = new Map((p.acks || []).map((a) => [a.userId, a]));
-  const signedByUser = new Map(
-    submissions.filter((s) => s.userId).map((s) => [s.userId, s]),
-  );
+  // signed means EVERY form the post asks for, dated when the last one landed
+  const signedByUser = signedAllByUser(p, submissions);
   const person = (u, note) => {
     const a = ackByUser.get(u.id);
     const sub = signedByUser.get(u.id);

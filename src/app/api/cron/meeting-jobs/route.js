@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { Resend } from "resend";
 import { ackAudienceWhere, ackOwedWhere, formatHasOnline, isCompanyMeeting } from "@/lib/announcements";
 import { notifyOversight } from "@/lib/notify";
+import { signedAllByUser } from "@/lib/announcement-sign";
 // the deadline's windows and words, one definition - see the module note
 import {
   chaseWindowOpen,
@@ -522,7 +523,7 @@ export async function GET(request) {
         OR: [{ ackReminderSentAt: null }, { deadlineNoticedAt: null }],
       },
       select: {
-        id: true, title: true, formId: true, expiresAt: true,
+        id: true, title: true, formId: true, extraFormIds: true, expiresAt: true,
         ackEveryone: true, ackTitles: true, ackUserIds: true, ackExemptUserIds: true,
         ackReminderSentAt: true, deadlineNoticedAt: true,
       },
@@ -538,13 +539,16 @@ export async function GET(request) {
         : post.formId
           ? await prisma.formSubmission.findMany({
               where: { announcementId: post.id, userId: { in: ids } },
-              select: { userId: true },
+              select: { userId: true, formId: true },
             })
           : await prisma.announcementAck.findMany({
               where: { announcementId: post.id, userId: { in: ids } },
               select: { userId: true },
             });
-      const done = new Set(doneRows.map((r) => r.userId));
+      // on a form post, done means EVERY form the post asks for is signed
+      const done = post.formId
+        ? new Set(signedAllByUser(post, doneRows).keys())
+        : new Set(doneRows.map((r) => r.userId));
       const outstanding = owedUsers.filter((u) => !done.has(u.id));
 
       // 4. the night-before chase. Nobody outstanding = nothing to send, and

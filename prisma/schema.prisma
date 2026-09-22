@@ -435,6 +435,12 @@ model Announcement {
   // means filling + submitting the form, which writes the ack (see FormSubmission).
   formId                      String?
   form                        Form?                         @relation("AnnouncementForm", fields: [formId], references: [id])
+  // MORE FORMS TO SIGN ON THE SAME POST. `formId` stays the first one, so
+  // everything that only ever read it keeps reading it; these are the rest, in
+  // the order the author picked them. A person has finished a post only when
+  // every one of them carries their submission - see announcement-sign.js.
+  // Empty on every post from before 2026-09-21.
+  extraFormIds                String[]                      @default([])
   // POST-MEETING ATTESTATION, and it is optional on purpose: a meeting with no
   // form here still concludes, it just does not email anybody.
   meetingAttestationFormId    String?

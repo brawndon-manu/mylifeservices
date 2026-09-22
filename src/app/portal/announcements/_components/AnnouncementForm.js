@@ -383,11 +383,27 @@ export default function AnnouncementForm({
   const [ackMode, setAckMode] = useState(
     d.requireAck ? (d.formId ? "attest" : "ack") : "none"
   );
-  const [formId, setFormId] = useState(d.formId || "");
+  // every form the post asks to be signed, first to last. several since
+  // 2026-09-21 - the September series wants two attestations from one post -
+  // stored as formId + extraFormIds on the server (announcement-sign.js).
+  const [formIds, setFormIds] = useState(() =>
+    [d.formId, ...(Array.isArray(d.extraFormIds) ? d.extraFormIds : [])].filter(Boolean),
+  );
   const [content, setContent] = useState(d.content || "");
 
   return (
-    <form action={action} className="space-y-6">
+    <form
+      action={action}
+      className="space-y-6"
+      // an attestation post with no form ticked would quietly save as a plain
+      // acknowledgment; stop it here and point at the box instead
+      onSubmit={(e) => {
+        if (ackMode === "attest" && formIds.length === 0) {
+          e.preventDefault();
+          document.getElementById("signForms")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }}
+    >
       {/* 1. Type picker (drives the rest of the form) */}
       <fieldset>
         <legend className={LABEL}>
@@ -753,30 +769,43 @@ export default function AnnouncementForm({
           {ackMode !== "none" && (
             <div className="mt-3 space-y-4 border-t border-border pt-3">
               {ackMode === "attest" && (
-                <div>
-                  <label htmlFor="formId" className={LABEL}>
+                <div id="signForms">
+                  <span className={LABEL}>
                     Attestation <span className="text-rose-600">*</span>
-                  </label>
-                  <select
-                    id="formId"
-                    name="formId"
-                    value={formId}
-                    onChange={(e) => setFormId(e.target.value)}
-                    className={INPUT}
-                    required
-                  >
-                    <option value="">Pick a form</option>
+                  </span>
+                  {/* SEVERAL AT ONCE: tick every form they have to sign. They
+                      are signed in this order, and the post is finished only
+                      when every one is in. */}
+                  <div className="mt-1 max-h-56 space-y-1 overflow-y-auto rounded-md border border-border bg-surface px-3 py-2">
                     {forms.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.title}
-                      </option>
+                      <label key={f.id} className="flex items-start gap-2 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          name="formIds"
+                          value={f.id}
+                          checked={formIds.includes(f.id)}
+                          onChange={(e) =>
+                            setFormIds((cur) =>
+                              e.target.checked ? [...cur, f.id] : cur.filter((id) => id !== f.id),
+                            )
+                          }
+                          className="mt-0.5 h-4 w-4 accent-brand"
+                        />
+                        <span>{f.title}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                  {formIds.length === 0 && (
+                    <p className="mt-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                      Pick at least one form.
+                    </p>
+                  )}
                   {/* OPENED AND SIGNED ARE TWO STATES, and the person choosing
                       the form has to know that before they choose it. */}
                   <p className="mt-1 text-xs text-muted">
                     Opening the post records that they saw it. Submitting the
-                    signed form is what finishes it. The roster tracks both.
+                    signed {formIds.length > 1 ? "forms, every one of them," : "form"} is
+                    what finishes it. The roster tracks both.
                   </p>
                 </div>
               )}

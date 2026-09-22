@@ -8,6 +8,7 @@
 import { getCurrentUser } from "@/lib/current-user";
 import { preferredName } from "@/lib/contacts";
 import { formEmailRoute } from "@/lib/forms";
+import { signFormIds } from "@/lib/announcement-sign";
 import { prisma } from "@/lib/prisma";
 import { resolveRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
@@ -36,9 +37,9 @@ export async function submitFormByEmail({
   if (typeof announcementId === "string" && announcementId) {
     const a = await prisma.announcement.findUnique({
       where: { id: announcementId },
-      select: { formId: true, requireAck: true, deletedAt: true },
+      select: { formId: true, extraFormIds: true, requireAck: true, deletedAt: true },
     });
-    if (a && !a.deletedAt && a.requireAck && a.formId === form.id) {
+    if (a && !a.deletedAt && a.requireAck && signFormIds(a).includes(form.id)) {
       validAnnouncementId = announcementId;
     }
   }

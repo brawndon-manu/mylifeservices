@@ -36,6 +36,7 @@ export async function GET(req) {
       tag: true,
       publishedAt: true,
       formId: true,
+      extraFormIds: true,
       ackEveryone: true,
       ackTitles: true,
       ackUserIds: true,

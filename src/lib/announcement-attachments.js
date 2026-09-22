@@ -56,17 +56,22 @@ export function attachmentsOf(post) {
 // staff got the reading material and not the thing they were being asked to
 // sign. This folds it in, deduped, so choosing it once is enough.
 //
-// It goes FIRST: it is the document the message is actually about.
-export function emailAttachmentsOf(post, form) {
+// It goes FIRST: it is the document the message is actually about. Since
+// 2026-09-21 a post can ask for several (see announcement-sign.js), so this
+// takes one form or a list; they go in front in signing order, each once.
+export function emailAttachmentsOf(post, forms) {
   const list = attachmentsOf(post);
-  const f = cleanAttachment(
-    form?.fileUrl ? { url: form.fileUrl, name: form.title, formId: form.id } : null,
-  );
-  if (!f) return list;
-  // already carried, either by url or because the same library form was picked
-  const already = list.some(
-    (a) => a.url === f.url || (f.formId && a.formId && a.formId === f.formId),
-  );
-  if (already) return list;
-  return [f, ...list].slice(0, ATTACH_MAX_COUNT);
+  const same = (a, f) => a.url === f.url || (f.formId && a.formId && a.formId === f.formId);
+  const front = [];
+  for (const form of Array.isArray(forms) ? forms : [forms]) {
+    const f = cleanAttachment(
+      form?.fileUrl ? { url: form.fileUrl, name: form.title, formId: form.id } : null,
+    );
+    if (!f) continue;
+    // already carried, either by url or because the same library form was picked
+    if (list.some((a) => same(a, f)) || front.some((a) => same(a, f))) continue;
+    front.push(f);
+  }
+  if (!front.length) return list;
+  return [...front, ...list].slice(0, ATTACH_MAX_COUNT);
 }

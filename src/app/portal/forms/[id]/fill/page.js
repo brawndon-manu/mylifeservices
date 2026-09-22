@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { canSeeForm, formFileHref } from "@/lib/form-visibility";
 import { getCurrentUser } from "@/lib/current-user";
 import { formEmailRoute } from "@/lib/forms";
+import { signFormIds } from "@/lib/announcement-sign";
 import { getRecipientOptions } from "@/lib/form-recipients";
 import ShareMenu from "@/components/ShareMenu";
 import FormFiller from "./FormFiller";
@@ -37,9 +38,9 @@ export default async function FillFormPage({ params, searchParams }) {
   if (typeof sp?.announcementId === "string" && sp.announcementId) {
     const a = await prisma.announcement.findUnique({
       where: { id: sp.announcementId },
-      select: { id: true, title: true, content: true, formId: true, requireAck: true, deletedAt: true },
+      select: { id: true, title: true, content: true, formId: true, extraFormIds: true, requireAck: true, deletedAt: true },
     });
-    if (a && !a.deletedAt && a.requireAck && a.formId === form.id) {
+    if (a && !a.deletedAt && a.requireAck && signFormIds(a).includes(form.id)) {
       announcement = a;
     }
   }
@@ -87,6 +88,7 @@ export default async function FillFormPage({ params, searchParams }) {
         title={form.title}
         formId={form.id}
         reviewTeam={reviewTeam}
+        requireAll={!!route?.requireAll}
         submitAction={submitFormByEmail}
         announcementId={announcement?.id || null}
         announcementTitle={announcement?.title || null}

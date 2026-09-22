@@ -34,8 +34,10 @@ test("both senders take a form post to the document, and leave an ordinary post 
 test("an old ack link forwards an unsigned form post to the document", () => {
   assert.match(ackPage, /if \(valid && needsSign && !signed\) redirect\(`\/a\/sign\/\$\{token\}`\)/);
   // and `signed` is read off the SIGNATURE, not off the ack row - the ack row
-  // being exactly what used to make this page lie
-  assert.match(ackPage, /signed = needsSign && !!\(await prisma\.formSubmission\.findFirst\(/);
+  // being exactly what used to make this page lie. Since 2026-09-21 it is
+  // every form the post asks for, through the one rule in announcement-sign.js.
+  assert.match(ackPage, /signed =\s*needsSign &&\s*unsignedFormIds\(/);
+  assert.match(ackPage, /prisma\.formSubmission\.findMany\(/);
   // the forward has to happen BEFORE `done` is computed, or it still dead-ends
   assert.ok(
     ackPage.indexOf("redirect(`/a/sign/") < ackPage.indexOf("const done ="),

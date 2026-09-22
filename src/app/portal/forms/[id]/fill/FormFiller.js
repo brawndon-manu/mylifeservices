@@ -16,7 +16,7 @@ import {
   StandardFonts,
 } from "pdf-lib";
 import SignaturePad from "./SignaturePad";
-import { signerNameField } from "@/lib/forms";
+import { fieldLabel, signerNameField } from "@/lib/forms";
 
 const RICH_TEXT_FLAG = 1 << 25;
 const WORKER_SRC = "/pdf.worker.min.mjs";
@@ -133,6 +133,16 @@ export default function FormFiller({
   // It is a STARTING value, never a locked one: the field stays editable, and
   // anything already typed wins.
   signerName = null,
+  // EVERY BOX MUST BE FILLED before the document can be sent, and each one is
+  // marked with a red asterisk. On for the forms whose route says
+  // `requireAll` - the September 2026 attestations, where nine initials and a
+  // name ARE the attestation and a blank one is not. Checkboxes are never
+  // required by this: a box left unticked is an answer on the forms that
+  // have them. Signatures are, on top of the sign-mode rule that always was.
+  requireAll = false,
+  // CALLED AFTER A SUCCESSFUL SUBMIT, for a caller with a next document to
+  // hand over - the emailed link with several forms to sign. Optional.
+  onSubmitted = null,
   // CALLED ONCE THE DOCUMENT IS ACTUALLY ON A SCREEN. The emailed signing page
   // records nothing on load, on purpose - mail scanners fetch every link in a
   // message, and a server-side write there would mark people as having looked
@@ -165,6 +175,9 @@ export default function FormFiller({
   const [sendBusy, setSendBusy] = useState(false);
   const [sendErr, setSendErr] = useState(null);
   const [sent, setSent] = useState(false);
+  // a submit was refused for empty required boxes: from then on each empty one
+  // is outlined red on the page, not just named in the message
+  const [showMissing, setShowMissing] = useState(false);
   const recipients = reviewTeam?.recipients || [];
   const recipientLabel = reviewTeam?.recipientLabel || "reviewer";
   // who this goes to (a picked holder of the form's recipientTitle) + on the
@@ -194,6 +207,20 @@ export default function FormFiller({
     for (const p of sigFields) next[p.name] = v;
     return next;
   });
+
+  // THE BOXES THIS DOCUMENT REFUSES TO SEND WITHOUT - see `requireAll`. None
+  // when the pages could not be drawn: the boxes are not on the screen to be
+  // filled, and a typed name is the whole of what that path can collect.
+  const requiredNames = requireAll && !cantDraw
+    ? [...new Set(placements.filter((p) => p.kind !== "checkbox").map((p) => p.name))]
+    : [];
+  const isMissing = (name) => {
+    const v = values[name];
+    return !(typeof v === "string" ? v.trim() : v);
+  };
+  const missingNames = requiredNames.filter(isMissing);
+  // outlined red once a submit has been refused over it
+  const flagged = (p) => showMissing && requiredNames.includes(p.name) && isMissing(p.name);
 
   useEffect(() => {
     let active = true;
@@ -616,6 +643,18 @@ export default function FormFiller({
       setSendErr(sendErrorText("nosignature"));
       return;
     }
+    // AND EVERY REQUIRED BOX, named. Mánu 2026-09-21: "it cant be sent
+    // unless all is filled out". The outline goes on the page at the same
+    // time, so the message and the document point at the same boxes.
+    if (missingNames.length) {
+      setShowMissing(true);
+      setSendErr(
+        `Fill in every box marked with a red asterisk before submitting. Still empty: ${missingNames
+          .map(fieldLabel)
+          .join(", ")}.`,
+      );
+      return;
+    }
     setSendBusy(true);
     setSendErr(null);
     try {
@@ -640,6 +679,15 @@ export default function FormFiller({
       if (r?.ok) {
         setSent(true);
         setSendOpen(false);
+        // the caller's next step, if it has one - never allowed to undo the
+        // success above
+        if (onSubmitted) {
+          try {
+            onSubmitted();
+          } catch {
+            // ignore
+          }
+        }
       } else {
         setSendErr(sendErrorText(r?.error));
       }
@@ -801,6 +849,30 @@ export default function FormFiller({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={pg.url} alt="" width={pg.w} height={pg.h} className="block select-none" draggable={false} />
+                {/* THE RED ASTERISK, at the top-right corner of every box the
+                    document will not send without. Drawn beside the box, not
+                    in it, so it never sits under what gets typed. */}
+                {placements
+                  .filter((p) => p.page === i && requiredNames.includes(p.name))
+                  .map((p, j) => (
+                    <span
+                      key={"req" + p.name + j}
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        left: p.left + p.width - 4,
+                        top: p.top - 7,
+                        fontSize: 15,
+                        lineHeight: "14px",
+                        fontWeight: 700,
+                        color: "#e11d48",
+                        pointerEvents: "none",
+                        zIndex: 2,
+                      }}
+                    >
+                      *
+                    </span>
+                  ))}
                 {placements
                   .filter((p) => p.page === i)
                   .map((p, j) =>
@@ -816,7 +888,7 @@ export default function FormFiller({
                           top: p.top,
                           width: p.width,
                           height: p.height,
-                          border: "1px solid rgba(37,99,235,0.45)",
+                          border: flagged(p) ? "2px solid #e11d48" : "1px solid rgba(37,99,235,0.45)",
                           background: values[p.name] ? "transparent" : "rgba(255,255,255,0.55)",
                           borderRadius: 2,
                           padding: 0,
@@ -870,7 +942,7 @@ export default function FormFiller({
                         key={p.name + j}
                         value={values[p.name] || ""}
                         onChange={(e) => setVal(p.name, e.target.value)}
-                        style={overlayStyle(p, true)}
+                        style={overlayStyle(p, true, flagged(p))}
                       />
                     ) : (
                       <input
@@ -878,7 +950,7 @@ export default function FormFiller({
                         type="text"
                         value={values[p.name] || ""}
                         onChange={(e) => setVal(p.name, e.target.value)}
-                        style={overlayStyle(p, false)}
+                        style={overlayStyle(p, false, flagged(p))}
                       />
                     ),
                   )}
@@ -890,6 +962,12 @@ export default function FormFiller({
             Tip: tap a signature box to draw your signature with your mouse or
             finger. Everything else types in.
           </p>
+          {requiredNames.length > 0 && (
+            <p className="mt-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+              Every box marked with a red asterisk (*) has to be filled in before this can
+              be submitted.
+            </p>
+          )}
 
           {sent ? (
             <div className="mt-5 flex items-start gap-3 rounded-lg border border-emerald-300/60 bg-emerald-50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
@@ -1117,14 +1195,15 @@ export default function FormFiller({
   );
 }
 
-function overlayStyle(p, multiline) {
+// `flag` outlines a required box that a refused submit found empty
+function overlayStyle(p, multiline, flag = false) {
   return {
     position: "absolute",
     left: p.left,
     top: p.top,
     width: p.width,
     height: p.height,
-    border: "1px solid rgba(37,99,235,0.45)",
+    border: flag ? "2px solid #e11d48" : "1px solid rgba(37,99,235,0.45)",
     background: "rgba(255,255,255,0.55)",
     color: "#111827",
     fontSize: Math.min(Math.max(p.height * 0.62, 9), 13),
