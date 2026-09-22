@@ -629,6 +629,21 @@ export default function FormFiller({
       setSendErr(sendErrorText("info"));
       return;
     }
+    // EVERY REQUIRED BOX, named in one message. Mánu 2026-09-21: "it cant be
+    // sent unless all is filled out". The signature is one of them, so this
+    // goes before the signature check below: one list of everything still
+    // empty, rather than "sign first" and then a second refusal for the
+    // initials. The outline goes on the page at the same time, so the message
+    // and the document point at the same boxes.
+    if (missingNames.length) {
+      setShowMissing(true);
+      setSendErr(
+        `Fill in every box marked with a red asterisk before submitting. Still empty: ${missingNames
+          .map(fieldLabel)
+          .join(", ")}.`,
+      );
+      return;
+    }
     // A SIGNATURE IS THE WHOLE POINT OF SIGN MODE, AND NOTHING WAS CHECKING FOR
     // ONE. Mánu 2026-08-10 answered every question on his timesheet, submitted,
     // and the stored copy came back with the signature line blank - the
@@ -641,18 +656,6 @@ export default function FormFiller({
       )
     ) {
       setSendErr(sendErrorText("nosignature"));
-      return;
-    }
-    // AND EVERY REQUIRED BOX, named. Mánu 2026-09-21: "it cant be sent
-    // unless all is filled out". The outline goes on the page at the same
-    // time, so the message and the document point at the same boxes.
-    if (missingNames.length) {
-      setShowMissing(true);
-      setSendErr(
-        `Fill in every box marked with a red asterisk before submitting. Still empty: ${missingNames
-          .map(fieldLabel)
-          .join(", ")}.`,
-      );
       return;
     }
     setSendBusy(true);
