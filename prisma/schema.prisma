@@ -2707,6 +2707,10 @@ model ClockAmendment {
   // to back up a fix made in QSClock, so the fix itself is on the record.
   approvalNote String?
   qspFixedAt   DateTime?
+  // the corrected punches, whichever the case called for: the clock-in for a
+  // late or missing clock-in, the clock-out for a missing clock-out, both when
+  // neither punch went in, neither when only the location was missing
+  qspFixedIn   String?
   qspFixedTo   String?
   qspFixedBy   String?
 

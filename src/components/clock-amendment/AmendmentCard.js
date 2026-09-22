@@ -77,7 +77,6 @@ export function AmendmentFigures({ a, className = "mt-5" }) {
               no location {row.gpsIn === "no" && row.gpsOut === "no" ? "at either punch" : row.gpsIn === "no" ? "at the clock-in" : "at the clock-out"}
             </dd>
           )}
-          {row.reason && <dd className="mt-1 text-[11px] text-muted">Reason on the export: {row.reason}</dd>}
         </div>
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">DSN submitted at</dt>
@@ -98,6 +97,14 @@ export function AmendmentFigures({ a, className = "mt-5" }) {
           )}
         </div>
       </dl>
+
+      {/* what was typed into the clock at the time, on its own line: it is
+          evidence in the person's own words and it runs long */}
+      {row.reason && (
+        <p className="mb-4 border-l-2 border-border-strong pl-3 text-xs leading-snug text-muted">
+          Typed into the clock: &ldquo;{row.reason}&rdquo;
+        </p>
+      )}
 
       <dl className="border-t border-border pt-4">
         <div>

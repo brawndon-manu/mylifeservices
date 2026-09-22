@@ -105,6 +105,17 @@ export function issueOf(a) {
 export const asksStart = (a) => ["noIn", "none", "lateIn", "noGps"].includes(issueOf(a));
 export const asksEnd = (a) => ["noOut", "none", "noGps"].includes(issueOf(a));
 
+// WHICH PUNCHES THE OFFICE CORRECTS IN THE CLOCK SYSTEM once it approves: the
+// one the case is about. a punch that only lacked a location stands as it is.
+export function qspFixNeeded(a) {
+  switch (issueOf(a)) {
+    case "none": return { in: true, out: true };
+    case "noIn": case "lateIn": return { in: true, out: false };
+    case "noOut": return { in: false, out: true };
+    default: return { in: false, out: false };
+  }
+}
+
 // what the time boxes start at. a missing or late punch starts from the note,
 // then the schedule, never the clock; a punch with no location is a real
 // punch, and the clock is what they are being asked to confirm

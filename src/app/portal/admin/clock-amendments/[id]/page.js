@@ -7,7 +7,7 @@ import { loadAmendment, shownName } from "@/lib/clock-amendment/document";
 import { COMPANY_TZ } from "@/lib/company-time";
 import {
   formNumber, missingPunchText, confirmedOf, correctionsOf, approvalFlags, canApprove,
-  clientStage, signerLabel, firstLast,
+  clientStage, signerLabel, firstLast, qspFixNeeded,
 } from "@/lib/clock-amendment/rules";
 import ApproveForm from "./ApproveForm";
 import { approveAmendment, chaseAmendment, deleteRehearsal } from "./actions";
@@ -143,7 +143,9 @@ export default async function ClockAmendmentPage({ params }) {
           <p className="mt-1 text-[13px] leading-relaxed text-emerald-900 dark:text-emerald-100">
             By {shownName(a.approvedBy)} on {when(a.approvedAt)}.
             {a.approvalNote ? ` ${a.approvalNote}` : ""}
-            {a.qspFixedTo || a.qspFixedAt ? ` Clock record corrected in QSClock${a.qspFixedTo ? ` to ${a.qspFixedTo}` : ""}${a.qspFixedAt ? ` on ${when(a.qspFixedAt).slice(0, 8)}` : ""}.` : ""}
+            {a.qspFixedIn || a.qspFixedTo || a.qspFixedAt
+              ? ` Clock record corrected in QSClock${a.qspFixedIn ? `, in to ${a.qspFixedIn}` : ""}${a.qspFixedTo ? `, out to ${a.qspFixedTo}` : ""}${a.qspFixedAt ? `, on ${when(a.qspFixedAt).slice(0, 8)}` : ""}.`
+              : " The punches stand as recorded."}
             {a.mailedAt ? ` Emailed on ${when(a.mailedAt)}.` : " The email did not go."}
           </p>
           <a href={a.pdfUrl || `/portal/admin/clock-amendments/${a.id}/pdf`} target="_blank" rel="noopener" className="mt-3 inline-block text-[13px] font-semibold text-brand underline underline-offset-4">
@@ -158,7 +160,9 @@ export default async function ClockAmendmentPage({ params }) {
           id={a.id}
           ready={canApprove(a)}
           flagged={flags.length > 0}
-          defaultTo={confirmed.actualOut}
+          fix={qspFixNeeded(a)}
+          defaultIn={confirmed.actualIn || a.clockedIn || ""}
+          defaultTo={confirmed.actualOut || a.clockedOut || ""}
           unsigned={!a.filledAt && !a.approvedAt}
           neverSent={!a.sentAt}
           testOnly={a.testOnly}

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { hasBlobStorage, putBlob, delBlob } from "@/lib/blob";
-import { canApprove, approvalFlags, formNumber, missingPunchText, firstLast, confirmedOf } from "@/lib/clock-amendment/rules";
+import { canApprove, approvalFlags, formNumber, missingPunchText, firstLast, confirmedOf, qspFixNeeded } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
 import { loadAmendment, withNames, shownName, buildAmendmentDocument } from "@/lib/clock-amendment/document";
 import { officeRecipients } from "@/lib/clock-amendment/recipients";
@@ -35,17 +35,23 @@ export async function approveAmendment(id, formData) {
 
   const approvalNote = str(formData.get("approvalNote"), 1000);
   if (approvalFlags(a).length && !approvalNote) return { ok: false, error: "note" };
-  // read the way the form reads it, against the time they signed for
-  const qspTyped = str(formData.get("qspFixedTo"), 12);
-  const qspFixedTo = qspTyped ? tidyTime(qspTyped, anchorOf(confirmedOf(a).actualOut) ?? anchorOf(a.scheduledOut)) : null;
-  if (qspFixedTo && !isTime(qspFixedTo)) return { ok: false, error: "qsptime" };
-  const fixedDay = str(formData.get("qspFixedAt"), 10);
+  // the corrections the case calls for, read the way the boxes read them,
+  // against the times they signed for. a punch the case is not about is
+  // never recorded as corrected, whatever the form posted.
+  const need = qspFixNeeded(a);
+  const confirmed = confirmedOf(a);
+  const typedIn = need.in ? str(formData.get("qspFixedIn"), 12) : null;
+  const typedTo = need.out ? str(formData.get("qspFixedTo"), 12) : null;
+  const qspFixedIn = typedIn ? tidyTime(typedIn, anchorOf(confirmed.actualIn) ?? anchorOf(a.scheduledIn)) : null;
+  const qspFixedTo = typedTo ? tidyTime(typedTo, anchorOf(confirmed.actualOut) ?? anchorOf(a.scheduledOut)) : null;
+  if ((qspFixedIn && !isTime(qspFixedIn)) || (qspFixedTo && !isTime(qspFixedTo))) return { ok: false, error: "qsptime" };
+  const fixedDay = need.in || need.out ? str(formData.get("qspFixedAt"), 10) : null;
   // a date box gives yyyy-mm-dd; noon so the day survives any timezone
   const qspFixedAt = fixedDay && /^\d{4}-\d{2}-\d{2}$/.test(fixedDay) ? new Date(`${fixedDay}T12:00:00`) : null;
-  const qspFixedBy = qspFixedTo || qspFixedAt ? shownName(user) : null;
+  const qspFixedBy = qspFixedIn || qspFixedTo || qspFixedAt ? shownName(user) : null;
   const now = new Date();
 
-  const view = withNames(a, { approvedAt: now, approvedByName: shownName(user), approvalNote, qspFixedTo, qspFixedAt, qspFixedBy });
+  const view = withNames(a, { approvedAt: now, approvedByName: shownName(user), approvalNote, qspFixedIn, qspFixedTo, qspFixedAt, qspFixedBy });
   let doc;
   try {
     doc = await buildAmendmentDocument(view);
@@ -69,7 +75,7 @@ export async function approveAmendment(id, formData) {
 
   await prisma.clockAmendment.update({
     where: { id: a.id },
-    data: { approvedAt: now, approvedById: user.id, approvalNote, qspFixedTo, qspFixedAt, qspFixedBy, pdfUrl, pdfHash: doc.hash },
+    data: { approvedAt: now, approvedById: user.id, approvalNote, qspFixedIn, qspFixedTo, qspFixedAt, qspFixedBy, pdfUrl, pdfHash: doc.hash },
   });
 
   const sent = await sendAmendmentDocument({

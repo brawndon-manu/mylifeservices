@@ -15,7 +15,7 @@ process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-only-secret";
 import {
   intakeOf, confirmedOf, correctionsOf, claimGap, scheduleGap, startGap, approvalFlags,
   formNumber, canApprove, clientStage, stageLine, missingPunchText, firstLast,
-  punchIssue, issueOf, asksStart, asksEnd, startingTimes, LATE_MIN,
+  punchIssue, issueOf, asksStart, asksEnd, startingTimes, qspFixNeeded, LATE_MIN,
 } from "../clock-amendment/rules.js";
 import { signAmendmentToken, verifyAmendmentToken } from "../clock-amendment/token.js";
 import { amendmentFormSubject, amendmentDocumentSubject } from "../clock-amendment/subjects.js";
@@ -169,6 +169,19 @@ test("the form asks for the start when it is missing or late, and the end only w
   assert.equal(asksEnd(neither), true);
   // a stored row with no clock row falls back to its two punch columns
   assert.equal(issueOf({ clockedIn: "9:00 AM", clockedOut: null }), "noOut");
+});
+
+test("the approval asks for the correction the case is about, and nothing else", () => {
+  const row = (extra) => ({ clockedIn: "9:00 AM", clockedOut: "12:00 PM", clockRow: { noIn: false, noOut: false, startDelta: 0, gpsIn: "yes", gpsOut: "yes", ...extra } });
+  // a late or missing clock-in is corrected at the clock-in
+  assert.deepEqual(qspFixNeeded(row({ startDelta: 40 })), { in: true, out: false });
+  assert.deepEqual(qspFixNeeded({ clockedIn: null, clockedOut: "12:00 PM", clockRow: { noIn: true, noOut: false } }), { in: true, out: false });
+  // a missing clock-out at the clock-out
+  assert.deepEqual(qspFixNeeded(base), { in: false, out: true });
+  // neither punch, both
+  assert.deepEqual(qspFixNeeded({ clockRow: { noIn: true, noOut: true } }), { in: true, out: true });
+  // a missing location corrects nothing: the punches stand
+  assert.deepEqual(qspFixNeeded(row({ gpsIn: "no" })), { in: false, out: false });
 });
 
 test("a late clock-in amended to before the booking is flagged, and the lateness itself is said", () => {

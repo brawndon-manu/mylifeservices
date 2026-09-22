@@ -6,14 +6,18 @@ import { tidyTime, anchorOf } from "@/lib/clock-amendment/typed-time";
 
 // THE OFFICE'S THREE BUTTONS: approve and send, remind, and (on a rehearsal
 // only) delete. Approval asks for a word when the claim was flagged, and for
-// the fix made in QSClock, because backing that fix up is what the form is for.
+// the correction made in the clock system, because backing that correction
+// up is what the form is for. Which correction depends on the case: the
+// clock-in for a late or missing clock-in, the clock-out for a missing
+// clock-out, both when neither punch went in, and none when only the location
+// was missing.
 const ERRORS = {
   auth: "You do not have access to do that.",
   notfound: "This amendment is gone.",
   approved: "Already approved.",
   notready: "Not ready: it needs the staff signature and the client half signed or explained.",
   note: "Say why you are accepting it despite the flags.",
-  qsptime: "The corrected clock-out time could not be read.",
+  qsptime: "A corrected time could not be read.",
   document: "The document could not be built.",
   signed: "They have already signed, so there is nothing to remind them of.",
   who: "There is nobody to send it to.",
@@ -32,11 +36,15 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export default function ApproveForm({ id, ready, flagged, defaultTo, unsigned, neverSent = false, testOnly, approve, chase, remove }) {
+export default function ApproveForm({
+  id, ready, flagged, fix = { in: false, out: false }, defaultIn = "", defaultTo = "",
+  unsigned, neverSent = false, testOnly, approve, chase, remove,
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [note, setNote] = useState("");
+  const [qspIn, setQspIn] = useState(defaultIn || "");
   const [qspTo, setQspTo] = useState(defaultTo || "");
   const [qspOn, setQspOn] = useState(today());
   const [result, setResult] = useState(null);
@@ -48,6 +56,8 @@ export default function ApproveForm({ id, ready, flagged, defaultTo, unsigned, n
       if (res?.ok) { setErr(null); after?.(res); router.refresh(); }
       else setErr(ERRORS[res?.error] || ERRORS.failed);
     });
+
+  const anyFix = fix.in || fix.out;
 
   return (
     <div className="space-y-4">
@@ -64,22 +74,41 @@ export default function ApproveForm({ id, ready, flagged, defaultTo, unsigned, n
           <p className="mt-0.5 text-[12px] leading-relaxed text-muted">
             Your name goes on the document, it is kept on the record, and a copy is emailed to the office and to the staff member.
           </p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={lbl} htmlFor="qspFixedTo">Clock-out corrected in QSClock to</label>
-              <input
-                id="qspFixedTo" name="qspFixedTo" value={qspTo}
-                onChange={(e) => setQspTo(e.target.value)}
-                // "7" reads as the time they signed for would have it
-                onBlur={(e) => setQspTo(tidyTime(e.target.value, anchorOf(defaultTo)))}
-                placeholder="6:30 PM" className={`mt-1.5 ${field} tabular-nums`}
-              />
+          {anyFix ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              {fix.in && (
+                <div>
+                  <label className={lbl} htmlFor="qspFixedIn">Clock-in corrected in QSClock to</label>
+                  <input
+                    id="qspFixedIn" name="qspFixedIn" value={qspIn}
+                    onChange={(e) => setQspIn(e.target.value)}
+                    // "7" reads as the time they signed for would have it
+                    onBlur={(e) => setQspIn(tidyTime(e.target.value, anchorOf(defaultIn)))}
+                    placeholder={defaultIn || "9:00 AM"} className={`mt-1.5 ${field} tabular-nums`}
+                  />
+                </div>
+              )}
+              {fix.out && (
+                <div>
+                  <label className={lbl} htmlFor="qspFixedTo">Clock-out corrected in QSClock to</label>
+                  <input
+                    id="qspFixedTo" name="qspFixedTo" value={qspTo}
+                    onChange={(e) => setQspTo(e.target.value)}
+                    onBlur={(e) => setQspTo(tidyTime(e.target.value, anchorOf(defaultTo)))}
+                    placeholder={defaultTo || "1:00 PM"} className={`mt-1.5 ${field} tabular-nums`}
+                  />
+                </div>
+              )}
+              <div>
+                <label className={lbl} htmlFor="qspFixedAt">On</label>
+                <input id="qspFixedAt" name="qspFixedAt" type="date" value={qspOn} onChange={(e) => setQspOn(e.target.value)} className={`mt-1.5 ${field} tabular-nums`} />
+              </div>
             </div>
-            <div>
-              <label className={lbl} htmlFor="qspFixedAt">On</label>
-              <input id="qspFixedAt" name="qspFixedAt" type="date" value={qspOn} onChange={(e) => setQspOn(e.target.value)} className={`mt-1.5 ${field} tabular-nums`} />
-            </div>
-          </div>
+          ) : (
+            <p className="mt-4 rounded-[9px] border border-border bg-surface-2 px-3 py-2 text-[12.5px] text-muted">
+              The punches stand as recorded. Nothing to correct in QSClock; this record supplies the location.
+            </p>
+          )}
           <div className="mt-4">
             <label className={lbl} htmlFor="approvalNote">
               {flagged ? "Why you are accepting it despite the flags" : "A note for the record (optional)"}

@@ -201,8 +201,13 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
     row("Approved by", a.approvedByName || "");
     row("Approved on", fmtStamp(a.approvedAt));
     if (a.approvalNote) row("Note", a.approvalNote);
-    if (a.qspFixedTo || a.qspFixedAt) {
-      row("Clock record corrected", `in QSClock${a.qspFixedTo ? ` to ${a.qspFixedTo}` : ""}${a.qspFixedAt ? ` on ${fmtStamp(a.qspFixedAt)}` : ""}${a.qspFixedBy ? ` by ${a.qspFixedBy}` : ""}`);
+    if (a.qspFixedIn || a.qspFixedTo || a.qspFixedAt) {
+      const parts = [];
+      if (a.qspFixedIn) parts.push(`clock-in to ${a.qspFixedIn}`);
+      if (a.qspFixedTo) parts.push(`clock-out to ${a.qspFixedTo}`);
+      row("Clock record corrected", `in QSClock${parts.length ? `: ${parts.join(", ")}` : ""}${a.qspFixedAt ? `, on ${fmtStamp(a.qspFixedAt)}` : ""}${a.qspFixedBy ? `, by ${a.qspFixedBy}` : ""}`);
+    } else {
+      row("Clock record", "The punches stand as recorded; this record supplies what the clock could not.");
     }
   } else {
     row("Status", "Not yet approved", { color: RED });
