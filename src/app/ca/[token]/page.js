@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
-import { missingPunchText, intakeOf, confirmedOf, suggestedTimes, clientStage, formNumber, firstLast } from "@/lib/clock-amendment/rules";
+import { missingPunchText, intakeOf, confirmedOf, startingTimes, clientStage, formNumber, firstLast, asksStart, asksEnd, issueOf } from "@/lib/clock-amendment/rules";
 import AmendmentCard from "@/components/clock-amendment/AmendmentCard";
 import AmendmentSign from "./AmendmentSign";
 import { confirmAndSign, clientSign } from "./actions";
@@ -32,7 +32,7 @@ export default async function AmendmentFromLinkPage({ params }) {
   const recipientName = preferredName(a.recipient) || a.recipient?.name || "";
   const intake = intakeOf(a);
   const confirmed = confirmedOf(a);
-  const suggested = suggestedTimes(a);
+  const suggested = startingTimes(a);
   // the client component gets plain values only
   const view = {
     id: a.id,
@@ -42,6 +42,11 @@ export default async function AmendmentFromLinkPage({ params }) {
     service: a.service,
     clockedIn: a.clockedIn,
     clockedOut: a.clockedOut,
+    // which times the form asks for: the start when it is missing or late,
+    // the end when it is missing
+    asksStart: asksStart(a),
+    asksEnd: asksEnd(a),
+    issue: issueOf(a),
     scheduledIn: a.scheduledIn,
     scheduledOut: a.scheduledOut,
     noteStart: a.note?.start || null,

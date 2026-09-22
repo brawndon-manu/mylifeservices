@@ -13,8 +13,9 @@ import path from "node:path";
 process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-only-secret";
 
 import {
-  intakeOf, confirmedOf, correctionsOf, claimGap, scheduleGap, approvalFlags,
+  intakeOf, confirmedOf, correctionsOf, claimGap, scheduleGap, startGap, approvalFlags,
   formNumber, canApprove, clientStage, stageLine, missingPunchText, firstLast,
+  punchIssue, issueOf, asksStart, asksEnd, startingTimes, LATE_MIN,
 } from "../clock-amendment/rules.js";
 import { signAmendmentToken, verifyAmendmentToken } from "../clock-amendment/token.js";
 import { amendmentFormSubject, amendmentDocumentSubject } from "../clock-amendment/subjects.js";
@@ -117,10 +118,70 @@ test("approval waits for the staff signature and for the client half to be signe
   assert.equal(stageLine({ ...signed, clientSignedAt: new Date() }), "Ready to approve");
 });
 
-test("the headline says which punch is missing", () => {
+test("the headline says which punch is missing, or that the clock-in was late", () => {
   assert.equal(missingPunchText(base), "did not clock out");
   assert.equal(missingPunchText({ clockedIn: null, clockedOut: "6:30 PM" }), "did not clock in");
   assert.equal(missingPunchText({ clockedIn: null, clockedOut: null }), "did not clock in or out");
+  const late = { clockedIn: "9:38 AM", clockedOut: "12:00 PM", clockRow: { noIn: false, noOut: false, startDelta: 38 } };
+  assert.equal(missingPunchText(late), "clocked in late");
+});
+
+test("what is wrong with a shift is measured, never read off the export's own late column", () => {
+  // the 09/21 export set "Late Clock In" on a shift clocked to the minute
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 0, says: { lateIn: true } }), null);
+  // two minutes at the door is not a record that is wrong
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 2 }), null);
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: LATE_MIN }), "lateIn");
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 38 }), "lateIn");
+  // a missing punch outranks lateness, and neither punch is its own case
+  assert.equal(punchIssue({ noIn: false, noOut: true, startDelta: 38 }), "noOut");
+  assert.equal(punchIssue({ noIn: true, noOut: false, startDelta: null }), "noIn");
+  assert.equal(punchIssue({ noIn: true, noOut: true }), "none");
+  assert.equal(punchIssue(null), null);
+  // both punches in, on time, but the phone did not say where from
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 0, gpsIn: "no", gpsOut: "yes" }), "noGps");
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 0, gpsIn: "yes", gpsOut: "no" }), "noGps");
+  // a late clock-in outranks a missing location, and a missing punch outranks both
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 12, gpsIn: "no", gpsOut: "no" }), "lateIn");
+  assert.equal(punchIssue({ noIn: false, noOut: true, gpsIn: "no" }), "noOut");
+  const noPlace = { clockedIn: "9:00 AM", clockedOut: "12:00 PM", clockRow: { noIn: false, noOut: false, startDelta: 0, gpsIn: "no", gpsOut: "no" } };
+  assert.equal(missingPunchText(noPlace), "clocked in and out without a location");
+  assert.equal(missingPunchText({ ...noPlace, clockRow: { ...noPlace.clockRow, gpsOut: "yes" } }), "clocked in without a location");
+  // the times stand, so the form asks for both as clocked and the attestation states them
+  assert.equal(asksStart(noPlace), true);
+  assert.equal(asksEnd(noPlace), true);
+  assert.deepEqual(startingTimes(noPlace), { in: "9:00 AM", out: "12:00 PM", from: "clock" });
+  assert.ok(approvalFlags({ ...base, ...noPlace, intakeActualIn: "9:00 AM", intakeActualOut: "12:00 PM" }).some((f) => f.kind === "noGps" && /at either punch/.test(f.text)));
+});
+
+test("the form asks for the start when it is missing or late, and the end only when it is missing", () => {
+  const late = { clockedIn: "9:38 AM", clockedOut: "12:00 PM", clockRow: { noIn: false, noOut: false, startDelta: 38 } };
+  assert.equal(issueOf(late), "lateIn");
+  assert.equal(asksStart(late), true);
+  assert.equal(asksEnd(late), false);
+  assert.equal(asksStart(base), false);
+  assert.equal(asksEnd(base), true);
+  const neither = { clockedIn: null, clockedOut: null, clockRow: { noIn: true, noOut: true } };
+  assert.equal(asksStart(neither), true);
+  assert.equal(asksEnd(neither), true);
+  // a stored row with no clock row falls back to its two punch columns
+  assert.equal(issueOf({ clockedIn: "9:00 AM", clockedOut: null }), "noOut");
+});
+
+test("a late clock-in amended to before the booking is flagged, and the lateness itself is said", () => {
+  const late = {
+    ...base, clockedIn: "9:38 AM", clockedOut: "12:00 PM", scheduledIn: "9:00 AM", scheduledOut: "12:00 PM",
+    clockRow: { noIn: false, noOut: false, startDelta: 38 }, note: { start: "9:38 AM", end: "12:00 PM", signedAt: "11:57 AM" },
+    intakeActualIn: "9:00 AM", intakeActualOut: null,
+  };
+  assert.equal(startGap(late), 0);
+  const kinds = approvalFlags(late).map((f) => f.kind);
+  assert.ok(kinds.includes("lateIn"));
+  assert.ok(!kinds.includes("beforeSchedule"));
+  // claiming to have started well before the booking began is a finding
+  const early = { ...late, intakeActualIn: "8:30 AM" };
+  assert.equal(startGap(early), 30);
+  assert.ok(approvalFlags(early).some((f) => f.kind === "beforeSchedule" && /30 minutes before the scheduled start of 9:00 AM/.test(f.text)));
 });
 
 test("the clock's Last, First reads First Last everywhere a person sees it", () => {

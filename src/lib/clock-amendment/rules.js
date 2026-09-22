@@ -58,6 +58,57 @@ export function evidenceLevel(amendment) {
 
 export const needsSupervisor = (amendment) => evidenceLevel(amendment) === "none";
 
+// WHAT IS WRONG WITH THE CLOCK RECORD, read off the shift.
+//
+// A punch can be missing at either end, or the clock-in can be LATE: both
+// punches present, the first of them minutes after the scheduled start.
+// Lateness is measured, never read off the export's own "Late Clock In"
+// column - on 09/21 that column was set on a shift clocked to the minute.
+//
+// A clock-in within a few minutes of the schedule is ordinary and is not
+// listed: a form exists for a record that is wrong, not for a person who was
+// two minutes at the door. Five minutes is where the office starts to care.
+export const LATE_MIN = 5;
+
+export function punchIssue(shift) {
+  if (!shift) return null;
+  if (shift.noIn && shift.noOut) return "none";
+  if (shift.noIn) return "noIn";
+  if (shift.noOut) return "noOut";
+  if (shift.startDelta != null && shift.startDelta >= LATE_MIN) return "lateIn";
+  // both punches went in but the phone did not say where from. the times
+  // stand; the place is what the signatures have to carry
+  if (shift.gpsIn === "no" || shift.gpsOut === "no") return "noGps";
+  return null;
+}
+
+// which ends of a shift went in without a location
+export function noGpsEnds(shift) {
+  return { in: shift?.gpsIn === "no", out: shift?.gpsOut === "no" };
+}
+
+// the same question asked of a stored record: the clock row it kept, or the
+// two punch columns when a row somehow has none
+export function issueOf(a) {
+  if (!a) return null;
+  if (a.clockRow) return punchIssue(a.clockRow);
+  return punchIssue({ noIn: !a.clockedIn, noOut: !a.clockedOut, startDelta: null });
+}
+
+// which times the form has to ask for: the start when it is missing or late,
+// the end when it is missing, and both when the place is what is missing, so
+// the attestation can state the times the person is signing for
+export const asksStart = (a) => ["noIn", "none", "lateIn", "noGps"].includes(issueOf(a));
+export const asksEnd = (a) => ["noOut", "none", "noGps"].includes(issueOf(a));
+
+// what the time boxes start at. a missing or late punch starts from the note,
+// then the schedule, never the clock; a punch with no location is a real
+// punch, and the clock is what they are being asked to confirm
+export function startingTimes(a) {
+  if (issueOf(a) === "noGps") return { in: a.clockedIn || null, out: a.clockedOut || null, from: "clock" };
+  return suggestedTimes(a);
+}
+
 // the clock export prints people "Last, First"; a form and an email say
 // "First Last". a booking with several people on it keeps each one in order.
 export function firstLast(name) {
@@ -78,10 +129,17 @@ export function firstLast(name) {
 
 // the headline the form opens with, in plain words
 export function missingPunchText(a) {
-  if (!a) return "did not clock out";
-  if (!a.clockedIn && !a.clockedOut) return "did not clock in or out";
-  if (!a.clockedIn) return "did not clock in";
-  return "did not clock out";
+  switch (issueOf(a)) {
+    case "none": return "did not clock in or out";
+    case "noIn": return "did not clock in";
+    case "lateIn": return "clocked in late";
+    case "noGps": {
+      const ends = noGpsEnds(a?.clockRow);
+      if (ends.in && ends.out) return "clocked in and out without a location";
+      return ends.in ? "clocked in without a location" : "clocked out without a location";
+    }
+    default: return "did not clock out";
+  }
 }
 
 // WHERE ONE IS IN ITS LIFE. One rule, so the inbox, the chase list and the
@@ -213,6 +271,15 @@ export function scheduleGap(a) {
   return out - sched;
 }
 
+// minutes the claimed start runs AHEAD of the scheduled start: a late clock-in
+// amended to before the booking began is claiming time the roster never held
+export function startGap(a) {
+  const start = noteMinute(confirmedOf(a).actualIn);
+  const sched = noteMinute(a?.scheduledIn);
+  if (start == null || sched == null) return null;
+  return sched - start;
+}
+
 // WHAT THE APPROVER IS TOLD BEFORE PRESSING APPROVE. Every one of these RANKS
 // and none concludes: a visit can legitimately run past the schedule, and a
 // note can legitimately be filed before the last ten minutes. The threshold is
@@ -228,6 +295,18 @@ export function approvalFlags(a) {
   const sg = scheduleGap(a);
   if (sg != null && sg > FILED_GAP_MIN) {
     flags.push({ kind: "beyondSchedule", text: `The end time is ${sg} minutes after the scheduled end of ${a.scheduledOut}.` });
+  }
+  const st = startGap(a);
+  if (st != null && st > FILED_GAP_MIN) {
+    flags.push({ kind: "beforeSchedule", text: `The start time is ${st} minutes before the scheduled start of ${a.scheduledIn}.` });
+  }
+  if (issueOf(a) === "lateIn" && a.clockRow?.startDelta != null) {
+    flags.push({ kind: "lateIn", text: `The clock-in was ${a.clockRow.startDelta} minutes after the scheduled start; the punch itself stands, only the start time is being amended.` });
+  }
+  if (issueOf(a) === "noGps") {
+    const ends = noGpsEnds(a.clockRow);
+    const where = ends.in && ends.out ? "at either punch" : ends.in ? "at the clock-in" : "at the clock-out";
+    flags.push({ kind: "noGps", text: `No location was captured ${where}; the times stand and the signatures carry where the visit happened.` });
   }
   const corrections = correctionsOf(a);
   if (corrections.length) {

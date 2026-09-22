@@ -10,7 +10,7 @@
 // amendment itself and who signed for it. The evidence comes before the claim
 // so nobody signs a time before seeing what the records already say about it.
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { SIGNER_KINDS, formNumber, correctionsOf, evidenceLevel } from "./rules.js";
+import { SIGNER_KINDS, formNumber, correctionsOf, evidenceLevel, LATE_MIN } from "./rules.js";
 import { COMPANY_TZ } from "../company-time.js";
 
 const PAGE_W = 612;
@@ -124,8 +124,11 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
   // ---- the clock
   heading("What the clock recorded");
   const level = evidenceLevel(a);
-  row("Clocked in", a.clockedIn ? `${a.clockedIn}${facts.gpsIn === "yes" ? ", location captured" : ""}` : "no punch", { color: a.clockedIn ? INK : RED });
-  row("Clocked out", a.clockedOut ? `${a.clockedOut}${facts.gpsOut === "yes" ? ", location captured" : ""}` : "no punch", { color: a.clockedOut ? INK : RED });
+  const where = (gps) => (gps === "yes" ? ", location captured" : gps === "no" ? ", no location captured" : "");
+  row("Clocked in", a.clockedIn
+    ? `${a.clockedIn}${where(facts.gpsIn)}${facts.lateBy != null ? `, ${facts.lateBy} minutes after the scheduled start` : ""}`
+    : "no punch", { color: a.clockedIn ? INK : RED });
+  row("Clocked out", a.clockedOut ? `${a.clockedOut}${where(facts.gpsOut)}` : "no punch", { color: a.clockedOut ? INK : RED });
   if (facts.qspReason) row("Reason on the export", facts.qspReason);
   if (level === "none") {
     para("Neither punch was recorded. Nothing independent shows the visit, so the signatures below carry it on their own.", { size: 9, color: RED });
@@ -256,5 +259,6 @@ function factsOf(row) {
     gpsIn: row.gpsIn ?? null,
     gpsOut: row.gpsOut ?? null,
     qspReason: row.reason || null,
+    lateBy: row.startDelta != null && row.startDelta >= LATE_MIN ? row.startDelta : null,
   };
 }

@@ -18,6 +18,7 @@ import { sameClient } from "../timesheet/note-audit.js";
 import { scheduleKey } from "../timesheet/schedule.js";
 import { buildWhoKey } from "../timesheet/people.js";
 import { ampmLabel } from "../timesheet/hours-label.js";
+import { punchIssue, LATE_MIN } from "./rules.js";
 
 // the clock export prints "Last, First", the notes print "First Last", and the
 // accounts print the legal name. `buildWhoKey` carries the preferred names and
@@ -46,6 +47,8 @@ export function shiftFacts(s) {
     gpsIn: s.gpsIn,
     gpsOut: s.gpsOut,
     qspReason: s.reason || null,
+    // minutes the clock-in came after the scheduled start, when it did
+    lateBy: s.startDelta != null && s.startDelta >= LATE_MIN ? s.startDelta : null,
   };
 }
 
@@ -68,11 +71,13 @@ export function notePageSpan(notes, note, pageCount) {
   return { from: note.page, to: (next ? next - 1 : pageCount) };
 }
 
-// -> { shifts, notes, pageCount, candidates }
+// -> { shifts, notes, pageCount, candidates, underFloor }
 //
-// candidates: every shift with a missing punch, each with the note the day
-// holds for it (or null), the account the clock name resolves to (or null),
-// and the pages of the upload the note sits on.
+// candidates: every shift with a missing punch or a late clock-in, each with
+// the note the day holds for it (or null), the account the clock name resolves
+// to (or null), and the pages of the upload the note sits on. `underFloor`
+// counts the clock-ins that were late by less than the floor and so are not
+// listed, so the screen can say they were seen.
 export async function readDayFiles({ xlsBytes, pdfBytes, users = [] }) {
   const shifts = clockShifts(xlsBytes);
   const notes = pdfBytes ? await parseServiceNotesPdf(pdfBytes) : [];
@@ -84,12 +89,18 @@ export async function readDayFiles({ xlsBytes, pdfBytes, users = [] }) {
   const taken = new Set();
 
   const candidates = [];
+  let underFloor = 0;
   for (const s of shifts) {
-    if (!s.noIn && !s.noOut) continue;
+    const issue = punchIssue(s);
+    if (!issue) {
+      if (s.startDelta != null && s.startDelta > 0) underFloor++;
+      continue;
+    }
     const sameDay = (byDay.get(`${who(s.name)}|${s.date}`) || []).filter((n) => !taken.has(n));
-    // a named client claims its note first, exactly as the audit does; a
-    // clientless booking may only take what is left
-    const pool = s.client ? sameDay.filter((n) => sameClient(n.client, s.client)) : sameDay;
+    // a note names its client and is only ever offered to that client's
+    // booking. a booking with no client on it (admin, travel) has no note of
+    // its own and takes none, rather than somebody else's visit
+    const pool = s.client ? sameDay.filter((n) => sameClient(n.client, s.client)) : [];
     const anchor = s.actualFrom ?? s.schedFrom ?? 0;
     const note = pool
       .map((n) => ({ n, d: Math.abs((n.startMin ?? 0) - anchor) }))
@@ -98,6 +109,7 @@ export async function readDayFiles({ xlsBytes, pdfBytes, users = [] }) {
     const account = accounts.get(who(s.name)) || null;
     candidates.push({
       key: `${scheduleKey(s.name)}|${s.date}|${s.schedFrom ?? ""}|${s.client || ""}`,
+      issue,
       shift: s,
       facts: shiftFacts(s),
       note,
@@ -107,7 +119,7 @@ export async function readDayFiles({ xlsBytes, pdfBytes, users = [] }) {
         : null,
     });
   }
-  return { shifts, notes, pageCount, candidates };
+  return { shifts, notes, pageCount, candidates, underFloor };
 }
 
 // the note's own pages, cut out of the upload as a pdf of their own, so the

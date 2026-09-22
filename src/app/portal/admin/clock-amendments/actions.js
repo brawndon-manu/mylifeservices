@@ -7,7 +7,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { preferredName } from "@/lib/contacts";
 import { readDayFiles, cutPages } from "@/lib/clock-amendment/files";
-import { missingPunchText, firstLast } from "@/lib/clock-amendment/rules";
+import { missingPunchText, firstLast, asksStart, asksEnd } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
 import { signAmendmentToken } from "@/lib/clock-amendment/token";
 import { sendAmendmentForm } from "@/lib/clock-amendment/email";
@@ -86,6 +86,7 @@ export async function readDayFilesAction(formData) {
       shifts: read.shifts.length,
       notes: read.notes.length,
       pageCount: read.pageCount,
+      underFloor: read.underFloor,
       clockName: clock?.name || null,
       notesName: notes?.name || null,
       candidates: read.candidates.map((c) => ({ ...c, account: c.account ? { ...c.account, label: shown(c.account) } : null })),
@@ -142,10 +143,11 @@ export async function raiseAmendments(formData) {
     const f = c.facts;
     const intakeActualIn = str(p.actualIn, 12) ? tidyTime(str(p.actualIn, 12), anchorOf(f.scheduledIn)) : null;
     const intakeActualOut = str(p.actualOut, 12) ? tidyTime(str(p.actualOut, 12), anchorOf(f.scheduledOut)) : null;
-    // the missing side has to be said; a form that asks somebody to sign for a
-    // blank is a form that asks them to make a time up on the spot
-    if (c.shift.noOut && !intakeActualOut) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
-    if (c.shift.noIn && !intakeActualIn) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
+    // the side in question has to be said; a form that asks somebody to sign
+    // for a blank is a form that asks them to make a time up on the spot
+    const asRecord = { clockRow: c.shift };
+    if (asksEnd(asRecord) && !intakeActualOut) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
+    if (asksStart(asRecord) && !intakeActualIn) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
     if ((intakeActualIn && !isTime(intakeActualIn)) || (intakeActualOut && !isTime(intakeActualOut))) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
 
     const recipientId = str(p.recipientId, 40) || c.account.id;
@@ -198,7 +200,7 @@ export async function raiseAmendments(formData) {
       service: f.service || "",
       date: f.date,
       scheduled: f.scheduledIn && f.scheduledOut ? `${f.scheduledIn} to ${f.scheduledOut}` : null,
-      missing: `The clock shows they ${missingPunchText({ clockedIn: f.clockedIn, clockedOut: f.clockedOut })}.`,
+      missing: `The clock shows they ${missingPunchText({ clockRow: c.shift })}.`,
       officeNote: str(p.officeNote, 1000),
       formUrl: url,
     });

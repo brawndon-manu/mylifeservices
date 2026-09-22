@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
-import { amendmentStage, STAGE_LABELS, stageLine, evidenceLevel, hasServiceNote, firstLast } from "@/lib/clock-amendment/rules";
+import { amendmentStage, STAGE_LABELS, stageLine, missingPunchText, hasServiceNote, firstLast } from "@/lib/clock-amendment/rules";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock amendments", robots: { index: false, follow: false } };
@@ -36,7 +36,7 @@ export default async function ClockAmendmentsPage() {
       scheduledIn: true, scheduledOut: true, clockedIn: true, clockedOut: true,
       dsnStart: true, dsnEnd: true,
       sentAt: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
-      testOnly: true, chaseCount: true,
+      testOnly: true, chaseCount: true, clockRow: true,
       createdAt: true,
       staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -110,20 +110,10 @@ export default async function ClockAmendmentsPage() {
                         <span className="flex-none font-mono text-[11.5px] text-muted">
                           {r.shiftDate}
                         </span>
-                        {/* WHAT THE CLOCK ALREADY PROVES, said on the row. A shift
-                            with a punch only needs its departure established; one
-                            with neither has the signatures carrying the whole
-                            visit, and that is worth seeing before opening it. */}
-                        <span className="flex-none">
-                          {evidenceLevel(r) === "none" ? (
-                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                              no punch
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                              clocked in
-                            </span>
-                          )}
+                        {/* WHAT IS WRONG WITH THE CLOCK RECORD, said on the row, so
+                            the pile can be read without opening anything */}
+                        <span className="flex-none rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                          {missingPunchText(r)}
                         </span>
                         {/* and whether their own service note already answers it */}
                         {hasServiceNote(r) && (

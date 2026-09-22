@@ -49,8 +49,8 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
 
   // step one
   const [reasonText, setReasonText] = useState(confirmed.reasonText || "");
-  const [actualIn, setActualIn] = useState(confirmed.actualIn || (view.clockedIn ? "" : suggested.in || ""));
-  const [actualOut, setActualOut] = useState(confirmed.actualOut || (view.clockedOut ? "" : suggested.out || ""));
+  const [actualIn, setActualIn] = useState(confirmed.actualIn || (view.asksStart ? suggested.in || "" : ""));
+  const [actualOut, setActualOut] = useState(confirmed.actualOut || (view.asksEnd ? suggested.out || "" : ""));
   const [attested, setAttested] = useState(false);
   const [padFor, setPadFor] = useState(null);
 
@@ -124,7 +124,7 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
           )}
         </div>
 
-        {!view.clockedIn && (
+        {view.asksStart && (
           <div className="mt-5">
             <label className="block text-[15px] font-semibold text-foreground" htmlFor="in">What time did the service start?</label>
             <input
@@ -133,9 +133,23 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
               onBlur={(e) => setActualIn(tidyTime(e.target.value, inAnchor))}
               placeholder="9:00 AM" className={`mt-2 ${field} max-w-[160px] font-medium tabular-nums`}
             />
+            {view.clockedIn && view.issue !== "noGps" && (
+              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+                The clock has you in at <b className="font-semibold text-foreground">{view.clockedIn}</b>
+                {view.noteStart ? <>, and your note says <b className="font-semibold text-foreground">{view.noteStart}</b></> : null}.
+              </p>
+            )}
+            {view.issue === "noGps" && (
+              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+                As clocked. The punch went in without a location, so this form is your word that the visit happened where the booking says.
+              </p>
+            )}
+            {changed("actualIn", actualIn) && intake.actualIn && (
+              <p className="mt-1 text-[11.5px] text-amber-700 dark:text-amber-300">The office had {intake.actualIn}.</p>
+            )}
           </div>
         )}
-        {!view.clockedOut && (
+        {view.asksEnd && (
           <div className="mt-5">
             <label className="block text-[15px] font-semibold text-foreground" htmlFor="out">What time did the service end?</label>
             <input
@@ -144,11 +158,14 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
               onBlur={(e) => setActualOut(tidyTime(e.target.value, outAnchor))}
               placeholder="1:00 PM" className={`mt-2 ${field} max-w-[160px] font-medium tabular-nums`}
             />
-            {view.noteStart && view.noteEnd && (
+            {view.noteStart && view.noteEnd && view.issue !== "noGps" && (
               <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
                 Your note for this visit says <b className="font-semibold text-foreground">{view.noteStart} to {view.noteEnd}</b>
                 {view.noteFiled ? <>, and you signed it at <b className="font-semibold text-foreground">{view.noteFiled}</b></> : null}. Change the time if the visit ended before that.
               </p>
+            )}
+            {view.issue === "noGps" && (
+              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">As clocked. Change it only if the clock is wrong.</p>
             )}
             {changed("actualOut", actualOut) && intake.actualOut && (
               <p className="mt-1 text-[11.5px] text-amber-700 dark:text-amber-300">The office had {intake.actualOut}.</p>
@@ -175,7 +192,7 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
             const tout = tidyTime(actualOut, outAnchor);
             setActualIn(tin);
             setActualOut(tout);
-            if ((!view.clockedOut && !tout) || (!view.clockedIn && !tin)) return setErr(ERRORS.times);
+            if ((view.asksEnd && !tout) || (view.asksStart && !tin)) return setErr(ERRORS.times);
             if (!attested) return setErr(ERRORS.attest);
             setErr(null);
             setPadFor("staff");

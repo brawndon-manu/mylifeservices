@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
-import { isSignerKind, signerIsPresent } from "@/lib/clock-amendment/rules";
+import { isSignerKind, signerIsPresent, asksStart, asksEnd } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
 
 // THE TWO SIGNATURES, COLLECTED ON THE PHONE THE LINK WAS OPENED ON.
@@ -48,7 +48,7 @@ async function open(token) {
     where: { id },
     select: {
       id: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
-      clockedIn: true, clockedOut: true, scheduledIn: true, scheduledOut: true,
+      clockedIn: true, clockedOut: true, scheduledIn: true, scheduledOut: true, clockRow: true,
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
     },
   });
@@ -72,8 +72,8 @@ export async function confirmAndSign(token, payload) {
   // clicking off is what gets signed
   const actualIn = str(payload?.actualIn, 12) ? tidyTime(str(payload?.actualIn, 12), anchorOf(a.scheduledIn)) : null;
   const actualOut = str(payload?.actualOut, 12) ? tidyTime(str(payload?.actualOut, 12), anchorOf(a.scheduledOut)) : null;
-  if (!a.clockedOut && !actualOut) return { ok: false, error: "times" };
-  if (!a.clockedIn && !actualIn) return { ok: false, error: "times" };
+  if (asksEnd(a) && !actualOut) return { ok: false, error: "times" };
+  if (asksStart(a) && !actualIn) return { ok: false, error: "times" };
   if ((actualIn && !isTime(actualIn)) || (actualOut && !isTime(actualOut))) return { ok: false, error: "times" };
   const signedName = str(payload?.signedName, 120);
   if (!signedName) return { ok: false, error: "name" };

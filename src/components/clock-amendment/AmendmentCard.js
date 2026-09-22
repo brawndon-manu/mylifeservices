@@ -1,4 +1,4 @@
-import { firstLast, stageLine, amendmentStage } from "@/lib/clock-amendment/rules";
+import { firstLast, stageLine, amendmentStage, LATE_MIN } from "@/lib/clock-amendment/rules";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP, the way the Audit card lines them
 // up: what was scheduled, what the clock caught, when the person who was there
@@ -69,6 +69,14 @@ export function AmendmentFigures({ a, className = "mt-5" }) {
           <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Clock</dt>
           <Punch end="in" time={a.clockedIn} gps={row.gpsIn} />
           <Punch end="out" time={a.clockedOut} gps={row.gpsOut} />
+          {a.clockedIn && row.startDelta != null && row.startDelta >= LATE_MIN && (
+            <dd className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">in {row.startDelta} min after the scheduled start</dd>
+          )}
+          {(row.gpsIn === "no" || row.gpsOut === "no") && (
+            <dd className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              no location {row.gpsIn === "no" && row.gpsOut === "no" ? "at either punch" : row.gpsIn === "no" ? "at the clock-in" : "at the clock-out"}
+            </dd>
+          )}
           {row.reason && <dd className="mt-1 text-[11px] text-muted">Reason on the export: {row.reason}</dd>}
         </div>
         <div>

@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import PersonPicker from "./PersonPicker";
 import { AmendmentFigures } from "@/components/clock-amendment/AmendmentCard";
-import { suggestedTimes, missingPunchText, firstLast } from "@/lib/clock-amendment/rules";
+import { startingTimes, missingPunchText, firstLast, asksStart, asksEnd } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf } from "@/lib/clock-amendment/typed-time";
 
 // RAISING ONE FROM THE DAY'S TWO FILES.
@@ -125,16 +125,17 @@ export default function RaiseFromFiles({ read, raise, search }) {
       setFound(res);
       const init = {};
       for (const c of res.candidates) {
-        // what the times start at: their own note, then the schedule. never
-        // the clock, which is the thing that is wrong
-        const s = suggestedTimes({
-          dsnStart: c.note?.start, dsnEnd: c.note?.end,
-          scheduledIn: c.facts.scheduledIn, scheduledOut: c.facts.scheduledOut,
-        });
+        // what the times start at: their own note, then the schedule, for a
+        // punch that is missing or late; the clock itself for a punch that
+        // only lacks a location
+        const asRecord = recordOf(c);
+        const s = startingTimes({ ...asRecord, dsnStart: c.note?.start, dsnEnd: c.note?.end });
+        const asksIn = asksStart(asRecord);
+        const asksOut = asksEnd(asRecord);
         init[c.key] = {
           reasonText: "",
-          actualIn: c.shift.noIn ? (s.in || "") : "",
-          actualOut: c.shift.noOut ? (s.out || "") : "",
+          actualIn: asksIn ? (s.in || "") : "",
+          actualOut: asksOut ? (s.out || "") : "",
           recipientId: c.account?.id || "",
         };
       }
@@ -199,7 +200,8 @@ export default function RaiseFromFiles({ read, raise, search }) {
           {found && (
             <p className="mr-auto text-[12px] text-muted">
               {found.shifts} {found.shifts === 1 ? "shift" : "shifts"} on the export, {found.notes} {found.notes === 1 ? "note" : "notes"}.{" "}
-              <b className="text-foreground">{found.candidates.length} with a missing punch.</b>
+              <b className="text-foreground">{found.candidates.length} with a missing punch, a late clock-in or no location.</b>
+              {found.underFloor > 0 && ` ${found.underFloor} clocked in under five minutes late and ${found.underFloor === 1 ? "is" : "are"} not listed.`}
             </p>
           )}
           <button
@@ -228,8 +230,8 @@ export default function RaiseFromFiles({ read, raise, search }) {
 
       {found && found.candidates.length > 1 && (
         <p className="text-[12.5px] leading-relaxed text-muted">
-          {found.candidates.length} shifts on this day have a missing punch. Fill in the one somebody rang about; a form
-          goes out for each one filled in, and the rest are left alone.
+          {found.candidates.length} shifts on this day have a missing punch, a late clock-in or no location. Fill in the
+          one somebody rang about; a form goes out for each one filled in, and the rest are left alone.
         </p>
       )}
 
@@ -239,6 +241,8 @@ export default function RaiseFromFiles({ read, raise, search }) {
         const inAnchor = anchorOf(c.facts.scheduledIn);
         const outAnchor = anchorOf(c.facts.scheduledOut);
         const filled = !!p.reasonText?.trim();
+        const asksIn = asksStart(recordOf(c));
+        const asksOut = asksEnd(recordOf(c));
         return (
           <article key={c.key} className={`rounded-xl border bg-surface p-5 sm:p-6 ${filled ? "border-brand" : "border-border"}`}>
             <div className="flex items-start justify-between gap-3">
@@ -267,13 +271,13 @@ export default function RaiseFromFiles({ read, raise, search }) {
                   <textarea
                     id={`words-${c.key}`} rows={3} value={p.reasonText || ""}
                     onChange={(e) => set(c.key, { reasonText: e.target.value })}
-                    placeholder={`Why they ${missingPunchText({ clockedIn: c.facts.clockedIn, clockedOut: c.facts.clockedOut })}, in their words.`}
+                    placeholder={`Why they ${missingPunchText({ clockRow: c.shift })}, in their words.`}
                     className="mt-1.5 min-h-[84px] w-full rounded-[9px] border border-border-strong bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-brand"
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid grid-cols-2 gap-4">
-                    {c.shift.noIn && (
+                    {asksIn && (
                       <div>
                         <label className={lbl} htmlFor={`in-${c.key}`}>Service started</label>
                         <input
@@ -284,7 +288,7 @@ export default function RaiseFromFiles({ read, raise, search }) {
                         />
                       </div>
                     )}
-                    {c.shift.noOut && (
+                    {asksOut && (
                       <div>
                         <label className={lbl} htmlFor={`out-${c.key}`}>Service ended</label>
                         <input
