@@ -7,7 +7,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { preferredName } from "@/lib/contacts";
 import { readDayFiles, cutPages } from "@/lib/clock-amendment/files";
-import { missingPunchText, firstLast, asksStart, asksEnd } from "@/lib/clock-amendment/rules";
+import { missingPunchText, firstLast, asksStart, asksEnd, asksPlace } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
 import { signAmendmentToken } from "@/lib/clock-amendment/token";
 import { sendAmendmentForm } from "@/lib/clock-amendment/email";
@@ -149,6 +149,12 @@ export async function raiseAmendments(formData) {
     if (asksEnd(asRecord) && !intakeActualOut) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
     if (asksStart(asRecord) && !intakeActualIn) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
     if ((intakeActualIn && !isTime(intakeActualIn)) || (intakeActualOut && !isTime(intakeActualOut))) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
+    // where they said they were at a punch the clock holds no location for.
+    // optional at intake - the office may not have asked - and required of
+    // them on the form, which is where it counts
+    const place = asksPlace(asRecord);
+    const intakePlaceIn = place.in ? str(p.placeIn, 300) : null;
+    const intakePlaceOut = place.out ? str(p.placeOut, 300) : null;
 
     const recipientId = str(p.recipientId, 40) || c.account.id;
     const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: ROSTER_SELECT });
@@ -168,7 +174,7 @@ export async function raiseAmendments(formData) {
         dsnStart: n?.start || null, dsnEnd: n?.end || null, dsnSummary: n?.summary || null,
         clockRow: c.shift, note: n || undefined,
         clockName: clock?.name || null, notesName: notes?.name || null,
-        intakeReasonText, intakeActualIn, intakeActualOut,
+        intakeReasonText, intakeActualIn, intakeActualOut, intakePlaceIn, intakePlaceOut,
         testOnly,
         createdById: user.id,
       },

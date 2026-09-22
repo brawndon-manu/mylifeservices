@@ -15,7 +15,7 @@ process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-only-secret";
 import {
   intakeOf, confirmedOf, correctionsOf, claimGap, scheduleGap, startGap, approvalFlags,
   formNumber, canApprove, clientStage, stageLine, missingPunchText, firstLast,
-  punchIssue, issueOf, asksStart, asksEnd, startingTimes, qspFixNeeded, LATE_MIN,
+  punchIssue, issueOf, asksStart, asksEnd, startingTimes, qspFixNeeded, asksPlace, LATE_MIN,
 } from "../clock-amendment/rules.js";
 import { signAmendmentToken, verifyAmendmentToken } from "../clock-amendment/token.js";
 import { amendmentFormSubject, amendmentDocumentSubject } from "../clock-amendment/subjects.js";
@@ -182,6 +182,22 @@ test("the approval asks for the correction the case is about, and nothing else",
   assert.deepEqual(qspFixNeeded({ clockRow: { noIn: true, noOut: true } }), { in: true, out: true });
   // a missing location corrects nothing: the punches stand
   assert.deepEqual(qspFixNeeded(row({ gpsIn: "no" })), { in: false, out: false });
+});
+
+test("the form asks where they were at any punch the clock holds no location for", () => {
+  const row = (extra) => ({ clockedIn: "9:00 AM", clockedOut: "12:00 PM", clockRow: { noIn: false, noOut: false, startDelta: 0, gpsIn: "yes", gpsOut: "yes", ...extra } });
+  // both punches located: nothing asked
+  assert.deepEqual(asksPlace(row({})), { in: false, out: false });
+  // a punch that went in without a location
+  assert.deepEqual(asksPlace(row({ gpsIn: "no" })), { in: true, out: false });
+  assert.deepEqual(asksPlace(row({ gpsIn: "no", gpsOut: "no" })), { in: true, out: true });
+  // a punch that never went in has no location either
+  assert.deepEqual(asksPlace({ clockedIn: "9:00 AM", clockedOut: null, clockRow: { noIn: false, noOut: true, gpsIn: "yes", gpsOut: null } }), { in: false, out: true });
+  assert.deepEqual(asksPlace({ clockedIn: null, clockedOut: null, clockRow: { noIn: true, noOut: true } }), { in: true, out: true });
+  // and the place is a claim like the times: kept both ways, corrections visible
+  const signed = { ...base, filledAt: new Date(), reasonText: base.intakeReasonText, actualOut: "6:30 PM", intakePlaceOut: "the client's home", placeOut: "in the car outside the client's home" };
+  const c = correctionsOf(signed);
+  assert.deepEqual(c, [{ field: "placeOut", label: "where they were at clock-out", was: "the client's home", now: "in the car outside the client's home" }]);
 });
 
 test("a late clock-in amended to before the booking is flagged, and the lateness itself is said", () => {

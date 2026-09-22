@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
-import { missingPunchText, intakeOf, confirmedOf, startingTimes, clientStage, formNumber, firstLast, asksStart, asksEnd, issueOf } from "@/lib/clock-amendment/rules";
+import { missingPunchText, intakeOf, confirmedOf, startingTimes, clientStage, formNumber, firstLast, asksStart, asksEnd, asksPlace, issueOf } from "@/lib/clock-amendment/rules";
 import AmendmentCard from "@/components/clock-amendment/AmendmentCard";
 import AmendmentSign from "./AmendmentSign";
 import { confirmAndSign, clientSign } from "./actions";
@@ -46,6 +46,7 @@ export default async function AmendmentFromLinkPage({ params }) {
     // the end when it is missing
     asksStart: asksStart(a),
     asksEnd: asksEnd(a),
+    asksPlace: asksPlace(a),
     issue: issueOf(a),
     scheduledIn: a.scheduledIn,
     scheduledOut: a.scheduledOut,

@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import PersonPicker from "./PersonPicker";
 import { AmendmentFigures } from "@/components/clock-amendment/AmendmentCard";
-import { startingTimes, missingPunchText, firstLast, asksStart, asksEnd } from "@/lib/clock-amendment/rules";
+import { startingTimes, missingPunchText, firstLast, asksStart, asksEnd, asksPlace } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf } from "@/lib/clock-amendment/typed-time";
 
 // RAISING ONE FROM THE DAY'S TWO FILES.
@@ -136,6 +136,8 @@ export default function RaiseFromFiles({ read, raise, search }) {
           reasonText: "",
           actualIn: asksIn ? (s.in || "") : "",
           actualOut: asksOut ? (s.out || "") : "",
+          placeIn: "",
+          placeOut: "",
           recipientId: c.account?.id || "",
         };
       }
@@ -244,6 +246,7 @@ export default function RaiseFromFiles({ read, raise, search }) {
         const filled = !!p.reasonText?.trim();
         const asksIn = asksStart(recordOf(c));
         const asksOut = asksEnd(recordOf(c));
+        const place = asksPlace(recordOf(c));
         return (
           <article key={c.key} className={`rounded-xl border bg-surface p-5 sm:p-6 ${filled ? "border-brand" : "border-border"}`}>
             <div className="flex items-start justify-between gap-3">
@@ -276,6 +279,22 @@ export default function RaiseFromFiles({ read, raise, search }) {
                     className="mt-1.5 min-h-[84px] w-full rounded-[9px] border border-border-strong bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-brand"
                   />
                 </div>
+                {(place.in || place.out) && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {place.in && (
+                      <div>
+                        <label className={lbl} htmlFor={`place-in-${c.key}`}>Where they said they were at clock-in</label>
+                        <input id={`place-in-${c.key}`} value={p.placeIn || ""} onChange={(e) => set(c.key, { placeIn: e.target.value })} placeholder="Optional here; the form asks them" className={`mt-1.5 ${field}`} />
+                      </div>
+                    )}
+                    {place.out && (
+                      <div>
+                        <label className={lbl} htmlFor={`place-out-${c.key}`}>Where they said they were at clock-out</label>
+                        <input id={`place-out-${c.key}`} value={p.placeOut || ""} onChange={(e) => set(c.key, { placeOut: e.target.value })} placeholder="Optional here; the form asks them" className={`mt-1.5 ${field}`} />
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid grid-cols-2 gap-4">
                     {asksIn && (

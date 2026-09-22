@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
-import { isSignerKind, signerIsPresent, asksStart, asksEnd } from "@/lib/clock-amendment/rules";
+import { isSignerKind, signerIsPresent, asksStart, asksEnd, asksPlace } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
 
 // THE TWO SIGNATURES, COLLECTED ON THE PHONE THE LINK WAS OPENED ON.
@@ -75,6 +75,11 @@ export async function confirmAndSign(token, payload) {
   if (asksEnd(a) && !actualOut) return { ok: false, error: "times" };
   if (asksStart(a) && !actualIn) return { ok: false, error: "times" };
   if ((actualIn && !isTime(actualIn)) || (actualOut && !isTime(actualOut))) return { ok: false, error: "times" };
+  // where they were at a punch the clock holds no location for: theirs to say
+  const place = asksPlace(a);
+  const placeIn = place.in ? str(payload?.placeIn, 300) : null;
+  const placeOut = place.out ? str(payload?.placeOut, 300) : null;
+  if ((place.in && !placeIn) || (place.out && !placeOut)) return { ok: false, error: "place" };
   const signedName = str(payload?.signedName, 120);
   if (!signedName) return { ok: false, error: "name" };
   if (payload?.attested !== true) return { ok: false, error: "attest" };
@@ -85,7 +90,7 @@ export async function confirmAndSign(token, payload) {
   await prisma.clockAmendment.update({
     where: { id: a.id },
     data: {
-      reasonText, actualIn, actualOut,
+      reasonText, actualIn, actualOut, placeIn, placeOut,
       filledName: signedName,
       filledAt: new Date(),
       filledIp: await callerIp(),

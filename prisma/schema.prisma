@@ -2686,6 +2686,14 @@ model ClockAmendment {
   intakeReasonText String?
   intakeActualIn   String?
   intakeActualOut  String?
+  // WHERE THEY WERE at a punch the clock holds no location for, whether the
+  // punch went in without one or never went in at all. asked per end, so a
+  // shift with neither punch located answers twice. same split as the times:
+  // what the office took down, and what the person confirmed and signed.
+  intakePlaceIn  String?
+  intakePlaceOut String?
+  placeIn        String?
+  placeOut       String?
 
   // THE TWO FILES, AS READ, AT THE MOMENT IT WAS RAISED. The clock row and the
   // service note the engine paired with it, copied rather than joined: the

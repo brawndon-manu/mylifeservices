@@ -7,7 +7,7 @@ import { loadAmendment, shownName } from "@/lib/clock-amendment/document";
 import { COMPANY_TZ } from "@/lib/company-time";
 import {
   formNumber, missingPunchText, confirmedOf, correctionsOf, approvalFlags, canApprove,
-  clientStage, signerLabel, firstLast, qspFixNeeded,
+  clientStage, signerLabel, firstLast, qspFixNeeded, asksPlace,
 } from "@/lib/clock-amendment/rules";
 import ApproveForm from "./ApproveForm";
 import { approveAmendment, chaseAmendment, deleteRehearsal } from "./actions";
@@ -85,6 +85,8 @@ export default async function ClockAmendmentPage({ params }) {
           <Row label="What happened" value={confirmed.reasonText} correction={was("reasonText")} />
           {(!a.clockedIn || confirmed.actualIn) && <Row label="Service started" value={confirmed.actualIn} correction={was("actualIn")} />}
           <Row label="Service ended" value={confirmed.actualOut} correction={was("actualOut")} />
+          {asksPlace(a).in && <Row label="Where they were at clock-in" value={confirmed.placeIn} correction={was("placeIn")} />}
+          {asksPlace(a).out && <Row label="Where they were at clock-out" value={confirmed.placeOut} correction={was("placeOut")} />}
         </dl>
         <div className="mt-4 border-t border-border pt-4">
           {a.filledAt ? (

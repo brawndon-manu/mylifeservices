@@ -26,6 +26,7 @@ const ERRORS = {
   done: "The person served has already answered.",
   reason: "Say what happened.",
   times: "The missing time is needed, as a time of day.",
+  place: "Say where you were.",
   name: "A name is needed.",
   attest: "Tick the confirmation before signing.",
   signature: "Draw your signature.",
@@ -51,6 +52,8 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
   const [reasonText, setReasonText] = useState(confirmed.reasonText || "");
   const [actualIn, setActualIn] = useState(confirmed.actualIn || (view.asksStart ? suggested.in || "" : ""));
   const [actualOut, setActualOut] = useState(confirmed.actualOut || (view.asksEnd ? suggested.out || "" : ""));
+  const [placeIn, setPlaceIn] = useState(confirmed.placeIn || "");
+  const [placeOut, setPlaceOut] = useState(confirmed.placeOut || "");
   const [attested, setAttested] = useState(false);
   const [padFor, setPadFor] = useState(null);
 
@@ -71,6 +74,8 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
         reasonText,
         actualIn: tidyTime(actualIn, inAnchor),
         actualOut: tidyTime(actualOut, outAnchor),
+        placeIn,
+        placeOut,
         signedName: recipientName,
         attested,
         signaturePng: png,
@@ -173,11 +178,41 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
           </div>
         )}
 
+        {(view.asksPlace.in || view.asksPlace.out) && (
+          <div className="mt-5 space-y-4">
+            {view.asksPlace.in && (
+              <div>
+                <label className="block text-[15px] font-semibold text-foreground" htmlFor="place-in">Where were you when you clocked in?</label>
+                <p className="mb-2 mt-0.5 text-[12.5px] text-muted">
+                  {view.clockedIn ? "The clock has the time but not the place." : "There is no punch, so the clock has neither the time nor the place."}
+                </p>
+                <input id="place-in" value={placeIn} onChange={(e) => setPlaceIn(e.target.value)} placeholder={`${view.clientName}'s home`} className={field} />
+                {changed("placeIn", placeIn) && intake.placeIn && (
+                  <p className="mt-1 text-[11.5px] text-amber-700 dark:text-amber-300">The office had: &ldquo;{intake.placeIn}&rdquo;.</p>
+                )}
+              </div>
+            )}
+            {view.asksPlace.out && (
+              <div>
+                <label className="block text-[15px] font-semibold text-foreground" htmlFor="place-out">Where were you when you clocked out?</label>
+                <p className="mb-2 mt-0.5 text-[12.5px] text-muted">
+                  {view.clockedOut ? "The clock has the time but not the place." : "There is no punch, so say where the visit ended."}
+                </p>
+                <input id="place-out" value={placeOut} onChange={(e) => setPlaceOut(e.target.value)} placeholder={`${view.clientName}'s home`} className={field} />
+                {changed("placeOut", placeOut) && intake.placeOut && (
+                  <p className="mt-1 text-[11.5px] text-amber-700 dark:text-amber-300">The office had: &ldquo;{intake.placeOut}&rdquo;.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-[10px] border border-border bg-surface px-3 py-3 text-[13px] leading-relaxed text-foreground">
           <input type="checkbox" checked={attested} onChange={(e) => setAttested(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-brand" />
           <span>
             I confirm that {recipientName === staffName ? "I provided" : `${staffName} provided`} the service described above to {view.clientName} on {view.shiftDate}
-            {actualIn ? ` from ${tidyTime(actualIn, inAnchor)}` : ""}{actualOut ? ` until ${tidyTime(actualOut, outAnchor)}` : ""}, that the clock record is incomplete for the reason given, and that this record supports the hours billed.
+            {actualIn ? ` from ${tidyTime(actualIn, inAnchor)}` : ""}{actualOut ? ` until ${tidyTime(actualOut, outAnchor)}` : ""}
+            {placeIn.trim() && placeOut.trim() && placeIn.trim() === placeOut.trim() ? ` at ${placeIn.trim()}` : `${placeIn.trim() ? `, starting at ${placeIn.trim()}` : ""}${placeOut.trim() ? `, ending at ${placeOut.trim()}` : ""}`}, that the clock record is incomplete for the reason given, and that this record supports the hours billed.
           </span>
         </label>
 
@@ -193,6 +228,7 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
             setActualIn(tin);
             setActualOut(tout);
             if ((view.asksEnd && !tout) || (view.asksStart && !tin)) return setErr(ERRORS.times);
+            if ((view.asksPlace.in && !placeIn.trim()) || (view.asksPlace.out && !placeOut.trim())) return setErr(ERRORS.place);
             if (!attested) return setErr(ERRORS.attest);
             setErr(null);
             setPadFor("staff");

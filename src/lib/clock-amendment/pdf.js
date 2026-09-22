@@ -10,7 +10,7 @@
 // amendment itself and who signed for it. The evidence comes before the claim
 // so nobody signs a time before seeing what the records already say about it.
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { SIGNER_KINDS, formNumber, correctionsOf, evidenceLevel, LATE_MIN } from "./rules.js";
+import { SIGNER_KINDS, formNumber, correctionsOf, evidenceLevel, asksPlace, LATE_MIN } from "./rules.js";
 import { COMPANY_TZ } from "../company-time.js";
 
 const PAGE_W = 612;
@@ -165,8 +165,14 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
   para(words || "-", { size: 10 });
   const inTime = confirmed ? a.actualIn : a.intakeActualIn;
   const outTime = confirmed ? a.actualOut : a.intakeActualOut;
+  const placeIn = confirmed ? a.placeIn : a.intakePlaceIn;
+  const placeOut = confirmed ? a.placeOut : a.intakePlaceOut;
   if (inTime) row("Service started", inTime);
   row("Service ended", outTime || "-");
+  // where they were, for any punch the clock holds no location for
+  const place = asksPlace(a);
+  if (place.in) row("Where at clock-in", placeIn || "-", { color: placeIn ? INK : RED });
+  if (place.out) row("Where at clock-out", placeOut || "-", { color: placeOut ? INK : RED });
   para(`Taken down by the office on ${fmtStamp(a.createdAt)}${a.createdByName ? ` by ${a.createdByName}` : ""}, from what the staff member reported.`, { size: 9, color: MUTED });
   const corrections = confirmed ? correctionsOf(a) : [];
   if (corrections.length) {
@@ -177,7 +183,10 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
 
   // ---- the staff signature
   heading("Attestation");
-  para(`I confirm that I provided the service described above to ${a.clientName} on ${a.shiftDate}${inTime ? ` from ${inTime}` : ""}${outTime ? ` until ${outTime}` : ""}, that the clock record is incomplete for the reason given, and that this record supports the hours billed.`, { size: 10 });
+  const wherePart = placeIn && placeOut && placeIn === placeOut
+    ? ` at ${placeIn}`
+    : `${placeIn ? `, starting at ${placeIn}` : ""}${placeOut ? `, ending at ${placeOut}` : ""}`;
+  para(`I confirm that I provided the service described above to ${a.clientName} on ${a.shiftDate}${inTime ? ` from ${inTime}` : ""}${outTime ? ` until ${outTime}` : ""}${wherePart}, that the clock record is incomplete for the reason given, and that this record supports the hours billed.`, { size: 10 });
   y -= 4;
   await signatureBlock({ pngBytes: staffSignaturePng, name: a.filledName || a.staffName, when: a.filledAt, ip: a.filledIp, missing: "Not yet signed" });
 

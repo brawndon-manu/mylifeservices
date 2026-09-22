@@ -105,6 +105,16 @@ export function issueOf(a) {
 export const asksStart = (a) => ["noIn", "none", "lateIn", "noGps"].includes(issueOf(a));
 export const asksEnd = (a) => ["noOut", "none", "noGps"].includes(issueOf(a));
 
+// WHICH ENDS THE FORM ASKS A PLACE FOR: any punch the clock holds no location
+// for, whether it went in without one or never went in. the time can be
+// confirmed off a note or a schedule; where somebody was can only come from
+// them, and it is what a signature over a missing location is worth.
+export function asksPlace(a) {
+  const row = a?.clockRow;
+  if (!row) return { in: !a?.clockedIn, out: !a?.clockedOut };
+  return { in: row.gpsIn !== "yes", out: row.gpsOut !== "yes" };
+}
+
 // WHICH PUNCHES THE OFFICE CORRECTS IN THE CLOCK SYSTEM once it approves: the
 // one the case is about. a punch that only lacked a location stands as it is.
 export function qspFixNeeded(a) {
@@ -229,6 +239,8 @@ export const CLAIM_FIELDS = [
   { field: "reasonText", label: "what happened" },
   { field: "actualIn", label: "the start time" },
   { field: "actualOut", label: "the end time" },
+  { field: "placeIn", label: "where they were at clock-in" },
+  { field: "placeOut", label: "where they were at clock-out" },
 ];
 
 const norm = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -239,6 +251,8 @@ export function intakeOf(a) {
     reasonText: a?.intakeReasonText || null,
     actualIn: a?.intakeActualIn || null,
     actualOut: a?.intakeActualOut || null,
+    placeIn: a?.intakePlaceIn || null,
+    placeOut: a?.intakePlaceOut || null,
   };
 }
 
@@ -250,6 +264,8 @@ export function confirmedOf(a) {
     reasonText: a.reasonText || null,
     actualIn: a.actualIn || null,
     actualOut: a.actualOut || null,
+    placeIn: a.placeIn || null,
+    placeOut: a.placeOut || null,
   };
 }
 
