@@ -15,7 +15,7 @@ process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-only-secret";
 import {
   intakeOf, confirmedOf, correctionsOf, claimGap, scheduleGap, startGap, approvalFlags,
   formNumber, canApprove, clientStage, stageLine, missingPunchText, firstLast,
-  punchIssue, issueOf, asksStart, asksEnd, startingTimes, qspFixNeeded, asksPlace, LATE_MIN,
+  punchIssue, issueOf, asksStart, asksEnd, startingTimes, qspFixNeeded, asksPlace, clockEnds, hasIssue, LATE_MIN,
 } from "../clock-amendment/rules.js";
 import { signAmendmentToken, verifyAmendmentToken } from "../clock-amendment/token.js";
 import { amendmentFormSubject, amendmentDocumentSubject } from "../clock-amendment/subjects.js";
@@ -153,7 +153,7 @@ test("what is wrong with a shift is measured, never read off the export's own la
   // the times stand, so the form asks for both as clocked and the attestation states them
   assert.equal(asksStart(noPlace), true);
   assert.equal(asksEnd(noPlace), true);
-  assert.deepEqual(startingTimes(noPlace), { in: "9:00 AM", out: "12:00 PM", from: "clock" });
+  assert.deepEqual(startingTimes(noPlace), { in: "9:00 AM", out: "12:00 PM", from: "clock", inAsClocked: true, outAsClocked: true });
   assert.ok(approvalFlags({ ...base, ...noPlace, intakeActualIn: "9:00 AM", intakeActualOut: "12:00 PM" }).some((f) => f.kind === "noGps" && /at either punch/.test(f.text)));
 });
 
@@ -198,6 +198,75 @@ test("the form asks where they were at any punch the clock holds no location for
   const signed = { ...base, filledAt: new Date(), reasonText: base.intakeReasonText, actualOut: "6:30 PM", intakePlaceOut: "the client's home", placeOut: "in the car outside the client's home" };
   const c = correctionsOf(signed);
   assert.deepEqual(c, [{ field: "placeOut", label: "where they were at clock-out", was: "the client's home", now: "in the car outside the client's home" }]);
+});
+
+test("every combination of the two ends asks, corrects and says the right things, including several at once", () => {
+  // the clock-in is fine, late, without a location, both, or missing; the
+  // clock-out is fine, without a location, or missing. a location mark only
+  // exists on a punch that happened, so that is the whole space.
+  const IN = {
+    fine:       { noIn: false, startDelta: 0,  gpsIn: "yes", clockedIn: "9:00 AM" },
+    late:       { noIn: false, startDelta: 20, gpsIn: "yes", clockedIn: "9:20 AM" },
+    noGps:      { noIn: false, startDelta: 0,  gpsIn: "no",  clockedIn: "9:00 AM" },
+    lateNoGps:  { noIn: false, startDelta: 20, gpsIn: "no",  clockedIn: "9:20 AM" },
+    missing:    { noIn: true,  startDelta: null, gpsIn: null, clockedIn: null },
+  };
+  const OUT = {
+    fine:    { noOut: false, gpsOut: "yes", clockedOut: "12:00 PM" },
+    noGps:   { noOut: false, gpsOut: "no",  clockedOut: "12:00 PM" },
+    missing: { noOut: true,  gpsOut: null,  clockedOut: null },
+  };
+  const make = (i, o) => {
+    const { clockedIn, ...inRow } = IN[i];
+    const { clockedOut, ...outRow } = OUT[o];
+    return { clockedIn, clockedOut, scheduledIn: "9:00 AM", scheduledOut: "12:00 PM", dsnStart: "9:05 AM", dsnEnd: "11:55 AM", clockRow: { ...inRow, ...outRow } };
+  };
+  // the one shift that needs nothing
+  assert.equal(hasIssue(make("fine", "fine").clockRow), false);
+  assert.equal(missingPunchText(make("fine", "fine")), "did not clock out", "a row with nothing wrong still prints something rather than crashing");
+
+  const expect = {
+    "late/fine":         { head: "clocked in late",                                     start: true,  end: false, placeIn: false, placeOut: false, fixIn: true,  fixOut: false },
+    "noGps/fine":        { head: "clocked in without a location",                       start: true,  end: false, placeIn: true,  placeOut: false, fixIn: false, fixOut: false },
+    "lateNoGps/fine":    { head: "clocked in late and without a location",              start: true,  end: false, placeIn: true,  placeOut: false, fixIn: true,  fixOut: false },
+    "missing/fine":      { head: "did not clock in",                                    start: true,  end: false, placeIn: true,  placeOut: false, fixIn: true,  fixOut: false },
+    "fine/noGps":        { head: "clocked out without a location",                      start: false, end: true,  placeIn: false, placeOut: true,  fixIn: false, fixOut: false },
+    "late/noGps":        { head: "clocked in late and clocked out without a location",  start: true,  end: true,  placeIn: false, placeOut: true,  fixIn: true,  fixOut: false },
+    "noGps/noGps":       { head: "clocked in and out without a location",               start: true,  end: true,  placeIn: true,  placeOut: true,  fixIn: false, fixOut: false },
+    "lateNoGps/noGps":   { head: "clocked in late and without a location and clocked out without a location", start: true, end: true, placeIn: true, placeOut: true, fixIn: true, fixOut: false },
+    "missing/noGps":     { head: "did not clock in and clocked out without a location", start: true,  end: true,  placeIn: true,  placeOut: true,  fixIn: true,  fixOut: false },
+    "fine/missing":      { head: "did not clock out",                                   start: false, end: true,  placeIn: false, placeOut: true,  fixIn: false, fixOut: true },
+    "late/missing":      { head: "clocked in late and did not clock out",               start: true,  end: true,  placeIn: false, placeOut: true,  fixIn: true,  fixOut: true },
+    "noGps/missing":     { head: "clocked in without a location and did not clock out", start: true,  end: true,  placeIn: true,  placeOut: true,  fixIn: false, fixOut: true },
+    "lateNoGps/missing": { head: "clocked in late and without a location and did not clock out", start: true, end: true, placeIn: true, placeOut: true, fixIn: true, fixOut: true },
+    "missing/missing":   { head: "did not clock in or out",                             start: true,  end: true,  placeIn: true,  placeOut: true,  fixIn: true,  fixOut: true },
+  };
+  assert.equal(Object.keys(expect).length, 14);
+  for (const [key, x] of Object.entries(expect)) {
+    const a = make(...key.split("/"));
+    assert.equal(hasIssue(a.clockRow), true, key);
+    assert.equal(missingPunchText(a), x.head, `${key} headline`);
+    assert.equal(asksStart(a), x.start, `${key} asks start`);
+    assert.equal(asksEnd(a), x.end, `${key} asks end`);
+    assert.deepEqual(asksPlace(a), { in: x.placeIn, out: x.placeOut }, `${key} asks place`);
+    assert.deepEqual(qspFixNeeded(a), { in: x.fixIn, out: x.fixOut }, `${key} corrects`);
+  }
+  // a punch that only lacked a location starts on the clock; a late or
+  // missing one starts on the note, whichever the other end is doing
+  assert.deepEqual(startingTimes(make("noGps", "missing")), { in: "9:00 AM", out: "11:55 AM", from: "note", inAsClocked: true, outAsClocked: false });
+  assert.deepEqual(startingTimes(make("late", "noGps")), { in: "9:05 AM", out: "12:00 PM", from: "note", inAsClocked: false, outAsClocked: true });
+  assert.deepEqual(startingTimes(make("noGps", "noGps")), { in: "9:00 AM", out: "12:00 PM", from: "clock", inAsClocked: true, outAsClocked: true });
+  // the approver is told about every end, not only the heaviest
+  const mixed = { ...make("late", "missing"), intakeActualIn: "9:00 AM", intakeActualOut: "12:00 PM", note: { start: "9:05 AM", end: "11:55 AM", signedAt: "11:56 AM" } };
+  const kinds = approvalFlags(mixed).map((f) => f.kind);
+  assert.ok(kinds.includes("lateIn"), "late in is said");
+  assert.ok(!kinds.includes("noGps"));
+  const kinds2 = approvalFlags({ ...make("lateNoGps", "noGps"), intakeActualIn: "9:00 AM", intakeActualOut: "12:00 PM" }).map((f) => f.kind);
+  assert.ok(kinds2.includes("lateIn") && kinds2.includes("noGps"), "both the lateness and the missing location are said");
+  // the tally word still ranks by weight
+  assert.equal(punchIssue(make("late", "missing").clockRow), "noOut");
+  assert.equal(punchIssue(make("lateNoGps", "fine").clockRow), "lateIn");
+  assert.deepEqual(clockEnds(make("lateNoGps", "noGps").clockRow), { inMissing: false, outMissing: false, late: true, inNoGps: true, outNoGps: true });
 });
 
 test("a late clock-in amended to before the booking is flagged, and the lateness itself is said", () => {

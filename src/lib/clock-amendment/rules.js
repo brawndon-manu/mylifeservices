@@ -74,64 +74,91 @@ export const needsSupervisor = (amendment) => evidenceLevel(amendment) === "none
 // clock-in was the case somebody wanted to amend.
 export const LATE_MIN = 1;
 
+// THE TWO ENDS OF A SHIFT, EACH ON ITS OWN. A location mark only exists on a
+// punch that happened, so the clock-in is one of: fine, late, without a
+// location, late and without a location, or missing; the clock-out is fine,
+// without a location, or missing. Everything the form asks and everything the
+// office corrects is decided per end from these five facts, never from one
+// "main" problem, so a late clock-in beside a missing clock-out asks for both.
+export function clockEnds(shift) {
+  const inMissing = !!shift?.noIn;
+  const outMissing = !!shift?.noOut;
+  const late = !inMissing && shift?.startDelta != null && shift.startDelta >= LATE_MIN;
+  const inNoGps = !inMissing && shift?.gpsIn === "no";
+  const outNoGps = !outMissing && shift?.gpsOut === "no";
+  return { inMissing, outMissing, late, inNoGps, outNoGps };
+}
+
+// the same five facts read off a stored record: the clock row it kept, or the
+// two punch columns when a row somehow has none
+export function endsOf(a) {
+  if (!a) return clockEnds(null);
+  if (a.clockRow) return clockEnds(a.clockRow);
+  return clockEnds({ noIn: !a.clockedIn, noOut: !a.clockedOut, startDelta: null, gpsIn: null, gpsOut: null });
+}
+
+// whether a shift needs a form at all
+export const hasIssue = (shift) => Object.values(clockEnds(shift)).some(Boolean);
+
+// ONE WORD FOR THE QUEUE'S TALLY, by weight: a punch that never went in
+// outranks a late one, which outranks a missing location. Everything else
+// reads the ends directly.
 export function punchIssue(shift) {
-  if (!shift) return null;
-  if (shift.noIn && shift.noOut) return "none";
-  if (shift.noIn) return "noIn";
-  if (shift.noOut) return "noOut";
-  if (shift.startDelta != null && shift.startDelta >= LATE_MIN) return "lateIn";
-  // both punches went in but the phone did not say where from. the times
-  // stand; the place is what the signatures have to carry
-  if (shift.gpsIn === "no" || shift.gpsOut === "no") return "noGps";
+  const e = clockEnds(shift);
+  if (e.inMissing && e.outMissing) return "none";
+  if (e.inMissing) return "noIn";
+  if (e.outMissing) return "noOut";
+  if (e.late) return "lateIn";
+  if (e.inNoGps || e.outNoGps) return "noGps";
   return null;
 }
 
+export const issueOf = (a) => (a ? punchIssue(a.clockRow || { noIn: !a.clockedIn, noOut: !a.clockedOut }) : null);
+
 // which ends of a shift went in without a location
 export function noGpsEnds(shift) {
-  return { in: shift?.gpsIn === "no", out: shift?.gpsOut === "no" };
+  const e = clockEnds(shift);
+  return { in: e.inNoGps, out: e.outNoGps };
 }
 
-// the same question asked of a stored record: the clock row it kept, or the
-// two punch columns when a row somehow has none
-export function issueOf(a) {
-  if (!a) return null;
-  if (a.clockRow) return punchIssue(a.clockRow);
-  return punchIssue({ noIn: !a.clockedIn, noOut: !a.clockedOut, startDelta: null });
-}
-
-// which times the form has to ask for: the start when it is missing or late,
-// the end when it is missing, and both when the place is what is missing, so
-// the attestation can state the times the person is signing for
-export const asksStart = (a) => ["noIn", "none", "lateIn", "noGps"].includes(issueOf(a));
-export const asksEnd = (a) => ["noOut", "none", "noGps"].includes(issueOf(a));
+// WHICH TIMES THE FORM ASKS FOR: the start when it is missing, late, or has no
+// location; the end when it is missing or has no location. A punch that only
+// lacked a location is shown as clocked for them to confirm, so the
+// attestation can state the times the person is signing for.
+export function asksStart(a) { const e = endsOf(a); return e.inMissing || e.late || e.inNoGps; }
+export function asksEnd(a) { const e = endsOf(a); return e.outMissing || e.outNoGps; }
 
 // WHICH ENDS THE FORM ASKS A PLACE FOR: any punch the clock holds no location
 // for, whether it went in without one or never went in. the time can be
 // confirmed off a note or a schedule; where somebody was can only come from
 // them, and it is what a signature over a missing location is worth.
 export function asksPlace(a) {
-  const row = a?.clockRow;
-  if (!row) return { in: !a?.clockedIn, out: !a?.clockedOut };
-  return { in: row.gpsIn !== "yes", out: row.gpsOut !== "yes" };
+  const e = endsOf(a);
+  return { in: e.inMissing || e.inNoGps, out: e.outMissing || e.outNoGps };
 }
 
-// WHICH PUNCHES THE OFFICE CORRECTS IN THE CLOCK SYSTEM once it approves: the
-// one the case is about. a punch that only lacked a location stands as it is.
+// WHICH PUNCHES THE OFFICE CORRECTS IN THE CLOCK SYSTEM once it approves: a
+// punch that is missing or late. a punch that only lacked a location stands.
 export function qspFixNeeded(a) {
-  switch (issueOf(a)) {
-    case "none": return { in: true, out: true };
-    case "noIn": case "lateIn": return { in: true, out: false };
-    case "noOut": return { in: false, out: true };
-    default: return { in: false, out: false };
-  }
+  const e = endsOf(a);
+  return { in: e.inMissing || e.late, out: e.outMissing };
 }
 
-// what the time boxes start at. a missing or late punch starts from the note,
-// then the schedule, never the clock; a punch with no location is a real
-// punch, and the clock is what they are being asked to confirm
+// what the time boxes start at, per end. a missing or late punch starts from
+// the note, then the schedule, never the clock; a punch that only lacked a
+// location is a real punch, and the clock is what they are asked to confirm
 export function startingTimes(a) {
-  if (issueOf(a) === "noGps") return { in: a.clockedIn || null, out: a.clockedOut || null, from: "clock" };
-  return suggestedTimes(a);
+  const e = endsOf(a);
+  const s = suggestedTimes(a);
+  const inAsClocked = e.inNoGps && !e.late && !e.inMissing;
+  const outAsClocked = e.outNoGps && !e.outMissing;
+  return {
+    in: inAsClocked ? a?.clockedIn || null : s.in,
+    out: outAsClocked ? a?.clockedOut || null : s.out,
+    from: inAsClocked && outAsClocked ? "clock" : s.from,
+    inAsClocked,
+    outAsClocked,
+  };
 }
 
 // the clock export prints people "Last, First"; a form and an email say
@@ -152,19 +179,19 @@ export function firstLast(name) {
     .join("; ");
 }
 
-// the headline the form opens with, in plain words
+// THE HEADLINE THE FORM OPENS WITH, in plain words, saying everything that is
+// wrong with the record and nothing that is not: one phrase per end, joined.
 export function missingPunchText(a) {
-  switch (issueOf(a)) {
-    case "none": return "did not clock in or out";
-    case "noIn": return "did not clock in";
-    case "lateIn": return "clocked in late";
-    case "noGps": {
-      const ends = noGpsEnds(a?.clockRow);
-      if (ends.in && ends.out) return "clocked in and out without a location";
-      return ends.in ? "clocked in without a location" : "clocked out without a location";
-    }
-    default: return "did not clock out";
-  }
+  const e = endsOf(a);
+  if (e.inMissing && e.outMissing) return "did not clock in or out";
+  if (e.inNoGps && e.outNoGps && !e.late) return "clocked in and out without a location";
+  const parts = [];
+  if (e.inMissing) parts.push("did not clock in");
+  else if (e.late) parts.push(`clocked in late${e.inNoGps ? " and without a location" : ""}`);
+  else if (e.inNoGps) parts.push("clocked in without a location");
+  if (e.outMissing) parts.push("did not clock out");
+  else if (e.outNoGps) parts.push("clocked out without a location");
+  return parts.join(" and ") || "did not clock out";
 }
 
 // WHERE ONE IS IN ITS LIFE. One rule, so the inbox, the chase list and the
@@ -331,13 +358,13 @@ export function approvalFlags(a) {
   if (st != null && st > FILED_GAP_MIN) {
     flags.push({ kind: "beforeSchedule", text: `The start time is ${st} minutes before the scheduled start of ${a.scheduledIn}.` });
   }
-  if (issueOf(a) === "lateIn" && a.clockRow?.startDelta != null) {
+  const e = endsOf(a);
+  if (e.late && a.clockRow?.startDelta != null) {
     flags.push({ kind: "lateIn", text: `The clock-in was ${a.clockRow.startDelta} minutes after the scheduled start; the punch itself stands, only the start time is being amended.` });
   }
-  if (issueOf(a) === "noGps") {
-    const ends = noGpsEnds(a.clockRow);
-    const where = ends.in && ends.out ? "at either punch" : ends.in ? "at the clock-in" : "at the clock-out";
-    flags.push({ kind: "noGps", text: `No location was captured ${where}; the times stand and the signatures carry where the visit happened.` });
+  if (e.inNoGps || e.outNoGps) {
+    const where = e.inNoGps && e.outNoGps ? "at either punch" : e.inNoGps ? "at the clock-in" : "at the clock-out";
+    flags.push({ kind: "noGps", text: `No location was captured ${where}; that punch's time stands and the signatures carry where the visit happened.` });
   }
   const corrections = correctionsOf(a);
   if (corrections.length) {

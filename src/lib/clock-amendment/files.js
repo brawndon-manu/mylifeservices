@@ -18,7 +18,7 @@ import { sameClient } from "../timesheet/note-audit.js";
 import { scheduleKey } from "../timesheet/schedule.js";
 import { buildWhoKey } from "../timesheet/people.js";
 import { ampmLabel } from "../timesheet/hours-label.js";
-import { punchIssue, LATE_MIN } from "./rules.js";
+import { punchIssue, hasIssue, LATE_MIN } from "./rules.js";
 
 // the clock export prints "Last, First", the notes print "First Last", and the
 // accounts print the legal name. `buildWhoKey` carries the preferred names and
@@ -91,11 +91,11 @@ export async function readDayFiles({ xlsBytes, pdfBytes, users = [] }) {
   const candidates = [];
   let underFloor = 0;
   for (const s of shifts) {
-    const issue = punchIssue(s);
-    if (!issue) {
-      if (s.startDelta != null && s.startDelta > 0) underFloor++;
+    if (!hasIssue(s)) {
+      if (!s.noIn && s.startDelta != null && s.startDelta > 0) underFloor++;
       continue;
     }
+    const issue = punchIssue(s);
     const sameDay = (byDay.get(`${who(s.name)}|${s.date}`) || []).filter((n) => !taken.has(n));
     // a note names its client and is only ever offered to that client's
     // booking. a booking with no client on it (admin, travel) has no note of

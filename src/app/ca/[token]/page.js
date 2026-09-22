@@ -48,6 +48,9 @@ export default async function AmendmentFromLinkPage({ params }) {
     asksEnd: asksEnd(a),
     asksPlace: asksPlace(a),
     issue: issueOf(a),
+    // a punch that only lacked a location is shown as clocked, to confirm
+    inAsClocked: suggested.inAsClocked,
+    outAsClocked: suggested.outAsClocked,
     scheduledIn: a.scheduledIn,
     scheduledOut: a.scheduledOut,
     noteStart: a.note?.start || null,

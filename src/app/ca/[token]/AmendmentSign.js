@@ -138,15 +138,15 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
               onBlur={(e) => setActualIn(tidyTime(e.target.value, inAnchor))}
               placeholder="9:00 AM" className={`mt-2 ${field} max-w-[160px] font-medium tabular-nums`}
             />
-            {view.clockedIn && view.issue !== "noGps" && (
+            {view.clockedIn && !view.inAsClocked && (
               <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
                 The clock has you in at <b className="font-semibold text-foreground">{view.clockedIn}</b>
                 {view.noteStart ? <>, and your note says <b className="font-semibold text-foreground">{view.noteStart}</b></> : null}.
               </p>
             )}
-            {view.issue === "noGps" && (
+            {view.inAsClocked && (
               <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-                As clocked. The punch went in without a location, so this form is your word that the visit happened where the booking says.
+                As clocked. The punch went in without a location, so change the time only if the clock is wrong.
               </p>
             )}
             {changed("actualIn", actualIn) && intake.actualIn && (
@@ -163,14 +163,14 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
               onBlur={(e) => setActualOut(tidyTime(e.target.value, outAnchor))}
               placeholder="1:00 PM" className={`mt-2 ${field} max-w-[160px] font-medium tabular-nums`}
             />
-            {view.noteStart && view.noteEnd && view.issue !== "noGps" && (
+            {view.noteStart && view.noteEnd && !view.outAsClocked && (
               <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
                 Your note for this visit says <b className="font-semibold text-foreground">{view.noteStart} to {view.noteEnd}</b>
                 {view.noteFiled ? <>, and you signed it at <b className="font-semibold text-foreground">{view.noteFiled}</b></> : null}. Change the time if the visit ended before that.
               </p>
             )}
-            {view.issue === "noGps" && (
-              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">As clocked. Change it only if the clock is wrong.</p>
+            {view.outAsClocked && (
+              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">As clocked. The punch went in without a location, so change the time only if the clock is wrong.</p>
             )}
             {changed("actualOut", actualOut) && intake.actualOut && (
               <p className="mt-1 text-[11.5px] text-amber-700 dark:text-amber-300">The office had {intake.actualOut}.</p>
