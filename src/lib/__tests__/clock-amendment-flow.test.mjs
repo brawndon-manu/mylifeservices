@@ -129,8 +129,11 @@ test("the headline says which punch is missing, or that the clock-in was late", 
 test("what is wrong with a shift is measured, never read off the export's own late column", () => {
   // the 09/21 export set "Late Clock In" on a shift clocked to the minute
   assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 0, says: { lateIn: true } }), null);
-  // two minutes at the door is not a record that is wrong
-  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 2 }), null);
+  // and a clock-in early is not late
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: -3 }), null);
+  // the same export's 9:02 against a 9:00 booking is the case that set the floor at one
+  assert.equal(LATE_MIN, 1);
+  assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 2 }), "lateIn");
   assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: LATE_MIN }), "lateIn");
   assert.equal(punchIssue({ noIn: false, noOut: false, startDelta: 38 }), "lateIn");
   // a missing punch outranks lateness, and neither punch is its own case

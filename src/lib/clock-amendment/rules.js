@@ -65,10 +65,14 @@ export const needsSupervisor = (amendment) => evidenceLevel(amendment) === "none
 // Lateness is measured, never read off the export's own "Late Clock In"
 // column - on 09/21 that column was set on a shift clocked to the minute.
 //
-// A clock-in within a few minutes of the schedule is ordinary and is not
-// listed: a form exists for a record that is wrong, not for a person who was
-// two minutes at the door. Five minutes is where the office starts to care.
-export const LATE_MIN = 5;
+// Every clock-in after the scheduled minute is listed, because QSP calls every
+// one of them late, a person who was there on time and could not clock in for
+// some reason wants the record right even by a minute, and the office raises
+// a form only for the ones it fills in.
+// The floor exists so it can be raised if a day's list ever gets too long;
+// it started at five and came down to one the first time a real two-minute
+// clock-in was the case somebody wanted to amend.
+export const LATE_MIN = 1;
 
 export function punchIssue(shift) {
   if (!shift) return null;

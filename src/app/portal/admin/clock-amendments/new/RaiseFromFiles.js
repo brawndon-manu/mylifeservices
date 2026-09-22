@@ -174,7 +174,8 @@ export default function RaiseFromFiles({ read, raise, search }) {
         <h2 className="text-[13px] font-semibold text-foreground">The day&apos;s files</h2>
         <p className="mt-0.5 text-[12px] leading-relaxed text-muted">
           The QSClock Time and Attendance report and the Employee Detailed Daily Service Notes for the day.
-          The export says which shifts have a missing punch; the notes say what was written about the visit.
+          The export says which shifts have a missing punch, a late clock-in or no location; the notes say what
+          was written about the visit.
         </p>
         <p className="mt-4 rounded-lg border border-dashed border-border-strong px-3 py-2 text-xs text-muted">
           Drag both files onto this card together. Each lands in its slot by what it is.
@@ -201,7 +202,7 @@ export default function RaiseFromFiles({ read, raise, search }) {
             <p className="mr-auto text-[12px] text-muted">
               {found.shifts} {found.shifts === 1 ? "shift" : "shifts"} on the export, {found.notes} {found.notes === 1 ? "note" : "notes"}.{" "}
               <b className="text-foreground">{found.candidates.length} with a missing punch, a late clock-in or no location.</b>
-              {found.underFloor > 0 && ` ${found.underFloor} clocked in under five minutes late and ${found.underFloor === 1 ? "is" : "are"} not listed.`}
+              {found.underFloor > 0 && ` ${found.underFloor} clocked in late by less than the floor and ${found.underFloor === 1 ? "is" : "are"} not listed.`}
             </p>
           )}
           <button
@@ -224,7 +225,7 @@ export default function RaiseFromFiles({ read, raise, search }) {
 
       {found && found.candidates.length === 0 && (
         <p className="rounded-xl border border-border bg-surface px-5 py-6 text-center text-sm text-muted">
-          Every shift on this export has both punches. Nothing to raise.
+          Nothing on this export needs a form: every shift has both punches, on time, with a location.
         </p>
       )}
 
