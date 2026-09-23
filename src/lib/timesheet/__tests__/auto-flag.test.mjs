@@ -4,7 +4,7 @@
 // session-cancelled, and several rules make ONE flag.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoFlagRow, autoFlagPlan, autoFlagText, FILED_GAP_MIN } from "../auto-flag.js";
+import { autoFlagRow, autoFlagPlan, autoFlagText, FILED_GAP_MIN, languageMatches, flaggedForWording } from "../auto-flag.js";
 
 const row = (over = {}) => ({
   shiftKey: "k", review: null,
@@ -112,4 +112,32 @@ test("an approved amendment stands down the punch rule at the end it covers, and
   assert.equal(autoFlagRow(row({ gpsOut: "no", amendment: { placeOut: "the client's home" } })), null);
   assert.equal(autoFlagRow(row({ gpsOut: "no", amendment: { placeIn: "the client's home" } })).reason, "Auto: GPS missing at clock out.");
   assert.equal(autoFlagRow(row({ gpsIn: "no", amendment: { placeIn: "the park" } })), null);
+});
+
+// WHAT WAS SAID: the sentence a language rule matched, the words that tripped
+// it and the report it came from, so a flag can be judged against the note
+// rather than the rule's name
+test("a wording flag quotes the sentence it matched, marks the words and names the report", () => {
+  const r = row({
+    note: { source: "dsn", summary: "Staff drove to the home. Client cancelled session when staff arrived. Staff went back to the office.", comments: ["Both didn't answer and one client left a message for them to call him back."] },
+    scheduleNote: { text: "Rest break added per timesheet review — QA Admin" },
+  });
+  const found = languageMatches(r);
+  assert.deepEqual(found.map((m) => [m.key, m.source, m.matched, m.sentence]), [
+    ["cancelled", "DSN", "Client cancelled", "Client cancelled session when staff arrived."],
+    ["remote", "DSN comment", "left a message", "Both didn't answer and one client left a message for them to call him back."],
+  ]);
+  // the supervisor .xls note is named for what it is
+  assert.equal(languageMatches(row({ note: { source: "xls", summary: "Client was not home today." } }))[0].source, "service note");
+  // the QA annotation is not staff language, and a clean note matches nothing
+  assert.deepEqual(languageMatches(row({ scheduleNote: { text: "Rest break added per timesheet review — QA Admin" } })), []);
+  assert.deepEqual(languageMatches(row()), []);
+});
+
+test("only an auto flag that came from the wording opens the quote", () => {
+  assert.equal(flaggedForWording({ reason: "Auto: the note mentions a cancellation or no show." }), true);
+  assert.equal(flaggedForWording({ reason: "Auto: billed above the clock; the note records contact that was not in person." }), true);
+  assert.equal(flaggedForWording({ reason: "Auto: billed above the clock." }), false);
+  assert.equal(flaggedForWording({ reason: "the note mentions a cancellation or no show" }), false);
+  assert.equal(flaggedForWording(null), false);
 });

@@ -64,6 +64,59 @@ const CANCELLED_RX =
 const REMOTE_RX =
   /\*{2,}Supervisor|over the phone|by phone only|via (phone|text|zoom|facetime)(?!.*accompan)|was in contact with (the )?client('s parent)? via phone|phone contact only|left (a )?(message|voicemail)(?!.*(accompan|took|drove|went|met))/i;
 
+// WHAT WAS SAID, quoted back. the two language rules fire off a regex over
+// everything staff wrote, and a flag that only names the rule leaves the
+// reader hunting through the note for the words. this finds them: for each
+// language rule, each report it matched in and the sentence around the
+// first match, with the matched words marked so the rule itself can be
+// judged against real sentences - "resumed ssi benefits over the phone" is
+// a session, not a phone call, and the only way to see that is to read it.
+//
+// re-read from the row every time rather than stored with the flag, so the
+// card always shows what the rule matches now.
+const LANGUAGE_RULES = [
+  { key: "cancelled", phrase: "the note mentions a cancellation or no show", rx: CANCELLED_RX },
+  { key: "remote", phrase: "the note records contact that was not in person", rx: REMOTE_RX },
+];
+
+// the texts a row carries, each named by the report it came from
+function textsOf(row) {
+  const out = [];
+  const clean = (t) => { let s = String(t || ""); for (const rx of QA_NOISE) s = s.replace(rx, ""); return s.trim(); };
+  const noteName = row?.note?.source === "dsn" ? "DSN" : "service note";
+  if (row?.note?.summary) out.push({ source: noteName, text: clean(row.note.summary) });
+  const c = row?.note?.comments;
+  if (Array.isArray(c)) for (const line of c) if (typeof line === "string" && line.trim()) out.push({ source: `${noteName} comment`, text: clean(line) });
+  if (row?.scheduleNote?.text) out.push({ source: "schedule note", text: clean(row.scheduleNote.text) });
+  return out.filter((t) => t.text);
+}
+
+// the sentence around a match: from the previous full stop to the next
+function sentenceAround(text, at, len) {
+  const from = text.lastIndexOf(".", Math.max(0, at - 1)) + 1;
+  const stop = text.indexOf(".", at + len);
+  return text.slice(from, stop < 0 ? text.length : stop + 1).trim();
+}
+
+// -> [{ key, phrase, source, sentence, matched }], one per report a language
+// rule matched in; [] when nothing staff wrote trips either rule
+export function languageMatches(row) {
+  const out = [];
+  for (const rule of LANGUAGE_RULES) {
+    for (const t of textsOf(row)) {
+      const m = rule.rx.exec(t.text);
+      if (!m) continue;
+      out.push({ key: rule.key, phrase: rule.phrase, source: t.source, sentence: sentenceAround(t.text, m.index, m[0].length), matched: m[0] });
+    }
+  }
+  return out;
+}
+
+// whether a stored auto-flag reason came, at least in part, from the wording
+export function flaggedForWording(review) {
+  return isAutoFlag(review) && LANGUAGE_RULES.some((r) => String(review.reason).includes(r.phrase));
+}
+
 // A NOTE FILED THIS FAR FROM THE CLOCK OUT IS WORTH A LOOK - Mánu 2026-09-14,
 // "over 10 minutes of the clock out time". Ordinary filing is a few minutes
 // early: the median on the current period is 3 minutes before clock out and

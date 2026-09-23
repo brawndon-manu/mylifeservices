@@ -21,6 +21,7 @@ import ShiftEvidence from "./ShiftEvidence";
 import NoteBody from "./NoteBody";
 import FlagAbout from "./FlagAbout";
 import DecisionLine from "./DecisionLine";
+import WhatWasSaid from "./WhatWasSaid";
 import { Flag } from "lucide-react";
 import { kindsOf, labelOfKind } from "@/lib/timesheet/review-kinds";
 
@@ -552,6 +553,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
 . Deciding again replaces it.
               </p>
             )}
+            {row.review && <WhatWasSaid row={row} />}
 
             {/* the time moved after the review: both readings side by side,
                 and the pick buttons stand in for the plain Approve below -

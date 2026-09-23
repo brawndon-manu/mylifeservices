@@ -162,6 +162,15 @@
 .raisePanel label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
 .raisePanel textarea, .raisePanel input[type="text"] { margin-top: 6px; width: 100%; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--background); padding: 8px 10px; font-size: 13px; color: var(--foreground); }
 .raisePanel textarea:focus-visible, .raisePanel input[type="text"]:focus-visible { outline: none; border-color: var(--accent); }
+/* what was said: the sentence a language rule matched, quoted under the
+   flag, the words that tripped it marked in the flag's own amber */
+.said { margin-top: 8px; }
+.said > summary { cursor: pointer; list-style: none; display: inline; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+.said > summary::-webkit-details-marker { display: none; }
+.saidList { margin-top: 8px; border-left: 2px solid var(--border-strong); padding-left: 12px; display: grid; gap: 8px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.saidSource { display: block; font-size: 10px; font-weight: 600; letter-spacing: .075em; text-transform: uppercase; color: var(--faint); }
+.saidList mark { background: var(--amber-fill); color: var(--foreground); border-radius: 3px; padding: 0 3px; }
+.saidNone { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .original { color: var(--faint); text-decoration: line-through; font-size: 14px; margin-right: 8px; }
 .checks { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 1fr); gap: 24px; padding-top: 17px; border-top: 1px solid var(--border); }
 .punch { display: grid; grid-template-columns: 26px 22px 72px 31px 20px; align-items: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }

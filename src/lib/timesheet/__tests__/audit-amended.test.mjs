@@ -106,3 +106,18 @@ test("the button is offered only where the clock has something wrong and nothing
   const evidence = read("src/app/portal/admin/audit/[id]/ShiftEvidence.js");
   assert.match(evidence, /\{!row\.amendment && row\.pending && <PendingLine p=\{row\.pending\} \/>\}/);
 });
+
+// ---- what was said, under a wording flag ----
+
+test("both card surfaces quote the sentence a wording rule matched, off the row and never off the flag", () => {
+  for (const p of ["src/app/portal/admin/audit/[id]/AuditCards.js", "src/app/portal/admin/audit/[id]/StudyMode.js"]) {
+    const s = read(p);
+    assert.match(s, /import WhatWasSaid from "\.\/WhatWasSaid"/, p);
+    assert.match(s, /<WhatWasSaid row=\{r(ow)?\} \/>/, p);
+  }
+  const said = read("src/app/portal/admin/audit/[id]/WhatWasSaid.js");
+  assert.match(said, /if \(!flaggedForWording\(row\?\.review\)\) return null;/);
+  assert.match(said, /const matches = languageMatches\(row\);/);
+  assert.match(said, /<mark>/);
+  assert.match(read("src/app/portal/admin/audit/audit.module.css"), /\.saidList mark \{ background: var\(--amber-fill\)/);
+});

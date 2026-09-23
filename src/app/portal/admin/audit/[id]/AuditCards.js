@@ -42,6 +42,7 @@ import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, off
 import { billableOf } from "@/lib/timesheet/billable-of";
 import { hasIssue } from "@/lib/clock-amendment/rules";
 import RaiseAmendment from "./RaiseAmendment";
+import WhatWasSaid from "./WhatWasSaid";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -1130,6 +1131,8 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
 
         </p>
       )}
+      {/* the sentence a wording rule matched, quoted under the flag it made */}
+      {r.review && <WhatWasSaid row={r} />}
 
       {settled && (
         <p className={styles.settled}>
