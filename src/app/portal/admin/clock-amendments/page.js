@@ -36,7 +36,7 @@ export default async function ClockAmendmentsPage() {
       scheduledIn: true, scheduledOut: true, clockedIn: true, clockedOut: true,
       dsnStart: true, dsnEnd: true,
       sentAt: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
-      testOnly: true, chaseCount: true, clockRow: true,
+      testOnly: true, demo: true, chaseCount: true, clockRow: true,
       createdAt: true,
       staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -104,7 +104,7 @@ export default async function ClockAmendmentsPage() {
                         </span>
                         {r.testOnly && (
                           <span className="flex-none rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                            rehearsal
+                            {r.demo ? "demo" : "rehearsal"}
                           </span>
                         )}
                         <span className="flex-none font-mono text-[11.5px] text-muted">

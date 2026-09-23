@@ -48,7 +48,7 @@ const REHEARSAL_ERRORS = {
 
 export default function ApproveForm({
   id, ready, flagged, fix = { in: false, out: false }, defaultIn = "", defaultTo = "",
-  unsigned, neverSent = false, testOnly, approve, chase, remove, sendTo = null, reset = null, lastSent = null,
+  unsigned, neverSent = false, testOnly, demo = false, approve, chase, remove, sendTo = null, reset = null, lastSent = null,
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -171,7 +171,11 @@ export default function ApproveForm({
 
       {testOnly && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-5">
-          <p className="w-full text-[13px] text-amber-800 dark:text-amber-200">This is a rehearsal. It is kept out of every count, and it can be run as many times as you like.</p>
+          <p className="w-full text-[13px] text-amber-800 dark:text-amber-200">
+            {demo
+              ? "This is a demo. It is kept out of every count and can be run as many times as you like, and it looks and mails like the real thing: no rehearsal wording on the form, real mail to whoever you pick, the approved document to the staff member and to you rather than the office."
+              : "This is a rehearsal. It is kept out of every count, and it can be run as many times as you like."}
+          </p>
           {/* aim it at whoever is being shown it: a roster person signs as
               themselves, a typed address only gets the link */}
           {sendTo && (

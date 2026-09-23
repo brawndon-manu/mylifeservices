@@ -72,8 +72,9 @@ test("the staff half mints the code when it signs, and the hand-off says it was 
   assert.match(actions, /export async function clientHalfStatus\(token\)/);
   assert.match(actions, /export async function refreshClientCode\(token\)/);
   assert.match(actions, /export async function emailClientLink\(token, email\)/);
-  // the mail for a rehearsal goes to whoever raised it, nowhere else
-  assert.match(actions, /forceTo: a\.testOnly \? a\.createdBy\?\.email \|\| null : null/);
+  // the mail for a rehearsal goes to whoever raised it, nowhere else; a demo
+  // is the exception and is pinned in its own test below
+  assert.match(actions, /forceTo: a\.testOnly && !a\.demo \? a\.createdBy\?\.email \|\| null : null/);
   const sign = read("src/app/ca/[token]/AmendmentSign.js");
   assert.match(sign, /import ClientCode from "\.\/ClientCode"/);
   assert.match(sign, /if \(view\.clientStage === "waiting" && !handoff\)/);
@@ -113,4 +114,25 @@ test("a rehearsal can be sent to a chosen person for real and reset for the next
   assert.match(form, /Reset the rehearsal/);
   const page = read("src/app/portal/admin/clock-amendments/[id]/page.js");
   assert.match(page, /sendTo=\{sendRehearsalTo\}\s*reset=\{resetRehearsal\}/);
+});
+
+// ---- a demo: a rehearsal that looks and mails like the real thing ----
+
+test("a demo keeps a rehearsal's safety and loses its wording and its routing; the office list is never mailed", () => {
+  const office = read("src/app/portal/admin/clock-amendments/[id]/actions.js");
+  // the approved document: staff member and approver on a demo, never the office list
+  assert.match(office, /intendedEmails: a\.demo \? \[a\.staff\?\.email, user\.email\] : \[\.\.\.officeRecipients\(\), a\.staff\?\.email\]/);
+  assert.match(office, /forceTo: a\.testOnly && !a\.demo \? user\.email : null,\s*formNumber/);
+  // the reminder goes to the person picked on a demo
+  assert.match(office, /forceTo: a\.testOnly && !a\.demo \? user\.email : null,\s*\/\/ a row whose first email never went/);
+  // the client link goes where it was addressed on a demo
+  assert.match(read("src/app/ca/[token]/actions.js"), /forceTo: a\.testOnly && !a\.demo \? a\.createdBy\?\.email \|\| null : null/);
+  // no rehearsal wording on the form or the client page
+  assert.match(read("src/app/ca/[token]/page.js"), /\{a\.testOnly && !a\.demo && \(/);
+  assert.match(read("src/app/s/[code]/page.js"), /testOnly: a\.testOnly && !a\.demo,/);
+  // the office still sees which it is
+  assert.match(read("src/app/portal/admin/clock-amendments/[id]/page.js"), /\{a\.demo \? "demo" : "rehearsal"\}/);
+  assert.match(read("src/app/portal/admin/clock-amendments/page.js"), /\{r\.demo \? "demo" : "rehearsal"\}/);
+  // and every safety stays keyed on testOnly, which a demo also carries
+  assert.match(read("prisma/schema.prisma"), /  demo     Boolean @default\(false\)/);
 });

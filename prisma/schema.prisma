@@ -2754,6 +2754,12 @@ model ClockAmendment {
   // A REHEARSAL, raised by the office for itself to see the flow, kept out of
   // every tally and deletable. Same idea as `TimesheetBatch.testOnly`.
   testOnly Boolean @default(false)
+  // A DEMO, shown in person: kept out of every count and resettable like a
+  // rehearsal, but it looks and mails like the real thing: no rehearsal
+  // wording on the form or the client page, real mail to whoever is picked,
+  // and the approved document to the staff member and the approver rather
+  // than the office list.
+  demo     Boolean @default(false)
 
   createdById String
   createdBy   User   @relation("ClockAmendmentCreatedBy", fields: [createdById], references: [id])

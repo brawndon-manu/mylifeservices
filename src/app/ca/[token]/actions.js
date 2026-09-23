@@ -86,7 +86,7 @@ async function open(token) {
     select: {
       id: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
       clockedIn: true, clockedOut: true, scheduledIn: true, scheduledOut: true, clockRow: true,
-      clientCode: true, clientCodeExpiresAt: true, clientName: true, shiftDate: true, testOnly: true,
+      clientCode: true, clientCodeExpiresAt: true, clientName: true, shiftDate: true, testOnly: true, demo: true,
       actualIn: true, actualOut: true, intakeActualIn: true, intakeActualOut: true,
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -189,8 +189,9 @@ export async function emailClientLink(token, email) {
   const c = confirmedOf(a);
   const sent = await sendClientSignLink({
     intendedEmail: to,
-    // a rehearsal's mail goes to whoever raised it and nowhere else
-    forceTo: a.testOnly ? a.createdBy?.email || null : null,
+    // a rehearsal's mail goes to whoever raised it and nowhere else; a demo's
+    // goes where it was addressed, like the real thing
+    forceTo: a.testOnly && !a.demo ? a.createdBy?.email || null : null,
     staffName: preferredName(a.staff) || a.staff?.name || "",
     clientName: firstLast(a.clientName) || "the person served",
     date: a.shiftDate,

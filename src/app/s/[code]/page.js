@@ -53,7 +53,8 @@ export default async function ClientSignPage({ params }) {
     shiftDate: a.shiftDate,
     from: c.actualIn || a.clockedIn || a.scheduledIn || null,
     to: c.actualOut || a.clockedOut || a.scheduledOut || null,
-    testOnly: a.testOnly,
+    // a demo is a rehearsal that must not say so
+    testOnly: a.testOnly && !a.demo,
   };
 
   return (

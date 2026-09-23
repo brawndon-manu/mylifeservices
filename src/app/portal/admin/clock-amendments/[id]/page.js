@@ -64,7 +64,7 @@ export default async function ClockAmendmentPage({ params }) {
       <BackLink href="/portal/admin/clock-amendments">Back to Clock amendments</BackLink>
       <p className="mt-4 text-[11px] font-semibold uppercase tracking-[.06em] text-faint">
         Clock amendment · {number}
-        {a.testOnly && <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-700 dark:text-amber-300">rehearsal</span>}
+        {a.testOnly && <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-700 dark:text-amber-300">{a.demo ? "demo" : "rehearsal"}</span>}
       </p>
       <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">{staffName} {missingPunchText(a)}.</h1>
       <p className="mt-2 text-sm leading-relaxed text-muted">
@@ -127,7 +127,7 @@ export default async function ClockAmendmentPage({ params }) {
             <b className="font-semibold text-rose-700 dark:text-rose-300">Nobody was available to sign.</b> {a.clientUnavailableReason}
           </p>
         ) : (
-          <p className="mt-2 text-[13px] leading-relaxed text-muted">Not collected yet. They sign on the staff member&apos;s phone right after the staff signature.</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-muted">Not collected yet. They sign on their own phone from the code on the staff member&apos;s screen, right after the staff signature.</p>
         )}
       </div>
 
@@ -169,6 +169,7 @@ export default async function ClockAmendmentPage({ params }) {
           unsigned={!a.filledAt && !a.approvedAt}
           neverSent={!a.sentAt}
           testOnly={a.testOnly}
+          demo={a.demo}
           approve={approveAmendment}
           chase={chaseAmendment}
           remove={deleteRehearsal}

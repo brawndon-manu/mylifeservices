@@ -84,7 +84,9 @@ export default async function AmendmentFromLinkPage({ params }) {
         <br />
         {a.shiftDate}{a.scheduledIn && a.scheduledOut ? `, scheduled ${a.scheduledIn} to ${a.scheduledOut}` : ""}
       </p>
-      {a.testOnly && (
+      {/* a demo is a rehearsal that must not say so: it is shown in person as
+          the real thing */}
+      {a.testOnly && !a.demo && (
         <p className="mt-3 rounded-[9px] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12.5px] text-amber-800 dark:text-amber-200">
           This is a rehearsal. Nothing here goes to anybody but the office.
         </p>

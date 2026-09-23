@@ -84,9 +84,12 @@ export async function approveAmendment(id, formData) {
     data: { approvedAt: now, approvedById: user.id, approvalNote, qspFixedIn, qspFixedTo, qspFixedAt, qspFixedBy, pdfUrl, pdfHash: doc.hash },
   });
 
+  // a demo mails like the real thing but never the office list: the staff
+  // member and the approver get the document. a rehearsal goes to the
+  // approver alone.
   const sent = await sendAmendmentDocument({
-    intendedEmails: [...officeRecipients(), a.staff?.email],
-    forceTo: a.testOnly ? user.email : null,
+    intendedEmails: a.demo ? [a.staff?.email, user.email] : [...officeRecipients(), a.staff?.email],
+    forceTo: a.testOnly && !a.demo ? user.email : null,
     formNumber: formNumber(a),
     staffName: view.staffName,
     clientName: firstLast(a.clientName),
@@ -117,7 +120,8 @@ export async function chaseAmendment(id) {
   const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
   const sent = await sendAmendmentForm({
     intendedEmail: a.recipient.email,
-    forceTo: a.testOnly ? user.email : null,
+    // a rehearsal reminds the desk itself; a demo reminds the person picked
+    forceTo: a.testOnly && !a.demo ? user.email : null,
     // a row whose first email never went is getting the form, not a reminder
     isResend: !!a.sentAt,
     recipientName: shownName(a.recipient),
