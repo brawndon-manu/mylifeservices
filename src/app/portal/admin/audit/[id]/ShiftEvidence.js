@@ -65,6 +65,7 @@ export default function ShiftEvidence({ row }) {
           <Punch row={row} end="in" /><Punch row={row} end="out" />
           {row.sharedSession && <dd className={styles.figureSub}>One session {ampmLabel(row.sharedSession.from)}–{ampmLabel(row.sharedSession.to)} across {row.sharedSession.parts} bookings.</dd>}
           {row.amendment && <AmendedLine a={row.amendment} />}
+          {!row.amendment && row.pending && <PendingLine p={row.pending} />}
         </>}
       </div>
       <div><dt>Note</dt>
@@ -143,5 +144,20 @@ function AmendedLine({ a }) {
   }
   return <dd className={styles.amendedLine}>
     {parts.join(", ")}{a.signedBy ? `, signed by ${a.signedBy}` : ""} · <a href={a.form}>open the form</a>
+  </dd>;
+}
+
+// AN AMENDMENT OUT FOR THE SHIFT AND NOT YET APPROVED: when it went, to whom,
+// where it stands in the queue's own words, and the form. nothing about the
+// figures, because nothing has been signed off yet.
+const mdyOf = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
+};
+function PendingLine({ p }) {
+  const line = String(p.line || "").replace(/^./, (c) => c.toLowerCase());
+  return <dd className={styles.amendedLine}>
+    Amendment{p.sentAt ? ` sent ${mdyOf(p.sentAt)}` : ""}{p.to ? ` to ${p.to}` : ""}{line ? `, ${line}` : ""} · <a href={p.form}>open the form</a>
   </dd>;
 }

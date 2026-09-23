@@ -40,6 +40,8 @@ import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinO
 import styles from "../audit.module.css";
 import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, offerableKinds } from "@/lib/timesheet/review-kinds";
 import { billableOf } from "@/lib/timesheet/billable-of";
+import { hasIssue } from "@/lib/clock-amendment/rules";
+import RaiseAmendment from "./RaiseAmendment";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -110,6 +112,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   // decision lands here so the counts and the piles move without re-running
   // the whole audit build; the server row is the durable record.
   const [localReviews, setLocalReviews] = useState({});
+  // AN AMENDMENT RAISED FROM A CARD lands here the same way, so the card says
+  // it is out without re-running the build; the server row is the record
+  const [localPending, setLocalPending] = useState({});
   // WHAT A FLAG IS ABOUT, toggled from inside the note itself. Held locally
   // the same way a decision is so the piles and counts move without re-running
   // the build; the server row is the durable record.
@@ -147,18 +152,23 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   const rows = useMemo(
     () => rowsProp.map((r) => {
       const l = localReviews[r.shiftKey];
-      return l === undefined ? r : { ...r, review: l };
+      const p = localPending[r.shiftKey];
+      const withReview = l === undefined ? r : { ...r, review: l };
+      return p === undefined ? withReview : { ...withReview, pending: p };
     }),
-    [rowsProp, localReviews],
+    [rowsProp, localReviews, localPending],
   );
   const noteReview = (shiftKey, review) =>
     setLocalReviews((v) => ({ ...v, [shiftKey]: review }));
+  const notePending = (shiftKey, pending) =>
+    setLocalPending((v) => ({ ...v, [shiftKey]: pending }));
 
 
   // A SUPERSEDED COPY OPENS FROZEN - Mánu 2026-09-07: "all the superceded
   // ones are frozen in time." Nothing decides from here; shifts take stars
   // instead (the only place stars exist), and a Starred filter finds them.
   const frozenMode = !!frozen;
+  const canRaise = canUpload && !frozenMode;
   const [stars, setStars] = useState(() => new Set(frozen?.stars || []));
   const [starsOnly, setStarsOnly] = useState(false);
   const onStar = async (shiftKey) => {
@@ -516,7 +526,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
                 </span>
               </h2>
               <div className="mt-2 space-y-3">
-                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozenMode} starred={stars.has(r.shiftKey)} onStar={onStar} onKind={onKind} />)}
+                {list.map((r) => <Card key={r.key} r={r} onReview={noteReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozenMode} starred={stars.has(r.shiftKey)} onStar={onStar} onKind={onKind} canRaise={canRaise} onPending={notePending} />)}
               </div>
             </div>
           ))}
@@ -524,6 +534,8 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       ) : (
         <RollUp
           rows={roll}
+          canRaise={canRaise}
+          onPending={notePending}
           what={view === "employee" ? "Employee" : "Client"}
           onOpen={drillInto}
           rowsFor={(name) => {
@@ -792,7 +804,7 @@ const ROLL_SORTS = {
 // it should undo the ones that contradict each other."
 const SORT_CONFLICTS = [["first", "last"]];
 
-function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [], batchId = null, frozen = false, stars = null, onStar = null, onKind = null }) {
+function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsFor = null, onReview = null, titles = null, sortKeys = [], batchId = null, frozen = false, stars = null, onStar = null, onKind = null, canRaise = false, onPending = null }) {
   // the Last name sort flips STAFF names to "Last, First" - the employee
   // roll and the staff on its unfolded cards; clients keep the roster form
   const staffName = sortKeys.includes("last") && what === "Employee" ? lastFirst : (n) => n;
@@ -924,7 +936,7 @@ function RollUp({ rows, what, onOpen, authorized = null, authLabel = null, rowsF
                     <td colSpan={withAuth ? 12 : 10} className="bg-surface-2/50 px-3 py-3">
                       <div className="space-y-3">
                         {rowsFor(g.name).map((r) => (
-                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozen} starred={!!stars?.has(r.shiftKey)} onStar={onStar} onKind={onKind} />
+                          <Card key={r.key} r={r} onReview={onReview} title={titles?.[r.employeeKey]} staffName={staffName} batchId={batchId} frozen={frozen} starred={!!stars?.has(r.shiftKey)} onStar={onStar} onKind={onKind} canRaise={canRaise} onPending={onPending} />
                         ))}
                       </div>
                     </td>
@@ -948,7 +960,7 @@ function Count({ n, tone }) {
   );
 }
 
-function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen = false, starred = false, onStar = null, onKind = null }) {
+function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen = false, starred = false, onStar = null, onKind = null, canRaise = false, onPending = null }) {
   const [open, setOpen] = useState(false);
   const [openSched, setOpenSched] = useState(false);
   const [openOverlap, setOpenOverlap] = useState(false);
@@ -1007,7 +1019,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
           {!dotOnly && decisionWord}
-          {r.amendment && <span className={styles.amendedPill}>Amended</span>}
+          {r.amendment ? <span className={styles.amendedPill}>Amended</span> : r.pending ? <span className={styles.pendingPill}>Amendment · {r.pending.line}</span> : null}
         </span>
         <span className="hidden shrink-0 text-right sm:block">
           <span className="block text-sm tabular-nums text-muted">{r.date}</span>
@@ -1017,7 +1029,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
           </span>
           {/* the record was amended: a fact beside the decision, not instead
               of it, in the amendment's own blue */}
-          {r.amendment && <span className={styles.amendedPill}>Amended</span>}
+          {r.amendment ? <span className={styles.amendedPill}>Amended</span> : r.pending ? <span className={styles.pendingPill}>Amendment · {r.pending.line}</span> : null}
         </span>
         {frozen && (
           <button
@@ -1208,7 +1220,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
           )}
         </div>
       )}
-      {!frozen && <DecideBar r={r} onReview={onReview} batchId={batchId} settled={settled} />}
+      {!frozen && <DecideBar r={r} onReview={onReview} batchId={batchId} settled={settled} canRaise={canRaise} onPending={onPending} />}
     </article>
   );
 }
@@ -1221,8 +1233,13 @@ const mdyOfIso = (iso) => {
 };
 
 
-function DecideBar({ r, onReview, batchId = null, settled = false }) {
+function DecideBar({ r, onReview, batchId = null, settled = false, canRaise = false, onPending = null }) {
   const [flagging, setFlagging] = useState(false);
+  // RAISING AN AMENDMENT FROM HERE, offered only where the clock has something
+  // wrong with the shift and nothing is out for it already; the panel is the
+  // amendments page's intake, on the card
+  const [raising, setRaising] = useState(false);
+  const showRaise = canRaise && !r.amendment && !r.pending && r.inClockExport === true && hasIssue(r);
   const [reason, setReason] = useState("");
   // WHAT THE FLAG IS ABOUT - offered only where the shift has the thing, so a
   // shift with no schedule note cannot be flagged about one
@@ -1315,6 +1332,14 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
           }
         />
       )}
+      {raising && !flagging && (
+        <RaiseAmendment
+          r={r}
+          batchId={batchId}
+          onCancel={() => setRaising(false)}
+          onDone={(p) => { setRaising(false); onPending?.(r.shiftKey, p); }}
+        />
+      )}
       {flagging ? (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
           <label htmlFor={reasonId} className="block text-xs font-semibold text-foreground">
@@ -1383,6 +1408,9 @@ function DecideBar({ r, onReview, batchId = null, settled = false }) {
         </div>
       ) : moved ? null : (
         <div className={styles.cardActions}>
+          {showRaise && (
+            <button type="button" disabled={busy} aria-expanded={raising} onClick={() => setRaising((v) => !v)} className={`${styles.raise} ${styles.lead}`}>Raise an amendment</button>
+          )}
           <button type="button" disabled={busy} onClick={() => setFlagging(true)} className={styles.secondary}>Flag</button>
           <button type="button" disabled={busy} onClick={() => send("approved")} className={styles.primary}>{busy ? "Saving…" : "Approve"}</button>
         </div>

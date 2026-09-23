@@ -150,6 +150,18 @@
 .amendedPill { display: inline-flex; align-items: center; margin-top: 4px; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-fill); white-space: nowrap; }
 .amendedLine { font-size: 11px; margin-top: 6px; color: var(--accent); }
 .amendedLine a { text-decoration: underline; text-underline-offset: 3px; }
+/* an amendment out and not yet approved: outlined, so it reads as pending
+   beside the filled pill of an approved one */
+.pendingPill { display: inline-flex; align-items: center; margin-top: 4px; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); white-space: nowrap; }
+/* raising one from the card: the button on the left of the footer, the
+   panel above it in the amendment's blue */
+.raise { display: inline-flex; align-items: center; justify-content: center; padding: 8px 13px; border-radius: 7px; font-size: 12px; font-weight: 550; white-space: nowrap; color: var(--accent); border: 1px solid var(--accent); background: var(--surface); }
+.raise:hover, .raise[aria-expanded="true"] { background: var(--accent-fill); }
+.lead { margin-right: auto; }
+.raisePanel { margin-bottom: 12px; padding: 14px 16px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-fill); }
+.raisePanel label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
+.raisePanel textarea, .raisePanel input[type="text"] { margin-top: 6px; width: 100%; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--background); padding: 8px 10px; font-size: 13px; color: var(--foreground); }
+.raisePanel textarea:focus-visible, .raisePanel input[type="text"]:focus-visible { outline: none; border-color: var(--accent); }
 .original { color: var(--faint); text-decoration: line-through; font-size: 14px; margin-right: 8px; }
 .checks { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 1fr); gap: 24px; padding-top: 17px; border-top: 1px solid var(--border); }
 .punch { display: grid; grid-template-columns: 26px 22px 72px 31px 20px; align-items: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -18,7 +18,7 @@ import { stampOverlaps } from "@/lib/timesheet/audit-overlaps";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
 import { periodDates } from "@/lib/timesheet/period-of";
 import { auditWindow, inAuditWindow } from "@/lib/timesheet/audit-window";
-import { indexAmendments, amendmentFor, amendmentView, amendedShift } from "@/lib/timesheet/amended";
+import { indexAmendments, amendmentFor, amendmentView, amendedShift, pendingView } from "@/lib/timesheet/amended";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -521,28 +521,31 @@ export async function buildAudit(id) {
     noteFor.set(shift, note);
   }
 
-  // APPROVED CLOCK AMENDMENTS ON THESE DAYS. one is raised the day it happens
-  // off that day's export and approved before the fortnight's copy exists, so
-  // it is looked up by the shift rather than stored on anything of this
-  // batch. rehearsals stay out. what one changes is in amended.js: the
-  // findings read the signed window, the billable follows it, the punch lines
-  // keep the export's own record.
+  // CLOCK AMENDMENTS ON THESE DAYS. one is raised the day it happens off that
+  // day's export, or off this copy from a card, and approved before or after
+  // the fortnight's copy exists, so it is looked up by the shift rather than
+  // stored on anything of this batch. rehearsals stay out. an APPROVED one is
+  // the record (amended.js: the findings read the signed window, the billable
+  // follows it, the punch lines keep the export's own); one still out only
+  // says so on the card.
   const shiftDates = [...new Set(everyShift.map((s) => s.date).filter(Boolean))];
   const amendmentRows = shiftDates.length
     ? await prisma.clockAmendment.findMany({
-      where: { testOnly: false, approvedAt: { not: null }, shiftDate: { in: shiftDates } },
+      where: { testOnly: false, shiftDate: { in: shiftDates } },
       select: {
-        id: true, shiftDate: true, clientName: true, clockRow: true, approvedAt: true,
+        id: true, shiftDate: true, clientName: true, clockRow: true, approvedAt: true, createdAt: true, sentAt: true,
         clockedIn: true, clockedOut: true,
-        filledAt: true, filledName: true,
+        filledAt: true, filledName: true, clientSignedAt: true, clientUnavailableReason: true,
         reasonText: true, actualIn: true, actualOut: true, placeIn: true, placeOut: true,
         intakeReasonText: true, intakeActualIn: true, intakeActualOut: true, intakePlaceIn: true, intakePlaceOut: true,
         qspFixedIn: true, qspFixedTo: true,
         approvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+        recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       },
     })
     : [];
-  const amendmentIndex = indexAmendments(amendmentRows, { whoKey, clientKey });
+  const amendmentIndex = indexAmendments(amendmentRows.filter((a) => a.approvedAt), { whoKey, clientKey });
+  const pendingIndex = indexAmendments(amendmentRows.filter((a) => !a.approvedAt), { whoKey, clientKey });
 
   for (const shift of everyShift) {
     const note = noteFor.get(shift) || null;
@@ -562,6 +565,10 @@ export async function buildAudit(id) {
         by: amendRow.approvedBy ? preferredName(amendRow.approvedBy) : null,
         byLegal: amendRow.approvedBy?.name || null,
       })
+      : null;
+    const pendingRow = amendmentFor(shift, pendingIndex, { clientKey });
+    const pending = pendingRow
+      ? pendingView(pendingRow, { to: pendingRow.recipient ? preferredName(pendingRow.recipient) : null })
       : null;
     const forRules = amendedShift(shift, amendment);
     const read = auditRow(forRules, note);
@@ -612,10 +619,15 @@ export async function buildAudit(id) {
       // read as a shift nobody tried to clock
       noIn: !!shift.noIn, noOut: !!shift.noOut,
       gpsIn: shift.gpsIn ?? null, gpsOut: shift.gpsOut ?? null,
+      // how far the punches sat from the roster, so a card can tell a late
+      // clock-in the way the amendment rules do
+      startDelta: shift.startDelta ?? null, endDelta: shift.endDelta ?? null,
       // the export's own minutes, kept apart from clockedMin, which is the
       // signed window on an amended shift
       clockWorkedMin: shift.workedMin ?? null,
       amendment,
+      // an amendment out for this shift and not yet approved, if any
+      pending,
       // one punch session shared across sibling bookings - see session-split.js
       sharedSession: shift.sharedSession || null,
       inheritedIn: !!shift.inheritedIn, inheritedOut: !!shift.inheritedOut,

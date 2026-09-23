@@ -4,9 +4,17 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { isAdminUp } from "@/lib/roles";
+import { isAdminUp, canManageTimesheets } from "@/lib/roles";
 import { readBudgetCapture } from "@/lib/timesheet/budget-capture";
 import { CHOSEN_KINDS } from "@/lib/timesheet/review-kinds";
+import { PDFDocument } from "pdf-lib";
+import { clockShifts } from "@/lib/timesheet/clock";
+import { buildWhoKey } from "@/lib/timesheet/people";
+import { clientKey } from "@/lib/timesheet/note-audit";
+import { clockShiftFor } from "@/lib/timesheet/amended";
+import { hasIssue, punchIssue } from "@/lib/clock-amendment/rules";
+import { shiftFacts, accountsByKey, notePageSpan } from "@/lib/clock-amendment/files";
+import { raiseOne, ROSTER_SELECT, str } from "@/lib/clock-amendment/raise";
 
 // THE STANDALONE SERVICE NOTES UPLOAD IS GONE, 2026-08-27.
 //
@@ -405,4 +413,117 @@ export async function resetAllReviews(batchId) {
   });
   revalidatePath("/portal/admin/audit");
   return { ok: true, deleted: gone.count };
+}
+
+// RAISE A CLOCK AMENDMENT FROM THE CARD.
+//
+// the amendments page asks the office to drop the day's clock export and DSN
+// and tick a shift. an audit copy already holds both files and every card
+// already knows its shift and its note, so the same form can be raised from
+// where the finding is read. the shift is re-read out of the copy's own clock
+// export rather than trusted off the card, the note is the one the card
+// shows, found by its page in the copy's stored notes, and its pages are cut
+// from the stored DSN file. the writing and the send are raise.js, the same
+// as the page's, so the two screens cannot raise two different documents.
+//
+// one open amendment per shift: a second while one is out is refused. a
+// rehearsal (testOnly) neither counts as open nor blocks a real one.
+const numOf = (v) => (v === null || v === undefined || v === "" || v === "null" ? null : Number(v));
+
+export async function raiseAmendmentFromCard(formData) {
+  const user = await getCurrentUser();
+  if (!canManageTimesheets(user?.role)) return { ok: false, error: "auth" };
+
+  const batchId = str(formData.get("batchId"), 40);
+  if (!batchId) return { ok: false, error: "nobatch" };
+  const batch = await prisma.timesheetBatch.findUnique({
+    where: { id: batchId },
+    select: {
+      id: true, clockUrl: true, clockName: true, notesUrl: true, notesName: true,
+      serviceNotes: { select: { notes: true } },
+    },
+  });
+  if (!batch?.clockUrl) return { ok: false, error: "noclock" };
+
+  // which shift, as the card identifies one
+  const identity = {
+    employeeKey: str(formData.get("employeeKey"), 120) || "",
+    date: str(formData.get("date"), 10) || "",
+    client: str(formData.get("client"), 200) || "",
+    startMin: numOf(formData.get("startMin")),
+    originalFrom: numOf(formData.get("originalFrom")),
+  };
+
+  const users = await prisma.user.findMany({ where: { deactivatedAt: null }, select: ROSTER_SELECT });
+  const who = buildWhoKey(users);
+  let xls;
+  try {
+    xls = Buffer.from(await (await fetch(batch.clockUrl, { cache: "no-store" })).arrayBuffer());
+  } catch (e) {
+    console.error("clock amendment from the card: clock export not read:", e);
+    return { ok: false, error: "clockfile" };
+  }
+  const shift = clockShiftFor(clockShifts(xls), identity, { whoKey: who, clientKey });
+  if (!shift) return { ok: false, error: "norow" };
+  if (!hasIssue(shift)) return { ok: false, error: "clean" };
+  const account = accountsByKey(users, who).get(who(shift.name)) || null;
+  if (!account) return { ok: false, error: "noaccount" };
+
+  const open = await prisma.clockAmendment.findMany({
+    where: { testOnly: false, approvedAt: null, staffId: account.id, shiftDate: shift.date },
+    select: { clockRow: true },
+  });
+  const sameShift = (a) =>
+    a.clockRow?.schedFrom === shift.schedFrom
+    && clientKey(a.clockRow?.client || "") === clientKey(shift.client || "");
+  if (open.some(sameShift)) return { ok: false, error: "open" };
+
+  // the note the card shows, by its page, and the pages it sits on
+  const notes = (batch.serviceNotes?.notes || []).filter((n) => n && n.page != null);
+  const page = numOf(formData.get("notePage"));
+  const note = page != null
+    ? notes.find((n) => n.page === page && who(n.employee) === who(shift.name) && n.date === shift.date) || null
+    : null;
+  let pdf = null;
+  let pages = null;
+  if (note && batch.notesUrl) {
+    try {
+      pdf = Buffer.from(await (await fetch(batch.notesUrl, { cache: "no-store" })).arrayBuffer());
+      const pageCount = (await PDFDocument.load(pdf, { ignoreEncryption: true })).getPageCount();
+      pages = notePageSpan(notes, note, pageCount);
+    } catch (e) {
+      // the form still goes out; only the appendix is lost, and it says so
+      console.error("clock amendment from the card: notes file not read:", e);
+      pdf = null;
+      pages = null;
+    }
+  }
+
+  const candidate = {
+    key: `${shift.key}|${shift.date}|${shift.schedFrom ?? ""}|${shift.client || ""}`,
+    issue: punchIssue(shift),
+    shift,
+    facts: shiftFacts(shift),
+    note,
+    pages,
+    account: {
+      id: account.id, name: account.name, email: account.email,
+      preferredFirstName: account.preferredFirstName, preferredLastName: account.preferredLastName,
+    },
+  };
+  const testOnly = ["1", "on", "true"].includes(String(formData.get("testOnly") || ""));
+  const pick = {
+    reasonText: formData.get("reasonText"),
+    actualIn: formData.get("actualIn"),
+    actualOut: formData.get("actualOut"),
+    placeIn: formData.get("placeIn"),
+    placeOut: formData.get("placeOut"),
+    recipientId: formData.get("recipientId"),
+  };
+  const res = await raiseOne({ user, candidate, pick, testOnly, pdf, clockName: batch.clockName, notesName: batch.notesName });
+  if (res.ok) {
+    revalidatePath(`/portal/admin/audit/${batch.id}`);
+    revalidatePath("/portal/admin/clock-amendments");
+  }
+  return res;
 }

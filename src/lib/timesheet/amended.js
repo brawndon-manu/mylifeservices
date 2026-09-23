@@ -15,7 +15,7 @@
 //
 // only the amendment's own rules and the minute reader are imported, so
 // node --test reads this without the app.
-import { confirmedOf, asksStart, asksEnd } from "../clock-amendment/rules.js";
+import { confirmedOf, asksStart, asksEnd, amendmentStage, stageLine } from "../clock-amendment/rules.js";
 import { noteMinute } from "./note-minute.js";
 
 // the window the amendment stands for, per end. an end the form asked about
@@ -84,10 +84,46 @@ export function indexAmendments(list, keys) {
     if (!m.has(k)) m.set(k, []);
     m.get(k).push(a);
   }
-  // the latest approval first, so a shift amended twice reads the newer one
+  // the latest approval first, so a shift amended twice reads the newer one;
+  // among rows not yet approved, the one raised last
   const ms = (v) => { const n = Date.parse(v || ""); return Number.isFinite(n) ? n : 0; };
-  for (const arr of m.values()) arr.sort((x, y) => ms(y.approvedAt) - ms(x.approvedAt));
+  for (const arr of m.values()) {
+    arr.sort((x, y) => ms(y.approvedAt) - ms(x.approvedAt) || ms(y.createdAt) - ms(x.createdAt));
+  }
   return m;
+}
+
+// AN AMENDMENT THAT IS OUT AND NOT YET APPROVED, as the card carries it: the
+// stage in the queue's own words, who it went to, and the form. it moves no
+// figure - only an approval does that.
+export function pendingView(a, { to = null } = {}) {
+  if (!a) return null;
+  const sentAt = a.sentAt instanceof Date ? a.sentAt.toISOString() : a.sentAt || null;
+  return {
+    id: a.id,
+    stage: amendmentStage(a),
+    line: stageLine(a),
+    sentAt,
+    to,
+    form: `/portal/admin/clock-amendments/${a.id}`,
+  };
+}
+
+// THE SHIFT'S OWN ROW IN A CLOCK EXPORT, found the way an amendment is joined
+// to a shift: the person, the day and the client narrow it, then QSP's
+// original start, the roster's start, or the only row there is.
+export function clockShiftFor(shifts, identity, { whoKey, clientKey }) {
+  const wantClient = clientPart(identity?.client, clientKey);
+  const list = (shifts || []).filter((s) =>
+    whoKey(s.name || "") === identity?.employeeKey
+    && s.date === identity?.date
+    && clientPart(s.client, clientKey) === wantClient);
+  if (!list.length) return null;
+  return (
+    (identity.originalFrom != null && list.find((s) => s.schedFrom === identity.originalFrom))
+    || (identity.startMin != null && list.find((s) => s.schedFrom === identity.startMin))
+    || (list.length === 1 ? list[0] : null)
+  );
 }
 
 // the amendment standing on one of the audit's shifts, or null. `shift.who`

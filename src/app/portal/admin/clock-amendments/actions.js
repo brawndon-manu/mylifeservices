@@ -4,13 +4,9 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
-import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { preferredName } from "@/lib/contacts";
-import { readDayFiles, cutPages } from "@/lib/clock-amendment/files";
-import { missingPunchText, firstLast, asksStart, asksEnd, asksPlace } from "@/lib/clock-amendment/rules";
-import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
-import { signAmendmentToken } from "@/lib/clock-amendment/token";
-import { sendAmendmentForm } from "@/lib/clock-amendment/email";
+import { readDayFiles } from "@/lib/clock-amendment/files";
+import { raiseOne } from "@/lib/clock-amendment/raise";
 
 // THE DESK THAT RAISES THESE is the one that runs payroll - same people, same
 // job. A SUPERVISOR is not on it: they RECEIVE an amendment through a link the
@@ -124,99 +120,12 @@ export async function raiseAmendments(formData) {
     return { ok: false, error: "read", detail: String(e?.message || e) };
   }
   const byKey = new Map(read.candidates.map((c) => [c.key, c]));
-  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
-  const str = (v, max = 300) => String(v ?? "").trim().slice(0, max) || null;
-
+  // the writing itself is shared with the audit card - see raise.js
   const results = [];
   for (const p of picks) {
     const c = byKey.get(p?.key);
     if (!c) { results.push({ key: p?.key, ok: false, error: "gone" }); continue; }
-    const who = c.account ? shown(c.account) : c.facts.staffName;
-
-    // the finished copy is mailed to the staff member, so they need an account
-    if (!c.account) { results.push({ key: c.key, who, ok: false, error: "noaccount" }); continue; }
-
-    // what they told the office happened, in their words - the whole point
-    const intakeReasonText = str(p.reasonText, 2000);
-    if (!intakeReasonText) { results.push({ key: c.key, who, ok: false, error: "reason" }); continue; }
-    // the times, read the way the boxes read them, against the schedule
-    const f = c.facts;
-    const intakeActualIn = str(p.actualIn, 12) ? tidyTime(str(p.actualIn, 12), anchorOf(f.scheduledIn)) : null;
-    const intakeActualOut = str(p.actualOut, 12) ? tidyTime(str(p.actualOut, 12), anchorOf(f.scheduledOut)) : null;
-    // the side in question has to be said; a form that asks somebody to sign
-    // for a blank is a form that asks them to make a time up on the spot
-    const asRecord = { clockRow: c.shift };
-    if (asksEnd(asRecord) && !intakeActualOut) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
-    if (asksStart(asRecord) && !intakeActualIn) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
-    if ((intakeActualIn && !isTime(intakeActualIn)) || (intakeActualOut && !isTime(intakeActualOut))) { results.push({ key: c.key, who, ok: false, error: "times" }); continue; }
-    // where they said they were at a punch the clock holds no location for.
-    // optional at intake - the office may not have asked - and required of
-    // them on the form, which is where it counts
-    const place = asksPlace(asRecord);
-    const intakePlaceIn = place.in ? str(p.placeIn, 300) : null;
-    const intakePlaceOut = place.out ? str(p.placeOut, 300) : null;
-
-    const recipientId = str(p.recipientId, 40) || c.account.id;
-    const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: ROSTER_SELECT });
-    if (!recipient?.email) { results.push({ key: c.key, who, ok: false, error: "who" }); continue; }
-
-    const n = c.note;
-    const row = await prisma.clockAmendment.create({
-      data: {
-        staffId: c.account.id,
-        recipientId: recipient.id,
-        clientName: firstLast(f.client) || "(no client on the booking)",
-        service: f.service || "",
-        shiftDate: f.date,
-        scheduledIn: f.scheduledIn, scheduledOut: f.scheduledOut,
-        clockedIn: f.clockedIn, clockedOut: f.clockedOut,
-        // the note as it read when the form was raised - copied, not joined
-        dsnStart: n?.start || null, dsnEnd: n?.end || null, dsnSummary: n?.summary || null,
-        clockRow: c.shift, note: n || undefined,
-        clockName: clock?.name || null, notesName: notes?.name || null,
-        intakeReasonText, intakeActualIn, intakeActualOut, intakePlaceIn, intakePlaceOut,
-        testOnly,
-        createdById: user.id,
-      },
-      select: { id: true },
-    });
-
-    // the note's own pages, cut out of the upload for the document's appendix
-    if (pdf && c.pages && hasBlobStorage()) {
-      try {
-        const pages = await cutPages(pdf, c.pages.from, c.pages.to);
-        const blob = await putBlob(`clock-amendments/${row.id}/dsn.pdf`, Buffer.from(pages), {
-          access: "public",
-          contentType: "application/pdf",
-        });
-        await prisma.clockAmendment.update({ where: { id: row.id }, data: { dsnPdfUrl: blob.url } });
-      } catch (e) {
-        console.error("clock amendment: dsn pages not stored:", e);
-      }
-    }
-
-    const url = `${base}/ca/${signAmendmentToken(row.id)}`;
-    const sent = await sendAmendmentForm({
-      intendedEmail: recipient.email,
-      // a rehearsal goes to the person raising it and nowhere else
-      forceTo: testOnly ? user.email : null,
-      recipientName: shown(recipient),
-      staffName: who,
-      clientName: firstLast(f.client) || "the person served",
-      service: f.service || "",
-      date: f.date,
-      scheduled: f.scheduledIn && f.scheduledOut ? `${f.scheduledIn} to ${f.scheduledOut}` : null,
-      missing: `The clock shows they ${missingPunchText({ clockRow: c.shift })}.`,
-      officeNote: str(p.officeNote, 1000),
-      formUrl: url,
-    });
-    if (sent.ok) {
-      await prisma.clockAmendment.update({
-        where: { id: row.id },
-        data: { sentAt: new Date(), sentToEmail: sent.sentTo, intendedEmail: recipient.email },
-      });
-    }
-    results.push({ key: c.key, who, ok: true, id: row.id, sent: sent.ok, sentTo: sent.ok ? sent.sentTo : null, redirected: !!sent.redirected, error: sent.ok ? null : sent.error });
+    results.push(await raiseOne({ user, candidate: c, pick: p, testOnly, pdf, clockName: clock?.name || null, notesName: notes?.name || null }));
   }
 
   revalidatePath("/portal/admin/clock-amendments");

@@ -5,7 +5,7 @@
 // punches standing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { amendedWindow, amendmentView, amendmentKey, indexAmendments, amendmentFor, amendedShift } from "../amended.js";
+import { amendedWindow, amendmentView, amendmentKey, indexAmendments, amendmentFor, amendedShift, pendingView, clockShiftFor } from "../amended.js";
 import { clientKey } from "../note-audit.js";
 
 const whoKey = (n) => String(n || "").trim().toLowerCase();
@@ -126,4 +126,44 @@ test("the shift the findings read: signed punches at both ends, counted as clock
   const placeOnly = amendmentView({ ...lateIn, clockRow: clockRow({ actualFrom: 840, startDelta: 0, gpsOut: "no" }), actualIn: null, intakeActualIn: null });
   assert.equal(amendedShift(shift, placeOnly), shift);
   assert.equal(amendedShift(shift, null), shift);
+});
+
+// ---- raising from the card, and an amendment that is out ----
+
+test("a shift's own row is found in an export by person, day, client and start, never by guessing between two", () => {
+  const rows = [
+    clockRow(),
+    clockRow({ schedFrom: 600, schedTo: 660, actualFrom: 600, actualTo: 660, startDelta: 0 }),
+    clockRow({ client: "Tsao, Frances" }),
+    clockRow({ date: "09/21/26" }),
+  ];
+  const base = { employeeKey: "espinoza, brandon", date: "09/22/26", client: "Prescott, M" };
+  assert.equal(clockShiftFor(rows, { ...base, startMin: 840, originalFrom: 840 }, keys)?.schedFrom, 840);
+  // the roster's start when the export's original is not on the card
+  assert.equal(clockShiftFor(rows, { ...base, startMin: 600, originalFrom: null }, keys)?.schedFrom, 600);
+  // two bookings with the client and a start matching neither: nothing
+  assert.equal(clockShiftFor(rows, { ...base, startMin: 700, originalFrom: null }, keys), null);
+  // one booking with the client: the only row there is
+  assert.equal(clockShiftFor(rows, { ...base, client: "Tsao, F", startMin: 700, originalFrom: null }, keys)?.client, "Tsao, Frances");
+  assert.equal(clockShiftFor(rows, { ...base, date: "09/20/26", startMin: 840 }, keys), null);
+  assert.equal(clockShiftFor([], { ...base, startMin: 840 }, keys), null);
+});
+
+test("an amendment out and not yet approved reads its stage in the queue's words and moves no figure", () => {
+  const sent = { ...lateIn, approvedAt: null, filledAt: null, actualIn: null, sentAt: "2026-09-22T20:00:00.000Z" };
+  const v = pendingView(sent, { to: "Brandon Espinoza" });
+  assert.deepEqual([v.stage, v.line, v.to, v.form], ["sent", "Waiting on them", "Brandon Espinoza", "/portal/admin/clock-amendments/amd1"]);
+  assert.equal(v.sentAt, "2026-09-22T20:00:00.000Z");
+  const signed = pendingView({ ...sent, filledAt: "2026-09-22T21:00:00.000Z" });
+  assert.equal(signed.line, "Signed, waiting on the person served");
+  const ready = pendingView({ ...sent, filledAt: "2026-09-22T21:00:00.000Z", clientSignedAt: "2026-09-22T21:05:00.000Z" });
+  assert.equal(ready.line, "Ready to approve");
+  assert.equal(pendingView({ ...sent, sentAt: null }).line, "Not sent");
+  assert.equal(pendingView(null), null);
+  // the pending index is the same join, newest raised first
+  const older = { ...sent, id: "old", createdAt: "2026-09-20T00:00:00.000Z" };
+  const newer = { ...sent, id: "new", createdAt: "2026-09-22T00:00:00.000Z" };
+  const index = indexAmendments([older, newer], keys);
+  const shift = { who: "espinoza, brandon", date: "09/22/26", client: "Prescott, M", clientFull: "Prescott, Mason", schedFrom: 840, originalFrom: 840 };
+  assert.equal(amendmentFor(shift, index, { clientKey })?.id, "new");
 });

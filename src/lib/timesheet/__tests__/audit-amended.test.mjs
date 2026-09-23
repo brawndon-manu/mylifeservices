@@ -25,7 +25,11 @@ test("every surface that sums billable minutes reads billable-of, and none keeps
 
 test("the build joins approved amendments and reads the signed shift for the findings", () => {
   const s = read("src/app/portal/admin/audit/[id]/build.js");
-  assert.match(s, /prisma\.clockAmendment\.findMany\(\{\s*where: \{ testOnly: false, approvedAt: \{ not: null \}/);
+  // every non-rehearsal amendment on the copy's days is read once; only the
+  // approved ones become the record, the rest only say they are out
+  assert.match(s, /prisma\.clockAmendment\.findMany\(\{\s*where: \{ testOnly: false, shiftDate: \{ in: shiftDates \} \}/);
+  assert.match(s, /indexAmendments\(amendmentRows\.filter\(\(a\) => a\.approvedAt\)/);
+  assert.match(s, /indexAmendments\(amendmentRows\.filter\(\(a\) => !a\.approvedAt\)/);
   assert.match(s, /const forRules = amendedShift\(shift, amendment\);\s*const read = auditRow\(forRules, note\);/);
   assert.match(s, /clockWorkedMin: shift\.workedMin \?\? null,\s*amendment,/);
 });
@@ -54,4 +58,51 @@ test("the punch rules of the auto flagger stand down on the end an amendment cov
   assert.match(s, /!!r\.noIn && !r\.amendment\?\.inChanged/);
   assert.match(s, /r\.gpsIn === "no" && !r\.amendment\?\.placeIn/);
   assert.match(s, /r\.gpsOut === "no" && !r\.amendment\?\.placeOut/);
+});
+
+// ---- raising one from the card ----
+
+test("both screens raise through the one creator, and the page keeps none of the writing", () => {
+  const page = read("src/app/portal/admin/clock-amendments/actions.js");
+  assert.match(page, /import \{ raiseOne \} from "@\/lib\/clock-amendment\/raise"/);
+  assert.match(page, /results\.push\(await raiseOne\(\{ user, candidate: c, pick: p, testOnly, pdf/);
+  assert.doesNotMatch(page, /prisma\.clockAmendment\.create/, "the page must not write its own record");
+  assert.doesNotMatch(page, /sendAmendmentForm/, "the page must not send its own mail");
+  const card = read("src/app/portal/admin/audit/actions.js");
+  assert.match(card, /export async function raiseAmendmentFromCard\(formData\)/);
+  assert.match(card, /raiseOne\(\{ user, candidate, pick, testOnly, pdf, clockName: batch\.clockName, notesName: batch\.notesName \}\)/);
+  const creator = read("src/lib/clock-amendment/raise.js");
+  assert.match(creator, /export async function raiseOne\(/);
+  assert.match(creator, /prisma\.clockAmendment\.create\(/);
+  assert.match(creator, /sendAmendmentForm\(/);
+});
+
+test("the card's raise re-reads the shift from the copy's stored export, refuses a clean shift and a second open one", () => {
+  const card = read("src/app/portal/admin/audit/actions.js");
+  assert.match(card, /if \(!canManageTimesheets\(user\?\.role\)\) return \{ ok: false, error: "auth" \}/);
+  assert.match(card, /fetch\(batch\.clockUrl, \{ cache: "no-store" \}\)/);
+  assert.match(card, /clockShiftFor\(clockShifts\(xls\), identity, \{ whoKey: who, clientKey \}\)/);
+  assert.match(card, /if \(!hasIssue\(shift\)\) return \{ ok: false, error: "clean" \}/);
+  assert.match(card, /where: \{ testOnly: false, approvedAt: null, staffId: account\.id, shiftDate: shift\.date \}/);
+  assert.match(card, /if \(open\.some\(sameShift\)\) return \{ ok: false, error: "open" \}/);
+  // the note is the card's own, by page, and its pages come off the stored file
+  assert.match(card, /n\.page === page && who\(n\.employee\) === who\(shift\.name\) && n\.date === shift\.date/);
+  assert.match(card, /notePageSpan\(notes, note, pageCount\)/);
+});
+
+test("the button is offered only where the clock has something wrong and nothing is out, and the card carries what the rules need", () => {
+  const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
+  assert.match(cards, /const showRaise = canRaise && !r\.amendment && !r\.pending && r\.inClockExport === true && hasIssue\(r\);/);
+  assert.match(cards, /const canRaise = canUpload && !frozenMode;/);
+  assert.match(cards, /styles\.pendingPill/);
+  const build = read("src/app/portal/admin/audit/[id]/build.js");
+  assert.match(build, /startDelta: shift\.startDelta \?\? null, endDelta: shift\.endDelta \?\? null,/);
+  assert.match(build, /pendingView\(pendingRow/);
+  assert.match(build, /where: \{ testOnly: false, shiftDate: \{ in: shiftDates \} \}/);
+  const panel = read("src/app/portal/admin/audit/[id]/RaiseAmendment.js");
+  for (const fn of ["asksStart", "asksEnd", "asksPlace", "startingTimes", "missingPunchText"]) assert.match(panel, new RegExp(`\\b${fn}\\(`), fn);
+  assert.match(panel, /search=\{searchPeople\}/);
+  assert.match(panel, /raiseAmendmentFromCard\(body\)/);
+  const evidence = read("src/app/portal/admin/audit/[id]/ShiftEvidence.js");
+  assert.match(evidence, /\{!row\.amendment && row\.pending && <PendingLine p=\{row\.pending\} \/>\}/);
 });
