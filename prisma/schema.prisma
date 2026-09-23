@@ -2666,6 +2666,23 @@ model ClockAmendment {
   // missing signature with no reason reads as one somebody forgot to collect
   clientUnavailableReason String?
 
+  // TWO DEVICES, NOT ONE PHONE PASSED ACROSS. once the staff member has signed,
+  // the person served signs on their own phone by scanning a code (or typing
+  // the short link) that opens a client-only page. `clientSignedVia` says which
+  // way the signature came: "own" from their own device, "staff" handed the
+  // staff member's phone, "email" from a link sent to a representative. the
+  // browser and a device id kept in that phone's storage sit beside each
+  // signature's IP, because two phones on one Wi-Fi share an address.
+  clientCode          String?   @unique
+  clientCodeExpiresAt DateTime?
+  clientSignedVia     String?
+  clientSignedUa      String?
+  clientSignedDevice  String?
+  filledUa            String?
+  filledDevice        String?
+  clientLinkEmail     String?
+  clientLinkEmailedAt DateTime?
+
   approvedAt     DateTime?
   approvedById   String?
   approvedBy     User?     @relation("ClockAmendmentApprover", fields: [approvedById], references: [id])

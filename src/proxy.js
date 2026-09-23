@@ -65,7 +65,10 @@ export default auth(async (req) => {
     pathname.startsWith("/t/") ||
     pathname.startsWith("/a/") ||
     pathname.startsWith("/g/") ||
-    pathname.startsWith("/ca/");
+    pathname.startsWith("/ca/") ||
+    // /s/<code> is the client-only half of a clock amendment, opened on the
+    // person served's own phone from the code on the staff member's screen
+    pathname.startsWith("/s/");
 
   // 1. MAINTENANCE GATE - public pages only. the portal, the login page, the
   // maintenance splash, and shared /f/ + /r/ links are always exempt so staff

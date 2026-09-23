@@ -9,7 +9,7 @@
 import { Resend } from "resend";
 import { buildTimesheetShell } from "@/lib/announcement-email";
 import { resolveAmendmentRecipients } from "@/lib/timesheet-mode";
-import { amendmentFormSubject, amendmentDocumentSubject } from "./subjects.js";
+import { amendmentFormSubject, amendmentDocumentSubject, clientSignSubject } from "./subjects.js";
 
 function esc(s) {
   return String(s ?? "")
@@ -172,4 +172,49 @@ export async function sendAmendmentDocument({
   });
   if (error) return { ok: false, error: "send", detail: String(error?.message || error) };
   return { ok: true, sentTo: [...to].join(", "), redirected };
+}
+
+// THE CLIENT LINK, to a parent or representative who is not in the room: the
+// same client-only page the code on the staff member's screen opens, sent by
+// mail instead. through the same lock as the form, so off the real deployment
+// it is redirected like the rest, and a rehearsal forces it to one inbox.
+export function buildClientSignEmailHtml({ staffName, clientName, date, link, redirectedFrom = null }) {
+  const bodyHtml = `
+    ${testBanner(redirectedFrom)}
+    <p style="margin:0 0 14px;color:#0f172a;font-size:15px;">Hello,</p>
+    <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
+      <strong>${esc(staffName)}</strong> has recorded a visit with <strong>${esc(clientName)}</strong> on
+      <strong>${esc(date)}</strong> that the clock did not capture properly. My Life Services asks the person
+      served, or someone who can speak for them, to confirm the visit happened by signing.
+    </p>
+    <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
+      The link opens a short page: say who you are, type your name and sign with your finger. It works today only.
+    </p>
+    <div style="margin:22px 0 8px;"><a href="${esc(link)}" style="${BTN}">Confirm the visit</a></div>
+    <p style="margin:14px 0 0;color:#8a93a0;font-size:12px;line-height:1.6;">
+      If you were not expecting this, you can ignore it. Nothing is signed until you sign.
+    </p>`;
+  return buildTimesheetShell({ title: "Please confirm a visit", bodyHtml, eyebrow: "Timekeeping" });
+}
+
+export async function sendClientSignLink({ intendedEmail, forceTo = null, staffName, clientName, date, link }) {
+  if (!intendedEmail) return { ok: false, error: "norecipient" };
+  const from = fromAddress();
+  if (!from || !process.env.RESEND_API_KEY) return { ok: false, error: "config" };
+  const { to, redirected } = resolveAmendmentRecipients(intendedEmail, process.env, { forceTo });
+  if (!to.length) return { ok: false, error: "norecipient" };
+  const redirectedFrom = redirected ? intendedEmail : null;
+  const subject = clientSignSubject({ staffName, clientName, date, redirectedFrom });
+  const html = buildClientSignEmailHtml({ staffName, clientName, date, link, redirectedFrom });
+  const text = [
+    redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
+    `${staffName} has recorded a visit with ${clientName} on ${date} that the clock did not capture properly.`,
+    `Please confirm the visit happened by signing at the link below. It works today only.`,
+    ``,
+    `Confirm the visit: ${link}`,
+  ].join("\n");
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const { error } = await resend.emails.send({ from, to, subject, html, text });
+  if (error) return { ok: false, error: "send", detail: String(error?.message || error) };
+  return { ok: true, sentTo: to.join(", "), redirected };
 }

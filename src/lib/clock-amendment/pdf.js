@@ -11,6 +11,7 @@
 // so nobody signs a time before seeing what the records already say about it.
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { SIGNER_KINDS, formNumber, correctionsOf, evidenceLevel, asksPlace, LATE_MIN } from "./rules.js";
+import { deviceLabel, deviceTail, viaLine } from "./device.js";
 import { COMPANY_TZ } from "../company-time.js";
 
 const PAGE_W = 612;
@@ -198,7 +199,7 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
     : `${placeIn ? `, starting at ${placeIn}` : ""}${placeOut ? `, ending at ${placeOut}` : ""}`;
   para(`I confirm that I provided the service described above to ${a.clientName} on ${a.shiftDate}${inTime ? ` from ${inTime}` : ""}${outTime ? ` until ${outTime}` : ""}${wherePart}, that the clock record is incomplete for the reason given, and that this record supports the hours billed.`, { size: 10 });
   y -= 4;
-  await signatureBlock({ pngBytes: staffSignaturePng, name: a.filledName || a.staffName, when: a.filledAt, ip: a.filledIp, missing: "Not yet signed" });
+  await signatureBlock({ pngBytes: staffSignaturePng, name: a.filledName || a.staffName, when: a.filledAt, ip: a.filledIp, ua: a.filledUa, device: a.filledDevice, missing: "Not yet signed" });
 
   // ---- the client signature
   heading("Person served");
@@ -206,7 +207,10 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
     row("Signed by", `${a.clientSigner || ""}${a.clientSignerKind ? ` (${label(SIGNER_KINDS, "kind", a.clientSignerKind)})` : ""}`);
     para(`Confirms that ${a.staffName || "the staff member"} provided this service on ${a.shiftDate}${outTime ? ` and left at about ${outTime}` : ""}.`, { size: 10 });
     y -= 4;
-    await signatureBlock({ pngBytes: clientSignaturePng, name: a.clientSigner, when: a.clientSignedAt, ip: a.clientSignedIp, missing: "No signature image" });
+    // which device the signature came from is the point of the second one:
+    // the person served signing on their own phone is what shows two people
+    // signed, not one phone signing twice
+    await signatureBlock({ pngBytes: clientSignaturePng, name: a.clientSigner, when: a.clientSignedAt, ip: a.clientSignedIp, ua: a.clientSignedUa, device: a.clientSignedDevice, via: a.clientSignedVia, missing: "No signature image" });
   } else if (a.clientUnavailableReason) {
     row("Signature", "Nobody was available to sign", { color: RED });
     row("Because", a.clientUnavailableReason);
@@ -253,8 +257,8 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
 
   return doc.save();
 
-  async function signatureBlock({ pngBytes, name, when, ip, missing }) {
-    need(70);
+  async function signatureBlock({ pngBytes, name, when, ip, ua = null, device = null, via = null, missing }) {
+    need(84);
     if (pngBytes) {
       try {
         const img = await doc.embedPng(pngBytes);
@@ -272,6 +276,14 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
     y -= 12;
     text(`${name || ""}${when ? `   ${fmtStamp(when)}` : ""}${ip ? `   from ${ip}` : ""}`, { size: 9, color: MUTED });
     y -= 14;
+    // the device line: how the signature was collected, what it was signed
+    // on, and the tail of the device id, so two signatures on one visit can
+    // be told apart even on one Wi-Fi
+    const deviceBits = [viaLine(via), deviceLabel(ua), deviceTail(device)].filter(Boolean);
+    if (deviceBits.length) {
+      text(deviceBits.join("   ·   "), { size: 8, color: MUTED });
+      y -= 12;
+    }
   }
 }
 

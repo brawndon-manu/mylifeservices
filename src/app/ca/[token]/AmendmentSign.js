@@ -5,19 +5,39 @@ import { useRouter } from "next/navigation";
 import SignaturePad from "@/app/portal/forms/[id]/fill/SignaturePad";
 import { SIGNER_KINDS, signerIsPresent } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf } from "@/lib/clock-amendment/typed-time";
+import ClientCode from "./ClientCode";
 
-// THE TWO STEPS ON ONE PHONE.
+// THE TWO STEPS, TWO PHONES.
 //
 //   1. the person asked reads what the office took down, corrects anything
 //      that is wrong, and signs. their signature turns the office's note into
 //      their own statement.
-//   2. they hand the phone over and the person served signs, or the form says
-//      who could not and why. a missing signature with a reason beside it is a
-//      record; one with nothing beside it reads as forgotten.
+//   2. the person served signs on their own phone, from the code this screen
+//      then shows (ClientCode.js). handing this phone over stays as a
+//      fallback, and the document says which it was; or the form says who
+//      could not sign and why. a missing signature with a reason beside it
+//      is a record; one with nothing beside it reads as forgotten.
 //
 // what happened is their own account in their own words, nothing picked from
 // a list. the signer kinds come from rules.js, so the form, the office screen
 // and the document all say the same words.
+
+// the id this phone keeps, so the same phone reads the same next time and a
+// different phone reads differently; beside the address, which two phones on
+// one Wi-Fi share. nothing about the person, only about the device.
+function deviceId() {
+  try {
+    const k = "mls-device";
+    let v = window.localStorage.getItem(k);
+    if (!v) {
+      v = (window.crypto?.randomUUID?.() || `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, "");
+      window.localStorage.setItem(k, v);
+    }
+    return v;
+  } catch {
+    return null;
+  }
+}
 const ERRORS = {
   notfound: "This link does not open anything any more.",
   approved: "This amendment has already been approved and cannot be changed.",
@@ -38,10 +58,12 @@ const ERRORS = {
 const field =
   "min-h-[44px] w-full rounded-[9px] border border-border-strong bg-surface px-3 py-2 text-[15px] text-foreground outline-none focus-visible:border-brand";
 
-export default function AmendmentSign({ token, view, staffName, recipientName, intake, confirmed, suggested, confirmAndSign, clientSign }) {
+export default function AmendmentSign({ token, view, staffName, recipientName, intake, confirmed, suggested, confirmAndSign, clientSign, clientHalfStatus, refreshClientCode, emailClientLink }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
+  // the fallback: the person served signs on this phone after all
+  const [handoff, setHandoff] = useState(false);
 
   // a bare "7" is read against the shift: nearest the scheduled end for the
   // clock-out, nearest the scheduled start for the clock-in
@@ -79,6 +101,7 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
         signedName: recipientName,
         attested,
         signaturePng: png,
+        deviceId: deviceId(),
       });
       done(res);
     });
@@ -87,7 +110,7 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
   const signClient = (png) => {
     setPadFor(null);
     start(async () => {
-      const res = await clientSign(token, { signerKind, signerName, signaturePng: png });
+      const res = await clientSign(token, { signerKind, signerName, signaturePng: png, deviceId: deviceId() });
       done(res);
     });
   };
@@ -237,14 +260,35 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
         >
           {pending ? "Saving…" : `Sign as ${recipientName}`}
         </button>
-        <p className="mt-3 text-center text-[12.5px] text-muted">Then <b className="font-semibold text-foreground">{view.clientName}</b> signs on this phone.</p>
+        <p className="mt-3 text-center text-[12.5px] text-muted">Then <b className="font-semibold text-foreground">{view.clientName}</b> signs on their own phone, from a code this screen will show.</p>
 
         {padFor === "staff" && <SignaturePad onSave={signStaff} onClose={() => setPadFor(null)} />}
       </section>
     );
   }
 
-  // ---- step two: the person served
+  // ---- step two: the person served, on their own phone
+  if (view.clientStage === "waiting" && !handoff) {
+    return (
+      <section className="mt-6">
+        <p className="rounded-[9px] border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-800 dark:text-emerald-200">
+          Signed by {view.filledName}. Thank you.
+        </p>
+        <ClientCode
+          token={token}
+          view={view}
+          staffName={staffName}
+          endTime={confirmed.actualOut || null}
+          clientHalfStatus={clientHalfStatus}
+          refreshClientCode={refreshClientCode}
+          emailClientLink={emailClientLink}
+          onHandoff={() => { setErr(null); setHandoff(true); }}
+        />
+      </section>
+    );
+  }
+
+  // ---- step two, the fallback: the person served on this phone
   if (view.clientStage === "waiting") {
     return (
       <section className="mt-6">
@@ -254,6 +298,8 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
         <h2 className="mt-5 text-[17px] font-semibold text-foreground">Now hand the phone to {view.clientName}</h2>
         <p className="mt-1 text-[13px] leading-relaxed text-muted">
           They confirm that {staffName} was there on {view.shiftDate}{confirmed.actualOut ? ` and left at about ${confirmed.actualOut}` : ""}. Not a clock reading, just that the visit happened.
+          The document will say the signature was made on this phone.{" "}
+          <button type="button" onClick={() => setHandoff(false)} className="text-brand underline underline-offset-4">Back to the code</button>
         </p>
 
         <div className="mt-4">
@@ -313,7 +359,9 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
       <p className="text-sm font-semibold text-foreground">All done. Thank you.</p>
       <p className="mt-1 text-[13px] leading-relaxed text-muted">
         Signed by {view.filledName}
-        {view.clientStage === "signed" ? ` and by ${view.clientSigner}.` : `. Nobody was available to sign for the person served: ${view.clientUnavailableReason}`}
+        {view.clientStage === "signed"
+          ? ` and by ${view.clientSigner}${view.clientSignedVia === "own" ? ", on their own phone" : view.clientSignedVia === "email" ? ", from the emailed link" : view.clientSignedVia === "staff" ? ", on this phone" : ""}.`
+          : `. Nobody was available to sign for the person served: ${view.clientUnavailableReason}`}
         {" "}The office will approve it and email you the signed copy.
       </p>
     </section>

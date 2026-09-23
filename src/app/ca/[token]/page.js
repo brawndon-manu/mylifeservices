@@ -5,7 +5,8 @@ import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
 import { missingPunchText, intakeOf, confirmedOf, startingTimes, clientStage, formNumber, firstLast, asksStart, asksEnd, asksPlace, issueOf } from "@/lib/clock-amendment/rules";
 import AmendmentCard from "@/components/clock-amendment/AmendmentCard";
 import AmendmentSign from "./AmendmentSign";
-import { confirmAndSign, clientSign } from "./actions";
+import { confirmAndSign, clientSign, clientHalfStatus, refreshClientCode, emailClientLink } from "./actions";
+import { formatCode, codeExpired } from "@/lib/clock-amendment/client-code";
 
 // THE FORM, OPENED FROM THE EMAIL, WITH OR WITHOUT A LOGIN. the signed token
 // is the credential and it opens exactly this one amendment for exactly the
@@ -61,8 +62,15 @@ export default async function AmendmentFromLinkPage({ params }) {
     approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
     clientStage: clientStage(a),
     clientSigner: a.clientSigner,
+    clientSignedVia: a.clientSignedVia || null,
     clientUnavailableReason: a.clientUnavailableReason,
     testOnly: a.testOnly,
+    // the code the person served scans or types on their own phone, and the
+    // link it opens; minted when the staff half went in, good for the day
+    clientCode: a.clientCode ? formatCode(a.clientCode) : null,
+    clientLink: a.clientCode ? `${process.env.AUTH_URL || "https://www.mylifeservicesinc.com"}/s/${a.clientCode}` : null,
+    codeExpired: codeExpired(a.clientCodeExpiresAt),
+    clientLinkEmail: a.clientLinkEmail || null,
   };
 
   return (
@@ -96,6 +104,9 @@ export default async function AmendmentFromLinkPage({ params }) {
         suggested={suggested}
         confirmAndSign={confirmAndSign}
         clientSign={clientSign}
+        clientHalfStatus={clientHalfStatus}
+        refreshClientCode={refreshClientCode}
+        emailClientLink={emailClientLink}
       />
     </main>
   );

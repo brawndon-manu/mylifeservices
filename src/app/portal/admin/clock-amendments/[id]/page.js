@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { deviceLabel, deviceTail, viaLine } from "@/lib/clock-amendment/device";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
@@ -96,7 +97,7 @@ export default async function ClockAmendmentPage({ params }) {
                 <img src={a.staffSignatureUrl} alt="" className="h-14 w-auto max-w-[240px] rounded-md bg-white p-1 ring-1 ring-border" />
               )}
               <p className="text-[12.5px] leading-relaxed text-muted">
-                Signed by <b className="font-semibold text-foreground">{a.filledName}</b> on {when(a.filledAt)}{a.filledIp ? ` from ${a.filledIp}` : ""}.
+                Signed by <b className="font-semibold text-foreground">{a.filledName}</b> on {when(a.filledAt)}{a.filledIp ? ` from ${a.filledIp}` : ""}{deviceLabel(a.filledUa) ? `, ${deviceLabel(a.filledUa)}` : ""}{deviceTail(a.filledDevice) ? ` (${deviceTail(a.filledDevice)})` : ""}.
               </p>
             </div>
           ) : (
@@ -118,7 +119,7 @@ export default async function ClockAmendmentPage({ params }) {
               <img src={a.clientSignatureUrl} alt="" className="h-14 w-auto max-w-[240px] rounded-md bg-white p-1 ring-1 ring-border" />
             )}
             <p className="text-[12.5px] leading-relaxed text-muted">
-              <b className="font-semibold text-foreground">{a.clientSigner}</b> ({signerLabel(a.clientSignerKind)}) signed on {when(a.clientSignedAt)}{a.clientSignedIp ? ` from ${a.clientSignedIp}` : ""}.
+              <b className="font-semibold text-foreground">{a.clientSigner}</b> ({signerLabel(a.clientSignerKind)}) signed on {when(a.clientSignedAt)}{a.clientSignedIp ? ` from ${a.clientSignedIp}` : ""}{deviceLabel(a.clientSignedUa) ? `, ${deviceLabel(a.clientSignedUa)}` : ""}{deviceTail(a.clientSignedDevice) ? ` (${deviceTail(a.clientSignedDevice)})` : ""}.{viaLine(a.clientSignedVia) ? ` ${viaLine(a.clientSignedVia)}.` : ""}
             </p>
           </div>
         ) : cs === "unavailable" ? (

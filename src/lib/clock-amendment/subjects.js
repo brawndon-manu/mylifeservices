@@ -22,3 +22,8 @@ export function amendmentFormSubject({ staffName, date, isResend = false, redire
 export function amendmentDocumentSubject({ formNumber, staffName, date, redirectedFrom = null }) {
   return prefixed(`Approved clock amendment ${formNumber}: ${staffName}, ${date}`, redirectedFrom);
 }
+
+// THE CLIENT LINK, to a parent or representative who is not in the room
+export function clientSignSubject({ staffName, clientName, date, redirectedFrom = null }) {
+  return prefixed(`Please confirm ${staffName}'s visit with ${clientName} on ${date}`, redirectedFrom);
+}

@@ -5,10 +5,16 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
-import { isSignerKind, signerIsPresent, asksStart, asksEnd, asksPlace } from "@/lib/clock-amendment/rules";
+import { isSignerKind, signerIsPresent, asksStart, asksEnd, asksPlace, firstLast, confirmedOf } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
+import { codeFromBytes, codeExpiry, codeExpired, formatCode, CODE_LENGTH } from "@/lib/clock-amendment/client-code";
+import { sendClientSignLink } from "@/lib/clock-amendment/email";
+import { preferredName } from "@/lib/contacts";
 
-// THE TWO SIGNATURES, COLLECTED ON THE PHONE THE LINK WAS OPENED ON.
+// THE STAFF SIGNATURE, ON THE PHONE THE LINK WAS OPENED ON; THE CLIENT'S ON
+// THEIR OWN. once the staff member has signed, a short code is minted for the
+// person served to scan or type on their own phone (see /s/[code]). the
+// hand-off on the staff member's phone stays as a fallback and says so.
 //
 // the token is the credential: it names exactly one amendment, and these
 // actions do nothing a page without it could not see. neither step can run on
@@ -18,6 +24,37 @@ import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
 async function callerIp() {
   const h = await headers();
   return (h.get("x-forwarded-for") || "").split(",")[0].trim() || h.get("x-real-ip") || null;
+}
+
+// the browser and device kind, beside the address: two phones on one Wi-Fi
+// share an address, and this is what still tells them apart
+async function callerUa() {
+  const h = await headers();
+  return String(h.get("user-agent") || "").slice(0, 300) || null;
+}
+
+// the id the page keeps in that phone's storage, when the page sent one
+const deviceOf = (payload) => {
+  const v = String(payload?.deviceId || "").trim();
+  return /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : null;
+};
+
+const BASE = () => process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+
+// a fresh code for the client half, unique across the table, good until the
+// end of the California day
+async function mintClientCode(id) {
+  for (let i = 0; i < 6; i++) {
+    const code = codeFromBytes(randomBytes(CODE_LENGTH));
+    try {
+      await prisma.clockAmendment.update({ where: { id }, data: { clientCode: code, clientCodeExpiresAt: codeExpiry() } });
+      return code;
+    } catch (e) {
+      // another row holds this code: draw again
+      if (e?.code !== "P2002") throw e;
+    }
+  }
+  return null;
 }
 
 // a drawn signature arrives as a png data url from the pad. stored as a file
@@ -49,7 +86,11 @@ async function open(token) {
     select: {
       id: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
       clockedIn: true, clockedOut: true, scheduledIn: true, scheduledOut: true, clockRow: true,
+      clientCode: true, clientCodeExpiresAt: true, clientName: true, shiftDate: true, testOnly: true,
+      actualIn: true, actualOut: true, intakeActualIn: true, intakeActualOut: true,
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      createdBy: { select: { email: true } },
     },
   });
 }
@@ -94,14 +135,75 @@ export async function confirmAndSign(token, payload) {
       filledName: signedName,
       filledAt: new Date(),
       filledIp: await callerIp(),
+      filledUa: await callerUa(),
+      filledDevice: deviceOf(payload),
       staffSignatureUrl: signatureUrl,
     },
   });
+  // the code the person served scans, minted the moment the staff half is in
+  await mintClientCode(a.id);
   return { ok: true };
 }
 
-// STEP TWO: the person served signs on the same phone, or the form says
-// honestly that nobody could.
+// WHERE THE CLIENT HALF STANDS, asked by the staff member's screen every few
+// seconds while the code is showing, so it can say "signed" on its own
+export async function clientHalfStatus(token) {
+  const a = await open(token);
+  if (!a) return { ok: false, error: "notfound" };
+  return {
+    ok: true,
+    signed: !!a.clientSignedAt,
+    unavailable: !!a.clientUnavailableReason,
+    approved: !!a.approvedAt,
+    code: a.clientCode ? formatCode(a.clientCode) : null,
+    expired: codeExpired(a.clientCodeExpiresAt),
+  };
+}
+
+// A NEW CODE, when the day has rolled over or the old one was shown to the
+// wrong screen. only while the client half is still open.
+export async function refreshClientCode(token) {
+  const a = await open(token);
+  if (!a) return { ok: false, error: "notfound" };
+  if (a.approvedAt) return { ok: false, error: "approved" };
+  if (!a.filledAt) return { ok: false, error: "unsigned" };
+  if (a.clientSignedAt || a.clientUnavailableReason) return { ok: false, error: "done" };
+  const code = await mintClientCode(a.id);
+  if (!code) return { ok: false, error: "failed" };
+  return { ok: true, code: formatCode(code), link: `${BASE()}/s/${code}` };
+}
+
+// THE LINK BY EMAIL, to a parent or representative who is not in the room.
+// the same code and the same page; a code past its day is replaced first.
+export async function emailClientLink(token, email) {
+  const a = await open(token);
+  if (!a) return { ok: false, error: "notfound" };
+  if (a.approvedAt) return { ok: false, error: "approved" };
+  if (!a.filledAt) return { ok: false, error: "unsigned" };
+  if (a.clientSignedAt || a.clientUnavailableReason) return { ok: false, error: "done" };
+  const to = str(email, 200);
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { ok: false, error: "email" };
+  let code = a.clientCode;
+  if (!code || codeExpired(a.clientCodeExpiresAt)) code = await mintClientCode(a.id);
+  if (!code) return { ok: false, error: "failed" };
+  const c = confirmedOf(a);
+  const sent = await sendClientSignLink({
+    intendedEmail: to,
+    // a rehearsal's mail goes to whoever raised it and nowhere else
+    forceTo: a.testOnly ? a.createdBy?.email || null : null,
+    staffName: preferredName(a.staff) || a.staff?.name || "",
+    clientName: firstLast(a.clientName) || "the person served",
+    date: a.shiftDate,
+    link: `${BASE()}/s/${code}`,
+  });
+  if (!sent.ok) return { ok: false, error: "send" };
+  await prisma.clockAmendment.update({ where: { id: a.id }, data: { clientLinkEmail: to, clientLinkEmailedAt: new Date() } });
+  return { ok: true, sentTo: sent.sentTo, redirected: !!sent.redirected, unusedTimes: !!c };
+}
+
+// STEP TWO ON THE STAFF MEMBER'S PHONE: the hand-off, kept as the fallback
+// for a person served with no phone, or the honest record that nobody could
+// sign. the document says the signature came from the staff member's phone.
 export async function clientSign(token, payload) {
   const a = await open(token);
   if (!a) return { ok: false, error: "notfound" };
@@ -134,6 +236,9 @@ export async function clientSign(token, payload) {
       clientSignerKind: kind,
       clientSignedAt: new Date(),
       clientSignedIp: await callerIp(),
+      clientSignedUa: await callerUa(),
+      clientSignedDevice: deviceOf(payload),
+      clientSignedVia: "staff",
       clientSignatureUrl: signatureUrl,
     },
   });
