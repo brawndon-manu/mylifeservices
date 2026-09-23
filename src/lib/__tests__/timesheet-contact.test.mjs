@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import {
   contactForPath,
   isTimesheetPath,
+  isAmendmentPath,
   SITE_PHONE_DISPLAY,
   SITE_PHONE_HREF,
   TIMESHEET_PHONE_DISPLAY,
@@ -92,4 +93,16 @@ test("the message is long enough to need reading time", () => {
   // for this length.
   assert.ok(TIMESHEET_CONTACT_MESSAGE.split(/\s+/).length >= 6);
   assert.ok(CONTACT_HOLD_MS >= 3000, "less than this is not reading time");
+});
+
+// THE CLIENT HALF IS THE SAME FORM ON ANOTHER PHONE: the person served's page
+// ends in a signature too, so the chrome treats /s/<code> like /ca/<token>
+// and never finishes it with "Get in touch"
+test("the client-only signing page counts as an amendment path, and nothing near it does", () => {
+  assert.equal(isAmendmentPath("/s/7KQ42MZD"), true);
+  assert.equal(isAmendmentPath("/s"), true);
+  assert.equal(isAmendmentPath("/ca/abc.def"), true);
+  assert.equal(isAmendmentPath("/services"), false);
+  assert.equal(isAmendmentPath("/staff"), false);
+  assert.equal(isAmendmentPath("/portal/admin/clock-amendments/x"), false);
 });

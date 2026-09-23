@@ -33,12 +33,14 @@ export function isTimesheetPath(pathname) {
   return p === "/t" || p.startsWith("/t/");
 }
 
-// the clock amendment form, opened from its own emailed link. same shape as
-// the timesheet link and treated the same way by the chrome: a form somebody
-// signs on a phone, not a page of the marketing site
+// the clock amendment form, opened from its own emailed link, and the client
+// half of it, opened on the person served's own phone from the code (/s/).
+// same shape as the timesheet link and treated the same way by the chrome: a
+// form somebody signs on a phone, not a page of the marketing site, so it
+// ends in a signature and not in "Get in touch"
 export function isAmendmentPath(pathname) {
   const p = String(pathname || "");
-  return p === "/ca" || p.startsWith("/ca/");
+  return p === "/ca" || p.startsWith("/ca/") || p === "/s" || p.startsWith("/s/");
 }
 
 // -> what the header's phone button says, links to, and offers alongside it.
