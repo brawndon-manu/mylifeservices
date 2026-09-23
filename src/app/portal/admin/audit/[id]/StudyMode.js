@@ -359,6 +359,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
             tabIndex={-1}
             onKeyDown={onKey}
             className={`${styles.card} ${styles.focusCard}`}
+            data-amended={row.amendment ? "true" : undefined}
           >
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <span>
@@ -384,6 +385,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                     ? `\u00A0\u00A0\u00A0${ampmLabel(row.schedFrom)} - ${ampmLabel(row.schedTo)}`
                     : ""}
                 </span>
+                {row.amendment && <span className={styles.amendedPill}>Amended</span>}
                 {/* what a standing flag is about, the same summary the card
                     carries, so neither surface needs a mark on every
                     disclosure saying the same thing again */}

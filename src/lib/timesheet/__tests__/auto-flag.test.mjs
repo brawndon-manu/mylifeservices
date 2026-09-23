@@ -101,3 +101,15 @@ test("a DSN filed more than fifteen minutes from the clock out fires, fifteen do
   assert.equal(autoFlagRow(filed(-16)).reason, "Auto: the DSN was filed more than 15 minutes from the clock out.");
   assert.equal(autoFlagRow(filed(null)), null);
 });
+
+// AN APPROVED CLOCK AMENDMENT ANSWERS THE PUNCH RULES, end by end: a supplied
+// time for a missing punch, a stated place for a punch with no location. the
+// end it did not cover still fires.
+test("an approved amendment stands down the punch rule at the end it covers, and no other", () => {
+  assert.equal(autoFlagRow(row({ noOut: true, amendment: { outChanged: true } })), null);
+  assert.equal(autoFlagRow(row({ noOut: true, amendment: { inChanged: true } })).reason, "Auto: no clock out.");
+  assert.equal(autoFlagRow(row({ noIn: true, amendment: { inChanged: true } })), null);
+  assert.equal(autoFlagRow(row({ gpsOut: "no", amendment: { placeOut: "the client's home" } })), null);
+  assert.equal(autoFlagRow(row({ gpsOut: "no", amendment: { placeIn: "the client's home" } })).reason, "Auto: GPS missing at clock out.");
+  assert.equal(autoFlagRow(row({ gpsIn: "no", amendment: { placeIn: "the park" } })), null);
+});

@@ -39,12 +39,17 @@ import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import styles from "../audit.module.css";
 import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, offerableKinds } from "@/lib/timesheet/review-kinds";
+import { billableOf } from "@/lib/timesheet/billable-of";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
   { key: "open", label: "Not decided", match: (r) => !r.review },
   { key: "approved", label: "Approved", match: (r) => r.review?.decision === "approved" },
   { key: "flagged", label: "Flagged", match: (r) => r.review?.decision === "flagged" },
+  // not a decision but a fact about the record, which is why it gets a tab of
+  // its own: an approved clock amendment stands on the shift whatever the
+  // reviewer has ruled. see amended.js
+  { key: "amended", label: "Amended", match: (r) => !!r.amendment },
 ];
 
 const VIEWS = [
@@ -284,10 +289,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       g.shifts++;
       g.minDay = Math.min(g.minDay, rollDayKey(r.date));
       g.billedMin += r.billedMin ?? 0;
-      // WHAT THE REVIEWER SAYS IS ACTUALLY BILLABLE: the adjusted figure where
-      // one was recorded, the billed figure everywhere else
-      g.billableMin += r.review?.billableMin ?? r.billedMin ?? 0;
-      if (r.review?.billableMin != null) g.adjusted++;
+      // WHAT IS ACTUALLY BILLABLE: the reviewer's corrected figure or the
+      // signed amendment where one stands, the billed figure everywhere else
+      const b = billableOf(r);
+      g.billableMin += b.min ?? 0;
+      if (b.source !== "billed") g.adjusted++;
       if (!g.authKey && r.authKey) g.authKey = r.authKey;
       // MEASURED AGAINST THE CLOCK. It used to total billed-above-DOCUMENTED,
       // and the note's time is a copy of the billed time - 494 of 494 - so the
@@ -433,7 +439,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
         {["all", ...periods].map((p) => <option key={p} value={p}>{p === "all" ? "Every period" : p} ({periodCounts[p] ?? 0})</option>)}
       </select></label>}
       {recordView && !frozenMode && <div className={styles.decisionTabs} aria-label="Review status">
-        {["open", "flagged", "approved", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
+        {["open", "flagged", "approved", "amended", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
       </div>}
       {recordView && !frozenMode && decision === "flagged" && (
         <div className={styles.decisionTabs} aria-label="What the flags are about">
@@ -985,7 +991,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
   // read without opening anything. Billing rides in from billableMin.
   const aboutKinds = r.review?.decision === "flagged" ? kindsOf(r.review) : [];
   return (
-    <article className={styles.card} data-decision={r.review?.decision || "open"}>
+    <article className={styles.card} data-decision={r.review?.decision || "open"} data-amended={r.amendment ? "true" : undefined}>
       {/* the corner answers the two questions at a glance: which day, and
           where the review stands - his mock, 2026-09-06 - and keeps its
           shape on desktop. */}
@@ -1001,6 +1007,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
           {!dotOnly && decisionWord}
+          {r.amendment && <span className={styles.amendedPill}>Amended</span>}
         </span>
         <span className="hidden shrink-0 text-right sm:block">
           <span className="block text-sm tabular-nums text-muted">{r.date}</span>
@@ -1008,6 +1015,9 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
             {decisionWord}
           </span>
+          {/* the record was amended: a fact beside the decision, not instead
+              of it, in the amendment's own blue */}
+          {r.amendment && <span className={styles.amendedPill}>Amended</span>}
         </span>
         {frozen && (
           <button

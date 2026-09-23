@@ -4,6 +4,7 @@
 // accept for billing time." One block shared by the cards and Focused
 // review so the two surfaces can never phrase the choice differently.
 import { hrs, span } from "./figures";
+import { billableOf } from "@/lib/timesheet/billable-of";
 import styles from "../audit.module.css";
 
 // THE REPORT CAUGHT UP TO THE CORRECTION: the newest copy bills exactly what
@@ -99,7 +100,9 @@ export default function TimeCompare({ r, busy = false, onPick, onFlag }) {
         )}
         {r.billedMin != null && (
           <button type="button" disabled={busy} className={styles.secondary} onClick={() => onPick("new")}>
-            Accept the new time · {hrs(r.billedMin)}
+            {/* what bills once the reviewer's own figure is let go: the signed
+                amendment where one stands, the roster's figure otherwise */}
+            Accept the new time · {hrs(billableOf({ ...r, review: null }).min)}
           </button>
         )}
         <button type="button" disabled={busy} className={styles.secondary} onClick={onFlag}>Flag with a reason</button>

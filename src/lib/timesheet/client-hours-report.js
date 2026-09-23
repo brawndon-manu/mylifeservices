@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { clockLabel } from "./schedule-notes.js";
+import { billableOf, adjustedWord } from "./billable-of.js";
 
 const hrs = (m) => `${(m / 60).toFixed(2)}h`;
 
@@ -44,9 +45,12 @@ export function clientHoursModel({
       g = { name, authKey: r.authKey || null, billableMin: 0, adjusted: 0, byWho: new Map() };
       byClient.set(name, g);
     }
-    const billable = r.review?.billableMin ?? r.billedMin ?? 0;
+    // the reviewer's correction or the signed amendment, else the billed figure
+    const b = billableOf(r);
+    const billable = b.min ?? 0;
+    const adjusted = b.source !== "billed";
     g.billableMin += billable;
-    if (r.review?.billableMin != null) g.adjusted++;
+    if (adjusted) g.adjusted++;
     if (!g.authKey && r.authKey) g.authKey = r.authKey;
     const staffName = r.whoLegal || r.who; // legal names on documents
     if (!g.byWho.has(staffName)) g.byWho.set(staffName, []);
@@ -58,12 +62,16 @@ export function clientHoursModel({
       start: r.schedFrom ?? r.startMin ?? null,
       end: r.schedTo ?? null,
       billableMin: billable,
-      adjusted: r.review?.billableMin != null,
-      adjustedBy: r.review?.billableMin != null ? r.review?.byLegal || null : null,
+      adjusted,
+      adjustedBy: adjusted ? b.byLegal || null : null,
+      // "amended" beside a figure a signed amendment set, "adjusted" beside a
+      // reviewer's, so the document says which record it is reading
+      adjustedWord: adjusted ? adjustedWord(r) : null,
       // the window the correction was typed as, when the reviewer used the
-      // time entry - printed beside the adjusted figure
-      adjustedFrom: r.review?.billableMin != null ? r.review?.billableFrom ?? null : null,
-      adjustedTo: r.review?.billableMin != null ? r.review?.billableTo ?? null : null,
+      // time entry, or the window the amendment was signed for - printed
+      // beside the adjusted figure
+      adjustedFrom: adjusted ? b.from ?? null : null,
+      adjustedTo: adjusted ? b.to ?? null : null,
     });
   }
 
@@ -104,8 +112,8 @@ export function clientHoursModel({
                     hrs(e.billableMin)
                     + (e.adjusted
                       ? e.adjustedFrom != null && e.adjustedTo != null
-                        ? ` (adjusted to ${clockLabel(e.adjustedFrom)}-${clockLabel(e.adjustedTo)} by ${e.adjustedBy || "the reviewer"})`
-                        : ` (adjusted by ${e.adjustedBy || "the reviewer"})`
+                        ? ` (${e.adjustedWord || "adjusted"} to ${clockLabel(e.adjustedFrom)}-${clockLabel(e.adjustedTo)} by ${e.adjustedBy || "the reviewer"})`
+                        : ` (${e.adjustedWord || "adjusted"} by ${e.adjustedBy || "the reviewer"})`
                       : ""),
                 })),
             }))

@@ -116,19 +116,24 @@ export const AUTO_FLAG_RULES = [
     phrase: `the DSN was filed more than ${FILED_GAP_MIN} minutes from the clock out`,
     test: (r) => r.note?.filedGapMin != null && Math.abs(r.note.filedGapMin) > FILED_GAP_MIN,
   },
+  // AN APPROVED CLOCK AMENDMENT ANSWERS THE FOUR PUNCH RULES, end by end. the
+  // row keeps the export's punches so the card can show what the phone caught,
+  // and the amendment beside them says which end a signature now covers: a
+  // supplied time for a missing punch, a stated place for a punch with no
+  // location. see amended.js. an end the amendment did not touch still fires.
   {
     key: "no-clock-out",
     label: "no clock out",
     phrase: "no clock out",
     // only where the export HOLDS the shift: absent-from-export is the known
     // admin-type pattern (B. Rotter's shifts) and is deliberately not a rule
-    test: (r) => r.inClockExport === true && !!r.noOut,
+    test: (r) => r.inClockExport === true && !!r.noOut && !r.amendment?.outChanged,
   },
   {
     key: "no-clock-in",
     label: "no clock in",
     phrase: "no clock in",
-    test: (r) => r.inClockExport === true && !!r.noIn,
+    test: (r) => r.inClockExport === true && !!r.noIn && !r.amendment?.inChanged,
   },
   {
     key: "gps-in",
@@ -137,13 +142,13 @@ export const AUTO_FLAG_RULES = [
     // "no" only - blank GPS on an unclocked punch says nothing (the
     // three-valued trap measured 2026-08-22: blanks are missed punches,
     // not missing location)
-    test: (r) => r.gpsIn === "no",
+    test: (r) => r.gpsIn === "no" && !r.amendment?.placeIn,
   },
   {
     key: "gps-out",
     label: "GPS missing at clock out",
     phrase: "GPS missing at clock out",
-    test: (r) => r.gpsOut === "no",
+    test: (r) => r.gpsOut === "no" && !r.amendment?.placeOut,
   },
   // the double booking rides the rows' own finding, stamped by
   // audit-overlaps.js at build. The staff-side twin ("booked in two places

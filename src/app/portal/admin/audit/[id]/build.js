@@ -18,6 +18,7 @@ import { stampOverlaps } from "@/lib/timesheet/audit-overlaps";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
 import { periodDates } from "@/lib/timesheet/period-of";
 import { auditWindow, inAuditWindow } from "@/lib/timesheet/audit-window";
+import { indexAmendments, amendmentFor, amendmentView, amendedShift } from "@/lib/timesheet/amended";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -520,6 +521,29 @@ export async function buildAudit(id) {
     noteFor.set(shift, note);
   }
 
+  // APPROVED CLOCK AMENDMENTS ON THESE DAYS. one is raised the day it happens
+  // off that day's export and approved before the fortnight's copy exists, so
+  // it is looked up by the shift rather than stored on anything of this
+  // batch. rehearsals stay out. what one changes is in amended.js: the
+  // findings read the signed window, the billable follows it, the punch lines
+  // keep the export's own record.
+  const shiftDates = [...new Set(everyShift.map((s) => s.date).filter(Boolean))];
+  const amendmentRows = shiftDates.length
+    ? await prisma.clockAmendment.findMany({
+      where: { testOnly: false, approvedAt: { not: null }, shiftDate: { in: shiftDates } },
+      select: {
+        id: true, shiftDate: true, clientName: true, clockRow: true, approvedAt: true,
+        clockedIn: true, clockedOut: true,
+        filledAt: true, filledName: true,
+        reasonText: true, actualIn: true, actualOut: true, placeIn: true, placeOut: true,
+        intakeReasonText: true, intakeActualIn: true, intakeActualOut: true, intakePlaceIn: true, intakePlaceOut: true,
+        qspFixedIn: true, qspFixedTo: true,
+        approvedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+      },
+    })
+    : [];
+  const amendmentIndex = indexAmendments(amendmentRows, { whoKey, clientKey });
+
   for (const shift of everyShift) {
     const note = noteFor.get(shift) || null;
     // the rule needs the difference between "no export was uploaded" and "the
@@ -530,7 +554,17 @@ export async function buildAudit(id) {
     // mandatory-DSN finding needs it (stamped at merge on new uploads,
     // derived for stored batches: only the DSN PDF gives a note a page)
     if (note && note.source === undefined) note.source = note.page != null ? "dsn" : "xls";
-    const read = auditRow(shift, note);
+    // the signed record where one stands, read by the rules in the export's
+    // place; the export's own shift still feeds the punch lines below
+    const amendRow = amendmentFor(shift, amendmentIndex, { clientKey });
+    const amendment = amendRow
+      ? amendmentView(amendRow, {
+        by: amendRow.approvedBy ? preferredName(amendRow.approvedBy) : null,
+        byLegal: amendRow.approvedBy?.name || null,
+      })
+      : null;
+    const forRules = amendedShift(shift, amendment);
+    const read = auditRow(forRules, note);
     // FULL WHERE ANYTHING HAS IT. The clock export is preferred over the note
     // because it is already "Last, First" like every other name on these
     // screens; the roster's abbreviation is the last resort, for a shift no
@@ -578,6 +612,10 @@ export async function buildAudit(id) {
       // read as a shift nobody tried to clock
       noIn: !!shift.noIn, noOut: !!shift.noOut,
       gpsIn: shift.gpsIn ?? null, gpsOut: shift.gpsOut ?? null,
+      // the export's own minutes, kept apart from clockedMin, which is the
+      // signed window on an amended shift
+      clockWorkedMin: shift.workedMin ?? null,
+      amendment,
       // one punch session shared across sibling bookings - see session-split.js
       sharedSession: shift.sharedSession || null,
       inheritedIn: !!shift.inheritedIn, inheritedOut: !!shift.inheritedOut,
@@ -601,7 +639,7 @@ export async function buildAudit(id) {
           // cannot know on its own - signedAfterMin is measured against the
           // note's own end time. Computed here, where the note and the shift
           // are already joined, so the rules stay pure and client-safe.
-          filedGapMin: filedGapMin(note, shift.date, shift.noOut ? null : shift.actualTo ?? null),
+          filedGapMin: filedGapMin(note, shift.date, forRules.noOut ? null : forRules.actualTo ?? null),
           miles: note.miles, page: note.page,
           source: note.source,
         }

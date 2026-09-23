@@ -110,3 +110,21 @@ test("summary clients are alphabetical and the detail flag names the title", () 
   assert.deepEqual(m.clients.map((c) => c.name), ["Abel, B", "Zed, A"]);
   assert.equal(m.title, "Client Billable Hours - Detailed");
 });
+
+test("a signed amendment bills its window and the entry says amended, not adjusted", () => {
+  const m = clientHoursModel({
+    ...base,
+    rows: [
+      row("Prescott, Mason", "Espinoza, Brandon", "08/22/26", 150, {
+        schedFrom: 840, schedTo: 990,
+        amendment: { min: 138, from: 825, to: 963, timesChanged: true, by: "Mánu Uribe", byLegal: "Brandon Uribe", at: "2026-08-22T23:23:20.309Z" },
+      }),
+    ],
+    detailed: true,
+  });
+  const c = m.clients[0];
+  assert.equal(c.billableMin, 138);
+  assert.equal(c.adjusted, 1);
+  const e = c.employees[0].entries[0];
+  assert.match(e.figure, /^2\.30h \(amended to 1:45p-4:03p by Brandon Uribe\)$/);
+});

@@ -13,6 +13,7 @@
   --green: #19804a;
   --amber: #936000;
   --amber-fill: #9360001f;
+  --accent-fill: #0066cc1a;
   display: grid;
   grid-template-columns: 204px minmax(0, 1fr);
   max-width: 1440px;
@@ -131,6 +132,10 @@
 .card { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 22px; }
 .card[data-decision="flagged"] { border-left: 3px solid var(--amber); }
 .card[data-decision="approved"] { border-left: 3px solid var(--green); }
+/* an approved clock amendment takes the edge over the decision colour: it is
+   the newer fact about the record, and the corner still says Approved or
+   Flagged in its own colour */
+.card[data-amended="true"] { border-left: 3px solid var(--accent); }
 .focusCard { margin-top: 20px; padding: 28px; }
 .evidence { margin-top: 22px; }
 .times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding-bottom: 18px; }
@@ -140,6 +145,11 @@
 .figureText { font-size: 13px; line-height: 1.5; letter-spacing: 0; }
 .figureSub { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 3px; }
 .corrected { color: var(--amber); }
+/* a figure an approved clock amendment set, blue where a reviewer's is amber */
+.amended { color: var(--accent); }
+.amendedPill { display: inline-flex; align-items: center; margin-top: 4px; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-fill); white-space: nowrap; }
+.amendedLine { font-size: 11px; margin-top: 6px; color: var(--accent); }
+.amendedLine a { text-decoration: underline; text-underline-offset: 3px; }
 .original { color: var(--faint); text-decoration: line-through; font-size: 14px; margin-right: 8px; }
 .checks { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 1fr); gap: 24px; padding-top: 17px; border-top: 1px solid var(--border); }
 .punch { display: grid; grid-template-columns: 26px 22px 72px 31px 20px; align-items: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -216,6 +226,7 @@
   --green: #55d692;
   --amber: #e9b453;
   --amber-fill: #e9b45326;
+  --accent-fill: #65afff26;
 }
 /* Night layers on Dim exactly as the site does: backgrounds and borders to
    true black and near-black, text and status hues unchanged. */

@@ -44,11 +44,22 @@ export function clockedFigure(row) {
   const from = row.actualFrom;
   const to = row.actualTo;
   if (from != null && to != null) {
-    return { value: hrs(row.clockedMin), sub: span(from, to), tone: null };
+    // the export's own minutes. on an amended shift clockedMin is the signed
+    // window, and this figure is the one it stands beside, struck through
+    return { value: hrs(row.clockWorkedMin ?? row.clockedMin), sub: span(from, to), tone: null };
   }
   if (from != null) return { value: "no clock-out", sub: `in ${ampm(from)}`, tone: "bad" };
   if (to != null) return { value: "no clock-in", sub: `out ${ampm(to)}`, tone: "bad" };
   return { value: "not clocked", sub: null, tone: "bad" };
+}
+
+// THE WINDOW AN APPROVED AMENDMENT WAS SIGNED FOR, to print beside the
+// export's reading. null when the amendment moved no time - a location
+// attested, the punches standing - so the export's figure prints alone.
+export function amendedFigure(row) {
+  const a = row.amendment;
+  if (!a?.timesChanged || a.min == null) return null;
+  return { value: hrs(a.min), sub: span(a.from, a.to) };
 }
 
 // EACH END OF THE CLOCK, ON ITS OWN LINE, WITH ITS LOCATION.

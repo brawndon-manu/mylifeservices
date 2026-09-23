@@ -14,6 +14,7 @@
 // never crosses a month boundary here.
 import fs from "node:fs";
 import path from "node:path";
+import { billableOf } from "./billable-of.js";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { clockLabel } from "./schedule-notes.js";
 import { minsWords } from "./hours-label.js";
@@ -50,20 +51,25 @@ export function clientDayModel(rows) {
       d = { billableMin: 0, flagged: false, corrected: false, shifts: [] };
       c.days.set(n, d);
     }
-    const billable = r.review?.billableMin ?? r.billedMin ?? 0;
+    // the reviewer's correction or the signed amendment, else the billed figure
+    const b = billableOf(r);
+    const billable = b.min ?? 0;
     d.billableMin += billable;
     c.totalMin += billable;
     if (r.review?.decision === "flagged") d.flagged = true;
-    if (r.review?.billableMin != null) d.corrected = true;
+    if (b.source !== "billed") d.corrected = true;
     d.shifts.push({
       who: r.whoLegal || r.who, // legal names on documents
       from: r.schedFrom,
       to: r.schedTo,
       billableMin: billable,
       billedMin: r.billedMin ?? 0,
-      corrected: r.review?.billableMin != null,
-      corrFrom: r.review?.billableMin != null ? r.review?.billableFrom ?? null : null,
-      corrTo: r.review?.billableMin != null ? r.review?.billableTo ?? null : null,
+      corrected: b.source !== "billed",
+      // "amended" beside a figure a signed amendment set, "corrected" beside
+      // a reviewer's, so the page says which record it is reading
+      corrWord: b.source === "amendment" ? "amended" : "corrected",
+      corrFrom: b.source !== "billed" ? b.from ?? null : null,
+      corrTo: b.source !== "billed" ? b.to ?? null : null,
       decision: r.review?.decision || null,
     });
   }
@@ -231,7 +237,7 @@ export async function renderClientCalendars({ periodFrom, generatedOn, clients, 
         text(span, L + 12, y, { size: 8.5, color: MUTED });
         text(s.who, L + 110, y, { size: 8.5 });
         const fig = s.corrected
-          ? `${hrs(s.billableMin)} corrected from ${hrs(s.billedMin)}${
+          ? `${hrs(s.billableMin)} ${s.corrWord || "corrected"} from ${hrs(s.billedMin)}${
             s.corrFrom != null && s.corrTo != null ? ` (${clockLabel(s.corrFrom)}-${clockLabel(s.corrTo)})` : ""}`
           : hrs(s.billableMin);
         text(fig, L + 300, y, { size: 8.5, f: s.corrected ? bold : font, color: s.corrected ? AMBER : INK });

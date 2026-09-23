@@ -1,6 +1,7 @@
 import { CircleAlert } from "lucide-react";
-import { span, hrs, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
+import { span, hrs, clock, clockedFigure, amendedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
 import { filedParts } from "@/lib/timesheet/note-filed";
+import { billableOf } from "@/lib/timesheet/billable-of";
 import styles from "../audit.module.css";
 
 // "3.00" big with a small quiet "h" beside it - Mánu 2026-09-06, off his
@@ -17,7 +18,16 @@ export default function ShiftEvidence({ row }) {
   const to = original ? row.originalTo : row.schedTo;
   const scheduled = from != null && to != null;
   const clocked = clockedFigure(row);
-  const correction = row.review?.billableMin;
+  // the signed window an approved amendment moved the clock to, if it moved it
+  const amended = amendedFigure(row);
+  // what bills: the reviewer's correction, the signed amendment, or the roster
+  const billable = billableOf(row);
+  const set = billable.source !== "billed";
+  const setTone = billable.source === "amendment" ? styles.amended : styles.corrected;
+  const setWord = billable.source === "amendment" ? "amended" : "corrected";
+  const amendedBy = row.amendment
+    ? <span className={styles.amended}>amended{row.amendment.by ? ` by ${row.amendment.by}` : ""}</span>
+    : null;
   const note = row.note;
   return <div className={styles.evidence}>
     <dl className={styles.times}>
@@ -28,16 +38,25 @@ export default function ShiftEvidence({ row }) {
         {/* a correction the newest copy has caught up to is the same number
             twice - print it once rather than striking a figure through
             itself */}
-        {correction != null && correction !== row.billedMin ? <><span className={styles.original}><FigureHours value={hrs(row.billedMin)} /></span><span className={styles.corrected}><FigureHours value={hrs(correction)} /></span></> : <FigureHours value={hrs(row.billedMin)} />}
-      </dd><dd className={styles.figureSub}>{correction != null
-        // the typed window leads when the review carries one; otherwise the
-        // figure in words, and never the word "null" on a round figure
-        ? `${row.review?.billableFrom != null && row.review?.billableTo != null
-          ? span(row.review.billableFrom, row.review.billableTo)
-          : minsWords(correction) || hrs(correction)} · corrected${row.review?.by ? ` by ${row.review.by}` : ""}`
+        {set && billable.min !== row.billedMin ? <><span className={styles.original}><FigureHours value={hrs(row.billedMin)} /></span><span className={setTone}><FigureHours value={hrs(billable.min)} /></span></> : <FigureHours value={hrs(row.billedMin)} />}
+      </dd><dd className={styles.figureSub}>{set
+        // the window the figure was set as leads where there is one; otherwise
+        // the figure in words, and never the word "null" on a round figure
+        ? <>{billable.from != null && billable.to != null
+          ? span(billable.from, billable.to)
+          : minsWords(billable.min) || hrs(billable.min)} · <span className={setTone}>{setWord}{billable.by ? ` by ${billable.by}` : ""}</span></>
         : span(row.schedFrom, row.schedTo)}</dd></div>
-      <div><dt>Clocked</dt><dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}><FigureHours value={clocked.value} /></dd>
-        {clocked.sub && <dd className={styles.figureSub}>{clocked.sub}</dd>}
+      <div><dt>Clocked</dt>
+        {amended ? <>
+          {/* the export's reading struck through, the signed window beside it
+              in the amendment's blue - the same treatment a reviewer's
+              correction gets on the billed figure, in its own colour */}
+          <dd className={styles.figureValue}><span className={styles.original}><FigureHours value={clocked.value} /></span><span className={styles.amended}><FigureHours value={amended.value} /></span></dd>
+          <dd className={styles.figureSub}>{amended.sub} · {amendedBy}</dd>
+        </> : <>
+          <dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}><FigureHours value={clocked.value} /></dd>
+          {(clocked.sub || amendedBy) && <dd className={styles.figureSub}>{clocked.sub}{clocked.sub && amendedBy ? " · " : ""}{amendedBy}</dd>}
+        </>}
       </div>
     </dl>
     <dl className={styles.checks}>
@@ -45,6 +64,7 @@ export default function ShiftEvidence({ row }) {
         {!row.clockAvailable ? <dd className={styles.figureSub}>No clock export for this period.</dd> : row.inClockExport === false ? <dd className={styles.figureSub}>No matching row in the clock export.</dd> : <>
           <Punch row={row} end="in" /><Punch row={row} end="out" />
           {row.sharedSession && <dd className={styles.figureSub}>One session {ampmLabel(row.sharedSession.from)}–{ampmLabel(row.sharedSession.to)} across {row.sharedSession.parts} bookings.</dd>}
+          {row.amendment && <AmendedLine a={row.amendment} />}
         </>}
       </div>
       <div><dt>Note</dt>
@@ -104,4 +124,24 @@ function Punch({ row, end }) {
 function Mark({ value, label }) {
   const description = value === "yes" ? "recorded" : value === "no" ? "missing" : "unavailable";
   return <span aria-label={`${label}: ${description}`} title={`${label}: ${description}`} className={value === "yes" ? styles.good : value === "no" ? styles.bad : undefined}>{value === "yes" ? "✓" : value === "no" ? "✕" : "—"}</span>;
+}
+
+// WHAT THE AMENDMENT CHANGED, in one line under the punches, and the form it
+// came from. the punch lines above keep saying what the export holds: the
+// signature is the record of the visit, not a punch the phone caught.
+function AmendedLine({ a }) {
+  const parts = [];
+  if (a.inChanged && a.from != null) parts.push(`Clock-in amended to ${clock(a.from)}`);
+  if (a.outChanged && a.to != null) parts.push(`Clock-out amended to ${clock(a.to)}`);
+  if (!parts.length) {
+    parts.push(
+      a.placeIn && a.placeOut ? "Where they were at both punches attested"
+        : a.placeIn ? "Where they were at clock-in attested"
+          : a.placeOut ? "Where they were at clock-out attested"
+            : "Clock record amended",
+    );
+  }
+  return <dd className={styles.amendedLine}>
+    {parts.join(", ")}{a.signedBy ? `, signed by ${a.signedBy}` : ""} · <a href={a.form}>open the form</a>
+  </dd>;
 }

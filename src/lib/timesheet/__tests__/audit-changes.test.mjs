@@ -240,3 +240,17 @@ test("a reviewed shift that came back wears that instead of a change list", () =
   );
   assert.equal(flips[0].reason, "Auto: back in the upload. Was approved by Brandon Uribe.");
 });
+
+test("the roster landing on the window a clock amendment was signed for is the report catching up, not a flip", () => {
+  const overlap = { from: "08/16/26", to: "08/31/26" };
+  const amendment = { min: 138, timesChanged: true };
+  const oldRows = [row({ billedMin: 150, clockedMin: 138, amendment })];
+  const newRows = [row({ billedMin: 138, clockedMin: 138, amendment })];
+  const diff = diffAuditRows(oldRows, newRows, overlap);
+  assert.deepEqual(diff.changed.k1, ["hours"]);
+  assert.equal(diff.figures.k1.amendedMin, 138);
+  assert.deepEqual(adjustedAfterReviewPlan(diff, [review()]), []);
+  // landing anywhere else is still a move
+  const elsewhere = diffAuditRows(oldRows, [row({ billedMin: 120, clockedMin: 138, amendment })], overlap);
+  assert.equal(adjustedAfterReviewPlan(elsewhere, [review()]).length, 1);
+});

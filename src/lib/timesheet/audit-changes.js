@@ -44,7 +44,10 @@ const noteName = (n) => (n?.source === "dsn" ? "DSN note" : "service note");
 function changesBetween(prev, r) {
   const kinds = new Set();
   const words = [];
-  const figures = { billed: null, clocked: null };
+  // amendedMin rides along so the flip plan can tell a roster landing on the
+  // signed amendment from a real move, the way it already can for the
+  // reviewer's own correction
+  const figures = { billed: null, clocked: null, amendedMin: r.amendment?.timesChanged ? r.amendment.min ?? null : null };
   const noteEvents = [];
   if ((r.billedMin ?? null) !== (prev.billedMin ?? null)) {
     kinds.add("hours");
@@ -192,12 +195,15 @@ export function adjustedAfterReviewPlan({ changed = {}, details = {}, gone = [],
     // the billed figure landing exactly on the reviewer's corrected billable,
     // the office fixed QSP to what he already ruled - his words: "if my
     // adjusted time is now the newer report time then good." The decision and
-    // the correction stand; the card says so quietly.
+    // the correction stand; the card says so quietly. the same for a roster
+    // landing on the window a clock amendment was signed for: that is the
+    // office fixing QSP to the signed record, not a change to chase.
     const f = figures[key];
+    const target = review.billableMin ?? f?.amendedMin ?? null;
     if (
       serious.every((k) => k === "hours")
-      && review.billableMin != null
-      && f?.billed && f.billed.to === review.billableMin
+      && target != null
+      && f?.billed && f.billed.to === target
       && !f.clocked
     ) continue;
     const what = kinds.includes("new")

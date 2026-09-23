@@ -16,6 +16,7 @@ import { scheduleKey } from "@/lib/timesheet/schedule";
 import { buildAudit } from "@/app/portal/admin/audit/[id]/build";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
 import { clientDayModel } from "@/lib/timesheet/client-calendar-report";
+import { billableOf } from "@/lib/timesheet/billable-of";
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 const h = (min) => (min == null ? null : r2(min / 60));
@@ -100,9 +101,10 @@ export async function buildAuditWorkbook(id) {
   const approved = decided.filter((r) => r.review.decision === "approved");
   const flagged = decided.filter((r) => r.review.decision === "flagged");
   const open = rows.length - decided.length;
-  const corrected = rows.filter((r) => r.review?.billableMin != null);
+  // a figure somebody set: the reviewer's correction or a signed amendment
+  const corrected = rows.filter((r) => billableOf(r).source !== "billed");
   const billedMin = rows.reduce((n, r) => n + (r.billedMin ?? 0), 0);
-  const billableMin = rows.reduce((n, r) => n + (r.review?.billableMin ?? r.billedMin ?? 0), 0);
+  const billableMin = rows.reduce((n, r) => n + (billableOf(r).min ?? 0), 0);
   const clockedMin = rows.reduce((n, r) => n + (r.clockedMin ?? 0), 0);
   const findings = new Map();
   for (const r of rows) for (const x of r.reasons) {
@@ -214,7 +216,7 @@ export async function buildAuditWorkbook(id) {
       date: r.date,
       sched: r.schedFrom != null && r.schedTo != null ? `${ampmLabel(r.schedFrom)} - ${ampmLabel(r.schedTo)}` : "",
       billed: h(r.billedMin),
-      billable: h(r.review?.billableMin ?? r.billedMin),
+      billable: h(billableOf(r).min),
       clocked: h(r.clockedMin),
       pin: r.actualFrom != null ? ampmLabel(r.actualFrom) : r.noIn ? "missed" : "",
       pout: r.actualTo != null ? ampmLabel(r.actualTo) : r.noOut ? "missed" : "",
@@ -229,9 +231,11 @@ export async function buildAuditWorkbook(id) {
     });
     zebra(row);
     for (const k of ["billed", "billable", "clocked"]) num(row.getCell(k));
-    if (r.review?.billableMin != null) {
-      row.getCell("billable").font = { bold: true, color: { argb: AMBER } };
-    }
+    // amber for the reviewer's correction, the brand blue for a signed
+    // amendment, the same two colours the card uses
+    const b = billableOf(r);
+    if (b.source === "review") row.getCell("billable").font = { bold: true, color: { argb: AMBER } };
+    else if (b.source === "amendment") row.getCell("billable").font = { bold: true, color: { argb: BRAND } };
     if (!r.note || r.note.source !== "dsn") row.getCell("note").font = { color: { argb: RED }, bold: !r.note };
     const dc = row.getCell("decision");
     if (r.review?.decision === "approved") dc.font = { color: { argb: GREEN }, bold: true };
@@ -287,8 +291,9 @@ export async function buildAuditWorkbook(id) {
       }
       g.shifts++;
       g.billedMin += r.billedMin ?? 0;
-      g.billableMin += r.review?.billableMin ?? r.billedMin ?? 0;
-      if (r.review?.billableMin != null) g.adjusted++;
+      const b = billableOf(r);
+      g.billableMin += b.min ?? 0;
+      if (b.source !== "billed") g.adjusted++;
       if (r.clockedMin != null) {
         g.clockedMin += r.clockedMin;
         if (r.billedMin != null) g.overMin += Math.max(0, r.billedMin - r.clockedMin);
