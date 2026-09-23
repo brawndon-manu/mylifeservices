@@ -12,6 +12,7 @@ import { loadAmendment, withNames, shownName, buildAmendmentDocument } from "@/l
 import { officeRecipients } from "@/lib/clock-amendment/recipients";
 import { sendAmendmentDocument, sendAmendmentForm } from "@/lib/clock-amendment/email";
 import { signAmendmentToken } from "@/lib/clock-amendment/token";
+import { companyInstant } from "@/lib/forms/email-thread";
 
 async function requireDesk() {
   const user = await getCurrentUser();
@@ -46,8 +47,13 @@ export async function approveAmendment(id, formData) {
   const qspFixedTo = typedTo ? tidyTime(typedTo, anchorOf(confirmed.actualOut) ?? anchorOf(a.scheduledOut)) : null;
   if ((qspFixedIn && !isTime(qspFixedIn)) || (qspFixedTo && !isTime(qspFixedTo))) return { ok: false, error: "qsptime" };
   const fixedDay = need.in || need.out ? str(formData.get("qspFixedAt"), 10) : null;
-  // a date box gives yyyy-mm-dd; noon so the day survives any timezone
-  const qspFixedAt = fixedDay && /^\d{4}-\d{2}-\d{2}$/.test(fixedDay) ? new Date(`${fixedDay}T12:00:00`) : null;
+  // a date box gives yyyy-mm-dd. stored as noon in COMPANY time, not the
+  // server's: on the real deployment the server's noon is 5 AM in California,
+  // and the first approved document printed exactly that.
+  const dayMatch = fixedDay ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(fixedDay) : null;
+  const qspFixedAt = dayMatch
+    ? companyInstant({ year: Number(dayMatch[1]), month: Number(dayMatch[2]) - 1, day: Number(dayMatch[3]), hour: 12, minute: 0 })
+    : null;
   const qspFixedBy = qspFixedIn || qspFixedTo || qspFixedAt ? shownName(user) : null;
   const now = new Date();
 

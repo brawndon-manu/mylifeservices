@@ -35,6 +35,16 @@ function fmtStamp(d) {
   return STAMP.format(dt).replace(",", "");
 }
 
+// a day with no time on it, for the date the clock was corrected: the record
+// holds a day, and printing a time of day beside it says something untrue
+const DAY = new Intl.DateTimeFormat("en-US", { timeZone: COMPANY_TZ, month: "2-digit", day: "2-digit", year: "2-digit" });
+function fmtDay(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d);
+  return DAY.format(dt);
+}
+
 // wrap a paragraph to the column width, word by word
 function wrap(text, font, size, width) {
   const words = String(text ?? "").replace(/\s+/g, " ").trim().split(" ");
@@ -214,7 +224,7 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
       const parts = [];
       if (a.qspFixedIn) parts.push(`clock-in to ${a.qspFixedIn}`);
       if (a.qspFixedTo) parts.push(`clock-out to ${a.qspFixedTo}`);
-      row("Clock record corrected", `in QSClock${parts.length ? `: ${parts.join(", ")}` : ""}${a.qspFixedAt ? `, on ${fmtStamp(a.qspFixedAt)}` : ""}${a.qspFixedBy ? `, by ${a.qspFixedBy}` : ""}`);
+      row("Clock record corrected", `in QSClock${parts.length ? `: ${parts.join(", ")}` : ""}${a.qspFixedAt ? `, on ${fmtDay(a.qspFixedAt)}` : ""}${a.qspFixedBy ? `, by ${a.qspFixedBy}` : ""}`);
     } else {
       row("Clock record", "The punches stand as recorded; this record supplies what the clock could not.");
     }
