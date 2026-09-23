@@ -360,7 +360,7 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
       <p className="mt-1 text-[13px] leading-relaxed text-muted">
         Signed by {view.filledName}
         {view.clientStage === "signed"
-          ? ` and by ${view.clientSigner}${view.clientSignedVia === "own" ? ", on their own phone" : view.clientSignedVia === "email" ? ", from the emailed link" : view.clientSignedVia === "staff" ? ", on this phone" : ""}.`
+          ? ` and by ${view.clientSigner}${view.clientSignedVia === "own" ? ", on their own device" : view.clientSignedVia === "email" ? ", from the emailed link" : view.clientSignedVia === "staff" ? ", on this phone" : ""}.`
           : `. Nobody was available to sign for the person served: ${view.clientUnavailableReason}`}
         {" "}The office will approve it and email you the signed copy.
       </p>
