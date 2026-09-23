@@ -360,7 +360,7 @@ export function approvalFlags(a) {
   }
   const e = endsOf(a);
   if (e.late && a.clockRow?.startDelta != null) {
-    flags.push({ kind: "lateIn", text: `The clock-in was ${a.clockRow.startDelta} minutes after the scheduled start; the punch itself stands, only the start time is being amended.` });
+    flags.push({ kind: "lateIn", text: `The clock-in was ${a.clockRow.startDelta} minutes after the scheduled start; the punch itself stands, and the addendum sets the start time.` });
   }
   if (e.inNoGps || e.outNoGps) {
     const where = e.inNoGps && e.outNoGps ? "at either punch" : e.inNoGps ? "at the clock-in" : "at the clock-out";

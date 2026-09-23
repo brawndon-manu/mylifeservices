@@ -52,7 +52,7 @@ const DECISIONS = [
   // not a decision but a fact about the record, which is why it gets a tab of
   // its own: an approved clock amendment stands on the shift whatever the
   // reviewer has ruled. see amended.js
-  { key: "amended", label: "Amended", match: (r) => !!r.amendment },
+  { key: "amended", label: "Addendum", match: (r) => !!r.amendment },
 ];
 
 const VIEWS = [
@@ -1020,7 +1020,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
           {!dotOnly && decisionWord}
-          {r.amendment ? <span className={styles.amendedPill}>Amended</span> : r.pending ? <span className={styles.pendingPill}>Amendment · {r.pending.line}</span> : null}
+          {r.amendment ? <span className={styles.amendedPill}>Addendum</span> : r.pending ? <span className={styles.pendingPill}>Addendum · {r.pending.line}</span> : null}
         </span>
         <span className="hidden shrink-0 text-right sm:block">
           <span className="block text-sm tabular-nums text-muted">{r.date}</span>
@@ -1030,7 +1030,7 @@ function Card({ r, onReview, title, staffName = (n) => n, batchId = null, frozen
           </span>
           {/* the record was amended: a fact beside the decision, not instead
               of it, in the amendment's own blue */}
-          {r.amendment ? <span className={styles.amendedPill}>Amended</span> : r.pending ? <span className={styles.pendingPill}>Amendment · {r.pending.line}</span> : null}
+          {r.amendment ? <span className={styles.amendedPill}>Addendum</span> : r.pending ? <span className={styles.pendingPill}>Addendum · {r.pending.line}</span> : null}
         </span>
         {frozen && (
           <button
@@ -1412,7 +1412,7 @@ function DecideBar({ r, onReview, batchId = null, settled = false, canRaise = fa
       ) : moved ? null : (
         <div className={styles.cardActions}>
           {showRaise && (
-            <button type="button" disabled={busy} aria-expanded={raising} onClick={() => setRaising((v) => !v)} className={`${styles.raise} ${styles.lead}`}>Raise an amendment</button>
+            <button type="button" disabled={busy} aria-expanded={raising} onClick={() => setRaising((v) => !v)} className={`${styles.raise} ${styles.lead}`}>Raise an addendum</button>
           )}
           <button type="button" disabled={busy} onClick={() => setFlagging(true)} className={styles.secondary}>Flag</button>
           <button type="button" disabled={busy} onClick={() => send("approved")} className={styles.primary}>{busy ? "Saving…" : "Approve"}</button>

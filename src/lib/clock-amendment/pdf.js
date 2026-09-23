@@ -118,7 +118,7 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
       // a logo that will not embed is not a reason to have no document
     }
   }
-  page.drawText("Clock In / Out Amendment", { x: MARGIN + 130, y: y - 6, size: 16, font: bold, color: INK });
+  page.drawText("Clock In / Out Addendum", { x: MARGIN + 130, y: y - 6, size: 16, font: bold, color: INK });
   page.drawText(number, { x: PAGE_W - MARGIN - bold.widthOfTextAtSize(number, 11), y: y - 6, size: 11, font: bold, color: MUTED });
   y -= 24;
   page.drawText(`Raised ${fmtStamp(a.createdAt)}${a.createdByName ? ` by ${a.createdByName}` : ""}`, { x: MARGIN + 130, y, size: 9, font, color: MUTED });
@@ -169,7 +169,7 @@ export async function renderAmendmentPdf(a, { logoBytes = null, staffSignaturePn
   }
 
   // ---- the amendment
-  heading("The amendment");
+  heading("The addendum");
   const confirmed = a.filledAt;
   const words = confirmed ? a.reasonText : a.intakeReasonText;
   y -= 2; text("What happened", { size: 9, color: MUTED }); y -= 13;

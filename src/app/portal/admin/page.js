@@ -56,7 +56,7 @@ export default async function AdminPage() {
           show: canManageTimesheets(role),
           href: "/portal/admin/clock-amendments",
           icon: "clockAlert",
-          title: "Amend clocks in / out",
+          title: "Clock in / out addenda",
           body: "Missed punches, signed for and approved.",
         },
         // THE DAY PROGRAM HAS NO ROW HERE ANY MORE. Both payroll screens carry

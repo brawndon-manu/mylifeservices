@@ -48,7 +48,7 @@ export function buildAmendmentFormEmailHtml({
     ${testBanner(redirectedFrom)}
     <p style="margin:0 0 14px;color:#0f172a;font-size:15px;">Hi ${esc(recipientName)},</p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
-      The office has raised a clock amendment for <strong>${esc(staffName)}</strong>'s shift with
+      The office has raised a clock addendum for <strong>${esc(staffName)}</strong>'s shift with
       <strong>${esc(clientName)}</strong> on <strong>${esc(date)}</strong>
       (${esc(service)}${scheduled ? `, scheduled ${esc(scheduled)}` : ""}). ${esc(missing)}
     </p>
@@ -62,21 +62,21 @@ export function buildAmendmentFormEmailHtml({
     <p style="margin:14px 0 0;color:#8a93a0;font-size:12px;line-height:1.6;">
       This link is yours alone. It opens this one form and nothing else.
     </p>`;
-  return buildTimesheetShell({ title: "A clock amendment to confirm and sign", bodyHtml, eyebrow: "Timekeeping" });
+  return buildTimesheetShell({ title: "A clock addendum to confirm and sign", bodyHtml, eyebrow: "Timekeeping" });
 }
 
 export function buildAmendmentDocumentEmailHtml({ formNumber, staffName, clientName, date, approvedBy, redirectedFrom = null }) {
   const bodyHtml = `
     ${testBanner(redirectedFrom)}
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
-      Clock amendment <strong>${esc(formNumber)}</strong> for <strong>${esc(staffName)}</strong>'s shift with
+      Clock addendum <strong>${esc(formNumber)}</strong> for <strong>${esc(staffName)}</strong>'s shift with
       <strong>${esc(clientName)}</strong> on <strong>${esc(date)}</strong> has been approved by ${esc(approvedBy)}.
     </p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
       The signed document is attached. It carries the clock record, the service note for the visit,
-      the reason the clock is wrong, the amended time, and every signature.
+      the reason the clock is wrong, the time the addendum sets, and every signature.
     </p>`;
-  return buildTimesheetShell({ title: `Approved: clock amendment ${formNumber}`, bodyHtml, eyebrow: "Timekeeping" });
+  return buildTimesheetShell({ title: `Approved: clock addendum ${formNumber}`, bodyHtml, eyebrow: "Timekeeping" });
 }
 
 function fromAddress() {
@@ -113,7 +113,7 @@ export async function sendAmendmentForm({
     redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
     `Hi ${recipientName},`,
     ``,
-    `The office has raised a clock amendment for ${staffName}'s shift with ${clientName} on ${date}. ${missing}`,
+    `The office has raised a clock addendum for ${staffName}'s shift with ${clientName} on ${date}. ${missing}`,
     `Please check it, correct anything that is wrong, sign, and hand the phone to the person served to sign as well.`,
     ``,
     `Open the form: ${formUrl}`,
@@ -157,7 +157,7 @@ export async function sendAmendmentDocument({
   const html = buildAmendmentDocumentEmailHtml({ formNumber, staffName, clientName, date, approvedBy, redirectedFrom });
   const text = [
     redirected ? `*** TEST SEND - this was meant for ${intended.join(", ")} ***\n` : "",
-    `Clock amendment ${formNumber} for ${staffName}'s shift with ${clientName} on ${date} has been approved by ${approvedBy}.`,
+    `Clock addendum ${formNumber} for ${staffName}'s shift with ${clientName} on ${date} has been approved by ${approvedBy}.`,
     `The signed document is attached.`,
   ].join("\n");
 

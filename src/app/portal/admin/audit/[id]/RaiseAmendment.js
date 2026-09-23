@@ -28,7 +28,7 @@ const ERRORS = {
   norow: "This shift was not found in the copy's clock export.",
   clean: "The clock has nothing wrong with this shift.",
   noaccount: "No account matches this person, so there is nobody to send it to.",
-  open: "An amendment is already out for this shift.",
+  open: "An addendum is already out for this shift.",
   reason: "Say what they said happened.",
   times: "The time is needed for the end the clock has wrong.",
   who: "Pick who to send it to.",
@@ -88,7 +88,7 @@ export default function RaiseAmendment({ r, batchId, onDone, onCancel }) {
     catch { res = null; }
     setBusy(false);
     if (!res?.ok) {
-      setError(ERRORS[res?.error] || "Could not raise the amendment. Please try again.");
+      setError(ERRORS[res?.error] || "Could not raise the addendum. Please try again.");
       return;
     }
     onDone?.({
@@ -104,7 +104,7 @@ export default function RaiseAmendment({ r, batchId, onDone, onCancel }) {
 
   return (
     <div className={styles.raisePanel}>
-      <p className="text-[13px] font-semibold text-foreground">Raise a clock amendment</p>
+      <p className="text-[13px] font-semibold text-foreground">Raise a clock addendum</p>
       <p className="mt-1 text-[12px] leading-relaxed text-muted">
         The clock shows they {missingPunchText(record)}. What they told you on the phone; they will see it as
         &ldquo;you told the office&rdquo;, confirm or correct it, and sign.

@@ -18,7 +18,7 @@ test("a signed amendment sets the billable, and says who approved it", () => {
   const b = billableOf(row({ amendment: amendment() }));
   assert.deepEqual([b.min, b.from, b.to, b.source, b.by, b.byLegal], [138, 825, 963, "amendment", "Mánu Uribe", "Brandon Uribe"]);
   assert.equal(billableMinOf(row({ amendment: amendment() })), 138);
-  assert.equal(adjustedWord(row({ amendment: amendment() })), "amended");
+  assert.equal(adjustedWord(row({ amendment: amendment() })), "by addendum");
 });
 
 test("an amendment that moved no time leaves the roster's figure alone", () => {

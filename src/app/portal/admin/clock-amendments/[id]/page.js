@@ -14,7 +14,7 @@ import ApproveForm from "./ApproveForm";
 import { approveAmendment, chaseAmendment, deleteRehearsal, sendRehearsalTo, resetRehearsal } from "./actions";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Clock amendment", robots: { index: false, follow: false } };
+export const metadata = { title: "Clock addendum", robots: { index: false, follow: false } };
 
 // stamps read in company time wherever the server is
 const when = (d) => {
@@ -61,9 +61,9 @@ export default async function ClockAmendmentPage({ params }) {
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-10">
-      <BackLink href="/portal/admin/clock-amendments">Back to Clock amendments</BackLink>
+      <BackLink href="/portal/admin/clock-amendments">Back to Clock addenda</BackLink>
       <p className="mt-4 text-[11px] font-semibold uppercase tracking-[.06em] text-faint">
-        Clock amendment · {number}
+        Clock addendum · {number}
         {a.testOnly && <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-700 dark:text-amber-300">{a.demo ? "demo" : "rehearsal"}</span>}
       </p>
       <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">{staffName} {missingPunchText(a)}.</h1>

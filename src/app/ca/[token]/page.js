@@ -13,7 +13,7 @@ import { formatCode, codeExpired } from "@/lib/clock-amendment/client-code";
 // person it was sent to. outside /portal so the proxy does not bounce it, and
 // listed with the other share links so a maintenance window does not either.
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Clock amendment · My Life Services", robots: { index: false, follow: false } };
+export const metadata = { title: "Clock addendum · My Life Services", robots: { index: false, follow: false } };
 
 export default async function AmendmentFromLinkPage({ params }) {
   const { token } = await params;
@@ -75,7 +75,7 @@ export default async function AmendmentFromLinkPage({ params }) {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-      <p className="text-[11px] font-semibold uppercase tracking-[.06em] text-faint">Clock amendment · {view.number}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[.06em] text-faint">Clock addendum · {view.number}</p>
       <h1 className="mt-2 text-[22px] font-semibold leading-tight tracking-tight text-foreground sm:text-[26px]">
         {staffName} {missingPunchText(a)}.
       </h1>

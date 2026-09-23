@@ -24,9 +24,9 @@ export default function ShiftEvidence({ row }) {
   const billable = billableOf(row);
   const set = billable.source !== "billed";
   const setTone = billable.source === "amendment" ? styles.amended : styles.corrected;
-  const setWord = billable.source === "amendment" ? "amended" : "corrected";
+  const setWord = billable.source === "amendment" ? "addendum" : "corrected";
   const amendedBy = row.amendment
-    ? <span className={styles.amended}>amended{row.amendment.by ? ` by ${row.amendment.by}` : ""}</span>
+    ? <span className={styles.amended}>addendum{row.amendment.by ? ` by ${row.amendment.by}` : ""}</span>
     : null;
   const note = row.note;
   return <div className={styles.evidence}>
@@ -132,14 +132,14 @@ function Mark({ value, label }) {
 // signature is the record of the visit, not a punch the phone caught.
 function AmendedLine({ a }) {
   const parts = [];
-  if (a.inChanged && a.from != null) parts.push(`Clock-in amended to ${clock(a.from)}`);
-  if (a.outChanged && a.to != null) parts.push(`Clock-out amended to ${clock(a.to)}`);
+  if (a.inChanged && a.from != null) parts.push(`Clock-in ${clock(a.from)} by addendum`);
+  if (a.outChanged && a.to != null) parts.push(`Clock-out ${clock(a.to)} by addendum`);
   if (!parts.length) {
     parts.push(
       a.placeIn && a.placeOut ? "Where they were at both punches attested"
         : a.placeIn ? "Where they were at clock-in attested"
           : a.placeOut ? "Where they were at clock-out attested"
-            : "Clock record amended",
+            : "Addendum on the clock record",
     );
   }
   return <dd className={styles.amendedLine}>
@@ -158,6 +158,6 @@ const mdyOf = (iso) => {
 function PendingLine({ p }) {
   const line = String(p.line || "").replace(/^./, (c) => c.toLowerCase());
   return <dd className={styles.amendedLine}>
-    Amendment{p.sentAt ? ` sent ${mdyOf(p.sentAt)}` : ""}{p.to ? ` to ${p.to}` : ""}{line ? `, ${line}` : ""} · <a href={p.form}>open the form</a>
+    Addendum{p.sentAt ? ` sent ${mdyOf(p.sentAt)}` : ""}{p.to ? ` to ${p.to}` : ""}{line ? `, ${line}` : ""} · <a href={p.form}>open the form</a>
   </dd>;
 }

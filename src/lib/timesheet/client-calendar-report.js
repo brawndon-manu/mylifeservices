@@ -67,7 +67,7 @@ export function clientDayModel(rows) {
       corrected: b.source !== "billed",
       // "amended" beside a figure a signed amendment set, "corrected" beside
       // a reviewer's, so the page says which record it is reading
-      corrWord: b.source === "amendment" ? "amended" : "corrected",
+      corrWord: b.source === "amendment" ? "by addendum" : "corrected",
       corrFrom: b.source !== "billed" ? b.from ?? null : null,
       corrTo: b.source !== "billed" ? b.to ?? null : null,
       decision: r.review?.decision || null,

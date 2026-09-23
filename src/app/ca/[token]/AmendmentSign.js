@@ -40,7 +40,7 @@ function deviceId() {
 }
 const ERRORS = {
   notfound: "This link does not open anything any more.",
-  approved: "This amendment has already been approved and cannot be changed.",
+  approved: "This addendum has already been approved and cannot be changed.",
   signed: "This form has already been signed.",
   unsigned: "The staff signature has to come first.",
   done: "The person served has already answered.",

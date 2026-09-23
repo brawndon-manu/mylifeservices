@@ -111,9 +111,15 @@ export function clientHoursModel({
                   figure:
                     hrs(e.billableMin)
                     + (e.adjusted
-                      ? e.adjustedFrom != null && e.adjustedTo != null
-                        ? ` (${e.adjustedWord || "adjusted"} to ${clockLabel(e.adjustedFrom)}-${clockLabel(e.adjustedTo)} by ${e.adjustedBy || "the reviewer"})`
-                        : ` (${e.adjustedWord || "adjusted"} by ${e.adjustedBy || "the reviewer"})`
+                      // a signed addendum is named as the record, with who approved it;
+                      // a reviewer's correction keeps its own words
+                      ? e.adjustedWord === "by addendum"
+                        ? e.adjustedFrom != null && e.adjustedTo != null
+                          ? ` (${clockLabel(e.adjustedFrom)}-${clockLabel(e.adjustedTo)} by addendum, approved by ${e.adjustedBy || "the office"})`
+                          : ` (by addendum, approved by ${e.adjustedBy || "the office"})`
+                        : e.adjustedFrom != null && e.adjustedTo != null
+                          ? ` (${e.adjustedWord || "adjusted"} to ${clockLabel(e.adjustedFrom)}-${clockLabel(e.adjustedTo)} by ${e.adjustedBy || "the reviewer"})`
+                          : ` (${e.adjustedWord || "adjusted"} by ${e.adjustedBy || "the reviewer"})`
                       : ""),
                 })),
             }))

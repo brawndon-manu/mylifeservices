@@ -36,7 +36,7 @@ test("the build joins approved amendments and reads the signed shift for the fin
 
 test("the cards carry the Amended tab, the blue edge and the pill", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
-  assert.match(cards, /\{ key: "amended", label: "Amended", match: \(r\) => !!r\.amendment \}/);
+  assert.match(cards, /\{ key: "amended", label: "Addendum", match: \(r\) => !!r\.amendment \}/);
   assert.match(cards, /\["open", "flagged", "approved", "amended", "all"\]/);
   assert.match(cards, /data-amended=\{r\.amendment \? "true" : undefined\}/);
   assert.match(cards, /styles\.amendedPill/);

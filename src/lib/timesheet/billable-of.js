@@ -60,4 +60,4 @@ export const billableMinOf = (r) => billableOf(r).min;
 export const isAdjusted = (r) => billableOf(r).source !== "billed";
 
 // the word a document prints beside a figure somebody set
-export const adjustedWord = (r) => (billableOf(r).source === "amendment" ? "amended" : "adjusted");
+export const adjustedWord = (r) => (billableOf(r).source === "amendment" ? "by addendum" : "adjusted");

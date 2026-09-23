@@ -386,7 +386,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                     ? `\u00A0\u00A0\u00A0${ampmLabel(row.schedFrom)} - ${ampmLabel(row.schedTo)}`
                     : ""}
                 </span>
-                {row.amendment ? <span className={styles.amendedPill}>Amended</span> : row.pending ? <span className={styles.pendingPill}>Amendment · {row.pending.line}</span> : null}
+                {row.amendment ? <span className={styles.amendedPill}>Addendum</span> : row.pending ? <span className={styles.pendingPill}>Addendum · {row.pending.line}</span> : null}
                 {/* what a standing flag is about, the same summary the card
                     carries, so neither surface needs a mark on every
                     disclosure saying the same thing again */}

@@ -15,7 +15,7 @@ import { searchPeople } from "../actions";
 // was missing.
 const ERRORS = {
   auth: "You do not have access to do that.",
-  notfound: "This amendment is gone.",
+  notfound: "This addendum is gone.",
   approved: "Already approved.",
   notready: "Not ready: it needs the staff signature and the client half signed or explained.",
   note: "Say why you are accepting it despite the flags.",

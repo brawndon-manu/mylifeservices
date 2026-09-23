@@ -126,5 +126,5 @@ test("a signed amendment bills its window and the entry says amended, not adjust
   assert.equal(c.billableMin, 138);
   assert.equal(c.adjusted, 1);
   const e = c.employees[0].entries[0];
-  assert.match(e.figure, /^2\.30h \(amended to 1:45p-4:03p by Brandon Uribe\)$/);
+  assert.match(e.figure, /^2\.30h \(1:45p-4:03p by addendum, approved by Brandon Uribe\)$/);
 });

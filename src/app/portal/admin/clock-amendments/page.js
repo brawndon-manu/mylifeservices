@@ -7,7 +7,7 @@ import BackLink from "@/components/BackLink";
 import { amendmentStage, STAGE_LABELS, stageLine, missingPunchText, hasServiceNote, firstLast } from "@/lib/clock-amendment/rules";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Clock amendments", robots: { index: false, follow: false } };
+export const metadata = { title: "Clock addenda", robots: { index: false, follow: false } };
 
 // THE ONES THAT HAVE BEEN RAISED, AND WHERE EACH ONE IS.
 //
@@ -54,7 +54,7 @@ export default async function ClockAmendmentsPage() {
       <BackLink href="/portal/admin">Back to Admin</BackLink>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Clock amendments</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Clock addenda</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
             A shift the clock record cannot account for on its own. The person who worked it, or
             their supervisor, says what the times were and why the clock is wrong, and the person
@@ -65,7 +65,7 @@ export default async function ClockAmendmentsPage() {
           href="/portal/admin/clock-amendments/new"
           className="min-h-[44px] shrink-0 rounded-[9px] bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-sm transition hover:opacity-90"
         >
-          New amendment
+          New addendum
         </Link>
       </div>
 
