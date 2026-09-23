@@ -4,7 +4,7 @@
 // session-cancelled, and several rules make ONE flag.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoFlagRow, autoFlagPlan, autoFlagText } from "../auto-flag.js";
+import { autoFlagRow, autoFlagPlan, autoFlagText, FILED_GAP_MIN } from "../auto-flag.js";
 
 const row = (over = {}) => ({
   shiftKey: "k", review: null,
@@ -86,4 +86,18 @@ test("the plan counts per rule and the QA annotation is not staff language", () 
   assert.equal(counts["above-clock"], 1);
   assert.equal(flags.length, 1);
   assert.equal(autoFlagText(rows[1]), "");
+});
+
+// THE FILING WINDOW IS FIFTEEN MINUTES, either side of the clock out - raised
+// from ten on 2026-09-22. pinned at the edge in both directions, because a
+// constant that drifts back to ten would quietly flag five minutes of ordinary
+// paperwork on every card.
+test("a DSN filed more than fifteen minutes from the clock out fires, fifteen does not", () => {
+  assert.equal(FILED_GAP_MIN, 15);
+  const filed = (gap) => row({ note: { summary: "Staff assisted client at the park.", comments: [], filedGapMin: gap } });
+  assert.equal(autoFlagRow(filed(15)), null);
+  assert.equal(autoFlagRow(filed(-15)), null);
+  assert.equal(autoFlagRow(filed(16)).reason, "Auto: the DSN was filed more than 15 minutes from the clock out.");
+  assert.equal(autoFlagRow(filed(-16)).reason, "Auto: the DSN was filed more than 15 minutes from the clock out.");
+  assert.equal(autoFlagRow(filed(null)), null);
 });

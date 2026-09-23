@@ -36,7 +36,8 @@ import { noteMinute } from "./note-minute.js";
 // Mánu 2026-09-14: "lets make the auto flag pick up dsn filed time if its over
 // 10 minutes of the clock out time ... for example a shift 9am-12pm clocked
 // 9am-12pm and dsn filed at 10am". A note filed two hours before the shift
-// ended describes work that had not happened yet.
+// ended describes work that had not happened yet. the window itself lives in
+// auto-flag.js (FILED_GAP_MIN), fifteen minutes since 2026-09-22.
 //
 // MEASURED ON THE CURRENT PERIOD before it became a rule. Filing a few minutes
 // early is ordinary - the median is 3 minutes before clock out, and p75 is 0 -

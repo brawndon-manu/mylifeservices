@@ -67,8 +67,10 @@ const REMOTE_RX =
 // A NOTE FILED THIS FAR FROM THE CLOCK OUT IS WORTH A LOOK - Mánu 2026-09-14,
 // "over 10 minutes of the clock out time". Ordinary filing is a few minutes
 // early: the median on the current period is 3 minutes before clock out and
-// p75 is 0, so ten leaves the ordinary case alone and takes the tail.
-export const FILED_GAP_MIN = 10;
+// p75 is 0, so the window leaves the ordinary case alone and takes the tail.
+// widened from ten to fifteen on 2026-09-22. the amendment approval flags read
+// the same number on purpose, so both screens agree on "away from the note".
+export const FILED_GAP_MIN = 15;
 
 export const AUTO_FLAG_RULES = [
   {
