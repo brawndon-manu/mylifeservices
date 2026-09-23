@@ -57,7 +57,10 @@ export function AmendmentFigures({ a, className = "mt-5" }) {
 
   return (
     <div className={className}>
-      <dl className="grid grid-cols-3 gap-x-5 gap-y-3 pb-4">
+      {/* three columns from sm up. on a phone each column is about 90px and
+          the punch row is 163px, so the clock block takes a row of its own
+          under the two short figures instead of running under the third */}
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-4 pb-4 sm:grid-cols-3 sm:gap-y-3">
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Scheduled</dt>
           <dd className="mt-1 text-[20px] font-medium leading-tight tabular-nums text-foreground sm:text-[23px]">
@@ -65,7 +68,7 @@ export function AmendmentFigures({ a, className = "mt-5" }) {
           </dd>
           <dd className="mt-0.5 text-[11px] tabular-nums text-muted">{a.scheduledIn || "?"}–{a.scheduledOut || "?"}</dd>
         </div>
-        <div>
+        <div className="order-last col-span-2 sm:order-none sm:col-span-1">
           <dt className="text-[10px] font-semibold uppercase tracking-[.075em] text-faint">Clock</dt>
           <Punch end="in" time={a.clockedIn} gps={row.gpsIn} />
           <Punch end="out" time={a.clockedOut} gps={row.gpsOut} />
