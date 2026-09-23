@@ -11,7 +11,7 @@ import {
   clientStage, signerLabel, firstLast, qspFixNeeded, asksPlace,
 } from "@/lib/clock-amendment/rules";
 import ApproveForm from "./ApproveForm";
-import { approveAmendment, chaseAmendment, deleteRehearsal } from "./actions";
+import { approveAmendment, chaseAmendment, deleteRehearsal, sendRehearsalTo, resetRehearsal } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock amendment", robots: { index: false, follow: false } };
@@ -172,6 +172,9 @@ export default async function ClockAmendmentPage({ params }) {
           approve={approveAmendment}
           chase={chaseAmendment}
           remove={deleteRehearsal}
+          sendTo={sendRehearsalTo}
+          reset={resetRehearsal}
+          lastSent={a.sentAt ? { to: shownName(a.recipient), email: a.sentToEmail, when: when(a.sentAt) } : null}
         />
       </div>
     </section>

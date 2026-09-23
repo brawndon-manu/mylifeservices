@@ -156,3 +156,92 @@ export async function deleteRehearsal(id) {
   revalidatePath(QUEUE);
   return { ok: true };
 }
+
+// A REHEARSAL CAN BE AIMED AT ANYONE, AND RUN AGAIN. a rehearsal exists to
+// show the flow: the form goes to whoever is being shown it, for real rather
+// than redirected to the raiser, and a reset puts the row back to the moment
+// it was raised so the next person can run it. only ever a rehearsal: a real
+// amendment's recipient was the office's choice when it was raised, and its
+// record is never cleared.
+export async function sendRehearsalTo(id, payload) {
+  const user = await requireDesk();
+  if (!user) return { ok: false, error: "auth" };
+  const a = await loadAmendment(str(id, 40));
+  if (!a) return { ok: false, error: "notfound" };
+  if (!a.testOnly) return { ok: false, error: "real" };
+  if (a.approvedAt) return { ok: false, error: "approved" };
+
+  // a roster person signs as themselves; a typed address only gets the link
+  const recipientId = str(payload?.recipientId, 40);
+  const typed = str(payload?.email, 200);
+  let recipient = null;
+  if (recipientId) {
+    recipient = await prisma.user.findFirst({
+      where: { id: recipientId, deactivatedAt: null },
+      select: { id: true, name: true, email: true, preferredFirstName: true, preferredLastName: true },
+    });
+    if (!recipient?.email) return { ok: false, error: "who" };
+  } else if (!typed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed)) {
+    return { ok: false, error: "email" };
+  }
+  const intendedEmail = recipient ? recipient.email : typed;
+  const recipientName = recipient ? shownName(recipient) : shownName(a.recipient);
+
+  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+  const sent = await sendAmendmentForm({
+    intendedEmail,
+    // the point of a demo is that it reaches the person being shown it
+    forceTo: null,
+    isResend: false,
+    recipientName,
+    staffName: shownName(a.staff),
+    clientName: firstLast(a.clientName),
+    service: a.service,
+    date: a.shiftDate,
+    scheduled: a.scheduledIn && a.scheduledOut ? `${a.scheduledIn} to ${a.scheduledOut}` : null,
+    missing: `The clock shows they ${missingPunchText(a)}.`,
+    officeNote: null,
+    formUrl: `${base}/ca/${signAmendmentToken(a.id)}`,
+  });
+  if (!sent.ok) return { ok: false, error: sent.error };
+  await prisma.clockAmendment.update({
+    where: { id: a.id },
+    data: {
+      ...(recipient ? { recipientId: recipient.id } : {}),
+      sentAt: new Date(), sentToEmail: sent.sentTo, intendedEmail,
+    },
+  });
+  revalidatePath(QUEUE);
+  revalidatePath(`${QUEUE}/${a.id}`);
+  return { ok: true, sentTo: sent.sentTo, redirected: !!sent.redirected, to: recipientName };
+}
+
+// back to the moment it was raised: both signatures, the code, the client
+// half, the approval and the document gone; what the office took down, the
+// note and its pages kept
+export async function resetRehearsal(id) {
+  const user = await requireDesk();
+  if (!user) return { ok: false, error: "auth" };
+  const a = await loadAmendment(str(id, 40));
+  if (!a) return { ok: false, error: "notfound" };
+  if (!a.testOnly) return { ok: false, error: "real" };
+  const urls = [a.staffSignatureUrl, a.clientSignatureUrl, a.pdfUrl].filter((u) => /^https?:\/\//.test(String(u || "")));
+  await prisma.clockAmendment.update({
+    where: { id: a.id },
+    data: {
+      reasonText: null, reasonCode: null, actualIn: null, actualOut: null, placeIn: null, placeOut: null,
+      filledName: null, filledAt: null, filledIp: null, filledUa: null, filledDevice: null, staffSignatureUrl: null,
+      clientSigner: null, clientSignerKind: null, clientSignedAt: null, clientSignedIp: null, clientSignedUa: null,
+      clientSignedDevice: null, clientSignedVia: null, clientSignatureUrl: null, clientUnavailableReason: null,
+      clientCode: null, clientCodeExpiresAt: null, clientLinkEmail: null, clientLinkEmailedAt: null,
+      approvedAt: null, approvedById: null, approvalNote: null, qspFixedAt: null, qspFixedIn: null, qspFixedTo: null, qspFixedBy: null,
+      pdfUrl: null, pdfHash: null, mailedAt: null, chasedAt: null, chaseCount: 0,
+    },
+  });
+  if (urls.length) {
+    try { await delBlob(urls); } catch (e) { console.error("clock amendment: rehearsal files not removed on reset:", e); }
+  }
+  revalidatePath(QUEUE);
+  revalidatePath(`${QUEUE}/${a.id}`);
+  return { ok: true };
+}

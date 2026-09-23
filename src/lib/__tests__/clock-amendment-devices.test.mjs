@@ -91,3 +91,26 @@ test("the document prints how each signature was collected and on what", () => {
   const admin = read("src/app/portal/admin/clock-amendments/[id]/page.js");
   assert.match(admin, /viaLine\(a\.clientSignedVia\)/);
 });
+
+// ---- a rehearsal aimed at anyone, and run again ----
+
+test("a rehearsal can be sent to a chosen person for real and reset for the next; a real amendment can be neither", () => {
+  const actions = read("src/app/portal/admin/clock-amendments/[id]/actions.js");
+  assert.match(actions, /export async function sendRehearsalTo\(id, payload\)/);
+  assert.match(actions, /export async function resetRehearsal\(id\)/);
+  // both refuse anything that is not a rehearsal, before touching a thing,
+  // the same way the delete does: three doors, one guard
+  assert.equal((actions.match(/if \(!a\.testOnly\) return \{ ok: false, error: "real" \}/g) || []).length, 3);
+  // the send reaches the chosen address rather than the raiser's inbox
+  assert.match(actions, /intendedEmail,\s*\/\/ the point of a demo is that it reaches the person being shown it\s*forceTo: null,/);
+  // a roster person becomes the recipient, so they sign as themselves
+  assert.match(actions, /\.\.\.\(recipient \? \{ recipientId: recipient\.id \} : \{\}\)/);
+  // the reset clears the code and every signed field, and keeps the intake
+  for (const f of ["clientCode: null", "clientCodeExpiresAt: null", "filledAt: null", "clientSignedAt: null", "clientSignedVia: null", "approvedAt: null", "pdfUrl: null", "chaseCount: 0"]) assert.match(actions, new RegExp(f), f);
+  assert.doesNotMatch(actions.slice(actions.indexOf("export async function resetRehearsal")), /intakeReasonText: null|dsnPdfUrl: null|note: null/);
+  const form = read("src/app/portal/admin/clock-amendments/[id]/ApproveForm.js");
+  assert.match(form, /sendTo\(id, \{ recipientId: pick\?\.id \|\| "", email: pick \? "" : email\.trim\(\) \}\)/);
+  assert.match(form, /Reset the rehearsal/);
+  const page = read("src/app/portal/admin/clock-amendments/[id]/page.js");
+  assert.match(page, /sendTo=\{sendRehearsalTo\}\s*reset=\{resetRehearsal\}/);
+});
