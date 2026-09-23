@@ -42,7 +42,7 @@ import UploadDone from "./UploadDone";
 // uploads from localhost, where the 4.5MB Vercel request cap does not apply.
 const BODY_LIMIT_MB = 48;
 const PDF_LIMIT_MB = 10;
-const PDF_PICKERS = ["file", "file2", "schedule", "notes"];
+const PDF_PICKERS = ["file", "schedule", "notes"];
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 // what each picker is called when an alert has to name one
@@ -108,9 +108,8 @@ function FileRow({ id, label, selected, size, onPick, tone, optional = false, ac
 }
 
 // every picker the form can hold; a lane that lacks one simply never has a
-// file in it. file2 is in the list now - it used to ride the final POST as
-// raw bytes because the blob sender's list predated it.
-const SLOTS = ["file", "file2", "schedule", "payroll", "rests", "clock", "notes", "serviceNotes", "scheduleNotes"];
+// file in it.
+const SLOTS = ["file", "schedule", "payroll", "rests", "clock", "notes", "serviceNotes", "scheduleNotes"];
 
 // `audit` is the Audit page's lane: same form, same action, minus the payroll
 // and rest-break pickers - those two feed payroll surfaces the audit never
@@ -123,7 +122,6 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
     null,
   );
   const [name, setName] = useState("");
-  const [name2, setName2] = useState("");
   const [schedName, setSchedName] = useState("");
   const [payrollName, setPayrollName] = useState("");
   const [restsName, setRestsName] = useState("");
@@ -176,7 +174,6 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
   // what to show in place of the pickers once they are hidden
   const sourceFiles = [
     { role: "Timesheet", kind: "pdf", name },
-    ...(audit && name2 ? [{ role: "Timesheet 2", kind: "pdf", name: name2 }] : []),
     { role: "Schedule", kind: "pdf", name: schedName },
     ...(audit
       ? []
@@ -396,41 +393,46 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
         </p>
         {unplaced.length > 0 && (
           <p className="mb-4 text-xs font-semibold text-rose-600 dark:text-rose-400">
-            Not one of the {audit ? "seven" : "eight"} exports, so it was not placed: {unplaced.join(", ")}
+            Not one of the {audit ? "six" : "eight"} exports, so it was not placed: {unplaced.join(", ")}
           </p>
         )}
         <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
-      <FileRow
-        id="file"
-        sendingPct={sending.file ?? null}
-        uploaded={!!blobRefs.file}
-        label="QSP Simple Timesheet export (PDF)"
-        tone="primary"
-        selected={name}
-        size={sizes.file || 0}
-        onPick={(e) => {
-          setName(e.target.files?.[0]?.name || "");
-          setSizes((p) => ({ ...p, file: e.target.files?.[0]?.size || 0 }));
-          eagerSend("file", e.target.files?.[0] || null);
-        }}
-      />
-
-      {audit && (
+      <div>
         <FileRow
-          id="file2"
-          sendingPct={sending.file2 ?? null}
-        uploaded={!!blobRefs.file2}
-          label="Second Simple Timesheet (PDF) - optional. A month audit takes two, one per pay period"
-          optional
-          selected={name2}
-          size={sizes.file2 || 0}
+          id="file"
+          sendingPct={sending.file ?? null}
+          uploaded={!!blobRefs.file}
+          label="QSP Simple Timesheet export (PDF)"
+          tone="primary"
+          selected={name}
+          size={sizes.file || 0}
           onPick={(e) => {
-            setName2(e.target.files?.[0]?.name || "");
-            setSizes((p) => ({ ...p, file2: e.target.files?.[0]?.size || 0 }));
-          eagerSend("file2", e.target.files?.[0] || null);
+            setName(e.target.files?.[0]?.name || "");
+            setSizes((p) => ({ ...p, file: e.target.files?.[0]?.size || 0 }));
+            eagerSend("file", e.target.files?.[0] || null);
           }}
         />
-      )}
+        {/* how the month is pulled, drawn the way QSP's own form looks so it
+            matches at a glance. drawn, not inputs: nothing here posts */}
+        {audit && (
+          <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+            <span>Reports → Timesheets</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[3px] bg-brand-light text-white">
+                <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.5l2.2 2.2L9.5 3.8" /></svg>
+              </span>
+              Inactive Employees<span className="sr-only"> ticked</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border-[1.5px] border-brand-light">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-light" />
+              </span>
+              Group By Employee<span className="sr-only"> selected</span>
+            </span>
+            <span>From/To the whole month</span>
+          </p>
+        )}
+      </div>
 
       <FileRow
         id="schedule"

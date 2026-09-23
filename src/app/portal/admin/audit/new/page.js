@@ -29,7 +29,7 @@ export default async function NewAuditCopyPage({ searchParams }) {
   const aside = (
     <details className={styles.uploadGuide}>
       <summary>Which exports do I need?</summary>
-      <p>Simple Timesheet (PDF), Employee Schedules (PDF), QSClock Time and Attendance (.xls), DSN (PDF), Employee Service Notes (.xls), and Employee Schedule Notes (.xls). A full month can include a second Simple Timesheet for its other pay period.</p>
+      <p>Simple Timesheet (PDF), Employee Schedules (PDF), QSClock Time and Attendance (.xls), DSN (PDF), Employee Service Notes (.xls), and Employee Schedule Notes (.xls).</p>
       <p>An audit copy keeps payroll and signed timesheets unchanged. Existing shift decisions and corrected billable hours carry over.</p>
     </details>
   );

@@ -8,6 +8,7 @@ import { PDFDocument } from "pdf-lib";
 import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { futureDates, trimDays, isoDate } from "@/lib/timesheet/partial";
+import { splitByPeriod } from "@/lib/timesheet/split-periods";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets, isSuper } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
@@ -294,62 +295,21 @@ export async function uploadBatch(formData) {
   P.pages = sheets.reduce((n, s) => n + (s.pages?.length || 0), 0);
   await setProgress(prog, P);
 
-  // A MONTH IN ONE AUDIT BATCH - Mánu 2026-09-04: "i need to do the whole
-  // month... 2 timesheet report for the first half and the second half." QSP
-  // prints the Simple Timesheet per pay period, so a month is two files.
-  // AUDIT COPIES ONLY: a payroll batch stays one timesheet, one period.
-  const file2 = pickOf("file2");
-  if (file2 && !auditOnly) redirect(`${NEW}error=secondfile`);
-  const dupesIn = (list) => {
-    const counts = new Map();
-    for (const s of list) {
-      const k = (s.employee || "").trim().toLowerCase();
-      counts.set(k, (counts.get(k) || 0) + 1);
+  // A MONTH IN ONE AUDIT BATCH. QSP prints the Simple Timesheet per pay
+  // period, and a range across the 15th returns both periods back to back in
+  // one PDF, every person twice. an audit copy reads that as the month's two
+  // halves, split on each sheet's own header; a payroll batch still refuses
+  // it at the duplicate guard below. one file only: the second slot that used
+  // to take the other half is gone.
+  let twoPeriods = false;
+  if (auditOnly) {
+    const names = withHours.map((s) => (s.employee || "").trim().toLowerCase());
+    if (new Set(names).size < names.length) {
+      const split = splitByPeriod(withHours);
+      if (!split.ok) redirect(`${NEW}error=twoperiods&why=${encodeURIComponent(split.why)}`);
+      withHours.splice(0, withHours.length, ...split.sheets);
+      twoPeriods = true;
     }
-    return [...counts].filter(([, n]) => n > 1);
-  };
-  let mergedTwo = false;
-  if (file2) {
-    let bytes2;
-    try {
-      bytes2 = await bytesOfPick(file2);
-    } catch (e) {
-      console.error("second timesheet source read failed:", e);
-      redirect(`${NEW}error=blob`);
-    }
-    let sheets2;
-    let parseError2 = null;
-    try {
-      sheets2 = await parseTimesheetPdf(bytes2);
-    } catch (e) {
-      console.error("second timesheet parse failed:", e);
-      parseError2 = (e?.message || String(e)).slice(0, 120);
-    }
-    if (parseError2) redirect(`${NEW}error=parse&why=${encodeURIComponent(`second timesheet: ${parseError2}`)}`);
-    const withHours2 = sheets2.filter((x) => !x.empty);
-    if (!withHours2.length) {
-      redirect(`${NEW}error=empty&why=${encodeURIComponent("the second timesheet read fine but held no rows with hours")}`);
-    }
-    // each file must be one clean period on its own...
-    if (dupesIn(withHours).length || dupesIn(withHours2).length) {
-      redirect(`${NEW}error=twoperiods&why=${encodeURIComponent("one of the two timesheet exports itself spans two pay periods. Each file is one period.")}`);
-    }
-    // ...and the two must be different periods - the same fortnight twice
-    // would hand everyone two sheets of the same days
-    const dk = (d) => {
-      const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
-      return m ? Number(m[3]) * 10000 + Number(m[1]) * 100 + Number(m[2]) : 0;
-    };
-    const p1 = withHours[0].payPeriod || {};
-    const p2 = withHours2[0].payPeriod || {};
-    const overlap = dk(p1.from) <= dk(p2.to) && dk(p2.from) <= dk(p1.to);
-    if (!p1.from || !p2.from || overlap) redirect(`${NEW}error=sameperiod`);
-    // earlier fortnight first, so the batch reads in day order
-    if (dk(p2.from) < dk(p1.from)) withHours.unshift(...withHours2);
-    else withHours.push(...withHours2);
-    mergedTwo = true;
-    P.total = withHours.length;
-    await setProgress(prog, P);
   }
 
   // ---- three guards on the export itself, all from real near-misses ----
@@ -436,7 +396,7 @@ export async function uploadBatch(formData) {
   // a merged month batch holds every person twice BY DESIGN - once per
   // fortnight - and each file was checked clean above, so the guard stands
   // down for exactly that case
-  if (dupes.length && !mergedTwo) {
+  if (dupes.length && !twoPeriods) {
     redirect(
       `${NEW}error=twoperiods&why=${encodeURIComponent(
         `${dupes.length} employees appear more than once. QSP returns whole pay periods, so a range spanning two gives you both. Ask for one period only.`,
@@ -459,7 +419,7 @@ export async function uploadBatch(formData) {
     );
   }
 
-  const period = mergedTwo
+  const period = twoPeriods
     ? {
       from: withHours[0].payPeriod?.from || "",
       to: withHours[withHours.length - 1].payPeriod?.to || "",
@@ -892,7 +852,7 @@ export async function uploadBatch(formData) {
     periodFrom: period.from || "",
     periodTo: period.to || "",
     sourceUrl,
-    sourceName: mergedTwo ? [file.name, file2.name].filter(Boolean).join(" + ") || null : file.name || null,
+    sourceName: file.name || null,
     scheduleUrl,
     scheduleName: scheduleUrl ? schedFile?.name || null : null,
     clockUrl,
