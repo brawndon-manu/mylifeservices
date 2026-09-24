@@ -65,7 +65,7 @@ const VIEWS = [
   { key: "client", label: "By client", of: (r) => r.client || "No client on the booking" },
 ];
 
-export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, month = null, batchId = null, titles = null, periodLabel = "", canUpload = true, frozen = null, noteChanges = [] }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, month = null, flagTypes = null, batchId = null, titles = null, periodLabel = "", canUpload = true, frozen = null, noteChanges = [] }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -426,7 +426,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       <header className={styles.heading}>
         <div><p className={styles.eyebrow}>{headerPeriod}</p><h1>{title}</h1><p className={styles.subtitle}>{totals.shifts} billed shifts · {totals.notes} service notes</p></div>
         {!frozenMode && <div className={styles.actions}>
-          <AuditDownloads batchId={batchId} periodLabel={periodLabel} />
+          <AuditDownloads batchId={batchId} periodLabel={periodLabel} flagTypes={flagTypes} />
           {!studying && recordView && <button type="button" className={styles.primary} disabled={!shown.length} onClick={() => setStudying(true)}>Start focused review</button>}
         </div>}
       </header>
@@ -439,7 +439,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       )}
       {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} onKind={onKind} /> : view === "reports" ? <>
         <p className={styles.notice}>Reports include the entire uploaded period and current saved decisions. Filters used while reviewing do not limit these downloads.</p>
-        <AuditDownloads batchId={batchId} periodLabel={periodLabel} reportsPage />
+        <AuditDownloads batchId={batchId} periodLabel={periodLabel} flagTypes={flagTypes} reportsPage />
       </> : view === "hours" ? (
         // the month per client, over every shift on the copy whatever the
         // tabs above were set to, with this session's decisions already in

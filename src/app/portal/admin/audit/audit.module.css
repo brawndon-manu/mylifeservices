@@ -108,6 +108,15 @@
 .exportOptions legend { margin-bottom: 10px; font-weight: 600; }
 .exportOptions input { accent-color: #0071e3; margin-right: 8px; }
 .dialogActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 24px; }
+.dialogActions [aria-disabled="true"] { opacity: .45; pointer-events: none; }
+/* the flagged report for one kind of flag: the period's types, grouped by who
+   raised them, each with how many flags read as it */
+.exportOptions + .exportOptions { margin-top: 22px; }
+.flagTypes { max-height: 260px; overflow: auto; margin-left: 24px; padding: 4px 12px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.flagGroup { margin: 10px 0 4px; color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
+.flagType { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; cursor: pointer; }
+.flagType small { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.flagHint { margin-left: 24px; color: var(--faint); font-size: 11px; }
 .reportList { border-top: 1px solid var(--border); }
 .reportList > button { display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 22px 4px; border-bottom: 1px solid var(--border); }
 .reportList > button:hover { background: var(--surface-2); }

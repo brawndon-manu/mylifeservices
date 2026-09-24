@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { scheduleKey } from "@/lib/timesheet/schedule";
 import { supersededBy } from "@/lib/timesheet/superseded";
 import { periodDates } from "@/lib/timesheet/period-of";
+import { FLAG_TYPES, FLAG_TYPE_GROUPS, countFlagTypes } from "@/lib/timesheet/flag-types";
 
 export const metadata = { title: "Audit", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -63,6 +64,23 @@ export default async function AuditBatchPage({ params }) {
       },
     });
 
+  // WHAT THE PERIOD'S FLAGS ARE FOR, counted the way the flagged report picks
+  // them (flag-types.js), so the download can send one kind on alone
+  const periodFlags = await prisma.shiftReview.findMany({
+    where: { decision: "flagged", date: { in: periodDates(batch.periodFrom, batch.periodTo) } },
+    select: { decision: true, reason: true, kinds: true, billableMin: true },
+  });
+  const flagCounts = countFlagTypes(periodFlags);
+  const flagTypes = {
+    total: periodFlags.length,
+    groups: FLAG_TYPE_GROUPS
+      .map((g) => ({
+        ...g,
+        types: FLAG_TYPES.filter((t) => t.group === g.group && flagCounts[t.key] > 0).map((t) => ({ key: t.key, label: t.label, count: flagCounts[t.key] })),
+      }))
+      .filter((g) => g.types.length),
+  };
+
   // the deck prints the employee's role beside the name - resolved by the
   // schedule key the rows already carry, exactly like the flagged report
   const staff = await prisma.user.findMany({
@@ -92,6 +110,7 @@ export default async function AuditBatchPage({ params }) {
         lost={lost}
         authorized={hasAuthorizations ? authorized : null}
         authMonthLabel={authMonthLabel}
+        flagTypes={flagTypes}
         month={{
           // the client hours page: every counted line, the month it belongs
           // to, and how far into it this copy reads

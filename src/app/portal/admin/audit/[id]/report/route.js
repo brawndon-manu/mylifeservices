@@ -11,6 +11,7 @@ import {
   renderFlagReportDetail,
 } from "@/lib/timesheet/flag-report";
 import { buildAudit } from "../build";
+import { pickFlags, flagTypeLabel } from "@/lib/timesheet/flag-types";
 import { clock } from "../figures";
 
 // The flagged shifts of this pay period, as a PDF. Gated and generated on
@@ -21,7 +22,13 @@ export async function GET(req, { params }) {
   const { id } = await params;
   // ?detailed=1 renders the grouped full-block companion - same data, same
   // gate, a second shape, exactly like the client report's pair of buttons
-  const detailed = new URL(req.url).searchParams.get("detailed") === "1";
+  const url = new URL(req.url);
+  const detailed = url.searchParams.get("detailed") === "1";
+  // ?types=no-dsn,filed-off-clock sends one kind of flag on alone: the flags
+  // that read as any of them, and a title and first line that say so. keys
+  // nothing knows are dropped, so a stale link still gives a report
+  const typeKeys = (url.searchParams.get("types") || "").split(",").map((k) => k.trim()).filter((k) => flagTypeLabel(k));
+  const only = typeKeys.length ? typeKeys.map(flagTypeLabel) : null;
 
   const user = await getCurrentUser();
   if (!isAdminUp(user?.role)) {
@@ -48,7 +55,7 @@ export async function GET(req, { params }) {
   const decisions = (await prisma.shiftReview.findMany({
     include: { decidedBy: { select: { name: true, preferredFirstName: true, preferredLastName: true } } },
   })).filter((r) => dayKey(r.date) >= from && dayKey(r.date) <= to);
-  const flagged = decisions.filter((r) => r.decision === "flagged");
+  const flagged = pickFlags(decisions.filter((r) => r.decision === "flagged"), typeKeys);
   const approved = decisions.filter((r) => r.decision === "approved");
 
   // the stored employeeKey is the normalised legal spelling; the report prints
@@ -128,6 +135,7 @@ export async function GET(req, { params }) {
         periodTo: batch.periodTo,
         generatedOn: day(new Date()),
         flags: flagRows,
+        only,
       }),
     )
     : await renderFlagReport(
@@ -141,9 +149,13 @@ export async function GET(req, { params }) {
           billedMin: r.billedMin,
         })),
         flags: flagRows,
+        only,
       }),
     );
-  const filename = `flagged-shifts${detailed ? "-detailed" : ""}-${batch.periodFrom.replaceAll("/", "-")}-to-${batch.periodTo.replaceAll("/", "-")}.pdf`;
+  // the file says what it holds too: the one kind by name, or how many
+  const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const picked = only ? (only.length === 1 ? `-${slug(only[0])}` : `-${only.length}-kinds`) : "";
+  const filename = `flagged-shifts${detailed ? "-detailed" : ""}${picked}-${batch.periodFrom.replaceAll("/", "-")}-to-${batch.periodTo.replaceAll("/", "-")}.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",

@@ -65,7 +65,19 @@ const dayKey = (d) => {
 // caller joined the audit build, the punch facts for the detail line:
 // { punchIn, punchOut, noIn, noOut, gpsIn, gpsOut, clockAvailable,
 //   inClockExport, billableMin }.
-export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [], generatedOn }) {
+// A REPORT PICKED FOR SOME FLAGS SAYS WHICH, in its title where one kind fits
+// and in its first line always, so a page sent on alone can't be read as the
+// whole period's flags. `only` is the picked types' labels, or null for every
+// flag. see flag-types.js
+function pickedTitle(whole, short, only) {
+  if (!only?.length) return whole;
+  return only.length === 1 ? `${short} - ${only[0]}` : `${short} - ${only.length} kinds of flag`;
+}
+function pickedLine(only) {
+  return only?.length ? [`Only these flags: ${only.join("; ")}.`] : [];
+}
+
+export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [], generatedOn, only = null }) {
   // over, under, level and unclocked are different findings and the summary
   // counts them apart - his flags include under-billing, and folding those
   // into "over" would misreport what he found
@@ -133,7 +145,9 @@ export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [
     perApproved.set(a.who, (perApproved.get(a.who) || 0) + 1);
     approvedMin += a.billedMin || 0;
   }
-  const approvedOut = approved.length
+  // a report picked for some flags is about those alone: the approved pile
+  // belongs to the whole period's report
+  const approvedOut = approved.length && !only?.length
     ? {
       count: approved.length,
       line: `${approved.length} shift${approved.length === 1 ? "" : "s"} · ${hrs(approvedMin)} billed`,
@@ -144,13 +158,16 @@ export function flagReportModel({ periodFrom, periodTo, flags = [], approved = [
     : null;
 
   return {
-    title: "Service audit - flagged shifts",
+    title: pickedTitle("Service audit - flagged shifts", "Flagged shifts", only),
     period: `Pay period ${periodFrom} to ${periodTo}`,
     generated: `Generated ${generatedOn}`,
-    summary: flags.length
-      ? [`${flags.length} shift${flags.length === 1 ? "" : "s"} flagged on review.`,
-         parts.length ? `${parts.join("; ")}.` : ""].filter(Boolean)
-      : ["No shifts are flagged in this period."],
+    summary: [
+      ...pickedLine(only),
+      ...(flags.length
+        ? [`${flags.length} shift${flags.length === 1 ? "" : "s"} flagged on review.`,
+           parts.length ? `${parts.join("; ")}.` : ""].filter(Boolean)
+        : [only?.length ? `No shift carries ${only.length === 1 ? "this flag" : "these flags"} in this period.` : "No shifts are flagged in this period."]),
+    ],
     groups,
     approved: approvedOut,
     footer: names.length
@@ -182,7 +199,7 @@ export { ampmLabel, minsWords };
 // build: title (role), schedFrom/schedTo, originalFrom/originalTo, punches,
 // gps, note texts. Everything the document says is computed here so tests
 // read the model, never the PDF.
-export function flagReportDetailModel({ periodFrom, periodTo, flags = [], generatedOn }) {
+export function flagReportDetailModel({ periodFrom, periodTo, flags = [], generatedOn, only = null }) {
   const byWho = new Map();
   for (const f of flags) {
     if (!byWho.has(f.who)) byWho.set(f.who, { who: f.who, title: f.title || null, list: [] });
@@ -289,12 +306,15 @@ export function flagReportDetailModel({ periodFrom, periodTo, flags = [], genera
     .sort((a, b) => a.who.localeCompare(b.who));
 
   return {
-    title: "Service audit - flagged shifts, detailed",
+    title: pickedTitle("Service audit - flagged shifts, detailed", "Flagged shifts, detailed", only),
     period: `Pay period ${periodFrom} to ${periodTo}`,
     generated: `Generated ${generatedOn}`,
-    summary: flags.length
-      ? [`${flags.length} shift${flags.length === 1 ? "" : "s"} flagged on review, grouped by employee.`]
-      : ["No shifts are flagged in this period."],
+    summary: [
+      ...pickedLine(only),
+      flags.length
+        ? `${flags.length} shift${flags.length === 1 ? "" : "s"} flagged on review, grouped by employee.`
+        : only?.length ? `No shift carries ${only.length === 1 ? "this flag" : "these flags"} in this period.` : "No shifts are flagged in this period.",
+    ],
     groups,
   };
 }
@@ -324,6 +344,12 @@ const GRID = rgb(0.75, 0.79, 0.83);
 const WINANSI_EXTRA = new Set(
   "\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178",
 );
+// the largest size up to `max` that keeps a line inside `room`, never below 11
+function fitSize(str, font, room, max) {
+  const w = font.widthOfTextAtSize(pdfText(str), max);
+  return w <= room ? max : Math.max(11, Math.floor((max * room) / w * 10) / 10);
+}
+
 export function pdfText(s) {
   return String(s ?? "")
     .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")
@@ -377,7 +403,9 @@ export async function renderFlagReport(model) {
       tx = L + lw + 14;
     }
     text("My Life Services, Inc.", tx, y - 12, { size: 8.5, f: bold, color: MUTED });
-    text(model.title, tx, y - 35, { size: 17, f: bold, color: BRAND });
+    // a picked flag's name can outrun the line beside the logo: the title
+    // shrinks to fit rather than running off the page
+    text(model.title, tx, y - 35, { size: fitSize(model.title, bold, R - tx, 17), f: bold, color: BRAND });
     y -= logoH + 15;
     text(model.period, L, y, { size: 11, f: bold });
     text(model.generated, R - font.widthOfTextAtSize(model.generated, 9), y, { size: 9, color: MUTED });
@@ -501,7 +529,9 @@ export async function renderFlagReportDetail(model) {
       tx = L + lw + 14;
     }
     text("My Life Services, Inc.", tx, y - 12, { size: 8.5, f: bold, color: MUTED });
-    text(model.title, tx, y - 35, { size: 17, f: bold, color: BRAND });
+    // a picked flag's name can outrun the line beside the logo: the title
+    // shrinks to fit rather than running off the page
+    text(model.title, tx, y - 35, { size: fitSize(model.title, bold, R - tx, 17), f: bold, color: BRAND });
     y -= logoH + 15;
     text(model.period, L, y, { size: 11, f: bold });
     text(model.generated, R - font.widthOfTextAtSize(model.generated, 9), y, { size: 9, color: MUTED });
