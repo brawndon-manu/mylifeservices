@@ -26,8 +26,6 @@ export const FILE_RULES = [
   { prefix: "form-email-imports/", can: canViewFormRecords, record: true },
   { prefix: "certificates/", can: canViewFormRecords, record: true },
   { prefix: "applications/", can: isElevated, record: true },
-  // three files from before the client roster moved out; nothing writes here now
-  { prefix: "clients/", can: isAdminUp, record: true },
   // blank templates. some carry a role floor (the field supervisor set), so
   // the gate looks the form up and asks canSeeForm - `form: true` - and this
   // rule is only what is left for a file no form row owns

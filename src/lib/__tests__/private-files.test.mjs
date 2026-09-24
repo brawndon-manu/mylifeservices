@@ -31,6 +31,8 @@ const PRIV = "https://abcd1234.private.blob.vercel-storage.com";
 test("only the website's pictures, the email logo and an announcement's pictures are public", () => {
   for (const key of [
     "site/about/1-a.jpg",
+    // the About page's first photos, uploaded before site/ existed
+    "clients/about-hero.jpg",
     "newsletter/1-b.png",
     "email/logo.png",
     "announcements/inline/1-c.gif",

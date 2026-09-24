@@ -12,8 +12,11 @@
 
 // the prefixes allowed on the open internet. an announcement's pdfs are the
 // exception inside announcements/ - they ride on the email as attachments, so
-// nothing outside the portal ever needs to load them from a url.
-const PUBLIC_PREFIXES = ["site/", "newsletter/", "email/", "announcements/"];
+// nothing outside the portal ever needs to load them from a url. clients/ is
+// where the About page's first three photos went (2026-06-17), before site/
+// existed: website photos with a release on file, public on purpose, and
+// nothing uploads there any more.
+const PUBLIC_PREFIXES = ["site/", "newsletter/", "email/", "announcements/", "clients/"];
 const PRIVATE_INSIDE_PUBLIC = ["announcements/docs/"];
 
 export const FILES_ROUTE = "/portal/files";
