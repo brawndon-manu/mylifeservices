@@ -44,8 +44,8 @@ export function clockedFigure(row) {
   const from = row.actualFrom;
   const to = row.actualTo;
   if (from != null && to != null) {
-    // the export's own minutes. on an amended shift clockedMin is the signed
-    // window, and this figure is the one it stands beside, struck through
+    // the export's own minutes, which is what clockedMin carries too; an
+    // addendum shows on the Billed figure and under the punches, never here
     return { value: hrs(row.clockWorkedMin ?? row.clockedMin), sub: span(from, to), tone: null };
   }
   if (from != null) return { value: "no clock-out", sub: `in ${ampm(from)}`, tone: "bad" };

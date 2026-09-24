@@ -622,8 +622,8 @@ export async function buildAudit(id) {
       // how far the punches sat from the roster, so a card can tell a late
       // clock-in the way the amendment rules do
       startDelta: shift.startDelta ?? null, endDelta: shift.endDelta ?? null,
-      // the export's own minutes, kept apart from clockedMin, which is the
-      // signed window on an amended shift
+      // the export's own minutes, the same figure clockedMin carries below;
+      // kept under its own name for the card, which reads it first
       clockWorkedMin: shift.workedMin ?? null,
       amendment,
       // an amendment out for this shift and not yet approved, if any
@@ -657,6 +657,10 @@ export async function buildAudit(id) {
         }
         : null,
       ...read,
+      // the clock is what the export recorded, on every screen and sheet. the
+      // rules above read the signed window where an addendum set one, and the
+      // window itself rides on `amendment`; neither is the clock.
+      clockedMin: shift.workedMin ?? null,
     });
   }
 

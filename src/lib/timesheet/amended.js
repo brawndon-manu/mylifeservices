@@ -159,5 +159,10 @@ export function amendedShift(shift, view) {
     noOut: view.to == null ? shift.noOut : false,
     noClockRow: false,
     amended: true,
+    // what bills follows the addendum (billable-of.js), so the rules that
+    // hold billed against clocked read this rather than the roster figure,
+    // and an addendum never flags the gap it exists to close. the roster
+    // catching up later shows on the Billed figure, not as a finding.
+    billableMin: view.min,
   };
 }

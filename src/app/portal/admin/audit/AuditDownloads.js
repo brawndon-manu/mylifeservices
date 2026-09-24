@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { Table2, FileChartColumn, Flag, CalendarDays, Download } from "lucide-react";
+import { Table2, FileChartColumn, Flag, CalendarDays, FileSignature, Download } from "lucide-react";
 import AuditMenu from "./AuditMenu";
 import styles from "./audit.module.css";
 
@@ -11,6 +11,7 @@ const REPORTS = [
   { key: "client-report", title: "Client hours", format: "PDF", Icon: FileChartColumn, description: "Billable hours and monthly authorizations.", detailed: true },
   { key: "report", title: "Flagged shifts", format: "PDF", Icon: Flag, description: "Saved flags, reviewer notes and corrected hours.", detailed: true },
   { key: "client-calendar", title: "Client calendars", format: "PDF", Icon: CalendarDays, description: "A calendar of services for each client." },
+  { key: "addenda", title: "Clock addenda", format: "PDF", Icon: FileSignature, description: "Every addendum on this period: what changed, who signed, who approved." },
 ];
 
 export default function AuditDownloads({ batchId, periodLabel, reportsPage = false }) {

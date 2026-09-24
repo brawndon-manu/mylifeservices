@@ -1,5 +1,5 @@
 import { CircleAlert } from "lucide-react";
-import { span, hrs, clock, clockedFigure, amendedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
+import { span, hrs, clock, clockedFigure, punchEnd, ampmLabel, minsWords } from "./figures";
 import { filedParts } from "@/lib/timesheet/note-filed";
 import { billableOf } from "@/lib/timesheet/billable-of";
 import styles from "../audit.module.css";
@@ -18,16 +18,11 @@ export default function ShiftEvidence({ row }) {
   const to = original ? row.originalTo : row.schedTo;
   const scheduled = from != null && to != null;
   const clocked = clockedFigure(row);
-  // the signed window an approved amendment moved the clock to, if it moved it
-  const amended = amendedFigure(row);
   // what bills: the reviewer's correction, the signed amendment, or the roster
   const billable = billableOf(row);
   const set = billable.source !== "billed";
   const setTone = billable.source === "amendment" ? styles.amended : styles.corrected;
   const setWord = billable.source === "amendment" ? "addendum" : "corrected";
-  const amendedBy = row.amendment
-    ? <span className={styles.amended}>addendum{row.amendment.by ? ` by ${row.amendment.by}` : ""}</span>
-    : null;
   const note = row.note;
   return <div className={styles.evidence}>
     <dl className={styles.times}>
@@ -47,16 +42,10 @@ export default function ShiftEvidence({ row }) {
           : minsWords(billable.min) || hrs(billable.min)} · <span className={setTone}>{setWord}{billable.by ? ` by ${billable.by}` : ""}</span></>
         : span(row.schedFrom, row.schedTo)}</dd></div>
       <div><dt>Clocked</dt>
-        {amended ? <>
-          {/* the export's reading struck through, the signed window beside it
-              in the amendment's blue - the same treatment a reviewer's
-              correction gets on the billed figure, in its own colour */}
-          <dd className={styles.figureValue}><span className={styles.original}><FigureHours value={clocked.value} /></span><span className={styles.amended}><FigureHours value={amended.value} /></span></dd>
-          <dd className={styles.figureSub}>{amended.sub} · {amendedBy}</dd>
-        </> : <>
-          <dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}><FigureHours value={clocked.value} /></dd>
-          {(clocked.sub || amendedBy) && <dd className={styles.figureSub}>{clocked.sub}{clocked.sub && amendedBy ? " · " : ""}{amendedBy}</dd>}
-        </>}
+        {/* what the export recorded, and only that: the addendum shows on the
+            Billed figure and on the line under the punches, never here */}
+        <dd className={`${styles.figureValue} ${clocked.tone ? styles.figureText : ""} ${clocked.tone === "bad" ? styles.bad : ""}`}><FigureHours value={clocked.value} /></dd>
+        {clocked.sub && <dd className={styles.figureSub}>{clocked.sub}</dd>}
       </div>
     </dl>
     <dl className={styles.checks}>

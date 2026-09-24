@@ -225,13 +225,17 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
   // find. Only where the shift was clocked at BOTH ends - a missing punch has
   // its own finding and cannot also be evidence of over-billing.
   const clockedMin = shift?.workedMin ?? null;
+  // on an amended shift the figure that bills is the signed one, not the
+  // roster (see amended.js), so the comparison is the addendum against its
+  // own window and comes out level
+  const billsMin = shift?.billableMin ?? billedMin;
   if (
-    billedMin != null && clockedMin != null
-    && billedMin - clockedMin >= rules.billedOverClockMin
+    billsMin != null && clockedMin != null
+    && billsMin - clockedMin >= rules.billedOverClockMin
   ) {
     out.push({
       kind: "billed-over-clocked",
-      billedMin,
+      billedMin: billsMin,
       clockedMin,
       // THE BOOKING IS UNTOUCHED AT BOTH ENDS, so nobody adjusted it to what
       // was worked. Comparing only the end missed a late clock-IN against an
@@ -247,10 +251,10 @@ export function auditReasons(shift, note, rules = AUDIT_RULES) {
   // company under-bills rather than over-bills) but Mánu 2026-09-05 wants it
   // filterable "just in case"; same both-punches requirement as the over case.
   if (
-    billedMin != null && clockedMin != null
-    && clockedMin - billedMin >= rules.billedOverClockMin
+    billsMin != null && clockedMin != null
+    && clockedMin - billsMin >= rules.billedOverClockMin
   ) {
-    out.push({ kind: "billed-under-clocked", billedMin, clockedMin });
+    out.push({ kind: "billed-under-clocked", billedMin: billsMin, clockedMin });
   }
 
   // the clock cannot corroborate a shift it never recorded, which matters most
