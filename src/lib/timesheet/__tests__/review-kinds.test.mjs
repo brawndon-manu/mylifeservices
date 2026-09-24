@@ -130,9 +130,10 @@ test("one control on both surfaces, and each says what it is about once", () => 
 
 test("the kinds narrow the flagged pile and nothing else", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
-  // four decisions and one fact about the record: an approved clock amendment
-  // gets a tab of its own without becoming a decision
-  assert.match(cards, /\["open", "flagged", "approved", "amended", "all"\]/, "the strip is the four decisions and Amended");
+  // four decisions and two facts about the record: an approved clock amendment
+  // gets a tab of its own without becoming a decision, and so do the cards
+  // that could raise one, where this reviewer can
+  assert.match(cards, /\["open", "flagged", "approved", "amended", \.\.\.\(canRaise \? \["raise"\] : \[\]\), "all"\]/, "the strip is the four decisions, Amended and the raise tab");
   assert.match(cards, /decision === "flagged" && \(/, "the kind row only shows inside that pile");
   // the kind row renders under Flagged and nowhere else, so it must not bite
   // on another tab - a filter with no control on screen empties the list for

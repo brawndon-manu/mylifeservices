@@ -37,7 +37,7 @@ test("the build joins approved amendments and reads the signed shift for the fin
 test("the cards carry the Amended tab, the blue edge and the pill", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
   assert.match(cards, /\{ key: "amended", label: "Addendum", match: \(r\) => !!r\.amendment \}/);
-  assert.match(cards, /\["open", "flagged", "approved", "amended", "all"\]/);
+  assert.match(cards, /\["open", "flagged", "approved", "amended", \.\.\.\(canRaise \? \["raise"\] : \[\]\), "all"\]/);
   assert.match(cards, /data-amended=\{r\.amendment \? "true" : undefined\}/);
   assert.match(cards, /styles\.amendedPill/);
   const focus = read("src/app/portal/admin/audit/[id]/StudyMode.js");
@@ -92,7 +92,8 @@ test("the card's raise re-reads the shift from the copy's stored export, refuses
 
 test("the button is offered only where the clock has something wrong and nothing is out, and the card carries what the rules need", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
-  assert.match(cards, /const showRaise = canRaise && !r\.amendment && !r\.pending && r\.inClockExport === true && hasIssue\(r\);/);
+  assert.match(cards, /const showRaise = canRaise && raisable\(r\);/);
+  assert.match(read("src/lib/clock-amendment/rules.js"), /export const raisable = \(row\) => !!row && !row\.amendment && !row\.pending && row\.inClockExport === true && hasIssue\(row\);/);
   assert.match(cards, /const canRaise = canUpload && !frozenMode;/);
   assert.match(cards, /styles\.pendingPill/);
   const build = read("src/app/portal/admin/audit/[id]/build.js");

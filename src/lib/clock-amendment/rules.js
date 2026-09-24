@@ -115,6 +115,23 @@ export function punchIssue(shift) {
 
 export const issueOf = (a) => (a ? punchIssue(a.clockRow || { noIn: !a.clockedIn, noOut: !a.clockedOut }) : null);
 
+// WHETHER AN AUDIT CARD OFFERS "Raise an addendum": the export has a row for
+// the shift, the clock has something wrong with it, and nothing is out or
+// approved for it yet. the card's button and the tab that lists them both ask
+// this, so every card in the list has the button
+export const raisable = (row) => !!row && !row.amendment && !row.pending && row.inClockExport === true && hasIssue(row);
+
+// THE CASES that list is cut by, heaviest first. one per shift off punchIssue,
+// so they add up to the whole list: a late clock-in with no clock-out counts
+// as no clock out. the words are the ones the auto flag and the intake use
+export const RAISE_CASES = [
+  { key: "none", label: "No clock in or out" },
+  { key: "noIn", label: "No clock in" },
+  { key: "noOut", label: "No clock out" },
+  { key: "lateIn", label: "Late clock-in" },
+  { key: "noGps", label: "No location" },
+];
+
 // which ends of a shift went in without a location
 export function noGpsEnds(shift) {
   const e = clockEnds(shift);

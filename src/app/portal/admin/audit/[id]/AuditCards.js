@@ -41,7 +41,7 @@ import styles from "../audit.module.css";
 import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, offerableKinds } from "@/lib/timesheet/review-kinds";
 import { billableOf } from "@/lib/timesheet/billable-of";
 import { flipReturnOf } from "@/lib/timesheet/audit-changes";
-import { hasIssue } from "@/lib/clock-amendment/rules";
+import { raisable, punchIssue, RAISE_CASES } from "@/lib/clock-amendment/rules";
 import RaiseAmendment from "./RaiseAmendment";
 import WhatWasSaid from "./WhatWasSaid";
 import ClientHours from "./ClientHours";
@@ -55,6 +55,10 @@ const DECISIONS = [
   // its own: an approved clock amendment stands on the shift whatever the
   // reviewer has ruled. see amended.js
   { key: "amended", label: "Addendum", match: (r) => !!r.amendment },
+  // not a decision either: every card that offers "Raise an addendum" whatever
+  // the review says, so the ones to send are one list. the missing punches sit
+  // under Flagged, so narrowing Not decided would never show them
+  { key: "raise", label: "Can raise an addendum", match: raisable },
 ];
 
 const VIEWS = [
@@ -90,6 +94,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   // Sits under the Flagged tab rather than beside the decisions, because it
   // only means anything inside that pile.
   const [kindFilter, setKindFilter] = useState("all");
+  // WHICH CASE of the raisable cards, under that tab only, the way the kind
+  // row narrows the flagged pile
+  const [raiseCase, setRaiseCase] = useState("all");
   const toggleKind = (k) =>
     setOnlyKinds((prev) => {
       if (prev.includes(k)) return prev.filter((x) => x !== k);
@@ -118,6 +125,9 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   // AN AMENDMENT RAISED FROM A CARD lands here the same way, so the card says
   // it is out without re-running the build; the server row is the record
   const [localPending, setLocalPending] = useState({});
+  // A CARD SENT FROM THE RAISE TAB stays in it, pill and all, until the tab is
+  // left, so the send can be seen to have gone; the counts drop at once
+  const [sentHere, setSentHere] = useState(() => new Set());
   // WHAT A FLAG IS ABOUT, toggled from inside the note itself. Held locally
   // the same way a decision is so the piles and counts move without re-running
   // the build; the server row is the durable record.
@@ -163,8 +173,15 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   );
   const noteReview = (shiftKey, review) =>
     setLocalReviews((v) => ({ ...v, [shiftKey]: review }));
-  const notePending = (shiftKey, pending) =>
+  const notePending = (shiftKey, pending) => {
     setLocalPending((v) => ({ ...v, [shiftKey]: pending }));
+    setSentHere((s) => new Set(s).add(shiftKey));
+  };
+  // leaving a tab lets go of the cards kept on the raise tab
+  const changeDecision = (key) => {
+    if (key !== decision) setSentHere(new Set());
+    setDecision(key);
+  };
 
 
   // A SUPERSEDED COPY OPENS FROZEN - Mánu 2026-09-07: "all the superceded
@@ -249,6 +266,17 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     [inPeriod],
   );
 
+  // the raisable cards by their heaviest problem, inside the period showing
+  const raiseCaseCounts = useMemo(() => {
+    const c = {};
+    for (const r of inPeriod) {
+      if (!raisable(r)) continue;
+      const k = punchIssue(r);
+      c[k] = (c[k] || 0) + 1;
+    }
+    return c;
+  }, [inPeriod]);
+
   const flagScopeCounts = useMemo(() => {
     const flagged = inPeriod.filter((r) => r.review?.decision === "flagged");
     const copy = flagged.filter((r) => r.review?.fromBatch === batchId).length;
@@ -257,7 +285,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const byDecision = frozenMode ? () => true : DECISIONS.find((d) => d.key === decision).match;
+    const byDecision = frozenMode
+      ? () => true
+      : decision === "raise"
+        ? (r) => raisable(r) || sentHere.has(r.shiftKey)
+        : DECISIONS.find((d) => d.key === decision).match;
     return inPeriod.filter((r) => {
       if (!byDecision(r)) return false;
       if (!frozenMode && decision === "flagged" && flagScope !== "all") {
@@ -270,11 +302,12 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       // filter with no control on screen - switch to Not decided with a kind
       // held and every card vanishes for no visible reason.
       if (decision === "flagged" && kindFilter !== "all" && !hasKind(r.review, kindFilter)) return false;
+      if (decision === "raise" && raiseCase !== "all" && punchIssue(r) !== raiseCase) return false;
       if (onlyKinds.length && !onlyKinds.every((k) => kindOn(r, k))) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars, flagScope, batchId, kindFilter]);
+  }, [inPeriod, decision, onlyKinds, q, frozenMode, starsOnly, stars, flagScope, batchId, kindFilter, raiseCase, sentHere]);
 
   // ONE LINE PER PERSON OR PER CLIENT, over whatever is showing.
   //
@@ -384,7 +417,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
   // "Open the shift" from a New notes entry: the shift is decided, so the
   // Not-decided tab would hide exactly the card being opened
   const openShiftOf = (who) => {
-    setDecision("all");
+    changeDecision("all");
     setQ(who);
     setView("shifts");
   };
@@ -456,8 +489,23 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
         {["all", ...periods].map((p) => <option key={p} value={p}>{p === "all" ? "Every period" : p} ({periodCounts[p] ?? 0})</option>)}
       </select></label>}
       {recordView && !frozenMode && <div className={styles.decisionTabs} aria-label="Review status">
-        {["open", "flagged", "approved", "amended", "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
+        {["open", "flagged", "approved", "amended", ...(canRaise ? ["raise"] : []), "all"].map((key) => { const d = DECISIONS.find((item) => item.key === key); return <button key={key} type="button" aria-pressed={decision === key} onClick={() => changeDecision(key)}>{d.label}<span>{decisionCounts[key]}</span></button>; })}
       </div>}
+      {/* the raisable cards by what the clock has wrong, heaviest first. a case
+          with none is left off unless it is the one picked, so a pick never
+          vanishes under the list it is narrowing */}
+      {recordView && !frozenMode && decision === "raise" && (
+        <div className={styles.decisionTabs} aria-label="What the clock has wrong">
+          <button type="button" aria-pressed={raiseCase === "all"} onClick={() => setRaiseCase("all")}>
+            Every case<span>{decisionCounts.raise}</span>
+          </button>
+          {RAISE_CASES.filter((c) => raiseCaseCounts[c.key] || raiseCase === c.key).map((c) => (
+            <button key={c.key} type="button" aria-pressed={raiseCase === c.key} onClick={() => setRaiseCase(c.key)}>
+              {c.label}<span>{raiseCaseCounts[c.key] || 0}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {recordView && !frozenMode && decision === "flagged" && (
         <div className={styles.decisionTabs} aria-label="What the flags are about">
           <button type="button" aria-pressed={kindFilter === "all"} onClick={() => setKindFilter("all")}>
@@ -493,7 +541,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           {Object.entries(ROLL_SORTS).filter(([k]) => recordView || ["date", "first", "last"].includes(k)).map(([k, v]) => <button key={k} type="button" aria-pressed={sortKeys.includes(k)} onClick={() => toggleSort(k)}>{v.label}<small>{sortKeys.includes(k) ? sortKeys.indexOf(k) + 1 : ""}</small></button>)}
           {sortKeys.length > 0 && <button type="button" onClick={() => setSortKeys([])}>Default order</button>}
         </AuditMenu>
-        {recordView && (q || onlyKinds.length > 0 || (decision === "flagged" && kindFilter !== "all")) && <button type="button" className={styles.secondary} onClick={() => { setQ(""); setOnlyKinds([]); setKindFilter("all"); }}>Clear filters</button>}
+        {recordView && (q || onlyKinds.length > 0 || (decision === "flagged" && kindFilter !== "all") || (decision === "raise" && raiseCase !== "all")) && <button type="button" className={styles.secondary} onClick={() => { setQ(""); setOnlyKinds([]); setKindFilter("all"); setRaiseCase("all"); }}>Clear filters</button>}
       </div>
       {recordView && <p className={styles.resultCount}>{shown.length} of {inPeriod.length} shifts{period === "all" ? "" : ` in ${period}`}</p>}
       {batchId && recordView && !frozenMode && <details className={styles.tools}><summary>Review tools</summary>
@@ -1246,9 +1294,9 @@ function DecideBar({ r, onReview, batchId = null, settled = false, canRaise = fa
   const [flagging, setFlagging] = useState(false);
   // RAISING AN AMENDMENT FROM HERE, offered only where the clock has something
   // wrong with the shift and nothing is out for it already; the panel is the
-  // amendments page's intake, on the card
+  // amendments page's intake, on the card. the raise tab lists by the same rule
   const [raising, setRaising] = useState(false);
-  const showRaise = canRaise && !r.amendment && !r.pending && r.inClockExport === true && hasIssue(r);
+  const showRaise = canRaise && raisable(r);
   const [reason, setReason] = useState("");
   // WHAT THE FLAG IS ABOUT - offered only where the shift has the thing, so a
   // shift with no schedule note cannot be flagged about one
