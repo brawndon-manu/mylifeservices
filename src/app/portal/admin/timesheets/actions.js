@@ -4854,6 +4854,12 @@ function resolutionFor(q, choice, stated, statedBreaks, block) {
           + `Change the ${q.row?.service || "block"} on this day to ${block || "the time they gave"} in QSP.`
         : "Employee says the block cannot be rearranged, so the meal break could not have been "
           + "taken. Premium stands.";
+    // a lunch under thirty minutes: the answer is whether a full thirty was
+    // offered, and that decides the hour, so payroll is told which way it went
+    case "mealShort":
+      return yes
+        ? "Employee says a full thirty minutes was offered and they chose to come back early. Meal premium removed for this day."
+        : "Employee says a full, uninterrupted thirty minutes was not offered. Meal premium stands.";
     case "shortMealRest":
       return yes
         ? "Employee confirmed the short meal block was their rest period. Credit stands."

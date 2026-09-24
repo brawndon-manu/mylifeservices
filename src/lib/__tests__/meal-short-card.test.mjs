@@ -39,3 +39,9 @@ test("the question line shows in the day view and in the full card", () => {
 test("a reason is still asked on the no and only there", () => {
   assert.deepEqual(REASON_ON.mealShort, ["no"]);
 });
+
+test("payroll's note on the answer says which way the hour went", () => {
+  const actions = read("src/app/portal/admin/timesheets/actions.js");
+  const note = actions.slice(actions.indexOf("function resolutionFor("), actions.indexOf("function resolutionFor(") + 12000);
+  assert.match(note, /case "mealShort":\s*return yes\s*\? "Employee says a full thirty minutes was offered and they chose to come back early\. Meal premium removed for this day\."\s*: "Employee says a full, uninterrupted thirty minutes was not offered\. Meal premium stands\.";/);
+});
