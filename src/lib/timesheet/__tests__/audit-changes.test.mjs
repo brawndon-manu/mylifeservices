@@ -5,6 +5,8 @@
 // the reason.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { diffAuditRows, periodOverlap, adjustedAfterReviewPlan, noteChangesPlan } from "../audit-changes.js";
 
 const row = (over = {}) => ({
@@ -253,4 +255,86 @@ test("the roster landing on the window a clock amendment was signed for is the r
   // landing anywhere else is still a move
   const elsewhere = diffAuditRows(oldRows, [row({ billedMin: 120, clockedMin: 138, amendment })], overlap);
   assert.equal(adjustedAfterReviewPlan(elsewhere, [review()]).length, 1);
+});
+
+// ---------------------------------------------------- the move a flip recorded
+
+test("a flip's own words read back to the exact minutes, every minute of a day", async () => {
+  const { movedFiguresOf } = await import("../audit-changes.js");
+  for (let from = 0; from <= 1440; from++) {
+    const to = (from * 7) % 1441;
+    const plan = adjustedAfterReviewPlan(
+      diffAuditRows([row({ billedMin: from })], [row({ billedMin: to })], { from: "08/16/26", to: "08/31/26" }),
+      [{ shiftKey: "k1", decision: "approved", decidedBy: { name: "Brianna Wyatt" } }],
+    );
+    if (from === to) continue;
+    const moved = movedFiguresOf(plan[0].reason);
+    assert.deepEqual(moved.billed, { from, to }, `minute ${from} -> ${to}`);
+    assert.equal(moved.clocked, null);
+  }
+});
+
+test("the move is read out of the flip's words only, never out of the verdict it carries", async () => {
+  const { movedFiguresOf } = await import("../audit-changes.js");
+  assert.deepEqual(
+    movedFiguresOf("Auto: changed after review (billed 2.00h → 2.57h). Was approved by Brianna Wyatt."),
+    { billed: { from: 120, to: 154 }, clocked: null },
+  );
+  // a clock row arriving, next to a note, both parenthesised
+  assert.deepEqual(
+    movedFiguresOf("Auto: changed after review (billed 2.50h → 2.83h; clocked none → 2.83h; DSN note added (17 words)). Earlier flag: \"Auto: no clock out.\""),
+    { billed: { from: 150, to: 170 }, clocked: { from: null, to: 170 } },
+  );
+  // an earlier flag quoting figures of its own is not the move
+  assert.deepEqual(
+    movedFiguresOf("Auto: changed after review (schedule note changed). Earlier flag: \"billed 3.00h → 2.00h per the office\""),
+    null,
+  );
+  assert.equal(movedFiguresOf("Auto: back in the upload. Was approved by Brianna Wyatt."), null);
+  assert.equal(movedFiguresOf("billed 2.00h → 2.57h"), null);
+  assert.equal(movedFiguresOf(null), null);
+});
+
+test("a flipped shift whose time came back to the reviewed figure hands back the copy in between", async () => {
+  const { flipReturnOf } = await import("../audit-changes.js");
+  const review = (over = {}) => ({
+    decision: "flagged",
+    reason: "Auto: changed after review (billed 2.00h → 2.57h). Was approved by Brianna Wyatt.",
+    wasBilledMin: 154, wasClockedMin: 154,
+    ...over,
+  });
+  const card = (over = {}) => ({ billedMin: 154, clockedMin: 154, review: review(), ...over });
+  // approved at 2.57, the copy before read 2.00, the newest is back at 2.57
+  assert.deepEqual(flipReturnOf(card()), { billedMin: 120, clockedMin: 154 });
+  // the ordinary moved case is the plain side by side's, not this
+  assert.equal(flipReturnOf(card({ review: review({ wasBilledMin: 120 }) })), null);
+  // a move that no longer ends on today's figure says nothing about today
+  assert.equal(flipReturnOf(card({ billedMin: 160, review: review({ wasBilledMin: 160, wasClockedMin: 154 }) })), null);
+  // a person's own flag, an approval, no review, no frozen reading
+  assert.equal(flipReturnOf(card({ review: review({ reason: "check the times" }) })), null);
+  assert.equal(flipReturnOf(card({ review: review({ decision: "approved" }) })), null);
+  assert.equal(flipReturnOf(card({ review: null })), null);
+  assert.equal(flipReturnOf(card({ review: review({ wasBilledMin: null }) })), null);
+  // a clocked-only move keeps the billed figure where it stands
+  assert.deepEqual(
+    flipReturnOf(card({ billedMin: 60, clockedMin: 60, review: review({ reason: "Auto: changed after review (clocked none → 1.00h; service note added (62 words)). Earlier flag: \"x\"", wasBilledMin: 60, wasClockedMin: 60 }) })),
+    { billedMin: 60, clockedMin: null },
+  );
+});
+
+test("the cards and focused review open the side by side on a came-back flip, with the copy in between", () => {
+  const read = (p) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
+  const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
+  assert.match(cards, /const back = !settled && !reviewMoved\(r\) \? flipReturnOf\(r\) : null;/);
+  assert.match(cards, /const moved = !settled && \(reviewMoved\(r\) \|\| !!back\);/);
+  assert.match(cards, /previous=\{back\}/);
+  const study = read("src/app/portal/admin/audit/[id]/StudyMode.js");
+  assert.match(study, /const comparing = \(row\) => reviewMoved\(row\) \|\| !!flipReturnOf\(row\);/);
+  assert.match(study, /!flagging && comparing\(row\) &&/);
+  assert.match(study, /\{!comparing\(row\) && <button/);
+  const compare = read("src/app/portal/admin/audit/[id]/TimeCompare.js");
+  assert.match(compare, /Previous copy/);
+  assert.match(compare, /The newest copy is back to the time that was reviewed\./);
+  // one button when both would bill the same figure
+  assert.match(compare, /reviewedFigure != null && !sameFigure && \(/);
 });

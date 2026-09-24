@@ -38,12 +38,21 @@ export const reviewedWinOf = (rv) =>
     ? { from: rv.billableFrom, to: rv.billableTo }
     : null;
 
-export default function TimeCompare({ r, busy = false, onPick, onFlag }) {
+// `previous` is the reading of the copy before the newest, handed in only when
+// the time went away from the reviewed figure and came back (flipReturnOf):
+// the reviewed reading and the newest agree then, so the move sits between
+// them in a column of its own and the newest reads "was" against it
+export default function TimeCompare({ r, busy = false, onPick, onFlag, previous = null }) {
   const rv = r.review;
   const reviewedFigure = reviewedFigureOf(rv);
-  const billedMoved = rv.wasBilledMin !== (r.billedMin ?? null);
-  const clockedMoved = (rv.wasClockedMin ?? null) !== (r.clockedMin ?? null);
+  const wasBilled = previous ? previous.billedMin : rv.wasBilledMin;
+  const wasClocked = previous ? previous.clockedMin : rv.wasClockedMin;
+  const billedMoved = (wasBilled ?? null) !== (r.billedMin ?? null);
+  const clockedMoved = (wasClocked ?? null) !== (r.clockedMin ?? null);
   const win = reviewedWinOf(rv);
+  // one button, not two, when both would bill the same figure
+  const newFigure = billableOf({ ...r, review: null }).min;
+  const sameFigure = reviewedFigure != null && reviewedFigure === newFigure;
   // WHAT THE REVIEWER HAD RULED - Mánu 2026-09-08: "the as it was reviewed
   // should show if i had approved it or if i have adjusted it. cause i may
   // not always go through them all in between new uploads." The flip keeps
@@ -72,41 +81,53 @@ export default function TimeCompare({ r, busy = false, onPick, onFlag }) {
             </p>
           )}
         </div>
+        {previous && (
+          <div className={styles.side}>
+            <div className={styles.sideLabel}>Previous copy</div>
+            <dl>
+              <div className={styles.cmpRow}><dt>Billed</dt><dd>{previous.billedMin != null ? hrs(previous.billedMin) : "no figure"}</dd></div>
+              <div className={styles.cmpRow}><dt>Clocked</dt><dd>{previous.clockedMin != null ? hrs(previous.clockedMin) : "no row"}</dd></div>
+            </dl>
+          </div>
+        )}
         <div className={`${styles.side} ${styles.sideNew}`}>
           <div className={styles.sideLabel}>Newest copy</div>
           <dl>
             <div className={styles.cmpRow}><dt>Billed</dt>
               <dd className={billedMoved ? styles.cmpMoved : undefined}>
                 {r.billedMin != null ? hrs(r.billedMin) : "no figure"}
-                {billedMoved && <span className={styles.cmpSub}>was {hrs(rv.wasBilledMin)}</span>}
+                {billedMoved && <span className={styles.cmpSub}>was {wasBilled != null ? hrs(wasBilled) : "no figure"}</span>}
               </dd>
             </div>
             <div className={styles.cmpRow}><dt>Clocked</dt>
               <dd className={clockedMoved ? styles.cmpMoved : undefined}>
                 {r.clockedMin != null ? hrs(r.clockedMin) : "no row"}
                 {clockedMoved && (
-                  <span className={styles.cmpSub}>was {rv.wasClockedMin != null ? hrs(rv.wasClockedMin) : "no row"}</span>
+                  <span className={styles.cmpSub}>was {wasClocked != null ? hrs(wasClocked) : "no row"}</span>
                 )}
               </dd>
             </div>
           </dl>
         </div>
       </div>
+      {previous && <p className={styles.cmpBack}>The newest copy is back to the time that was reviewed.</p>}
       <div className={styles.pickRow}>
-        {reviewedFigure != null && (
+        {reviewedFigure != null && !sameFigure && (
           <button type="button" disabled={busy} className={styles.primary} onClick={() => onPick("reviewed")}>
             Bill the reviewed time · {hrs(reviewedFigure)}
           </button>
         )}
         {r.billedMin != null && (
-          <button type="button" disabled={busy} className={styles.secondary} onClick={() => onPick("new")}>
+          <button type="button" disabled={busy} className={sameFigure ? styles.primary : styles.secondary} onClick={() => onPick("new")}>
             {/* what bills once the reviewer's own figure is let go: the signed
                 amendment where one stands, the roster's figure otherwise */}
-            Accept the new time · {hrs(billableOf({ ...r, review: null }).min)}
+            Accept the new time · {hrs(newFigure)}
           </button>
         )}
         <button type="button" disabled={busy} className={styles.secondary} onClick={onFlag}>Flag with a reason</button>
-        <small>Billing the reviewed time records it as a corrected billable figure, same as the adjust panel.</small>
+        {!sameFigure && reviewedFigure != null && (
+          <small>Billing the reviewed time records it as a corrected billable figure, same as the adjust panel.</small>
+        )}
       </div>
     </>
   );

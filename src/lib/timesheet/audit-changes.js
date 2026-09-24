@@ -225,6 +225,53 @@ export function adjustedAfterReviewPlan({ changed = {}, details = {}, gone = [],
   return flips;
 }
 
+// THE MOVE A FLIP RECORDED, read back out of its own words. the flip keeps the
+// change only as the sentence changesBetween wrote ("billed 2.00h → 2.57h"), so
+// this reads that exact shape and nothing looser: a reason in any other form,
+// somebody's own words included, answers null. two decimals of an hour are
+// finer than a minute, so the round trip always lands on the same minute.
+const FLIP_OPENER = "Auto: changed after review (";
+const FIGURE_RX = /^(billed|clocked) (none|\d+\.\d{2}h) → (none|\d+\.\d{2}h)$/;
+const minutesOf = (s) => (s === "none" ? null : Math.round(parseFloat(s) * 60));
+
+export function movedFiguresOf(reason) {
+  const s = String(reason || "");
+  if (!s.startsWith(FLIP_OPENER)) return null;
+  // the words stop where the carried verdict starts. a note's "(62 words)"
+  // inside them never runs into a full stop, so it can't end them early
+  const verdict = s.search(/\)\. (Was (approved|flagged)|Earlier flag:)/);
+  const end = verdict >= 0 ? verdict : s.lastIndexOf(").");
+  if (end < FLIP_OPENER.length) return null;
+  const out = { billed: null, clocked: null };
+  for (const part of s.slice(FLIP_OPENER.length, end).split("; ")) {
+    const m = FIGURE_RX.exec(part.trim());
+    if (m) out[m[1]] = { from: minutesOf(m[2]), to: minutesOf(m[3]) };
+  }
+  return out.billed || out.clocked ? out : null;
+}
+
+// A FLAGGED SHIFT WHOSE TIME WENT AWAY AND CAME BACK. the side by side weighs
+// the reading a decision froze against the newest copy, so when the report
+// moves off the reviewed figure and later back onto it the two agree and the
+// side by side stays shut, while the flip the first move caused still stands.
+// this hands back the previous copy's reading for exactly that case: an auto
+// flip, a frozen reading equal to today's, and a recorded move that ends on
+// today's figures. anything else is the ordinary side by side's business.
+export function flipReturnOf(r) {
+  const rv = r?.review;
+  if (!rv || rv.decision !== "flagged") return null;
+  const moved = movedFiguresOf(rv.reason);
+  if (!moved) return null;
+  const billed = r.billedMin ?? null;
+  const clocked = r.clockedMin ?? null;
+  if (rv.wasBilledMin == null || rv.wasBilledMin !== billed || (rv.wasClockedMin ?? null) !== clocked) return null;
+  if ((moved.billed && moved.billed.to !== billed) || (moved.clocked && moved.clocked.to !== clocked)) return null;
+  return {
+    billedMin: moved.billed ? moved.billed.from : billed,
+    clockedMin: moved.clocked ? moved.clocked.from : clocked,
+  };
+}
+
 // THE NEW NOTES LEDGER - one row per note that arrived or changed on a shift
 // somebody had already ruled on. Pure: hand it the diff's noteEvents, the new
 // rows and the standing reviews; it hands back the rows to record. The

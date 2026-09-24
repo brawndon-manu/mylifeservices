@@ -27,8 +27,14 @@ import { kindsOf, labelOfKind } from "@/lib/timesheet/review-kinds";
 
 import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
+import { flipReturnOf } from "@/lib/timesheet/audit-changes";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
+
+// the side by side opens on a moved card, and on a flipped one whose time came
+// back to the reviewed figure, with the copy in between beside them
+const comparing = (row) => reviewMoved(row) || !!flipReturnOf(row);
+const previousOf = (row) => (reviewMoved(row) ? null : flipReturnOf(row));
 
 export default function StudyMode({ rows: dealt, onExit, titles = null, onReview, batchId = null, onKind = null }) {
   // THE DECK IS DEALT ONCE, when study mode opens.
@@ -558,11 +564,12 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
             {/* the time moved after the review: both readings side by side,
                 and the pick buttons stand in for the plain Approve below -
                 the shared TimeCompare, same as the cards */}
-            {!flagging && reviewMoved(row) && (
+            {!flagging && comparing(row) && (
               <div className="mt-5">
                 <TimeCompare
                   r={row}
                   busy={busy}
+                  previous={previousOf(row)}
                   onFlag={() => setFlagging(true)}
                   onPick={(which) =>
                     which === "reviewed"
@@ -655,7 +662,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                   approve - the plain one would silently mean "accept the
                   new time" without saying so. The A key still lands there
                   knowingly: approve-with-no-correction is that choice. */}
-              {!reviewMoved(row) && <button
+              {!comparing(row) && <button
                 type="button"
                 disabled={busy}
                 onClick={() => send("approved")}

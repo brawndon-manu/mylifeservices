@@ -40,6 +40,7 @@ import TimeCompare, { reviewMoved, reviewSettled, reviewedFigureOf, reviewedWinO
 import styles from "../audit.module.css";
 import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, offerableKinds } from "@/lib/timesheet/review-kinds";
 import { billableOf } from "@/lib/timesheet/billable-of";
+import { flipReturnOf } from "@/lib/timesheet/audit-changes";
 import { hasIssue } from "@/lib/clock-amendment/rules";
 import RaiseAmendment from "./RaiseAmendment";
 import WhatWasSaid from "./WhatWasSaid";
@@ -1259,7 +1260,10 @@ function DecideBar({ r, onReview, batchId = null, settled = false, canRaise = fa
   // THE TIME MOVED AFTER THE REVIEW - the decision froze its figures, the
   // newest copy reads differently, and neither is the settled catch-up case:
   // the shared TimeCompare block shows both readings and picks which bills.
-  const moved = !settled && reviewMoved(r);
+  // a flip whose time came back to the reviewed figure opens it too, with the
+  // copy in between beside them
+  const back = !settled && !reviewMoved(r) ? flipReturnOf(r) : null;
+  const moved = !settled && (reviewMoved(r) || !!back);
 
   const send = async (decision, o = {}) => {
     if (busy) return;
@@ -1327,6 +1331,7 @@ function DecideBar({ r, onReview, batchId = null, settled = false, canRaise = fa
         <TimeCompare
           r={r}
           busy={busy}
+          previous={back}
           onFlag={() => setFlagging(true)}
           onPick={(which) =>
             which === "reviewed"
