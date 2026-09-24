@@ -73,3 +73,15 @@ test("the tab is the card's own rule, offered only where the card could raise, a
   // nothing left calls the bare setter, so no way off the tab skips the reset
   assert.equal((cards.match(/setDecision\(/g) || []).length, 1);
 });
+
+test("focused review offers the same raise by the same rule, and the run keeps what was sent", () => {
+  const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
+  assert.match(cards, /<StudyMode rows=\{queue\} .*canRaise=\{canRaise\} onPending=\{notePending\} \/>/);
+  const study = read("src/app/portal/admin/audit/[id]/StudyMode.js");
+  assert.match(study, /import \{ raisable \} from "@\/lib\/clock-amendment\/rules";/);
+  assert.match(study, /\{canRaise && !flagging && !comparing\(row\) && raisable\(row\) && \(/);
+  assert.match(study, /setPendingOverrides\(\(v\) => \(\{ \.\.\.v, \[row\.shiftKey\]: p \}\)\);\s*onPending\?\.\(row\.shiftKey, p\);/);
+  assert.match(study, /\.\.\.\(pending !== undefined \? \{ pending \} : \{\}\),/);
+  // deciding, skipping, undoing and narrowing each close the form
+  assert.ok((study.match(/setRaising\(false\);/g) || []).length >= 5, "every move closes the form");
+});

@@ -28,15 +28,17 @@ import { kindsOf, labelOfKind } from "@/lib/timesheet/review-kinds";
 import OverlapDay from "./OverlapDay";
 import TimeCompare, { reviewMoved, reviewedFigureOf, reviewedWinOf } from "./TimeCompare";
 import { flipReturnOf } from "@/lib/timesheet/audit-changes";
+import { raisable } from "@/lib/clock-amendment/rules";
 import styles from "../audit.module.css";
 import BillableAdjust from "./BillableAdjust";
+import RaiseAmendment from "./RaiseAmendment";
 
 // the side by side opens on a moved card, and on a flipped one whose time came
 // back to the reviewed figure, with the copy in between beside them
 const comparing = (row) => reviewMoved(row) || !!flipReturnOf(row);
 const previousOf = (row) => (reviewMoved(row) ? null : flipReturnOf(row));
 
-export default function StudyMode({ rows: dealt, onExit, titles = null, onReview, batchId = null, onKind = null }) {
+export default function StudyMode({ rows: dealt, onExit, titles = null, onReview, batchId = null, onKind = null, canRaise = false, onPending = null }) {
   // THE DECK IS DEALT ONCE, when study mode opens.
   //
   // Mánu 2026-08-28: "sometimes when i click approve it skips over 2 cards
@@ -67,6 +69,10 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     return m;
   });
   const [reviewOverrides, setReviewOverrides] = useState({});
+  // AN ADDENDUM SENT FROM THE RUN, held here the same way a decision is: the
+  // deck is dealt once, so the row never hears about it from the page
+  const [pendingOverrides, setPendingOverrides] = useState({});
+  const [raising, setRaising] = useState(false);
   // what a flag is about, toggled from in here and remembered in here - the
   // deck is dealt once, so the row object never hears about it from the page
   const [kindsByShift, setKindsByShift] = useState({});
@@ -133,6 +139,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setOnly((o) => ({ ...o, [field]: value }));
     setAt(0);
     setFlagging(false);
+    setRaising(false);
     setReason("");
     setBillable("");
     setOpenNote(false);
@@ -149,12 +156,17 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
   }, [decided]);
 
   const baseRow = rows[at] || null;
-  const row = useMemo(
-    () => baseRow && reviewOverrides[baseRow.shiftKey] !== undefined
-      ? { ...baseRow, review: reviewOverrides[baseRow.shiftKey] }
-      : baseRow,
-    [baseRow, reviewOverrides],
-  );
+  const row = useMemo(() => {
+    if (!baseRow) return baseRow;
+    const review = reviewOverrides[baseRow.shiftKey];
+    const pending = pendingOverrides[baseRow.shiftKey];
+    if (review === undefined && pending === undefined) return baseRow;
+    return {
+      ...baseRow,
+      ...(review !== undefined ? { review } : {}),
+      ...(pending !== undefined ? { pending } : {}),
+    };
+  }, [baseRow, reviewOverrides, pendingOverrides]);
   const done = at >= rows.length;
 
   const send = useCallback(async (decision, why, billableMin = null, win = null) => {
@@ -203,6 +215,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     setDecided((d) => ({ ...d, [row.shiftKey]: decision }));
     setHistory((h) => [...h, row.shiftKey]);
     setFlagging(false);
+    setRaising(false);
     setReason("");
     setBillable("");
     setOpenNote(false);
@@ -225,6 +238,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
   const step = useCallback((by) => {
     if (!rows.length) return;
     setFlagging(false);
+    setRaising(false);
     setReason("");
     setBillable("");
     setOpenNote(false);
@@ -252,6 +266,7 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
     onReview?.(key, null);
     setDecided((d) => { const next = { ...d }; delete next[key]; return next; });
     setFlagging(false);
+    setRaising(false);
     setReason("");
     setBillable("");
     setOpenNote(false);
@@ -577,6 +592,29 @@ export default function StudyMode({ rows: dealt, onExit, titles = null, onReview
                       : send("approved", null, null, null)
                   }
                 />
+              </div>
+            )}
+
+            {/* RAISING AN ADDENDUM FROM THE RUN, the list's button and form by
+                the list's rule. sending decides nothing, so the run stays on
+                the card and it takes its pill like a card in the list */}
+            {canRaise && !flagging && !comparing(row) && raisable(row) && (
+              <div className={styles.cardFooter}>
+                {raising && (
+                  <RaiseAmendment
+                    r={row}
+                    batchId={batchId}
+                    onCancel={() => setRaising(false)}
+                    onDone={(p) => {
+                      setRaising(false);
+                      setPendingOverrides((v) => ({ ...v, [row.shiftKey]: p }));
+                      onPending?.(row.shiftKey, p);
+                    }}
+                  />
+                )}
+                <div className={styles.cardActions}>
+                  <button type="button" aria-expanded={raising} onClick={() => setRaising((v) => !v)} className={`${styles.raise} ${styles.lead}`}>Raise an addendum</button>
+                </div>
               </div>
             )}
           </article>

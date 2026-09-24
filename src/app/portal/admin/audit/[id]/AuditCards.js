@@ -470,7 +470,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
           {frozen.currentId && <Link href={`/portal/admin/audit/${frozen.currentId}`}>Open the current copy</Link>}
         </div>
       )}
-      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} onKind={onKind} /> : view === "reports" ? <>
+      {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} onKind={onKind} canRaise={canRaise} onPending={notePending} /> : view === "reports" ? <>
         <p className={styles.notice}>Reports include the entire uploaded period and current saved decisions. Filters used while reviewing do not limit these downloads.</p>
         <AuditDownloads batchId={batchId} periodLabel={periodLabel} flagTypes={flagTypes} reportsPage />
       </> : view === "hours" ? (
