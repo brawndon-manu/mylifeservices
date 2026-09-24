@@ -1,3 +1,4 @@
+import { announcementLinkOpen } from "@/lib/link-life";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
@@ -21,6 +22,7 @@ export async function GET(_req, { params }) {
   if (!parsed || !Number.isInteger(index) || index < 0) {
     return new NextResponse("Not found", { status: 404 });
   }
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return NextResponse.redirect(new URL("/a/expired", _req.url));
 
   const [post, user] = await Promise.all([
     prisma.announcement.findUnique({

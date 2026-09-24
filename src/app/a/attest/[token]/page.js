@@ -1,3 +1,5 @@
+import LinkExpired from "@/components/LinkExpired";
+import { announcementLinkOpen } from "@/lib/link-life";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
@@ -28,6 +30,7 @@ export default async function AttestFromLinkPage({ params }) {
   const { token } = await params;
   const parsed = verifyAckToken(token);
   if (!parsed) notFound();
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return <LinkExpired />;
 
   const [post, user] = await Promise.all([
     prisma.announcement.findUnique({

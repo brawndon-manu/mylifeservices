@@ -1156,6 +1156,8 @@ function copyFor(q, standing) {
 // for whether it deserves its own sentence.
 const REFUSALS = {
   already: "This timesheet is already signed, so it cannot be changed.",
+  // the link ran past its 30 days, or the account behind it was deactivated
+  expired: "This link has expired.",
   superseded: "This timesheet was replaced by a newer copy, so answers here no longer count. Use the most recent email from the office, or ask them to resend your link.",
   // `?preview=1` refuses every write on a real person's batch - see `act` in
   // page.js. On a test batch it does not refuse at all, so this never fires

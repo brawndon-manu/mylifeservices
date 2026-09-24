@@ -39,6 +39,8 @@ function actionHarness() {
   const writes = [];
   const action = vm.runInNewContext(`(${source})`, {
     tokenVerifier: { verifyTimesheetToken: () => "test-sheet" },
+    // the link is in its window; link-life has its own tests
+    timesheetLinkOpen: async () => true,
     supersededByForTimesheet: async () => null,
     prisma: {
       timesheet: { findUnique: async () => ({

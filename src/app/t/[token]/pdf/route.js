@@ -1,3 +1,4 @@
+import { timesheetLinkOpen } from "@/lib/link-life";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
@@ -33,6 +34,7 @@ export async function GET(_req, { params }) {
   const { token } = await params;
   const id = verifyTimesheetToken(token);
   if (!id) return new NextResponse("Not found", { status: 404 });
+  if (!(await timesheetLinkOpen(id))) return NextResponse.redirect(new URL("/a/expired", _req.url));
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },

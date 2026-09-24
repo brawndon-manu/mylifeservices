@@ -1,5 +1,6 @@
 "use server";
 
+import { amendmentLinkOpen } from "@/lib/link-life";
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
@@ -80,6 +81,7 @@ async function storeSignature(id, which, dataUrl) {
 async function open(token) {
   const id = verifyAmendmentToken(token);
   if (!id) return null;
+  if (!(await amendmentLinkOpen(id))) return null;
   return prisma.clockAmendment.findUnique({
     where: { id },
     select: {

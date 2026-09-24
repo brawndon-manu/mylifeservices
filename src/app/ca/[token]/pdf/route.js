@@ -1,3 +1,4 @@
+import { amendmentLinkOpen } from "@/lib/link-life";
 import { NextResponse } from "next/server";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
 import { formNumber } from "@/lib/clock-amendment/rules";
@@ -16,6 +17,7 @@ export async function GET(req, { params }) {
   const { token } = await params;
   const id = verifyAmendmentToken(token);
   if (!id) return new NextResponse("Not found", { status: 404 });
+  if (!(await amendmentLinkOpen(id))) return NextResponse.redirect(new URL("/a/expired", req.url));
   const a = await loadAmendment(id);
   if (!a || !a.approvedAt) return new NextResponse("Not found", { status: 404 });
 

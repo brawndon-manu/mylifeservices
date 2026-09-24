@@ -12,6 +12,7 @@
 // live inside it, and the form routes itself to the field supervisor. The
 // supervisor link files the whole thing - that is the copy that counts as
 // signed everywhere else in the portal.
+import { attestationLinkOpen } from "@/lib/link-life";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAttestationToken, signAttestationToken } from "@/lib/client-attestations/token";
@@ -34,6 +35,7 @@ function baseUrl() {
 export async function submitSignedScheduleByToken(token, { pdfBase64, employeeName }) {
   const parsed = verifyAttestationToken(token);
   if (!parsed) return { ok: false, error: "auth" };
+  if (!(await attestationLinkOpen(parsed.attestationId, parsed.audience))) return { ok: false, error: "expired" };
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

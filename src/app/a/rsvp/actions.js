@@ -1,5 +1,6 @@
 "use server";
 
+import { announcementLinkOpen } from "@/lib/link-life";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyRsvpToken } from "@/lib/rsvp-token";
@@ -12,6 +13,7 @@ import { recordEmailPicks } from "@/lib/meeting-response";
 export async function submitRsvpPicks(token, formData) {
   const parsed = verifyRsvpToken(token);
   if (!parsed) redirect(`/a/rsvp/${token}`);
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) redirect("/a/expired");
 
   // series: a chosen date posts as `series:<seriesId>` = optionId; the can't-attend
   // checklist posts each declined series as `cantSeries` = seriesId.

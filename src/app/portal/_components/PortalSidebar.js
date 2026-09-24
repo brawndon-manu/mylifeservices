@@ -11,6 +11,7 @@ import {
   AlignLeft,
   Newspaper,
   FileText,
+  FolderOpen,
   BookOpen,
   MapPin,
   TreePine,
@@ -31,6 +32,7 @@ const MAIN = [
 
 const LIBRARY = [
   { href: "/portal/forms", label: "Forms", icon: FileText },
+  { href: "/portal/documents", label: "My documents", icon: FolderOpen },
   { href: "/portal/guidebook", label: "Guidebook", icon: BookOpen },
   { href: "/portal/resources", label: "Resources", icon: MapPin },
   { href: "/portal/recreation", label: "Recreation", icon: TreePine },

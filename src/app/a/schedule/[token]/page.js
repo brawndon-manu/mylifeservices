@@ -1,3 +1,5 @@
+import LinkExpired from "@/components/LinkExpired";
+import { attestationLinkOpen } from "@/lib/link-life";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyAttestationToken } from "@/lib/client-attestations/token";
@@ -33,6 +35,7 @@ export default async function ScheduleSignPage({ params }) {
   const { token } = await params;
   const parsed = verifyAttestationToken(token);
   if (!parsed) notFound();
+  if (!(await attestationLinkOpen(parsed.attestationId, parsed.audience))) return <LinkExpired />;
 
   const row = await prisma.clientAttestation.findUnique({
     where: { id: parsed.attestationId },

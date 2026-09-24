@@ -1,3 +1,4 @@
+import { attestationLinkOpen } from "@/lib/link-life";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyAttestationToken } from "@/lib/client-attestations/token";
@@ -11,6 +12,9 @@ export async function GET(req, { params }) {
   const { token } = await params;
   const parsed = verifyAttestationToken(token);
   if (!parsed) return new NextResponse("Not found", { status: 404 });
+  if (!(await attestationLinkOpen(parsed.attestationId, parsed.audience))) {
+    return NextResponse.redirect(new URL("/a/expired", req.url));
+  }
 
   const row = await prisma.clientAttestation.findUnique({
     where: { id: parsed.attestationId },

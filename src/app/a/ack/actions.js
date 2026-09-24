@@ -1,5 +1,6 @@
 "use server";
 
+import { announcementLinkOpen } from "@/lib/link-life";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
@@ -16,6 +17,7 @@ import { recordAnnouncementAck } from "@/lib/announcement-ack";
 export async function acknowledgeFromEmail(token) {
   const parsed = verifyAckToken(String(token || ""));
   if (!parsed) redirect("/portal/announcements");
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) redirect("/a/expired");
 
   const [announcement, user] = await Promise.all([
     prisma.announcement.findUnique({

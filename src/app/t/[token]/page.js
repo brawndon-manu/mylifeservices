@@ -1,3 +1,5 @@
+import LinkExpired from "@/components/LinkExpired";
+import { timesheetLinkOpen } from "@/lib/link-life";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
@@ -69,6 +71,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const { token } = await params;
   const id = verifyTimesheetToken(token);
   if (!id) notFound();
+  if (!(await timesheetLinkOpen(id))) return <LinkExpired />;
 
   // WHICH OF THE TWO MODES A REVIEWER IS IN, and the safe one is the default.
   //

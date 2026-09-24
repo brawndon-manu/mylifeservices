@@ -1,5 +1,6 @@
 "use server";
 
+import { timesheetLinkOpen } from "@/lib/link-life";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -2368,6 +2369,7 @@ export async function submitTimesheetCorrections({ token, items }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(id))) return { ok: false, error: "expired" };
   // a replaced sheet takes no employee writes - Rosa's answers and signature
   // landed on a superseded batch no screen reads. Same read-only rule the
   // office side has had since August; the /t page says why in words.
@@ -3814,6 +3816,7 @@ export async function answerTimeOff({ token, choice, entries }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(tsId))) return { ok: false, error: "expired" };
   // a replaced sheet takes no employee writes - Rosa's answers and signature
   // landed on a superseded batch no screen reads. Same read-only rule the
   // office side has had since August; the /t page says why in words.
@@ -3905,6 +3908,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(tsId))) return { ok: false, error: "expired" };
   // a replaced sheet takes no employee writes - Rosa's answers and signature
   // landed on a superseded batch no screen reads. Same read-only rule the
   // office side has had since August; the /t page says why in words.
@@ -4884,6 +4888,7 @@ export async function acknowledgeSpan({ token, date, min, undo = false }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(id))) return { ok: false, error: "expired" };
   // a replaced sheet takes no employee writes - Rosa's answers and signature
   // landed on a superseded batch no screen reads. Same read-only rule the
   // office side has had since August; the /t page says why in words.
@@ -4954,6 +4959,7 @@ export async function markDayWalked({ token, date, undo = false }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(id))) return { ok: false, error: "expired" };
   if (!date || typeof date !== "string") return { ok: false, error: "missing" };
 
   const ts = await prisma.timesheet.findUnique({ where: { id }, select: { id: true, signedAt: true } });
@@ -4977,6 +4983,7 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const id = verifyTimesheetToken(token);
   if (!id) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(id))) return { ok: false, error: "expired" };
   // a replaced sheet takes no employee writes - Rosa's answers and signature
   // landed on a superseded batch no screen reads. Same read-only rule the
   // office side has had since August; the /t page says why in words.
@@ -5234,6 +5241,7 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
   if (!tsId) return { ok: false, error: "auth" };
+  if (!(await timesheetLinkOpen(tsId))) return { ok: false, error: "expired" };
   // a replaced sheet takes no employee writes - Rosa's answers and signature
   // landed on a superseded batch no screen reads. Same read-only rule the
   // office side has had since August; the /t page says why in words.

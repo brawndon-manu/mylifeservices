@@ -8,6 +8,7 @@
 // sending it to a review team, which is why /a/sign refuses a form with no email
 // route. An attestation is not sent anywhere. It is filed against the meeting,
 // and the FormSubmission row IS the record. So no route, no recipient, no cc.
+import { announcementLinkOpen } from "@/lib/link-life";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
@@ -18,6 +19,7 @@ import { storeFormSubmission } from "@/lib/form-store";
 export async function submitAttestationByToken(token, { pdfBase64, pdfName }) {
   const parsed = verifyAckToken(token);
   if (!parsed) return { ok: false, error: "auth" };
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return { ok: false, error: "expired" };
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

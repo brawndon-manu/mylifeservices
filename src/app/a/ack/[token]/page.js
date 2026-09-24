@@ -1,3 +1,5 @@
+import LinkExpired from "@/components/LinkExpired";
+import { announcementLinkOpen } from "@/lib/link-life";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -26,6 +28,7 @@ export default async function AckPage({ params, searchParams }) {
   const { token } = await params;
   const sp = await searchParams;
   const parsed = verifyAckToken(token);
+  if (parsed && !(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return <LinkExpired />;
 
   let valid = false;
   let acked = false;

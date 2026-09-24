@@ -1,3 +1,5 @@
+import LinkExpired from "@/components/LinkExpired";
+import { amendmentLinkOpen } from "@/lib/link-life";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
@@ -19,6 +21,7 @@ export default async function AmendmentFromLinkPage({ params }) {
   const { token } = await params;
   const id = verifyAmendmentToken(token);
   if (!id) notFound();
+  if (!(await amendmentLinkOpen(id))) return <LinkExpired />;
 
   const a = await prisma.clockAmendment.findUnique({
     where: { id },

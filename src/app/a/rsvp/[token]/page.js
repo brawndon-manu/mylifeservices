@@ -1,3 +1,5 @@
+import LinkExpired from "@/components/LinkExpired";
+import { announcementLinkOpen } from "@/lib/link-life";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { isFull, slotLabel, remainingFor, sessionStarted } from "@/lib/meeting-slots";
@@ -30,6 +32,7 @@ export default async function RsvpPage({ params, searchParams }) {
   const sp = await searchParams;
   const done = sp?.done; // set after the cant form posts back (= its result status)
   const parsed = verifyRsvpToken(token);
+  if (parsed && !(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return <LinkExpired />;
 
   let post = null;
   let user = null;

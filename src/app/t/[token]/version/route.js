@@ -1,3 +1,4 @@
+import { timesheetLinkOpen } from "@/lib/link-life";
 import { NextResponse } from "next/server";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { getSheetVersion } from "@/lib/timesheet-presence";
@@ -27,6 +28,7 @@ export async function GET(_req, { params }) {
   const { token } = await params;
   const id = verifyTimesheetToken(token);
   if (!id) return new NextResponse("Not found", { status: 404 });
+  if (!(await timesheetLinkOpen(id))) return new NextResponse("Gone", { status: 410 });
 
   const v = await getSheetVersion(id);
   return NextResponse.json(

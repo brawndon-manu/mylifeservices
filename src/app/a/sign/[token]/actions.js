@@ -11,6 +11,7 @@
 // asks for a name and a work email and reconciles by matching the address, which
 // is tagged `email-match` precisely because a typed address is not proof of
 // identity. Here we have proof, so we use it.
+import { announcementLinkOpen } from "@/lib/link-life";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
@@ -29,6 +30,7 @@ import { storeFormSubmission } from "@/lib/form-store";
 export async function submitSignedByToken(token, { pdfBase64, pdfName, message, recipientId, formId }) {
   const parsed = verifyAckToken(token);
   if (!parsed) return { ok: false, error: "auth" };
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return { ok: false, error: "expired" };
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -156,6 +158,7 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
 export async function recordOpenedByToken(token) {
   const parsed = verifyAckToken(String(token || ""));
   if (!parsed) return { ok: false };
+  if (!(await announcementLinkOpen(parsed.announcementId, parsed.userId))) return { ok: false };
 
   const [post, user] = await Promise.all([
     prisma.announcement.findUnique({
