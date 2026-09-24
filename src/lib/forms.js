@@ -32,6 +32,10 @@ export const FORM_DESC_MAX = 300;
 //   - `requireAll`: every box on the form has to be filled in before it can be
 //     submitted. FormFiller marks each one with a red asterisk and refuses the
 //     send while any is empty. Off, a form submits with whatever was filled.
+//   - `clientRecord`: the form is about a person served. it never rides on an
+//     email: it is stored first, and the email carries a link that opens for
+//     its recipients and the form-records roles only (form-deliver.js). any
+//     route added for a client form (a testimonial consent) sets it too.
 export const FORM_EMAIL_ROUTES = [
   {
     key: "sir",
@@ -41,6 +45,7 @@ export const FORM_EMAIL_ROUTES = [
     // goes to a Field Supervisor the submitter picks; Jessica is always cc'd.
     recipientTitle: "Field Supervisor",
     cc: [{ name: "Jessica Zermeno", email: "mls.jessicazermeno@gmail.com" }],
+    clientRecord: true,
   },
   {
     key: "training-ack",

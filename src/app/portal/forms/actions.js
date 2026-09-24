@@ -12,6 +12,7 @@ import { signFormIds } from "@/lib/announcement-sign";
 import { prisma } from "@/lib/prisma";
 import { resolveRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
+import { deliverClientRecordForm } from "@/lib/form-deliver";
 import { storeFormSubmission } from "@/lib/form-store";
 
 export async function submitFormByEmail({
@@ -50,7 +51,7 @@ export async function submitFormByEmail({
   const recipient = await resolveRecipient(route.recipientTitle, recipientId);
   if (!recipient) return { ok: false, error: "norecipient" };
 
-  const result = await sendFilledForm({
+  const send = {
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
@@ -61,7 +62,15 @@ export async function submitFormByEmail({
     message,
     pdfBase64,
     pdfName,
-  });
+  };
+  // a form about a person served is stored first and emailed as a link
+  if (route.clientRecord) {
+    return deliverClientRecordForm({
+      send,
+      store: { formId: form.id, userId: user.id, attribution: "signed-in", announcementId: validAnnouncementId },
+    });
+  }
+  const result = await sendFilledForm(send);
 
   // best-effort: keep a stored copy for the forms admin panel + retention. a
   // signed-in submit is attributed straight to their account. never let a storage

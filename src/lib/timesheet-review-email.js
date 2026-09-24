@@ -83,9 +83,6 @@ export function buildReviewCorrectionsEmailHtml({
   // [{ date, said, changes: [{ fact, action }] }] from reviewChoices
   items = [],
   batchUrl,
-  // whether the signed sheet rode along, so the body only promises what is
-  // actually on the message
-  attached = false,
   redirectedFrom = null,
 }) {
   const testBanner = redirectedFrom
@@ -97,44 +94,23 @@ export function buildReviewCorrectionsEmailHtml({
 
   const fixCount = items.reduce((n, it) => n + (it.changes?.length || 0), 0);
 
-  // EVERY EDIT SITS UNDER THE ANSWER THAT PRODUCED IT, the same rule as the
-  // employee's copy. The receipts are quoted exactly as their review page
-  // worded them - "You said..." is the page speaking to them, not this email
-  // speaking to its reader - and the intro line below says so once.
-  const itemHtml = (it) => {
-    const saidLine = it.said
-      ? `<p style="margin:0 0 4px;color:#5f4a17;">${esc(it.said)}</p>`
-      : "";
-    const changeLines = (it.changes || []).map((ch) =>
-      `<p style="margin:0 0 4px;color:#7a4a12;"><strong>Change in QuickSolve:</strong> ${esc(ch.fact)} ${esc(ch.action)}</p>`,
-    ).join("");
-    return `<li style="margin:0 0 12px;">
-        <p style="margin:0 0 4px;font-weight:600;color:#5f4a17;">${esc(it.date)}</p>
-        ${saidLine}${changeLines}
-      </li>`;
-  };
 
+  // NO ANSWERS, NO CHANGE LINES AND NO PDF ON THE EMAIL: any of them can name a
+  // person served. the count says how much there is to do; the portal says what.
   const body = `
     ${testBanner}
     <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#1b2430;">
       <strong>${esc(employeeName)}</strong> signed their timesheet for
       <strong>${esc(periodLabel)}</strong>.
       ${fixCount === 0
-        ? "Their review changes nothing in QuickSolve; their answers are below."
+        ? "Their review changes nothing in QuickSolve."
         : fixCount === 1
           ? "Their review leaves one entry to change in QuickSolve."
           : `Their review leaves ${fixCount} entries to change in QuickSolve.`}
     </p>
     <p style="margin:0 0 18px;font-size:13px;line-height:1.6;color:#5b6b7c;">
-      Their answers are quoted the way their review page worded them.${attached
-        ? " The timesheet they signed is attached."
-        : ""}
+      Their answers and the changes to make are on the timesheet in the portal.
     </p>
-    <div style="margin:0 0 22px;padding:14px 16px;background:#fffbeb;border:1px solid #f0d48a;border-radius:10px;">
-      <ul style="margin:0;padding:0 0 0 18px;list-style:none;">
-        ${items.map(itemHtml).join("")}
-      </ul>
-    </div>
     ${batchUrl
       ? `<p style="margin:0 0 8px;"><a href="${esc(batchUrl)}" style="${BTN}">Open the timesheet</a></p>`
       : ""}`;
@@ -151,12 +127,6 @@ export async function sendReviewCorrections({
   periodLabel,
   items = [],
   batchUrl,
-  // THE SHEET THEY SIGNED, AS A BUFFER. The very bytes the sign action stored,
-  // so the copy in the office's inbox and the copy in the portal can never be
-  // two documents - the same rule the employee's copy follows. Mánu 2026-08-25.
-  // Absent, the email still goes: the corrections are the point and a missing
-  // attachment must not hold them up.
-  pdfBytes = null,
   // see `batchForceTo` - a rehearsal batch redirects this one as well
   forceTo = null,
 }) {
@@ -189,32 +159,22 @@ export async function sendReviewCorrections({
     periodLabel,
     items,
     batchUrl,
-    attached: !!pdfBytes,
     redirectedFrom: redirected ? intendedLabel : null,
   });
 
   const fixCount = items.reduce((n, it) => n + (it.changes?.length || 0), 0);
-  const itemText = (it) => [
-    `  ${it.date}`,
-    it.said ? `    ${it.said}` : "",
-    ...(it.changes || []).map((ch) => `    Change in QuickSolve: ${ch.fact} ${ch.action}`),
-  ].filter(Boolean).join("\n");
   const text = [
     redirected ? `*** TEST SEND - this was meant for ${intendedLabel} ***\n` : "",
     `${employeeName} signed their timesheet for ${periodLabel}.`,
     fixCount === 0
-      ? "Their review changes nothing in QuickSolve; their answers are below."
+      ? "Their review changes nothing in QuickSolve."
       : `Their review leaves ${fixCount === 1 ? "one entry" : `${fixCount} entries`} to change in QuickSolve.`,
     ``,
-    `Their answers are quoted the way their review page worded them.`
-      + (pdfBytes ? ` The timesheet they signed is attached.` : ``),
-    ``,
-    items.map(itemText).join("\n"),
+    `Their answers and the changes to make are on the timesheet in the portal.`,
     batchUrl ? `\n${batchUrl}` : "",
   ]
     .filter(Boolean)
     .join("\n");
-
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const { error } = await resend.emails.send({
@@ -224,16 +184,6 @@ export async function sendReviewCorrections({
       subject,
       html,
       text,
-      ...(pdfBytes
-        ? {
-          attachments: [
-            {
-              filename: `${employeeName} - signed timesheet ${periodLabel}.pdf`,
-              content: pdfBytes,
-            },
-          ],
-        }
-        : {}),
     });
     if (error) {
       console.error("review corrections send error:", error);

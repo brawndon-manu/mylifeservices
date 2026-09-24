@@ -88,8 +88,8 @@ export default async function PublicFillPage({ params, searchParams }) {
         {form.title}
       </h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">
-        Fill it in below, then submit it to a {route.recipientTitle}. Nothing is
-        saved here - the completed form is only sent when you submit.
+        Fill it in below, then submit it to a {route.recipientTitle}. A copy is
+        kept on file when you submit.
       </p>
       <FormFiller
         fileUrl={formFileHref(form)}

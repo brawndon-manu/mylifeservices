@@ -344,6 +344,8 @@ export function buildFormEmailHtml({
   dateStr,
   note = "",
   eyebrow = "Form submission",
+  // a form about a person served carries this instead of the pdf
+  link = null,
 }) {
   const subtitle = `
     <div style="margin-top:12px;color:#334155;font-size:14px;">Submitted by ${esc(submitterName)} <span style="color:#64748b;">(${esc(submitterEmail)})</span></div>
@@ -363,7 +365,9 @@ export function buildFormEmailHtml({
     // to keep and that the acknowledgment is on record.
     bodyHtml:
       `${noteBlock}` +
-      `<p style="margin:0 0 12px;">The signed copy is attached as a PDF. Keep it for your records.</p>` +
+      (link
+        ? `<p style="margin:0 0 12px;">The signed copy is in the portal. Sign in to open it: <a href="${esc(link)}" style="color:#2f6feb;">${esc(link)}</a></p>`
+        : `<p style="margin:0 0 12px;">The signed copy is attached as a PDF. Keep it for your records.</p>`) +
       `<p style="margin:0;color:#4b5563;">This submission has been recorded and the signed document is on file.</p>`,
     footer: "My Life Services &middot; form submission",
   });

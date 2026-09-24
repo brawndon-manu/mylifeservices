@@ -22,7 +22,7 @@ import {
 import { renderAttestationForm } from "@/lib/client-attestations/render";
 import { signAttestationToken } from "@/lib/client-attestations/token";
 import { sendAttestation } from "@/lib/client-attestations/send";
-import { fetchStored, formFileName } from "@/lib/client-attestations/serve";
+import { fetchStored } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { titleHasSegment } from "@/lib/positions";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
@@ -397,8 +397,6 @@ export async function sendAttestationOne(attestationId, formData) {
     clientName: row.clientName,
     monthLabel: row.batch.monthLabel,
     signUrl: `${baseUrl()}/a/schedule/${signAttestationToken(row.id, audience)}`,
-    pdf,
-    pdfName: formFileName(row.clientName, row.batch.monthLabel),
   });
   if (!result.ok) return { ok: false, error: result.error };
 
@@ -667,8 +665,6 @@ export async function sendAttestations(batchId, formData) {
         signUrl: `${baseUrl()}/a/schedule/${signAttestationToken(row.id, audience)}`,
         message,
         dueAt,
-        pdf,
-        pdfName: formFileName(row.clientName, batch.monthLabel),
       });
       if (!result.ok) {
         failed.push(`${row.clientName} (${result.error})`);

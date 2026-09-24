@@ -1,7 +1,11 @@
 // build + send one filled-form email. shared by the portal submit action and the
 // public share-link submit so both send identically (same from, subject, body,
-// attachment). the filled PDF is built in the browser and handed here as base64 -
-// nothing is stored, it's emailed and gone.
+// attachment). the filled PDF is built in the browser and handed here as base64;
+// the callers keep a stored copy too.
+//
+// a form about a person served comes in with a `link` instead: no pdf, and the
+// note stays with the stored record rather than going in the email (see
+// form-deliver.js).
 import { Resend } from "resend";
 import { buildFormEmailHtml, EMAIL_TZ } from "@/lib/announcement-email";
 // the guard lives in timesheet-mode.js because that module is deliberately
@@ -34,16 +38,17 @@ export async function sendFilledForm({
   message,
   pdfBase64,
   pdfName,
+  link = null,
 }) {
-  if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
+  if (!link && (typeof pdfBase64 !== "string" || pdfBase64.length < 100)) return { ok: false, error: "nofile" };
   // ~2MB cap on the decoded PDF (base64 is ~4/3 the bytes).
-  if (pdfBase64.length > 2_800_000) return { ok: false, error: "toobig" };
+  if (!link && pdfBase64.length > 2_800_000) return { ok: false, error: "toobig" };
 
   const from = route.from || process.env.ANNOUNCEMENTS_FROM || process.env.AUTH_RESEND_FROM;
   if (!from || !process.env.RESEND_API_KEY) return { ok: false, error: "config" };
   if (!recipientEmail) return { ok: false, error: "norecipient" };
 
-  const note = (message || "").toString().trim().slice(0, 2000);
+  const note = link ? "" : (message || "").toString().trim().slice(0, 2000);
   // pinned to Pacific + " PT" so it reads the same for every reviewer, matching
   // the announcement emails (e.g. "July 9, 2026 at 11:01 AM PT").
   const dateStr =
@@ -63,8 +68,9 @@ export async function sendFilledForm({
     submitterEmail,
     dateStr,
     note,
+    link,
   });
-  const text = `${formTitle}\n\nSubmitted by ${submitterName} (${submitterEmail})\n${dateStr}\n${note ? `\nAdditional info: ${note}\n` : ""}\nThe signed copy is attached as a PDF. Keep it for your records.\nThis submission has been recorded and the signed document is on file.`;
+  const text = `${formTitle}\n\nSubmitted by ${submitterName} (${submitterEmail})\n${dateStr}\n${note ? `\nAdditional info: ${note}\n` : ""}\n${link ? `The signed copy is in the portal. Sign in to open it: ${link}` : "The signed copy is attached as a PDF. Keep it for your records."}\nThis submission has been recorded and the signed document is on file.`;
 
   const route_ = resolveFormRecipients(recipientEmail, ccEmails);
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -79,7 +85,7 @@ export async function sendFilledForm({
       subject: route_.redirected ? `[TEST - would have gone to ${route_.intendedTo}] ${subject}` : subject,
       html,
       text,
-      attachments: [{ filename: pdfName || "form.pdf", content: pdfBase64 }],
+      attachments: link ? undefined : [{ filename: pdfName || "form.pdf", content: pdfBase64 }],
     });
     if (error) {
       console.error("form submit email error:", error);

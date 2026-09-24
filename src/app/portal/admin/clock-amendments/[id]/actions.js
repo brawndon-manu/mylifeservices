@@ -86,16 +86,20 @@ export async function approveAmendment(id, formData) {
   // a demo mails like the real thing but never the office list: the staff
   // member and the approver get the document. a rehearsal goes to the
   // approver alone.
+  // no pdf on the email: the office opens the addendum's page, the staff member
+  // their own copy through their link
+  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
   const sent = await sendAmendmentDocument({
-    intendedEmails: a.demo ? [a.staff?.email, user.email] : [...officeRecipients(), a.staff?.email],
+    officeEmails: a.demo ? [user.email] : officeRecipients(),
+    staffEmail: a.staff?.email || null,
+    officeLink: `${base}/portal/admin/clock-amendments/${a.id}`,
+    staffLink: `${base}/ca/${signAmendmentToken(a.id)}/pdf`,
     forceTo: a.testOnly && !a.demo ? user.email : null,
     formNumber: formNumber(a),
     staffName: view.staffName,
     clientName: firstLast(a.clientName),
     date: a.shiftDate,
     approvedBy: shownName(user),
-    pdfBytes: doc.bytes,
-    filename: `${formNumber(a)} ${view.staffName} ${a.shiftDate.replace(/\//g, "-")}.pdf`,
   });
   if (sent.ok) await prisma.clockAmendment.update({ where: { id: a.id }, data: { mailedAt: new Date() } });
 

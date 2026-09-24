@@ -47,8 +47,8 @@ export default async function FormsPage() {
         Forms
       </h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">
-        Find a form, fill it out, and download or send it. Filled copies are
-        never stored here - only the blank templates.
+        Find a form, fill it out, and download or send it. A copy of each
+        submitted form is kept on file.
       </p>
 
       <FormsLibrary forms={forms} />

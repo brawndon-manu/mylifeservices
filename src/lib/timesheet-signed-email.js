@@ -19,6 +19,9 @@ import { buildTimesheetShell } from "@/lib/announcement-email";
 import { signedCopySubject } from "@/lib/timesheet-subjects";
 import { resolveRecipients } from "@/lib/timesheet-mode";
 
+const BTN =
+  "display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;";
+
 function esc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -28,12 +31,11 @@ function esc(s) {
 }
 
 export function buildSignedTimesheetEmailHtml({
+  link = null,
   employeeName,
   periodLabel,
-  // [{ date, said, changes: [{ fact, action }] }] from reviewChoices - the
-  // choices they made on their review, each with the record facts it produced.
-  // Only the FACT of each change is shown here: the action belongs to the
-  // office now, and an instruction in this email would read as theirs to do.
+  // [{ date, said, changes }] from reviewChoices. only whether there are any
+  // matters here - the answers themselves are on their copy, not the email
   items = [],
   redirectedFrom = null,
 }) {
@@ -45,44 +47,23 @@ export function buildSignedTimesheetEmailHtml({
        </div>`
     : "";
 
-  // EVERY FACT SITS UNDER THE CHOICE THAT PRODUCED IT. A record statement with
-  // no memory of the answer behind it asks somebody to trust it blind; this
-  // way each line reads as "you told us this, so the record shows this".
-  // Choices that produced no correction are listed too - the rest of their
-  // review record.
-  const itemHtml = (it) => {
-    const saidLine = it.said
-      ? `<p style="margin:0 0 4px;color:#5f4a17;">${esc(it.said)}</p>`
-      : "";
-    const changeLines = (it.changes || []).map((ch) =>
-      `<p style="margin:0 0 4px;color:#7a4a12;">${esc(ch.fact)}</p>`,
-    ).join("");
-    return `<li style="margin:0 0 12px;">
-        <p style="margin:0 0 4px;font-weight:600;color:#5f4a17;">${esc(it.date)}</p>
-        ${saidLine}${changeLines}
-      </li>`;
-  };
-
+  // NO ANSWERS AND NO PDF ON THE EMAIL. their answers can name a person
+  // served, and so can the notes printed on the sheet, so both stay on their
+  // copy, one click away through their own link.
   const review = items.length
-    ? `<div style="margin:0 0 18px;padding:14px 16px;background:#fffbeb;border:1px solid #f0d48a;border-radius:10px;">
-         <p style="margin:0 0 10px;font-weight:600;color:#7a5a12;">
-           What you told us on your review
-         </p>
-         <ul style="margin:0;padding:0 0 0 18px;list-style:none;">
-           ${items.map(itemHtml).join("")}
-         </ul>
-         <p style="margin:10px 0 0;font-size:13px;color:#8a7a4a;">
-           Nothing further is needed from you.
-         </p>
-       </div>`
+    ? `<p style="margin:0 0 18px;">Your answers are on your copy.</p>`
+    : "";
+  const button = link
+    ? `<p style="margin:0 0 18px;"><a href="${esc(link)}" style="${BTN}">Open my signed timesheet</a></p>`
     : "";
 
   const body = `
     ${testBanner}
     <p style="margin:0 0 14px;">Hi ${esc(employeeName)},</p>
-    <p style="margin:0 0 18px;">Thank you - your timesheet for <strong>${esc(periodLabel)}</strong> is signed. Your copy is attached to this email.</p>
+    <p style="margin:0 0 18px;">Thank you - your timesheet for <strong>${esc(periodLabel)}</strong> is signed. Your copy is ready whenever you need it.</p>
+    ${button}
     ${review}
-    <p style="margin:18px 0 0;font-size:13px;color:#6b7280;">If anything looks wrong on the attached copy, reply to this email.</p>`;
+    <p style="margin:18px 0 0;font-size:13px;color:#6b7280;">If anything looks wrong on your copy, reply to this email.</p>`;
 
   return buildTimesheetShell({ title: `Signed timesheet - ${periodLabel}`, bodyHtml: body });
 }
@@ -92,8 +73,8 @@ export async function sendSignedTimesheetCopy({
   employeeName,
   periodLabel,
   items = [],
-  // the exact bytes they signed, as a Buffer
-  pdfBytes,
+  // their own copy, through their link - the email carries no pdf
+  link = null,
   // set from `TimesheetBatch.testOnly` - every message from a rehearsal batch
   // goes to this one address and nowhere else
   forceTo = null,
@@ -116,28 +97,21 @@ export async function sendSignedTimesheetCopy({
     employeeName,
     periodLabel,
     items,
+    link,
     redirectedFrom: redirected ? intendedEmail : null,
   });
 
   // the plain-text copy says the same thing and no more, so a client that
   // strips html gets the same email rather than a different one
-  const itemText = (it) => [
-    `  ${it.date}`,
-    it.said ? `    ${it.said}` : "",
-    ...(it.changes || []).map((ch) => `    ${ch.fact}`),
-  ].filter(Boolean).join("\n");
   const text = [
     redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
     `Hi ${employeeName},`,
     ``,
-    `Thank you - your timesheet for ${periodLabel} is signed. Your copy is attached.`,
-    items.length
-      ? `\nWhat you told us on your review:\n`
-        + items.map(itemText).join("\n")
-        + `\n\nNothing further is needed from you.`
-      : "",
+    `Thank you - your timesheet for ${periodLabel} is signed. Your copy is ready whenever you need it.`,
+    link ? `Open my signed timesheet: ${link}` : "",
+    items.length ? `\nYour answers are on your copy.` : "",
     ``,
-    `If anything looks wrong on the attached copy, reply to this email.`,
+    `If anything looks wrong on your copy, reply to this email.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -150,12 +124,6 @@ export async function sendSignedTimesheetCopy({
       subject,
       html,
       text,
-      attachments: [
-        {
-          filename: `Signed timesheet ${periodLabel}.pdf`,
-          content: pdfBytes,
-        },
-      ],
     });
     if (error) {
       console.error("signed copy send error:", error);

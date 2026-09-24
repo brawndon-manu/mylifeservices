@@ -121,7 +121,7 @@ test("a rehearsal can be sent to a chosen person for real and reset for the next
 test("a demo keeps a rehearsal's safety and loses its wording and its routing; the office list is never mailed", () => {
   const office = read("src/app/portal/admin/clock-amendments/[id]/actions.js");
   // the approved document: staff member and approver on a demo, never the office list
-  assert.match(office, /intendedEmails: a\.demo \? \[a\.staff\?\.email, user\.email\] : \[\.\.\.officeRecipients\(\), a\.staff\?\.email\]/);
+  assert.match(office, /officeEmails: a\.demo \? \[user\.email\] : officeRecipients\(\),\s*staffEmail: a\.staff\?\.email \|\| null,/);
   assert.match(office, /forceTo: a\.testOnly && !a\.demo \? user\.email : null,\s*formNumber/);
   // the reminder goes to the person picked on a demo
   assert.match(office, /forceTo: a\.testOnly && !a\.demo \? user\.email : null,\s*\/\/ a row whose first email never went/);

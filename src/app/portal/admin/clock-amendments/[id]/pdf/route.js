@@ -3,12 +3,8 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { formNumber } from "@/lib/clock-amendment/rules";
 import { loadAmendment, withNames, buildAmendmentDocument } from "@/lib/clock-amendment/document";
+import { fetchBlob } from "@/lib/blob";
 
-// THE DOCUMENT AS IT STANDS. An approved amendment has its own stored copy and
-// this sends the reader there, so the bytes that were hashed and mailed are the
-// bytes they open. Anything earlier is rendered on request from the record, so
-// the office can read the form as the staff member will sign it, before
-// anything is sent.
 export const dynamic = "force-dynamic";
 
 export async function GET(_req, { params }) {
@@ -17,14 +13,20 @@ export async function GET(_req, { params }) {
   const { id } = await params;
   const a = await loadAmendment(id);
   if (!a) return new NextResponse("Not found", { status: 404 });
-  if (a.pdfUrl) return NextResponse.redirect(a.pdfUrl);
 
-  const doc = await buildAmendmentDocument(withNames(a));
-  return new NextResponse(doc.bytes, {
+  // the approved copy is stored; streamed from here, because its address is in
+  // the private store and opens for nobody
+  let bytes = null;
+  if (a.pdfUrl) {
+    const res = await fetchBlob(a.pdfUrl);
+    if (res.ok) bytes = await res.arrayBuffer();
+  }
+  if (!bytes) bytes = (await buildAmendmentDocument(withNames(a))).bytes;
+  return new NextResponse(bytes, {
     headers: {
       "content-type": "application/pdf",
       "content-disposition": `inline; filename="${formNumber(a)}.pdf"`,
-      "cache-control": "no-store",
+      "cache-control": "private, no-store",
     },
   });
 }

@@ -127,7 +127,15 @@ export default function AmendmentSign({ token, view, staffName, recipientName, i
     return (
       <section className="mt-6 rounded-xl border border-border bg-surface p-5">
         <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Approved by the office.</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted">The signed document has been emailed to you and to the office. Nothing else is needed.</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-muted">Your signed copy is here whenever you need it, and the office has theirs. Nothing else is needed.</p>
+        <a
+          href={`/ca/${token}/pdf`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-block text-[13px] font-semibold text-brand underline-offset-2 hover:underline"
+        >
+          Open the signed document
+        </a>
       </section>
     );
   }

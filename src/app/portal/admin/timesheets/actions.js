@@ -5119,15 +5119,16 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // one reading of the rehearsal flag drives both sends, so they can never
   // disagree about where a test batch's mail may go
   const forceTo = batchForceTo(ts.batch);
+  const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
   try {
     const r = await sendSignedTimesheetCopy({
       intendedEmail: ts.intendedEmail || ts.user?.email || null,
       employeeName,
       periodLabel,
-      // the choices they made on their review, each with the record facts it
-      // produced - so every statement carries the answer behind it
+      // whether they answered anything - the answers themselves stay on the copy
       items: reviewItems,
-      pdfBytes: Buffer.from(pdfBase64, "base64"),
+      // their signed copy, through their own link; no pdf on the email
+      link: `${base}/t/${signTimesheetToken(ts.id)}/pdf`,
       forceTo,
     });
     emailed = !!r?.ok;
@@ -5148,15 +5149,11 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // must not hinge on our internal routing working.
   if (reviewItems.length) {
     try {
-      const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
       const r = await sendReviewCorrections({
         employeeName,
         periodLabel,
         items: reviewItems,
         batchUrl: `${base}/portal/admin/timesheets/${ts.batchId}`,
-        // the same bytes their own copy carries, so the office is looking at
-        // the document they signed rather than a re-render of it
-        pdfBytes: Buffer.from(pdfBase64, "base64"),
         forceTo,
       });
       if (!r?.ok) {

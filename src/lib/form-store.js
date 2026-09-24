@@ -26,6 +26,8 @@ export async function storeFormSubmission({
   attribution = "unassigned",
   announcementId = null,
   ip = null,
+  sentTo = [],
+  note = null,
 }) {
   if (!pdfBase64 || !hasBlobStorage()) return null;
 
@@ -59,6 +61,8 @@ export async function storeFormSubmission({
       attribution: resolvedAttribution,
       announcementId,
       ip,
+      sentTo: [...new Set((sentTo || []).map((e) => String(e || "").trim()).filter(Boolean))],
+      note: note ? String(note).slice(0, 2000) : null,
     },
   });
 

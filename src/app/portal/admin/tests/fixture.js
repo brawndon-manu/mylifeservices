@@ -450,14 +450,14 @@ export function emailVariants() {
       items: noFixes
         ? REVIEW_ITEMS.filter((it) => !it.changes.length)
         : REVIEW_ITEMS,
+      link: "https://www.mylifeservicesinc.com/t/example-token/pdf",
       redirectedFrom: test ? TESTER : null,
     }),
   });
 
-  // THE SAME REVIEW GOING TO THE OFFICE, with the edits to make. `attached` is
-  // the signed PDF riding along, which is the ordinary case - the send only
-  // drops it if the bytes never arrived.
-  const office = ({ test, noAttachment }) => ({
+  // THE SAME REVIEW GOING TO THE OFFICE: how much there is to change, and the
+  // button to the timesheet where the answers and the edits are.
+  const office = ({ test }) => ({
     subject: reviewCorrectionsSubject({
       employeeName: FIXTURE_NAME,
       periodLabel: PERIOD_LABEL,
@@ -468,7 +468,6 @@ export function emailVariants() {
       periodLabel: PERIOD_LABEL,
       items: REVIEW_ITEMS,
       batchUrl: BATCH_URL,
-      attached: !noAttachment,
       redirectedFrom: test ? TESTER : null,
     }),
   });
@@ -540,15 +539,8 @@ export function emailVariants() {
     office: {
       name: "Corrections to the office",
       goesTo: "Gabriel, cc Kristy · April · David",
-      toggles: ["test", "noAttachment"],
-      states: Object.fromEntries(
-        [false, true].flatMap((test) =>
-          [false, true].map((noAttachment) => [
-            `${+test}${+noAttachment}`,
-            office({ test, noAttachment }),
-          ]),
-        ),
-      ),
+      toggles: ["test"],
+      states: Object.fromEntries([false, true].map((test) => [`${+test}`, office({ test })])),
     },
     alert: {
       name: "Problem alert",

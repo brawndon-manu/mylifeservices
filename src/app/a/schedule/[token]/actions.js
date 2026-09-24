@@ -19,7 +19,6 @@ import { checkRateLimit } from "@/lib/security";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { randomBytes } from "node:crypto";
 import { sendAttestation } from "@/lib/client-attestations/send";
-import { formFileName } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { attestationLiveSend } from "@/lib/timesheet-mode";
 
@@ -121,8 +120,6 @@ export async function submitSignedScheduleByToken(token, { pdfBase64, employeeNa
         clientName: row.clientName,
         monthLabel: row.batch.monthLabel,
         signUrl: `${baseUrl()}/a/schedule/${signAttestationToken(row.id, "supervisor")}`,
-        pdf: Buffer.from(pdfBase64, "base64"),
-        pdfName: formFileName(row.clientName, row.batch.monthLabel),
       });
       if (result.ok) {
         await prisma.clientAttestation.update({

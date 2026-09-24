@@ -742,6 +742,13 @@ model FormSubmission {
   // ordinary form submission, where the PDF is the evidence.
   submittedText  String?
   ip             String?
+  // WHO THE EMAIL WENT TO, for a form about a person served (the incident
+  // report). that email carries a link instead of the pdf, and the link opens
+  // for these people and the form-records roles, after signing in.
+  sentTo         String[] @default([])
+  // the note typed in with the submission. a form about a person served keeps
+  // it here instead of in the email.
+  note           String?
   createdAt      DateTime @default(now())
 
   @@index([formId, createdAt])

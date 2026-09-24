@@ -12,6 +12,7 @@
 // on the real deployment. See src/lib/timesheet-mode.js.
 import { Resend } from "resend";
 import { resolveAttestationRecipients } from "@/lib/timesheet-mode";
+import { clientInitials } from "@/lib/initials";
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -28,19 +29,22 @@ export function attestationEmailHtml({
   redirectedFrom,
 }) {
   const hello = recipientName ? `Hi ${esc(recipientName)},` : "Hi,";
+  // initials only - the email never carries the full name (it is on the
+  // document, behind the link)
+  const who = clientInitials(clientName) || "the client";
   // WHO THE LETTER IS TO changes what it says. A supervisor or staff member is
   // being asked to review the schedule WITH the client; the client is being
   // asked about their own schedule and their own staff.
   const ask =
     kind === "client"
-      ? `Attached is your schedule for ${esc(monthLabel)} with a sign-off section
-         under it. Please review it and confirm that you received your schedule,
+      ? `Your schedule for ${esc(monthLabel)} is ready, with a sign-off section
+         under it. Please open it and confirm that you received your schedule,
          that you want to continue with your current staff, and that staff have
          been providing services as scheduled.`
-      : `Attached is ${esc(clientName)}&rsquo;s schedule for ${esc(monthLabel)} with a
-         sign-off section under it. Please review it with them and confirm that they
-         were given their schedule, that they want to continue with their current
-         staff, and that staff have been providing services as scheduled.`;
+      : `${esc(who)}&rsquo;s schedule for ${esc(monthLabel)} is ready, with a
+         sign-off section under it. Please open it, go over it with them and confirm
+         that they were given their schedule, that they want to continue with their
+         current staff, and that staff have been providing services as scheduled.`;
   return `<!doctype html>
 <html><body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#16202a">
 <div style="max-width:600px;margin:0 auto;padding:24px">
@@ -56,7 +60,7 @@ export function attestationEmailHtml({
       Client attestation
     </p>
     <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3">
-      ${esc(clientName)} &middot; ${esc(monthLabel)}
+      ${esc(who)} &middot; ${esc(monthLabel)}
     </h1>
     <p style="margin:0 0 14px;font-size:15px;line-height:1.6">${hello}</p>
     <p style="margin:0 0 14px;font-size:15px;line-height:1.6">${ask}</p>
@@ -71,7 +75,7 @@ export function attestationEmailHtml({
         : ""
     }
     <p style="margin:0 0 20px;font-size:15px;line-height:1.6">
-      You can sign it in your browser, or print the attachment and sign it on
+      You can sign it in your browser, or open it and print it to sign on
       paper if that&rsquo;s easier with the client.
     </p>
     <p style="margin:0 0 8px">
@@ -80,14 +84,15 @@ export function attestationEmailHtml({
       </a>
     </p>
     <p style="margin:16px 0 0;font-size:12px;color:#6b7885;line-height:1.5">
-      This link opens ${esc(clientName)}&rsquo;s form only.
+      This link opens ${esc(who)}&rsquo;s form only.
     </p>
   </div>
 </div>
 </body></html>`;
 }
 
-// ONE FORM, TO ONE ADDRESS. `pdf` is the stored form as a Buffer.
+// ONE FORM, TO ONE ADDRESS. no attachment: the form carries the client's
+// schedule, so it stays behind the signing link, which opens it to print too.
 export async function sendAttestation({
   intendedEmail,
   recipientName,
@@ -97,8 +102,6 @@ export async function sendAttestation({
   signUrl,
   message,
   dueAt,
-  pdf,
-  pdfName,
 }) {
   if (!intendedEmail) return { ok: false, error: "norecipient" };
   const from =
@@ -110,9 +113,10 @@ export async function sendAttestation({
   const { to, redirected } = resolveAttestationRecipients(intendedEmail, process.env);
   if (!to.length) return { ok: false, error: "norecipient" };
 
+  const who = clientInitials(clientName) || "Client";
   const subject = redirected
-    ? `[TEST -> ${intendedEmail}] ${clientName} - ${monthLabel} schedule attestation`
-    : `${clientName} - ${monthLabel} schedule attestation`;
+    ? `[TEST -> ${intendedEmail}] ${who} - ${monthLabel} schedule attestation`
+    : `${who} - ${monthLabel} schedule attestation`;
 
   const html = attestationEmailHtml({
     recipientName,
@@ -134,7 +138,6 @@ export async function sendAttestation({
       to,
       subject,
       html,
-      attachments: pdf ? [{ filename: pdfName || "attestation.pdf", content: pdf }] : undefined,
     });
     if (res?.error) return { ok: false, error: res.error.message || "send" };
     return { ok: true, to, redirected, intendedEmail };

@@ -11,6 +11,7 @@ import { cleanEmail, cleanDisplayName, checkRateLimit } from "@/lib/security";
 import { formEmailRoute } from "@/lib/forms";
 import { resolveRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
+import { deliverClientRecordForm } from "@/lib/form-deliver";
 import { storeFormSubmission } from "@/lib/form-store";
 
 export async function submitPublicFormByEmail({
@@ -58,7 +59,7 @@ export async function submitPublicFormByEmail({
   const recipient = await resolveRecipient(route.recipientTitle, recipientId);
   if (!recipient) return { ok: false, error: "norecipient" };
 
-  const result = await sendFilledForm({
+  const send = {
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
@@ -69,7 +70,15 @@ export async function submitPublicFormByEmail({
     message,
     pdfBase64,
     pdfName,
-  });
+  };
+  // a form about a person served is stored first and emailed as a link
+  if (route.clientRecord) {
+    return deliverClientRecordForm({
+      send,
+      store: { formId: form.id, attribution: "unassigned", announcementId: validAnnouncementId, ip },
+    });
+  }
+  const result = await sendFilledForm(send);
 
   // best-effort: store a copy for the forms admin panel + retention. no login, so
   // it lands unassigned - reconciled later by email-match or a manual assign. the

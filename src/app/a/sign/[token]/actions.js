@@ -20,6 +20,7 @@ import { formEmailRoute } from "@/lib/forms";
 import { signFormIds } from "@/lib/announcement-sign";
 import { resolveRecipient, resolveDefaultRecipient, routeCcList } from "@/lib/form-recipients";
 import { sendFilledForm, buildCc } from "@/lib/form-send";
+import { deliverClientRecordForm } from "@/lib/form-deliver";
 import { storeFormSubmission } from "@/lib/form-store";
 
 // `token` is bound by the page (submitSignedByToken.bind(null, token)) - an
@@ -85,7 +86,7 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
   if (!recipient) return { ok: false, error: "norecipient" };
 
   const name = preferredName(user) || user.name || "Staff";
-  const result = await sendFilledForm({
+  const send = {
     route,
     formTitle: form.title,
     recipientEmail: recipient.email,
@@ -96,7 +97,17 @@ export async function submitSignedByToken(token, { pdfBase64, pdfName, message, 
     message,
     pdfBase64,
     pdfName,
-  });
+  };
+  // a form about a person served is stored first and emailed as a link
+  if (route.clientRecord) {
+    const r = await deliverClientRecordForm({
+      send,
+      store: { formId: form.id, userId: user.id, attribution: "signed-in", announcementId: post.id, ip },
+    });
+    if (!r.stored) return { ok: false, error: r.error || "send" };
+    return { ok: true, emailed: !!r.ok, stored: true };
+  }
+  const result = await sendFilledForm(send);
 
   // STORED EVEN IF THE MAIL FAILS. Everywhere else keeps the copy only when the
   // email went, which quietly discards a good signature on a Resend hiccup. A

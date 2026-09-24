@@ -31,7 +31,6 @@ const TOGGLE_LABEL = {
   withDue: "With a due date",
   oneItem: "One problem only",
   noFixes: "Nothing to change",
-  noAttachment: "Without the sheet",
 };
 
 const TOGGLE_WHY = {
@@ -40,7 +39,6 @@ const TOGGLE_WHY = {
   withDue: "The orange \"please sign it by\" line.",
   oneItem: "The table with a single row, which is the common case.",
   noFixes: "A review whose answers leave the QuickSolve record as it is. Every answer still reads back; nothing is asked of them.",
-  noAttachment: "The signed PDF missing. The corrections still go - the sentence promising an attachment is the only thing that drops.",
 };
 
 export default function EmailStage({ emails }) {
@@ -117,22 +115,6 @@ export default function EmailStage({ emails }) {
             <code>buildTimesheetEmailHtml</code> takes no <code>isResend</code> - only the subject
             changes, which is what stops Gmail collapsing the repeat behind &ldquo;Show trimmed
             content&rdquo;. Flip between the two in the rail and nothing above moves.
-          </p>
-        )}
-        {/* THE ATTACHMENT IS NOT ON THE PAGE, and saying so is the point. Both
-            of these carry the signed PDF - the same bytes the sign action
-            stored - and an iframe renders a body, not a message. Without a line
-            here the preview reads as an email that arrives with nothing on it. */}
-        {(picked === "signed" || (picked === "office" && !flags.noAttachment)) && (
-          <p className="mt-3 rounded-lg border border-border-strong bg-surface-2 p-3 text-sm text-muted">
-            The signed timesheet is attached to this one:{" "}
-            <code>
-              {picked === "signed"
-                ? "Signed timesheet {period}.pdf"
-                : "{name} - signed timesheet {period}.pdf"}
-            </code>
-            . It is the exact PDF they signed, so the copy in the inbox and the copy in the portal
-            can never be two documents. A preview shows the body only.
           </p>
         )}
         {picked === "office" && (

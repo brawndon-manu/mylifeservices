@@ -222,6 +222,14 @@ test("a fresh read is asked of the private store only - the public one answers i
   assert.match(blob, /\.\.\.authFor\(parsed\), \.\.\.fresh \}/);
 });
 
+test("no route sends the browser to a stored file's own address", () => {
+  // a redirect to a private url is a 403 in the visitor's browser - the
+  // addendum pdf route did this until it was caught after the move
+  const re = new RegExp(`redirect\\(\\s*[a-zA-Z_.?]*\\.(${STORED}|fileUrl|imageUrl|image)\\b`);
+  const offenders = SRC.filter((f) => re.test(read(f)));
+  assert.deepEqual(offenders, [], `stream these through the server instead: ${offenders.join(", ")}`);
+});
+
 test("the timesheet exports upload into the private store", () => {
   const form = read("src/app/portal/admin/timesheets/new/UploadForm.js");
   assert.match(form, /uploadPresigned\(`timesheets\/src\//);

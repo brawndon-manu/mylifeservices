@@ -10,6 +10,11 @@ import { Resend } from "resend";
 import { buildTimesheetShell } from "@/lib/announcement-email";
 import { resolveAmendmentRecipients } from "@/lib/timesheet-mode";
 import { amendmentFormSubject, amendmentDocumentSubject, clientSignSubject } from "./subjects.js";
+import { clientInitials } from "../initials.js";
+
+// the person served goes by initials in every one of these emails - the full
+// name is on the form and the document, behind their links
+const initialsOf = (clientName) => clientInitials(clientName) || "the person served";
 
 function esc(s) {
   return String(s ?? "")
@@ -49,7 +54,7 @@ export function buildAmendmentFormEmailHtml({
     <p style="margin:0 0 14px;color:#0f172a;font-size:15px;">Hi ${esc(recipientName)},</p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
       The office has raised a clock addendum for <strong>${esc(staffName)}</strong>'s shift with
-      <strong>${esc(clientName)}</strong> on <strong>${esc(date)}</strong>
+      <strong>${esc(initialsOf(clientName))}</strong> on <strong>${esc(date)}</strong>
       (${esc(service)}${scheduled ? `, scheduled ${esc(scheduled)}` : ""}). ${esc(missing)}
     </p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
@@ -65,17 +70,18 @@ export function buildAmendmentFormEmailHtml({
   return buildTimesheetShell({ title: "A clock addendum to confirm and sign", bodyHtml, eyebrow: "Timekeeping" });
 }
 
-export function buildAmendmentDocumentEmailHtml({ formNumber, staffName, clientName, date, approvedBy, redirectedFrom = null }) {
+export function buildAmendmentDocumentEmailHtml({ formNumber, staffName, clientName, date, approvedBy, link = null, redirectedFrom = null }) {
   const bodyHtml = `
     ${testBanner(redirectedFrom)}
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
       Clock addendum <strong>${esc(formNumber)}</strong> for <strong>${esc(staffName)}</strong>'s shift with
-      <strong>${esc(clientName)}</strong> on <strong>${esc(date)}</strong> has been approved by ${esc(approvedBy)}.
+      <strong>${esc(initialsOf(clientName))}</strong> on <strong>${esc(date)}</strong> has been approved by ${esc(approvedBy)}.
     </p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
-      The signed document is attached. It carries the clock record, the service note for the visit,
+      The signed document is in the portal. It carries the clock record, the service note for the visit,
       the reason the clock is wrong, the time the addendum sets, and every signature.
-    </p>`;
+    </p>
+    ${link ? `<div style="margin:22px 0 8px;"><a href="${esc(link)}" style="${BTN}">Open the document</a></div>` : ""}`;
   return buildTimesheetShell({ title: `Approved: clock addendum ${formNumber}`, bodyHtml, eyebrow: "Timekeeping" });
 }
 
@@ -113,7 +119,7 @@ export async function sendAmendmentForm({
     redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
     `Hi ${recipientName},`,
     ``,
-    `The office has raised a clock addendum for ${staffName}'s shift with ${clientName} on ${date}. ${missing}`,
+    `The office has raised a clock addendum for ${staffName}'s shift with ${initialsOf(clientName)} on ${date}. ${missing}`,
     `Please check it, correct anything that is wrong, sign, and hand the phone to the person served to sign as well.`,
     ``,
     `Open the form: ${formUrl}`,
@@ -125,53 +131,56 @@ export async function sendAmendmentForm({
   return { ok: true, sentTo: to.join(", "), redirected };
 }
 
-// the approved document, to several people at once. each intended address
+// the approved document. no pdf rides on it: the office gets a button to the
+// addendum's page in the portal, the staff member one to their own copy through
+// their link - so it goes as two sends, one per link. each intended address
 // goes through the lock on its own and the answers are merged, so a redirected
 // send lands once in the local inbox rather than once per person
 export async function sendAmendmentDocument({
-  intendedEmails = [],
+  officeEmails = [],
+  staffEmail = null,
+  officeLink,
+  staffLink,
   forceTo = null,
   formNumber,
   staffName,
   clientName,
   date,
   approvedBy,
-  pdfBytes,
-  filename,
 }) {
   const from = fromAddress();
   if (!from || !process.env.RESEND_API_KEY) return { ok: false, error: "config" };
-  const intended = [...new Set(intendedEmails.filter(Boolean))];
-  if (!intended.length) return { ok: false, error: "norecipient" };
-
-  const to = new Set();
-  let redirected = false;
-  for (const email of intended) {
-    const r = resolveAmendmentRecipients(email, process.env, { forceTo });
-    r.to.forEach((t) => to.add(t));
-    if (r.redirected) redirected = true;
-  }
-  const redirectedFrom = redirected ? intended.join(", ") : null;
-
-  const subject = amendmentDocumentSubject({ formNumber, staffName, date, redirectedFrom });
-  const html = buildAmendmentDocumentEmailHtml({ formNumber, staffName, clientName, date, approvedBy, redirectedFrom });
-  const text = [
-    redirected ? `*** TEST SEND - this was meant for ${intended.join(", ")} ***\n` : "",
-    `Clock addendum ${formNumber} for ${staffName}'s shift with ${clientName} on ${date} has been approved by ${approvedBy}.`,
-    `The signed document is attached.`,
-  ].join("\n");
+  const groups = [
+    { intended: [...new Set(officeEmails.filter(Boolean))], link: officeLink },
+    { intended: staffEmail ? [staffEmail] : [], link: staffLink },
+  ].filter((g) => g.intended.length && g.link);
+  if (!groups.length) return { ok: false, error: "norecipient" };
 
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const { error } = await resend.emails.send({
-    from,
-    to: [...to],
-    subject,
-    html,
-    text,
-    attachments: [{ filename, content: Buffer.from(pdfBytes) }],
-  });
-  if (error) return { ok: false, error: "send", detail: String(error?.message || error) };
-  return { ok: true, sentTo: [...to].join(", "), redirected };
+  const sentTo = new Set();
+  let redirected = false;
+  for (const g of groups) {
+    const to = new Set();
+    let groupRedirected = false;
+    for (const email of g.intended) {
+      const r = resolveAmendmentRecipients(email, process.env, { forceTo });
+      r.to.forEach((t) => to.add(t));
+      if (r.redirected) groupRedirected = true;
+    }
+    const redirectedFrom = groupRedirected ? g.intended.join(", ") : null;
+    const subject = amendmentDocumentSubject({ formNumber, staffName, date, redirectedFrom });
+    const html = buildAmendmentDocumentEmailHtml({ formNumber, staffName, clientName, date, approvedBy, link: g.link, redirectedFrom });
+    const text = [
+      groupRedirected ? `*** TEST SEND - this was meant for ${g.intended.join(", ")} ***\n` : "",
+      `Clock addendum ${formNumber} for ${staffName}'s shift with ${initialsOf(clientName)} on ${date} has been approved by ${approvedBy}.`,
+      `The signed document is in the portal: ${g.link}`,
+    ].join("\n");
+    const { error } = await resend.emails.send({ from, to: [...to], subject, html, text });
+    if (error) return { ok: false, error: "send", detail: String(error?.message || error) };
+    to.forEach((t) => sentTo.add(t));
+    if (groupRedirected) redirected = true;
+  }
+  return { ok: true, sentTo: [...sentTo].join(", "), redirected };
 }
 
 // THE CLIENT LINK, to a parent or representative who is not in the room: the
@@ -183,7 +192,7 @@ export function buildClientSignEmailHtml({ staffName, clientName, date, link, re
     ${testBanner(redirectedFrom)}
     <p style="margin:0 0 14px;color:#0f172a;font-size:15px;">Hello,</p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
-      <strong>${esc(staffName)}</strong> has recorded a visit with <strong>${esc(clientName)}</strong> on
+      <strong>${esc(staffName)}</strong> has recorded a visit with <strong>${esc(initialsOf(clientName))}</strong> on
       <strong>${esc(date)}</strong> that the clock did not capture properly. My Life Services asks the person
       served, or someone who can speak for them, to confirm the visit happened by signing.
     </p>
@@ -204,11 +213,11 @@ export async function sendClientSignLink({ intendedEmail, forceTo = null, staffN
   const { to, redirected } = resolveAmendmentRecipients(intendedEmail, process.env, { forceTo });
   if (!to.length) return { ok: false, error: "norecipient" };
   const redirectedFrom = redirected ? intendedEmail : null;
-  const subject = clientSignSubject({ staffName, clientName, date, redirectedFrom });
+  const subject = clientSignSubject({ staffName, clientName: initialsOf(clientName), date, redirectedFrom });
   const html = buildClientSignEmailHtml({ staffName, clientName, date, link, redirectedFrom });
   const text = [
     redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
-    `${staffName} has recorded a visit with ${clientName} on ${date} that the clock did not capture properly.`,
+    `${staffName} has recorded a visit with ${initialsOf(clientName)} on ${date} that the clock did not capture properly.`,
     `Please confirm the visit happened by signing at the link below. It works today only.`,
     ``,
     `Confirm the visit: ${link}`,
