@@ -1,7 +1,8 @@
 /* the payout report's anatomy (PayoutReport.module.css), inside the audit
    workspace and on its palette, so every appearance comes from the tokens
    audit.module.css sets on .workspace. blue is kept for one meaning here:
-   hours an addendum added. amber is a review correction, red is over. */
+   hours an addendum added. amber is a review correction, red is over or
+   booked past. */
 .page { min-width: 0; }
 .emptyState { margin-top: 8px; padding: 32px; border: 1px dashed var(--border-strong); border-radius: 12px; text-align: center; font-size: 13px; color: var(--muted); }
 
@@ -15,13 +16,15 @@
 .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
 .status[data-tone="over"] { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
 .status[data-tone="ok"] { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
-.breakdown { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; margin-top: 28px; padding-block: 24px; border-block: 1px solid var(--border); }
+.breakdown { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 24px; margin-top: 28px; padding-block: 24px; border-block: 1px solid var(--border); }
 .breakdown dt { color: var(--muted); font-size: 12px; }
 .breakdown dd { margin-top: 8px; font-size: 24px; font-weight: 500; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .breakdown dd span { font-size: 12px; }
 .breakdown [data-tone="amended"] dd { color: var(--accent); }
 .breakdown [data-tone="reviewed"] dd { color: var(--amber); }
 .breakdown [data-tone="sum"] dd { font-weight: 600; }
+.breakdown [data-tone="past"] dd { color: var(--red); }
+.warn { color: var(--red); }
 .formula { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; padding-top: 16px; color: var(--muted); font-size: 12px; }
 
 /* the audit's own decision tabs, the same control one screen over */
@@ -48,18 +51,19 @@
 .tableScroll { overflow: auto; max-height: 70vh; border-block: 1px solid var(--border); background: var(--surface); isolation: isolate; }
 .tableScroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .table { width: 100%; min-width: 780px; table-layout: fixed; border-collapse: separate; border-spacing: 0; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
-.num { width: 13%; }
-.st { width: 18%; }
+.num { width: 15%; }
+.st { width: 21%; }
 .table th, .table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; vertical-align: bottom; }
 .table thead th button { display: inline-flex; align-items: center; gap: 6px; color: inherit; font-weight: inherit; }
 .table thead th button[aria-pressed="true"] { color: var(--foreground); font-weight: 600; }
 .table thead th small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); text-align: left; }
+.table thead th small.headNote { text-align: right; }
 .table .left { text-align: left; }
 .table tbody tr { background: var(--surface); }
 .row { cursor: pointer; }
 .row:hover, .row:hover th { background: var(--surface-2); }
-.table th.client { position: sticky; left: 0; z-index: 1; width: 30%; min-width: 220px; text-align: left; font-weight: 500; background: var(--surface); box-shadow: 1px 0 var(--border); }
+.table th.client { position: sticky; left: 0; z-index: 1; width: 34%; min-width: 220px; text-align: left; font-weight: 500; background: var(--surface); box-shadow: 1px 0 var(--border); }
 .table thead th.client { z-index: 3; background: var(--surface-2); }
 .name { display: flex; align-items: flex-start; gap: 8px; }
 .chev { flex: none; width: 16px; margin-top: 1px; color: var(--muted); }
@@ -86,6 +90,10 @@
 .who td { padding-top: 12px; font-weight: 600; }
 .table .last th, .table .last td { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .why { display: block; margin-top: 2px; font-size: 11px; }
+/* the calendar's shifts after the copy's last day: planned, not billed, so
+   they read quieter than the billed ones above them */
+.table .plan th.client, .plan td { color: var(--muted); }
+.table .plan.who th.client { color: var(--foreground); }
 
 .table tfoot td, .table tfoot th { position: sticky; bottom: 0; z-index: 2; border-top: 1px solid var(--border-strong); border-bottom: 0; background: var(--surface-2); font-weight: 500; }
 .table tfoot th.client { z-index: 3; background: var(--surface-2); }
@@ -99,7 +107,6 @@
   .aside { text-align: left; }
   .breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; }
   .breakdown dd { font-size: 22px; }
-  .breakdown [data-tone="sum"] { grid-column: 1 / -1; }
   .tabs button, .phoneSort button { padding: 7px 8px; font-size: 11px; }
   .phoneSort { display: flex; margin: 0 0 12px; }
   .searchBox { width: 100%; }
@@ -112,14 +119,16 @@
   .table tr.row th, .table tr.row td, .table tr.sub th, .table tr.sub td, .table tfoot th, .table tfoot td, .table tfoot th.client, .table tr.row th.client, .table tr.sub th.client {
     position: static; width: auto; min-width: 0; border: 0; box-shadow: none;
   }
-  .table tr.row th.client, .table tfoot th.client { grid-column: 1; grid-row: 1 / span 2; padding: 12px 0 12px 4px; }
-  .table .remain { grid-column: 2; grid-row: 1; padding: 12px 4px 0 0; }
-  .table .billed { grid-column: 2; grid-row: 2; padding: 2px 4px 12px 0; font-size: 12px; color: var(--muted); }
-  .table .billed.amended { color: var(--accent); }
-  .table .billed.reviewed { color: var(--amber); }
+  /* the name keeps the width; what's left sits beside it, and the billed and
+     scheduled line runs the full width underneath */
+  .table tr.row, .table tfoot tr { padding: 8px 0; }
+  .table tr.row th.client, .table tfoot th.client { grid-column: 1; grid-row: 1; padding: 4px 0 2px 4px; }
+  .table .remain { grid-column: 2; grid-row: 1; padding: 4px 4px 0 0; }
+  .table .billed { grid-column: 1 / -1; grid-row: 2; padding: 2px 4px 0 28px; font-size: 12px; color: var(--muted); text-align: left; }
+  .table tfoot .billed { padding-left: 4px; }
   .table .billed .note { display: none; }
   .table .auth, .table .used, .table .pad { display: none; }
-  .table .state { grid-column: 1 / -1; padding: 0 4px 12px 28px; }
+  .table .state { grid-column: 1 / -1; grid-row: 3; padding: 6px 4px 0 28px; }
   .table .state:empty { display: none; }
   .state span { display: inline; margin-right: 10px; }
   .ph { display: inline; }

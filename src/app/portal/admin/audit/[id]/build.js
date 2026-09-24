@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { isCappedService } from "@/lib/timesheet/compliance";
 import { preferredName } from "@/lib/contacts";
-import { scheduleKey, serviceOf, clientOf, blockTimes } from "@/lib/timesheet/schedule";
+import { scheduleKey, serviceOf, clientOf, blockTimes, parseSchedulePdf } from "@/lib/timesheet/schedule";
+import { plannedFromSchedule } from "@/lib/timesheet/planned";
 import { clockShifts } from "@/lib/timesheet/clock";
 import { auditRow, shiftKeyOf, sameClient, displayClient, clientKey } from "@/lib/timesheet/note-audit";
 // the full-name key the client-anchored tables share (Client, ClientReport,
@@ -28,12 +29,34 @@ import { indexAmendments, amendmentFor, amendmentView, amendedShift, pendingView
 //
 // Returns null when the batch does not exist; the callers decide what a
 // missing batch means for them (the page 404s, the route returns one).
-export async function buildAudit(id) {
+// THE MONTH SCHEDULE, READ ONCE PER UPLOAD. the file behind a blob url never
+// changes, so a parse is kept for the next load of the same copy; a handful is
+// plenty, a day's copies rather than a history
+const scheduleReads = new Map();
+function readMonthSchedule(url) {
+  if (!scheduleReads.has(url)) {
+    const read = (async () => {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`the schedule came back ${res.status}`);
+      return parseSchedulePdf(new Uint8Array(await res.arrayBuffer()));
+    })();
+    read.catch(() => scheduleReads.delete(url));
+    scheduleReads.set(url, read);
+    while (scheduleReads.size > 4) scheduleReads.delete(scheduleReads.keys().next().value);
+  }
+  return scheduleReads.get(url);
+}
+
+// `planned` also reads the rest of the month off the copy's schedule, for the
+// client hours page. only the audit page asks: the reports and the actions
+// don't need it and shouldn't wait on it
+export async function buildAudit(id, { planned = false } = {}) {
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     select: {
       id: true, periodFrom: true, periodTo: true, auditOnly: true, auditChanges: true,
       createdAt: true, partialFrom: true, partialThrough: true,
+      scheduleUrl: true, scheduleName: true,
       clockUrl: true, clockName: true, clockFindings: true,
       notesName: true, serviceNotesName: true,
       scheduleNotesUrl: true, scheduleNotesName: true,
@@ -60,6 +83,8 @@ export async function buildAudit(id) {
   // partialThrough has been written for a while and was never read, so batches
   // made before the box existed carry one that only ever narrows to today.
   const window = auditWindow(batch);
+  // started now, awaited at the end, so the pdf is read while the rest builds
+  const scheduleRead = planned && batch.scheduleUrl ? readMonthSchedule(batch.scheduleUrl) : null;
 
   const dateKey = (d) => {
     const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(d || "");
@@ -958,6 +983,28 @@ export async function buildAudit(id) {
   // days outside the window never reach the screen, the counts or the engine
   const inWindow = rows.filter((r) => inAuditWindow(r.date, window));
   inWindow.sort((a, b) => b.score - a.score || a.who.localeCompare(b.who) || a.date.localeCompare(b.date));
+
+  // THE REST OF THE MONTH, off the schedule uploaded with this copy: the
+  // shifts after its last day, joined to clients through the rows above. a
+  // schedule that won't read costs the page its scheduled column, nothing more
+  let plannedMonth = null;
+  if (planned) {
+    if (!scheduleRead) plannedMonth = { missing: true };
+    else {
+      try {
+        plannedMonth = {
+          ...plannedFromSchedule(await scheduleRead, {
+            through: window.to, rows: inWindow, authLines, whoKey, initialKey: clientKey,
+          }),
+          name: batch.scheduleName || null,
+        };
+      } catch (e) {
+        console.error("month schedule could not be read:", e);
+        plannedMonth = { failed: true, name: batch.scheduleName || null };
+      }
+    }
+  }
+
   return {
     batch,
     rows: inWindow,
@@ -975,5 +1022,6 @@ export async function buildAudit(id) {
     authLines,
     authLeftOut,
     authUploadedAt,
+    planned: plannedMonth,
   };
 }

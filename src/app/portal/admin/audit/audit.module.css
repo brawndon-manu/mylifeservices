@@ -118,6 +118,7 @@
 .fileIcon { display: grid; place-items: center; width: 42px; height: 48px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 10px; }
 .budgetForm { display: grid; gap: 12px; margin: 22px 0; font-size: 12px; }
 .budgetForm .primary { justify-self: start; }
+.budgetPath { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: -4px; color: var(--muted); font-size: 12px; }
 .budgetForm input::file-selector-button, .upload input::file-selector-button { padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-2); color: var(--foreground); margin-right: 12px; cursor: pointer; }
 .dangerText { color: var(--red); font-size: 12px; }
 .decisionTabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 8px; background: var(--surface-2); width: fit-content; margin: 24px 0 16px; }

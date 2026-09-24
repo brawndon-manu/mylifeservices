@@ -16,6 +16,10 @@ export default function BudgetManager({ months }) {
         <form action={uploadBudgetCapture} className={styles.budgetForm}>
           <label htmlFor="budget-file">Budget Capture Report (.xls)</label>
           <input id="budget-file" name="file" type="file" accept=".xls,application/vnd.ms-excel" required />
+          {/* where the file comes from in QSP, the way the timesheet upload
+              says it. the client auth list looks close and is not it: it names
+              no month, so the upload turns it away */}
+          <p className={styles.budgetPath}><span>Reports → Budget Capture Report</span><span>From/To the whole month</span></p>
           <button type="submit" className={styles.primary}>Upload report</button>
         </form>
         {months.map((month) => <div key={month.key} className={styles.budgetRow}>

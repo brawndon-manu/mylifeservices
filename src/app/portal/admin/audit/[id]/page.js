@@ -28,9 +28,9 @@ export default async function AuditBatchPage({ params }) {
   if (!isAdminUp(user?.role)) redirect("/portal");
 
   const { id } = await params;
-  const data = await buildAudit(id);
+  const data = await buildAudit(id, { planned: true });
   if (!data) notFound();
-  const { batch, rows, lost, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations, authLines, authLeftOut, authUploadedAt } = data;
+  const { batch, rows, lost, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations, authLines, authLeftOut, authUploadedAt, planned } = data;
 
   // A SUPERSEDED COPY OPENS FROZEN - readable exactly as uploaded, nothing
   // decidable, and its shifts take stars (the only place stars exist).
@@ -104,6 +104,8 @@ export default async function AuditBatchPage({ params }) {
             : null,
           from: batch.periodFrom,
           through: batch.partialThrough || batch.periodTo,
+          // the rest of the month off the schedule uploaded with the copy
+          planned,
         }}
         periods={periodLabels}
         totals={{
