@@ -9,6 +9,7 @@ import { auditRow, shiftKeyOf, sameClient, displayClient, clientKey } from "@/li
 // which matches on surname + initial
 import { clientKey as authClientKey } from "@/lib/client-attestations/names";
 import { monthLabelOf } from "@/lib/timesheet/budget-capture";
+import { countsAgainstAuthorization } from "@/lib/timesheet/client-month";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { parseComments } from "@/lib/timesheet/comments";
 import { parseScheduleNotesXls } from "@/lib/timesheet/schedule-notes";
@@ -758,12 +759,20 @@ export async function buildAudit(id) {
     return m ? `20${m[2]}-${m[1]}` : null;
   };
   const monthKeys = [...new Set([monthKeyOf(batch.periodFrom), monthKeyOf(batch.periodTo)].filter(Boolean))];
-  const authRows = monthKeys.length
+  const reportRows = monthKeys.length
     ? await prisma.clientAuthorization.findMany({
       where: { monthKey: { in: monthKeys } },
-      select: { monthKey: true, clientKey: true, authorizedHours: true },
+      select: {
+        monthKey: true, clientKey: true, clientName: true, serviceType: true,
+        authorizedHours: true, caseManagerName: true, createdAt: true,
+      },
     })
     : [];
+  // ONLY THE LINES THAT COUNT: ils and self determination. day program is
+  // billed outside the audit, so its hours only ever made a client look short.
+  // one rule for the roll-up, the pdf and the client hours page, see
+  // client-month.js
+  const authRows = reportRows.filter((a) => countsAgainstAuthorization(a.serviceType));
   const authorized = {};
   for (const a of authRows) {
     if (!authorized[a.clientKey]) authorized[a.clientKey] = { hours: 0, months: new Set() };
@@ -773,6 +782,16 @@ export async function buildAudit(id) {
   for (const k of Object.keys(authorized)) authorized[k] = { hours: authorized[k].hours };
   const authMonthLabel = monthKeys.map(monthLabelOf).join(" + ") || null;
   const hasAuthorizations = authRows.length > 0;
+  // the client hours page lists every counted line, the ones nobody has billed
+  // against yet included, and says what it left out and when the report landed
+  const authLines = authRows.map(({ createdAt, ...line }) => line);
+  const leftOutRows = reportRows.filter((a) => !countsAgainstAuthorization(a.serviceType));
+  const authLeftOut = {
+    count: leftOutRows.length,
+    types: [...new Set(leftOutRows.map((a) => String(a.serviceType || "").trim()).filter(Boolean))],
+  };
+  const authUploadedAt =
+    reportRows.reduce((t, a) => (!t || a.createdAt > t ? a.createdAt : t), null)?.toISOString() ?? null;
 
   // A NICKNAME SPLITS THE JOIN. The Budget Capture Report spells six clients
   // with their chosen name in brackets - "Acuna, Jose ( Angel)" - while the
@@ -953,5 +972,8 @@ export async function buildAudit(id) {
     authorized,
     authMonthLabel,
     hasAuthorizations,
+    authLines,
+    authLeftOut,
+    authUploadedAt,
   };
 }

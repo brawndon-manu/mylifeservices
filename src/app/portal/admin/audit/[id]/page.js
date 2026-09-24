@@ -30,7 +30,7 @@ export default async function AuditBatchPage({ params }) {
   const { id } = await params;
   const data = await buildAudit(id);
   if (!data) notFound();
-  const { batch, rows, lost, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations } = data;
+  const { batch, rows, lost, orphans, notesCount, clockLoaded, periodLabels, authorized, authMonthLabel, hasAuthorizations, authLines, authLeftOut, authUploadedAt } = data;
 
   // A SUPERSEDED COPY OPENS FROZEN - readable exactly as uploaded, nothing
   // decidable, and its shifts take stars (the only place stars exist).
@@ -92,6 +92,19 @@ export default async function AuditBatchPage({ params }) {
         lost={lost}
         authorized={hasAuthorizations ? authorized : null}
         authMonthLabel={authMonthLabel}
+        month={{
+          // the client hours page: every counted line, the month it belongs
+          // to, and how far into it this copy reads
+          lines: hasAuthorizations ? authLines : null,
+          leftOut: authLeftOut,
+          // the office's day, formatted here so the server and the browser
+          // print the same one
+          uploadedOn: authUploadedAt
+            ? new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "2-digit", day: "2-digit" }).format(new Date(authUploadedAt))
+            : null,
+          from: batch.periodFrom,
+          through: batch.partialThrough || batch.periodTo,
+        }}
         periods={periodLabels}
         totals={{
           notes: notesCount,

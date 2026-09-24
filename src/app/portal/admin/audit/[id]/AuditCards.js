@@ -44,6 +44,7 @@ import { flipReturnOf } from "@/lib/timesheet/audit-changes";
 import { hasIssue } from "@/lib/clock-amendment/rules";
 import RaiseAmendment from "./RaiseAmendment";
 import WhatWasSaid from "./WhatWasSaid";
+import ClientHours from "./ClientHours";
 
 const DECISIONS = [
   { key: "all", label: "All", match: () => true },
@@ -64,7 +65,7 @@ const VIEWS = [
   { key: "client", label: "By client", of: (r) => r.client || "No client on the booking" },
 ];
 
-export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, batchId = null, titles = null, periodLabel = "", canUpload = true, frozen = null, noteChanges = [] }) {
+export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost = [], periods = [], authorized = null, authMonthLabel = null, month = null, batchId = null, titles = null, periodLabel = "", canUpload = true, frozen = null, noteChanges = [] }) {
   // THE PAY PERIOD LEADS, because approving is a billing judgement and billing
   // runs per period - a reviewer works one fortnight at a time. One notes upload
   // spans several of them; 8/1 to 8/26 is three.
@@ -387,8 +388,8 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     setQ(who);
     setView("shifts");
   };
-  const title = studying ? "Focused review" : ({ shifts: "Shifts", employee: "Employees", client: "Clients", orphans: "Unmatched notes", newnotes: "New notes", lost: "Disappeared shifts", reports: "Reports" })[view];
-  const recordView = !["orphans", "lost", "reports", "newnotes"].includes(view);
+  const title = studying ? "Focused review" : ({ shifts: "Shifts", employee: "Employees", client: "Clients", hours: "Client hours", orphans: "Unmatched notes", newnotes: "New notes", lost: "Disappeared shifts", reports: "Reports" })[view];
+  const recordView = !["orphans", "lost", "reports", "newnotes", "hours"].includes(view);
   // the sidebar names the period the way a person says it - "AUG 16-31,
   // 2026" off his mock - and falls back to the raw label if it ever fails
   // to parse
@@ -439,7 +440,11 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       {studying ? <StudyMode rows={queue} onExit={() => setStudying(false)} titles={titles} onReview={noteReview} batchId={batchId} onKind={onKind} /> : view === "reports" ? <>
         <p className={styles.notice}>Reports include the entire uploaded period and current saved decisions. Filters used while reviewing do not limit these downloads.</p>
         <AuditDownloads batchId={batchId} periodLabel={periodLabel} reportsPage />
-      </> : <>
+      </> : view === "hours" ? (
+        // the month per client, over every shift on the copy whatever the
+        // tabs above were set to, with this session's decisions already in
+        <ClientHours rows={rows} month={month} monthLabel={authMonthLabel} />
+      ) : <>
       {(!totals.fromPdf || !totals.fromXls) && <p className={styles.notice}>
         {!totals.fromPdf && !totals.fromXls
           ? "No service notes export was uploaded. Missing-note counts reflect the missing files."

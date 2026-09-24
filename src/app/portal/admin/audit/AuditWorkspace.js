@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  SquareStack, Plus, ListChecks, PanelTop, Users, UserRound,
+  SquareStack, Plus, ListChecks, PanelTop, Users, UserRound, Hourglass,
   FileQuestion, FileX, FileDown, FilePlus2,
 } from "lucide-react";
 import styles from "./audit.module.css";
@@ -36,12 +36,12 @@ export default function AuditWorkspace({ children, page = "home", view = "shifts
   const views = frozen
     ? [
       ["shifts", "Shifts", ListChecks], ["employee", "Employees", Users],
-      ["client", "Clients", UserRound], ["orphans", "Unmatched notes", FileQuestion],
+      ["client", "Clients", UserRound], ["hours", "Client hours", Hourglass], ["orphans", "Unmatched notes", FileQuestion],
       ...(hasLost ? [["lost", "Disappeared shifts", FileX]] : []),
     ]
     : [
       ["shifts", "Shifts", ListChecks], ["focus", "Focused review", PanelTop], ["employee", "Employees", Users],
-      ["client", "Clients", UserRound], ["orphans", "Unmatched notes", FileQuestion],
+      ["client", "Clients", UserRound], ["hours", "Client hours", Hourglass], ["orphans", "Unmatched notes", FileQuestion],
       ["newnotes", "New notes", FilePlus2],
       ...(hasLost ? [["lost", "Disappeared shifts", FileX]] : []), ["reports", "Reports", FileDown],
     ];
