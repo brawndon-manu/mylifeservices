@@ -127,8 +127,10 @@ test("it never blocks a signature", () => {
 
 test("their answer reads back in their own words", () => {
   const said = (choice) => employeeResolution({ kind: "q_mealShort", date: "08/21/26", choice });
-  assert.match(said("yes"), /thirty minutes/);
-  assert.match(said("no"), /did not get/);
+  // the two answers the card offers: the chance was there and they came back
+  // early, or it never was
+  assert.equal(said("yes"), "You said you were given a full thirty minutes for lunch and chose to come back early.");
+  assert.equal(said("no"), "You said you were not given a full, uninterrupted thirty minutes for lunch.");
 });
 
 // ------------------------------------------------ THE OTHER WAY IT GOES SHORT

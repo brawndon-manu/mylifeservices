@@ -1083,27 +1083,21 @@ function copyFor(q, standing) {
         ),
       };
 
-    // THE SCHEDULE BOOKED A LUNCH TOO SHORT TO BE ONE.
+    // A LUNCH THAT CAME TO LESS THAN THIRTY MINUTES, booked short or with a
+    // booking running into it. counted the way a lunch inside a shift is, so
+    // the day starts with the hour on.
     //
-    // Mánu 2026-08-26: "for the short lunches it should be counted the same way
-    // lunches are counted when they are overlapping." So this is `mealInShift`
-    // with one fact swapped - there the block sat inside a shift, here it is
-    // simply not long enough - and it carries the same single option for the
-    // same reason: there is no second true answer to give.
-    //
-    // IT DOES NOT ACCUSE THEM OF ANYTHING. The roster is what was short. The
-    // rule line says so before the option does.
+    // it used to carry one answer, the missed meal, on the reading that a
+    // roster leaving less than thirty offered no meal at all. it asks now: the
+    // chance at a full thirty was there and they came back early, which owes
+    // nothing, or it never was, which is the missed meal and takes a reason
+    // like one. the facts say how it came up short and nothing here says which
+    // answer is true.
     case "mealShort":
       return {
-        title: "Your meal break is booked for less than thirty minutes",
-        short: "Meal booked under thirty minutes",
-        rule: q.row?.eaten
-          ? "A meal break has to be thirty minutes clear of work. Your "
-            + `${q.row?.service || "shift"} runs ${q.row?.eaten} minutes into this one, which `
-            + `leaves ${q.row?.minutes}. Your schedule needs the two moved apart.`
-          : "A meal break has to be thirty minutes. Your schedule books this one for "
-            + `${q.row?.minutes} minutes, so it is not a meal break. Your schedule needs it `
-            + "lengthened.",
+        title: "Your meal period was less than 30 minutes",
+        short: "Your meal period was less than 30 minutes",
+        ask: "Were you provided the opportunity to take a full, uninterrupted 30-minute meal period?",
         facts: [
           { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
           ...(q.row?.eaten
@@ -1126,17 +1120,18 @@ function copyFor(q, standing) {
             ) : (
               <>That is <b>{q.row?.minutes} minutes</b>, and a meal break has to be thirty.</>
             )}
-            <br /><br />
-            A meal break has to be thirty minutes clear of work, so this one is not a break you
-            could have taken. What needs fixing is the schedule.
           </>
         ),
-        // ONE OPTION, exactly like the booked-inside-a-shift card above.
-        no: {
-          label: "I understand, I did not get a meal break that day",
-          why: "Your record says the meal break was missed, with your reason on it.",
+        yes: {
+          label: "Yes. I was provided the opportunity to take a full 30-minute meal period but voluntarily chose to return early.",
+          why: "Your record says you had your full meal break.",
         },
-        noEffect: <>Your record says the meal break was missed, with your reason on it.</>,
+        no: {
+          label: "No. I was not provided the opportunity to take a full, uninterrupted 30-minute meal period.",
+          why: "Your record says the meal break was cut short, and we ask you why below.",
+        },
+        yesEffect: <>Your record says you were given a full meal break and chose to come back early.</>,
+        noEffect: <>Your record says the meal break was cut short, with your reason on it.</>,
       };
 
     default:
@@ -3324,6 +3319,11 @@ export default function TimesheetQuestion({
         {c.rule && (
           <p className="mt-1.5 text-xs leading-5 text-muted">{c.rule}</p>
         )}
+        {/* THE QUESTION ITSELF, where a card puts one to them in so many
+            words, set as the thing being answered rather than as a note */}
+        {c.ask && (
+          <p className="mt-2 text-sm font-semibold leading-snug text-foreground">{c.ask}</p>
+        )}
         <div className={perDay ? "mt-2" : ""}>
           {list.map((q) => (
             <OneQuestion
@@ -3360,6 +3360,9 @@ export default function TimesheetQuestion({
           about the same day. */}
       {c.rule && !allAnswered && (
         <p className="mt-2 text-sm leading-relaxed text-muted">{c.rule}</p>
+      )}
+      {c.ask && !allAnswered && (
+        <p className="mt-2 text-sm font-semibold leading-snug text-foreground">{c.ask}</p>
       )}
       {perDay && (
         <p className="mt-2 text-sm leading-relaxed text-muted">
