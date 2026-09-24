@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { fetchBlob } from "@/lib/blob";
 
 // the two documents a batch was built from: QSP's timesheet export and the
 // Employee Schedules calendar. Served so the checks screen can send someone
@@ -60,7 +61,7 @@ export async function GET(req, { params }) {
     });
   }
 
-  const res = await fetch(url);
+  const res = await fetchBlob(url);
   if (!res.ok) return new NextResponse("Not found", { status: 404 });
 
   const buf = await res.arrayBuffer();

@@ -5,6 +5,7 @@ import { canManageTimesheets } from "@/lib/roles";
 import { renderSheet, RENDER_SELECT, BASES } from "@/lib/timesheet/render-sheet";
 import { answersByDate, confirmedFromAnswers } from "@/lib/timesheet/premium-split";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
+import { fetchBlob } from "@/lib/blob";
 
 // gated download of one timesheet - the signed copy when it exists, otherwise
 // the generated one. same stream-it-ourselves pattern as the résumé route: Blob
@@ -53,7 +54,7 @@ export async function GET(req, { params }) {
   if (copy === "signed" || copy === "approved") {
     const url = copy === "signed" ? ts.signedPdfUrl : ts.approvedPdfUrl;
     if (!url) return new NextResponse("Not found", { status: 404 });
-    const res = await fetch(url);
+    const res = await fetchBlob(url);
     if (!res.ok) return new NextResponse("Not found", { status: 404 });
     const safeName = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
     return new NextResponse(await res.arrayBuffer(), {
@@ -78,7 +79,7 @@ export async function GET(req, { params }) {
 
   let buf;
   if (storedUrl) {
-    const res = await fetch(storedUrl);
+    const res = await fetchBlob(storedUrl);
     if (!res.ok) return new NextResponse("Not found", { status: 404 });
     buf = await res.arrayBuffer();
   } else {

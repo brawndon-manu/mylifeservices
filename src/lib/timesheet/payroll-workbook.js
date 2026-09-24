@@ -7,6 +7,7 @@ import { payrollName } from "@/lib/contacts";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 import { payoutTimeOff } from "@/lib/timesheet/time-off";
 import { parsePayrollReport, payrollKey, reconcile } from "@/lib/timesheet/payroll";
+import { fetchBlob } from "@/lib/blob";
 
 // THE WHOLE PAYROLL PACKAGE AS ONE WORKBOOK, Mánu 2026-09-03: "can we make
 // the csv be all in one with seperate tabs in the excel sheet? can we also
@@ -98,7 +99,7 @@ export async function buildPayrollWorkbook(id) {
   let rec = null;
   if (batch.payrollUrl) {
     try {
-      const bytes = Buffer.from(await (await fetch(batch.payrollUrl)).arrayBuffer());
+      const bytes = Buffer.from(await (await fetchBlob(batch.payrollUrl)).arrayBuffer());
       const theirs = parsePayrollReport(bytes);
       rec = reconcile(
         batch.timesheets.map((t) => ({

@@ -177,7 +177,7 @@ export async function saveEmailImport(formData) {
   const stored = await putBlob(
     `form-email-imports/${randomBytes(12).toString("hex")}.pdf`,
     noticeBytes,
-    { access: "public", contentType: "application/pdf" },
+    { contentType: "application/pdf" },
   );
 
   // RENDER FIRST, WRITE ONCE - the rule the schedules upload follows. A failure
@@ -201,7 +201,7 @@ export async function saveEmailImport(formData) {
     const put = await putBlob(
       `form-email-imports/acks/${randomBytes(12).toString("hex")}.pdf`,
       bytes,
-      { access: "public", contentType: "application/pdf" },
+      { contentType: "application/pdf" },
     );
     built.push({
       // NESTED UNDER THE FORM, so the person is connected rather than set as a

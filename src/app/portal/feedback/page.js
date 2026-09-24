@@ -15,6 +15,7 @@ import AuthorChip from "../hub/_components/AuthorChip";
 import ConfirmButton from "@/components/ConfirmButton";
 import BackLink from "@/components/BackLink";
 import { setFeedbackStatus, deleteFeedback } from "./actions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const metadata = {
   title: "Suggestions & Bugs · MLS Portal",
@@ -122,7 +123,7 @@ export default async function FeedbackPage({ searchParams }) {
                 {item.imageUrl && (
                   <div className="mt-3 overflow-hidden rounded-lg border border-border">
                     <Image
-                      src={item.imageUrl}
+                      src={fileHref(item.imageUrl)}
                       alt=""
                       width={1200}
                       height={800}

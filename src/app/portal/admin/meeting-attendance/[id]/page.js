@@ -12,6 +12,7 @@ import { buildRoster, meetingMeta, fmtSession } from "../roster";
 import MeetingBreakdown from "../_components/MeetingBreakdown";
 import OfficeFilter from "@/components/OfficeFilter";
 import { officeFromSearch } from "@/lib/positions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const metadata = {
   title: "Meeting attendance",
@@ -300,7 +301,7 @@ export default async function MeetingAttendanceDetailPage({ params, searchParams
               <ul className="mt-2 space-y-1">
                 {materials.map((a) => (
                   <li key={a.url} className="text-sm text-foreground">
-                    <a href={a.url} target="_blank" rel="noopener noreferrer" className="hover:text-brand hover:underline">
+                    <a href={fileHref(a.url)} target="_blank" rel="noopener noreferrer" className="hover:text-brand hover:underline">
                       {a.name}
                     </a>
                   </li>

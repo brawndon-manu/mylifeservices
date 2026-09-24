@@ -5,6 +5,7 @@ import { canViewFormRecords } from "@/lib/roles";
 import { renderSignedFormsBundle } from "@/lib/signed-forms-pdf";
 import { readFilters, submissionWhere, submissionRow } from "../../query";
 import { fileDate } from "../../../acknowledgments/audit";
+import { fetchBlob } from "@/lib/blob";
 
 // one form's actual signed documents in one file, a divider page before each.
 // honors the same filters as the record page.
@@ -46,7 +47,7 @@ export async function GET(req, { params }) {
   const items = await Promise.all(
     submissions.map(async (s) => ({
       ...submissionRow(s),
-      bytes: await fetch(s.pdfUrl)
+      bytes: await fetchBlob(s.pdfUrl)
         .then((r) => (r.ok ? r.arrayBuffer() : null))
         .catch(() => null),
     })),

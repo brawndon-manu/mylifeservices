@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { put, del } from "@vercel/blob";
+import { putBlob, delBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isModerator, isElevated } from "@/lib/roles";
@@ -32,10 +32,10 @@ function parseDateField(raw) {
   return d;
 }
 
-// helper: upload a File to Vercel Blob, return the public URL. throws
-// with a clean message if BLOB_READ_WRITE_TOKEN isnt configured yet.
+// helper: upload a File to the private blob store, return its URL. throws
+// with a clean message if file storage isnt configured yet.
 async function uploadImage(file) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!hasBlobStorage()) {
     throw new Error(
       "Image upload isnt configured yet. Create a Blob store in Vercel.",
     );
@@ -44,8 +44,7 @@ async function uploadImage(file) {
   // path: hub/<timestamp>-<random>.<ext>
   const ext = (file.name?.split(".").pop() || "bin").toLowerCase().slice(0, 8);
   const key = `hub/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-  const blob = await put(key, file, {
-    access: "public",
+  const blob = await putBlob(key, file, {
     contentType: file.type,
   });
   return blob.url;
@@ -56,9 +55,9 @@ async function uploadImage(file) {
 // to block the rest of the cleanup.
 async function tryDeleteBlob(url) {
   if (!url) return;
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  if (!hasBlobStorage()) return;
   try {
-    await del(url);
+    await delBlob(url);
   } catch {
     // ignore - blob may already be gone or token missing in dev
   }

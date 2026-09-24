@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { verifyAckToken } from "@/lib/ack-token";
 import { firstNameOf, preferredName } from "@/lib/contacts";
 import { attachmentsOf } from "@/lib/announcement-attachments";
+import { formFileHref } from "@/lib/form-visibility";
+import { isBlobUrl } from "@/lib/blob-paths";
 import { formEmailRoute } from "@/lib/forms";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { submitAttestationByToken } from "./actions";
@@ -37,7 +39,7 @@ export default async function AttestFromLinkPage({ params }) {
         attachments: true,
         meetingConcludedAt: true,
         meetingAttestationForm: {
-          select: { id: true, title: true, fileUrl: true, fillable: true },
+          select: { id: true, title: true, fileUrl: true, fillable: true, minRole: true },
         },
       },
     }),
@@ -63,6 +65,12 @@ export default async function AttestFromLinkPage({ params }) {
 
   // the reading material the meeting carried, minus the attestation itself
   const others = attachmentsOf(post).filter((a) => a.formId !== form.id);
+  // a stored document opens through /a/doc on this same token: its own
+  // address is in the private store and opens for nobody
+  const docHref = (a) => {
+    if (!isBlobUrl(a.url)) return a.url;
+    return `/a/doc/${token}/${attachmentsOf(post).findIndex((x) => x.url === a.url)}`;
+  };
 
   return (
     <section className="mx-auto max-w-5xl px-6 py-10 sm:py-14">
@@ -87,7 +95,7 @@ export default async function AttestFromLinkPage({ params }) {
             {others.map((a) => (
               <li key={a.url}>
                 <a
-                  href={a.url}
+                  href={docHref(a)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm transition hover:border-brand"
@@ -117,7 +125,7 @@ export default async function AttestFromLinkPage({ params }) {
       ) : (
         <div className="mt-6">
           <FormFiller
-            fileUrl={form.fileUrl}
+            fileUrl={formFileHref(form)}
             title={form.title}
             formId={form.id}
             announcementId={post.id}

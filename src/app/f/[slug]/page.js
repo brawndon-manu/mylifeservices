@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { formEmailRoute } from "@/lib/forms";
 import { getRecipientOptions } from "@/lib/form-recipients";
+import { formFileHref } from "@/lib/form-visibility";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 import { submitPublicFormByEmail } from "./actions";
 
@@ -91,7 +92,7 @@ export default async function PublicFillPage({ params, searchParams }) {
         saved here - the completed form is only sent when you submit.
       </p>
       <FormFiller
-        fileUrl={form.fileUrl}
+        fileUrl={formFileHref(form)}
         title={form.title}
         formId={form.id}
         reviewTeam={reviewTeam}

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { renderSheet, RENDER_SELECT } from "@/lib/timesheet/render-sheet";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
+import { fetchBlob } from "@/lib/blob";
 
 // serve one employee their own timesheet PDF, authorised purely by the signed
 // token in the url. the token only ever unlocks this single document.
@@ -44,7 +45,7 @@ export async function GET(_req, { params }) {
 
   let buf;
   if (ts.signedPdfUrl) {
-    const res = await fetch(ts.signedPdfUrl);
+    const res = await fetchBlob(ts.signedPdfUrl);
     if (!res.ok) return new NextResponse("Not found", { status: 404 });
     buf = await res.arrayBuffer();
   } else {

@@ -70,7 +70,6 @@ export async function approveAmendment(id, formData) {
   if (hasBlobStorage()) {
     try {
       const blob = await putBlob(`clock-amendments/${a.id}/${randomBytes(6).toString("hex")}-${formNumber(a)}.pdf`, doc.bytes, {
-        access: "public",
         contentType: "application/pdf",
       });
       pdfUrl = blob.url;

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { buildZip, safeEntryName } from "@/lib/zip";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
+import { fetchBlob } from "@/lib/blob";
 
 // every completed timesheet in a batch as separate PDFs in one zip - the
 // counterpart to the merged download, for when payroll needs them filed
@@ -71,7 +72,7 @@ export async function GET(req, { params }) {
     try {
       let data;
       if (url) {
-        const res = await fetch(url);
+        const res = await fetchBlob(url);
         if (!res.ok) continue;
         data = Buffer.from(await res.arrayBuffer());
       } else {

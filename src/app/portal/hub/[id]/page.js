@@ -20,6 +20,7 @@ import {
   addComment,
   deleteComment,
 } from "../actions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const metadata = {
   title: "Post · MLS Hub",
@@ -126,7 +127,7 @@ export default async function PostDetailPage({ params, searchParams }) {
         {post.imageUrl && (
           <div className="mt-4 overflow-hidden rounded-lg border border-border">
             <Image
-              src={post.imageUrl}
+              src={fileHref(post.imageUrl)}
               alt=""
               width={1600}
               height={1200}

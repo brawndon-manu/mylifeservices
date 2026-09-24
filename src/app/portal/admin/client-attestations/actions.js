@@ -123,7 +123,7 @@ export async function uploadClientSchedules(formData) {
   const source = await putBlob(
     `client-attestations/${randomBytes(12).toString("hex")}.pdf`,
     buffer,
-    { access: "public", contentType: "application/pdf" },
+    { contentType: "application/pdf" },
   );
 
   // RENDER FIRST, WRITE ONCE. Every form is built and stored before a single
@@ -172,7 +172,7 @@ export async function uploadClientSchedules(formData) {
       const stored = await putBlob(
         `client-attestations/forms/${randomBytes(12).toString("hex")}.pdf`,
         pdf,
-        { access: "public", contentType: "application/pdf" },
+        { contentType: "application/pdf" },
       );
       formUrl = stored.url;
     } catch (e) {
@@ -744,7 +744,7 @@ export async function recordPaperSignature(attestationId, formData) {
     stored = await putBlob(
       `client-attestations/signed/${randomBytes(12).toString("hex")}.pdf`,
       Buffer.from(await file.arrayBuffer()),
-      { access: "public", contentType: "application/pdf" },
+      { contentType: "application/pdf" },
     );
   } catch (e) {
     console.error("paper signature upload failed:", e?.message || e);

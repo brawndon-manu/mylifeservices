@@ -20,6 +20,7 @@ import { randomBytes } from "node:crypto";
 import { renderCertificate, DEFAULT_SIZE, MIN_SIZE, MAX_SIZE } from "@/lib/certificates/render";
 import { cleanTitle } from "@/lib/certificates/title";
 import { faceFor, cleanColor } from "@/lib/certificates/faces";
+import { fetchBlob } from "@/lib/blob";
 
 async function requireAccess() {
   const user = await getCurrentUser();
@@ -115,7 +116,7 @@ export async function createCertificates(formData) {
     const stored = await putBlob(
       `certificates/templates/${randomBytes(12).toString("hex")}.pdf`,
       templateBytes,
-      { access: "public", contentType: "application/pdf" },
+      { contentType: "application/pdf" },
     );
 
     // RENDER FIRST, WRITE ONCE, per template - a template that cannot be drawn
@@ -135,7 +136,7 @@ export async function createCertificates(formData) {
       const put = await putBlob(
         `certificates/${randomBytes(12).toString("hex")}.pdf`,
         bytes,
-        { access: "public", contentType: "application/pdf" },
+        { contentType: "application/pdf" },
       );
       built.push({
         ...(p.userId ? { user: { connect: { id: p.userId } } } : {}),
@@ -243,7 +244,7 @@ export async function regenerateCertificateBatch(batchId, plan) {
 
   let templateBytes;
   try {
-    const res = await fetch(batch.templateUrl);
+    const res = await fetchBlob(batch.templateUrl);
     if (!res.ok) throw new Error(`template fetch ${res.status}`);
     templateBytes = Buffer.from(await res.arrayBuffer());
   } catch (e) {
@@ -269,7 +270,7 @@ export async function regenerateCertificateBatch(batchId, plan) {
     const put = await putBlob(
       `certificates/${randomBytes(12).toString("hex")}.pdf`,
       bytes,
-      { access: "public", contentType: "application/pdf" },
+      { contentType: "application/pdf" },
     );
     made.push({ id: c.id, was: c.pdfUrl, now: put.url });
   }

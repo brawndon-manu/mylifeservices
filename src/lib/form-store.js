@@ -1,11 +1,11 @@
-import { put } from "@vercel/blob";
+import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { recordAnnouncementAck } from "@/lib/announcement-ack";
 
-// store a completed form submission: the signed PDF goes to Blob under a random,
-// unguessable key (Blob is a public store, so it's streamed back through a gated
-// route, never linked to the browser), and a FormSubmission row records who / when
+// store a completed form submission: the signed PDF goes to the private blob
+// store under a random key (streamed back through a gated route, never linked
+// to the browser), and a FormSubmission row records who / when
 // for the forms admin panel + retention.
 //
 // a no-login submit that comes in "unassigned" gets one auto-reconciliation pass
@@ -27,7 +27,7 @@ export async function storeFormSubmission({
   announcementId = null,
   ip = null,
 }) {
-  if (!pdfBase64 || !process.env.BLOB_READ_WRITE_TOKEN) return null;
+  if (!pdfBase64 || !hasBlobStorage()) return null;
 
   let resolvedUserId = userId;
   let resolvedAttribution = attribution;
@@ -44,8 +44,7 @@ export async function storeFormSubmission({
 
   const buffer = Buffer.from(pdfBase64, "base64");
   const key = `form-submissions/${randomBytes(12).toString("hex")}.pdf`;
-  const blob = await put(key, buffer, {
-    access: "public",
+  const blob = await putBlob(key, buffer, {
     contentType: "application/pdf",
   });
 

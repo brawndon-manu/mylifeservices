@@ -87,7 +87,6 @@ export async function raiseOne({ user, candidate: c, pick: p, testOnly = false, 
     try {
       const pages = await cutPages(pdf, c.pages.from, c.pages.to);
       const blob = await putBlob(`clock-amendments/${row.id}/dsn.pdf`, Buffer.from(pages), {
-        access: "public",
         contentType: "application/pdf",
       });
       await prisma.clockAmendment.update({ where: { id: row.id }, data: { dsnPdfUrl: blob.url } });

@@ -74,7 +74,7 @@ export async function submitSignedScheduleByToken(token, { pdfBase64, employeeNa
     stored = await putBlob(
       `client-attestations/${clientStage ? "partial" : "signed"}/${randomBytes(12).toString("hex")}.pdf`,
       Buffer.from(pdfBase64, "base64"),
-      { access: "public", contentType: "application/pdf" },
+      { contentType: "application/pdf" },
     );
   } catch (e) {
     console.error("signed attestation store failed:", e?.message || e);

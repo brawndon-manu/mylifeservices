@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { fmtSession } from "@/app/portal/admin/meeting-attendance/roster";
 import Image from "next/image";
+import { fileHref } from "@/lib/blob-paths";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -1462,7 +1463,7 @@ export default async function AnnouncementDetailPage({ params, searchParams }) {
                   {attachments.map((a) => (
                     <li key={a.url}>
                       <a
-                        href={a.url}
+                        href={fileHref(a.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 transition hover:border-brand"

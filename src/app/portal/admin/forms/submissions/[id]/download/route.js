@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { fetchBlob } from "@/lib/blob";
 
 // gated form-submission download, same pattern as the résumé route: the PDF
 // lives in Blob under an unguessable key, but Blob is a PUBLIC store - so we
@@ -21,7 +22,7 @@ export async function GET(_req, { params }) {
   });
   if (!submission?.pdfUrl) return new NextResponse("Not found", { status: 404 });
 
-  const res = await fetch(submission.pdfUrl);
+  const res = await fetchBlob(submission.pdfUrl);
   if (!res.ok) return new NextResponse("Not found", { status: 404 });
 
   const buf = await res.arrayBuffer();

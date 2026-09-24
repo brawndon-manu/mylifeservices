@@ -6,6 +6,7 @@ import { officeFromSearch } from "@/lib/positions";
 import { renderSignedFormsBundle } from "@/lib/signed-forms-pdf";
 import { submissionRow } from "../query";
 import { fileDate } from "../../acknowledgments/audit";
+import { fetchBlob } from "@/lib/blob";
 
 // every signed document on file, all forms, in one file - grouped in library
 // order with a divider page before each document.
@@ -46,7 +47,7 @@ export async function GET(req) {
     submissions.map(async (s) => ({
       formId: s.formId,
       ...submissionRow(s),
-      bytes: await fetch(s.pdfUrl)
+      bytes: await fetchBlob(s.pdfUrl)
         .then((r) => (r.ok ? r.arrayBuffer() : null))
         .catch(() => null),
     })),

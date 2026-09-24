@@ -350,7 +350,7 @@ export async function uploadDayProgramBatch(formData) {
   P.stage = "storing";
   await setProgress(prog, P);
   const store = async (key, body, contentType) => {
-    const blob = await putBlob(key, body, { access: "public", contentType });
+    const blob = await putBlob(key, body, { contentType });
     return blob.url;
   };
   let sourceUrl, restsUrl, scheduleUrl = null, mileageUrl = null, notesUrl = null, clockUrl = null;

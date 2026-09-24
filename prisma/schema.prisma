@@ -2771,3 +2771,30 @@ model ClockAmendment {
   @@index([approvedAt])
   @@index([createdAt])
 }
+
+// WHO OPENED WHICH RECORD. the file gate writes a row every time it serves a
+// record (a signed timesheet, an attestation, a filled form...). append-only:
+// nothing in the app updates or deletes a row, so this is the answer to "who
+// has looked at this?" when an auditor or a client asks.
+//
+// no relation to User on purpose: the email and role are copied in, so a row
+// still reads right after the account changes or goes away.
+model AccessLog {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  userId    String?
+  userEmail String?
+  // the account's real role, even while previewing a lower one
+  role      String?
+  // "session" for a signed-in user; an emailed link names its kind instead
+  via       String   @default("session")
+  action    String
+  // what was opened - a stored file's pathname
+  target    String
+  ip        String?
+  userAgent String?
+
+  @@index([at])
+  @@index([userId, at])
+  @@index([target])
+}

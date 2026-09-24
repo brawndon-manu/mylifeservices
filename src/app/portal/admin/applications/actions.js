@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { del } from "@vercel/blob";
+import { delBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
@@ -18,9 +18,9 @@ export async function deleteApplication(id) {
   });
   if (!app) redirect("/portal/admin/applications");
 
-  if (app.resumeUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+  if (app.resumeUrl && hasBlobStorage()) {
     try {
-      await del(app.resumeUrl);
+      await delBlob(app.resumeUrl);
     } catch {
       // blob may already be gone - the row delete is what matters
     }

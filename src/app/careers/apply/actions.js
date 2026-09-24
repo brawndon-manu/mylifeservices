@@ -9,7 +9,7 @@
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { Resend } from "resend";
-import { put } from "@vercel/blob";
+import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, cleanEmail, cleanDisplayName } from "@/lib/security";
 
@@ -139,11 +139,10 @@ export async function submitApplication(_prevState, formData) {
 async function storeApplication(app, { firstName, lastName, email }, resumeMeta) {
   try {
     let resumeUrl = null;
-    if (resumeMeta && process.env.BLOB_READ_WRITE_TOKEN) {
+    if (resumeMeta && hasBlobStorage()) {
       const ext = (resumeMeta.name.split(".").pop() || "pdf").toLowerCase().slice(0, 8);
       const key = `applications/${randomBytes(12).toString("hex")}.${ext}`;
-      const blob = await put(key, resumeMeta.buffer, {
-        access: "public",
+      const blob = await putBlob(key, resumeMeta.buffer, {
         contentType: resumeMeta.type,
       });
       resumeUrl = blob.url;

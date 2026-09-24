@@ -85,7 +85,9 @@ export default async function PublicContactPage({ params }) {
       </p>
 
       <div className="mt-4 flex items-start gap-5 rounded-xl border border-border bg-surface p-6 shadow-sm">
-        <Avatar name={top} email={p.email} image={p.image} size={80} />
+        {/* the photo comes through the card's own route: the stored picture is
+            in the private store, and this page is open to anyone with the link */}
+        <Avatar name={top} email={p.email} image={p.image ? `/c/${id}/photo` : null} size={80} />
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             {top}

@@ -68,7 +68,6 @@ async function storeSignature(id, which, dataUrl) {
   if (!hasBlobStorage()) return dataUrl;
   try {
     const blob = await putBlob(`clock-amendments/${id}/${randomBytes(6).toString("hex")}-${which}-signature.png`, bytes, {
-      access: "public",
       contentType: "image/png",
     });
     return blob.url;

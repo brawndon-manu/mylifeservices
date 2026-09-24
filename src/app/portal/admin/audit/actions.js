@@ -15,6 +15,7 @@ import { clockShiftFor } from "@/lib/timesheet/amended";
 import { hasIssue, punchIssue } from "@/lib/clock-amendment/rules";
 import { shiftFacts, accountsByKey, notePageSpan } from "@/lib/clock-amendment/files";
 import { raiseOne, ROSTER_SELECT, str } from "@/lib/clock-amendment/raise";
+import { fetchBlob } from "@/lib/blob";
 
 // THE STANDALONE SERVICE NOTES UPLOAD IS GONE, 2026-08-27.
 //
@@ -458,7 +459,7 @@ export async function raiseAmendmentFromCard(formData) {
   const who = buildWhoKey(users);
   let xls;
   try {
-    xls = Buffer.from(await (await fetch(batch.clockUrl, { cache: "no-store" })).arrayBuffer());
+    xls = Buffer.from(await (await fetchBlob(batch.clockUrl)).arrayBuffer());
   } catch (e) {
     console.error("clock amendment from the card: clock export not read:", e);
     return { ok: false, error: "clockfile" };
@@ -488,7 +489,7 @@ export async function raiseAmendmentFromCard(formData) {
   let pages = null;
   if (note && batch.notesUrl) {
     try {
-      pdf = Buffer.from(await (await fetch(batch.notesUrl, { cache: "no-store" })).arrayBuffer());
+      pdf = Buffer.from(await (await fetchBlob(batch.notesUrl)).arrayBuffer());
       const pageCount = (await PDFDocument.load(pdf, { ignoreEncryption: true })).getPageCount();
       pages = notePageSpan(notes, note, pageCount);
     } catch (e) {

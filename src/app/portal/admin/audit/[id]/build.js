@@ -21,6 +21,7 @@ import { ampmLabel } from "@/lib/timesheet/hours-label";
 import { periodDates } from "@/lib/timesheet/period-of";
 import { auditWindow, inAuditWindow } from "@/lib/timesheet/audit-window";
 import { indexAmendments, amendmentFor, amendmentView, amendedShift, pendingView } from "@/lib/timesheet/amended";
+import { fetchBlob } from "@/lib/blob";
 
 // THE THREE RECORDS OF ONE SHIFT, LINED UP - the whole build, moved out of the
 // page verbatim on 2026-08-31 so the client-hours report route reads the same
@@ -36,7 +37,7 @@ const scheduleReads = new Map();
 function readMonthSchedule(url) {
   if (!scheduleReads.has(url)) {
     const read = (async () => {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetchBlob(url);
       if (!res.ok) throw new Error(`the schedule came back ${res.status}`);
       return parseSchedulePdf(new Uint8Array(await res.arrayBuffer()));
     })();
@@ -224,7 +225,7 @@ export async function buildAudit(id, { planned = false } = {}) {
   let scheduleNotesLoaded = false;
   if (batch.scheduleNotesUrl) {
     try {
-      const res = await fetch(batch.scheduleNotesUrl, { cache: "no-store" });
+      const res = await fetchBlob(batch.scheduleNotesUrl);
       if (!res.ok) throw new Error(`the file came back ${res.status}`);
       for (const n of parseScheduleNotesXls(Buffer.from(await res.arrayBuffer()))) {
         if (dateKey(n.date) < notesFrom || dateKey(n.date) > notesTo) continue;
@@ -317,7 +318,7 @@ export async function buildAudit(id, { planned = false } = {}) {
     for (const f of files) {
       if (!f.url) continue;
       try {
-        const res = await fetch(f.url, { cache: "no-store" });
+        const res = await fetchBlob(f.url);
         if (!res.ok) throw new Error(`the file came back ${res.status}`);
         periodsWithClock.add(`${period.periodFrom} to ${period.periodTo}`);
         for (const row of clockShifts(Buffer.from(await res.arrayBuffer()))) {

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { PDFDocument } from "pdf-lib";
-import { putBlob, hasBlobStorage } from "@/lib/blob";
+import { putBlob, hasBlobStorage, fetchBlob } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { futureDates, trimDays, isoDate } from "@/lib/timesheet/partial";
 import { splitByPeriod } from "@/lib/timesheet/split-periods";
@@ -157,7 +157,7 @@ export async function uploadBatch(formData) {
   // the bytes, from whichever side the file came in on
   const bytesOfPick = async (pk) => {
     if (pk.file) return new Uint8Array(await pk.file.arrayBuffer());
-    const res = await fetch(pk.url);
+    const res = await fetchBlob(pk.url);
     if (!res.ok) throw new Error(`stored file fetch failed: ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
   };
@@ -448,7 +448,6 @@ export async function uploadBatch(formData) {
     try {
       const key = `timesheets/source/${randomBytes(10).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(bytes), {
-        access: "public",
         contentType: "application/pdf",
       });
       sourceUrl = blob.url;
@@ -489,7 +488,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/schedule/${randomBytes(10).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(sbytes), {
-        access: "public",
         contentType: "application/pdf",
       });
       scheduleUrl = blob.url;
@@ -556,7 +554,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/clock/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(cbytes), {
-        access: "public",
         contentType: "application/vnd.ms-excel",
       });
       clockUrl = blob.url;
@@ -610,7 +607,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/notes/${randomBytes(10).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(nbytes), {
-        access: "public",
         contentType: "application/pdf",
       });
       notesUrl = blob.url;
@@ -633,7 +629,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/service-notes/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(xbytes), {
-        access: "public",
         contentType: "application/vnd.ms-excel",
       });
       serviceNotesUrl = blob.url;
@@ -659,7 +654,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/schedule-notes/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(sbytes2), {
-        access: "public",
         contentType: "application/vnd.ms-excel",
       });
       scheduleNotesUrl = blob.url;
@@ -691,7 +685,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/rests/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(rbytes), {
-        access: "public",
         contentType: "application/vnd.ms-excel",
       });
       restsUrl = blob.url;
@@ -736,7 +729,6 @@ export async function uploadBatch(formData) {
     } else try {
       const key = `timesheets/payroll/${randomBytes(10).toString("hex")}.xls`;
       const blob = await putBlob(key, Buffer.from(pbytes), {
-        access: "public",
         contentType: "application/vnd.ms-excel",
       });
       payrollUrl = blob.url;
@@ -2137,7 +2129,7 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
   // stamp the signature onto the employee-signed copy
   let pdfBase64;
   try {
-    const res = await fetch(sourceUrl);
+    const res = await fetchBlob(sourceUrl);
     if (!res.ok) return { ok: false, error: "nofile" };
     const doc = await PDFDocument.load(await res.arrayBuffer());
     // the block's real position, read off the signed bytes. The stored rect
@@ -2170,7 +2162,6 @@ export async function approveTimesheet({ timesheetId, signatureDataUrl }) {
     try {
       const key = `timesheets/approved/${randomBytes(12).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(pdfBase64, "base64"), {
-        access: "public",
         contentType: "application/pdf",
       });
       approvedPdfUrl = blob.url;
@@ -5045,7 +5036,6 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
     try {
       const key = `timesheets/signed/${randomBytes(12).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(pdfBase64, "base64"), {
-        access: "public",
         contentType: "application/pdf",
       });
       signedPdfUrl = blob.url;
@@ -5407,7 +5397,6 @@ export async function recordOfflineSignature(timesheetId, formData) {
     try {
       const key = `timesheets/signed/${randomBytes(12).toString("hex")}.pdf`;
       const blob = await putBlob(key, Buffer.from(await file.arrayBuffer()), {
-        access: "public",
         contentType: file.type || "application/pdf",
       });
       signedPdfUrl = blob.url;

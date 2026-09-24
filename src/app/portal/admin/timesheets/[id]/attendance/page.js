@@ -9,6 +9,7 @@ import {
 import { isCappedService, CAP_MINUTES } from "@/lib/timesheet/compliance";
 import BackLink from "@/components/BackLink";
 import AuditTable from "./AuditTable";
+import { fetchBlob } from "@/lib/blob";
 
 export const metadata = {
   title: "QSClock Time and Attendance",
@@ -66,7 +67,7 @@ export default async function AttendancePage({ params }) {
   for (const f of files) {
     if (!f.url) continue;
     try {
-      const res = await fetch(f.url, { cache: "no-store" });
+      const res = await fetchBlob(f.url);
       if (!res.ok) throw new Error(`the file came back ${res.status}`);
       rows.push(...clockShifts(Buffer.from(await res.arrayBuffer())));
     } catch (e) {

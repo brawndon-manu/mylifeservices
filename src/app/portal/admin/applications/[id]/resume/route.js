@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isElevated } from "@/lib/roles";
+import { fetchBlob } from "@/lib/blob";
 
 // gated resume download. the resume lives in Blob under a random key, but Blob is
 // a PUBLIC store - so instead of ever handing that url to the browser, we re-check
@@ -21,7 +22,7 @@ export async function GET(_req, { params }) {
   });
   if (!app?.resumeUrl) return new NextResponse("Not found", { status: 404 });
 
-  const res = await fetch(app.resumeUrl);
+  const res = await fetchBlob(app.resumeUrl);
   if (!res.ok) return new NextResponse("Not found", { status: 404 });
 
   const buf = await res.arrayBuffer();

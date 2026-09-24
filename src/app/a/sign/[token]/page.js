@@ -8,6 +8,8 @@ import { renderMarkdown, PROSE } from "@/lib/markdown";
 import { getRecipientOptions } from "@/lib/form-recipients";
 import { attachmentsOf } from "@/lib/announcement-attachments";
 import { signFormIds, unsignedFormIds } from "@/lib/announcement-sign";
+import { formFileHref } from "@/lib/form-visibility";
+import { isBlobUrl } from "@/lib/blob-paths";
 import SignSequence from "./SignSequence";
 import { submitSignedByToken, recordOpenedByToken } from "./actions";
 
@@ -37,7 +39,7 @@ export default async function SignFromLinkPage({ params }) {
       select: {
         id: true, title: true, content: true, requireAck: true, deletedAt: true,
         attachments: true, formId: true, extraFormIds: true,
-        form: { select: { id: true, title: true, fileUrl: true, fillable: true } },
+        form: { select: { id: true, title: true, fileUrl: true, fillable: true, minRole: true } },
       },
     }),
     prisma.user.findUnique({
@@ -58,7 +60,7 @@ export default async function SignFromLinkPage({ params }) {
   const extraRows = ids.length > 1
     ? await prisma.form.findMany({
         where: { id: { in: ids.slice(1) }, fillable: true },
-        select: { id: true, title: true, fileUrl: true, fillable: true },
+        select: { id: true, title: true, fileUrl: true, fillable: true, minRole: true },
       })
     : [];
   const forms = ids
@@ -92,7 +94,7 @@ export default async function SignFromLinkPage({ params }) {
       return {
         id: f.id,
         title: f.title,
-        fileUrl: f.fileUrl,
+        fileUrl: formFileHref(f),
         requireAll: !!route?.requireAll,
         reviewTeam: {
           recipientLabel: route?.recipientTitle || "HR",
@@ -104,6 +106,12 @@ export default async function SignFromLinkPage({ params }) {
   );
   const signIds = new Set(forms.map((f) => f.id));
   const others = attachmentsOf(post).filter((a) => !signIds.has(a.formId));
+  // a stored document opens through /a/doc on this same token: its own
+  // address is in the private store and opens for nobody
+  const docHref = (a) => {
+    if (!isBlobUrl(a.url)) return a.url;
+    return `/a/doc/${token}/${attachmentsOf(post).findIndex((x) => x.url === a.url)}`;
+  };
   const bodyHtml = renderMarkdown(post.content);
   const longDate = (d) =>
     new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -141,7 +149,7 @@ export default async function SignFromLinkPage({ params }) {
             {others.map((a) => (
               <li key={a.url}>
                 <a
-                  href={a.url}
+                  href={docHref(a)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm transition hover:border-brand"

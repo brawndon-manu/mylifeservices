@@ -9,6 +9,7 @@ import BackLink from "@/components/BackLink";
 import DeleteBatch from "./DeleteBatch";
 import BatchTitle from "./BatchTitle";
 import { deleteCertificateBatch, renameCertificateBatch } from "../actions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const metadata = { title: "Certificates", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -97,7 +98,7 @@ export default async function CertificateBatchPage({ params }) {
             {!c.user && <span className="text-xs text-muted">not in the directory</span>}
             {c.user?.deactivatedAt && <span className="text-xs text-muted">no longer here</span>}
             <a
-              href={c.pdfUrl}
+              href={fileHref(c.pdfUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto font-semibold text-brand hover:underline"

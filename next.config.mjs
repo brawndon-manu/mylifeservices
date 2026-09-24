@@ -84,6 +84,10 @@ const nextConfig = {
     // the gated forms route reads a library pick off disk the same way, so it
     // needs the same directory traced or it ENOENTs only once deployed
     "/portal/forms/**": ["./public/forms/*.pdf"],
+    // and the two no-login routes that read the same way: blank templates,
+    // and the documents an announcement email's sign/attest page links to
+    "/f/file/**": ["./public/forms/*.pdf"],
+    "/a/doc/**": ["./public/forms/*.pdf"],
     "/portal/admin/timesheets/**": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],

@@ -12,6 +12,7 @@ import {
 } from "@/lib/clock-amendment/rules";
 import ApproveForm from "./ApproveForm";
 import { approveAmendment, chaseAmendment, deleteRehearsal, sendRehearsalTo, resetRehearsal } from "./actions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock addendum", robots: { index: false, follow: false } };
@@ -94,7 +95,7 @@ export default async function ClockAmendmentPage({ params }) {
             <div className="flex flex-wrap items-end gap-4">
               {a.staffSignatureUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={a.staffSignatureUrl} alt="" className="h-14 w-auto max-w-[240px] rounded-md bg-white p-1 ring-1 ring-border" />
+                <img src={fileHref(a.staffSignatureUrl)} alt="" className="h-14 w-auto max-w-[240px] rounded-md bg-white p-1 ring-1 ring-border" />
               )}
               <p className="text-[12.5px] leading-relaxed text-muted">
                 Signed by <b className="font-semibold text-foreground">{a.filledName}</b> on {when(a.filledAt)}{a.filledIp ? ` from ${a.filledIp}` : ""}{deviceLabel(a.filledUa) ? `, ${deviceLabel(a.filledUa)}` : ""}{deviceTail(a.filledDevice) ? ` (${deviceTail(a.filledDevice)})` : ""}.
@@ -116,7 +117,7 @@ export default async function ClockAmendmentPage({ params }) {
           <div className="mt-3 flex flex-wrap items-end gap-4">
             {a.clientSignatureUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={a.clientSignatureUrl} alt="" className="h-14 w-auto max-w-[240px] rounded-md bg-white p-1 ring-1 ring-border" />
+              <img src={fileHref(a.clientSignatureUrl)} alt="" className="h-14 w-auto max-w-[240px] rounded-md bg-white p-1 ring-1 ring-border" />
             )}
             <p className="text-[12.5px] leading-relaxed text-muted">
               <b className="font-semibold text-foreground">{a.clientSigner}</b> ({signerLabel(a.clientSignerKind)}) signed on {when(a.clientSignedAt)}{a.clientSignedIp ? ` from ${a.clientSignedIp}` : ""}{deviceLabel(a.clientSignedUa) ? `, ${deviceLabel(a.clientSignedUa)}` : ""}{deviceTail(a.clientSignedDevice) ? ` (${deviceTail(a.clientSignedDevice)})` : ""}.{viaLine(a.clientSignedVia) ? ` ${viaLine(a.clientSignedVia)}.` : ""}
@@ -151,7 +152,7 @@ export default async function ClockAmendmentPage({ params }) {
               : " The punches stand as recorded."}
             {a.mailedAt ? ` Emailed on ${when(a.mailedAt)}.` : " The email did not go."}
           </p>
-          <a href={a.pdfUrl || `/portal/admin/clock-amendments/${a.id}/pdf`} target="_blank" rel="noopener" className="mt-3 inline-block text-[13px] font-semibold text-brand underline underline-offset-4">
+          <a href={fileHref(a.pdfUrl) || `/portal/admin/clock-amendments/${a.id}/pdf`} target="_blank" rel="noopener" className="mt-3 inline-block text-[13px] font-semibold text-brand underline underline-offset-4">
             Open the signed document
           </a>
           {a.pdfHash && <p className="mt-2 font-mono text-[10px] text-faint">sha256 {a.pdfHash}</p>}

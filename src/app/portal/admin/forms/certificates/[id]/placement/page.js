@@ -7,6 +7,7 @@ import { printedDate } from "@/lib/certificates/render";
 import BackLink from "@/components/BackLink";
 import PlacementEditor from "./PlacementEditor";
 import { regenerateCertificateBatch } from "../../actions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const metadata = { title: "Certificates", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export default async function CertificatePlacementPage({ params }) {
       </p>
 
       <PlacementEditor
-        batch={{ ...placement, count: _count.certificates }}
+        batch={{ ...placement, templateUrl: fileHref(placement.templateUrl), count: _count.certificates }}
         sample={first?.printedName || "Sample Name"}
         dateSample={printedDate(first?.issuedOn || batch.issuedOn) || companyDate(new Date())}
         action={regenerateCertificateBatch}

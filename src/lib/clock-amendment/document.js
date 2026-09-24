@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { preferredName } from "@/lib/contacts";
 import { renderAmendmentPdf } from "./pdf.js";
+import { fetchBlob } from "@/lib/blob";
 
 const LOGO_PATH = path.join(process.cwd(), "public", "logo", "MLSlogo.png");
 
@@ -45,7 +46,7 @@ async function bytesFrom(url) {
   if (m) return Buffer.from(m[1], "base64");
   if (!/^https?:\/\//.test(url)) return null;
   try {
-    const r = await fetch(url);
+    const r = await fetchBlob(url);
     if (!r.ok) return null;
     return Buffer.from(await r.arrayBuffer());
   } catch {

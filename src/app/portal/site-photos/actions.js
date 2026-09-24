@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { put, del } from "@vercel/blob";
+import { putBlob, delBlob, blobToken } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
@@ -25,21 +25,21 @@ async function requireAdmin() {
 }
 
 async function uploadImage(file, section) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!blobToken()) {
     throw new Error("Image upload isnt configured yet.");
   }
   const ext = (file.name?.split(".").pop() || "bin").toLowerCase().slice(0, 8);
   const key = `site/${section}/${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 10)}.${ext}`;
-  const blob = await put(key, file, { access: "public", contentType: file.type });
+  const blob = await putBlob(key, file, { contentType: file.type });
   return blob.url;
 }
 
 async function tryDeleteBlob(url) {
-  if (!url || !process.env.BLOB_READ_WRITE_TOKEN) return;
+  if (!url || !blobToken()) return;
   try {
-    await del(url);
+    await delBlob(url);
   } catch {
     // ignore - orphaned blob is harmless
   }

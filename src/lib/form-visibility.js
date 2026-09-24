@@ -12,6 +12,7 @@
 // is a trust boundary, so it is testable on its own with no database and no
 // framework underneath it.
 import { ROLES, isValidRole, roleRank } from "./roles.js";
+import { isBlobUrl } from "./blob-paths.js";
 
 // A form with no minRole is visible to anyone signed in, which is what all
 // fourteen forms were before the column existed. A minRole is a FLOOR: store
@@ -47,12 +48,16 @@ export function visibleFormsWhere(role) {
   return { OR: [{ minRole: null }, { minRole: { notIn: blocked } }] };
 }
 
-// WHERE THE FILE IS FETCHED FROM. An open form keeps pointing at its own url,
-// which is how all fourteen already work. A restricted one is only ever
-// reachable through the route that re-checks the role, so its stored url - a
-// blob address that would work for anyone holding it - never reaches a page.
+// WHERE THE FILE IS FETCHED FROM. A restricted form is only ever reachable
+// through the route that re-checks the role. An open form that lives in
+// public/ keeps pointing at its own url, which is how the library picks work.
+// An open form uploaded to the blob store is in the private store now, whose
+// address opens for nobody, so it comes through /f/file - blank templates,
+// the same ones a share link already hands to anyone who has it.
 export function formFileHref(form) {
-  return form?.minRole ? `/portal/forms/${form.id}/file` : form?.fileUrl || "";
+  if (form?.minRole) return `/portal/forms/${form.id}/file`;
+  const url = form?.fileUrl || "";
+  return isBlobUrl(url) ? `/f/file/${form.id}` : url;
 }
 
 // a restricted form must never carry a public share link, because /f/<slug>

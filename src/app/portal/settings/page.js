@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { put, del } from "@vercel/blob";
+import { putBlob, delBlob, hasBlobStorage } from "@/lib/blob";
+import { isBlobUrl } from "@/lib/blob-paths";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { cleanDisplayName } from "@/lib/security";
@@ -62,29 +63,29 @@ async function updateProfile(formData) {
     if (file.size > IMAGE_MAX_BYTES) {
       redirect("/portal/settings?error=photoSize");
     }
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    if (!hasBlobStorage()) {
       redirect("/portal/settings?error=photoUpload");
     }
     try {
       const ext = (file.name?.split(".").pop() || "jpg").toLowerCase().slice(0, 8);
       const key = `avatars/${user.id}-${Date.now()}.${ext}`;
-      const blob = await put(key, file, { access: "public", contentType: file.type });
+      const blob = await putBlob(key, file, { contentType: file.type });
       imageUpdate = { image: blob.url };
     } catch {
       redirect("/portal/settings?error=photoUpload");
     }
     // best-effort cleanup of the previous avatar blob
-    if (user.image?.includes("blob.vercel-storage.com")) {
+    if (isBlobUrl(user.image)) {
       try {
-        await del(user.image);
+        await delBlob(user.image);
       } catch {
         // ignore
       }
     }
   } else if (removePhoto) {
-    if (user.image?.includes("blob.vercel-storage.com")) {
+    if (isBlobUrl(user.image)) {
       try {
-        await del(user.image);
+        await delBlob(user.image);
       } catch {
         // ignore
       }

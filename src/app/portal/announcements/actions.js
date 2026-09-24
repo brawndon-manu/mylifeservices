@@ -7,7 +7,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { put, del } from "@vercel/blob";
+import { putBlob, delBlob, blobToken, fetchBlob } from "@/lib/blob";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 import { resolveAttachments } from "@/lib/announcement-attach-server";
@@ -399,15 +399,14 @@ async function resolveAttestationFormId(formData, tag) {
 
 
 async function uploadImage(file) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!blobToken()) {
     throw new Error(
       "Image upload isnt configured yet. Create a Blob store in Vercel.",
     );
   }
   const ext = (file.name?.split(".").pop() || "bin").toLowerCase().slice(0, 8);
   const key = `announcements/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-  const blob = await put(key, file, {
-    access: "public",
+  const blob = await putBlob(key, file, {
     contentType: file.type,
   });
   return blob.url;
@@ -430,9 +429,11 @@ async function tryDeleteInlineImages(content) {
 
 async function tryDeleteBlob(url) {
   if (!url) return;
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  if (!blobToken()) return;
   try {
-    await del(url);
+    // a pdf sits in the private store and a picture in the public one;
+    // delBlob sends each url to its own
+    await delBlob(url);
   } catch {
     // ignore - blob may already be gone or token missing in dev
   }
@@ -2655,7 +2656,7 @@ async function sendAttestation({ post, form, presentIds, formData, sessionLine =
   for (const a of emailAttachmentsOf(post, form)) {
     try {
       const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
-      const res = await fetch(url);
+      const res = await fetchBlob(url);
       if (!res.ok) throw new Error(String(res.status));
       files.push({
         filename: `${a.name.replace(/[^\w .-]/g, "_").slice(0, 80)}.pdf`,

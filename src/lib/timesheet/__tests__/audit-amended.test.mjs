@@ -80,7 +80,9 @@ test("both screens raise through the one creator, and the page keeps none of the
 test("the card's raise re-reads the shift from the copy's stored export, refuses a clean shift and a second open one", () => {
   const card = read("src/app/portal/admin/audit/actions.js");
   assert.match(card, /if \(!canManageTimesheets\(user\?\.role\)\) return \{ ok: false, error: "auth" \}/);
-  assert.match(card, /fetch\(batch\.clockUrl, \{ cache: "no-store" \}\)/);
+  // read back from the store, fresh: fetchBlob reads past the CDN cache
+  assert.match(card, /fetchBlob\(batch\.clockUrl\)/);
+  assert.match(read("src/lib/blob.js"), /useCache: false/);
   assert.match(card, /clockShiftFor\(clockShifts\(xls\), identity, \{ whoKey: who, clientKey \}\)/);
   assert.match(card, /if \(!hasIssue\(shift\)\) return \{ ok: false, error: "clean" \}/);
   assert.match(card, /where: \{ testOnly: false, approvedAt: null, staffId: account\.id, shiftDate: shift\.date \}/);

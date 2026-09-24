@@ -8,7 +8,7 @@
 // should be able to call directly.
 //
 // Server only: it reaches the blob store and the database.
-import { put } from "@vercel/blob";
+import { putBlob, hasBlobStorage } from "@/lib/blob";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
@@ -18,14 +18,15 @@ import {
   cleanAttachment,
 } from "@/lib/announcement-attachments";
 
-// PDFs UPLOADED STRAIGHT ONTO A POST. Same store and same cleanup as the image,
-// a different prefix so the two are tellable apart in the bucket.
+// PDFs UPLOADED STRAIGHT ONTO A POST. Same cleanup as the image, but the
+// private store: a pdf rides on the email as an attachment, so nothing outside
+// the portal ever needs to load it from a url.
 export async function uploadAttachment(file) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!hasBlobStorage()) {
     throw new Error("Attachments arent configured yet. Create a Blob store in Vercel.");
   }
   const key = `announcements/docs/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.pdf`;
-  const blob = await put(key, file, { access: "public", contentType: "application/pdf" });
+  const blob = await putBlob(key, file, { contentType: "application/pdf" });
   return blob.url;
 }
 

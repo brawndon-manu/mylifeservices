@@ -5,6 +5,7 @@ import { renderSheet, RENDER_SELECT_SHEET } from "@/lib/timesheet/render-sheet";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
+import { fetchBlob } from "@/lib/blob";
 
 // a whole batch merged into one PDF for re-uploading to QSP. gated + streamed
 // like the single-sheet route.
@@ -75,7 +76,7 @@ export async function GET(req, { params }) {
       const url = ts.approvedPdfUrl || ts.signedPdfUrl;
       let bytes;
       if (url) {
-        const res = await fetch(url);
+        const res = await fetchBlob(url);
         if (!res.ok) continue;
         bytes = await res.arrayBuffer();
       } else {

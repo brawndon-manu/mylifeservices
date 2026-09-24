@@ -33,6 +33,7 @@ import {
   emailAttachmentsOf,
   titleSegmentMatch,
 } from "@/lib/announcements";
+import { fetchBlob } from "@/lib/blob";
 
 export function emailAudienceWhere({ everyone, titles, userIds = [] }) {
   if (everyone) return { deactivatedAt: null };
@@ -121,7 +122,7 @@ export async function emailAnnouncement(
   for (const a of emailAttachmentsOf(post, signForms)) {
     try {
       const url = a.url.startsWith("/") ? `${base}${a.url}` : a.url;
-      const res = await fetch(url);
+      const res = await fetchBlob(url);
       if (!res.ok) throw new Error(`${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
       files.push({

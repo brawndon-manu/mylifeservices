@@ -11,7 +11,7 @@
 import { useActionState, useEffect, useRef, useState, startTransition } from "react";
 // browser-to-Blob uploads, so eight exports never ride one 30MB request -
 // Vercel caps a serverless body at 4.5MB and the big exports blow past it
-import { upload } from "@vercel/blob/client";
+import { uploadPresigned } from "@vercel/blob/client";
 import { placeDroppedFiles } from "@/lib/timesheet/upload-slots";
 import { STAGES, AUDIT_STAGES } from "@/lib/timesheet-stages";
 import DatePicker from "@/components/DatePicker";
@@ -292,8 +292,9 @@ export default function UploadForm({ action, aside, into = null, blobUpload = fa
     controllersRef.current[slot] = ctrl;
     setSending((p) => ({ ...p, [slot]: 0 }));
     try {
-      const blob = await upload(`timesheets/src/${ensureUploadId()}/${slot}-${file.name}`, file, {
-        access: "public",
+      // the private store: an export is a record from the moment it lands
+      const blob = await uploadPresigned(`timesheets/src/${ensureUploadId()}/${slot}-${file.name}`, file, {
+        access: "private",
         handleUploadUrl: "/portal/admin/timesheets/blob-upload",
         contentType: file.type || undefined,
         // split-and-retry for the big exports; the service notes alone is 27MB

@@ -17,6 +17,7 @@ import {
 import AuthorChip from "./_components/AuthorChip";
 import ConfirmButton from "@/components/ConfirmButton";
 import { toggleLike, togglePin, deletePost } from "./actions";
+import { fileHref } from "@/lib/blob-paths";
 
 export const metadata = {
   title: "MLS Hub",
@@ -233,7 +234,7 @@ function PostCard({ post, currentUser }) {
             {/* unoptimized so Vercel Blob URLs work without an Image
                 optimization round-trip - saves bandwidth quota. */}
             <Image
-              src={post.imageUrl}
+              src={fileHref(post.imageUrl)}
               alt=""
               width={1200}
               height={800}

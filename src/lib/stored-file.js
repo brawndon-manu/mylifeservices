@@ -10,6 +10,8 @@
 // SERVER ONLY: it reads the filesystem.
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readBlob } from "./blob.js";
+import { isBlobUrl } from "./blob-paths.js";
 
 // The disk read builds its path at runtime and the tracer does not follow one,
 // so every route that calls this has to name its directory in
@@ -30,6 +32,12 @@ export async function readStoredPdf(url) {
     } catch {
       return null;
     }
+  }
+
+  // ours: either store, the private one included
+  if (isBlobUrl(url)) {
+    const file = await readBlob(url);
+    return file ? file.bytes : null;
   }
 
   if (/^https:\/\//i.test(url)) {
