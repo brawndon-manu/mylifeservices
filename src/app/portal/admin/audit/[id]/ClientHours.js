@@ -266,8 +266,8 @@ export default function ClientHours({ rows = [], month = null, monthLabel = null
       </p>
       {notCounted.length > 0 && (
         <p className={styles.footnote}>
-          Not counted: {notCounted.join("; ")}. A shift with a short name joins its client once that staff member has
-          billed one of them.
+          Not counted: {notCounted.join("; ")}. These haven&apos;t happened yet, so no service note names the client.
+          They are counted once a copy with their notes is uploaded.
         </p>
       )}
       <p className={styles.footnote}>
