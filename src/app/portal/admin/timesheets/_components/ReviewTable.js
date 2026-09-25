@@ -115,7 +115,12 @@ export default function ReviewTable({
               <div className={styles.header}>
                 <div className={styles.identity}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={styles.name}>{r.user?.displayName || r.sourceName.split(", ").reverse().join(" ")}</span>
+                    {/* qsp's "Last, First", the order the list is sorted in,
+                        with the name they go by beside it where it differs */}
+                    <span className={styles.name}>
+                      {r.sourceName}
+                      {r.nameBeside && <span className="ml-2 font-normal text-muted">{r.nameBeside}</span>}
+                    </span>
                     {/* the office's per-sheet controls, beside the name on
                         Mánu's call 2026-09-02 - the review button sits on the right, and the bottom row
                         holds delivery. Opens rightward from here. */}

@@ -26,6 +26,45 @@
 // nothing else - so the sheet says "Manu" rather than "Uribe, Brandon". On every
 // ordinary batch this returns exactly what it always did, so nothing an employee
 // actually signs is changed by it.
+// THE NAME THEY GO BY, BESIDE QSP'S "Last, First" ON THE PAY PERIOD LIST.
+//
+// The list is ordered by QSP's spelling, so it leads with that; the portal name
+// sits next to it only where it says something the export doesn't. Same
+// surname: just the first name they go by ("Rivera, Anabel" + "Annie"). A
+// different surname: the whole portal name. Case, accents and a trailing
+// middle name or initial on either side are not a difference.
+const fold = (s) => String(s || "")
+  .normalize("NFD")
+  .replace(/[̀-ͯ]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, " ")
+  .trim();
+
+export function portalNameBeside(sourceName, portalName) {
+  const portal = String(portalName || "").trim().replace(/\s+/g, " ");
+  if (!portal) return null;
+  const s = String(sourceName || "");
+  const comma = s.indexOf(",");
+  const last = (comma < 0 ? s : s.slice(0, comma)).trim();
+  const first = comma < 0 ? "" : s.slice(comma + 1).trim();
+  const words = portal.split(" ");
+  const lastLen = fold(last).split(" ").filter(Boolean).length;
+  const sameLast = lastLen > 0 && words.length > lastLen
+    && fold(words.slice(words.length - lastLen).join(" ")) === fold(last);
+  if (!sameLast) {
+    // an account with no name set falls back to its email, which is not a name
+    if (portal.includes("@")) return null;
+    const whole = fold(portal);
+    return whole === fold(`${first} ${last}`) || whole === fold(first) ? null : portal;
+  }
+  const given = words.slice(0, words.length - lastLen).join(" ");
+  const g = fold(given).split(" ").filter(Boolean);
+  const q = fold(first).split(" ").filter(Boolean);
+  // one reads as the start of the other: "Joseph" and "Joseph A" are one name
+  const agrees = g.every((t, i) => q[i] === t) || q.every((t, i) => g[i] === t);
+  return agrees ? null : given;
+}
+
 export function sheetDisplayName({ user, sourceName, batch, fallback = null }) {
   // ON A REHEARSAL BATCH, WHATEVER THE SHEET ITSELF SAYS.
   //

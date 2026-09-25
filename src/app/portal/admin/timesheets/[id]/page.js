@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
+import { portalNameBeside } from "@/lib/timesheet/display-name";
 import { sendModeSummary } from "@/lib/timesheet-send";
 import { describePunchIssue, scheduledPaidHours } from "@/lib/timesheet/anomalies";
 import { buildQuestions, answerProgress } from "@/lib/timesheet/questions";
@@ -162,6 +163,9 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     return {
     id: t.id,
     sourceName: t.sourceName,
+    // the name they go by, printed lighter beside QSP's spelling where the two
+    // differ - see portalNameBeside
+    nameBeside: t.user ? portalNameBeside(t.sourceName, preferredName(t.user)) : null,
     // null for everyone but SUPER, so the token never reaches a page that is
     // not entitled to it
     previewToken: canPreview ? signTimesheetToken(t.id) : null,
