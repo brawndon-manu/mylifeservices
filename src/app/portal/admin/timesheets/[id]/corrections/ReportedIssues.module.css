@@ -2,6 +2,7 @@
 .back,.link{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-size:13px;background:none;border:0;cursor:pointer;text-decoration:none;min-height:36px}
 .heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:14px 0 26px}
 .heading h1{font-size:30px;font-weight:600;letter-spacing:-.8px;line-height:1.2;margin:0}
+.views{margin-bottom:24px}
 .subtitle,.caption{color:var(--muted);font-size:13px;line-height:1.6;margin:6px 0 0}
 .period{border:1px solid var(--border);background:var(--surface);border-radius:12px;text-align:center;padding:8px 14px;flex-shrink:0;min-width:76px}
 .period b{display:block;color:var(--calendar-month);font-size:11px;letter-spacing:.7px}

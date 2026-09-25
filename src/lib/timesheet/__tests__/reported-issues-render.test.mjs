@@ -20,8 +20,13 @@ test("the corrections page resolves its components and renders actual slot evide
     "@/lib/prisma": `export const prisma = {
       timesheetBatch: {findUnique: async () => ({id: 'batch', periodFrom: '09/01/26', periodTo: '09/15/26'})},
       timesheet: {findMany: async () => { const s = ${JSON.stringify(sheet)};
-        s.corrections[0].createdAt = new Date(s.corrections[0].createdAt); return [s]; }}
+        s.corrections[0].createdAt = new Date(s.corrections[0].createdAt); return [s]; },
+        count: async () => 63}
     };`,
+    // the tab row counts open reports itself, so it is I/O too. stood in by a
+    // marker carrying the props the page hands it (its own test pins the real one)
+    "../../_components/BatchViews": `import { createElement } from "react";
+      export default function BatchViews(p) { return createElement("nav", { "data-views": p.active, "data-count": p.count, "data-batch": p.batchId }); }`,
     "@/lib/current-user": "export const getCurrentUser = async () => ({ role: 'SUPER' });",
     "@/app/portal/admin/timesheets/actions": `
       const forbidden = () => { throw new Error('A render must not write'); };
@@ -36,7 +41,8 @@ test("the corrections page resolves its components and renders actual slot evide
     jsx: "automatic", loader: { ".js": "jsx", ".module.css": "local-css" }, tsconfig: "jsconfig.json",
     plugins: [{ name: "render-io", setup(builder) {
       builder.onResolve({ filter: /.*/ }, (args) => stubs[args.path] ? { path: args.path, namespace: "render-io" } : null);
-      builder.onLoad({ filter: /.*/, namespace: "render-io" }, (args) => ({ contents: stubs[args.path], loader: "js" }));
+      // resolveDir so a stub can import react like the real module would
+      builder.onLoad({ filter: /.*/, namespace: "render-io" }, (args) => ({ contents: stubs[args.path], loader: "js", resolveDir: process.cwd() }));
     } }],
   });
   const compiled = { exports: {} };
@@ -48,4 +54,6 @@ test("the corrections page resolves its components and renders actual slot evide
   }
   assert.match(html, /Original and reported work slots/);
   assert.ok(!html.includes("rest premium currently owed"));
+  // the batch's views sit under the heading with this page's tab current
+  assert.match(html, /<\/header><div class="[^"]*views[^"]*"><nav data-views="reported" data-count="63" data-batch="batch"><\/nav><\/div>/);
 });

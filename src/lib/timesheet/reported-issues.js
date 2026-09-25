@@ -1,3 +1,17 @@
+import { TIME_OFF_KIND } from "./time-off.js";
+
+// the correction rows that are staff reports. not the q_ answers (asked before
+// signing, never open, nothing to accept) and not the day program's time-off
+// answer (always "noted", it gets decided on the batch calendar). the reported
+// problems page lists these and the tab in the batch views counts the open
+// ones, so both read this one filter.
+export const REPORT_ROWS = {
+  AND: [
+    { kind: { not: { startsWith: "q_" } } },
+    { kind: { not: TIME_OFF_KIND } },
+  ],
+};
+
 // Review status is separate from the last document rebuild. An old rebuild
 // cannot finish a correction accepted after it.
 const timestamp = (value) => value ? new Date(value).getTime() || 0 : 0;

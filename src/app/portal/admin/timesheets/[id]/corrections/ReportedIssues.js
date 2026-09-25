@@ -13,7 +13,7 @@ const hours = (n) => Number.isFinite(n) ? n.toFixed(2) : "0.00";
 const statusLabel = (status) => ({ open: "Open", accepted: "Accepted", declined: "Declined" })[status] || status;
 const queues = { review: "To review", rebuild: "Recalculate", history: "History" };
 
-export default function ReportedIssues({ batch, sheets }) {
+export default function ReportedIssues({ batch, sheets, views = null }) {
   const [filter, setFilter] = useState(() => Object.keys(queues).find((key) => sheets.some((sheet) => reportQueue(sheet) === key)) || "review");
   const [selected, setSelected] = useState(null);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -42,6 +42,7 @@ export default function ReportedIssues({ batch, sheets }) {
           <p className={styles.subtitle}>{reportDate(batch.periodFrom)} to {reportDate(batch.periodTo)} · {openCount ? `${openCount} waiting on you` : "nothing outstanding"}</p>
         </div>
       </header>
+      {views && <div className={styles.views}>{views}</div>}
       {sheets.length === 0 ? <p className={styles.empty}>Nobody has reported a problem with this batch.</p> : (
         <div className={styles.workspace} data-mobile={mobileDetail ? "detail" : "list"}>
           <aside className={styles.inbox} aria-label="Reported problems">

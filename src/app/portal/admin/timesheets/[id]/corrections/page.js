@@ -7,8 +7,9 @@ import { splitSourceName } from "@/lib/timesheet/people-sort";
 import { CORRECTION_KINDS, correctionEffect } from "@/lib/timesheet/corrections";
 // minutes -> "08:00 AM", the same words the employee typed them as
 import { breaksAgainstSlots, droppedBreakLabel } from "@/lib/timesheet/work-slots";
-import { TIME_OFF_KIND } from "@/lib/timesheet/time-off";
+import { REPORT_ROWS } from "@/lib/timesheet/reported-issues";
 import ReportedIssues from "./ReportedIssues";
+import BatchViews from "../../_components/BatchViews";
 import { shiftsOf } from "@/lib/timesheet/questions";
 
 export const dynamic = "force-dynamic";
@@ -44,18 +45,15 @@ export default async function CorrectionsPage({ params }) {
   // 2026-09-03: "why is this showing up in the issues reported"). A claim's
   // actionable surface is the batch calendar's amber cell and its Accept,
   // and a "no" needs nothing from anyone.
-  const NOT_A_QUESTION = {
-    AND: [
-      { kind: { not: { startsWith: "q_" } } },
-      { kind: { not: TIME_OFF_KIND } },
-    ],
-  };
-  const sheets = await prisma.timesheet.findMany({
-    where: { batchId: id, corrections: { some: NOT_A_QUESTION } },
+  //
+  // the filter itself lives in reported-issues.js now, so the tab that opens
+  // this page counts exactly the rows listed here
+  const [sheets, people] = await Promise.all([prisma.timesheet.findMany({
+    where: { batchId: id, corrections: { some: REPORT_ROWS } },
     include: {
       user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       corrections: {
-        where: NOT_A_QUESTION,
+        where: REPORT_ROWS,
         orderBy: [{ status: "asc" }, { createdAt: "asc" }],
         include: {
           resolvedBy: {
@@ -65,7 +63,7 @@ export default async function CorrectionsPage({ params }) {
       },
     },
     orderBy: { disputedAt: "desc" },
-  });
+  }), prisma.timesheet.count({ where: { batchId: id } })]);
 
   const reports = sheets.map((s) => {
     const days = s.data?.days || [];
@@ -108,5 +106,12 @@ export default async function CorrectionsPage({ params }) {
     };
   });
 
-  return <ReportedIssues batch={batch} sheets={reports} />;
+  // the same row of views as the rest of the batch, this page's tab underlined
+  return (
+    <ReportedIssues
+      batch={batch}
+      sheets={reports}
+      views={<BatchViews batchId={batch.id} count={people} active="reported" />}
+    />
+  );
 }

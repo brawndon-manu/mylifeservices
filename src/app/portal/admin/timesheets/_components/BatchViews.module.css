@@ -4,4 +4,8 @@
 .view[aria-current="page"] { color: var(--accent-strong); border-bottom-color: var(--accent-strong); }
 .view:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .count { padding: 2px 6px; border-radius: 5px; background: var(--fill-2); color: var(--muted); font-size: 11px; }
+/* reports waiting on a decision. the caution colour on its own wash is under
+   4:1 in light, short of what 11px text needs, so the ink leans a fifth toward
+   the text colour. in dim and night that just lightens it a touch. */
+.waiting { background: color-mix(in srgb, var(--status-caution) 13%, transparent); color: color-mix(in srgb, var(--status-caution) 80%, var(--foreground)); font-weight: 600; }
 @media (max-width: 440px) { .views { gap: 16px; } .view { font-size: 13px; } }
