@@ -29,6 +29,8 @@ import { shellFolds } from "@/lib/timesheet/day-shell";
 import {
   employeeQuestion, reasonOwedOn, reasonSlotFor, breakFindingKey,
 } from "@/lib/timesheet/break-answers";
+// a typed break against the stretches its question offered, the server's rules
+import { lunchOutside, restOutside } from "@/lib/timesheet/typed-break";
 import { useStagedPublisher } from "./StagedTimes";
 
 // THE BATCH ANSWER, SHARED SO ITS ROWS CAN BE SPLIT ACROSS THE PAGE.
@@ -1164,6 +1166,11 @@ function copyFor(q, standing) {
         },
         yesEffect: <>Your record says you took your meal break, and your schedule needs changing to match.</>,
         noEffect: <>Your record says the meal break was missed, with your reason on it.</>,
+        // where the meal break can go, the lunch-move card's sentence. a day
+        // with no gap keeps the general line, since any time is taken there
+        timeHint: q.needs?.[0]?.windows?.length
+          ? `Has to be a half hour inside ${q.needs[0].windows.join(" or ")}.`
+          : undefined,
       };
 
     case "shortMealRest":
@@ -1598,10 +1605,15 @@ function OneQuestion({
   const timeRequired = needsTime && slots.length > 0;
   const suggestion = q.proposed?.from || null;
   const slotMin = (need) => parseLooseTime(slotAt[need.slot] || "", { assumeWorkday: true });
+  // a lunch typed outside the gaps the card offered, which the answer action
+  // refuses (mealTimeFits, and the free time on the lunch-move card)
+  const slotOutside = (need) => lunchOutside(need, toMin(slotAt[need.slot]));
+  const timeOutside = timeRequired && slots.some(slotOutside);
   // EVERY slot has to be readable, not just the first. Each one is a separate
-  // day's break and the sheet redraws all of them.
+  // day's break and the sheet redraws all of them. and a lunch has to sit where
+  // the server will take it.
   const timeBlocked = timeRequired
-    ? slots.some((need) => !slotMin(need))
+    ? slots.some((need) => !slotMin(need)) || timeOutside
     : !!(at.trim() && !typedHHMM);
 
   // AND NOT TWICE FOR ONE BREAK. Another question on this day may have collected
@@ -1883,7 +1895,7 @@ function OneQuestion({
       {needsTime && (
         <div className="mt-3 rounded-xl bg-fill p-3.5">
           <p className="text-sm font-semibold text-foreground">{c.timeLabel}</p>
-          <p className="mt-1 text-xs text-muted">
+          <p className={`mt-1 text-xs ${timeOutside ? "text-rose-600 dark:text-rose-400" : "text-muted"}`}>
             {c.timeHint
               || (timeRequired
                 ? "We need this before you can confirm - the record has no time on it at all."
@@ -1912,7 +1924,7 @@ function OneQuestion({
                       value={raw}
                       onChange={(e) => setSlotAt((t) => ({ ...t, [need.slot]: e.target.value }))}
                       className={`w-36 rounded-[9px] border bg-surface px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
-                        mins ? "border-emerald-400/80" : raw.trim() ? "border-rose-400" : "border-border"
+                        mins && !slotOutside(need) ? "border-emerald-400/80" : raw.trim() ? "border-rose-400" : "border-border"
                       }`}
                     />
                     {!mins && need.suggest && (
@@ -2106,10 +2118,16 @@ function OneQuestion({
                   Write why in the box above first.
                 </p>
               )}
-              {timeBlocked && (
+              {/* a time that is there but outside its gaps needs no line here,
+                  the hint above it is already red and names them. and a
+                  single-day card's slot carries no date, so it gets the plain
+                  sentence rather than "Put a time in for  above first." */}
+              {timeBlocked && !(slots.length > 0 && slots.every((n) => slotMin(n))) && (
                 <p className="font-semibold text-rose-600 dark:text-rose-400">
                   {slots.length > 0
-                    ? `Put a time in for ${slots.filter((n) => !slotMin(n)).map((n) => n.date).join(", ")} above first.`
+                    ? slots.some((n) => !slotMin(n) && n.date)
+                      ? `Put a time in for ${slots.filter((n) => !slotMin(n) && n.date).map((n) => n.date).join(", ")} above first.`
+                      : "Put the time in above first."
                     : timeRequired && !at.trim()
                       ? "Put the time in above first."
                       : "That time cannot be read - check it above."}
@@ -2504,26 +2522,21 @@ export function BatchProvider({
   //
   // `restTimeFits` on the server is the authority; this is the same rule said
   // early enough to be useful.
-  const min = (t) => parseLooseTime(t, { assumeWorkday: true });
+  //
+  // AND A LUNCH HAS TO LAND IN A GAP, the one `mealTimeFits` refuses on save.
+  // only rests were checked here, so a lunch typed into the middle of a service
+  // shift went green with Save answer under it and came back refused. both
+  // rules live in typed-break.js now, in minutes: this used to add the ten to
+  // "11:55" as text and pass a break the server then turned down.
+  //
+  // the minutes come from what was typed, read once - reading the parsed
+  // "01:00" again would turn a typed 1a into 1p
   const badTime = (q, need) => {
-    if (need.kindOf !== "rest") return null;
-    const m = minutesAt(q, need);
+    const raw = rawAt(q, need.slot);
+    const m = toMin(raw.trim() ? raw : need.prefill);
     if (m == null) return null;
-    const spans = (need.shifts || [])
-      .map((x) => x.split("-"))
-      .map(([a, b]) => [min(a), min(b)])
-      .filter(([a, b]) => a != null && b != null);
-    if (spans.length && !spans.some(([a, b]) => m >= a && m + (need.minutes || 10) <= b)) {
-      return "outside";
-    }
-    const windows = (need.window || [])
-      .map((x) => x.split("-"))
-      .map(([a, b]) => [min(a), min(b)])
-      .filter(([a, b]) => a != null && b != null);
-    if (windows.length && !windows.some(([a, b]) => m >= a && m + (need.minutes || 10) <= b)) {
-      return "window";
-    }
-    return null;
+    if (need.kindOf === "meal") return lunchOutside(need, m) ? "lunch" : null;
+    return restOutside(need, m);
   };
   // EVERY DAY ANSWERED "missed them" OWES A REASON, the way a day answered
   // "took them" owes its times. Only on the kinds the server also enforces it
@@ -2990,7 +3003,11 @@ export function BatchProvider({
                     ? "that is not inside any shift you worked that day"
                     : bad === "window"
                       ? `that has to be inside ${(need.window || []).join(" or ")}`
-                      : mins ? null : q.needs.length === 1 ? null : need.hint}
+                      // a lunch outside its gaps: the hint already names them.
+                      // one box keeps it in the line under the card, below
+                      : bad === "lunch"
+                        ? q.needs.length === 1 ? null : need.hint
+                        : mins ? null : q.needs.length === 1 ? null : need.hint}
                 </span>
               </div>
             );
@@ -3011,7 +3028,10 @@ export function BatchProvider({
               .
             </p>
           ) : q.needs[0].hint ? (
-            <p className="mt-2 text-[13px] text-muted">{q.needs[0].hint}</p>
+            // red while the time typed sits outside the gaps it names
+            <p className={`mt-2 text-[13px] ${badTime(q, q.needs[0]) === "lunch" ? "text-rose-600 dark:text-rose-400" : "text-muted"}`}>
+              {q.needs[0].hint}
+            </p>
           ) : null
         )}
         {/* WHAT IS STILL MISSING, in amber, once somebody has tried to leave the
