@@ -167,7 +167,10 @@ export default function DayByDay({
   // card beside it cannot disagree about which days those are.
   const bookedMealDates = new Set(
     groups.flat()
-      .filter((q) => q.kind === "mealInShift" || q.kind === "mealMovable")
+      .filter((q) => q.kind === "mealInShift" || q.kind === "mealMovable"
+        // the lunch-move card about a lunch booked inside a shift is about
+        // that same buried block
+        || (q.kind === "mealCouldMove" && q.row?.booked === "inside"))
       .map((q) => q.date),
   );
 

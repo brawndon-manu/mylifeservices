@@ -115,6 +115,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
       buildQuestions(t.data, {
         restRows: batch.restsByDate || [],
         sourceName: t.sourceName,
+        answers: t.corrections,
       }),
       t.corrections,
     );
@@ -365,6 +366,7 @@ export default async function TimesheetBatchPage({ params, searchParams }) {
     buildQuestions(t.data, {
       restRows: batch.restsByDate || [], sourceName: t.sourceName,
       reviewerSettled: reviewerSettledDates(t.overrides),
+      answers: t.corrections,
     }), t.corrections,
   ).settled).length;
 

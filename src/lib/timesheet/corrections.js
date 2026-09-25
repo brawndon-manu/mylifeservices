@@ -680,6 +680,14 @@ export function employeeResolution(correction, question = null) {
         ? "You said you were given a full thirty minutes for lunch and chose to come back early."
         : "You said you were not given a full, uninterrupted thirty minutes for lunch.";
 
+    case "mealCouldMove": {
+      // the start alone, the way the card asked for it
+      const from = (c.statedBreaks || []).find((b) => b && b.kindOf === "meal" && b.from)?.from;
+      return yes
+        ? `You said you took your meal break${from ? ` at ${from}` : ""}, when you were free.`
+        : "You said your meal break could not have been moved.";
+    }
+
     case "duplicateDay":
       return yes
         ? "You said you worked both of the listed shifts."

@@ -389,7 +389,7 @@ export function batchPremiumStanding(sheets, { restRows } = {}) {
     // the same classifier the employee's page renders from, so payroll's idea
     // of "still waiting" cannot drift from what the person was actually asked
     const progress = answerProgress(
-      buildQuestions(s.data, { restRows: restRows || [], sourceName: s.sourceName }),
+      buildQuestions(s.data, { restRows: restRows || [], sourceName: s.sourceName, answers: s.corrections }),
       s.corrections,
     );
     if (!progress.settled) waiting++;

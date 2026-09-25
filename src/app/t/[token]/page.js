@@ -256,6 +256,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
     reviewerSettled,
+    // the lunch-move question's no opens the booked-meal card after it
+    answers: ts.corrections,
   });
   // answers live per date and per kind; a grouped question counts as answered
   // once any of its dates has an answer, because it is answered as one thing
@@ -526,8 +528,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const droppedRest = new Set();
   const droppedRosteredMeal = new Set();
   for (const q of questions) {
-    if (q.kind !== "restTooLongOffClock" || !q.date) continue;
+    if (!q.date) continue;
     const picked = choices[q.id];
+    // the lunch was taken in free time instead, so the rostered one is the
+    // record that is wrong and the picture shows the lunch where they said
+    if (q.kind === "mealCouldMove" && picked === "yes") droppedRosteredMeal.add(q.date);
+    if (q.kind !== "restTooLongOffClock") continue;
     if (picked === "no") droppedRest.add(`${q.date}|${q.at}`);
     if (picked === "wrongone") droppedRosteredMeal.add(q.date);
   }

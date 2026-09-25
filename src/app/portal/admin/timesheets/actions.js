@@ -23,7 +23,7 @@ import {
   punchCoverage,
 } from "@/lib/timesheet/parse";
 import { reviewSheet, repairConfirmedDays } from "@/lib/timesheet/anomalies";
-import { questionPolicyApplies, buildQuestions, patchesFor, restTimeFits, mealTimeFits, MEAL_MIN_MINUTES, collidesWithRecorded, shiftAlreadyHasTen } from "@/lib/timesheet/questions";
+import { questionPolicyApplies, buildQuestions, patchesFor, restTimeFits, mealTimeFits, mealFreeWindows, MEAL_MIN_MINUTES, collidesWithRecorded, shiftAlreadyHasTen } from "@/lib/timesheet/questions";
 // the reported-problem card reads times the same loose way the question cards
 // do, and this is the server's own reading of what that box was sent
 import { parseLooseTime } from "@/lib/loose-time";
@@ -2045,6 +2045,7 @@ export async function sendTimesheets(batchId, formData) {
     const asked = buildQuestions(ts.data, {
       restRows: batch.restsByDate || [],
       sourceName: ts.sourceName,
+      answers: ts.corrections,
     }).length;
     const res = await sendTimesheet({
       intendedEmail: ts.user.email,
@@ -4036,10 +4037,17 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // knew a reviewer had not settled that day; this did not, so it rebuilt
   // without the question and sent back "that question is not on this timesheet
   // any more" for an answer somebody was looking at.
+  // the answers on record, read once: the lunch-move question's no is what
+  // opens the booked-meal card, and their snapshots are the restored cards below
+  const onRecord = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
+    select: { kind: true, date: true, status: true, question: true },
+  });
   const questions = buildQuestions(ts.data, {
     restRows: ts.batch.restsByDate || [],
     sourceName: ts.sourceName,
     reviewerSettled: reviewerSettledDates(ts.overrides),
+    answers: onRecord,
   });
   // AND THE ONES THE PAGE PUT BACK, which a rebuild here can never produce.
   //
@@ -4057,10 +4065,7 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
   // correction row belonging to THIS timesheet, so a client still cannot answer
   // something nobody put to them.
   const restoredQuestions = new Map();
-  for (const row of await prisma.timesheetCorrection.findMany({
-    where: { timesheetId: ts.id, kind: { startsWith: "q_" }, status: { not: "open" } },
-    select: { question: true },
-  })) {
+  for (const row of onRecord) {
     const q = row.question;
     if (q?.id && questionPolicyApplies(q, ts.data) && !questions.some((x) => x.id === q.id)) restoredQuestions.set(q.id, q);
   }
@@ -4161,7 +4166,14 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
         // nothing at all.
         if (need.kindOf === "meal") {
           const d = (ts.data?.days || []).find((x) => x.date === (need.date || q.date));
-          if (d && mealTimeFits(d, start, need.minutes).why === "window") {
+          // A LUNCH MOVED INTO FREE TIME HAS TO LAND IN THAT FREE TIME: the
+          // stretches the card offered, which leave out rostered travel and
+          // anything opening after the fifth hour
+          const free = q.kind === "mealCouldMove" && d
+            ? mealFreeWindows(d, ts.data?.scheduleCheck?.byDate?.[need.date || q.date])
+            : null;
+          const outsideFree = !!free && !free.some((w) => start >= w.from && start + need.minutes <= w.to);
+          if (outsideFree || (d && mealTimeFits(d, start, need.minutes).why === "window")) {
             return {
               ok: false, error: "nolunchgap", given: raw,
               at: {
@@ -4413,6 +4425,20 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       for (const { q, choice: pick, stated, statedBreaks, reason, block } of resolved) {
         const kindKey = `q_${q.kind}`;
         const dates = q.dates || [q.date];
+        // THE BOOKED-MEAL CARD ONLY EXISTS BEHIND A NO on the lunch-move one.
+        // taking that no back, or turning it into a yes, takes away the question
+        // the card answered, so its answer goes too rather than staying on the
+        // page saying the opposite
+        if (q.kind === "mealCouldMove" && pick !== "no") {
+          await tx.timesheetCorrection.deleteMany({
+            where: {
+              timesheetId: ts.id,
+              kind: { in: ["q_mealShort", "q_mealInShift"] },
+              date: { in: dates },
+              status: { not: "open" },
+            },
+          });
+        }
         // UNANSWERED AGAIN. Scoped to this sheet, this kind and these dates - never
         // a bare delete - and the override rebuild below then runs without it, so
         // the sheet goes back to what it said before they answered.
@@ -4849,6 +4875,15 @@ function resolutionFor(q, choice, stated, statedBreaks, block) {
           + `Change the ${q.row?.service || "block"} on this day to ${block || "the time they gave"} in QSP.`
         : "Employee says the block cannot be rearranged, so the meal break could not have been "
           + "taken. Premium stands.";
+    // the lunch the roster booked short or inside a shift, taken in free time
+    // the same day instead. a no settles nothing: the booked-meal answer after
+    // it does, and the note says so
+    case "mealCouldMove": {
+      const at = (statedBreaks || []).find((b) => b.kindOf === "meal")?.from;
+      return yes
+        ? `Employee says the meal break was taken${at ? ` at ${at}` : ""}, in time they were free. Meal premium removed for this day.`
+        : "Employee says the meal break could not have been moved into the free time. Their answer on the booked meal break decides the premium.";
+    }
     // a lunch under thirty minutes: the answer is whether a full thirty was
     // offered, and that decides the hour, so payroll is told which way it went
     case "mealShort":

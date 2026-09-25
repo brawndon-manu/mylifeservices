@@ -1134,6 +1134,51 @@ function copyFor(q, standing) {
         noEffect: <>Your record says the meal break was cut short, with your reason on it.</>,
       };
 
+    // THE SAME LUNCH, ON A DAY WITH A FREE HALF HOUR IN IT. the roster booked
+    // it short or inside a clocked shift, but the punches and the roster both
+    // leave a stretch of thirty or more open, so this asks first whether the
+    // lunch was really taken there. yes gives the time; no opens the card for
+    // the lunch as booked, so the facts are the booked ones plus the free time.
+    case "mealCouldMove": {
+      const free = (q.row?.free || []).map((w) => `${w.from} to ${w.to}`).join(" or ");
+      const facts = [
+        { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
+        q.row?.booked === "inside"
+          ? { label: "Your shift", value: `${q.row?.blockFrom}-${q.row?.blockTo}, ${q.row?.service}` }
+          : { label: "Worked until", value: `${q.row?.blockTo}, ${q.row?.service}` },
+        { label: "Free", value: free },
+      ];
+      return {
+        title: "Your meal break could have been moved",
+        short: "Your meal break could have been moved",
+        ask: "Could your meal break have been moved to when you were free?",
+        facts,
+        // the long card has no facts list of its own, so the same three lines
+        // stand in for the paragraph there
+        body: (
+          <>
+            {facts.map((f, i) => (
+              <span key={f.label}>
+                {i > 0 && <br />}
+                {f.label} <b>{f.value}</b>
+              </span>
+            ))}
+          </>
+        ),
+        timeHint: `Has to be a half hour inside ${(q.row?.free || []).map((w) => `${w.from}-${w.to}`).join(" or ")}.`,
+        yes: {
+          label: "Yes, I took it then",
+          why: "Tell us when your meal break started.",
+        },
+        no: {
+          label: "No, it could not have been moved",
+          why: "Then we ask about the meal break as it was booked.",
+        },
+        yesEffect: <>Your record says you took your meal break, and your schedule needs changing to match.</>,
+        noEffect: <>Nothing changes yet. The next question asks about the meal break as it was booked.</>,
+      };
+    }
+
     default:
       return null;
   }
@@ -1505,8 +1550,12 @@ function OneQuestion({
 
   // TAKING AN ANSWER OFF FINISHES NOTHING, so `choice === null` never moves. And
   // the last day of a sheet has nowhere to go, so it keeps the plain confirm.
+  // AN ANSWER THAT OPENS ANOTHER CARD ON THE DAY doesn't finish it either: the
+  // lunch-move no is followed by the card for the lunch as booked, which has to
+  // appear under it rather than behind a jump to the next day
   const movesOn =
     !!proposed && proposed.choice !== null
+    && proposed.choice !== q.followsOn
     && !!nav?.go && nav.index < (nav.dates?.length ?? 0) - 1
     && !!done?.finishesDay?.(q.date, q.id);
 

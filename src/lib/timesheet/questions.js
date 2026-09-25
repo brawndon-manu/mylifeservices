@@ -339,6 +339,43 @@ export function mealNoRoom(day, minMinutes = MEAL_MIN_MINUTES) {
 // could have taken.
 // Shaped like `restTimeFits` - {ok, why} rather than a bare boolean - because a
 // refusal has to be able to say which rule it broke.
+// WHERE A FULL LUNCH COULD HAVE GONE on a day the roster booked it short or
+// inside a clocked shift: a stretch with no punch AND nothing rostered in it,
+// thirty minutes or more, opening by the end of the fifth hour worked.
+//
+// the punches alone overstate it. a typed-in travel or admin block can sit in
+// a hole in the punches, and that time is work, so every rostered block but
+// the meal counts as busy too. and a stretch that only opens after the fifth
+// hour would be a late lunch, which owes the hour anyway, so it isn't offered.
+//
+// a day with no punches has nothing to judge by and offers nothing.
+export function mealFreeWindows(day, entry, minMinutes = MEAL_MIN_MINUTES) {
+  const punched = shiftsOf(day);
+  if (!punched.length) return [];
+  const busy = punched.map((s) => ({ from: s.from, to: s.to }));
+  for (const sh of entry?.shifts || []) {
+    if (sh.meal) continue;
+    const t = blockTimes(sh.text);
+    if (t && t.end > t.start) busy.push({ from: t.start, to: t.end });
+  }
+  busy.sort((a, b) => a.from - b.from);
+  const merged = [];
+  for (const b of busy) {
+    const last = merged[merged.length - 1];
+    if (last && b.from <= last.to) last.to = Math.max(last.to, b.to);
+    else merged.push({ ...b });
+  }
+  const out = [];
+  let worked = 0;
+  for (let i = 0; i + 1 < merged.length; i++) {
+    worked += merged[i].to - merged[i].from;
+    const from = merged[i].to;
+    const to = merged[i + 1].from;
+    if (to - from >= minMinutes && worked <= RULES.mealMustStartByMin) out.push({ from, to });
+  }
+  return out;
+}
+
 export function mealTimeFits(day, startMin, minutes = MEAL_MIN_MINUTES) {
   const shifts = shiftsOf(day);
   if (!shifts.length) return { ok: true, why: null };   // nothing to judge it by
@@ -669,11 +706,20 @@ export function singleCountHours(day) {
   return r2(min / 60);
 }
 
-export function buildQuestions(data, { restRows, sourceName, reviewerSettled } = {}) {
+// `answers` is the sheet's q_ correction rows ({ kind, date, status }). Only the
+// lunch-move question reads them: its "no" is what opens the booked-meal card
+// after it, and a day whose booked-meal card was answered before the move
+// question existed keeps that card as it was. A caller without them gets the
+// move question on every such day, which is right for a sheet nobody has
+// answered yet.
+export function buildQuestions(data, { restRows, sourceName, reviewerSettled, answers } = {}) {
   if (!data) return [];
   const days = data.days || [];
   const dates = new Set(days.map((d) => d.date));
   const dayOf = (date) => days.find((d) => d.date === date) || null;
+  const answerOn = (kind, date) => (answers || []).find(
+    (c) => c && c.kind === `q_${kind}` && c.date === date && c.status !== "open",
+  ) || null;
   // under the spelling the REST REPORT used, which is not always the timesheet's
   // - see `restNameFor`. Resolved here rather than at the five call sites, since
   // every one of them already hands over the `data` that holds the answer.
@@ -1301,6 +1347,66 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
         // asked of thirteen days at once; this one has its own options, its own
         // follow-ups on the movable branch, and belongs on its own day.
         const inside = part === "meal" ? mealBookedInside(byDate[date]) : null;
+        const short = part === "meal" && !inside ? mealBookedShort(byDate[date]) : null;
+
+        // THE LUNCH COULD HAVE GONE IN FREE TIME. the roster booked it short, or
+        // inside a shift they clock, but the day has a stretch off the clock
+        // with room for a full thirty. so the first thing asked is whether the
+        // lunch was really taken there; the booked-meal card only follows a no.
+        // a meal inside movable time already asks where it really was, so it
+        // isn't doubled here.
+        const booked = inside?.kind === "clocked" ? inside : short;
+        if (booked) {
+          const bookedKind = inside ? "mealInShift" : "mealShort";
+          const free = mealFreeWindows(dayOf(date), byDate[date]);
+          const move = answerOn("mealCouldMove", date);
+          // answers already given stay as they are: a booked-meal card
+          // answered before this question existed is not put behind it
+          if (free.length && (move || !answerOn(bookedKind, date))) {
+            const asText = free.map((w) => `${clock(w.from)}-${clock(w.to)}`);
+            out.push({
+              kind: "mealCouldMove",
+              date,
+              at: "",
+              canGiveTime: true,
+              needsOn: "yes",
+              // the answer that opens the booked-meal card after this one, so
+              // the page stays on the day for it
+              followsOn: "no",
+              needs: [{
+                slot: "meal",
+                kindOf: "meal",
+                label: "Meal break started",
+                minutes: MEAL_MIN_MINUTES,
+                prefill: null,
+                source: null,
+                options: free.map((w) => clock(w.from)),
+                windows: asText,
+                // the booked lunch this answer moves, so the sheet stops
+                // drawing it and the office's edit list says where it went
+                replaces: { from: clock(booked.mealFrom), to: clock(booked.mealTo) },
+                hint: `has to be a half hour inside ${asText.join(" or ")}`,
+              }],
+              // the premium is on the sheet by construction: yes takes the
+              // hour off, no leaves it for the booked-meal card to settle
+              moves: -1,
+              movesOnDecline: 0,
+              row: {
+                part: "meal",
+                booked: inside ? "inside" : "short",
+                service: booked.service,
+                mealFrom: clock(booked.mealFrom),
+                mealTo: clock(booked.mealTo),
+                blockFrom: booked.blockFrom == null ? null : clock(booked.blockFrom),
+                blockTo: booked.blockTo == null ? null : clock(booked.blockTo),
+                free: free.map((w) => ({ from: clock(w.from), to: clock(w.to) })),
+                hours: r2((dayOf(date)?.paidHours) || 0),
+              },
+            });
+            if (move?.status !== "declined") continue;
+          }
+        }
+
         if (inside) {
           const movable = inside.kind === "movable";
           out.push({
@@ -1357,7 +1463,6 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled } =
         // standing as the overlap above and the same shape of card - Mánu
         // 2026-08-26: "for the short lunches it should be counted the same way
         // lunches are counted when they are overlapping."
-        const short = part === "meal" ? mealBookedShort(byDate[date]) : null;
         if (short) {
           out.push({
             kind: "mealShort",
@@ -1485,6 +1590,9 @@ const OPTIONAL_KINDS = new Set([
   // the roster's lunch was under thirty minutes - the same shape as a lunch
   // booked inside a shift, and optional for the same reason
   "mealShort",
+  // whether that lunch was really taken in free time the same day. silence
+  // leaves the hour on, like the two cards it comes before
+  "mealCouldMove",
 ]);
 
 export const isMandatory = (kind) => !OPTIONAL_KINDS.has(kind);
@@ -1753,6 +1861,11 @@ export function patchesFor(question, choice, day) {
     // with the premium on the sheet: "they took it anyway" takes the hour off,
     // and confirming it was missed leaves it exactly where it is.
     case "mealShort":
+      return yes ? { mealViolation: false } : { mealViolation: null };
+    // the lunch was really taken in free time the same day, so the day had its
+    // thirty and the hour comes off. a no settles nothing: the booked-meal card
+    // after it decides, so it clears rather than writes
+    case "mealCouldMove":
       return yes ? { mealViolation: false } : { mealViolation: null };
     case "mealInShift":
       return { mealViolation: null };
