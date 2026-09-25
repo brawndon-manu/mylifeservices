@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CircleAlert } from "lucide-react";
+import { Check, CircleAlert, Flag } from "lucide-react";
 import { reportedReviewDay } from "@/lib/timesheet/review-days";
 import styles from "./ReviewFlow.module.css";
 import { useReviewFlow } from "./ReviewFlow";
@@ -175,17 +175,25 @@ export default function DayRail({ days, children, stacked = false }) {
                   {display.paidHours.toFixed(2)} hrs{display.reviewReported ? " reported" : ""}
                 </span>
               </span>
+              {/* STATUS FIRST: green is a day with nothing on it, yellow is a
+                  day with something on it. the "!" is an answer still owed, the
+                  flag is a problem they reported, and a reported day shows the
+                  flag alone rather than a warning beside a check. a quiet day's
+                  check stays light until they have been through it, because
+                  "nothing flagged" only means our checks found nothing - the
+                  hours are theirs to look at */}
               <span aria-hidden="true" className="flex flex-none items-center gap-1.5">
-                {(hasReport || needsAnswer) && <CircleAlert size={16} className={styles.issue} />}
-                {!needsAnswer && (
-                  <span className={`flex h-4 w-4 items-center justify-center rounded-full ${reviewed ? styles.reviewed : "border-[1.5px] border-border-strong"}`}>
-                    {reviewed && <Check size={11} strokeWidth={3} />}
+                {needsAnswer && <CircleAlert size={16} className={styles.issue} />}
+                {hasReport && <Flag size={15} className={styles.issue} />}
+                {!needsAnswer && !hasReport && (
+                  <span className={`flex h-4 w-4 items-center justify-center rounded-full ${reviewed ? styles.reviewed : styles.quiet}`}>
+                    <Check size={reviewed ? 11 : 10} strokeWidth={3} />
                   </span>
                 )}
               </span>
               <span className="sr-only">
-                {needsAnswer ? "Needs answers" : reviewed ? "Reviewed" : hasReport ? "" : "Nothing to check"}
-                {hasReport ? `${needsAnswer || reviewed ? " · " : ""}${flow.reported ? "Awaiting payroll" : "Report added"}` : ""}
+                {needsAnswer ? "Needs answers" : hasReport ? "" : reviewed ? "Reviewed" : "Nothing to check"}
+                {hasReport ? `${needsAnswer ? " · " : ""}${flow.reported ? "Awaiting payroll" : "Report added"}` : ""}
               </span>
             </button>
           );

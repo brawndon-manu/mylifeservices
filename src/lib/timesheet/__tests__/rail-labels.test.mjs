@@ -32,3 +32,26 @@ test("the answered count counts answers, not visits", () => {
   // the old form ORed the walk in and would read 3 of 3 with nothing answered
   assert.doesNotMatch(src.replace(/\/\/.*$/gm, ""), /d\.done \|\| readyOn\(d\.date\)/);
 });
+
+// STATUS FIRST. green is a day with nothing on it, yellow is a day with
+// something on it: the "!" for an answer still owed, the flag for a problem
+// they reported. a quiet day's check is light until they have been through it.
+test("an owed answer shows the warning, and only an owed answer", () => {
+  assert.match(src, /\{needsAnswer && <CircleAlert size=\{16\} className=\{styles\.issue\} \/>\}/);
+  // a report used to raise the same warning, beside a check
+  assert.doesNotMatch(src, /\(hasReport \|\| needsAnswer\) && <CircleAlert/);
+});
+
+test("a reported day shows the flag alone, never a check beside it", () => {
+  assert.match(src, /\{hasReport && <Flag size=\{15\} className=\{styles\.issue\} \/>\}/);
+  assert.match(src, /\{!needsAnswer && !hasReport && \(/);
+  // read aloud as the report, not as "Reviewed" and the report
+  assert.match(src, /\{needsAnswer \? "Needs answers" : hasReport \? "" : reviewed \? "Reviewed" : "Nothing to check"\}/);
+  assert.match(src, /\$\{needsAnswer \? " · " : ""\}\$\{flow\.reported \? "Awaiting payroll" : "Report added"\}/);
+});
+
+test("a quiet day's check is light until they have been through it", () => {
+  assert.match(src, /\$\{reviewed \? styles\.reviewed : styles\.quiet\}/);
+  const css = fs.readFileSync(path.join(process.cwd(), "src/app/t/[token]/ReviewFlow.module.css"), "utf8");
+  assert.match(css, /\.quiet \{\s*border: 1\.5px solid color-mix\(in srgb, var\(--status-positive\) 55%, transparent\);/);
+});

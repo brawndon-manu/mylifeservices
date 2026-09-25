@@ -48,6 +48,12 @@
   color: var(--surface);
 }
 
+/* the same check, light: nothing flagged, not opened yet */
+.quiet {
+  border: 1.5px solid color-mix(in srgb, var(--status-positive) 55%, transparent);
+  color: color-mix(in srgb, var(--status-positive) 80%, transparent);
+}
+
 .issue {
   color: var(--status-caution);
 }
