@@ -35,8 +35,13 @@ test("the facts are the booked lunch, what it ran into, and the free time", () =
   assert.match(spec, /timeHint: `Has to be a half hour inside/);
 });
 
-test("confirming the no stays on the day, where the booked-meal card opens", () => {
-  assert.match(card, /const movesOn =\s*!!proposed && proposed\.choice !== null\s*&& proposed\.choice !== q\.followsOn\s*&& !!nav\?\.go/);
+test("saving the no stays on the day, where the booked-meal card opens", () => {
+  // the card reports that its no opens another card; the day's button then
+  // saves it and stays, reading Save answer rather than Save and next
+  assert.match(card, /stays=\{!!q\.followsOn && proposed\?\.choice === q\.followsOn\}/);
+  assert.match(card, /const staying = waiting\.some\(\(e\) => e\.stays\);/);
+  assert.match(card, /staying \? "Save answer" : waiting\.length \? "Save and next" : "Next"/);
+  assert.match(card, /if \(staying\) return;/);
 });
 
 test("no reason is asked on either answer: a no goes on to the booked-meal card, which asks it", () => {

@@ -5,7 +5,7 @@
 // single card's answer gone at 1.4s, back at 1.9s; the batched card the same
 // shape with every toggle. The cards are client components, so the rule is
 // pinned as text: each holds what it just saved until the refreshed props
-// carry it, and the batched confirm says it is saving while the action runs.
+// carry it, and every save button says it is saving while the action runs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -23,18 +23,22 @@ test("the single card drops the hold only when the props move", () => {
 });
 
 test("the batched card holds every pick it just saved, counts them as answered, and is not dirty against them", () => {
-  assert.match(src, /setHeld\(\{ picked: Object\.fromEntries\(chosen\.filter\(\(x\) => x\.v\)\.map\(\(\{ q, v \}\) => \[q\.id, v\]\)\), answersThen: answers \}\);/);
+  // each save merges into the hold rather than replacing it, so two answers
+  // saved a moment apart both stay on screen until the page catches up
+  assert.match(src, /picked: \{ \.\.\.\(h\?\.picked \|\| \{\}\), \.\.\.Object\.fromEntries\(qs\.map\(\(q\) => \[q\.id, valueFor\(q\)\]\)\) \},/);
   assert.match(src, /held && q\.id in held\.picked \? held\.picked\[q\.id\] : savedValue\(q\)/);
-  assert.match(src, /const answeredAll = list\.every\(\(q\) => answers\?\.\[q\.id\] \|\| \(held && q\.id in held\.picked\)\);/);
-  assert.match(src, /const dirty = chosen\.filter\(\(\{ q, v \}\) => v !== onRecord\(q\)\);/);
+  // a question the hold carries is not waiting on a save against the old props
+  assert.match(src, /if \(waiting\?\.has\?\.\(q\.id\) \|\| held\?\.ids\?\.has\?\.\(q\.id\)\) return false;/);
 });
 
-test("the batched card drops the hold when a refresh hands it new answers", () => {
-  assert.match(src, /if \(held && answers !== held\.answersThen\) setHeld\(null\);/);
+test("the batched card drops the hold, and the typed copies of what it saved, when a refresh hands it new answers", () => {
+  assert.match(src, /if \(!held \|\| answers === held\.answersThen\) return;/);
+  assert.match(src, /setPicked\(drop\);\s*setTimes\(drop\);\s*setReasons\(drop\);\s*setHeld\(null\);/);
 });
 
-test("the batched confirm says it is saving while the action runs", () => {
-  assert.match(src, /\{pending && <p className="mt-3 text-sm text-muted">Saving your answers…<\/p>\}/);
-  // and the single card's own line is still there, unchanged
-  assert.match(src, /\{pending && <p className="mt-3 text-sm text-muted">Saving your answer…<\/p>\}/);
+test("every save button says it is saving while the action runs", () => {
+  // the batched answer's own button, the single card's, and the day's
+  assert.match(src, /\{saving \? "Saving…" : "Save answer"\}/);
+  assert.match(src, /\{pending \? "Saving…" : "Save answer"\}/);
+  assert.match(src, /const nextLabel = saving \? "Saving…" :/);
 });

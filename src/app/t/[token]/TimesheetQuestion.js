@@ -8,21 +8,20 @@
 // money gets one card with a row PER DAY - Hernadez's two thirty minute
 // entries, answered separately inside the same card. Mánu 2026-08-09.
 //
-// NOTHING IS PRE-SELECTED and NOTHING SUBMITS ON THE FIRST CLICK. Every answer
-// stages, then a confirm panel spells out what it will do. That was already
-// true of the rest-repair card and it is more true here, because two of these
-// five arrive with the correction already applied and declining is what moves
-// the money.
+// NOTHING IS PRE-SELECTED and NOTHING SUBMITS ON THE FIRST CLICK. An answer is
+// picked, filled in, and saved with its own Save answer, with a line beside the
+// button saying what it will do - or saved by the day's Save and next on the
+// way past. There is no second save anywhere, and nothing waits unsaved in the
+// tab for a press further down the page.
 //
 // COLOUR CARRIES THE SAME MEANING AS THE SHEET: amber while we are still asking,
 // green once an answer has left the figures alone, plain once it has not.
-import { createContext, useContext, useEffect, useRef, useState, useTransition, Fragment } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useReviewFlow } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
-import { dayChipLabel } from "@/lib/timesheet/review-days";
 // whether a day folds to its one line - a press, not a keystroke, decides it
 import { shellFolds } from "@/lib/timesheet/day-shell";
 // the five sentences, already written and already counting correctly - see the
@@ -34,26 +33,45 @@ import { useStagedPublisher } from "./StagedTimes";
 
 // THE BATCH ANSWER, SHARED SO ITS ROWS CAN BE SPLIT ACROSS THE PAGE.
 //
-// A batched kind is many days answered separately and committed ONCE - see
-// BatchProvider. "Day by day" needs each of those days to sit beside its own
-// calendar, which means the rows can no longer live inside one card, but they
-// still have to share one set of staged answers and one confirm. So the state
-// moved up into a provider and the two pieces that draw it - BatchDays and
-// BatchConfirm - read it from here.
+// A batched kind is many days answered separately - see BatchProvider. "Day by
+// day" needs each of those days to sit beside its own calendar, so the rows
+// cannot live inside one card; the state lives in a provider and BatchDays draws
+// it wherever a day is.
 //
-// Both views mount exactly one provider, so there is still one staged answer
-// and one commit however the rows are arranged.
+// It used to commit every day in ONE press at the bottom, after the last day,
+// and until then nothing was written. Somebody who pressed Next through the
+// fortnight and left had saved nothing, and the sign step then said their
+// questions were unanswered. Each answer saves on its own now, where it is given.
 const BatchCtx = createContext(null);
 
-// WHAT THE RAIL NEEDS TO KNOW BEFORE IT LETS SOMEBODY LEAVE THE DAYS. The
-// batched card stages its answers in the tab and writes them in one press, and
-// that press sat after the last day - which is exactly where Next on the last
-// day used to jump away from. See `leaveDays` in DayRail. Null outside the
-// provider, so a sheet with no batched card is unchanged.
-export function useBatchSave() {
-  const ctx = useContext(BatchCtx);
-  if (!ctx) return null;
-  return { needsSave: ctx.needsSave, canSave: ctx.canSave, openConfirm: ctx.openConfirm };
+// WHAT THE RAIL NEEDS BEFORE IT LETS SOMEBODY LEAVE THE DAYS: every answer
+// started and not saved yet, wherever it is, and the way to save one. Null
+// outside the provider.
+export function usePendingAnswers() {
+  const done = useContext(DayDoneCtx);
+  if (!done?.pendingAll) return null;
+  return { pendingAll: done.pendingAll, saveOne: done.saveOne, attempt: done.attempt };
+}
+
+// ONE ANSWER BEING GIVEN, REPORTED UP. A card renders this while it holds an
+// answer that is not saved yet: "ready" once it is complete, "incomplete" while
+// a time or a reason is still missing, nothing otherwise. A component rather
+// than a hook call inside the card, because the single card returns early for a
+// kind with no copy and a hook below that line would break the rules of hooks.
+// `stays` marks an answer that opens another card on the same day once saved -
+// the lunch-move no - so the day's button saves it and stays for that card.
+function PendingReporter({ id, date, state, stays = false, save }) {
+  const done = useContext(DayDoneCtx);
+  const setPending = done?.setPending;
+  // the save is read at the moment somebody presses, so the freshest one runs
+  const saveRef = useRef(save);
+  useEffect(() => { saveRef.current = save; });
+  useEffect(() => {
+    if (!setPending) return;
+    setPending(id, state ? { date, state, stays, save: () => saveRef.current?.() } : null);
+  }, [setPending, id, date, state, stays]);
+  useEffect(() => () => setPending?.(id, null), [setPending, id]);
+  return null;
 }
 
 // DAYS SOMEBODY HAS FINISHED WITH.
@@ -64,9 +82,10 @@ export function useBatchSave() {
 // Mánu 2026-08-15: all cards need it. So it owns its own context, wrapping every
 // day rather than only the batched ones.
 //
-// STILL NOT A SAVE. A plain card writes on its own confirm; the batched card
-// writes once at the bottom. This is neither - it is the person saying they are
-// through with the day, which collapses it and lets the panel count it.
+// STILL NOT A SAVE ON ITS OWN. Every card saves its own answer; this is the
+// person saying they are through with the day, which collapses it and lets the
+// panel count it. What it does carry now is the list of answers started and not
+// saved yet, so the day's button can save them on the way past.
 const DayDoneCtx = createContext(null);
 
 // WHERE THIS DAY SITS IN THE PERIOD, and how to move. The rail owns the
@@ -163,6 +182,47 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
     }
   };
 
+  // ANSWERS STARTED AND NOT SAVED YET, by question - see PendingReporter. The
+  // day and the state live in state, so the day's button redraws as they
+  // change; the save functions change on every render of their card, so they
+  // sit in a ref and are only read when somebody presses.
+  const [pending, setPendingState] = useState(() => new Map());
+  const savers = useRef(new Map());
+  const setPending = useCallback((id, entry) => {
+    if (entry) savers.current.set(id, entry.save);
+    else savers.current.delete(id);
+    setPendingState((m) => {
+      const was = m.get(id);
+      if (!entry) {
+        if (!was) return m;
+        const n = new Map(m);
+        n.delete(id);
+        return n;
+      }
+      if (was && was.date === entry.date && was.state === entry.state && was.stays === !!entry.stays) return m;
+      const n = new Map(m);
+      n.set(id, { date: entry.date, state: entry.state, stays: !!entry.stays });
+      return n;
+    });
+  }, []);
+  const pendingAll = () => [...pending].map(([id, e]) => ({ id, ...e }));
+  // the days somebody tried to leave with an answer half given, so the card can
+  // say what it still needs where the missing box is
+  const [attempted, setAttempted] = useState(() => new Set());
+
+  // CLOSING THE TAB WITH AN ANSWER ON SCREEN ASKS FIRST. The browser writes the
+  // words; all a page can do is ask it to ask.
+  const anyPending = pending.size > 0;
+  useEffect(() => {
+    if (!anyPending) return;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [anyPending]);
+
   return (
     <DayDoneCtx.Provider
       value={{
@@ -170,6 +230,16 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
         readyOn: (date) => ready.has(date),
         pressesOn: (date) => presses[date] || 0,
         finishesDay: (date, id) => !!id && finishers?.[date] === id,
+        setPending,
+        pendingAll,
+        pendingOn: (date) => pendingAll().filter((e) => e.date === date),
+        // resolves true once the answer is on record, false if it was refused
+        saveOne: async (id) => {
+          const save = savers.current.get(id);
+          return save ? !!(await save()) : true;
+        },
+        attempt: (date) => setAttempted((a) => (a.has(date) ? a : new Set(a).add(date))),
+        attemptedOn: (date) => attempted.has(date),
         markReady: (date) => {
           setReady((r) => (r.has(date) ? r : new Set(r).add(date)));
           setPresses((p) => ({ ...p, [date]: (p[date] || 0) + 1 }));
@@ -196,11 +266,45 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   // read before any early return - a hook cannot be called conditionally
   const nav = useContext(DayNavCtx);
   const flow = useReviewFlow();
+  // the save this button is running, so it says so and cannot go twice
+  const [saving, setSaving] = useState(false);
   if (!done) return null;
   if (!nav && done.readyOn(date)) return null;
   const hasBatchRow = !!batch?.byDay?.some?.((d) => d.date === date);
   const blocked = plainBlocked || (hasBatchRow && batch.blockedOn(date));
   const hasBack = (nav?.index ?? 0) > 0;
+  // SAVE AND NEXT. An answer started on this day and not saved yet is saved by
+  // the press that leaves the day, so typing a time and pressing Next does what
+  // it looks like it does - and the button says so rather than doing it
+  // quietly. Half an answer stops here instead: the card says what it still
+  // needs beside the missing box, and nothing half done is ever kept.
+  const waiting = done.pendingOn?.(date) || [];
+  const halfDone = waiting.some((e) => e.state === "incomplete");
+  // AN ANSWER THAT OPENS ANOTHER CARD ON THIS DAY keeps the press here: the
+  // lunch-move no is followed by the card for the lunch as booked, which has to
+  // open under it rather than behind a jump to the next day
+  const staying = waiting.some((e) => e.stays);
+  const nextLabel = saving ? "Saving…" : staying ? "Save answer" : waiting.length ? "Save and next" : "Next";
+  const saveThenGo = async (finish) => {
+    if (halfDone) {
+      done.attempt?.(date);
+      return;
+    }
+    setSaving(true);
+    for (const e of waiting) {
+      if (!(await done.saveOne(e.id))) {
+        setSaving(false);
+        return;
+      }
+    }
+    setSaving(false);
+    if (staying) return;
+    if (finish) {
+      flow?.markReviewed(date);
+      done.markReady(date);
+    }
+    if (nav?.go) nav.go(nav.index + 1);
+  };
   // BACK IS JUST NAVIGATION, so it does not wait on the day being finished. A
   // day with answers still owing keeps the sentence where Next would be - there
   // is nothing to move forward to yet - and still offers the way back.
@@ -224,11 +328,12 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
         {nav?.go && nav.index < (nav.dates?.length ?? 0) - 1 && (
           <button
             type="button"
-            disabled={!!flow?.editorTarget}
-            onClick={() => nav.go(nav.index + 1)}
+            disabled={!!flow?.editorTarget || saving}
+            // an answer on the way is saved first; with none it only moves
+            onClick={() => (waiting.length ? saveThenGo(false) : nav.go(nav.index + 1))}
             className={`min-h-[44px] rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${flow ? reviewStyles.primary : ""}`}
           >
-            Next
+            {nextLabel}
           </button>
         )}
         </div>
@@ -247,8 +352,13 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
       {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
       <button
         type="button"
-        disabled={!!flow?.editorTarget || (flow?.readOnly && nav?.index === nav?.dates?.length - 1)}
+        disabled={!!flow?.editorTarget || saving || (flow?.readOnly && nav?.index === nav?.dates?.length - 1)}
         onClick={() => {
+          // an answer on the way is saved first, and the day finishes after
+          if (waiting.length) {
+            saveThenGo(true);
+            return;
+          }
           flow?.markReviewed(date);
           // A DAY WITH NOTHING TO CHECK IS STILL A DAY YOU FINISHED.
           //
@@ -265,7 +375,7 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
         }}
         className={`ml-auto min-h-[44px] rounded-[9px] bg-fill px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${flow ? reviewStyles.primary : ""}`}
       >
-        Next
+        {nextLabel}
       </button>
     </div>
   );
@@ -1363,13 +1473,10 @@ function OneQuestion({
   // summary kept the old hours AND `answer` stayed stale - so the card had no
   // idea it had been answered and would not let him change it.
   const router = useRouter();
-  // ANSWERING THE LAST THING OPEN ON A DAY IS FINISHING WITH THAT DAY, so the
-  // confirm carries them on rather than leaving a separate Next at the far side
-  // of the calendar - see `dayFinishesOn`. Read before any early return: a hook
-  // cannot be called conditionally.
-  const nav = useContext(DayNavCtx);
+  // the days somebody tried to leave with an answer half given, so this card can
+  // say what it still needs. Read before any early return: a hook cannot be
+  // called conditionally.
   const done = useContext(DayDoneCtx);
-  const flow = useReviewFlow();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [at, setAt] = useState("");
@@ -1548,22 +1655,18 @@ function OneQuestion({
     })
     .filter(Boolean);
 
-  // TAKING AN ANSWER OFF FINISHES NOTHING, so `choice === null` never moves. And
-  // the last day of a sheet has nowhere to go, so it keeps the plain confirm.
-  // AN ANSWER THAT OPENS ANOTHER CARD ON THE DAY doesn't finish it either: the
-  // lunch-move no is followed by the card for the lunch as booked, which has to
-  // appear under it rather than behind a jump to the next day
-  const movesOn =
-    !!proposed && proposed.choice !== null
-    && proposed.choice !== q.followsOn
-    && !!nav?.go && nav.index < (nav.dates?.length ?? 0) - 1
-    && !!done?.finishesDay?.(q.date, q.id);
-
+  // SAVE ANSWER STAYS ON THE DAY. It used to carry somebody on to the next day
+  // when it was the last thing open ("Confirm and move on"); the day's own
+  // button does that now, as Save and next, so the card's button only saves and
+  // the card folds to what was said where it was said.
+  //
+  // RESOLVES TRUE ONCE THE ANSWER IS ON RECORD, false if it was refused, so the
+  // day's button can save it on the way past and stop if it did not land.
+  const complete = !!proposed && proposed.choice !== null && !timeBlocked && !reasonBlocked && !blockBlocked;
   function commit() {
-    if (!proposed || timeBlocked || reasonBlocked || blockBlocked) return;
-    const moving = movesOn;
+    if (!proposed || timeBlocked || reasonBlocked || blockBlocked) return Promise.resolve(false);
     setErr(null);
-    start(async () => {
+    return new Promise((resolve) => start(async () => {
       const res = await submitAction({
         token, id: q.id, choice: proposed.choice,
         // the boxes only exist on the answer that needs them, so a time typed
@@ -1579,20 +1682,15 @@ function OneQuestion({
         // then switched away from is never written
         block: wantsBlock ? block.trim() || null : null,
       });
-      if (!res?.ok) setErr(res || { error: "failed" });
-      else {
-        setHeld({ choice: proposed.choice, answerThen: answer, savedThen: savedChoice });
-        setProposed(null); setAt(""); setSlotAt({}); setReason(null); setBlock(""); setEditing(false); router.refresh();
-        // the day is finished BECAUSE this was answered, so it is marked here
-        // rather than waiting for a press that no longer exists. Both halves,
-        // the same pair Next sets: the ring and the flow's own count.
-        if (moving) {
-          flow?.markReviewed?.(q.date);
-          done?.markReady?.(q.date);
-          nav.go(nav.index + 1);
-        }
+      if (!res?.ok) {
+        setErr(res || { error: "failed" });
+        resolve(false);
+        return;
       }
-    });
+      setHeld({ choice: proposed.choice, answerThen: answer, savedThen: savedChoice });
+      setProposed(null); setAt(""); setSlotAt({}); setReason(null); setBlock(""); setEditing(false); router.refresh();
+      resolve(true);
+    }));
   }
 
   return (
@@ -1610,6 +1708,8 @@ function OneQuestion({
               ? (answerNow === "accepted" ? c.yesEffect : c.noEffect)
               : answerNow === "accepted" ? "thank you." : "your timesheet has been rebuilt."}
           </p>
+          {/* the line every saved answer carries, here and on the batched rows */}
+          <p className="mt-1 text-xs text-muted">Saved. You can change it any time before you sign.</p>
           {/* what is still theirs to do once the answer is in - see `afterYes` */}
           {answer === "accepted" && c.afterYes && (
             <div className="amber-tint-card mt-2 rounded-xl p-3.5">
@@ -1948,92 +2048,105 @@ function OneQuestion({
         </div>
       )}
 
-      {/* the panel takes the colour of the answer it is about to write, so the
-          last thing somebody reads before committing is the same green or red
-          they just clicked. */}
-      {proposed && (
-        <div className={`mt-3 rounded-lg border-2 p-4 ${
-          // one colour whichever way they answered - see the note on `Choice`.
-          // Taking an answer OFF keeps its own grey, because that is not an
-          // answer, it is undoing one.
-          proposed.choice === null
-            ? "border-border-strong bg-surface-2"
-            : "border-brand bg-brand/10"
-        }`}>
-          <p className="text-base font-semibold text-foreground">
-            {proposed.choice === null ? "Take your answer off?" : "Are you sure you want to confirm?"}
-          </p>
-          <div className="mt-2 space-y-1.5 text-sm text-muted">
+      {/* SAVE ANSWER, UNDER THE ANSWER IT SAVES. No "are you sure" box and no
+          second save anywhere: once the answer is complete the button is here,
+          with the line saying what it does beside it, and the day's own button
+          saves it too on the way past. While something is still missing the
+          boxes above say so, and once somebody tries to leave the day with it
+          half given, the line here says exactly what. */}
+      {proposed && proposed.choice !== null && (
+        <div className="mt-3 space-y-1.5 text-sm text-muted">
+          {complete && (
+            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={commit}
+                className="flex-none rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
+              >
+                {pending ? "Saving…" : "Save answer"}
+              </button>
+              <span>
+                {proposed.choice === "yes" ? c.yesEffect
+                  : proposed.choice === "no" ? c.noEffect
+                    : proposed.choice === c.third?.value ? c.thirdEffect
+                      : proposed.choice === c.fourth?.value ? c.fourthEffect
+                        : null}
+              </span>
+            </div>
+          )}
+          {complete && needsTime && !slots.length && typedHHMM && (
             <p>
-              {proposed.choice === "yes" ? c.yesEffect
-                : proposed.choice === "no" ? c.noEffect
-                  : proposed.choice === c.third?.value ? c.thirdEffect
-                    : proposed.choice === c.fourth?.value ? c.fourthEffect
-                      : <>This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.</>}
+              The sheet will show <b className="text-foreground">{formatTimeDisplay(typedHHMM)}</b>,
+              and say it came from you rather than from the break record.
             </p>
-            {needsTime && !slots.length && typedHHMM && (
-              <p>
-                The sheet will show <b className="text-foreground">{formatTimeDisplay(typedHHMM)}</b>,
-                and say it came from you rather than from the break record.
-              </p>
-            )}
-            {needsTime && slots.length > 0 && !timeBlocked && (
-              <p>
-                Your sheet will show{" "}
-                {slots.map((need, i) => (
-                  <span key={need.slot}>
-                    {i > 0 ? ", " : ""}
-                    <b className="text-foreground">{need.date} at {formatTimeDisplay(slotMin(need))}</b>
-                  </span>
-                ))}
-                , and say the times came from you rather than from the break record.
-              </p>
-            )}
-            {blockBlocked && (
-              <p className="font-semibold text-rose-600 dark:text-rose-400">
-                Say what that time becomes above first.
-              </p>
-            )}
-            {reasonBlocked && (
-              <p className="font-semibold text-rose-600 dark:text-rose-400">
-                Write why in the box above first.
-              </p>
-            )}
-            {timeBlocked && (
-              <p className="font-semibold text-rose-600 dark:text-rose-400">
-                {slots.length > 0
-                  ? `Put a time in for ${slots.filter((n) => !slotMin(n)).map((n) => n.date).join(", ")} above first.`
-                  : timeRequired && !at.trim()
-                    ? "Put the time in above first."
-                    : "That time cannot be read - check it above."}
-              </p>
-            )}
-            <p className="text-xs">You can change your answer any time before you sign.</p>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2.5">
-            <button
-              type="button"
-              disabled={pending || timeBlocked}
-              onClick={commit}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
-                "bg-brand"
-              }`}
-            >
-              {proposed.choice === null ? "Take it off" : movesOn ? "Confirm and move on" : "Yes, confirm"}
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => setProposed(null)}
-              className="rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
-            >
-              Go back
-            </button>
-          </div>
+          )}
+          {complete && needsTime && slots.length > 0 && (
+            <p>
+              Your sheet will show{" "}
+              {slots.map((need, i) => (
+                <span key={need.slot}>
+                  {i > 0 ? ", " : ""}
+                  {/* a single-day card's slots carry no date of their own */}
+                  <b className="text-foreground">{need.date ? `${need.date} at ` : ""}{formatTimeDisplay(slotMin(need))}</b>
+                </span>
+              ))}
+              , and say the times came from you rather than from the break record.
+            </p>
+          )}
+          {!complete && done?.attemptedOn?.(q.date) && (
+            <>
+              {blockBlocked && (
+                <p className="font-semibold text-rose-600 dark:text-rose-400">
+                  Say what that time becomes above first.
+                </p>
+              )}
+              {reasonBlocked && (
+                <p className="font-semibold text-rose-600 dark:text-rose-400">
+                  Write why in the box above first.
+                </p>
+              )}
+              {timeBlocked && (
+                <p className="font-semibold text-rose-600 dark:text-rose-400">
+                  {slots.length > 0
+                    ? `Put a time in for ${slots.filter((n) => !slotMin(n)).map((n) => n.date).join(", ")} above first.`
+                    : timeRequired && !at.trim()
+                      ? "Put the time in above first."
+                      : "That time cannot be read - check it above."}
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 
-      {pending && <p className="mt-3 text-sm text-muted">Saving your answer…</p>}
+      {/* TAKING A SAVED ANSWER OFF is undoing one, not giving one, so it keeps
+          its own sentence and its own button rather than the Save answer row. */}
+      {proposed && proposed.choice === null && (
+        <div className="mt-3 rounded-xl bg-fill p-3.5">
+          <p className="text-sm text-muted">
+            This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={commit}
+            className="mt-2.5 rounded-[9px] border border-border-strong px-4 py-2 text-[13.5px] font-semibold text-foreground disabled:opacity-50"
+          >
+            {pending ? "Saving…" : "Take it off"}
+          </button>
+        </div>
+      )}
+
+      {/* an answer being given and not saved yet, reported up so the day's
+          Save and next can save it and closing the tab asks first */}
+      <PendingReporter
+        id={q.id}
+        date={q.date}
+        state={proposed && proposed.choice !== null ? (complete ? "ready" : "incomplete") : null}
+        stays={!!q.followsOn && proposed?.choice === q.followsOn}
+        save={commit}
+      />
       {err && <Refusal err={err} />}
     </div>
   );
@@ -2257,12 +2370,11 @@ export function BatchProvider({
   // rendered, so an answer that does not refresh the tree leaves them stale
   const router = useRouter();
   const [pending, start] = useTransition();
+  // a refusal, with the questions it was about, so it shows under those
   const [err, setErr] = useState(null);
   const [picked, setPicked] = useState({});
-  // WHERE TO GO ONCE THE SAVE LANDS. Set only by the last day's Next - see
-  // `openConfirm` - so a save pressed from the panel itself stays put.
-  const flow = useReviewFlow();
-  const [afterSave, setAfterSave] = useState(null);
+  // the days somebody tried to leave with an answer half given - see DayDoneButton
+  const done = useContext(DayDoneCtx);
   // WHY THEY MISSED IT, one per question. Required on a "no" - Mánu 2026-08-14 -
   // because a "no" IS the violation and the why is the one half no QSP export
   // has a field for. Leaving the whole question alone is still fine and still
@@ -2270,31 +2382,27 @@ export function BatchProvider({
   const [reasons, setReasons] = useState({});
   // { [questionId]: { [slot]: "raw text the person typed" } }
   const [times, setTimes] = useState({});
-  const [confirming, setConfirming] = useState(false);
   // WHAT THEY JUST SAVED, HELD ON SCREEN until the refreshed `answers` carry
-  // it. Clearing the picks on success and waiting for the page put every
-  // toggle back to unanswered and the panel back to "N questions still need an
-  // answer" for the length of the re-render, which read as the save not
-  // working. The hold is keyed on the props object itself: a refresh hands
-  // this component a new one, and that is the moment the hold is redundant.
+  // it, along with what they typed for it. Clearing on success and waiting for
+  // the page put the answer back to unanswered for the length of the
+  // re-render, which read as the save not working. The hold is keyed on the
+  // props object itself: a refresh hands this component a new one, and that is
+  // the moment the hold, and the typed copies of what it saved, can go.
   const [held, setHeld] = useState(null);
   useEffect(() => {
-    if (held && answers !== held.answersThen) setHeld(null);
+    if (!held || answers === held.answersThen) return;
+    const saved = held.ids || new Set();
+    const drop = (o) => Object.fromEntries(Object.entries(o).filter(([id]) => !saved.has(id)));
+    setPicked(drop);
+    setTimes(drop);
+    setReasons(drop);
+    setHeld(null);
   }, [held, answers]);
-  // DAYS THEY HAVE FINISHED WITH.
-  //
-  // NOT A SAVE. The card still commits every day in one write at the end - see
-  // the note on `batch` in the engine, and Ford, who that design exists for.
-  // This is the person saying "I am done with this one", which collapses the day
-  // and lets the panel at the top count it.
-  //
-  // The distinction matters and the page says it out loud: a ready day is typed
-  // in, a saved one is on record, and the confirm at the bottom is what moves
-  // one to the other.
-  const [ready, setReady] = useState(() => new Set());
-
-  const base = standing?.charged || 0;
-  const answeredAll = list.every((q) => answers?.[q.id] || (held && q.id in held.picked));
+  // A SAVED ANSWER FOLDS TO ONE LINE, and Change this opens it again. The ids
+  // opened that way, until their change is saved.
+  const [editing, setEditing] = useState(() => new Set());
+  // which questions a save is running for, so only their button says so
+  const [savingIds, setSavingIds] = useState(() => new Set());
   // an answer already on record shows as the current setting, so changing your
   // mind is editing what you said rather than starting again
   //
@@ -2440,145 +2548,149 @@ export function BatchProvider({
   // what they are looking at and typing over. Untouched, it submits the same
   // words back and nothing moves.
   const owesReason = (q, v) => reasonOwedOn(q.kind, v);
-  const missingReasons = list.reduce(
-    (n, q) => n + (owesReason(q, valueFor(q)) && !reasonOf(q) ? 1 : 0),
-    0,
-  );
 
+  // IS THIS ANSWER COMPLETE - the one test the Save answer button, the day's
+  // Save and next and the day's own finish all ask, and the same the server
+  // applies, so the button only shows on an answer that will save.
+  //
   // EVERY DAY ANSWERED "took them" OWES ITS TIMES. Mánu 2026-08-10: required,
   // "because we need a record of this". A day answered "missed them" owes none -
-  // there is nothing to say when about.
-  // AND WHICH DAYS THEY ARE ON, which is the whole difference between a warning
-  // and an instruction.
-  //
-  // This counted and stopped. Mánu 2026-08-17 answered every day on his own
-  // sheet, pressed save, and got "12 times still to fill in" with no way to
-  // find one of them - on a card that can run to thirteen days. The single-card
-  // version of this warning has named its dates all along ("Put a time in for
-  // 07/20 above first"); the BATCHED one, the only one where hunting is
-  // actually hard, was the one that did not.
-  //
-  // A Map keyed on the date, so two missing tens on one day are one place to go
-  // rather than two identical chips.
-  const missingByDate = new Map();
-  const noteMissing = (date) => {
-    if (!date) return;
-    missingByDate.set(date, (missingByDate.get(date) || 0) + 1);
+  // there is nothing to say when about - and owes its reason instead. A PARTIAL
+  // OWES AT LEAST ONE TIME, not all of them: the blanks are the tens they did
+  // not get, and what cannot be accepted is a partial with nothing filled in.
+  const completeQ = (q, v) => {
+    if (!v) return false;
+    if (v === "yes" && (q.needs || []).some((n) => !minutesAt(q, n) || badTime(q, n))) return false;
+    if (v === "partial" && (!(q.needs || []).some((n) => minutesAt(q, n))
+      || (q.needs || []).some((n) => minutesAt(q, n) && badTime(q, n)))) return false;
+    if (owesReason(q, v) && !reasonOf(q)) return false;
+    return true;
   };
-  for (const q of list) {
-    const v = valueFor(q);
-    if (v === "yes") {
-      for (const need of q.needs || []) {
-        if (!minutesAt(q, need) || badTime(q, need)) noteMissing(need.date || q.date);
-      }
-    } else if (v === "partial") {
-      // A PARTIAL OWES AT LEAST ONE TIME, not all of them. They are telling us
-      // they got some of their tens and not the others, so the blanks are the
-      // point - what we cannot accept is a partial with nothing filled in at all.
-      if (!(q.needs || []).some((need) => minutesAt(q, need))) noteMissing(q.date);
-    }
-  }
-  const missingTimes = [...missingByDate.values()].reduce((n, x) => n + x, 0);
-  const missingTimeDates = [...missingByDate.keys()];
 
   const chosen = list.map((q) => ({ q, v: waiting?.has?.(q.id) ? null : valueFor(q) }));
-  // A PARTIAL COUNTS AS MISSED FOR THE MONEY. One hour per workday on which a
-  // rest period was not provided, per UPS v. Superior Court - so one of two
-  // tens is exactly as much premium as none of two. What differs is the record,
-  // and the time they give for the one they did get.
-  const missed = chosen.filter((x) => x.v === "no" || x.v === "partial");
-  const took = chosen.filter((x) => x.v === "yes");
-  const undecided = chosen.filter((x) => !x.v);
-  // AND WHICH DAYS THEY ARE ON. One card holds a fortnight and the day view
-  // shows one day at a time, so "2 questions here" named nothing anyone could
-  // go to - Carminia's two were on days she had already walked past. One chip
-  // per day, the same as the missing times.
-  const undecidedDates = [...new Set(undecided.map(({ q }) => q.date).filter(Boolean))];
-  // WHAT A FINISHED DAY SAYS ON ITS ONE LINE. The answer in their words, plus
-  // any time they gave, so a collapsed day is still checkable at a glance.
+  // WHAT ONE ANSWER SAYS ON ITS ONE LINE: the answer in their words, plus any
+  // time they gave, as CLOCK TIMES rather than the digits somebody typed -
+  // "Took it, 115" said nothing; "Took it, 1:15 PM" is the record.
+  const sayOf = (q, v) => {
+    const said = v ? label(q, v) : null;
+    if (!said) return null;
+    if (v !== "yes" && v !== "partial") return said;
+    const times = (q.needs || [])
+      .map((need) => {
+        const m = minutesAt(q, need);
+        return m ? formatTimeDisplay(m) : rawAt(q, need.slot);
+      })
+      .filter(Boolean);
+    return times.length ? `${said}, ${times.join(", ")}` : said;
+  };
+  // and a finished day's line, which is its answers side by side
   const summaryFor = (date) => chosen
-    .filter(({ q }) => q.date === date && q.v !== null)
-    .map(({ q, v }) => {
-      const said = v ? label(q, v) : null;
-      if (!said) return null;
-      // the times read back as CLOCK TIMES, not the digits somebody typed -
-      // "Took it, 115" said nothing; "Took it, 1:15 PM" is the record
-      const times = (q.needs || [])
-        .map((need) => {
-          const m = minutesAt(q, need);
-          return m ? formatTimeDisplay(m) : rawAt(q, need.slot);
-        })
-        .filter(Boolean);
-      return times.length ? `${said}, ${times.join(", ")}` : said;
-    })
+    .filter(({ q }) => q.date === date)
+    .map(({ q, v }) => sayOf(q, v))
     .filter(Boolean)
     .join(" · ");
   // a day can only be finished with once every question on it has an answer and
-  // whatever that answer owes - the same tests the confirm applies to the whole
+  // whatever that answer owes
   const blockedOn = (date) => chosen
     .filter(({ q }) => q.date === date)
-    .some(({ q, v }) => !v
-      || ((v === "yes" || v === "partial") && (q.needs || []).some((n) => !minutesAt(q, n) || badTime(q, n)))
-      || (owesReason(q, v) && !reasonOf(q)));
-  const hours = missed.reduce((n, x) => n + (x.q.movesOnDecline || 0), 0);
-  // only the days whose answer differs from what is already stored need writing.
-  // A CLEARED ONE COUNTS AS A CHANGE - unclicking a saved answer has to be able
-  // to take it off the record, or the box unhighlights and nothing happens.
+    .some(({ q, v }) => !completeQ(q, v));
   // what is on record as far as this tab knows: the hold counts as saved
   const onRecord = (q) => (held && q.id in held.picked ? held.picked[q.id] : savedValue(q));
-  const dirty = chosen.filter(({ q, v }) => v !== onRecord(q));
-  const cleared = dirty.filter(({ v }) => !v);
-  // IS ANYTHING ON THIS CARD STILL OFF THE RECORD - staged and unsaved, or
-  // not answered at all, or answered but owing a time or a reason. The rail
-  // asks before it lets the last day's Next leave the days: Elizabeth Matias,
-  // 2026-09-16, walked her fortnight with five rest questions unanswered,
-  // pressed Next off the last day, and met "Answer the remaining questions" on
-  // the PTO step with nothing on screen saying which, or where the save was.
-  const needsSave = dirty.length > 0 || undecided.length > 0 || missingTimes > 0 || missingReasons > 0;
-  // and whether the one press would go through right now
-  const canSave = dirty.length > 0 && undecided.length === 0 && missingTimes === 0 && missingReasons === 0;
-  const openConfirm = (then = null) => { setAfterSave(then); setConfirming(true); };
 
-  function commit() {
+  // HAS SOMETHING BEEN GIVEN THAT IS NOT ON RECORD - the answer, one of its
+  // times, or its reason. A CLEARED ONE COUNTS - unclicking a saved answer has
+  // to be able to take it off the record. A day with one possible answer is not
+  // started until something is typed in its box, or every such day would count
+  // as unsaved the moment the page opened.
+  const savedMinAt = (q, need) => {
+    const raw = savedAt(q, need.slot) || need.prefill || "";
+    return raw ? parseLooseTime(raw, { assumeWorkday: true }) : null;
+  };
+  const dirtyQ = (q) => {
+    if (waiting?.has?.(q.id) || held?.ids?.has?.(q.id)) return false;
+    const v = valueFor(q);
+    if (noRoom(q) && onRecord(q) == null && !String(reasons[q.id] ?? "").trim()) return false;
+    if (v !== onRecord(q)) return true;
+    if (!v) return false;
+    if ((v === "yes" || v === "partial")
+      && (q.needs || []).some((n) => n.slot in (times[q.id] || {}) && minutesAt(q, n) !== savedMinAt(q, n))) return true;
+    if (owesReason(q, v) && q.id in reasons && reasonOf(q) !== String(reasonAlready(q) ?? "").trim()) return true;
+    return false;
+  };
+  // "ready" to save, "incomplete" while a time or a reason is missing, or
+  // nothing - untouched, already on record, or an answer being taken off,
+  // which waits for its own button rather than going with Save and next
+  const stateOf = (q) => {
+    if (!dirtyQ(q)) return null;
+    const v = valueFor(q);
+    if (!v) return null;
+    return completeQ(q, v) ? "ready" : "incomplete";
+  };
+  const dayState = (date) => {
+    const states = list.filter((q) => q.date === date).map(stateOf);
+    return states.includes("incomplete") ? "incomplete" : states.includes("ready") ? "ready" : null;
+  };
+  // on record and not being changed: the answer folds to its one line
+  const isSettled = (q) => !waiting?.has?.(q.id) && onRecord(q) != null && !editing.has(q.id) && !dirtyQ(q);
+
+  // SAVE THESE ANSWERS NOW - one from its own Save answer, or every finished
+  // one on a day from Save and next. One write and one rebuild for however many
+  // go together. Resolves true once they are on record, false if refused.
+  function saveQs(qs) {
+    if (!qs.length) return Promise.resolve(true);
+    const ids = new Set(qs.map((q) => q.id));
     setErr(null);
-    start(async () => {
+    setSavingIds(ids);
+    return new Promise((resolve) => start(async () => {
       const res = await submitAction({
         token,
-        batch: chosen.filter((x) => x.v || dirty.includes(x)).map(({ q, v }) => ({
-          id: q.id,
-          // null means "take my answer off the record" - see the clear branch
-          // in answerTimesheetQuestion
-          choice: v,
-          // sent as HH:MM, the one shape the server parses. A day answered
-          // "missed them" sends none - there is nothing to say when about.
-          // a "missed them" sends none - there is nothing to say when about. A
-          // partial sends only the slots they actually filled in.
-          times:
-            (v === "yes" || v === "partial") && q.needs?.length
-              ? Object.fromEntries(
+        batch: qs.map((q) => {
+          const v = valueFor(q);
+          return {
+            id: q.id,
+            // null takes a saved answer off the record - see the clear branch in
+            // answerTimesheetQuestion
+            choice: v,
+            // sent as HH:MM, the one shape the server parses. A "missed them"
+            // sends none - there is nothing to say when about. A partial sends
+            // only the slots they actually filled in.
+            times:
+              (v === "yes" || v === "partial") && q.needs?.length
+                ? Object.fromEntries(
                   q.needs
                     .map((need) => [need.slot, minutesAt(q, need)])
                     .filter(([, m]) => m),
                 )
-              : null,
-          // WHY, on the answer that IS the violation. Sent only on a "no": a
-          // "yes" has nothing to explain, and a partial is telling us about the
-          // tens they DID get. The server re-checks this against the question it
-          // re-derives, so a browser that skipped the box still cannot save one.
-          reason: owesReason(q, v) ? reasonOf(q) || null : null,
-        })),
+                : null,
+            // WHY, on the answer that IS the violation. The server re-checks this
+            // against the question it re-derives, so a browser that skipped the
+            // box still cannot save one.
+            reason: owesReason(q, v) ? reasonOf(q) || null : null,
+          };
+        }),
       });
-      if (!res?.ok) setErr(res || { error: "failed" });
-      else {
-        setHeld({ picked: Object.fromEntries(chosen.filter((x) => x.v).map(({ q, v }) => [q.id, v])), answersThen: answers });
-        setConfirming(false); setPicked({}); setTimes({}); setReasons({}); router.refresh();
-        // the last day's Next was what opened this confirm, so the save is the
-        // step it stood for and the walk carries on from here
-        if (afterSave === "reports") flow?.go?.("reports");
-        setAfterSave(null);
+      setSavingIds(new Set());
+      if (!res?.ok) {
+        setErr({ ...(res || { error: "failed" }), ids });
+        resolve(false);
+        return;
       }
-    });
+      setHeld((h) => ({
+        picked: { ...(h?.picked || {}), ...Object.fromEntries(qs.map((q) => [q.id, valueFor(q)])) },
+        ids: new Set([...(h?.ids || []), ...ids]),
+        answersThen: h?.answersThen ?? answers,
+      }));
+      setEditing((e) => {
+        const n = new Set(e);
+        for (const id of ids) n.delete(id);
+        return n;
+      });
+      router.refresh();
+      resolve(true);
+    }));
   }
+  // every finished answer on a day, for Save and next
+  const saveDay = (date) => saveQs(list.filter((q) => q.date === date && stateOf(q) === "ready"));
 
   // WHAT IS ACTUALLY MISSING ON THIS DAY, in a few words. Mánu 2026-08-11:
   // "for the first day, it should say no scheduled rest break with the hours",
@@ -2619,6 +2731,15 @@ export function BatchProvider({
     if (v === "no") return one ? "Missed it" : "Missed them";
     return owedOn(q) === 2 ? "Took one" : "Took some";
   };
+  // WHAT A HALF GIVEN ANSWER STILL NEEDS, said once somebody tries to leave its
+  // day - naming the other answer by the card's own word for it, so a day owed
+  // two tens says "Missed them". A day with only one possible answer has no
+  // other answer to name.
+  const timeStillNeeded = (q) =>
+    `Add the time your ${q.row?.part === "meal" ? "meal break" : "break"} started, or pick ${label(q, "no")}.`;
+  const reasonStillNeeded = (q) => (noRoom(q)
+    ? "Tell us why you missed it."
+    : `Tell us why you missed ${q.row?.part === "meal" || owedOn(q) <= 1 ? "it" : "them"}, or pick ${label(q, "yes")}.`);
 
   // the yes/no pair for one decision. Lifted out of the row markup when the
   // split arrived, because a day can now show two of them.
@@ -2658,8 +2779,8 @@ export function BatchProvider({
           disabled={pending}
           aria-pressed={v === opt}
           onClick={() => {
-            setConfirming(false);
-            setPicked((p) => ({ ...p, [q.id]: (q.id in p ? p[q.id] : savedValue(q)) === opt ? null : opt }));
+            // a fresh pick is asked afresh, so an old "what is still missing" line goes
+            setPicked((p) => ({ ...p, [q.id]: valueFor(q) === opt ? null : opt }));
           }}
           className={`min-h-11 flex-1 rounded-[6px] px-4 py-1.5 text-[13px] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand disabled:opacity-50 sm:min-h-9 sm:flex-none ${
             v === opt
@@ -2718,6 +2839,8 @@ export function BatchProvider({
         },
       { lateMinutes: q.row?.lateMinutes ?? null },
     );
+    // tried to leave the day with the box still empty
+    const stillNeeded = !said && !!done?.attemptedOn?.(q.date);
     return (
       /* HIS MISSED LAYOUT, 2026-09-08: the why as its own section under a
          hairline - heading, the day named in the line under it, the label
@@ -2737,15 +2860,16 @@ export function BatchProvider({
           value={reasons[q.id] ?? already ?? ""}
           onChange={(e) => setReasons((r) => ({ ...r, [q.id]: e.target.value }))}
           placeholder={ask.placeholder}
-          className="mt-2 min-h-[5.5rem] w-full rounded-[9px] border border-border bg-fill px-3 py-3 text-base text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand sm:text-sm"
+          className={`mt-2 min-h-[5.5rem] w-full rounded-[9px] border bg-fill px-3 py-3 text-base text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand sm:text-sm ${
+            stillNeeded ? "border-amber-400 ring-1 ring-amber-400" : "border-border"
+          }`}
         />
-        {(reasons[q.id] ?? already ?? "").trim() ? (
-          <p className="mt-1.5 flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-700 dark:text-emerald-400">
-            <CircleCheck size={14} strokeWidth={1.8} aria-hidden="true" />
-            Answer ready to review.
+        {stillNeeded ? (
+          <p className="mt-2 flex items-start gap-2 text-[13px] text-amber-700 dark:text-amber-300">
+            <CircleAlert size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none" />
+            {reasonStillNeeded(q)}
           </p>
-        ) : null}
-        {!said && !(reasons[q.id] ?? "").trim() ? (
+        ) : !said && !(reasons[q.id] ?? "").trim() ? (
           <p className="mt-1.5 text-[12.5px] text-muted">
             Add a reason to complete this answer. It goes at the bottom of your timesheet.
           </p>
@@ -2759,7 +2883,6 @@ export function BatchProvider({
             This is what you told us for {dayLong(q.date)} already. Change it here if it is not right.
           </p>
         ) : null}
-        <p className="mt-2 text-xs text-muted">You&apos;ll review your answers before submitting.</p>
       </div>
     );
   };
@@ -2771,6 +2894,12 @@ export function BatchProvider({
     const oneWord = q.row?.part === "meal" ? "meal break" : one ? "break" : "breaks";
     const windows = q.needs.length === 1 ? (q.needs[0].window || []) : [];
     const stillOwed = !partial && q.needs.some((n) => !minutesAt(q, n));
+    // tried to leave the day with a time still missing or wrong - every box on
+    // a "took it", at least one on a partial
+    const timeMissing = partial
+      ? !q.needs.some((n) => minutesAt(q, n)) || q.needs.some((n) => minutesAt(q, n) && badTime(q, n))
+      : q.needs.some((n) => !minutesAt(q, n) || badTime(q, n));
+    const stillNeeded = timeMissing && !!done?.attemptedOn?.(q.date);
     return (
       /* HIS FOLLOW-UP LAYOUT, 2026-09-08: a section under a hairline - the
          question as its heading (no date; the day pane's heading names it),
@@ -2839,17 +2968,18 @@ export function BatchProvider({
                   autoComplete="off"
                   disabled={pending}
                   value={raw || (need.prefill && !(q.id in times && need.slot in (times[q.id] || {})) ? need.prefill : raw)}
-                  onChange={(e) => { setConfirming(false); setAt(q, need.slot, e.target.value); }}
+                  onChange={(e) => setAt(q, need.slot, e.target.value)}
                   className={`w-32 rounded-[9px] border bg-surface px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
                     bad ? "border-rose-400"
-                      : mins ? "border-emerald-400/80" : "border-border"
+                      : mins ? "border-emerald-400/80"
+                        : stillNeeded ? "border-amber-400 ring-1 ring-amber-400" : "border-border"
                   }`}
                 />
                 {false && need.suggest && (
                   <button
                     type="button"
                     disabled={pending}
-                    onClick={() => { setConfirming(false); setAt(q, need.slot, need.suggest); }}
+                    onClick={() => setAt(q, need.slot, need.suggest)}
                     className="rounded-full border border-dashed border-border-strong px-3 py-1 text-xs text-brand transition hover:border-solid"
                   >
                     use {need.suggest}
@@ -2884,18 +3014,82 @@ export function BatchProvider({
             <p className="mt-2 text-[13px] text-muted">{q.needs[0].hint}</p>
           ) : null
         )}
-        {stillOwed || q.needs.some((n) => badTime(q, n)) ? (
-          <p className="mt-6 text-xs text-muted">Enter the start time to complete this answer.</p>
-        ) : (
-          <p className="mt-6 flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-700 dark:text-emerald-400">
-            <CircleCheck size={14} strokeWidth={1.8} aria-hidden="true" />
-            Answer ready to review.
+        {/* WHAT IS STILL MISSING, in amber, once somebody has tried to leave the
+            day without it - and the quiet line before that */}
+        {stillNeeded ? (
+          <p className="mt-3 flex items-start gap-2 text-[13px] text-amber-700 dark:text-amber-300">
+            <Clock3 size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none" />
+            {timeStillNeeded(q)}
           </p>
-        )}
-        <p className="mt-2 text-xs text-muted">You&apos;ll review your answers before submitting.</p>
+        ) : stillOwed || q.needs.some((n) => badTime(q, n)) ? (
+          <p className="mt-6 text-xs text-muted">Enter the start time to complete this answer.</p>
+        ) : null}
       </div>
     );
   };
+
+  // SAVE ANSWER, UNDER THE ANSWER. Only once it is complete and not already on
+  // record - see `completeQ` and `dirtyQ` - and a saved answer being taken off
+  // gets its own sentence and button instead, because undoing an answer is not
+  // giving one. A refusal shows under the answer it was about.
+  const renderSave = ({ q, v }) => {
+    if (waiting?.has?.(q.id)) return null;
+    const saving = savingIds.has(q.id);
+    const refused = err?.ids?.has?.(q.id) ? <Refusal err={err} /> : null;
+    if (!v && onRecord(q) != null && dirtyQ(q)) {
+      return (
+        <div className="mt-5 rounded-xl bg-fill p-3.5">
+          <p className="text-sm text-muted">
+            This goes back to unanswered, and your timesheet goes back to what it said before. You can answer it again any time.
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => saveQs([q])}
+            className="mt-2.5 rounded-[9px] border border-border-strong px-4 py-2 text-[13.5px] font-semibold text-foreground disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Take it off"}
+          </button>
+          {refused}
+        </div>
+      );
+    }
+    if (!dirtyQ(q) || !completeQ(q, v)) return refused;
+    return (
+      <div className="mt-5">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => saveQs([q])}
+          className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50 max-sm:w-full max-sm:py-3"
+        >
+          {saving ? "Saving…" : "Save answer"}
+        </button>
+        {refused}
+      </div>
+    );
+  };
+
+  // A SAVED ANSWER, FOLDED TO ITS ONE LINE: what they said, Change this to open
+  // it again, and the line every saved answer carries.
+  const renderSaved = ({ q, v }) => (
+    <div className="mt-4 rounded-xl bg-fill px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span className="flex min-w-0 items-center gap-2 text-[15px] font-medium text-foreground">
+          <CircleCheck size={16} strokeWidth={1.8} aria-hidden="true" className="flex-none text-emerald-500" />
+          {sayOf(q, v)}
+        </span>
+        <button
+          type="button"
+          onClick={() => setEditing((e) => new Set(e).add(q.id))}
+          className="rounded-[9px] px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+        >
+          Change this
+        </button>
+      </div>
+      <p className="mt-1 pl-6 text-xs text-muted">Saved. You can change it any time before you sign.</p>
+    </div>
+  );
 
   // one entry per DAY, carrying its one or two decisions. The card stays a list
   // of days; only a day short both grows a second row.
@@ -2925,18 +3119,23 @@ export function BatchProvider({
   return (
     <BatchCtx.Provider
       value={{
-        renderToggle, renderTimes, renderReason, missingLabel, noRoom, titleFor, partWord, byDay, list, copy,
-        pending, err, confirming, setConfirming, commit,
-        dirty, missingTimes, missingTimeDates, missingReasons, undecided, undecidedDates, missed, took, hours, base, answeredAll,
-        needsSave, canSave, openConfirm,
-        ready,
-        readyOn: (date) => ready.has(date),
+        renderToggle, renderTimes, renderReason, renderSave, renderSaved, isSettled,
+        missingLabel, noRoom, titleFor, partWord, byDay, list, copy,
         blockedOn,
         summaryFor,
-        markReady: (date) => setReady((r) => new Set(r).add(date)),
-        unmarkReady: (date) => setReady((r) => { const n = new Set(r); n.delete(date); return n; }),
       }}
     >
+      {/* each day's answers started and not saved, reported up so the day's
+          Save and next can save them in one write */}
+      {byDay.map(({ date }) => (
+        <PendingReporter
+          key={date}
+          id={`batch|${date}`}
+          date={date}
+          state={dayState(date)}
+          save={() => saveDay(date)}
+        />
+      ))}
       {children}
     </BatchCtx.Provider>
   );
@@ -2948,7 +3147,9 @@ export function BatchProvider({
 export function BatchDays({ dates }) {
   const ctx = useContext(BatchCtx);
   if (!ctx) return null;
-  const { renderToggle, renderTimes, renderReason, missingLabel, noRoom, titleFor, partWord } = ctx;
+  const {
+    renderToggle, renderTimes, renderReason, renderSave, renderSaved, isSettled, missingLabel, noRoom, titleFor,
+  } = ctx;
   const byDay = dates ? ctx.byDay.filter((d) => dates.includes(d.date)) : ctx.byDay;
   if (!byDay.length) return null;
 
@@ -2971,7 +3172,9 @@ export function BatchDays({ dates }) {
              Digits only: "07/16/26" carries slashes, not valid in an id. */
           <li key={date} id={dayAnchorId(date)} className="scroll-mt-24">
             {items.map((item) => {
-              const { q, v } = item;
+              const { q } = item;
+              // on record and not being changed: the one line and Change this
+              const settled = isSettled(q);
               return (
                 <div key={q.id} className="border-t border-sep py-6 first:border-t-0 first:pt-3 last:pb-2">
                   <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-4">
@@ -2982,16 +3185,21 @@ export function BatchDays({ dates }) {
                       <p className="mt-1 text-[13px] text-muted">{missingLabel(q)}.</p>
                       {/* WHY THERE IS NO CONTROL, next to the finding rather
                           than stranded in the control's slot. */}
-                      {noRoom(q) && (
+                      {noRoom(q) && !settled && (
                         <p className="mt-0.5 text-[13px] text-muted">
                           There is no gap in this day long enough to have taken one.
                         </p>
                       )}
                     </div>
-                    {renderToggle({ item })}
+                    {!settled && renderToggle({ item })}
                   </div>
-                  {renderTimes(item)}
-                  {renderReason(item)}
+                  {settled ? renderSaved(item) : (
+                    <>
+                      {renderTimes(item)}
+                      {renderReason(item)}
+                      {renderSave(item)}
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -3001,13 +3209,6 @@ export function BatchDays({ dates }) {
     </>
   );
 }
-
-// THE ONE CONFIRM FOR THE WHOLE BATCH, wherever its rows ended up. Rendered once
-// per provider: after the list in "All questions", after the last day in "Day by
-// day". It still spells out the total before anything is written.
-// the day chips read "Thu, Jul 16", the label the rail wears - `dayChipLabel`
-// in review-days, which the flow's hold line draws from too.
-const chipLabel = dayChipLabel;
 
 // "13:31" + 10 -> "13:41", for reading a break's span back
 const addMinutes = (hhmm, add) => {
@@ -3030,238 +3231,9 @@ const dayLong = (date) => {
   return `${DAY_FULL[at.getDay()]}, ${MONTH_FULL[m - 1]} ${d}`;
 };
 
-export function BatchConfirm() {
-  const ctx = useContext(BatchCtx);
-  if (!ctx) return null;
-  const {
-    list, copy, pending, err, confirming, setConfirming, commit,
-    dirty, missingTimes, missingTimeDates, missingReasons, undecided, undecidedDates, missed, took, hours, base, answeredAll,
-    ready, byDay, openConfirm,
-  } = ctx;
-  // HOW MANY DAYS THEY HAVE FINISHED WITH, and how many are left.
-  //
-  // The button was the only thing on the page that knew nothing about a day
-  // being marked done, so somebody could collapse twelve of thirteen days and
-  // still be looking at a control that said the same thing it said at the start.
-  // Counted off the days this card actually holds, so a day marked ready and
-  // then re-opened stops counting on its own.
-  const days = (byDay || []).map((d) => d.date);
-  const readyCount = days.filter((d) => ready?.has?.(d)).length;
-  const leftCount = days.length - readyCount;
-
-  // NOTHING STANDS BETWEEN THEM AND SAVING - the green line's condition, and
-  // only while there is genuinely something to save.
-  const readyToSave =
-    !confirming && undecided.length === 0 && missingTimes === 0 && missingReasons === 0
-    && !(answeredAll && !dirty.length);
-
-  return (
-    <>
-      {!confirming && (
-        <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3">
-          <div className="min-w-0">
-            <p className="text-[15px] font-semibold text-foreground">Save my answers</p>
-            {readyToSave && (
-              <p className="mt-1 flex items-center gap-2 text-[13px] text-muted">
-                <CircleCheck size={15} strokeWidth={1.8} aria-hidden="true" className="flex-none text-emerald-500" />
-                Every day has an answer. They are saved together as one set.
-              </p>
-            )}
-            {/* WHAT PRESSING IT WOULD ACTUALLY PUT ON RECORD. Ready is typed in
-                and collapsed, not saved - this is the one control that turns the
-                first into the second, so it is the one that has to say how many
-                are waiting on it. */}
-            {!readyToSave && readyCount > 0 && (
-              <p className="mt-1 text-[13px] text-muted">
-                <b className="font-semibold text-foreground">
-                  {readyCount === 1 ? "1 day ready" : `${readyCount} days ready`}
-                </b>
-                {leftCount > 0
-                  ? ` · ${leftCount} still open`
-                  : " · nothing else on this card"}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            // EVERY DAY NEEDS AN ANSWER BEFORE ANY OF THEM SAVES, 2026-08-14.
-            //
-            // This was NEVER GREYED OUT, and that was a deliberate call on
-            // 2026-08-12: it used to disable itself with nothing changed or a
-            // time still blank, so the one control on the page looked broken
-            // while the reason sat somewhere else on screen.
-            //
-            // The reason survives the reversal, so the shape does too. It blocks
-            // - nothing is written while a day is still open - but the block
-            // SAYS SO, in the lines below and in the label, rather than the
-            // button going dead with the explanation somewhere off screen.
-            disabled={pending}
-            onClick={() => { if (!undecided.length) openConfirm(null); }}
-            aria-disabled={undecided.length > 0}
-            className="flex-none rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-          >
-            {/* THE BUTTON NAMES ITS ACTION. It carried the count for a while
-                and that made three tellings of one fact on one row - the label,
-                the line beside it and the panel under it. The count belongs in
-                the sentence that also says what it stops. */}
-            {answeredAll && !dirty.length ? "Answered" : "Save my answers"}
-          </button>
-        </div>
-      )}
-
-      {/* WHAT STILL STANDS BETWEEN THEM AND SAVING - quiet lines under one
-          hairline since 2026-09-08 (his option B pick): every sentence word
-          for word as the amber boxes carried it, with the amber held to the
-          icons and the day chips. */}
-      {!confirming && (undecided.length > 0 || missingTimes > 0 || missingReasons > 0) && (
-        <div className="mt-4 grid gap-3 border-t border-sep pt-3.5">
-          {/* NOTHING SAVES WHILE A DAY IS STILL OPEN. The card commits every
-              one of its days in a single write - that is what makes it one card
-              and not thirteen - so a half-answered set is not a partial save,
-              it is a set somebody has not finished. */}
-          {undecided.length > 0 && (
-            <p className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
-              <CircleAlert size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-500" />
-              <span>
-                {/* IT COUNTS ANSWERS, NOT DAYS AND NOT TIME LEFT. The wording
-                    before this put a number in front of the word day, and it
-                    was read as a number of days REMAINING - there is no due
-                    date on any of this. One date can carry two answers, a meal
-                    and its rests. */}
-                <b className="font-semibold text-foreground">
-                  {undecided.length === 1
-                    ? "One question here still needs an answer."
-                    : `${undecided.length} questions here still need an answer.`}
-                </b>{" "}
-                They are saved together, so none of them is recorded until all of them
-                have one.
-                {undecidedDates.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => jumpToDay(d)}
-                    className="ml-2 inline-flex rounded-[7px] bg-amber-500/15 px-2 py-0.5 align-baseline font-mono text-xs font-semibold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
-                  >
-                    {chipLabel(d)}
-                  </button>
-                ))}
-              </span>
-            </p>
-          )}
-
-          {/* SAYING YOU TOOK A BREAK IS ONLY HALF THE ANSWER. The record is the
-              thing that was missing, so a day claimed without a time is not a
-              day that has been answered. */}
-          {missingTimes > 0 && (
-            <div className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
-              <Clock3 size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-500" />
-              <span>
-                {/* THE SENTENCE IS UNCHANGED, word for word. */}
-                <b className="font-semibold text-foreground">
-                  {missingTimes} {missingTimes === 1 ? "time" : "times"} still to fill in.
-                </b>{" "}
-                Nothing is submitted until every day you answered &ldquo;took them&rdquo; says when.
-                {/* ONE CHIP PER DAY, not per missing time: two blank tens on
-                    one day are one place to go. Scrolls rather than jumps, and
-                    centres the row, because a day landed under the sticky
-                    header reads as the link having done nothing. */}
-                {missingTimeDates.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => jumpToDay(d)}
-                    className="ml-2 inline-flex rounded-[7px] bg-amber-500/15 px-2 py-0.5 align-baseline font-mono text-xs font-semibold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
-                  >
-                    {chipLabel(d)}
-                  </button>
-                ))}
-              </span>
-            </div>
-          )}
-
-          {/* AND SAYING YOU MISSED ONE IS ONLY HALF TOO. The why is the one
-              half no QSP export has a field for, so a day claimed as missed
-              without it records the violation and cannot say what caused it. */}
-          {missingReasons > 0 && (
-            <p className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
-              <CircleAlert size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none text-amber-500" />
-              <span>
-                <b className="font-semibold text-foreground">
-                  {missingReasons} {missingReasons === 1 ? "reason" : "reasons"} still to write.
-                </b>{" "}
-                Nothing is submitted until every day that needs one has it.
-              </span>
-            </p>
-          )}
-        </div>
-      )}
-
-      {confirming && (
-        <div
-          className="mt-3 rounded-xl bg-fill p-4"
-        >
-          <p className="text-[15px] font-semibold text-foreground">Are you sure you want to confirm?</p>
-          <div className="mt-2 space-y-1.5 text-sm text-muted">
-            {/* EVERY TALLY AND EVERY FIGURE CAME OUT 2026-08-12, at Mánu's
-                instruction: the days-missed count, the penalty arithmetic
-                ("N hours of penalty pay go onto your timesheet, taking it from
-                X to Y"), the line about the times going on as their own record,
-                and the warning that unanswered days block signing - which is no
-                longer true in any case, since the sheet is signable at any time.
-                What is left is a plain confirm. */}
-            <p className="text-xs">You can change your answer any time before you sign.</p>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2.5">
-            <button
-              type="button"
-              disabled={pending}
-              onClick={commit}
-              className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
-            >
-              Yes, confirm
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => setConfirming(false)}
-              className="rounded-[9px] px-4 py-2 text-[13.5px] font-medium text-muted transition-colors hover:bg-fill"
-            >
-              Go back
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* the single card has said this since August; the batched confirm sat
-          silent for the two to four seconds the save takes */}
-      {pending && <p className="mt-3 text-sm text-muted">Saving your answers…</p>}
-      {err && <Refusal err={err} />}
-
-      {copy.footnote && (
-        <p className="mt-3 border-l-2 border-border-strong pl-3 text-sm text-muted">
-          {copy.footnote}
-        </p>
-      )}
-    </>
-  );
-}
-
-// WHERE A DAY ROW LIVES IN THE BATCHED CARD, so the missing-times warning can
-// send somebody to it. Digits only - "07/16/26" carries slashes, which are not
-// valid in an id.
+// WHERE A DAY ROW LIVES IN THE BATCHED CARD. Digits only - "07/16/26" carries
+// slashes, which are not valid in an id.
 const dayAnchorId = (date) => `break-day-${String(date || "").replace(/[^0-9]/g, "")}`;
-// THE CHIP OPENS THE DAY. The rail selects whichever day the address bar names
-// - the #day-<date> handler in DayRail - so the chip says the day and the rail
-// does the moving; a hash already set fires no event, so that case is fired by
-// hand. The stacked view has no rail to select on, so it scrolls to the row.
-// Scrolling alone was what the times chips did, which in the rail view found a
-// hidden pane and moved nothing.
-const jumpToDay = (date) => {
-  const want = `#day-${date}`;
-  if (window.location.hash === want) window.dispatchEvent(new HashChangeEvent("hashchange"));
-  else window.location.hash = want;
-  document.getElementById(dayAnchorId(date))?.scrollIntoView({ behavior: "smooth", block: "center" });
-};
 
 export default function TimesheetQuestion({
   token, questions, answers, partials, answerTimes, choices, waiting, disturbs, standing, submitAction,
@@ -3314,7 +3286,6 @@ export default function TimesheetQuestion({
           copy={c}
         >
           <BatchDays />
-          <BatchConfirm />
         </BatchProvider>
       </div>
     );

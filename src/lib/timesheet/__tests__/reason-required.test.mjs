@@ -31,7 +31,9 @@ test("the browser enforces the same rule as the action, from the same map", () =
   // refuses something the server would have taken. They were a copy each; the
   // map lives in break-answers.js now and both import it.
   assert.match(CARD, /reasonOwedOn/);
-  assert.match(CARD, /missingReasons/);
+  // an answer that owes a reason is not complete without one, the same test
+  // the Save answer button, the day's Save and next and the server all apply
+  assert.match(CARD, /if \(owesReason\(q, v\) && !reasonOf\(q\)\) return false;/);
   assert.doesNotMatch(CARD, /const REASON_ON = \{/);
 });
 
@@ -168,30 +170,25 @@ test("the other view keeps them too", () => {
   assert.match(detailed, /breakAsks=\{breakAsks\}/);
 });
 
-// NOTHING SAVES WHILE A DAY IS STILL OPEN, 2026-08-14.
+// NOTHING HALF DONE IS SAVED, 2026-09-25.
 //
-// The card commits every one of its days in a single write - that is what makes
-// it one card and not thirteen - so a half-answered set is not a partial save,
-// it is a set somebody has not finished.
-//
-// IT REVERSES A DELIBERATE CALL and keeps that call's reasoning. The confirm was
-// made never-greyed-out on 2026-08-12 because a dead button put the explanation
-// somewhere off screen. So this blocks without going dead: the label counts what
-// is left and a line above says the same thing.
-test("the batch confirm will not open while a day is unanswered", () => {
-  // `openConfirm` since 2026-09-16 - it also remembers whether the last day's
-  // Next opened it - and the guard in front of it is the same
-  assert.match(CARD, /if \(!undecided\.length\) openConfirm\(null\)/);
+// Each answer saves on its own now, where it is given, so a half-answered
+// answer is never written: its Save answer only appears once it is complete,
+// and the day's Save and next stops on it. The 2026-08-12 objection to a
+// control that looked broken with its reason off screen still holds, so there
+// is no dead button - the reason sits on the box that is missing something.
+test("an answer only saves once it is complete", () => {
+  assert.match(CARD, /if \(!dirtyQ\(q\) \|\| !completeQ\(q, v\)\) return refused;/);
+  assert.match(CARD, /const completeQ = \(q, v\) => \{\s*if \(!v\) return false;/);
+  // `disabled` is for the in-flight save alone
+  assert.match(CARD, /disabled=\{pending\}\s*onClick=\{\(\) => saveQs\(\[q\]\)\}/);
 });
 
-test("and it says so rather than going dead", () => {
-  // the 2026-08-12 objection was never to the block, it was to a control that
-  // looked broken with its reason elsewhere
-  assert.match(CARD, /still needs an answer/);
-  assert.match(CARD, /aria-disabled=\{undecided\.length > 0\}/);
-  // `disabled` stays for the in-flight save alone, which is what keeps the
-  // label readable and the reason on screen
-  assert.match(CARD, /disabled=\{pending\}/);
+test("and says what is missing on the box itself rather than going dead", () => {
+  assert.match(CARD, /`Add the time your \$\{q\.row\?\.part === "meal" \? "meal break" : "break"\} started, or pick \$\{label\(q, "no"\)\}\.`/);
+  assert.match(CARD, /`Tell us why you missed \$\{q\.row\?\.part === "meal" \|\| owedOn\(q\) <= 1 \? "it" : "them"\}, or pick \$\{label\(q, "yes"\)\}\.`/);
+  assert.match(CARD, /\{timeStillNeeded\(q\)\}/);
+  assert.match(CARD, /\{reasonStillNeeded\(q\)\}/);
 });
 
 // AND THE SHEET DOES NOT GENERATE UNTIL EVERY QUESTION HAS AN ANSWER.
@@ -275,23 +272,15 @@ test("and the ones that take a typed time quote it back", () => {
 });
 
 
-// AND IT DOES NOT READ AS A DEADLINE.
+// AND NOTHING READS AS A DEADLINE.
 //
-// "1 day still to answer" was read as one day REMAINING. Nothing here has a due
-// date, and "day" was wrong for a second reason the line beside the button had
-// already noted: one day can carry two answers, a meal and its rests.
-test("the count is of answers, not of days or of time left", () => {
-  const panel = CARD.slice(CARD.indexOf("still needs an answer"), CARD.indexOf("still needs an answer") + 400);
-  assert.doesNotMatch(panel, /days? still/);
-  assert.match(CARD, /One question here still needs an answer/);
-});
-
-test("it is said once, not three times on one row", () => {
-  // the label, the line beside it and the panel under it all carried the same
-  // count. The button names its action now and the count lives with the
-  // sentence that says what it stops.
-  const hits = [...CARD.matchAll(/still (?:to answer|needs an answer|need an answer)/g)];
-  assert.ok(hits.length <= 2, `said ${hits.length} times`);
+// "1 day still to answer" was once read as one day REMAINING. The panel that
+// counted what was left went with the save at the bottom on 2026-09-25, so
+// nothing on the card counts days, answers or time any more.
+test("no count of what is left sits on the card to be read as a deadline", () => {
+  const code = CARD.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /still (?:to answer|needs an answer|need an answer)/);
+  assert.doesNotMatch(code, /\bdays? still\b/);
 });
 
 

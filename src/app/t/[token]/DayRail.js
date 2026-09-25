@@ -5,7 +5,7 @@ import { Check, CircleAlert, Flag } from "lucide-react";
 import { reportedReviewDay } from "@/lib/timesheet/review-days";
 import styles from "./ReviewFlow.module.css";
 import { useReviewFlow } from "./ReviewFlow";
-import { useDayDone, DayNavProvider, useBatchSave } from "./TimesheetQuestion";
+import { useDayDone, DayNavProvider, usePendingAnswers } from "./TimesheetQuestion";
 
 // THE DAY RAIL: the period's days down the left, one day's work shown at a
 // time. Presentation only - every pane stays MOUNTED and the unselected ones
@@ -19,7 +19,7 @@ import { useDayDone, DayNavProvider, useBatchSave } from "./TimesheetQuestion";
 // on screen.
 export default function DayRail({ days, children, stacked = false }) {
   const flow = useReviewFlow();
-  const batch = useBatchSave();
+  const unsaved = usePendingAnswers();
   // IT OPENS ON THE FIRST DAY OF THE PERIOD, so somebody can start at the top
   // and press Next all the way through.
   //
@@ -82,26 +82,27 @@ export default function DayRail({ days, children, stacked = false }) {
 
   const panes = Array.isArray(children) ? children : [children];
 
-  // NEXT ON THE LAST DAY IS NOT ALLOWED TO WALK AWAY FROM AN UNSAVED CARD.
+  // LEAVING THE DAYS SAVES WHAT IS TYPED, WHEREVER IT IS.
   //
-  // The batched card writes every day in one press, and that press sits after
-  // the last day - which is exactly what Next on the last day jumped over on
-  // its way to the reports. Elizabeth Matias, 2026-09-16: five rest questions
-  // unanswered, fourteen days walked, and the PTO step saying "Answer the
-  // remaining questions" with the days, the questions and the save all hidden
-  // behind a stage she had left.
-  //
-  // So the last Next asks the card first. Nothing off the record: on to the
-  // reports as before. Answers typed and complete: the confirm opens and the
-  // page lands on it, and the save is what carries the walk on - see
-  // `afterSave` in BatchProvider. Something still owing: the page lands on the
-  // panel, which names the days.
-  const leaveDays = () => {
-    if (batch?.needsSave) {
-      if (batch.canSave) batch.openConfirm("reports");
-      afterRef.current?.focus({ preventScroll: true });
-      afterRef.current?.scrollIntoView({ block: "start" });
+  // The last day's Save and next saves that day on the way out, but an answer
+  // can be typed on one day and the rail pressed to go to another, so the
+  // leaving checks every day. Every finished answer is saved before the
+  // reports open. Half an answer anywhere stops it: the page goes to that day
+  // and the card says what it still needs. Elizabeth Matias, 2026-09-16, was
+  // the case for the older version of this door - five answers staged, nothing
+  // saved, and the next step telling her to answer questions she could not see.
+  const leaveDays = async () => {
+    const waiting = unsaved?.pendingAll?.() || [];
+    const half = waiting.find((e) => e.state === "incomplete");
+    if (half) {
+      unsaved.attempt(half.date);
+      const i = days.findIndex((d) => d.date === half.date);
+      if (i >= 0) setSel(i);
+      (stacked ? paneRefs.current[i] : boxRef.current)?.scrollIntoView({ block: "start" });
       return;
+    }
+    for (const e of waiting) {
+      if (!(await unsaved.saveOne(e.id))) return;
     }
     flow.go("reports");
   };

@@ -30,16 +30,21 @@ test("the day view hands the shell the server's reading of what is still open", 
   assert.match(day, /<DayShell\s+date=\{day\.date\}[\s\S]{0,400}blocked=\{plainBlockedOn\(day\.date\)\}/);
 });
 
-test("the unanswered line names the days it is waiting on", () => {
-  // one card holds a fortnight and the day view shows one day at a time, so a
-  // count with no dates pointed at nothing anybody could go to
-  assert.match(shell, /const undecidedDates = \[\.\.\.new Set\(undecided\.map\(\(\{ q \}\) => q\.date\)\.filter\(Boolean\)\)\];/);
-  assert.match(shell, /still need an answer\.`\}[\s\S]{0,400}undecidedDates\.map\(\(d\) => \(/);
+// THE SAVE PANEL THAT COUNTED UNANSWERED DAYS IS GONE, 2026-09-25: every answer
+// saves where it is given now, so nothing is held for a press at the bottom and
+// there is no bottom panel to count what is left. What still says where a day
+// needs something is the flow's own hold (last-day-save.test.mjs) and, on the
+// day itself, the line under the box that is missing something.
+test("half an answer is named on its own day, once somebody tries to leave it", () => {
+  assert.match(shell, /const stillNeeded = timeMissing && !!done\?\.attemptedOn\?\.\(q\.date\);/);
+  assert.match(shell, /const stillNeeded = !said && !!done\?\.attemptedOn\?\.\(q\.date\);/);
+  assert.doesNotMatch(shell, /const undecidedDates =/);
 });
 
-test("a day chip opens the day through the rail, not by scrolling to a hidden pane", () => {
-  // the rail selects whichever day the address bar names; scrolling alone found
-  // a hidden pane in the day view and moved nothing
-  assert.match(shell, /const jumpToDay = \(date\) => \{\s*const want = `#day-\$\{date\}`;/);
-  assert.doesNotMatch(shell.replace(/\/\/.*$/gm, ""), /onClick=\{\(\) => \{\s*const el = document\.getElementById\(dayAnchorId\(d\)\);/);
+test("leaving the days with half an answer goes to that day through the rail", () => {
+  // the rail owns the selection, so it is the rail that moves to the day, not a
+  // scroll that would find a hidden pane
+  const rail = fs.readFileSync(path.join(process.cwd(), "src/app/t/[token]/DayRail.js"), "utf8");
+  assert.match(rail, /const half = waiting\.find\(\(e\) => e\.state === "incomplete"\);/);
+  assert.match(rail, /unsaved\.attempt\(half\.date\);\s*const i = days\.findIndex\(\(d\) => d\.date === half\.date\);\s*if \(i >= 0\) setSel\(i\);/);
 });

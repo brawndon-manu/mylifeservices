@@ -16,7 +16,6 @@ import { dayStillOpen, finisherFor } from "@/lib/timesheet/day-open";
 import TimesheetQuestion, {
   BatchProvider,
   BatchDays,
-  BatchConfirm,
   BatchHeading,
   DayShell,
   DayDoneProvider,
@@ -792,12 +791,9 @@ export default function DayByDay({
             standing={standing}
             className="amber-tint-card rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border"
           />
+          {/* no save panel after the last day any more: each answer saves under
+              itself, and each day's Save and next saves what is on it */}
           {daysView}
-          {/* ONE CONFIRM FOR ALL OF THEM, after the last day - the same single
-              commit the other view makes. */}
-          <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
-            <BatchConfirm />
-          </div>
         </BatchProvider>
       ) : (
         <>
