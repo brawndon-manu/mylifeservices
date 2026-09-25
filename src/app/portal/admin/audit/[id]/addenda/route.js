@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 import { scheduleKey } from "@/lib/timesheet/schedule";
 import { assembleAddenda, addendaReportModel, renderAddendaReport } from "@/lib/timesheet/addenda-report";
 import { buildAudit } from "../build";
@@ -13,7 +15,10 @@ import { buildAudit } from "../build";
 export async function GET(req, { params }) {
   const { id } = await params;
   const user = await getCurrentUser();
-  if (!isAdminUp(user?.role)) return new NextResponse("Forbidden", { status: 403 });
+  if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: `audit/${id}/addenda`, req, label: "Audit addenda" });
+    return new NextResponse("Forbidden", { status: 403 });
+  }
 
   const audit = await buildAudit(id);
   if (!audit) return new NextResponse("Not found", { status: 404 });
@@ -46,6 +51,12 @@ export async function GET(req, { params }) {
       pending,
     }),
   );
+  await logFileOpen({
+    user,
+    pathname: `audit/${id}/addenda`,
+    req,
+    label: accessLabel("Audit addenda", periodRange(batch.periodFrom, batch.periodTo)),
+  });
   const filename = `clock-addenda-${batch.periodFrom.replaceAll("/", "-")}-to-${batch.periodTo.replaceAll("/", "-")}.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {

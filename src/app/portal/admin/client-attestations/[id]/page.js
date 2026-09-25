@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canManageClientAttestations, canSeeEveryAttestation } from "@/lib/roles";
+import { attestationScope } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { companyDate } from "@/lib/company-time";
 import BackLink from "@/components/BackLink";
@@ -17,7 +18,7 @@ import {
   setClientRouting,
 } from "../actions";
 import { titleHasSegment } from "@/lib/positions";
-import { supervisorOf } from "@/lib/client-attestations/routing";
+import { supervisorOf, attestationIsTheirs } from "@/lib/client-attestations/routing";
 
 export const metadata = {
   title: "Client attestations",
@@ -27,9 +28,13 @@ export const dynamic = "force-dynamic";
 
 // THE REVIEW SCREEN: every client on the month, what their form says, and who is
 // going to collect the signature.
+//
+// a field supervisor gets the same screen over the clients assigned to them,
+// without the office's month-wide files, the send panel or the routing.
 export default async function ClientAttestationBatchPage({ params, searchParams }) {
   const user = await getCurrentUser();
   if (!canManageClientAttestations(user?.role)) redirect("/portal");
+  const office = canSeeEveryAttestation(user.role);
   const { id } = await params;
   const sp = await searchParams;
   const show = typeof sp?.show === "string" ? sp.show : "all";
@@ -41,6 +46,7 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
         select: { name: true, preferredFirstName: true, preferredLastName: true },
       },
       attestations: {
+        where: attestationScope(user, office),
         orderBy: { clientName: "asc" },
         include: {
           staffUser: {
@@ -55,13 +61,16 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
   });
   if (!batch) notFound();
 
-  const rows = batch.attestations;
-
   // WHO EACH ROW'S SUPERVISOR ACTUALLY IS - a Field Supervisor attests their
   // own clients, so the answer is not always the stored column. Read once here
   // and used by the counts, the filter and the cell, because a screen that
   // counts one thing and shows another is worse than either.
   const isFieldSupervisor = (u) => titleHasSegment(u?.title, "Field Supervisor");
+  // a field supervisor's month is the clients assigned to them: the rows the
+  // office sees their name on in the Supervisor column
+  const rows = office
+    ? batch.attestations
+    : batch.attestations.filter((a) => attestationIsTheirs(a, user.id, isFieldSupervisor));
   const supFor = new Map(
     rows.map((a) => [
       a.id,
@@ -78,10 +87,12 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
   // on every row and every column would be 25,000 options on one page. Only 22
   // rows have no staff, so the long list is drawn 22 times and the short one
   // 233 times.
-  const people = await prisma.user.findMany({
-    where: { deactivatedAt: null },
-    select: { id: true, name: true, title: true, preferredFirstName: true, preferredLastName: true },
-  });
+  const people = office
+    ? await prisma.user.findMany({
+        where: { deactivatedAt: null },
+        select: { id: true, name: true, title: true, preferredFirstName: true, preferredLastName: true },
+      })
+    : [];
   const byName = (a, b) => a.name.localeCompare(b.name);
   const staffChoices = people
     .map((u) => ({ id: u.id, name: preferredName(u) }))
@@ -139,36 +150,38 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
             {batch.monthLabel}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {counts.all} clients · uploaded {companyDate(batch.createdAt)} by{" "}
+            {counts.all} {office ? "clients" : "of your clients"} · uploaded {companyDate(batch.createdAt)} by{" "}
             {preferredName(batch.uploadedBy) || "someone"}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={`/portal/admin/client-attestations/${batch.id}/download-pdf`}
-            className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
-          >
-            One PDF to print
-          </a>
-          <a
-            href={`/portal/admin/client-attestations/${batch.id}/download`}
-            className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
-          >
-            Download all forms (.zip)
-          </a>
-          <Link
-            href={`/portal/admin/client-attestations/${batch.id}/caseloads`}
-            className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
-          >
-            By caseload
-          </Link>
-          <a
-            href={`/portal/admin/client-attestations/${batch.id}/source`}
-            className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
-          >
-            The QSP export
-          </a>
-        </div>
+        {office && (
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/portal/admin/client-attestations/${batch.id}/download-pdf`}
+              className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
+            >
+              One PDF to print
+            </a>
+            <a
+              href={`/portal/admin/client-attestations/${batch.id}/download`}
+              className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
+            >
+              Download all forms (.zip)
+            </a>
+            <Link
+              href={`/portal/admin/client-attestations/${batch.id}/caseloads`}
+              className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
+            >
+              By caseload
+            </Link>
+            <a
+              href={`/portal/admin/client-attestations/${batch.id}/source`}
+              className="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2"
+            >
+              The QSP export
+            </a>
+          </div>
+        )}
       </div>
 
       {/* WHERE MAIL FROM THIS SCREEN ACTUALLY GOES. Test mode is the default
@@ -183,175 +196,193 @@ export default async function ClientAttestationBatchPage({ params, searchParams 
         </div>
       )}
 
-      <SendPanel
-        counts={sendCounts}
-        mode={mode}
-        action={sendAttestations.bind(null, batch.id)}
-      />
+      {office && (
+        <SendPanel
+          counts={sendCounts}
+          mode={mode}
+          action={sendAttestations.bind(null, batch.id)}
+        />
+      )}
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Filter id={batch.id} k="all" now={show} label="All" n={counts.all} />
-        <Filter id={batch.id} k="unrouted" now={show} label="No supervisor" n={counts.unrouted} />
-        <Filter id={batch.id} k="unsigned" now={show} label="Not signed" n={counts.unsigned} />
-        <Filter id={batch.id} k="signed" now={show} label="Signed" n={counts.signed} />
-      </div>
+      {!office && rows.length === 0 ? (
+        <div className="mt-10 rounded-xl border border-dashed border-border-strong bg-surface-2 p-10 text-center">
+          <p className="text-sm font-medium text-foreground">
+            No clients on this month are assigned to you.
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            The office assigns each client&apos;s supervisor on the Caseloads page.
+          </p>
+        </div>
+      ) : (
+      <>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-surface">
-        <table className="w-full min-w-[880px] text-left text-sm">
-          <thead className="border-b border-border bg-surface-2">
-            <tr className="text-xs font-semibold uppercase tracking-wide text-faint">
-              <th className="px-4 py-3">Client</th>
-              <th className="px-4 py-3">Assigned staff</th>
-              <th className="px-4 py-3 text-right">Visits</th>
-              <th className="px-4 py-3 text-right">Hours</th>
-              <th className="px-4 py-3">Supervisor</th>
-              <th className="px-4 py-3">Sent</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Form</th>
-              <th className="px-4 py-3 text-right"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((a) => (
-              <tr key={a.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-3 font-medium text-foreground">
-                  {a.clientName}
-                  <span className="ml-2 text-xs font-normal text-faint">
-                    p{a.sourcePage}
-                  </span>
-                  {a.staffNames.length > 0 && (
-                    <span className="block text-xs font-normal text-faint">
-                      On the schedule: {a.staffNames.join(", ")}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-muted">
-                  {a.staffUser ? (
-                    preferredName(a.staffUser)
-                  ) : a.signedAt ? (
-                    a.caseWorker || "-"
-                  ) : (
-                    <RoutePick
-                      form={`route-${a.id}`}
-                      name="staffUserId"
-                      choices={staffChoices}
-                      label={`Staff for ${a.clientName}`}
-                      empty="Nobody"
-                    />
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted">
-                  {a.entryCount}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted">
-                  {a.scheduledHours.toFixed(2)}
-                </td>
-                <td className="px-4 py-3">
-                  {supFor.get(a.id).supervisor ? (
-                    <span className="text-foreground">
-                      {preferredName(supFor.get(a.id).supervisor)}
-                      {supFor.get(a.id).from === "self" && (
-                        <span className="block text-xs text-faint">Supervises this client</span>
-                      )}
-                    </span>
-                  ) : a.signedAt ? (
-                    <span className="text-amber-700 dark:text-amber-400">Not assigned</span>
-                  ) : (
-                    <RoutePick
-                      form={`route-${a.id}`}
-                      name="supervisorUserId"
-                      choices={supervisorChoices}
-                      label={`Supervisor for ${a.clientName}`}
-                      empty="Nobody"
-                    />
-                  )}
-                </td>
-                <td className="px-4 py-3 text-muted">
-                  {a.sentAt ? (
-                    <span title={a.intendedEmail || ""}>
-                      {companyDate(a.sentAt)}
-                    </span>
-                  ) : (
-                    "-"
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {a.signedAt ? (
-                    <Chip tone="ok">Signed {companyDate(a.signedAt)}</Chip>
-                  ) : a.clientSignedAt ? (
-                    <Chip tone="mid">Client signed · supervisor next</Chip>
-                  ) : (
-                    <Chip>Not signed</Chip>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {a.formUrl || a.signedPdfUrl ? (
-                    <a
-                      href={`/portal/admin/client-attestations/${batch.id}/form/${a.id}`}
-                      className="font-semibold text-brand hover:underline"
-                    >
-                      {a.signedPdfUrl ? "Signed copy" : "Download"}
-                    </a>
-                  ) : (
-                    <span className="text-rose-700 dark:text-rose-400">Failed</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {!a.signedAt && (
-                    <div className="flex items-center justify-end gap-1.5">
-                      {(!a.staffUser || !supFor.get(a.id).supervisor) && (
-                        <>
-                          {/* THE FORM LIVES HERE, ITS CONTROLS DO NOT. A form
-                              cannot wrap table cells, so the selects sit in
-                              their own columns and join this one by id - which
-                              is what the HTML form attribute is for. One
-                              submit sends both, so assigning a staff member
-                              and a supervisor is one action, not two. */}
-                          <form id={`route-${a.id}`} action={setClientRouting} />
-                          <input type="hidden" name="clientKey" value={a.clientKey} form={`route-${a.id}`} />
-                          <input type="hidden" name="clientName" value={a.clientName} form={`route-${a.id}`} />
-                          {a.staffUser && (
-                            <input type="hidden" name="staffUserId" value={a.staffUser.id} form={`route-${a.id}`} />
-                          )}
-                          {a.supervisor && (
-                            <input type="hidden" name="supervisorUserId" value={a.supervisor.id} form={`route-${a.id}`} />
-                          )}
-                          <button
-                            type="submit"
-                            form={`route-${a.id}`}
-                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:text-foreground"
-                          >
-                            Assign
-                          </button>
-                        </>
-                      )}
-                      {a.formUrl && (
-                        <SendButton
-                          attestation={{
-                            id: a.id,
-                            clientName: a.clientName,
-                            sentAt: a.sentAt ? a.sentAt.toISOString() : null,
-                            supervisorName: a.supervisor ? preferredName(a.supervisor) : null,
-                            staffName: a.staffUser ? preferredName(a.staffUser) : null,
-                          }}
-                          testInbox={mode.live ? null : mode.recipients.join(", ")}
-                          action={sendAttestationOne}
-                        />
-                      )}
-                      <PaperSignButton
-                        attestation={{ id: a.id, clientName: a.clientName }}
-                        action={recordPaperSignature}
-                      />
-                    </div>
-                  )}
-                </td>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Filter id={batch.id} k="all" now={show} label="All" n={counts.all} />
+          {office && (
+            <Filter id={batch.id} k="unrouted" now={show} label="No supervisor" n={counts.unrouted} />
+          )}
+          <Filter id={batch.id} k="unsigned" now={show} label="Not signed" n={counts.unsigned} />
+          <Filter id={batch.id} k="signed" now={show} label="Signed" n={counts.signed} />
+        </div>
+
+        <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-surface">
+          <table className="w-full min-w-[880px] text-left text-sm">
+            <thead className="border-b border-border bg-surface-2">
+              <tr className="text-xs font-semibold uppercase tracking-wide text-faint">
+                <th className="px-4 py-3">Client</th>
+                <th className="px-4 py-3">Assigned staff</th>
+                <th className="px-4 py-3 text-right">Visits</th>
+                <th className="px-4 py-3 text-right">Hours</th>
+                <th className="px-4 py-3">Supervisor</th>
+                <th className="px-4 py-3">Sent</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Form</th>
+                <th className="px-4 py-3 text-right"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {shown.map((a) => (
+                <tr key={a.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-3 font-medium text-foreground">
+                    {a.clientName}
+                    <span className="ml-2 text-xs font-normal text-faint">
+                      p{a.sourcePage}
+                    </span>
+                    {a.staffNames.length > 0 && (
+                      <span className="block text-xs font-normal text-faint">
+                        On the schedule: {a.staffNames.join(", ")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted">
+                    {a.staffUser ? (
+                      preferredName(a.staffUser)
+                    ) : a.signedAt || !office ? (
+                      a.caseWorker || "-"
+                    ) : (
+                      <RoutePick
+                        form={`route-${a.id}`}
+                        name="staffUserId"
+                        choices={staffChoices}
+                        label={`Staff for ${a.clientName}`}
+                        empty="Nobody"
+                      />
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted">
+                    {a.entryCount}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted">
+                    {a.scheduledHours.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3">
+                    {supFor.get(a.id).supervisor ? (
+                      <span className="text-foreground">
+                        {preferredName(supFor.get(a.id).supervisor)}
+                        {supFor.get(a.id).from === "self" && (
+                          <span className="block text-xs text-faint">Supervises this client</span>
+                        )}
+                      </span>
+                    ) : a.signedAt ? (
+                      <span className="text-amber-700 dark:text-amber-400">Not assigned</span>
+                    ) : (
+                      <RoutePick
+                        form={`route-${a.id}`}
+                        name="supervisorUserId"
+                        choices={supervisorChoices}
+                        label={`Supervisor for ${a.clientName}`}
+                        empty="Nobody"
+                      />
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted">
+                    {a.sentAt ? (
+                      <span title={a.intendedEmail || ""}>
+                        {companyDate(a.sentAt)}
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {a.signedAt ? (
+                      <Chip tone="ok">Signed {companyDate(a.signedAt)}</Chip>
+                    ) : a.clientSignedAt ? (
+                      <Chip tone="mid">Client signed · supervisor next</Chip>
+                    ) : (
+                      <Chip>Not signed</Chip>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {a.formUrl || a.signedPdfUrl ? (
+                      <a
+                        href={`/portal/admin/client-attestations/${batch.id}/form/${a.id}`}
+                        className="font-semibold text-brand hover:underline"
+                      >
+                        {a.signedPdfUrl ? "Signed copy" : "Download"}
+                      </a>
+                    ) : (
+                      <span className="text-rose-700 dark:text-rose-400">Failed</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {!a.signedAt && (
+                      <div className="flex items-center justify-end gap-1.5">
+                        {office && (!a.staffUser || !supFor.get(a.id).supervisor) && (
+                          <>
+                            {/* THE FORM LIVES HERE, ITS CONTROLS DO NOT. A form
+                                cannot wrap table cells, so the selects sit in
+                                their own columns and join this one by id - which
+                                is what the HTML form attribute is for. One
+                                submit sends both, so assigning a staff member
+                                and a supervisor is one action, not two. */}
+                            <form id={`route-${a.id}`} action={setClientRouting} />
+                            <input type="hidden" name="clientKey" value={a.clientKey} form={`route-${a.id}`} />
+                            <input type="hidden" name="clientName" value={a.clientName} form={`route-${a.id}`} />
+                            {a.staffUser && (
+                              <input type="hidden" name="staffUserId" value={a.staffUser.id} form={`route-${a.id}`} />
+                            )}
+                            {a.supervisor && (
+                              <input type="hidden" name="supervisorUserId" value={a.supervisor.id} form={`route-${a.id}`} />
+                            )}
+                            <button
+                              type="submit"
+                              form={`route-${a.id}`}
+                              className="rounded-md border border-border-strong px-2.5 py-1 text-xs font-medium text-muted transition hover:text-foreground"
+                            >
+                              Assign
+                            </button>
+                          </>
+                        )}
+                        {a.formUrl && (
+                          <SendButton
+                            attestation={{
+                              id: a.id,
+                              clientName: a.clientName,
+                              sentAt: a.sentAt ? a.sentAt.toISOString() : null,
+                              supervisorName: a.supervisor ? preferredName(a.supervisor) : null,
+                              staffName: a.staffUser ? preferredName(a.staffUser) : null,
+                            }}
+                            testInbox={mode.live ? null : mode.recipients.join(", ")}
+                            action={sendAttestationOne}
+                          />
+                        )}
+                        <PaperSignButton
+                          attestation={{ id: a.id, clientName: a.clientName }}
+                          action={recordPaperSignature}
+                        />
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+      )}
 
-      {counts.unrouted > 0 && (
+      {office && counts.unrouted > 0 && (
         <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted">
           {counts.unrouted} of {counts.all}{" "}clients have no field
           supervisor. A client&apos;s supervisor is whoever supervises their

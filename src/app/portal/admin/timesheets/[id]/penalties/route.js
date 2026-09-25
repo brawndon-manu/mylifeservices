@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
 import { renderPenaltyRoster } from "@/lib/timesheet/penalty-roster";
@@ -11,11 +13,12 @@ import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 // demand from the rows, so it always agrees with the review screen.
 export const dynamic = "force-dynamic";
 
-export async function GET(_req, { params }) {
+export async function GET(req, { params }) {
   const { id } = await params;
 
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
+    await logFileDenied({ user, pathname: `timesheets/${id}/penalties`, req, label: "Break penalty hours" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -74,6 +77,12 @@ export async function GET(_req, { params }) {
     return new NextResponse("Could not build the sheet", { status: 500 });
   }
 
+  await logFileOpen({
+    user,
+    pathname: `timesheets/${id}/penalties`,
+    req,
+    label: accessLabel("Break penalty hours", periodRange(batch.periodFrom, batch.periodTo)),
+  });
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");
   return new NextResponse(Buffer.from(bytes), {
     headers: {

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canSeeEveryAttestation } from "@/lib/roles";
 import BackLink from "@/components/BackLink";
 import { uploadClientSchedules } from "../actions";
 import UploadForm from "./UploadForm";
@@ -25,7 +25,7 @@ const ERRORS = {
 
 export default async function NewClientAttestationBatchPage({ searchParams }) {
   const user = await getCurrentUser();
-  if (!canManageClientAttestations(user?.role)) redirect("/portal");
+  if (!canSeeEveryAttestation(user?.role)) redirect("/portal");
   const sp = await searchParams;
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
   const why = typeof sp?.why === "string" ? sp.why : null;

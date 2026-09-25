@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageClientAttestations } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, clientInitials } from "@/lib/access-labels";
 import { renderSatisfactionPdf } from "@/lib/client-reports/satisfaction-pdf";
 
 // one filled survey as the printed form, built on demand from the stored
@@ -9,13 +11,14 @@ import { renderSatisfactionPdf } from "@/lib/client-reports/satisfaction-pdf";
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
+  const { id } = await params;
   const user = await getCurrentUser();
   // client feedback is sensitive - same gate as the survey desk itself
   if (!canManageClientAttestations(user?.role)) {
+    await logFileDenied({ user, pathname: `satisfaction/${id}.pdf`, req, label: "Satisfaction survey" });
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const { id } = await params;
   const r = await prisma.clientReport.findUnique({
     where: { id },
     select: { clientName: true, answers: true, conductedByName: true, createdAt: true },
@@ -43,6 +46,12 @@ export async function GET(req, { params }) {
     return new NextResponse("Could not build the survey", { status: 500 });
   }
 
+  await logFileOpen({
+    user,
+    pathname: `satisfaction/${id}.pdf`,
+    req,
+    label: accessLabel("Satisfaction survey", clientInitials(r.clientName), conductedOn),
+  });
   const slug =
     r.clientName
       .toLowerCase()

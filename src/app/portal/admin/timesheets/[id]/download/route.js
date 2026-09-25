@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { renderSheet, RENDER_SELECT_SHEET } from "@/lib/timesheet/render-sheet";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { fetchBlob } from "@/lib/blob";
 
@@ -18,6 +20,7 @@ export async function GET(req, { params }) {
 
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
+    await logFileDenied({ user, pathname: `timesheets/${id}/download`, req, label: "Timesheet batch · one PDF" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -107,6 +110,16 @@ export async function GET(req, { params }) {
   if (!added) return new NextResponse("Couldn't read any of the files", { status: 500 });
 
   const bytes = await merged.save();
+  await logFileOpen({
+    user,
+    pathname: `timesheets/${id}/download`,
+    req,
+    label: accessLabel(
+      "Timesheet batch",
+      periodRange(batch.periodFrom, batch.periodTo),
+      includeUnsigned ? "every sheet in one PDF" : "all signed copies in one PDF",
+    ),
+  });
   const name = `timesheets-${(batch.periodFrom || "").replace(/\//g, "-")}-${
     includeUnsigned ? "corrected" : "signed"
   }.pdf`;

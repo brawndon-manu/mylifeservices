@@ -2,10 +2,11 @@ import { amendmentLinkOpen } from "@/lib/link-life";
 import { NextResponse } from "next/server";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
 import { formNumber } from "@/lib/clock-amendment/rules";
-import { loadAmendment, withNames, buildAmendmentDocument } from "@/lib/clock-amendment/document";
+import { loadAmendment, withNames, buildAmendmentDocument, shownName } from "@/lib/clock-amendment/document";
 import { fetchBlob } from "@/lib/blob";
 import { parseBlobUrl } from "@/lib/blob-paths";
 import { logFileOpen } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 
 // THE STAFF MEMBER'S OWN COPY of an approved addendum, through the same link
 // they signed it on. the approval email no longer carries the pdf - it links
@@ -33,6 +34,7 @@ export async function GET(req, { params }) {
     pathname: parseBlobUrl(a.pdfUrl)?.pathname || `clock-amendments/${a.id}`,
     req,
     via: "addendum-link",
+    label: accessLabel("Clock addendum", formNumber(a), shownName(a.staff)),
   });
   return new NextResponse(bytes, {
     headers: {

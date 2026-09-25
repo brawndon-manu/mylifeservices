@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canSeeEveryAttestation } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { companyDate } from "@/lib/company-time";
 import BackLink from "@/components/BackLink";
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 // where every signature stands.
 export default async function BatchByCaseloadPage({ params }) {
   const user = await getCurrentUser();
-  if (!canManageClientAttestations(user?.role)) redirect("/portal");
+  if (!canSeeEveryAttestation(user?.role)) redirect("/portal");
   const { id } = await params;
 
   const batch = await prisma.clientAttestationBatch.findUnique({

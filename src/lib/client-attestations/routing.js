@@ -62,6 +62,16 @@ export function supervisorOf({ supervisor = null, staffUser = null, isFieldSuper
   return { supervisor: null, from: null };
 }
 
+// IS THIS FORM A FIELD SUPERVISOR'S OWN. the same answer the review screen's
+// Supervisor column gives (supervisorOf), so a supervisor sees exactly the rows
+// the office sees their name on: the ones set to them, and the clients they
+// staff themselves when nobody else is set.
+export function attestationIsTheirs(row, userId, isFieldSupervisor = () => false) {
+  if (!row || !userId) return false;
+  const { supervisor } = supervisorOf({ supervisor: row.supervisor, staffUser: row.staffUser, isFieldSupervisor });
+  return !!supervisor && supervisor.id === userId;
+}
+
 // can this client be sent to at all, and if not, why the screen says so
 export function routingGaps(resolved) {
   return {

@@ -6,6 +6,7 @@ import { openBlob } from "@/lib/blob";
 import { cleanPathname, parseBlobUrl } from "@/lib/blob-paths";
 import { canOpenFile, fileRuleFor } from "@/lib/file-access";
 import { logFileOpen } from "@/lib/file-log";
+import { describeStoredFile } from "@/lib/file-describe";
 
 // THE GATE. every private file a page links to comes through here: the page
 // hands the browser /portal/files/<pathname> (see fileHref), and this checks
@@ -35,7 +36,9 @@ export async function GET(req, { params }) {
   // not yours and not there look the same from outside - but a refused ask
   // for a record is written down, same as an open
   if (!allowed) {
-    if (rule?.record) await logFileOpen({ user, pathname, req, action: "denied" });
+    if (rule?.record) {
+      await logFileOpen({ user, pathname, req, action: "denied", label: await describeStoredFile(pathname) });
+    }
     return new NextResponse("Not found", { status: 404 });
   }
 
@@ -53,7 +56,7 @@ export async function GET(req, { params }) {
     });
   }
 
-  if (rule.record) await logFileOpen({ user, pathname, req });
+  if (rule.record) await logFileOpen({ user, pathname, req, label: await describeStoredFile(pathname) });
 
   const name = (pathname.split("/").pop() || "file").replace(/[^\w.\- ]/g, "_");
   return new NextResponse(res.stream, {

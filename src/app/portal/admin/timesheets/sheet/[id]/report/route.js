@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
+import { sheetName } from "@/lib/file-describe";
 import { renderComplianceReport } from "@/lib/timesheet/report";
 
 // the companion compliance report for one employee. generated on demand rather
@@ -9,17 +12,21 @@ import { renderComplianceReport } from "@/lib/timesheet/report";
 // to keep in sync and no second copy to go stale after a correction.
 export const dynamic = "force-dynamic";
 
-export async function GET(_req, { params }) {
+export async function GET(req, { params }) {
   const { id } = await params;
 
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
+    await logFileDenied({ user, pathname: `timesheets/sheet/${id}/report`, req, label: "Hours and penalties report" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },
-    include: { batch: { select: { periodFrom: true, periodTo: true } } },
+    include: {
+      batch: { select: { periodFrom: true, periodTo: true } },
+      user: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
+    },
   });
   if (!ts) return new NextResponse("Not found", { status: 404 });
 
@@ -65,6 +72,12 @@ export async function GET(_req, { params }) {
     return new NextResponse("Could not build the report", { status: 500 });
   }
 
+  await logFileOpen({
+    user,
+    pathname: `timesheets/sheet/${id}/report`,
+    req,
+    label: accessLabel("Hours and penalties report", sheetName(ts), periodRange(ts.batch.periodFrom, ts.batch.periodTo)),
+  });
   const safe = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
   return new NextResponse(Buffer.from(bytes), {
     headers: {

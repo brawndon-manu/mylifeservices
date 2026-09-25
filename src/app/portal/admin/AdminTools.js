@@ -19,6 +19,7 @@ import {
   Files,
   Image as ImageIcon,
   FlaskConical,
+  ShieldCheck,
   Search,
   ChevronRight,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const ICONS = {
   files: Files,
   image: ImageIcon,
   flask: FlaskConical,
+  shieldCheck: ShieldCheck,
 };
 
 // the admin launcher: two packed columns of borderless groups, hairline rows,

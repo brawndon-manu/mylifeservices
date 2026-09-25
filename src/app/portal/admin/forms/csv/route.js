@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { preferredName } from "@/lib/contacts";
 import { cell, csvResponse } from "@/lib/csv";
 import { firstLine } from "../../acknowledgments/roster";
@@ -14,6 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req) {
   const user = await getCurrentUser();
   if (!canViewFormRecords(user?.role)) {
+    await logFileDenied({ user, pathname: "form-records/submissions.csv", req, label: "Form submissions · CSV" });
     return new Response("Not found", { status: 404 });
   }
 
@@ -79,6 +82,7 @@ export async function GET(req) {
     );
   }
 
+  await logFileOpen({ user, pathname: "form-records/submissions.csv", req, label: accessLabel("Form submissions", "CSV") });
   const suffix = filters.office ? `-${filters.office.toLowerCase()}` : "";
   return csvResponse(lines, `form-submissions${suffix}-${fileDate()}.csv`);
 }

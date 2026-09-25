@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { cell, csvResponse } from "@/lib/csv";
 import { COMPANY_MEETING_TAG } from "@/lib/announcements";
 import { audienceLabel, firstLine, fmtPosted } from "../roster";
@@ -16,6 +18,7 @@ export async function GET(req) {
   const user = await getCurrentUser();
   // read-receipts are sensitive - Admin/IT/Super only, same gate as the board.
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: "acknowledgments/audit.csv", req, label: "Acknowledgment records · CSV" });
     return new Response("Not found", { status: 404 });
   }
   const office = officeFromSearch(Object.fromEntries(new URL(req.url).searchParams));
@@ -65,6 +68,7 @@ export async function GET(req) {
     }
   }
 
+  await logFileOpen({ user, pathname: "acknowledgments/audit.csv", req, label: accessLabel("Acknowledgment records", "every announcement", "CSV") });
   const suffix = office ? `-${office.toLowerCase()}` : "";
   return csvResponse(lines, `acknowledgment-audit${suffix}-${fileDate()}.csv`);
 }

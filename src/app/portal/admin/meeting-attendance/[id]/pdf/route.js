@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { prisma } from "@/lib/prisma";
 import {
   ackAudienceWhere, isCompanyMeeting, recordNoteOf, topicsForSession, attachmentsForSession,
@@ -22,6 +24,7 @@ export async function GET(req, { params }) {
   const user = await getCurrentUser();
   // roster is sensitive - same gate as the board itself
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: `meeting-attendance/${id}.pdf`, req, label: "Meeting attendance" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -178,6 +181,7 @@ export async function GET(req, { params }) {
     return new NextResponse("Could not build the report", { status: 500 });
   }
 
+  await logFileOpen({ user, pathname: `meeting-attendance/${id}.pdf`, req, label: accessLabel("Meeting attendance", m.title) });
   const slug = (m.title || "meeting")
     .toLowerCase()
     .replace(/[^\w]+/g, "-")

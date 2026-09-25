@@ -131,13 +131,16 @@ test("who opens what: each kind of file follows the screen that lists it", () =>
   assert.equal(open("STAFF", "form-submissions/a.pdf"), false);
   assert.equal(open("STAFF", "applications/a.pdf"), false);
 
-  // a supervisor has the attestation desk and nothing of payroll
-  assert.equal(open("SUPERVISOR", "client-attestations/forms/a.pdf"), true);
+  // a supervisor opens their own clients' forms through the desk's form route,
+  // which checks the row; by its path an attestation file is the office's.
+  // and nothing of payroll
+  assert.equal(open("SUPERVISOR", "client-attestations/forms/a.pdf"), false);
   assert.equal(open("SUPERVISOR", "timesheets/signed/a.pdf"), false);
   assert.equal(open("SUPERVISOR", "clock-amendments/x/dsn.pdf"), false);
 
-  // HR: timesheets and form records
+  // HR: timesheets, form records and the whole attestation month
   assert.equal(open("HR", "timesheets/signed/a.pdf"), true);
+  assert.equal(open("HR", "client-attestations/forms/a.pdf"), true);
   assert.equal(open("HR", "form-submissions/a.pdf"), true);
   assert.equal(open("HR", "certificates/a.pdf"), true);
 

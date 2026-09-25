@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { fetchBlob } from "@/lib/blob";
 import { parseBlobUrl } from "@/lib/blob-paths";
 import { logFileOpen } from "@/lib/file-log";
+import { describeStoredFile } from "@/lib/file-describe";
 import { loadAmendment, withNames, buildAmendmentDocument } from "@/lib/clock-amendment/document";
 
 // ONE OF MY DOCUMENTS - a document the signed-in person signed or holds, and
@@ -49,7 +50,7 @@ export async function GET(req, { params }) {
   const doc = await find(id);
   const pathname = parseBlobUrl(doc?.url)?.pathname || `${kind}/${id}`;
   if (!doc || !doc.owner || doc.owner !== user.id) {
-    if (doc) await logFileOpen({ user, pathname, req, action: "denied" });
+    if (doc) await logFileOpen({ user, pathname, req, action: "denied", label: await describeStoredFile(pathname) });
     return new NextResponse("Not found", { status: 404 });
   }
 
@@ -66,7 +67,7 @@ export async function GET(req, { params }) {
   }
   if (!bytes) return new NextResponse("Not found", { status: 404 });
 
-  await logFileOpen({ user, pathname, req });
+  await logFileOpen({ user, pathname, req, label: await describeStoredFile(pathname) });
   return new NextResponse(bytes, {
     headers: {
       "Content-Type": "application/pdf",

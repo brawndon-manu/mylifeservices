@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 import { preferredName } from "@/lib/contacts";
 import { scheduleKey } from "@/lib/timesheet/schedule";
 import {
@@ -32,6 +34,7 @@ export async function GET(req, { params }) {
 
   const user = await getCurrentUser();
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: `audit/${id}/report`, req, label: "Audit flagged shifts" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -155,6 +158,17 @@ export async function GET(req, { params }) {
   // the file says what it holds too: the one kind by name, or how many
   const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const picked = only ? (only.length === 1 ? `-${slug(only[0])}` : `-${only.length}-kinds`) : "";
+  await logFileOpen({
+    user,
+    pathname: `audit/${id}/report`,
+    req,
+    label: accessLabel(
+      "Audit flagged shifts",
+      periodRange(batch.periodFrom, batch.periodTo),
+      detailed && "detailed",
+      only && only.join(", "),
+    ),
+  });
   const filename = `flagged-shifts${detailed ? "-detailed" : ""}${picked}-${batch.periodFrom.replaceAll("/", "-")}-to-${batch.periodTo.replaceAll("/", "-")}.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {

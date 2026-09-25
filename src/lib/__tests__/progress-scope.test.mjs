@@ -56,5 +56,6 @@ test("each upload reads its own lane, and only its own", () => {
   assert.match(ca, /progressKey\(user\.id, id, "ca"\)/);
   // and each is behind its own permission
   assert.match(ts, /canManageTimesheets/);
-  assert.match(ca, /canManageClientAttestations/);
+  // uploading a month is the office's side of the desk
+  assert.match(ca, /canSeeEveryAttestation/);
 });

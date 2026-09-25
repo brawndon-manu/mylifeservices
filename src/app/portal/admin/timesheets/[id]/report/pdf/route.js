@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 // LEGAL NAMES ON EVERY DOWNLOADABLE DOCUMENT - see payrollName
 import { payrollName } from "@/lib/contacts";
 import { renderPayoutReport } from "@/lib/timesheet/payout-pdf";
@@ -12,11 +14,12 @@ import { payoutTimeOff } from "@/lib/timesheet/time-off";
 // it can never disagree with the screen.
 export const dynamic = "force-dynamic";
 
-export async function GET(_req, { params }) {
+export async function GET(req, { params }) {
   const { id } = await params;
 
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
+    await logFileDenied({ user, pathname: `timesheets/${id}/report.pdf`, req, label: "Payroll hours and penalties" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -119,6 +122,12 @@ export async function GET(_req, { params }) {
     return new NextResponse("Could not build the report", { status: 500 });
   }
 
+  await logFileOpen({
+    user,
+    pathname: `timesheets/${id}/report.pdf`,
+    req,
+    label: accessLabel("Payroll hours and penalties", periodRange(batch.periodFrom, batch.periodTo)),
+  });
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");
   return new NextResponse(Buffer.from(bytes), {
     headers: {

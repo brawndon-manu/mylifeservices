@@ -5,6 +5,9 @@ import {
   requireAttestationAccess,
   fetchStored,
 } from "@/lib/client-attestations/serve";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, clientInitials } from "@/lib/access-labels";
+import { parseBlobUrl } from "@/lib/blob-paths";
 
 // THE WHOLE MONTH AS ONE CONTINUOUS PDF, one page per client, for printing the
 // round in a single go. The zip next to it is for filing per client; this is
@@ -18,11 +21,16 @@ import {
 // AcroForm dictionary they belong to - fields in the merged file would be
 // orphans that some viewers draw and some don't. Printed is what this is for,
 // so the fields are baked to their current appearance instead.
+//
+// EVERY CLIENT IS IN IT, so like the zip it is the office's.
 export async function GET(req, { params }) {
-  const { deny } = await requireAttestationAccess();
-  if (deny) return deny;
-
   const { id } = await params;
+  const { user, deny } = await requireAttestationAccess({ wholeMonth: true });
+  if (deny) {
+    await logFileDenied({ user, pathname: `client-attestations/${id}/download-pdf`, req, label: "Client attestations · one PDF to print" });
+    return deny;
+  }
+
   const batch = await prisma.clientAttestationBatch.findUnique({
     where: { id },
     select: {
@@ -95,6 +103,12 @@ export async function GET(req, { params }) {
     console.warn(`attestation merge missing ${missing.length}: ${missing.join(", ")}`);
   }
 
+  await logFileOpen({
+    user,
+    pathname: `client-attestations/${id}/download-pdf`,
+    req,
+    label: accessLabel("Client attestations", batch.monthLabel, "one PDF to print"),
+  });
   const safe = batch.monthLabel.replace(/[^\w.\- ]/g, "_");
   return new NextResponse(Buffer.from(await merged.save()), {
     headers: {

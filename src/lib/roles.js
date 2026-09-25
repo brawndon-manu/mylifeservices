@@ -234,6 +234,15 @@ export function canManageClientAttestations(role) {
   return canManageTimesheets(role) || role === "SUPERVISOR";
 }
 
+// THE WHOLE MONTH OF CLIENT ATTESTATIONS - uploading it, routing it, every
+// client's form, and the files that carry every client at once (the QSP
+// source, the zip, the one pdf). The office's side of the desk, same tier as
+// timesheets. A field supervisor is on the desk too, but sees only the forms
+// assigned to them: a client's paperwork is for the people working that case.
+export function canSeeEveryAttestation(role) {
+  return canManageTimesheets(role);
+}
+
 // returns true if `role` is a valid Role enum value. use for form
 // validation when accepting role from a form submission.
 export function isValidRole(role) {

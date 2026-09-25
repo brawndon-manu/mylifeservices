@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { renderSignedFormsBundle } from "@/lib/signed-forms-pdf";
 import { readFilters, submissionWhere, submissionRow } from "../../query";
 import { fileDate } from "../../../acknowledgments/audit";
@@ -12,12 +14,13 @@ import { fetchBlob } from "@/lib/blob";
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
+  const { id } = await params;
   const user = await getCurrentUser();
   if (!canViewFormRecords(user?.role)) {
+    await logFileDenied({ user, pathname: `form-records/${id}/signed-pdf`, req, label: "Signed forms · one PDF" });
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const { id } = await params;
   const form = await prisma.form.findUnique({
     where: { id },
     select: { id: true, title: true, category: true },
@@ -74,6 +77,7 @@ export async function GET(req, { params }) {
     .replace(/[^\w]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "form";
+  await logFileOpen({ user, pathname: `form-records/${id}/signed-pdf`, req, label: accessLabel("Signed forms", form.title, "one PDF") });
   const suffix = filters.office ? `-${filters.office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {

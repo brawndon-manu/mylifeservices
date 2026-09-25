@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { clientInitials } from "../initials.js";
+import { submissionOpenTo } from "../submission-access.js";
 
 const read = (p) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
 
@@ -65,11 +66,18 @@ test("a form about a person served is stored first and goes out as a link", () =
 });
 
 test("the link opens only for its recipients, its sender and the form-records roles", () => {
-  const route = read("src/app/portal/forms/submissions/[id]/route.js");
-  assert.match(route, /canViewFormRecords\(user\.role\) \|\|/);
-  assert.match(route, /\(!!sub\.userId && sub\.userId === user\.id\) \|\|/);
-  assert.match(route, /\(sub\.sentTo \|\| \[\]\)\.some\(\(e\) => String\(e\)\.toLowerCase\(\) === mine\)/);
-  assert.match(route, /action: "denied"/);
+  const sub = { userId: "u-sender", sentTo: ["Sup@Example.com", "cc@example.com"] };
+  assert.equal(submissionOpenTo({ id: "a", role: "STAFF", email: "sup@example.com" }, sub), true, "a recipient, any case");
+  assert.equal(submissionOpenTo({ id: "u-sender", role: "STAFF", email: "me@example.com" }, sub), true, "the sender");
+  assert.equal(submissionOpenTo({ id: "b", role: "HR", email: "hr@example.com" }, sub), true, "the form-records roles");
+  assert.equal(submissionOpenTo({ id: "c", role: "SUPERVISOR", email: "other@example.com" }, sub), false);
+  assert.equal(submissionOpenTo({ id: "c", role: "STAFF", email: "" }, { userId: null, sentTo: [""] }), false, "no address matches nothing");
+  assert.equal(submissionOpenTo(null, sub), false);
+  // the page with the note and the pdf behind it both ask it, and write a refusal down
+  for (const f of ["src/app/portal/forms/submissions/[id]/page.js", "src/app/portal/forms/submissions/[id]/pdf/route.js"]) {
+    const src = read(f);
+    assert.match(src, /if \(!submissionOpenTo\(user, sub\)\) \{\s+await logFileOpen\(\{ user, pathname, req, action: "denied", label \}\);/, f);
+  }
 });
 
 test("the person served is named by initials in every subject and body", () => {

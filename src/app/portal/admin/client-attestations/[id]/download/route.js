@@ -6,17 +6,24 @@ import {
   fetchStored,
   formFileName,
 } from "@/lib/client-attestations/serve";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, clientInitials } from "@/lib/access-labels";
+import { parseBlobUrl } from "@/lib/blob-paths";
 
 // THE WHOLE MONTH AS ONE ZIP, one PDF per client, so a supervisor round can be
 // printed in a single go.
 //
 // Takes the SIGNED copy where there is one, so a re-download after signatures
-// have come back is the filing copy rather than a folder of blanks.
+// have come back is the filing copy rather than a folder of blanks. every
+// client is in it, so it is the office's.
 export async function GET(req, { params }) {
-  const { deny } = await requireAttestationAccess();
-  if (deny) return deny;
-
   const { id } = await params;
+  const { user, deny } = await requireAttestationAccess({ wholeMonth: true });
+  if (deny) {
+    await logFileDenied({ user, pathname: `client-attestations/${id}/download`, req, label: "Client attestations · all forms (.zip)" });
+    return deny;
+  }
+
   const batch = await prisma.clientAttestationBatch.findUnique({
     where: { id },
     select: {
@@ -46,6 +53,12 @@ export async function GET(req, { params }) {
   }
 
   const zip = buildZip(files);
+  await logFileOpen({
+    user,
+    pathname: `client-attestations/${id}/download`,
+    req,
+    label: accessLabel("Client attestations", batch.monthLabel, "all forms (.zip)"),
+  });
   const safe = batch.monthLabel.replace(/[^\w.\- ]/g, "_");
   return new NextResponse(zip, {
     headers: {

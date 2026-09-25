@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 import { buildAudit } from "../build";
 import { clientDayModel, renderClientCalendars } from "@/lib/timesheet/client-calendar-report";
 
@@ -12,12 +14,13 @@ import { clientDayModel, renderClientCalendars } from "@/lib/timesheet/client-ca
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
+  const { id } = await params;
   const user = await getCurrentUser();
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: `audit/${id}/client-calendar`, req, label: "Audit client calendar" });
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const { id } = await params;
   const data = await buildAudit(id);
   if (!data) return new NextResponse("Not found", { status: 404 });
 
@@ -35,6 +38,12 @@ export async function GET(req, { params }) {
     return new NextResponse("Could not build the report", { status: 500 });
   }
 
+  await logFileOpen({
+    user,
+    pathname: `audit/${id}/client-calendar`,
+    req,
+    label: accessLabel("Audit client calendar", periodRange(data.batch.periodFrom, data.batch.periodTo)),
+  });
   const stamp = `${data.batch.periodFrom}-${data.batch.periodTo}`.replaceAll("/", "-");
   return new NextResponse(Buffer.from(bytes), {
     headers: {

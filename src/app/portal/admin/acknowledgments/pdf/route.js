@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { COMPANY_MEETING_TAG } from "@/lib/announcements";
 import { renderAcksOverviewReport } from "@/lib/ack-report-pdf";
 import { audienceLabel, firstLine, fmtPosted } from "../roster";
@@ -17,6 +19,7 @@ export async function GET(req) {
   const user = await getCurrentUser();
   // read-receipts are sensitive - Admin/IT/Super only, same gate as the board.
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: "acknowledgments/audit.pdf", req, label: "Acknowledgment records · PDF" });
     return new NextResponse("Not found", { status: 404 });
   }
   const office = officeFromSearch(Object.fromEntries(new URL(req.url).searchParams));
@@ -86,6 +89,7 @@ export async function GET(req) {
     return new NextResponse("Could not build the report", { status: 500 });
   }
 
+  await logFileOpen({ user, pathname: "acknowledgments/audit.pdf", req, label: accessLabel("Acknowledgment records", "every announcement", "PDF") });
   const suffix = office ? `-${office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {

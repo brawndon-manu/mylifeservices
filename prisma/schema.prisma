@@ -2798,6 +2798,10 @@ model AccessLog {
   action    String
   // what was opened - a stored file's pathname
   target    String
+  // the same thing in words, as it stood when it was opened (the kind of
+  // record, whose it is, the period), so a line still says what it was after
+  // the record is gone
+  label     String?
   ip        String?
   userAgent String?
 

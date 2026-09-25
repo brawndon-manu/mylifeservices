@@ -12,6 +12,7 @@ import {
   canEnterAdmin,
   isElevated,
   canManageClientAttestations,
+  canSeeEveryAttestation,
   canManageTimesheets,
   canSeeRoles,
   canManageUser,
@@ -40,6 +41,16 @@ test("the attestation and survey desk now includes field supervisors", () => {
     assert.equal(canManageClientAttestations(r), true, r);
   }
   assert.equal(canManageClientAttestations("STAFF"), false);
+});
+
+test("the whole attestation month is the office's; a supervisor works their own forms", () => {
+  assert.equal(canSeeEveryAttestation("SUPERVISOR"), false);
+  assert.equal(canSeeEveryAttestation("STAFF"), false);
+  for (const r of ["SUPER", "IT_ADMIN", "ADMIN", "MANAGER", "HR"]) {
+    assert.equal(canSeeEveryAttestation(r), true, r);
+  }
+  // the same tier as timesheets, so the two desks cannot drift apart
+  for (const r of ROLES) assert.equal(canSeeEveryAttestation(r), canManageTimesheets(r), r);
 });
 
 test("timesheets did not come along for the ride", () => {

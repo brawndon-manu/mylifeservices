@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canSeeEveryAttestation } from "@/lib/roles";
 import { preferredName } from "@/lib/contacts";
 import { titleHasSegment } from "@/lib/positions";
 import BackLink from "@/components/BackLink";
@@ -27,7 +27,7 @@ const ERRORS = {
 // set here, per staff member, and everything routed by supervisor follows it.
 export default async function CaseloadsPage({ searchParams }) {
   const user = await getCurrentUser();
-  if (!canManageClientAttestations(user?.role)) redirect("/portal");
+  if (!canSeeEveryAttestation(user?.role)) redirect("/portal");
   const sp = await searchParams;
   const error = sp?.error ? ERRORS[sp.error] || "Something went wrong." : null;
   const why = typeof sp?.why === "string" ? sp.why : null;

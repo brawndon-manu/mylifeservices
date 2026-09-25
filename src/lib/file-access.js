@@ -8,8 +8,8 @@
 //
 // pure on purpose (roles.js is pure too) so the node tests can pin it.
 import {
-  canManageClientAttestations,
   canManageTimesheets,
+  canSeeEveryAttestation,
   canViewFormRecords,
   isAdminUp,
   isElevated,
@@ -21,7 +21,9 @@ export const FILE_RULES = [
   { prefix: "timesheets/", can: canManageTimesheets, record: true },
   { prefix: "day-program/", can: canManageTimesheets, record: true },
   { prefix: "clock-amendments/", can: canManageTimesheets, record: true },
-  { prefix: "client-attestations/", can: canManageClientAttestations, record: true },
+  // a field supervisor opens their own clients' forms through the desk's form
+  // route, which checks the row; a stored file by its path is the office's
+  { prefix: "client-attestations/", can: canSeeEveryAttestation, record: true },
   { prefix: "form-submissions/", can: canViewFormRecords, record: true },
   { prefix: "form-email-imports/", can: canViewFormRecords, record: true },
   { prefix: "certificates/", can: canViewFormRecords, record: true },

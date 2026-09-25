@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { cell, csvResponse } from "@/lib/csv";
 import { isCompanyMeeting } from "@/lib/announcements";
 import { firstLine } from "../../roster";
@@ -12,13 +14,14 @@ import { ackAuditRows, AUDIT_COLUMNS, fileDate } from "../../audit";
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
+  const { id } = await params;
   const user = await getCurrentUser();
   // read-receipts are sensitive - Admin/IT/Super only, same gate as the page.
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: `acknowledgments/${id}.csv`, req, label: "Acknowledgments · CSV" });
     return new Response("Not found", { status: 404 });
   }
 
-  const { id } = await params;
   const p = await prisma.announcement.findUnique({
     where: { id },
     select: {
@@ -60,6 +63,12 @@ export async function GET(req, { params }) {
     .replace(/[^\w]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "announcement";
+  await logFileOpen({
+    user,
+    pathname: `acknowledgments/${id}.csv`,
+    req,
+    label: accessLabel("Acknowledgments", p.title || firstLine(p.content), "CSV"),
+  });
   const suffix = office ? `-${office.toLowerCase()}` : "";
   return csvResponse(lines, `acknowledgments-${slug}${suffix}-${fileDate()}.csv`);
 }

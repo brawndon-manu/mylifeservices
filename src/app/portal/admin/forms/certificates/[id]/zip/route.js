@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { fetchStored } from "@/lib/client-attestations/serve";
 import { buildZip, safeEntryName } from "@/lib/zip";
 import { fileDate } from "../../../../acknowledgments/audit";
@@ -11,10 +13,13 @@ import { fileDate } from "../../../../acknowledgments/audit";
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
-  const user = await getCurrentUser();
-  if (!canViewFormRecords(user?.role)) return new NextResponse("Not found", { status: 404 });
-
   const { id } = await params;
+  const user = await getCurrentUser();
+  if (!canViewFormRecords(user?.role)) {
+    await logFileDenied({ user, pathname: `certificates/batch/${id}/zip`, req, label: "Certificates · zip" });
+    return new NextResponse("Not found", { status: 404 });
+  }
+
   const batch = await prisma.certificateBatch.findUnique({
     where: { id },
     select: {
@@ -36,6 +41,7 @@ export async function GET(req, { params }) {
     files.push({ name: n === 1 ? `${base}.pdf` : `${base} (${n}).pdf`, data: bytes });
   }
   if (!files.length) return new NextResponse("Nothing to send", { status: 404 });
+  await logFileOpen({ user, pathname: `certificates/batch/${id}/zip`, req, label: accessLabel("Certificates", batch.title, "zip") });
 
   const slug = batch.title.toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "certificates";
   return new NextResponse(buildZip(files), {

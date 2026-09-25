@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canSeeEveryAttestation } from "@/lib/roles";
 import { progressKey, getProgress } from "@/lib/timesheet-progress";
 
 // what the schedules upload is doing right now, for the page that started it.
@@ -12,7 +12,7 @@ import { progressKey, getProgress } from "@/lib/timesheet-progress";
 // worse than no count.
 export async function GET(req) {
   const user = await getCurrentUser();
-  if (!canManageClientAttestations(user?.role)) {
+  if (!canSeeEveryAttestation(user?.role)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

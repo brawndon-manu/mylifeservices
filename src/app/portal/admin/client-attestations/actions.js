@@ -9,7 +9,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations } from "@/lib/roles";
+import { canManageClientAttestations, canSeeEveryAttestation } from "@/lib/roles";
 import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { randomBytes } from "node:crypto";
 import { parseClientSchedules } from "@/lib/client-attestations/parse";
@@ -22,7 +22,7 @@ import {
 import { renderAttestationForm } from "@/lib/client-attestations/render";
 import { signAttestationToken } from "@/lib/client-attestations/token";
 import { sendAttestation } from "@/lib/client-attestations/send";
-import { fetchStored } from "@/lib/client-attestations/serve";
+import { fetchStored, attestationOpenTo } from "@/lib/client-attestations/serve";
 import { preferredName } from "@/lib/contacts";
 import { titleHasSegment } from "@/lib/positions";
 import { progressKey, setProgress } from "@/lib/timesheet-progress";
@@ -40,8 +40,17 @@ async function requireAccess() {
   return user;
 }
 
+// THE OFFICE'S SIDE OF THE DESK: uploading a month, routing, the roster, a
+// send to the whole month, deleting one. these reach every client, and a
+// field supervisor works only the forms assigned to them.
+async function requireOffice() {
+  const user = await getCurrentUser();
+  if (!canSeeEveryAttestation(user?.role)) redirect("/portal");
+  return user;
+}
+
 export async function uploadClientSchedules(formData) {
-  const user = await requireAccess();
+  const user = await requireOffice();
 
   // WHAT IT IS DOING, WHILE IT DOES IT - Mánu 2026-09-12 watching a 240-client
   // month sit on "Building the forms...": "its stuck here". It was not; it had
@@ -251,7 +260,7 @@ export async function uploadClientSchedules(formData) {
 // reads, so a routing fixed today has to reach the form that is waiting to go
 // out - but never a signed one, whose routing is part of what was agreed.
 export async function setClientRouting(formData) {
-  const user = await requireAccess();
+  const user = await requireOffice();
   const clientKeyIn = String(formData.get("clientKey") || "").trim();
   const clientName = String(formData.get("clientName") || "").trim();
   if (!clientKeyIn) return { ok: false, error: "noclient" };
@@ -299,7 +308,7 @@ export async function setClientRouting(formData) {
 
 // ASSIGNING THE SUPERVISOR BY HAND, until the per-staff mapping is filled in.
 export async function setAttestationSupervisor(attestationId, supervisorUserId) {
-  await requireAccess();
+  await requireOffice();
   const id = String(supervisorUserId || "") || null;
   const row = await prisma.clientAttestation.update({
     where: { id: attestationId },
@@ -311,7 +320,7 @@ export async function setAttestationSupervisor(attestationId, supervisorUserId) 
 }
 
 export async function deleteAttestationBatch(batchId) {
-  await requireAccess();
+  await requireOffice();
   await prisma.clientAttestationBatch.delete({ where: { id: batchId } });
   revalidatePath("/portal/admin/client-attestations");
   redirect("/portal/admin/client-attestations");
@@ -337,7 +346,12 @@ function baseUrl() {
 // phrase is set on the real deployment everything is redirected to the test
 // inbox whatever is picked here.
 export async function sendAttestationOne(attestationId, formData) {
-  await requireAccess();
+  const user = await requireAccess();
+  // a field supervisor sends their own clients' forms only; anyone else's
+  // reads as a row that isn't there
+  if (!(await attestationOpenTo(user, canSeeEveryAttestation(user.role), attestationId))) {
+    return { ok: false, error: "norow" };
+  }
 
   const target = String(formData.get("target") || "");
   if (!SEND_TARGETS.includes(target)) return { ok: false, error: "target" };
@@ -434,7 +448,7 @@ export async function sendAttestationOne(attestationId, formData) {
 // to their replacements, and there is no row-level history worth keeping here:
 // the attestation rows copy what they need at their own upload.
 export async function uploadClientRoster(formData) {
-  const user = await requireAccess();
+  const user = await requireOffice();
   void user;
 
   const file = formData.get("file");
@@ -524,7 +538,7 @@ export async function uploadClientRoster(formData) {
 // WHICH FIELD SUPERVISOR A STAFF MEMBER REPORTS TO - the mapping the hierarchy
 // runs on. Set from the caseloads screen, per staff member.
 export async function setStaffSupervisor(staffUserId, formData) {
-  await requireAccess();
+  await requireOffice();
   const supervisorId = String(formData.get("supervisorId") || "") || null;
   if (supervisorId === staffUserId) return; // nobody supervises themselves
   await prisma.user.update({
@@ -560,7 +574,7 @@ export async function setStaffSupervisor(staffUserId, formData) {
 //               is described honestly rather than the option missing
 //   other       full form, to one typed address
 export async function sendAttestations(batchId, formData) {
-  await requireAccess();
+  await requireOffice();
 
   const targets = formData.getAll("target").map(String);
   const valid = ["supervisor", "staff", "client", "other"];
@@ -709,6 +723,9 @@ export async function sendAttestations(batchId, formData) {
 // warned about. A photo can be saved as a PDF from any phone.
 export async function recordPaperSignature(attestationId, formData) {
   const user = await requireAccess();
+  if (!(await attestationOpenTo(user, canSeeEveryAttestation(user.role), attestationId))) {
+    return { ok: false, error: "gone" };
+  }
 
   const row = await prisma.clientAttestation.findUnique({
     where: { id: attestationId },

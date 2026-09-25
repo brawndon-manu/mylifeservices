@@ -145,8 +145,9 @@ test("the long list is only drawn where it is needed", () => {
   const supCell = page.slice(page.indexOf("{supFor.get(a.id).supervisor ? ("), page.indexOf("{a.sentAt ?"));
   assert.ok(supCell.length > 100, "found the supervisor cell");
   assert.match(supCell, /choices=\{supervisorChoices\}/);
-  // a signed month is settled - its routing is part of what was agreed
-  assert.match(staffCell, /a\.signedAt \?/, "a signed row is never re-routed");
+  // a signed month is settled - its routing is part of what was agreed - and
+  // routing is the office's: a field supervisor sees no picker at all
+  assert.match(staffCell, /a\.signedAt \|\| !office \?/, "a signed row is never re-routed, and a supervisor routes nothing");
   assert.match(supCell, /a\.signedAt \?/);
 });
 

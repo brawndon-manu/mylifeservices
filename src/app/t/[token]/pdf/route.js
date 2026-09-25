@@ -5,6 +5,10 @@ import { verifyTimesheetToken } from "@/lib/timesheet-token";
 import { renderSheet, RENDER_SELECT } from "@/lib/timesheet/render-sheet";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { fetchBlob } from "@/lib/blob";
+import { logFileOpen } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
+import { sheetName } from "@/lib/file-describe";
+import { parseBlobUrl } from "@/lib/blob-paths";
 
 // serve one employee their own timesheet PDF, authorised purely by the signed
 // token in the url. the token only ever unlocks this single document.
@@ -30,17 +34,21 @@ import { fetchBlob } from "@/lib/blob";
 // `corrected` applies every policy assumption except the ones somebody has
 // settled, which is an ADMIN reading of an open question. The employee signs
 // what payroll pays.
-export async function GET(_req, { params }) {
+//
+// every open is written down against the person the sheet belongs to - the
+// token only ever unlocks their own.
+export async function GET(req, { params }) {
   const { token } = await params;
   const id = verifyTimesheetToken(token);
   if (!id) return new NextResponse("Not found", { status: 404 });
-  if (!(await timesheetLinkOpen(id))) return NextResponse.redirect(new URL("/a/expired", _req.url));
+  if (!(await timesheetLinkOpen(id))) return NextResponse.redirect(new URL("/a/expired", req.url));
 
   const ts = await prisma.timesheet.findUnique({
     where: { id },
     select: {
       ...RENDER_SELECT,
       signedPdfUrl: true,
+      user: { select: { id: true, email: true, role: true, name: true, preferredFirstName: true, preferredLastName: true } },
     },
   });
   if (!ts) return new NextResponse("Not found", { status: 404 });
@@ -64,6 +72,13 @@ export async function GET(_req, { params }) {
     buf = rendered.bytes;
   }
 
+  await logFileOpen({
+    user: ts.user,
+    pathname: (ts.signedPdfUrl && parseBlobUrl(ts.signedPdfUrl)?.pathname) || `timesheets/sheet/${id}`,
+    req,
+    via: "timesheet-link",
+    label: accessLabel(ts.signedPdfUrl ? "Signed timesheet" : "Timesheet", sheetName(ts), periodRange(ts.batch.periodFrom, ts.batch.periodTo)),
+  });
   return new NextResponse(buf, {
     headers: {
       "Content-Type": "application/pdf",

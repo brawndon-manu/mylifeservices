@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { canManageClientAttestations, canManageTimesheets, isElevated } from "@/lib/roles";
+import { canManageTimesheets, canSeeEveryAttestation, isElevated } from "@/lib/roles";
 import { withinWindow } from "@/lib/link-window";
 
 // EVERY EMAILED LINK ANSWERS TO TWO RULES before it shows or takes anything:
@@ -51,7 +51,7 @@ export async function amendmentLinkOpen(id) {
 // the client's own link has no account behind it; the staff and supervisor
 // links do
 export async function attestationLinkOpen(attestationId, audience) {
-  if (await office(canManageClientAttestations)) return true;
+  if (await office(canSeeEveryAttestation)) return true;
   const r = await prisma.clientAttestation.findUnique({
     where: { id: attestationId },
     select: {

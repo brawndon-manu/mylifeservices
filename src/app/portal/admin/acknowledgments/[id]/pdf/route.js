@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { isAdminUp } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { isCompanyMeeting } from "@/lib/announcements";
 import { renderAckReport } from "@/lib/ack-report-pdf";
 import { audienceLabel, firstLine, fmtPosted } from "../../roster";
@@ -14,13 +16,14 @@ import { ackAuditPeople, ackStats, fileDate } from "../../audit";
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
+  const { id } = await params;
   const user = await getCurrentUser();
   // read-receipts are sensitive - Admin/IT/Super only, same gate as the page.
   if (!isAdminUp(user?.role)) {
+    await logFileDenied({ user, pathname: `acknowledgments/${id}.pdf`, req, label: "Acknowledgments · PDF" });
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const { id } = await params;
   const p = await prisma.announcement.findUnique({
     where: { id },
     select: {
@@ -88,6 +91,7 @@ export async function GET(req, { params }) {
     .replace(/[^\w]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "announcement";
+  await logFileOpen({ user, pathname: `acknowledgments/${id}.pdf`, req, label: accessLabel("Acknowledgments", title, "PDF") });
   const suffix = office ? `-${office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {

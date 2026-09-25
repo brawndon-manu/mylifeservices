@@ -2,19 +2,24 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
+import { sheetName } from "@/lib/file-describe";
+import { parseBlobUrl } from "@/lib/blob-paths";
 import { renderSheet, RENDER_SELECT, BASES } from "@/lib/timesheet/render-sheet";
 import { answersByDate, confirmedFromAnswers } from "@/lib/timesheet/premium-split";
 import { loadBreakReasons, loadTimeOffFor } from "@/lib/timesheet/load-break-reasons";
 import { fetchBlob } from "@/lib/blob";
 
 // gated download of one timesheet - the signed copy when it exists, otherwise
-// the generated one. same stream-it-ourselves pattern as the résumé route: Blob
-// is a public store, so its url never reaches the browser.
+// the generated one. same stream-it-ourselves pattern as the résumé route: the
+// stored url never reaches the browser, and every open is written down.
 export async function GET(req, { params }) {
   const { id } = await params;
 
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
+    await logFileDenied({ user, pathname: `timesheets/sheet/${id}`, req, label: "Timesheet" });
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -56,6 +61,16 @@ export async function GET(req, { params }) {
     if (!url) return new NextResponse("Not found", { status: 404 });
     const res = await fetchBlob(url);
     if (!res.ok) return new NextResponse("Not found", { status: 404 });
+    await logFileOpen({
+      user,
+      pathname: parseBlobUrl(url)?.pathname || `timesheets/sheet/${id}`,
+      req,
+      label: accessLabel(
+        copy === "signed" ? "Signed timesheet" : "Approved timesheet",
+        sheetName(ts),
+        periodRange(ts.batch.periodFrom, ts.batch.periodTo),
+      ),
+    });
     const safeName = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
     return new NextResponse(await res.arrayBuffer(), {
       headers: {
@@ -96,6 +111,18 @@ export async function GET(req, { params }) {
     if (!rendered) return new NextResponse("Not found", { status: 404 });
     buf = rendered.bytes;
   }
+
+  // the line says which document it was: a stored copy is the signed or
+  // approved one; anything built here is the sheet as it stands
+  const kind = storedUrl
+    ? ts.approvedPdfUrl ? "Approved timesheet" : "Signed timesheet"
+    : basis === "corrected" ? "Corrected timesheet" : "Timesheet";
+  await logFileOpen({
+    user,
+    pathname: (storedUrl && parseBlobUrl(storedUrl)?.pathname) || `timesheets/sheet/${id}`,
+    req,
+    label: accessLabel(kind, sheetName(ts), periodRange(ts.batch.periodFrom, ts.batch.periodTo)),
+  });
 
   const safe = (ts.sourceName || "timesheet").replace(/[^\w.\- ]/g, "_");
   const suffix =

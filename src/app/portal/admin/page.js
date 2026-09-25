@@ -162,6 +162,14 @@ export default async function AdminPage() {
           title: "Form submissions",
           body: "Signed forms and attribution.",
         },
+        {
+          // every open of a record, and every refusal, from the AccessLog table
+          show: isAdminUp(role),
+          href: "/portal/admin/access-log",
+          icon: "shieldCheck",
+          title: "Access log",
+          body: "Who opened which record, and when.",
+        },
       ],
     },
   ];

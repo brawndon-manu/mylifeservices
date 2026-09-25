@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { officeFromSearch, OFFICE_FILTER_LABELS } from "@/lib/positions";
 import { renderFormsOverviewReport } from "@/lib/form-report-pdf";
 import { submissionRow } from "../query";
@@ -16,6 +18,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req) {
   const user = await getCurrentUser();
   if (!canViewFormRecords(user?.role)) {
+    await logFileDenied({ user, pathname: "form-records/report.pdf", req, label: "Form signature records" });
     return new NextResponse("Not found", { status: 404 });
   }
   const office = officeFromSearch(Object.fromEntries(new URL(req.url).searchParams));
@@ -82,6 +85,7 @@ export async function GET(req) {
     return new NextResponse("Could not build the report", { status: 500 });
   }
 
+  await logFileOpen({ user, pathname: "form-records/report.pdf", req, label: accessLabel("Form signature records", "every form") });
   const suffix = office ? `-${office.toLowerCase()}` : "";
   return new NextResponse(Buffer.from(bytes), {
     headers: {

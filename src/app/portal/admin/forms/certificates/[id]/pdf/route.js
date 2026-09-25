@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { fetchStored } from "@/lib/client-attestations/serve";
 import { mergeCertificates } from "@/lib/certificates/render";
 import { fileDate } from "../../../../acknowledgments/audit";
@@ -10,10 +12,13 @@ import { fileDate } from "../../../../acknowledgments/audit";
 export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
-  const user = await getCurrentUser();
-  if (!canViewFormRecords(user?.role)) return new NextResponse("Not found", { status: 404 });
-
   const { id } = await params;
+  const user = await getCurrentUser();
+  if (!canViewFormRecords(user?.role)) {
+    await logFileDenied({ user, pathname: `certificates/batch/${id}/pdf`, req, label: "Certificates · one PDF" });
+    return new NextResponse("Not found", { status: 404 });
+  }
+
   const batch = await prisma.certificateBatch.findUnique({
     where: { id },
     select: {
@@ -33,6 +38,7 @@ export async function GET(req, { params }) {
   if (!parts.length) return new NextResponse("Nothing to print", { status: 404 });
 
   const merged = await mergeCertificates(parts);
+  await logFileOpen({ user, pathname: `certificates/batch/${id}/pdf`, req, label: accessLabel("Certificates", batch.title, "one PDF") });
   const slug = batch.title.toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "certificates";
   return new NextResponse(Buffer.from(merged), {
     headers: {

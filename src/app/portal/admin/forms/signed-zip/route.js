@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewFormRecords } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel } from "@/lib/access-labels";
 import { officeFromSearch } from "@/lib/positions";
 import { buildSignedFormsZip, zipResponse } from "../zip";
 
@@ -15,6 +17,7 @@ const userSelect = {
 export async function GET(req) {
   const user = await getCurrentUser();
   if (!canViewFormRecords(user?.role)) {
+    await logFileDenied({ user, pathname: "form-records/signed-zip", req, label: "Signed forms · every form · zip" });
     return new NextResponse("Not found", { status: 404 });
   }
   const office = officeFromSearch(Object.fromEntries(new URL(req.url).searchParams));
@@ -41,6 +44,7 @@ export async function GET(req) {
 
   const buf = await buildSignedFormsZip(groups);
   if (!buf) return new NextResponse("No submissions on file", { status: 404 });
+  await logFileOpen({ user, pathname: "form-records/signed-zip", req, label: accessLabel("Signed forms", "every form", "zip") });
 
   const suffix = office ? `-${office.toLowerCase()}` : "";
   return zipResponse(buf, `signed-forms${suffix}`);

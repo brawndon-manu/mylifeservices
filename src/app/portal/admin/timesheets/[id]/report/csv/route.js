@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets } from "@/lib/roles";
+import { logFileOpen, logFileDenied } from "@/lib/file-log";
+import { accessLabel, periodRange } from "@/lib/access-labels";
 import { preferredName } from "@/lib/contacts";
 import { batchPremiumStanding } from "@/lib/timesheet/premium-split";
 import { payoutTimeOff } from "@/lib/timesheet/time-off";
@@ -20,13 +22,14 @@ function cell(v) {
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-export async function GET(_req, { params }) {
+export async function GET(req, { params }) {
+  const { id } = await params;
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
+    await logFileDenied({ user, pathname: `timesheets/${id}/report.csv`, req, label: "Payout CSV" });
     return new Response("Not found", { status: 404 });
   }
 
-  const { id } = await params;
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     include: {
@@ -185,6 +188,12 @@ export async function GET(_req, { params }) {
       : `PROVISIONAL: ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumptions)} premium hours come OFF if they all confirm they took their breaks. This total can fall and cannot rise.`,
   ].map(cell).join(","));
 
+  await logFileOpen({
+    user,
+    pathname: `timesheets/${id}/report.csv`,
+    req,
+    label: accessLabel("Payout CSV", periodRange(batch.periodFrom, batch.periodTo)),
+  });
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");
   // BOM so Excel opens it as UTF-8 and doesn't mangle accented names
   return new Response("﻿" + lines.join("\r\n") + "\r\n", {
