@@ -22,8 +22,9 @@ import { useReviewFlow } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
-// whether a day folds to its one line - a press, not a keystroke, decides it
-import { shellFolds } from "@/lib/timesheet/day-shell";
+// whether a day folds to its one line - a press, not a keystroke, decides it -
+// and which days count as walked once the sheet's own list comes back
+import { shellFolds, walkedFromSheet } from "@/lib/timesheet/day-shell";
 // the five sentences, already written and already counting correctly - see the
 // note on `renderReason`. Client-safe: break-answers.js imports nothing.
 import {
@@ -158,14 +159,20 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
   // press and never on a keystroke - see `shellFolds`.
   const [presses, setPresses] = useState({});
 
-  // the sheet's own list wins whenever it changes under us - another device, or
-  // this one after a refresh. A date pressed here and not yet written is kept,
-  // or a slow write would visibly untick the ring somebody just pressed.
-  const fromSheet = (walked || []).join("|");
+  // the sheet's own list wins whenever it changes under us - another device, a
+  // reset, or this one after a refresh. A date pressed here and not yet written
+  // is kept, or a slow write would visibly untick the ring somebody just
+  // pressed. it used to only ever ADD the sheet's dates, so a reset that emptied
+  // the list left every day this tab had seen walked solid until a reload.
+  // `unwritten` is those presses, date -> walked or not, until their write lands.
+  //
+  // re-read on every render the server sends (each brings a new list), not only
+  // when the dates differ: a press doesn't refresh the page, so the list a tab
+  // holds can be the same empty one before the walk and after a reset
+  const unwritten = useRef(new Map());
   useEffect(() => {
-    if (!fromSheet) return;
-    setReady((r) => new Set([...r, ...fromSheet.split("|")]));
-  }, [fromSheet]);
+    setReady(walkedFromSheet(walked || [], unwritten.current));
+  }, [walked]);
 
   // BEST EFFORT, AND NEVER IN THE WAY. The ring has already moved by the time
   // this is called; a failed write costs the trail on the next device, never the
@@ -176,9 +183,16 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
   // and the column stayed empty. A silent no is what a best-effort write buys,
   // so the payload has to be right rather than merely accepted.
   const write = (date, undo = false) => {
+    unwritten.current.set(date, !undo);
     if (!walkAction || !token) return;
     try {
-      Promise.resolve(walkAction({ token, date, undo })).catch(() => {});
+      Promise.resolve(walkAction({ token, date, undo }))
+        .then((res) => {
+          // on the sheet now, so its list speaks for this day again - unless
+          // the day has been pressed the other way since
+          if (res?.ok && unwritten.current.get(date) === !undo) unwritten.current.delete(date);
+        })
+        .catch(() => {});
     } catch {
       // an action that cannot even be called must not take the page down
     }
@@ -301,10 +315,7 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
     }
     setSaving(false);
     if (staying) return;
-    if (finish) {
-      flow?.markReviewed(date);
-      done.markReady(date);
-    }
+    if (finish) done.markReady(date);
     if (nav?.go) nav.go(nav.index + 1);
   };
   // BACK IS JUST NAVIGATION, so it does not wait on the day being finished. A
@@ -361,7 +372,6 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
             saveThenGo(true);
             return;
           }
-          flow?.markReviewed(date);
           // A DAY WITH NOTHING TO CHECK IS STILL A DAY YOU FINISHED.
           //
           // This was `if (hasQuestions)`, so pressing Next on a quiet day

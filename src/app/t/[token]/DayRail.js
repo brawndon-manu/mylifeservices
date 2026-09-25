@@ -151,7 +151,11 @@ export default function DayRail({ days, children, stacked = false }) {
           //
           // It was a browser-session quirk until the walk moved onto the sheet
           // on 2026-09-16, which made it survive every reload.
-          const walked = readyOn(d.date) || !!flow?.reviewedDays.has(d.date);
+          //
+          // the walk is the provider's alone now. a second copy the flow kept in
+          // the tab never learned about a reset or a Change this, so a day could
+          // stay solid after the sheet had forgotten it was walked
+          const walked = readyOn(d.date);
           const needsAnswer = !!d.needs && !d.done;
           const reviewed = !needsAnswer && (d.done || walked);
           const hasReport = flow?.items.some((item) => item.date === d.date);

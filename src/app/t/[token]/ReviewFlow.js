@@ -43,8 +43,8 @@ export function ReviewProvider({
   const items = readOnly ? initialReports : draftItems;
   const [reported, setReported] = useState(readOnly || initialReports.length > 0);
   const [generated, setGenerated] = useState(false);
-  const [reviewedDays, setReviewedDays] = useState(() => new Set());
-  const markReviewed = (date) => setReviewedDays((previous) => new Set(previous).add(date));
+  // the days walked through live on DayDoneProvider now, seeded from the sheet.
+  // a second copy kept here only in the tab outlived a reset and a Change this
   const [editorTarget, setEditorTarget] = useState(null);
   const [activeDate, setActiveDate] = useState(null);
   const [leaveEditing, setLeaveEditing] = useState(false);
@@ -102,7 +102,6 @@ export function ReviewProvider({
   const generateStep = leave ? 2 : 1;
   const current = stage === "days" || stage === "reports" ? 0 : stage === "leave" ? 1 : generated ? generateStep + 1 : generateStep;
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly, leave,
-    reviewedDays, markReviewed,
     generated, setGenerated, editorTarget, setEditorTarget, activeDate,
     reportRef, targets, report, leaveEditing, setLeaveEditing, leaveBusy, setLeaveBusy,
     // what the strip and the footer draw from, so the visuals hold no rules

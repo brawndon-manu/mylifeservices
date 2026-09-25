@@ -24,3 +24,17 @@ export function shellFolds({ ready = false, open = false, presses = 0, pressesWh
   if (pressesWhenShownOpen !== null && pressesWhenShownOpen === presses) return false;
   return true;
 }
+
+// WHICH DAYS COUNT AS WALKED IN THIS TAB: the sheet's own list, with the presses
+// made here that haven't been written back yet laid over it (a Next adds its
+// day, a Change this takes it off). everything else follows the sheet, so a
+// reset that empties the list takes the solid checks with it instead of an open
+// tab holding on to them until a reload.
+export function walkedFromSheet(sheet = [], unwritten = new Map()) {
+  const out = new Set(sheet);
+  for (const [date, on] of unwritten) {
+    if (on) out.add(date);
+    else out.delete(date);
+  }
+  return out;
+}

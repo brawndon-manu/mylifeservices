@@ -42,7 +42,8 @@ test("a deep link into one day still wins over the opening day", () => {
 const QUESTION = fs.readFileSync("src/app/t/[token]/TimesheetQuestion.js", "utf8");
 
 test("Next marks the day finished whether or not it asked anything", () => {
-  assert.match(QUESTION, /flow\?\.markReviewed\(date\);/);
+  // the quiet day's Next: marked, then on to the next day
+  assert.match(QUESTION, /\n\s*done\.markReady\(date\);\n\s*if \(nav\?\.go\) nav\.go\(nav\.index \+ 1\);/);
   assert.ok(
     !/if \(hasQuestions\) done\.markReady\(date\);/.test(QUESTION),
     "a quiet day must not be the one day Next records nothing for",

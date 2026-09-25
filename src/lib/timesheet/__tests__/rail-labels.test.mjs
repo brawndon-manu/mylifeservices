@@ -23,7 +23,8 @@ test("only a real answer clears a day that asks something", () => {
 test("the walk still marks a quiet day as reviewed", () => {
   // the press is what says somebody looked at a day with nothing on it, so it
   // has to keep counting for exactly that
-  assert.match(src, /const walked = readyOn\(d\.date\) \|\| !!flow\?\.reviewedDays\.has\(d\.date\);/);
+  // the provider's walk alone - the tab-only copy the flow kept outlived a reset
+  assert.match(src, /const walked = readyOn\(d\.date\);/);
   assert.match(src, /const reviewed = !needsAnswer && \(d\.done \|\| walked\);/);
 });
 

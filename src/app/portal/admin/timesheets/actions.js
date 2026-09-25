@@ -3135,6 +3135,9 @@ export async function resetBatchAnswers(batchId) {
   const { count } = await prisma.timesheetCorrection.deleteMany({
     where: { timesheetId: { in: sheets.map((t) => t.id) }, kind: { startsWith: "q_" } },
   });
+  // and the days everybody had been through, the same as the one-sheet reset:
+  // a period started over has not been walked yet
+  await prisma.timesheet.updateMany({ where: { batchId }, data: { walkedDays: [] } });
 
   let rebuilt = 0;
   let failed = 0;
@@ -3240,6 +3243,16 @@ export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false
   });
   if (!ts) return { ok: false, error: "notfound" };
 
+  // WHAT THIS IS ABOUT TO UNDO, checked against what the caller was told. Each
+  // refusal names itself so the page can put the right prompt up rather than
+  // guess which one it missed.
+  //
+  // before anything is deleted. these sat after the deletes, so a sheet signed
+  // between the confirm opening and the press lost its answers and then
+  // refused the rebuild, keeping a signature over answers that were gone
+  if (ts.signedAt && !confirmUnsign) return { ok: false, error: "needsunsign" };
+  if (ts.approvedAt && !confirmUnapprove) return { ok: false, error: "needsunapprove" };
+
   const { count } = await prisma.timesheetCorrection.deleteMany({
     // `fix_` rows are acknowledgements of a backwards entry - the employee's own
     // answer like any other, so a reset takes them off with the rest
@@ -3274,11 +3287,11 @@ export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false
     }
     reasons = drop.length + unconfirm.length;
   }
-  // WHAT THIS IS ABOUT TO UNDO, checked against what the caller was told. Each
-  // refusal names itself so the page can put the right prompt up rather than
-  // guess which one it missed.
-  if (ts.signedAt && !confirmUnsign) return { ok: false, error: "needsunsign" };
-  if (ts.approvedAt && !confirmUnapprove) return { ok: false, error: "needsunapprove" };
+
+  // AND THE DAYS THEY HAD BEEN THROUGH. the walk is what turns a quiet day's
+  // check solid, and a sheet put back to the upload has not been gone through
+  // yet, so every day starts light again until it is opened
+  await prisma.timesheet.update({ where: { id: ts.id }, data: { walkedDays: [] } });
 
   // a full reset ONLY when there is something to undo. On an ordinary unsigned
   // sheet this is the rebuild it has always been, with both guards standing.
