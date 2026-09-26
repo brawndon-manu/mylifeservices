@@ -21,7 +21,9 @@ test("reason requirement compares rounded full-day totals and preserves existing
   assert.equal(addsWorkHours("hours", day, 4.504), false);
   assert.equal(addsWorkHours("hours", day, 4.51), true);
   assert.equal(addsWorkHours("hours", { paidHours: 4.504 }, 4.5), false);
-  for (const hours of [0, 2, 4.5]) assert.equal(correctionNoteProblem("hours", day, hours, ""), null);
+  // an hours report always carries a reason now (2026-09-26): fewer or the
+  // same hours ask what changed
+  for (const hours of [0, 2, 4.5]) assert.equal(correctionNoteProblem("hours", day, hours, ""), "changeReason");
   assert.equal(correctionNoteProblem("day_extra", day, null, ""), null);
   assert.equal(correctionNoteProblem("other", day, null, ""), "note");
   assert.equal(addsWorkHours("hours", day, Infinity), false);

@@ -183,8 +183,10 @@ test("a changed figure is drawn the way the audit screen draws one", () => {
   assert.match(audit, /--amber: #e9b453;/);
   assert.match(css, /\.review \.nowFigure \{\s*color: var\(--review-changed\);/);
   assert.match(css, /\.review \.wasFigure \{[\s\S]*?text-decoration: line-through;/);
-  // both places that draw a pair use the same two classes, so one page cannot
-  // end up with two ways of showing the same thing
-  assert.equal((flowFile.match(/styles\.wasFigure/g) || []).length, 2);
-  assert.equal((flowFile.match(/styles\.nowFigure/g) || []).length, 2);
+  // every place that draws a pair uses the same two classes, so one page cannot
+  // end up with two ways of showing the same thing: the totals figure, the
+  // reported day's heading, and since 2026-09-26 the draft card's figure and
+  // its crossed-out old range
+  assert.equal((flowFile.match(/styles\.wasFigure/g) || []).length, 4);
+  assert.equal((flowFile.match(/styles\.nowFigure/g) || []).length, 3);
 });

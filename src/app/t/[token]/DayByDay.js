@@ -548,7 +548,7 @@ export default function DayByDay({
                 picture sits above the questions at every width, the way the
                 phone always drew it. The old width notes are in git. */}
             <div className="mt-3 flex-1">
-              <ReportedDayVisual day={displayDay} part="calendar">
+              <ReportedDayVisual day={displayDay} part="calendar" scheduled={scheduled[day.date] || []}>
               {emptyDay && (
                 <div className="py-8">
                   <div className="sm:hidden">
@@ -708,6 +708,7 @@ export default function DayByDay({
             {/* the bar floats in Day by day; in All questions every day is on
                 the page at once, so each keeps its bar inside its own day */}
             <DayReport
+              day={day}
               date={day.date}
               floats={!stacked}
               note={<DayBlockedNote date={day.date} plainBlocked={plainBlockedOn(day.date)} />}

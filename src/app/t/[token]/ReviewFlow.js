@@ -6,6 +6,8 @@ import { reportedReviewDay, dayChipLabel } from "@/lib/timesheet/review-days";
 // the engine's own overtime split, in a file a browser can import - see overtime.js
 import { applyOvertime } from "@/lib/timesheet/overtime";
 import { checkWorkSlots, clockLabel } from "@/lib/timesheet/work-slots";
+import { slotChanges } from "@/lib/timesheet/report-diff";
+import { shiftsOf } from "@/lib/timesheet/questions";
 import { parseLooseTime, formatTimeDisplay } from "@/lib/loose-time";
 import DayCalendar from "./DayCalendar";
 import styles from "./ReviewFlow.module.css";
@@ -168,7 +170,7 @@ export default function ReviewFlow({ children, reports }) {
       )}
       {children}
       <div hidden={enabled && stage !== "reports"}>{reports}</div>
-      {enabled && !readOnly && (stage !== "days" || items.length > 0 || editorTarget) && (
+      {enabled && !readOnly && (stage !== "days" || hold) && (
         <div className="mt-6 border-t border-sep pt-5">
           {hold && <p className="mb-3 text-xs text-muted">
             {hold}
@@ -183,7 +185,10 @@ export default function ReviewFlow({ children, reports }) {
               </button>
             ))}
           </p>}
-          {stage === "days" ? <div className="flex justify-end"><button type="button" className={button} disabled={!!editorTarget} onClick={() => go("reports")}>Review reports ({items.length})</button></div> : <div className="flex items-center justify-between gap-3">
+          {/* no Review reports button on the days stage any more: a drafted
+              report sits in the told-us panel, which opens the reports page -
+              see ToldUsPanel */}
+          {stage !== "days" && <div className="flex items-center justify-between gap-3">
             <button type="button" className={button} disabled={!!editorTarget || leaveEditing || leaveBusy}
               onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : leave ? "leave" : "reports")}>Back</button>
             {stage !== "document" && <button type="button" className={`${button} ${styles.primary}`}
@@ -197,6 +202,59 @@ export default function ReviewFlow({ children, reports }) {
   );
 }
 
+// WHAT THEY HAVE DRAFTED, IN THE TOLD-US PANEL. A report not yet sent sits
+// with the answers already on record, as a row of the same shape with its
+// figure; the lone Review reports button at the foot of the page is gone, and
+// "View reports" under the rows opens the reports page, where the sending
+// stays. Once sent the page refreshes and the server's own
+// row ("reported") takes over, so the drafts are drawn only while nothing is
+// sent. The panel itself is here so it can show for a draft on a sheet that
+// has told us nothing else yet.
+export function ToldUsPanel({ hasRows, children }) {
+  const flow = useReviewFlow();
+  const drafts = flow && !flow.readOnly && !flow.reported ? flow.items : [];
+  if (!hasRows && !drafts.length) return null;
+  return (
+    <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+      <p className="text-[15px] font-semibold text-foreground">
+        What you have told us about this timesheet
+      </p>
+      {children}
+      {drafts.length > 0 && (
+        <ul className="mt-1.5 divide-y divide-sep">
+          {drafts.map((item, i) => (
+            <li key={i} className="flex gap-4 py-2.5 text-[13px]">
+              <span className="w-24 flex-none font-semibold text-foreground">
+                {item.date ? dayChipLabel(item.date) : "This timesheet"}
+              </span>
+              <span className="min-w-0 text-muted">
+                <span className="font-semibold text-amber-700 dark:text-amber-400">not sent</span>
+                <span className="mt-0.5 block text-faint">
+                  {CORRECTION_KINDS[item.kind]?.label || item.kind}
+                  {item.claimedHours != null && <> · <span className={`tabular-nums text-foreground ${styles.hours}`}>{Number(item.claimedHours).toFixed(2)}</span> hrs</>}
+                </span>
+                {item.note && (
+                  <span className="mt-1 block border-l-2 border-sep pl-2 italic text-faint">
+                    &ldquo;{item.note}&rdquo;
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {drafts.length > 0 && (
+        <div className="mt-1">
+          <button type="button" onClick={() => flow.go("reports")} disabled={!!flow.editorTarget}
+            className="min-h-[44px] text-[13px] font-medium text-accent disabled:opacity-40">
+            View reports
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ReviewStage({ name, children }) {
   const flow = useReviewFlow();
   return <div hidden={!!flow && flow.stage !== name}>{children}</div>;
@@ -206,26 +264,63 @@ export function ReviewStage({ name, children }) {
 // than on the bar. `floats`: false in All questions, where every day is on the
 // page at once - fixed there, all their bars stacked on one spot and the one on
 // top was the last day's, so Next and Report a problem acted on the wrong day.
-export function DayReport({ date, navigation, note = null, floats = true }) {
+// `day`: the day as recorded, so an hours report can be drawn as what it
+// changes - see slotChanges
+export function DayReport({ date, day = null, navigation, note = null, floats = true }) {
   const flow = useReviewFlow();
   if (!flow) return navigation;
   const reports = flow.items.map((item, index) => ({ item, index })).filter(({ item }) => item.date === date);
+  const range = (from, to) => `${clockLabel(from)}–${clockLabel(to)}`;
   return (
     <div className={`mt-4 border-t border-sep pt-3 ${styles.dayBarHost}`}>
-      {reports.map(({ item, index }) => (
-        <div key={item.id || index} className="mb-4 border-l-2 border-amber-400 pl-3">
-          <p className="text-sm font-medium text-foreground">{CORRECTION_KINDS[item.kind]?.label || item.kind}</p>
-          {item.claimedHours != null && <p className={`mt-2 text-lg tabular-nums ${styles.hours}`}>{Number(item.claimedHours).toFixed(2)} <span className="text-xs text-muted">hrs reported</span></p>}
-          <p className="mt-1 text-sm text-muted">{(item.slots ? checkWorkSlots(item.slots, item.claimedHours).slots || [] : item.statedSlots || []).map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`).join(", ")}</p>
-          {!!item.times?.length && <p className="mt-1 text-sm text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(", ")}</p>}
-          {item.note && <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.note}</p>}
-          <p className="mt-2 text-xs text-muted">{flow.reported ? "Awaiting payroll" : "Not sent"}</p>
-          {!flow.reported && <div className="flex gap-4">
-            <button type="button" disabled={!!flow.editorTarget} onClick={() => flow.report(date, index)} className="min-h-[44px] text-sm text-accent disabled:opacity-40">Edit</button>
-            <button type="button" disabled={!!flow.editorTarget} onClick={() => flow.setItems((old) => old.filter((_, i) => i !== index))} className="min-h-[44px] text-sm text-muted disabled:opacity-40">Remove</button>
+      {/* THE REPORT ON THIS DAY, as a card rather than bare lines under an
+          amber rule: the sent panel's amber tint, the
+          kind as its heading with the state as a pill beside it, the figure,
+          the slots as one mono line, the note quoted the way the told-us
+          panel quotes one, and Edit / Remove only while it is still theirs */}
+      {reports.map(({ item, index }) => {
+        const minuteSlots = item.slots ? checkWorkSlots(item.slots, item.claimedHours).slots || [] : item.statedSlots || [];
+        const slots = minuteSlots.map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`);
+        // ONLY WHAT CHANGED: a shift stretched to 11pm shows as
+        // the old range crossed out beside the new one and the hours it adds,
+        // an added shift with a plus, a removed one crossed out; a slot left
+        // as it was is not printed. A missing day has no record to differ
+        // from, so it keeps its plain list.
+        const changes = item.kind === "hours" && day ? slotChanges(shiftsOf(day), minuteSlots) : null;
+        return (
+        <div key={item.id || index} className="amber-tint-card mb-4 rounded-xl px-4 py-3.5 night:ring-1 night:ring-border">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <p className="text-sm font-semibold text-foreground">{CORRECTION_KINDS[item.kind]?.label || item.kind}</p>
+            <span className="rounded-full bg-surface/70 px-2 py-0.5 text-[11px] font-medium text-muted">{flow.reported ? "Awaiting payroll" : "Not sent"}</span>
+          </div>
+          {item.claimedHours != null && <p className={`mt-2 text-xl tabular-nums text-foreground ${styles.hours}`}>
+            {/* the day's figure crossed out beside the reported one, the way
+                the day's heading shows it */}
+            {day && item.kind === "hours" && <span className={styles.wasFigure}>{Number(day.paidHours || 0).toFixed(2)}</span>}
+            <span className={day && item.kind === "hours" ? styles.nowFigure : undefined}>{Number(item.claimedHours).toFixed(2)}</span>
+            {" "}<span className="text-xs font-normal text-muted">hrs reported</span>
+          </p>}
+          {changes && changes.length > 0 ? (
+            <ul className="mt-1.5 space-y-0.5 font-mono text-[12.5px] leading-relaxed text-muted">
+              {changes.map((c, i) => (
+                <li key={i} className="flex flex-wrap items-baseline gap-x-2">
+                  {c.kind !== "added" && <s className={styles.wasFigure}>{range(c.wasFrom, c.wasTo)}</s>}
+                  {c.kind === "added" && <span className="text-muted">+</span>}
+                  {c.kind !== "removed" && <span className="text-foreground">{range(c.from, c.to)}</span>}
+                  <span className="text-muted">{c.delta >= 0 ? "+" : "−"}{Math.abs(c.delta).toFixed(2)} hrs</span>
+                </li>
+              ))}
+            </ul>
+          ) : slots.length > 0 && !changes && <p className="mt-1.5 font-mono text-[12.5px] leading-relaxed text-muted">{slots.join(" · ")}</p>}
+          {!!item.times?.length && <p className="mt-1.5 font-mono text-[12.5px] text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(" · ")}</p>}
+          {item.note && <p className="mt-2 border-l-2 border-sep pl-2 text-[13px] italic leading-relaxed text-muted whitespace-pre-wrap">&ldquo;{item.note}&rdquo;</p>}
+          {!flow.reported && <div className="mt-1 flex gap-5">
+            <button type="button" disabled={!!flow.editorTarget} onClick={() => flow.report(date, index)} className="min-h-[44px] text-[13px] font-medium text-accent disabled:opacity-40">Edit</button>
+            <button type="button" disabled={!!flow.editorTarget} onClick={() => flow.setItems((old) => old.filter((_, i) => i !== index))} className="min-h-[44px] text-[13px] font-medium text-muted disabled:opacity-40">Remove</button>
           </div>}
         </div>
-      ))}
+        );
+      })}
       <div ref={(node) => { if (node) flow.targets.current.set(date, node); else flow.targets.current.delete(date); }} />
       {/* the line saying what the day still needs stays down here in the card,
           in the page - only the controls float */}
@@ -374,13 +469,18 @@ function Figure({ label, value, strong, tone, was = null }) {
   );
 }
 
-export function ReportedDayVisual({ day, label, part, children }) {
+// `scheduled`: the day's rostered blocks, so a reported slot keeps the name the
+// roster gave that time (without it a shift stretched to 11pm turned every
+// block on the day into "Work"). The calendar names worked time by overlap
+// with the roster, so a slot
+// nothing was booked over is the only one that reads Work.
+export function ReportedDayVisual({ day, label, part, children, scheduled = [] }) {
   const flow = useReviewFlow();
   const display = reportedReviewDay(day, flow?.items);
   if (!display.reviewReported) return children;
   if (part === "quiet") return null;
   if (part === "calendar") return <div className={styles.calendar}>
-    {display.punches.length ? <DayCalendar day={display} /> : <p className="py-8 text-sm text-muted">No work reported.</p>}
+    {display.punches.length ? <DayCalendar day={display} scheduled={scheduled} /> : <p className="py-8 text-sm text-muted">No work reported.</p>}
   </div>;
   const [weekday, ...month] = label.split(", ");
   const slots = display.punches;

@@ -11,8 +11,10 @@
 // happens to pay more without noticing it doesn't describe their day.
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { useReviewFlow, REPORTS_PENDING } from "./ReviewFlow";
-import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON } from "@/lib/timesheet/corrections";
+import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON, REMOVED_HOURS_REASON, CHANGE_REASON } from "@/lib/timesheet/corrections";
+import { NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
 import { kindsForDay } from "@/lib/timesheet/report-kinds";
 // the attestation covers the tens now - see rest-attestation.js
 // the same loose reading the question cards use, so "331" means 3:31 here too
@@ -32,6 +34,7 @@ import {
   kindTakesSlots,
   readSlot,
   slotHours,
+  slotProblems,
   MAX_SLOTS,
 } from "@/lib/timesheet/work-slots";
 
@@ -50,6 +53,7 @@ const shortDay = (date) => {
 // sheet can be generated straight away - see acceptReportsNow.
 export default function ReportProblem({ token, days, submitAction, period = null, live = false, employeeName = null, acceptAction = null }) {
   const flow = useReviewFlow();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [localItems, setLocalItems] = useState([]);
   const items = flow?.items ?? localItems;
@@ -67,6 +71,11 @@ export default function ReportProblem({ token, days, submitAction, period = null
   // for the day, unchanged ones included, so payroll gets a day it can rebuild
   // rather than a number it has to guess the shape of.
   const [slots, setSlots] = useState([]);
+  // THE DAY AS RECORDED, slot by slot, so a box somebody changes can show the
+  // time it had before. Seeded from the day's own
+  // shifts whenever the form opens on a day - never from a draft, so editing
+  // a draft still compares with the record.
+  const [seed, setSeed] = useState([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -107,13 +116,22 @@ export default function ReportProblem({ token, days, submitAction, period = null
   // Every kind that asks for hours takes slots, so the figure is read off
   // them: the box that used to hold it is gone, and the total cannot
   // disagree with the slots under it.
-  const slotTotal = takesSlots ? slotHours(slots) : null;
+  // a slot that runs into another, or ends before it starts, is refused as
+  // typed - the box at fault red, no total - not just on Add: the rules of
+  // the day apply while it is being described. see slotProblems
+  const problems = takesSlots ? slotProblems(slots, seed) : { boxes: new Set(), ok: true };
+  const slotTotal = takesSlots && problems.ok ? slotHours(slots) : null;
   const hours = slotTotal == null ? "" : String(slotTotal);
   const slotCheck = takesSlots ? checkWorkSlots(slots, hours) : null;
   const addingHours = activeKind === "day_missing"
     || addsWorkHours(activeKind, day, hours)
     || addsWorkHours(activeKind, day, slotCheck?.hours);
-  const needsNote = meta?.needsNote || addingHours;
+  // AN HOURS REPORT ALWAYS CARRIES A REASON: the box used to
+  // turn optional when the day came out shorter. Which reason it asks for
+  // follows the change - adding, removing, or the same hours moved about.
+  const needsNote = meta?.needsNote || takesSlots;
+  const removingHours = takesSlots && !addingHours && !!day && slotTotal != null && slotTotal < (day.paidHours || 0);
+  const reasonLine = addingHours ? ADDED_HOURS_REASON : removingHours ? REMOVED_HOURS_REASON : takesSlots ? CHANGE_REASON : null;
   const setSlot = (i, key, value) =>
     setSlots((prev) => prev.map((s, j) => (j === i ? { ...s, [key]: value } : s)));
   const displayTime = (raw) => {
@@ -131,6 +149,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
       setNewDayDate(recorded ? "" : chosen || "");
       setKind(nextKind);
       setSlots(item?.slots ? item.slots.map((slot) => ({ ...slot })) : slotsForDay(nextKind, recorded));
+      setSeed(slotsForDay(nextKind, recorded));
       setTimes(item?.times || []);
       setNote(item?.note || "");
       setEditingIndex(index);
@@ -185,7 +204,10 @@ export default function ReportProblem({ token, days, submitAction, period = null
     }
     const noteProblem = correctionNoteProblem(activeKind, day, hours, note);
     if (noteProblem) {
-      setError(noteProblem === "addedHoursReason" ? ADDED_HOURS_REASON : "Tell us briefly what's wrong.");
+      setError(noteProblem === "junk" ? NEEDS_REAL_WORDS
+        : noteProblem === "addedHoursReason" ? ADDED_HOURS_REASON
+          : noteProblem === "changeReason" ? (reasonLine || CHANGE_REASON)
+            : "Tell us briefly what's wrong.");
       return;
     }
     if (date === NEW_DAY && !newDayDate) {
@@ -231,6 +253,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
         flow?.setReported(true);
         // Live: the office can accept what it just sent, right here
         if (live && acceptAction && Array.isArray(res.ids) && res.ids.length) setOffer({ ids: res.ids, items: payload });
+        // the page's own rows take over from the drafts - see ToldUsPanel
+        router.refresh();
       }
       else setError(messageFor(res));
     } catch {
@@ -369,6 +393,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
             // was "When did you work?" over nothing at all.
             const first = days.find((d) => d.date === date) || null;
             setSlots(slotsForDay(kind, first));
+            setSeed(slotsForDay(kind, first));
             setOpen(true);
           }}
           className="inline-flex min-h-[44px] items-center gap-2 rounded text-sm font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
@@ -458,6 +483,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
               const nextDay = days.find((d) => d.date === next) || null;
               const nextKind = available.includes(kind) ? kind : "hours";
               setSlots(slotsForDay(nextKind, nextDay));
+              setSeed(slotsForDay(nextKind, nextDay));
             }}
             className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           >
@@ -515,6 +541,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
                   setKind(k);
                   setError(null);
                   setSlots(slotsForDay(k, day));
+                  setSeed(slotsForDay(k, day));
                 }}
                 className="mt-1"
               />
@@ -632,6 +659,13 @@ export default function ReportProblem({ token, days, submitAction, period = null
                 <div className="grid gap-2">
                   {slots.map((slot, i) => {
                     const read = readSlot(slot);
+                    // the time this box had when the form opened, shown once
+                    // it has been changed to something else that reads
+                    const wasOf = (key) => {
+                      const before = seed[i]?.[key];
+                      if (!before || !read[key]) return null;
+                      return displayTime(before) === formatTimeDisplay(read[key]) ? null : displayTime(before);
+                    };
                     return (
                       <div
                         key={i}
@@ -656,7 +690,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
                               onChange={(e) => setSlot(i, key, e.target.value)}
                               onBlur={(e) => setSlot(i, key, displayTime(e.target.value))}
                               className={`w-full rounded-[9px] border bg-surface px-3 py-2 text-[15px] text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${
-                                read[key]
+                                read[key] && !problems.boxes.has(`${i}:${key}`)
                                   ? "border-emerald-400/80"
                                   : (slot[key] || "").trim()
                                     ? "border-rose-400"
@@ -664,15 +698,19 @@ export default function ReportProblem({ token, days, submitAction, period = null
                               }`}
                             />
                             {/* the figure IS the confirmation, same as the day
-                                question's slot row */}
+                                question's slot row - and the time it had
+                                before, struck, once it has been changed */}
                             <span className="min-h-4 text-[11px] text-muted">
                               {read[key] ? formatTimeDisplay(read[key]) : ""}
+                              {wasOf(key) && <> <s className="text-faint">{wasOf(key)}</s></>}
                             </span>
                           </label>
                         ))}
                         <button
                           type="button"
-                          onClick={() => setSlots((p) => p.filter((_, j) => j !== i))}
+                          // the seed goes with it, so the slots after it keep comparing
+                          // with their own recorded times, not the one before
+                          onClick={() => { setSlots((p) => p.filter((_, j) => j !== i)); setSeed((p) => p.filter((_, j) => j !== i)); }}
                           disabled={slots.length === 1}
                           aria-label={`Remove work slot ${i + 1}`}
                           className="mt-6 inline-flex h-9 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface disabled:opacity-40"
@@ -719,7 +757,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
 
         <label className="grid gap-1">
           <span className="text-sm font-semibold text-foreground">
-            {addingHours ? "Reason for adding hours" : needsNote ? "Reason for the correction" : "Anything else about it?"}{" "}
+            {addingHours ? "Reason for adding hours" : removingHours ? "Reason for removing hours" : takesSlots ? "Reason for the change" : needsNote ? "Reason for the correction" : "Anything else about it?"}{" "}
             {needsNote && <><span aria-hidden="true" style={{ color: "var(--status-danger)" }}>*</span><span className="sr-only">(required)</span></>}
             {!needsNote && (
               <span className="font-normal text-muted">(optional)</span>
@@ -731,7 +769,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
             onChange={(e) => setNote(e.target.value)}
             rows={3}
             maxLength={1000}
-            placeholder={addingHours ? ADDED_HOURS_REASON : "Anything that helps payroll check it"}
+            placeholder={reasonLine || "Anything that helps payroll check it"}
             className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           />
         </label>
@@ -747,7 +785,11 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <button
           type="button"
           onClick={add}
-          className="rounded-[9px] px-4 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-fill"
+          // THE BLUE BUTTON ON THE FORM: as a quiet link nobody could tell it
+          // had to be pressed for the report to go anywhere. this press is
+          // what puts the report on the list that goes to payroll; Cancel
+          // stays the quiet one
+          className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
         >
           {flow ? "Add to reports" : items.length ? "Add another" : "Add this"}
         </button>
@@ -796,7 +838,7 @@ function checkSlotMessage(code) {
     case "tooMany":
       return `a day takes up to ${MAX_SLOTS} work slots.`;
     case "badHours":
-      return "enter the day's work hours, more than 0 and up to 24.";
+      return "enter the day's work hours, more than 0.";
     case "incomplete":
       return "every work slot needs a start and an end.";
     case "backwards":
@@ -887,6 +929,10 @@ function messageFor(res) {
         return "Tell us briefly what's wrong.";
       case "addedHoursReason":
         return `${at}${ADDED_HOURS_REASON}`;
+      case "changeReason":
+        return `${at}${CHANGE_REASON}`;
+      case "junk":
+        return NEEDS_REAL_WORDS;
       case "times":
         return "Enter the time it started.";
       default:

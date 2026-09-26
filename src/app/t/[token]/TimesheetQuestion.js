@@ -22,6 +22,29 @@ import { useReviewFlow } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
+import { meaningfulText, NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
+
+// "1:48p", the row's compact clock, said in full - "1:48 PM" - the way the
+// meal-period card reads
+const longClock = (compact) => {
+  const hhmm = parseLooseTime(compact || "", { assumeWorkday: true });
+  return hhmm ? formatTimeDisplay(hhmm).replace(/^0/, "") : compact;
+};
+// the same clock as minutes past midnight, null when it does not read
+const clockMins = (compact) => {
+  const hhmm = parseLooseTime(compact || "", { assumeWorkday: true });
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+// the same clock, some minutes earlier: the last start a full break fits from
+const clockMinus = (compact, minutes) => {
+  const hhmm = parseLooseTime(compact || "", { assumeWorkday: true });
+  if (!hhmm) return compact;
+  const [h, m] = hhmm.split(":").map(Number);
+  const t = h * 60 + m - minutes;
+  return formatTimeDisplay(`${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`).replace(/^0/, "");
+};
 // whether a day folds to its one line - a press, not a keystroke, decides it -
 // and which days count as walked once the sheet's own list comes back
 import { shellFolds, walkedFromSheet } from "@/lib/timesheet/day-shell";
@@ -1289,39 +1312,56 @@ function copyFor(q, standing) {
     // leave a stretch of thirty or more open, so this asks first whether the
     // lunch was really taken there. yes gives the time; no opens the card for
     // the lunch as booked, so the facts are the booked ones plus the free time.
+    // WORDED AS A QUESTION ABOUT WHAT HAPPENED, not about what could have:
+    // "could it have been moved" asked
+    // whether it was possible while "yes, I took it then" said it was done.
+    // The card now states the unscheduled stretch and the recorded meal, and
+    // asks whether a full break was taken in that stretch.
     case "mealCouldMove": {
-      const free = (q.row?.free || []).map((w) => `${w.from} to ${w.to}`).join(" or ");
-      const facts = [
-        { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
-        q.row?.booked === "inside"
-          ? { label: "Your shift", value: `${q.row?.blockFrom}-${q.row?.blockTo}, ${q.row?.service}` }
-          : { label: "Worked until", value: `${q.row?.blockTo}, ${q.row?.service}` },
-        { label: "Free", value: free },
-      ];
+      const minutes = q.needs?.[0]?.minutes || 30;
+      const windows = q.row?.free || [];
+      const unscheduled = windows.map((w) => `from ${longClock(w.from)} to ${longClock(w.to)}`).join(" and ");
+      const between = windows.map((w) => `between ${longClock(w.from)} and ${longClock(w.to)}`).join(" or ");
+      const within = windows.map((w) => `${longClock(w.from)}–${longClock(w.to)}`).join(" or ");
+      const examples = windows
+        .map((w) => `${longClock(w.from)} through ${clockMinus(w.to, minutes)} because a full ${minutes} minutes has to fit before ${longClock(w.to)}`)
+        .join(", or ");
+      const booked = `${longClock(q.row?.mealFrom)}–${longClock(q.row?.mealTo)}`;
+      // WHAT CUT THE RECORDED MEAL SHORT, in the second line: a block that
+      // began inside it (booked 1:30-2, service from 1:48), a
+      // block that ran into it, a shift it sat wholly inside, or a roster
+      // that simply booked it short
+      const mf = clockMins(q.row?.mealFrom);
+      const mt = clockMins(q.row?.mealTo);
+      const bf = clockMins(q.row?.blockFrom);
+      const bt = clockMins(q.row?.blockTo);
+      const recorded = bf != null && mf != null && mt != null && bf > mf && bf < mt
+        ? `Your recorded meal period was scheduled for ${booked}, but work began again at ${longClock(q.row?.blockFrom)}.`
+        : bt != null && mf != null && mt != null && bt > mf && bt < mt
+          ? `Your recorded meal period was scheduled for ${booked}, but work ran until ${longClock(q.row?.blockTo)}.`
+          : q.row?.booked === "inside"
+            ? `Your recorded meal period was scheduled for ${booked}, inside a shift you worked from ${longClock(q.row?.blockFrom)} to ${longClock(q.row?.blockTo)}.`
+            : `Your recorded meal period was scheduled for ${booked}, shorter than ${minutes} minutes.`;
       return {
-        title: "Your meal break could have been moved",
-        short: "Your meal break could have been moved",
-        ask: "Could your meal break have been moved to when you were free?",
-        facts,
-        // the long card has no facts list of its own, so the same three lines
-        // stand in for the paragraph there
+        title: "Confirm your meal period",
+        short: "Confirm your meal period",
+        ask: `Did you take an uninterrupted ${minutes}-minute meal break at any time ${between}?`,
+        // the two sentences, on the day card as well as the long one
+        prose: true,
         body: (
           <>
-            {facts.map((f, i) => (
-              <span key={f.label}>
-                {i > 0 && <br />}
-                {f.label} <b>{f.value}</b>
-              </span>
-            ))}
+            You had an unscheduled period {unscheduled}.
+            <br />
+            {recorded}
           </>
         ),
-        timeHint: `Has to be a half hour inside ${(q.row?.free || []).map((w) => `${w.from}-${w.to}`).join(" or ")}.`,
+        timeHint: `What time did your meal break start? It must be a ${minutes}-minute period within ${within}. For example, valid start times would be ${examples}.`,
         yes: {
-          label: "Yes, I took it then",
-          why: "Tell us when your meal break started.",
+          label: `Yes, I took a ${minutes}-minute meal break during this time`,
+          why: "What time did your meal break start?",
         },
         no: {
-          label: "No, it could not have been moved",
+          label: `No, I did not take a ${minutes}-minute meal break during this time`,
           why: "Then we ask about the meal break as it was booked.",
         },
         yesEffect: <>Your record says you took your meal break, and your schedule needs changing to match.</>,
@@ -1662,7 +1702,8 @@ function OneQuestion({
   // - see the note on `owesReason` in BatchProvider for why it is not hidden
   const reasonText = reason ?? saidAlready ?? "";
   const needsReason = reasonOwedOn(q.kind, proposed?.choice);
-  const reasonBlocked = needsReason && !reasonText.trim();
+  // words, not a dot or an n/a - see meaningfulText
+  const reasonBlocked = needsReason && !meaningfulText(reasonText);
   // AND WHAT THE BLOCK BECOMES, on the answer that says it can move. Saying it
   // can be rearranged without saying what to is an instruction nobody can carry
   // out in QuickSolve.
@@ -2081,9 +2122,9 @@ function OneQuestion({
             placeholder={reasonAsk.placeholder}
             className="mt-2 min-h-[5.5rem] w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-foreground sm:min-h-0"
           />
-          {!reasonText.trim() ? (
+          {!meaningfulText(reasonText) ? (
             <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
-              Needed before this can be saved. It goes at the bottom of your timesheet.
+              {reasonText.trim() ? NEEDS_REAL_WORDS : "Needed before this can be saved. It goes at the bottom of your timesheet."}
             </p>
           ) : saidAlready ? (
             <p className="mt-1.5 text-xs text-muted">
@@ -2101,13 +2142,15 @@ function OneQuestion({
           half given, the line here says exactly what. */}
       {proposed && proposed.choice !== null && (
         <div className="mt-3 space-y-1.5 text-sm text-muted">
+          {/* the quiet one, in Back's own clothes: the bar's Save and next is
+              the one blue button on the screen, this saves and stays */}
           {complete && (
             <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
               <button
                 type="button"
                 disabled={pending}
                 onClick={commit}
-                className="flex-none rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
+                className="min-h-[44px] flex-none rounded-[9px] bg-fill px-4 py-2 text-[13.5px] font-medium text-foreground transition hover:bg-surface-2 disabled:opacity-40"
               >
                 {pending ? "Saving…" : "Save answer"}
               </button>
@@ -2609,7 +2652,7 @@ export function BatchProvider({
     if (v === "yes" && (q.needs || []).some((n) => !minutesAt(q, n) || badTime(q, n))) return false;
     if (v === "partial" && (!(q.needs || []).some((n) => minutesAt(q, n))
       || (q.needs || []).some((n) => minutesAt(q, n) && badTime(q, n)))) return false;
-    if (owesReason(q, v) && !reasonOf(q)) return false;
+    if (owesReason(q, v) && !meaningfulText(reasonOf(q))) return false;
     return true;
   };
 
@@ -2919,6 +2962,11 @@ export function BatchProvider({
           <p className="mt-1.5 text-[12.5px] text-muted">
             Add a reason to complete this answer. It goes at the bottom of your timesheet.
           </p>
+        ) : !said && !meaningfulText(reasons[q.id]) ? (
+          // something is typed, but not words - see meaningfulText
+          <p className="mt-1.5 text-[12.5px] font-semibold text-amber-800 dark:text-amber-300">
+            {NEEDS_REAL_WORDS}
+          </p>
         ) : already ? (
           /* WHERE THE WORDS IN THE BOX CAME FROM. Without this an answer they
              gave on another question about the same day looks like something we
@@ -3110,11 +3158,13 @@ export function BatchProvider({
     if (!dirtyQ(q) || !completeQ(q, v)) return refused;
     return (
       <div className="mt-5">
+        {/* the quiet one, in Back's own clothes: the bar's Save and next is
+            the one blue button on the screen, this saves and stays */}
         <button
           type="button"
           disabled={pending}
           onClick={() => saveQs([q])}
-          className="rounded-[9px] bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50 max-sm:w-full max-sm:py-3"
+          className="min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13.5px] font-medium text-foreground transition hover:bg-surface-2 disabled:opacity-40"
         >
           {saving ? "Saving…" : "Save answer"}
         </button>
@@ -3370,6 +3420,10 @@ export default function TimesheetQuestion({
             The {head.row.copies === 2 ? "two" : head.row.copies} entries add up to <span className={reviewStyles.hours}>{Number(head.row.hours).toFixed(2)} hours</span>.
             {" "}Worked once, this shift is <span className={reviewStyles.hours}>{Number(head.row.single).toFixed(2)} hours</span>.
           </p>
+        ) : c.prose && c.body ? (
+          // a card whose facts are sentences, not a readout - the meal-period
+          // card says its two lines here as well as on the long card
+          <p className="mt-2 text-[13px] leading-relaxed text-muted">{c.body}</p>
         ) : c.facts?.length > 0 && (
           <dl className="mt-1.5 space-y-0.5">
             {c.facts.map((f) => (

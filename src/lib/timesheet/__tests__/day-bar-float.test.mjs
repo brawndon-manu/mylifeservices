@@ -55,7 +55,7 @@ test("the page ends with room for the bar while one floats", () => {
 });
 
 test("All questions keeps each bar in its own day", () => {
-  assert.match(flow, /export function DayReport\(\{ date, navigation, note = null, floats = true \}\)/);
+  assert.match(flow, /export function DayReport\(\{ date, day = null, navigation, note = null, floats = true \}\)/);
   assert.match(flow, /<div data-day-bar className=\{`flex items-center justify-between gap-3 \$\{floats \? styles\.dayBar : "mt-3"\}`\}>/);
   assert.match(days, /floats=\{!stacked\}/);
 });

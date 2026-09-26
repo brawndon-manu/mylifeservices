@@ -33,7 +33,8 @@ test("the browser enforces the same rule as the action, from the same map", () =
   assert.match(CARD, /reasonOwedOn/);
   // an answer that owes a reason is not complete without one, the same test
   // the Save answer button, the day's Save and next and the server all apply
-  assert.match(CARD, /if \(owesReason\(q, v\) && !reasonOf\(q\)\) return false;/);
+  // and the reason has to be words, not a dot or an n/a (2026-09-26)
+  assert.match(CARD, /if \(owesReason\(q, v\) && !meaningfulText\(reasonOf\(q\)\)\) return false;/);
   assert.doesNotMatch(CARD, /const REASON_ON = \{/);
 });
 

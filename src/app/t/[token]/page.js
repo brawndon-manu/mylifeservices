@@ -26,7 +26,7 @@ import {
   markDayWalked,
 } from "@/app/portal/admin/timesheets/actions";
 import TimeOffCard from "./TimeOffCard";
-import ReviewFlow, { ReviewStage, ReviewTotals, ReviewProvider } from "./ReviewFlow";
+import ReviewFlow, { ReviewStage, ReviewTotals, ReviewProvider, ToldUsPanel } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { reviewDays } from "@/lib/timesheet/review-days";
 import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
@@ -1043,11 +1043,10 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               missed. That is the half no export carries, they typed it, and it
               is about to be printed on the sheet below - so it reads back here
               rather than only appearing on the document after they sign. */}
-          {(Object.keys(answers).length > 0 || toldUs.length > 0) && (
-            <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
-              <p className="text-[15px] font-semibold text-foreground">
-                What you have told us about this timesheet
-              </p>
+          {/* the panel is a client piece now, so a report drafted in this tab
+              can sit with the rows on record - see ToldUsPanel */}
+          <ToldUsPanel hasRows={Object.keys(answers).length > 0 || toldUs.length > 0}>
+            {(Object.keys(answers).length > 0 || toldUs.length > 0) && (
               <ul className="mt-1.5 divide-y divide-sep">
                 {toldUs.map((c) => (
                   // KEYED ON THE ROW, not on kind and date. Nothing stops two
@@ -1104,8 +1103,8 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                   );
                 })}
               </ul>
-            </div>
-          )}
+            )}
+          </ToldUsPanel>
 
           {/* THE SHEET IS ALWAYS ON THE PAGE NOW, and it updates as answers go
               in. Mánu 2026-08-11: "let's make the current time sheet appear at

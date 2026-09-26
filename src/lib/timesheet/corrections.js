@@ -24,6 +24,7 @@
 // whose only import is loose-time.js, which imports nothing at all. No pdf and
 // no parse, so the review page's bundle is unchanged.
 import { breaksAgainstSlots } from "./work-slots.js";
+import { meaningfulText } from "./meaningful-text.js";
 
 // §226.7 pays one hour per violation, max one meal + one rest premium a day.
 const PREMIUM_HOURS_PER_VIOLATION = 1;
@@ -116,11 +117,26 @@ export function addsWorkHours(kind, day, claimedHours) {
   return r2(hours) > r2(kind === "day_missing" ? 0 : day?.paidHours || 0);
 }
 
+// WHAT THE NOTE HAS TO SAY, and when. An hours report always carries a reason
+// (it used to be optional when the day came out shorter): adding
+// hours asks why they are being added, anything else on an hours report asks
+// what changed, and the kinds marked needsNote ask their own. A note that is
+// there but not words ("." / "n/a") is "junk" - see meaningfulText.
 export function correctionNoteProblem(kind, day, claimedHours, note) {
-  if (typeof note === "string" && note.trim()) return null;
+  const hoursReport = kind === "hours" || kind === "day_missing";
+  const required = hoursReport || !!CORRECTION_KINDS[kind]?.needsNote;
+  if (!required) return null;
+  const said = typeof note === "string" && !!note.trim();
+  if (said && meaningfulText(note)) return null;
+  if (said) return "junk";
   if (addsWorkHours(kind, day, claimedHours)) return "addedHoursReason";
-  return CORRECTION_KINDS[kind]?.needsNote ? "note" : null;
+  if (hoursReport) return "changeReason";
+  return "note";
 }
+// the other two lines the hours report's box can ask with - beside
+// ADDED_HOURS_REASON so the three cannot drift apart
+export const REMOVED_HOURS_REASON = "Explain why you are removing work hours.";
+export const CHANGE_REASON = "Explain what changed and why.";
 
 export function isCorrectionKind(k) {
   return Object.prototype.hasOwnProperty.call(CORRECTION_KINDS, k);

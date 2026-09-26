@@ -176,7 +176,8 @@ test("slotHours adds up the readable slots and is null until one reads", () => {
 });
 
 test("the form reads its hours off the slots and has no box for them", () => {
-  assert.match(report, /const slotTotal = takesSlots \? slotHours\(slots\) : null;\n\s*const hours = slotTotal == null \? "" : String\(slotTotal\);/);
+  // no total while a slot runs into another - see report-form-rules
+  assert.match(report, /const slotTotal = takesSlots && problems\.ok \? slotHours\(slots\) : null;\n\s*const hours = slotTotal == null \? "" : String\(slotTotal\);/);
   assert.doesNotMatch(report, /id="rp-hours"/);
   assert.doesNotMatch(report, /setHours\(/);
   assert.match(report, /<span data-slot-total className=\{`text-2xl font-medium tabular-nums text-foreground \$\{reviewStyles\.hours\}`\}>\n\s*\{slotTotal == null \? "—" : fmt\(slotTotal\)\}/);

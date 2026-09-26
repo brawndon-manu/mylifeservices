@@ -98,6 +98,7 @@ import {
   openReports,
 } from "@/lib/timesheet/corrections";
 import { sendDecisionEmail } from "@/lib/timesheet-decision-email";
+import { meaningfulText } from "@/lib/timesheet/meaningful-text";
 
 async function requireTimesheetAccess() {
   const user = await getCurrentUser();
@@ -4430,7 +4431,8 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       return { ok: false, error: "needblock", at: { id: q.id, date: q.date } };
     }
     const why = String(a.reason ?? "").trim().slice(0, 1000);
-    if (reasonOwedOn(q.kind, a.choice) && !why) {
+    // words, not a dot or an n/a - the same rule the card reads, see meaningfulText
+    if (reasonOwedOn(q.kind, a.choice) && !meaningfulText(a.reason)) {
       // WHICH DAY, not just that one of them is short. This card commits every
       // day it holds in a single write, so a bare code points at thirteen at
       // once and the person has to hunt for the one that stopped it.
@@ -5459,6 +5461,7 @@ export async function answerBreakReason({ token, findingKey, agree, text }) {
   if (!row || row.answer !== "not-taken") return { ok: false, error: "notasked" };
 
   const said = String(text ?? "").trim().slice(0, 1000) || null;
+  if (said && !meaningfulText(said)) return { ok: false, error: "needreason", at: { key: findingKey } };
 
   // NOTHING WE WROTE: they are supplying the only reason there is, so it goes in
   // as theirs and is confirmed by definition.

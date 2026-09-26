@@ -15,6 +15,8 @@
 // NO PREMIUM LANGUAGE ANYWHERE HERE. What is owed is admin's business; this page
 // is collecting a fact.
 import { useState, useTransition } from "react";
+// a reason has to be words, not a dot or an n/a - see meaningfulText
+import { meaningfulText, NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
 import { employeeQuestion } from "@/lib/timesheet/break-answers";
 import { useRouter } from "next/navigation";
 
@@ -30,7 +32,7 @@ export default function BreakReason({ token, ask, submitAction }) {
       setErr(null);
       const res = await submitAction({ token, findingKey: ask.findingKey, agree, text: said });
       if (res?.ok) { setChanging(false); setText(""); router.refresh(); }
-      else setErr(res?.error === "empty" ? "Please write something first." : "That did not save. Try again?");
+      else setErr(res?.error === "empty" ? "Please write something first." : res?.error === "needreason" ? NEEDS_REAL_WORDS : "That did not save. Try again?");
     });
 
   // BUILT FROM THE COUNTS, not from a noun swapped into one sentence. That is
@@ -90,7 +92,7 @@ export default function BreakReason({ token, ask, submitAction }) {
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={pending || !text.trim()}
+              disabled={pending || !meaningfulText(text)}
               onClick={() => send(false, text)}
               className="rounded-[9px] bg-brand px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
             >
@@ -123,7 +125,7 @@ export default function BreakReason({ token, ask, submitAction }) {
           <div className="mt-2">
             <button
               type="button"
-              disabled={pending || !text.trim()}
+              disabled={pending || !meaningfulText(text)}
               onClick={() => send(true, text)}
               className="rounded-[9px] bg-brand px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:opacity-50"
             >

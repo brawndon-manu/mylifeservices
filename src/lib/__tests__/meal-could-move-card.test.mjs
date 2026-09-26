@@ -16,23 +16,41 @@ const card = read("src/app/t/[token]/TimesheetQuestion.js");
 const from = card.indexOf('case "mealCouldMove": {');
 const spec = card.slice(from, card.indexOf("default:", from));
 
+// WORDED AS A QUESTION ABOUT WHAT HAPPENED:
+// the card states the unscheduled stretch and the recorded meal, then asks
+// whether a full break was taken in that stretch; the old "could it have been
+// moved" asked whether it was possible while its yes said it was done.
 test("the card asks the question and offers both answers word for word", () => {
   assert.ok(from > -1, "the card has a case for the kind");
-  assert.match(spec, /title: "Your meal break could have been moved",/);
-  assert.match(spec, /short: "Your meal break could have been moved",/);
-  assert.match(spec, /ask: "Could your meal break have been moved to when you were free\?",/);
-  assert.match(spec, /label: "Yes, I took it then",\s*why: "Tell us when your meal break started\.",/);
-  assert.match(spec, /label: "No, it could not have been moved",\s*why: "Then we ask about the meal break as it was booked\.",/);
+  assert.match(spec, /title: "Confirm your meal period",/);
+  assert.match(spec, /short: "Confirm your meal period",/);
+  assert.match(spec, /ask: `Did you take an uninterrupted \$\{minutes\}-minute meal break at any time \$\{between\}\?`,/);
+  assert.match(spec, /label: `Yes, I took a \$\{minutes\}-minute meal break during this time`,\s*why: "What time did your meal break start\?",/);
+  assert.match(spec, /label: `No, I did not take a \$\{minutes\}-minute meal break during this time`,\s*why: "Then we ask about the meal break as it was booked\.",/);
   assert.match(spec, /yesEffect: <>Your record says you took your meal break, and your schedule needs changing to match\.<\/>,/);
   assert.match(spec, /noEffect: <>Nothing changes yet\. The next question asks about the meal break as it was booked\.<\/>,/);
 });
 
-test("the facts are the booked lunch, what it ran into, and the free time", () => {
-  assert.match(spec, /label: "Booked at", value: `\$\{q\.row\?\.mealFrom\} to \$\{q\.row\?\.mealTo\}`/);
-  assert.match(spec, /label: "Your shift", value: `\$\{q\.row\?\.blockFrom\}-\$\{q\.row\?\.blockTo\}, \$\{q\.row\?\.service\}`/);
-  assert.match(spec, /label: "Worked until", value: `\$\{q\.row\?\.blockTo\}, \$\{q\.row\?\.service\}`/);
-  assert.match(spec, /label: "Free", value: free/);
-  assert.match(spec, /timeHint: `Has to be a half hour inside/);
+test("the body says the unscheduled stretch and the recorded meal, and the hint says where a full break fits", () => {
+  assert.match(spec, /const unscheduled = windows\.map\(\(w\) => `from \$\{longClock\(w\.from\)\} to \$\{longClock\(w\.to\)\}`\)\.join\(" and "\);/);
+  assert.match(spec, /const between = windows\.map\(\(w\) => `between \$\{longClock\(w\.from\)\} and \$\{longClock\(w\.to\)\}`\)\.join\(" or "\);/);
+  assert.match(spec, /You had an unscheduled period \{unscheduled\}\./);
+  // the second line says what cut the meal short: a block that began inside
+  // it, one that ran into it, a shift around it, or a roster that booked it short
+  assert.match(spec, /bf > mf && bf < mt\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, but work began again at \$\{longClock\(q\.row\?\.blockFrom\)\}\.`/);
+  assert.match(spec, /bt > mf && bt < mt\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, but work ran until \$\{longClock\(q\.row\?\.blockTo\)\}\.`/);
+  assert.match(spec, /q\.row\?\.booked === "inside"\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, inside a shift you worked from \$\{longClock\(q\.row\?\.blockFrom\)\} to \$\{longClock\(q\.row\?\.blockTo\)\}\.`/);
+  assert.match(spec, /: `Your recorded meal period was scheduled for \$\{booked\}, shorter than \$\{minutes\} minutes\.`/);
+  assert.match(spec, /timeHint: `What time did your meal break start\? It must be a \$\{minutes\}-minute period within \$\{within\}\. For example, valid start times would be \$\{examples\}\.`/);
+  // the day card says the sentences too, not a label-and-value readout
+  assert.match(spec, /prose: true,/);
+  assert.match(card, /\) : c\.prose && c\.body \? \(/);
+  assert.doesNotMatch(spec, /facts:/);
+  assert.match(spec, /`\$\{longClock\(w\.from\)\} through \$\{clockMinus\(w\.to, minutes\)\} because a full \$\{minutes\} minutes has to fit before \$\{longClock\(w\.to\)\}`/);
+  // the minutes come from the question's own need, never a number typed here
+  assert.match(spec, /const minutes = q\.needs\?\.\[0\]\?\.minutes \|\| 30;/);
+  // the clocks read in full, "1:48 PM", off the row's compact "1:48p"
+  assert.match(card, /const longClock = \(compact\) => \{\n\s*const hhmm = parseLooseTime\(compact \|\| "", \{ assumeWorkday: true \}\);\n\s*return hhmm \? formatTimeDisplay\(hhmm\)\.replace\(\/\^0\/, ""\) : compact;/);
 });
 
 test("saving the no stays on the day, where the booked-meal card opens", () => {

@@ -728,6 +728,28 @@ export default function DayCalendar({
     })),
   ]);
 
+  // WHERE A GAP'S LABEL MAY SIT once a break is drawn over it. A lunch typed
+  // into a gap lands in the break lanes on the right, and the gap's centred
+  // "Not scheduled 1p–1:30p" ran straight through "Lunch 1p–1:30p". The label
+  // moves to the longest stretch of the gap no break covers, and goes when
+  // none is long enough to hold it - the break block says what is there and
+  // the hatch says the rest.
+  const labelSpanOf = (g) => {
+    const over = breakLanes.placed
+      .map((b) => drawnBreak(b))
+      .filter((d) => d.from < g.drawTo && d.to > g.drawFrom)
+      .map((d) => ({ from: Math.max(d.from, g.drawFrom), to: Math.min(d.to, g.drawTo) }))
+      .sort((a, b) => a.from - b.from);
+    if (!over.length) return fitsLabel(g.drawFrom, g.drawTo) ? { from: g.drawFrom, to: g.drawTo } : null;
+    let best = null;
+    let cursor = g.drawFrom;
+    for (const o of [...over, { from: g.drawTo, to: g.drawTo }]) {
+      if (o.from > cursor && (!best || o.from - cursor > best.to - best.from)) best = { from: cursor, to: o.from };
+      cursor = Math.max(cursor, o.to);
+    }
+    return best && fitsLabel(best.from, best.to) ? best : null;
+  };
+
   return (
     <figure className="m-0">
       <figcaption className="sr-only">{spoken(day, shifts, rests, staged, scheduled)}</figcaption>
@@ -914,7 +936,18 @@ export default function DayCalendar({
         {/* THE GAPS BETWEEN SHIFTS. Unscheduled time unless it is meal length,
             in which case the punch-out IS the meal. Never a rest period - see
             the note above. */}
-        {between.map((g) => (
+        {between.map((g) => {
+          const at = labelSpanOf(g);
+          const whole = at && at.from === g.drawFrom && at.to === g.drawTo;
+          const label = at && (
+            <span className="truncate text-[12px] font-semibold leading-[15px]">
+              {g.kind === "meal" ? "Meal" : "Not scheduled"}{" "}
+              <span className="font-mono font-normal opacity-80">
+                {hhmm(g.from)}&ndash;{hhmm(g.to)}
+              </span>
+            </span>
+          );
+          return (
           <div
             key={`g-${g.from}-${g.to}`}
             /* TIME NOBODY WAS BOOKED FOR, SAID PROPERLY. Mánu 2026-08-12: "The
@@ -941,17 +974,22 @@ export default function DayCalendar({
                 : "repeating-linear-gradient(45deg, transparent, transparent 5px, rgb(148 163 184 / 0.14) 5px, rgb(148 163 184 / 0.14) 10px)",
             }}
           >
-            {/* nothing at all when it will not fit - the hatch is the message */}
-            {fitsLabel(g.drawFrom, g.drawTo) && (
-              <span className="truncate text-[12px] font-semibold leading-[15px]">
-                {g.kind === "meal" ? "Meal" : "Not scheduled"}{" "}
-                <span className="font-mono font-normal opacity-80">
-                  {hhmm(g.from)}&ndash;{hhmm(g.to)}
-                </span>
+            {/* nothing at all when it will not fit - the hatch is the message.
+                the label sits where no break covers it - see labelSpanOf */}
+            {whole ? label : at && (
+              <span
+                className={`absolute inset-x-0 flex items-center px-1.5 ${g.kind === "meal" ? "" : "justify-center"}`}
+                style={{
+                  top: `${((at.from - g.drawFrom) / (g.drawTo - g.drawFrom)) * 100}%`,
+                  height: `${((at.to - at.from) / (g.drawTo - g.drawFrom)) * 100}%`,
+                }}
+              >
+                {label}
               </span>
             )}
           </div>
-        ))}
+          );
+        })}
 
         {/* THE BREAK LAYER, laid out in lanes down the right of the column.
 

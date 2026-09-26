@@ -69,13 +69,6 @@ export function checkWorkSlots(rawSlots, claimedHours) {
   if (list.length > MAX_SLOTS) {
     return { ok: false, code: "tooMany", message: `A day takes up to ${MAX_SLOTS} work slots.` };
   }
-  if (claimedHours == null || claimedHours === "" || !Number.isFinite(target) || target <= 0 || target > 24) {
-    return {
-      ok: false,
-      code: "badHours",
-      message: "Enter the day's work hours, more than 0 and up to 24.",
-    };
-  }
 
   const parsed = [];
   for (const raw of list) {
@@ -110,6 +103,18 @@ export function checkWorkSlots(rawSlots, claimedHours) {
     }
   }
 
+  // THE HOURS ARE JUDGED AFTER THE SLOTS, and "up to 24" is gone from the
+  // line: the figure is the slots added up now, so a missing or odd figure is
+  // a slot fault wearing a different name - the slot's own line says which.
+  // This stays for a caller that hands a figure of its own.
+  if (claimedHours == null || claimedHours === "" || !Number.isFinite(target) || target <= 0 || target > 24) {
+    return {
+      ok: false,
+      code: "badHours",
+      message: "Enter the day's work hours, more than 0.",
+    };
+  }
+
   const minutes = parsed.reduce((n, s) => n + (s.to - s.from), 0);
   const hours = r2(minutes / 60);
   if (hours !== r2(target)) {
@@ -134,6 +139,48 @@ export function checkWorkSlots(rawSlots, claimedHours) {
 
 // does this kind of correction carry a full day of slots?
 export const kindTakesSlots = (kind) => kind === "hours" || kind === "day_missing";
+
+// THE BOXES THAT BREAK THE DAY'S RULES, as they are typed: a slot can't run
+// into another one. The fault sits on the box that made it, not on the whole
+// slot, so a 1pm typed into one start doesn't redden another slot's end:
+//   - an end at or before its start marks that End box
+//   - two slots that cross mark the edges that cross - the earlier one's End
+//     and the later one's Start - but only the ones changed from `seed`, the
+//     slots the form opened with; if neither was touched, both
+// Boxes are "index:from" / "index:to" in the raw order; `ok` is no marks.
+// Unreadable boxes are not judged here - their own red says so.
+export function slotProblems(rawSlots, seed = []) {
+  const boxes = new Set();
+  const minsOf = (raw, key) => {
+    const v = readSlot(raw || {})[key];
+    return v == null ? null : toMin(v);
+  };
+  const changed = (i, key) => {
+    const was = seed?.[i];
+    if (!was) return true;
+    return minsOf(was, key) !== minsOf(rawSlots[i], key);
+  };
+  const read = [];
+  (rawSlots || []).forEach((raw, i) => {
+    const a = minsOf(raw, "from");
+    const b = minsOf(raw, "to");
+    if (a == null || b == null) return;
+    if (b <= a) { boxes.add(`${i}:to`); return; }
+    read.push({ i, from: a, to: b });
+  });
+  read.sort((x, y) => x.from - y.from || x.i - y.i);
+  for (let k = 1; k < read.length; k += 1) {
+    const before = read[k - 1];
+    const after = read[k];
+    if (after.from >= before.to) continue;
+    const marks = [];
+    if (changed(before.i, "to")) marks.push(`${before.i}:to`);
+    if (changed(after.i, "from")) marks.push(`${after.i}:from`);
+    if (!marks.length) marks.push(`${before.i}:to`, `${after.i}:from`);
+    for (const m of marks) boxes.add(m);
+  }
+  return { boxes, ok: boxes.size === 0 };
+}
 
 // THE DAY'S HOURS ARE THE SLOTS ADDED UP (Mánu 2026-09-25): the figure on the
 // report form is read off the slots, never typed, so it cannot disagree with
