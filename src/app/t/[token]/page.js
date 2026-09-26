@@ -1135,9 +1135,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           </ReviewStage>
           <ReviewStage name="document">
           <TimesheetSigner
-            key={`sheet-${answered.length}-${breakAsks.length}`}
+            // and the sheet's last rebuild, so a decision payroll makes - which
+            // moves the figures without anybody answering anything - swaps the
+            // document in an open tab too
+            key={`sheet-${answered.length}-${breakAsks.length}-${ts.recomputedAt?.getTime() ?? 0}`}
             token={token}
-            fileUrl={`/t/${token}/pdf?v=${answered.length}`}
+            fileUrl={`/t/${token}/pdf?v=${answered.length}-${ts.recomputedAt?.getTime() ?? 0}`}
             title={`timesheet-${period.replace(/[^\w]+/g, "-")}`}
             submitAction={act(submitSignedTimesheet)}
             /* THE POPUP IS REASSURANCE, NOT A WARNING. Ignoring these is the

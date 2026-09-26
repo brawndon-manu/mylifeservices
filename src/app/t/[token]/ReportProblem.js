@@ -9,7 +9,7 @@
 // that already has a punched lunch; the honest option there is the opposite
 // one. filtering it this way is also what stops people picking the option that
 // happens to pay more without noticing it doesn't describe their day.
-import { useImperativeHandle, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReviewFlow } from "./ReviewFlow";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON } from "@/lib/timesheet/corrections";
@@ -128,6 +128,21 @@ export default function ReportProblem({ token, days, submitAction, period = null
     flow?.setEditorTarget(null);
   }
 
+  // THE FORM COMES INTO VIEW, the page does not jump to the top of the day. it
+  // opens at the bottom of the day's card, which can be well below the screen
+  // when Report a problem is pressed from the floating bar, so once it is on the
+  // page its top is brought up under the header - and only when it is not
+  // already sitting in the top part of the screen.
+  const editorRef = useRef(null);
+  const editorTarget = flow?.editorTarget || null;
+  useEffect(() => {
+    if (!open || !editorTarget) return;
+    const el = editorRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    if (top < 96 || top > window.innerHeight * 0.6) window.scrollBy({ top: top - 96 });
+  }, [open, editorTarget]);
+
   function add() {
     setError(null);
     if (takesSlots) {
@@ -244,21 +259,26 @@ export default function ReportProblem({ token, days, submitAction, period = null
               <li key={index} className="py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div><h3 className="font-medium text-foreground">{item.date || "This timesheet"}</h3><p className="mt-1 text-sm text-muted">{CORRECTION_KINDS[item.kind]?.label}</p></div>
-                  <div className="flex gap-4">
-                    <button type="button" disabled={busy} className="min-h-[44px] text-sm text-accent" onClick={() => flow.report(item.date || days[0]?.date, index)}>Edit</button>
-                    <button type="button" disabled={busy} className="min-h-[44px] text-sm text-muted" onClick={() => setItems((old) => old.filter((_, i) => i !== index))}>Remove</button>
-                  </div>
+                  {/* a report already sent is payroll's now - nothing here can
+                      edit or take it back, so the list stops offering to */}
+                  {!flow.reported && (
+                    <div className="flex gap-4">
+                      <button type="button" disabled={busy} className="min-h-[44px] text-sm text-accent" onClick={() => flow.report(item.date || days[0]?.date, index)}>Edit</button>
+                      <button type="button" disabled={busy} className="min-h-[44px] text-sm text-muted" onClick={() => setItems((old) => old.filter((_, i) => i !== index))}>Remove</button>
+                    </div>
+                  )}
                 </div>
                 {item.claimedHours != null && <p className={`mt-3 text-xl tabular-nums text-foreground ${reviewStyles.hours}`}>{fmt(before?.paidHours)} → {fmt(item.claimedHours)} <span className="text-sm text-muted">hrs</span></p>}
                 {!!item.slots?.length && <p className="mt-2 text-sm text-muted">{(checkWorkSlots(item.slots, item.claimedHours).slots || []).map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`).join(", ")}</p>}
                 {!!item.times?.length && <p className="mt-2 text-sm text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(", ")}</p>}
                 {item.note && <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.note}</p>}
-                <p className="mt-2 text-xs text-muted">Not sent</p>
+                {/* the day card's own two words for the same state */}
+                <p className="mt-2 text-xs text-muted">{flow.reported ? "Awaiting payroll" : "Not sent"}</p>
               </li>
             );
           })}
         </ul>
-        {items.length > 0 && <>
+        {items.length > 0 && !flow.reported && <>
           <button type="button" onClick={send} disabled={busy} className="mt-4 min-h-[44px] rounded-[9px] bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? "Sending..." : "Send reports"}</button>
         </>}
         {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
@@ -294,7 +314,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
   }
 
   const editor = (
-    <div className="mt-4 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+    <div ref={editorRef} className="mt-4 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
       <h2 className="text-base font-semibold text-foreground">
         Tell payroll what&apos;s wrong
       </h2>
@@ -816,6 +836,10 @@ function messageFor(res) {
       return "This timesheet has already been signed, so it can't be changed here. Reply to the email that brought you here.";
     case "reported":
       return "You've already reported something on this timesheet - payroll is looking at it.";
+    // the preview's refusal on a real batch, in the time-off card's words -
+    // it read "Something went wrong" and invited a retry that could never work
+    case "preview":
+      return "Preview only - nothing was saved.";
     case "empty":
       return "Add what's wrong first.";
     case "badtime":

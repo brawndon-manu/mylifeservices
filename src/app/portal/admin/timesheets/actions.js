@@ -2698,6 +2698,13 @@ export async function resolveCorrection(correctionId, decision, formData) {
 
   revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}/corrections`);
   revalidatePath(`/portal/admin/timesheets/${c.timesheet.batchId}`);
+  // AND THE EMPLOYEE'S OWN PAGE. it kept the report on its day as "Awaiting
+  // payroll" after the decision, over figures it never refreshed, until
+  // somebody reloaded. the same pair a reset and an answer use: the page is
+  // revalidated, and an open tab hears the sheet's counter move and refreshes.
+  revalidatePath(`/t/${signTimesheetToken(c.timesheet.id)}`);
+  await bumpSheetVersion(c.timesheet.id);
+  await bumpBatchVersion(c.timesheet.batchId);
 }
 
 // THE LAST DECISION WITHOUT A REBUILD. Nothing accepted since the last rebuild
@@ -3485,7 +3492,15 @@ export async function recomputeTimesheet(timesheetId) {
   // change again - deal with all of them first.
   if (ts.corrections.length) return { ok: false, error: "openitems" };
 
-  return rebuildSheetFor(ts, ts.overrides);
+  const res = await rebuildSheetFor(ts, ts.overrides);
+  // the employee's page follows a recalculation as well, the way it follows a
+  // decision - see the end of resolveCorrection
+  if (res?.ok) {
+    revalidatePath(`/t/${signTimesheetToken(ts.id)}`);
+    await bumpSheetVersion(ts.id);
+    await bumpBatchVersion(ts.batchId);
+  }
+  return res;
 }
 
 // Recompute one sheet against a set of overrides, re-render its PDF, and store

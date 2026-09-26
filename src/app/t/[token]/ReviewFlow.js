@@ -45,6 +45,23 @@ export function ReviewProvider({
   const [draftItems, setItems] = useState(() => (readOnly ? [] : initialReports));
   const items = readOnly ? initialReports : draftItems;
   const [reported, setReported] = useState(readOnly || initialReports.length > 0);
+  // AND THE SENT ONES FOLLOW THE SHEET. they were read once when the tab
+  // opened, so a report payroll had just accepted stayed on its day as
+  // "Awaiting payroll" after the page refreshed with the rebuilt figures under
+  // it. when the server's list of open reports changes, a tab holding sent
+  // reports takes the new list - an emptied one puts Report a problem back.
+  // drafts not sent yet are the tab's own and are left alone.
+  // done while rendering, React's way of resetting state off a prop, so the
+  // page never paints the stale list first
+  const serverReports = initialReports.map((r) => r.id).join("|");
+  const [seenReports, setSeenReports] = useState(serverReports);
+  if (!readOnly && seenReports !== serverReports) {
+    setSeenReports(serverReports);
+    if (reported || initialReports.length) {
+      setItems(initialReports);
+      setReported(initialReports.length > 0);
+    }
+  }
   const [generated, setGenerated] = useState(false);
   // the days walked through live on DayDoneProvider now, seeded from the sheet.
   // a second copy kept here only in the tab outlived a reset and a Change this

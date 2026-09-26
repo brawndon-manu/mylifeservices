@@ -76,9 +76,11 @@ export default function DayRail({ days, children, stacked = false }) {
     // Selection follows an explicit Edit or Report action in the shared flow.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (i >= 0) setSel(i);
-    const target = stacked ? paneRefs.current[i] : boxRef.current;
-    target?.scrollIntoView({ block: "start" });
-  }, [requestedDate, days, stacked]);
+    // NO SCROLL TO THE TOP OF THE DAY. this threw the page up to the day's
+    // heading on every Report a problem, the day you were already on included,
+    // with the form then opening down at the bottom of the card out of sight.
+    // the report form brings itself into view instead - see ReportProblem.
+  }, [requestedDate, days]);
 
   const panes = Array.isArray(children) ? children : [children];
 
