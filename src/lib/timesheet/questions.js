@@ -1520,6 +1520,7 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled, an
               // booked short reads differently from one a booking ran into
               eaten: short.eaten,
               service: short.service,
+              blockFrom: short.blockFrom == null ? null : clock(short.blockFrom),
               blockTo: short.blockTo == null ? null : clock(short.blockTo),
               mealFrom: clock(short.mealFrom),
               mealTo: clock(short.mealTo),

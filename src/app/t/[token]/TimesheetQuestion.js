@@ -45,6 +45,26 @@ const clockMinus = (compact, minutes) => {
   const t = h * 60 + m - minutes;
   return formatTimeDisplay(`${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`).replace(/^0/, "");
 };
+// WHAT CUT THE RECORDED MEAL SHORT, as one sentence. the lunch-move card and
+// the short-meal card say it the same way: a block that began inside it
+// (booked 1:30-2, service from 1:48), a block that ran into it, a shift it
+// sat wholly inside, or a roster that simply booked it short. the old
+// "Worked until" line printed the block's END even when the block began
+// inside the lunch, so an afternoon's 4:58p stood where 12:54p belonged
+const recordedMealLine = (row, minutes) => {
+  const booked = `${longClock(row?.mealFrom)}–${longClock(row?.mealTo)}`;
+  const mf = clockMins(row?.mealFrom);
+  const mt = clockMins(row?.mealTo);
+  const bf = clockMins(row?.blockFrom);
+  const bt = clockMins(row?.blockTo);
+  return bf != null && mf != null && mt != null && bf > mf && bf < mt
+    ? `Your recorded meal period was scheduled for ${booked}, but work began again at ${longClock(row?.blockFrom)}.`
+    : bt != null && mf != null && mt != null && bt > mf && bt < mt
+      ? `Your recorded meal period was scheduled for ${booked}, but work ran until ${longClock(row?.blockTo)}.`
+      : row?.booked === "inside"
+        ? `Your recorded meal period was scheduled for ${booked}, inside a shift you worked from ${longClock(row?.blockFrom)} to ${longClock(row?.blockTo)}.`
+        : `Your recorded meal period was scheduled for ${booked}, shorter than ${minutes} minutes.`;
+};
 // whether a day folds to its one line - a press, not a keystroke, decides it -
 // and which days count as walked once the sheet's own list comes back
 import { shellFolds, walkedFromSheet } from "@/lib/timesheet/day-shell";
@@ -1266,33 +1286,23 @@ function copyFor(q, standing) {
     // nothing, or it never was, which is the missed meal and takes a reason
     // like one. the facts say how it came up short and nothing here says which
     // answer is true.
-    case "mealShort":
+    //
+    // SAID IN SENTENCES, the way the lunch-move card says them: what cut the
+    // recorded meal short, then how much of it was left when a booking ate
+    // into it. the full meal is what was clear plus what it came up short by
+    case "mealShort": {
+      const minutes = (q.row?.minutes ?? 0) + (q.row?.short ?? 0) || 30;
+      const clear = q.row?.minutes;
       return {
         title: "Your meal period was less than 30 minutes",
         short: "Your meal period was less than 30 minutes",
         ask: "Were you provided the opportunity to take a full, uninterrupted 30-minute meal period?",
-        facts: [
-          { label: "Booked at", value: `${q.row?.mealFrom} to ${q.row?.mealTo}` },
-          ...(q.row?.eaten
-            ? [
-              { label: "Worked until", value: `${q.row?.blockTo}, ${q.row?.service}` },
-              { label: "Left clear", value: `${q.row?.minutes} minutes` },
-            ]
-            : [{ label: "Length", value: `${q.row?.minutes} minutes` }]),
-        ],
+        // the sentences on the day card as well as the long one
+        prose: true,
         body: (
           <>
-            Your schedule books a meal break at <b>{q.row?.mealFrom} to {q.row?.mealTo}</b> on{" "}
-            <b>{q.date}</b>.{" "}
-            {q.row?.eaten ? (
-              <>
-                Your <b>{q.row?.service}</b> runs until <b>{q.row?.blockTo}</b>, which is{" "}
-                <b>{q.row?.eaten} minutes</b> into it, so only <b>{q.row?.minutes} minutes</b> of it
-                are clear.
-              </>
-            ) : (
-              <>That is <b>{q.row?.minutes} minutes</b>, and a meal break has to be thirty.</>
-            )}
+            {recordedMealLine(q.row, minutes)}
+            {q.row?.eaten ? <> That left {clear} {clear === 1 ? "minute" : "minutes"} clear.</> : null}
           </>
         ),
         yes: {
@@ -1306,6 +1316,7 @@ function copyFor(q, standing) {
         yesEffect: <>Your record says you were given a full meal break and chose to come back early.</>,
         noEffect: <>Your record says the meal break was cut short, with your reason on it.</>,
       };
+    }
 
     // THE SAME LUNCH, ON A DAY WITH A FREE HALF HOUR IN IT. the roster booked
     // it short or inside a clocked shift, but the punches and the roster both
@@ -1326,22 +1337,8 @@ function copyFor(q, standing) {
       const examples = windows
         .map((w) => `${longClock(w.from)} through ${clockMinus(w.to, minutes)} because a full ${minutes} minutes has to fit before ${longClock(w.to)}`)
         .join(", or ");
-      const booked = `${longClock(q.row?.mealFrom)}–${longClock(q.row?.mealTo)}`;
-      // WHAT CUT THE RECORDED MEAL SHORT, in the second line: a block that
-      // began inside it (booked 1:30-2, service from 1:48), a
-      // block that ran into it, a shift it sat wholly inside, or a roster
-      // that simply booked it short
-      const mf = clockMins(q.row?.mealFrom);
-      const mt = clockMins(q.row?.mealTo);
-      const bf = clockMins(q.row?.blockFrom);
-      const bt = clockMins(q.row?.blockTo);
-      const recorded = bf != null && mf != null && mt != null && bf > mf && bf < mt
-        ? `Your recorded meal period was scheduled for ${booked}, but work began again at ${longClock(q.row?.blockFrom)}.`
-        : bt != null && mf != null && mt != null && bt > mf && bt < mt
-          ? `Your recorded meal period was scheduled for ${booked}, but work ran until ${longClock(q.row?.blockTo)}.`
-          : q.row?.booked === "inside"
-            ? `Your recorded meal period was scheduled for ${booked}, inside a shift you worked from ${longClock(q.row?.blockFrom)} to ${longClock(q.row?.blockTo)}.`
-            : `Your recorded meal period was scheduled for ${booked}, shorter than ${minutes} minutes.`;
+      // the second line says what cut the recorded meal short - see recordedMealLine
+      const recorded = recordedMealLine(q.row, minutes);
       return {
         title: "Confirm your meal period",
         short: "Confirm your meal period",

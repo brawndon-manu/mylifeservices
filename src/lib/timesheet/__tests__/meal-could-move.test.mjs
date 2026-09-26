@@ -193,5 +193,5 @@ test("their answer reads back in their own words", () => {
     "You said you took your meal break at 1p, when you were free.",
   );
   assert.equal(said("yes"), "You said you took your meal break, when you were free.");
-  assert.equal(said("no"), "You said your meal break could not have been moved.");
+  assert.equal(said("no"), "You said you did not take a 30-minute meal break in the free time.");
 });

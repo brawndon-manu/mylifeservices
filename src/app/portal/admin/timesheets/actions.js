@@ -5022,7 +5022,7 @@ function resolutionFor(q, choice, stated, statedBreaks, block) {
       const at = (statedBreaks || []).find((b) => b.kindOf === "meal")?.from;
       return yes
         ? `Employee says the meal break was taken${at ? ` at ${at}` : ""}, in time they were free. Meal premium removed for this day.`
-        : "Employee says the meal break could not have been moved into the free time. Their answer on the booked meal break decides the premium.";
+        : "Employee says no 30-minute meal break was taken in the free time. Their answer on the booked meal break decides the premium.";
     }
     // a lunch under thirty minutes: the answer is whether a full thirty was
     // offered, and that decides the hour, so payroll is told which way it went

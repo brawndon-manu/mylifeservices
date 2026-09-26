@@ -264,13 +264,42 @@ export function ReviewStage({ name, children }) {
 // than on the bar. `floats`: false in All questions, where every day is on the
 // page at once - fixed there, all their bars stacked on one spot and the one on
 // top was the last day's, so Next and Report a problem acted on the wrong day.
+// WHAT A REPORT DOES TO ITS DAY, for the card under the day and the reports
+// list alike: the slots in minutes (a draft's typed ones read, a sent one's
+// stored ones) and, on an hours report with a record to compare, only what
+// changed - see slotChanges. a missing day has nothing to differ from, so
+// `changes` is null and the caller prints the plain slots
+export function reportSlots(item, day) {
+  const minuteSlots = item.slots ? checkWorkSlots(item.slots, item.claimedHours).slots || [] : item.statedSlots || [];
+  const changes = item.kind === "hours" && day ? slotChanges(shiftsOf(day), minuteSlots) : null;
+  return { minuteSlots, changes };
+}
+
+// the changes as lines: the old range crossed out beside the new one and the
+// hours it adds or takes, a plus before an added shift, a removed one crossed
+// out. a slot left as it was is not printed
+export function ChangeLines({ changes }) {
+  const range = (from, to) => `${clockLabel(from)}–${clockLabel(to)}`;
+  return (
+    <ul className="mt-1.5 space-y-0.5 font-mono text-[12.5px] leading-relaxed text-muted">
+      {changes.map((c, i) => (
+        <li key={i} className="flex flex-wrap items-baseline gap-x-2">
+          {c.kind !== "added" && <s className={styles.wasFigure}>{range(c.wasFrom, c.wasTo)}</s>}
+          {c.kind === "added" && <span className="text-muted">+</span>}
+          {c.kind !== "removed" && <span className="text-foreground">{range(c.from, c.to)}</span>}
+          <span className="text-muted">{c.delta >= 0 ? "+" : "−"}{Math.abs(c.delta).toFixed(2)} hrs</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // `day`: the day as recorded, so an hours report can be drawn as what it
-// changes - see slotChanges
+// changes - see reportSlots
 export function DayReport({ date, day = null, navigation, note = null, floats = true }) {
   const flow = useReviewFlow();
   if (!flow) return navigation;
   const reports = flow.items.map((item, index) => ({ item, index })).filter(({ item }) => item.date === date);
-  const range = (from, to) => `${clockLabel(from)}–${clockLabel(to)}`;
   return (
     <div className={`mt-4 border-t border-sep pt-3 ${styles.dayBarHost}`}>
       {/* THE REPORT ON THIS DAY, as a card rather than bare lines under an
@@ -279,14 +308,11 @@ export function DayReport({ date, day = null, navigation, note = null, floats = 
           the slots as one mono line, the note quoted the way the told-us
           panel quotes one, and Edit / Remove only while it is still theirs */}
       {reports.map(({ item, index }) => {
-        const minuteSlots = item.slots ? checkWorkSlots(item.slots, item.claimedHours).slots || [] : item.statedSlots || [];
+        // ONLY WHAT CHANGED: a shift stretched to 11pm shows as the old range
+        // crossed out beside the new one and the hours it adds. A missing day
+        // has no record to differ from, so it keeps its plain list
+        const { minuteSlots, changes } = reportSlots(item, day);
         const slots = minuteSlots.map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`);
-        // ONLY WHAT CHANGED: a shift stretched to 11pm shows as
-        // the old range crossed out beside the new one and the hours it adds,
-        // an added shift with a plus, a removed one crossed out; a slot left
-        // as it was is not printed. A missing day has no record to differ
-        // from, so it keeps its plain list.
-        const changes = item.kind === "hours" && day ? slotChanges(shiftsOf(day), minuteSlots) : null;
         return (
         <div key={item.id || index} className="amber-tint-card mb-4 rounded-xl px-4 py-3.5 night:ring-1 night:ring-border">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -301,16 +327,7 @@ export function DayReport({ date, day = null, navigation, note = null, floats = 
             {" "}<span className="text-xs font-normal text-muted">hrs reported</span>
           </p>}
           {changes && changes.length > 0 ? (
-            <ul className="mt-1.5 space-y-0.5 font-mono text-[12.5px] leading-relaxed text-muted">
-              {changes.map((c, i) => (
-                <li key={i} className="flex flex-wrap items-baseline gap-x-2">
-                  {c.kind !== "added" && <s className={styles.wasFigure}>{range(c.wasFrom, c.wasTo)}</s>}
-                  {c.kind === "added" && <span className="text-muted">+</span>}
-                  {c.kind !== "removed" && <span className="text-foreground">{range(c.from, c.to)}</span>}
-                  <span className="text-muted">{c.delta >= 0 ? "+" : "−"}{Math.abs(c.delta).toFixed(2)} hrs</span>
-                </li>
-              ))}
-            </ul>
+            <ChangeLines changes={changes} />
           ) : slots.length > 0 && !changes && <p className="mt-1.5 font-mono text-[12.5px] leading-relaxed text-muted">{slots.join(" · ")}</p>}
           {!!item.times?.length && <p className="mt-1.5 font-mono text-[12.5px] text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(" · ")}</p>}
           {item.note && <p className="mt-2 border-l-2 border-sep pl-2 text-[13px] italic leading-relaxed text-muted whitespace-pre-wrap">&ldquo;{item.note}&rdquo;</p>}

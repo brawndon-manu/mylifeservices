@@ -189,3 +189,11 @@ test("the bar offers Cancel beside Report a problem while the form is open, and 
   assert.match(flow, /\{flow\.editorTarget && <button type="button" onClick=\{\(\) => flow\.reportRef\.current\?\.cancel\(\)\}\n\s*className="[^"]*">Cancel<\/button>\}/);
   assert.match(report, /useImperativeHandle\(flow\?\.reportRef, \(\) => \(\{[\s\S]*?cancel,\n\s*\}\)\);/);
 });
+
+test("the form's intro says the report goes to payroll and the timesheet waits, not page 2", () => {
+  const form = fs.readFileSync("src/app/t/[token]/ReportProblem.js", "utf8").replace(/\s+/g, " ");
+  assert.match(form, /What you send goes to payroll, and your timesheet waits until they decide\./);
+  assert.doesNotMatch(form, /goes on page 2 of your timesheet/);
+  // the line after it said "decide" a second time, so it went
+  assert.doesNotMatch(form, /Nothing changes until payroll decides/);
+});

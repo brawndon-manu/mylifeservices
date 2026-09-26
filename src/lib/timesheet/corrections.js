@@ -736,7 +736,7 @@ export function employeeResolution(correction, question = null) {
       const from = (c.statedBreaks || []).find((b) => b && b.kindOf === "meal" && b.from)?.from;
       return yes
         ? `You said you took your meal break${from ? ` at ${from}` : ""}, when you were free.`
-        : "You said your meal break could not have been moved.";
+        : "You said you did not take a 30-minute meal break in the free time.";
     }
 
     case "duplicateDay":

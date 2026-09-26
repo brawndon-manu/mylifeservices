@@ -56,3 +56,20 @@ test("the day card draws the changes off the day's own shifts, and the figure cr
   assert.match(flow, /\{day && item\.kind === "hours" && <span className=\{styles\.wasFigure\}>\{Number\(day\.paidHours \|\| 0\)\.toFixed\(2\)\}<\/span>\}/);
   assert.match(byDay, /<DayReport\s+day=\{day\}/);
 });
+
+test("the reports list shows the same changes as the card under the day, from one helper", () => {
+  const flow = fs.readFileSync("src/app/t/[token]/ReviewFlow.js", "utf8");
+  const form = fs.readFileSync("src/app/t/[token]/ReportProblem.js", "utf8");
+  // one diff: a draft's typed slots or a sent report's stored ones
+  assert.match(flow, /export function reportSlots\(item, day\) \{/);
+  assert.match(flow, /const minuteSlots = item\.slots \? checkWorkSlots\(item\.slots, item\.claimedHours\)\.slots \|\| \[\] : item\.statedSlots \|\| \[\];/);
+  assert.match(flow, /export function ChangeLines\(\{ changes \}\) \{/);
+  // the card under the day
+  assert.match(flow, /const \{ minuteSlots, changes \} = reportSlots\(item, day\);/);
+  assert.match(flow, /\{changes && changes\.length > 0 \? \(\s*<ChangeLines changes=\{changes\} \/>/);
+  // the reports list, which printed every slot before
+  assert.match(form, /import \{ useReviewFlow, REPORTS_PENDING, reportSlots, ChangeLines \} from "\.\/ReviewFlow";/);
+  assert.match(form, /const \{ minuteSlots, changes \} = reportSlots\(item, before\);/);
+  assert.match(form, /\{changes && changes\.length > 0\s*\? <ChangeLines changes=\{changes\} \/>\s*: !changes && minuteSlots\.length > 0 && <p className="mt-2 text-sm text-muted">/);
+  assert.doesNotMatch(form, /\{!!item\.slots\?\.length && <p className="mt-2 text-sm text-muted">/);
+});

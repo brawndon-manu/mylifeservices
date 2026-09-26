@@ -31,6 +31,22 @@ test("the card puts the question in so many words and offers both answers word f
   assert.match(card, /case "mealInShift":[\s\S]{0,4000}I understand, I did not get a meal break that day/);
 });
 
+test("the card says it in sentences, the lunch-move card's own, not the old table", () => {
+  // the table printed the block's END as "Worked until" even when the block
+  // began inside the lunch: 12:54p service read as "Worked until 4:58p"
+  assert.doesNotMatch(spec, /facts:/);
+  assert.doesNotMatch(spec, /Worked until|Left clear|Booked at/);
+  assert.match(spec, /prose: true,/);
+  assert.match(spec, /const minutes = \(q\.row\?\.minutes \?\? 0\) \+ \(q\.row\?\.short \?\? 0\) \|\| 30;/);
+  assert.match(spec, /\{recordedMealLine\(q\.row, minutes\)\}/);
+  assert.match(spec, /\{q\.row\?\.eaten \? <> That left \{clear\} \{clear === 1 \? "minute" : "minutes"\} clear\.<\/> : null\}/);
+  assert.match(card, /const recordedMealLine = \(row, minutes\) => \{/);
+  // the row says where the block began, so the two shapes can be told apart
+  const questions = read("src/lib/timesheet/questions.js");
+  const at = questions.indexOf('kind: "mealShort"');
+  assert.match(questions.slice(at, at + 1400), /blockFrom: short\.blockFrom == null \? null : clock\(short\.blockFrom\),/);
+});
+
 test("the question line shows in the day view and in the full card", () => {
   assert.match(card, /\{c\.ask && \(\s*<p className="mt-2 text-sm font-semibold leading-snug text-foreground">\{c\.ask\}<\/p>\s*\)\}/);
   assert.match(card, /\{c\.ask && !allAnswered && \(\s*<p className="mt-2 text-sm font-semibold leading-snug text-foreground">\{c\.ask\}<\/p>\s*\)\}/);

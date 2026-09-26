@@ -36,11 +36,13 @@ test("the body says the unscheduled stretch and the recorded meal, and the hint 
   assert.match(spec, /const between = windows\.map\(\(w\) => `between \$\{longClock\(w\.from\)\} and \$\{longClock\(w\.to\)\}`\)\.join\(" or "\);/);
   assert.match(spec, /You had an unscheduled period \{unscheduled\}\./);
   // the second line says what cut the meal short: a block that began inside
-  // it, one that ran into it, a shift around it, or a roster that booked it short
-  assert.match(spec, /bf > mf && bf < mt\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, but work began again at \$\{longClock\(q\.row\?\.blockFrom\)\}\.`/);
-  assert.match(spec, /bt > mf && bt < mt\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, but work ran until \$\{longClock\(q\.row\?\.blockTo\)\}\.`/);
-  assert.match(spec, /q\.row\?\.booked === "inside"\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, inside a shift you worked from \$\{longClock\(q\.row\?\.blockFrom\)\} to \$\{longClock\(q\.row\?\.blockTo\)\}\.`/);
-  assert.match(spec, /: `Your recorded meal period was scheduled for \$\{booked\}, shorter than \$\{minutes\} minutes\.`/);
+  // it, one that ran into it, a shift around it, or a roster that booked it
+  // short. one builder, shared with the short-meal card
+  assert.match(spec, /const recorded = recordedMealLine\(q\.row, minutes\);/);
+  assert.match(card, /bf > mf && bf < mt\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, but work began again at \$\{longClock\(row\?\.blockFrom\)\}\.`/);
+  assert.match(card, /bt > mf && bt < mt\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, but work ran until \$\{longClock\(row\?\.blockTo\)\}\.`/);
+  assert.match(card, /row\?\.booked === "inside"\n\s*\? `Your recorded meal period was scheduled for \$\{booked\}, inside a shift you worked from \$\{longClock\(row\?\.blockFrom\)\} to \$\{longClock\(row\?\.blockTo\)\}\.`/);
+  assert.match(card, /: `Your recorded meal period was scheduled for \$\{booked\}, shorter than \$\{minutes\} minutes\.`/);
   assert.match(spec, /timeHint: `What time did your meal break start\? It must be a \$\{minutes\}-minute period within \$\{within\}\. For example, valid start times would be \$\{examples\}\.`/);
   // the day card says the sentences too, not a label-and-value readout
   assert.match(spec, /prose: true,/);
@@ -74,7 +76,7 @@ test("payroll's note says which way it went", () => {
   const note = actions.slice(at, at + 14000);
   assert.match(note, /case "mealCouldMove": \{/);
   assert.match(note, /`Employee says the meal break was taken\$\{at \? ` at \$\{at\}` : ""\}, in time they were free\. Meal premium removed for this day\.`/);
-  assert.match(note, /"Employee says the meal break could not have been moved into the free time\. Their answer on the booked meal break decides the premium\."/);
+  assert.match(note, /"Employee says no 30-minute meal break was taken in the free time\. Their answer on the booked meal break decides the premium\."/);
 });
 
 test("the answer has to land in the free time the card offered", () => {

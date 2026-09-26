@@ -12,7 +12,7 @@
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { useReviewFlow, REPORTS_PENDING } from "./ReviewFlow";
+import { useReviewFlow, REPORTS_PENDING, reportSlots, ChangeLines } from "./ReviewFlow";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON, REMOVED_HOURS_REASON, CHANGE_REASON } from "@/lib/timesheet/corrections";
 import { NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
 import { kindsForDay } from "@/lib/timesheet/report-kinds";
@@ -350,6 +350,9 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <ul className="mt-5 divide-y divide-sep">
           {items.map((item, index) => {
             const before = days.find((day) => day.date === item.date);
+            // only what the report changes, the way the card under the day
+            // shows it - see reportSlots
+            const { minuteSlots, changes } = reportSlots(item, before);
             return (
               <li key={index} className="py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -364,7 +367,9 @@ export default function ReportProblem({ token, days, submitAction, period = null
                   )}
                 </div>
                 {item.claimedHours != null && <p className={`mt-3 text-xl tabular-nums text-foreground ${reviewStyles.hours}`}>{fmt(before?.paidHours)} → {fmt(item.claimedHours)} <span className="text-sm text-muted">hrs</span></p>}
-                {!!item.slots?.length && <p className="mt-2 text-sm text-muted">{(checkWorkSlots(item.slots, item.claimedHours).slots || []).map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`).join(", ")}</p>}
+                {changes && changes.length > 0
+                  ? <ChangeLines changes={changes} />
+                  : !changes && minuteSlots.length > 0 && <p className="mt-2 text-sm text-muted">{minuteSlots.map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`).join(", ")}</p>}
                 {!!item.times?.length && <p className="mt-2 text-sm text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(", ")}</p>}
                 {item.note && <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.note}</p>}
                 {/* the day card's own two words for the same state */}
@@ -418,9 +423,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
         <span className="font-semibold text-foreground">
           You can report more than one day
         </span>{" "}
-        - add each one, then send them together. What you send goes on page 2
-        of your timesheet, and you sign it there. Nothing changes until payroll
-        decides.
+        - add each one, then send them together. What you send goes to payroll,
+        and your timesheet waits until they decide.
       </p>
 
       {!flow && items.length > 0 && (
