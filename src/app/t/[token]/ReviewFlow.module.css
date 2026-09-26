@@ -58,6 +58,56 @@
   color: var(--status-caution);
 }
 
+/* THE STRIP OF DAYS UNDER THE DAY LIST, one pill a day with the rail's own mark.
+   a day still owing an answer is amber: the caution wash with its ink leaning a
+   fifth toward the text colour, the same pairing as the Reported problems count,
+   which keeps it readable in light (the plain caution colour on its wash is
+   under 4:1 there). */
+.stripDay {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 12.5px;
+  color: var(--muted);
+  transition: background-color 0.15s;
+}
+
+.stripDay:hover {
+  background: var(--fill-2);
+}
+
+.stripDay:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.stripDay:disabled {
+  opacity: 0.5;
+}
+
+.stripDay b {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.stripDay[data-open] {
+  background: color-mix(in srgb, var(--status-caution) 13%, transparent);
+  color: color-mix(in srgb, var(--status-caution) 80%, var(--foreground));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-caution) 40%, transparent);
+}
+
+.stripDay[data-open] b {
+  color: inherit;
+}
+
+.stripDay[data-open]:hover {
+  background: color-mix(in srgb, var(--status-caution) 20%, transparent);
+}
+
 .review .hours {
   color: var(--review-work-ink);
 }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, CircleAlert, Flag } from "lucide-react";
 import { reportedReviewDay } from "@/lib/timesheet/review-days";
 import styles from "./ReviewFlow.module.css";
-import { useReviewFlow } from "./ReviewFlow";
+import { useReviewFlow, REMAINING_QUESTIONS } from "./ReviewFlow";
 import { useDayDone, DayNavProvider, usePendingAnswers } from "./TimesheetQuestion";
 
 // THE DAY RAIL: the period's days down the left, one day's work shown at a
@@ -138,27 +138,7 @@ export default function DayRail({ days, children, stacked = false }) {
       >
         {days.map((d, i) => {
           const on = i === sel;
-          // WALKING PAST A DAY IS NOT ANSWERING IT - Mánu 2026-09-16, Carminia
-          // Suarez: "cant proceed with her timesheet and i dont know why".
-          //
-          // These two were one value. `d.done` is the day's questions actually
-          // answered on the server; `readyOn` is the walk - "I have been here".
-          // ORed together, being there cleared `needsAnswer`, so her three days
-          // with an unanswered meal question went from "Needs answers" to
-          // "Reviewed" the moment she pressed Next past them. Eleven green days,
-          // a Generate that refuses, and nothing on the page pointing at the
-          // three it is waiting for.
-          //
-          // It was a browser-session quirk until the walk moved onto the sheet
-          // on 2026-09-16, which made it survive every reload.
-          //
-          // the walk is the provider's alone now. a second copy the flow kept in
-          // the tab never learned about a reset or a Change this, so a day could
-          // stay solid after the sheet had forgotten it was walked
-          const walked = readyOn(d.date);
-          const needsAnswer = !!d.needs && !d.done;
-          const reviewed = !needsAnswer && (d.done || walked);
-          const hasReport = flow?.items.some((item) => item.date === d.date);
+          const status = railStatus(d, readyOn, flow);
           const display = reportedReviewDay({ date: d.date, paidHours: Number(d.hrs) }, flow?.items);
           return (
             <button
@@ -180,26 +160,8 @@ export default function DayRail({ days, children, stacked = false }) {
                   {display.paidHours.toFixed(2)} hrs{display.reviewReported ? " reported" : ""}
                 </span>
               </span>
-              {/* STATUS FIRST: green is a day with nothing on it, yellow is a
-                  day with something on it. the "!" is an answer still owed, the
-                  flag is a problem they reported, and a reported day shows the
-                  flag alone rather than a warning beside a check. a quiet day's
-                  check stays light until they have been through it, because
-                  "nothing flagged" only means our checks found nothing - the
-                  hours are theirs to look at */}
-              <span aria-hidden="true" className="flex flex-none items-center gap-1.5">
-                {needsAnswer && <CircleAlert size={16} className={styles.issue} />}
-                {hasReport && <Flag size={15} className={styles.issue} />}
-                {!needsAnswer && !hasReport && (
-                  <span className={`flex h-4 w-4 items-center justify-center rounded-full ${reviewed ? styles.reviewed : styles.quiet}`}>
-                    <Check size={reviewed ? 11 : 10} strokeWidth={3} />
-                  </span>
-                )}
-              </span>
-              <span className="sr-only">
-                {needsAnswer ? "Needs answers" : hasReport ? "" : reviewed ? "Reviewed" : "Nothing to check"}
-                {hasReport ? `${needsAnswer ? " · " : ""}${flow.reported ? "Awaiting payroll" : "Report added"}` : ""}
-              </span>
+              <StatusMark {...status} />
+              <StatusWords {...status} flow={flow} />
             </button>
           );
         })}
@@ -254,5 +216,99 @@ export function DaysAnsweredCount({ days }) {
     <p className="mt-0.5 text-[12.5px] text-faint">
       {done} of {need.length} day{need.length === 1 ? "" : "s"} answered
     </p>
+  );
+}
+
+// ONE DAY'S STATUS, the way the rail draws it - and the strip under the days
+// repeats it from here, so the two can never come to disagree.
+//
+// WALKING PAST A DAY IS NOT ANSWERING IT - Mánu 2026-09-16, Carminia
+// Suarez: "cant proceed with her timesheet and i dont know why".
+//
+// These two were one value. `d.done` is the day's questions actually
+// answered on the server; `readyOn` is the walk - "I have been here".
+// ORed together, being there cleared `needsAnswer`, so her three days
+// with an unanswered meal question went from "Needs answers" to
+// "Reviewed" the moment she pressed Next past them. Eleven green days,
+// a Generate that refuses, and nothing on the page pointing at the
+// three it is waiting for.
+//
+// It was a browser-session quirk until the walk moved onto the sheet
+// on 2026-09-16, which made it survive every reload.
+//
+// the walk is the provider's alone now. a second copy the flow kept in
+// the tab never learned about a reset or a Change this, so a day could
+// stay solid after the sheet had forgotten it was walked
+function railStatus(d, readyOn, flow) {
+  const walked = readyOn(d.date);
+  const needsAnswer = !!d.needs && !d.done;
+  const reviewed = !needsAnswer && (d.done || walked);
+  const hasReport = !!flow?.items.some((item) => item.date === d.date);
+  return { needsAnswer, hasReport, reviewed };
+}
+
+// STATUS FIRST: green is a day with nothing on it, yellow is a day with
+// something on it. the "!" is an answer still owed, the flag is a problem they
+// reported, and a reported day shows the flag alone rather than a warning
+// beside a check. a quiet day's check stays light until they have been through
+// it, because "nothing flagged" only means our checks found nothing - the hours
+// are theirs to look at
+function StatusMark({ needsAnswer, hasReport, reviewed }) {
+  return (
+    <span aria-hidden="true" className="flex flex-none items-center gap-1.5">
+      {needsAnswer && <CircleAlert size={16} className={styles.issue} />}
+      {hasReport && <Flag size={15} className={styles.issue} />}
+      {!needsAnswer && !hasReport && (
+        <span className={`flex h-4 w-4 items-center justify-center rounded-full ${reviewed ? styles.reviewed : styles.quiet}`}>
+          <Check size={reviewed ? 11 : 10} strokeWidth={3} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+// and the same status in words, for a screen reader
+function StatusWords({ needsAnswer, hasReport, reviewed, flow }) {
+  return (
+    <span className="sr-only">
+      {needsAnswer ? "Needs answers" : hasReport ? "" : reviewed ? "Reviewed" : "Nothing to check"}
+      {hasReport ? `${needsAnswer ? " · " : ""}${flow.reported ? "Awaiting payroll" : "Report added"}` : ""}
+    </span>
+  );
+}
+
+// THE DAYS STILL TO ANSWER, UNDER THE DAY LIST. it went away with the Save my
+// answers panel it used to sit in, and the only list of what was left was the
+// hold line after the last day. every day of the period with the rail's own
+// mark, the ones still owing an answer in amber; a day opens from its pill.
+// gone once nothing is owed.
+export function DaysLeftStrip({ days }) {
+  const readyOn = useDayDone();
+  const flow = useReviewFlow();
+  if (!flow || flow.readOnly) return null;
+  const rows = days.map((d) => ({ d, status: railStatus(d, readyOn, flow) }));
+  if (!rows.some(({ status }) => status.needsAnswer)) return null;
+  return (
+    <div className="mt-5 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+      <p className="text-[13px] leading-relaxed text-muted">{REMAINING_QUESTIONS}</p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {rows.map(({ d, status }) => (
+          <button
+            key={d.date}
+            type="button"
+            data-open={status.needsAnswer ? "" : undefined}
+            disabled={!!flow.editorTarget}
+            onClick={() => flow.openDay(d.date)}
+            className={styles.stripDay}
+          >
+            <StatusMark {...status} />
+            <span>
+              <b>{String(d.weekday || "").slice(0, 3)}</b> {Number(String(d.date).split("/")[1])}
+            </span>
+            <StatusWords {...status} flow={flow} />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

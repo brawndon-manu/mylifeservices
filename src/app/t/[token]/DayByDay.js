@@ -7,7 +7,7 @@ import DayCalendar from "./DayCalendar";
 import { DayReport, ReportedDayVisual } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { monthNameFor } from "@/lib/timesheet/mock-period";
-import DayRail, { DaysAnsweredCount } from "./DayRail";
+import DayRail, { DaysAnsweredCount, DaysLeftStrip } from "./DayRail";
 import { ViewToggle } from "./TimesheetViews";
 import AcknowledgeFix from "./AcknowledgeFix";
 import BreakReason from "./BreakReason";
@@ -730,6 +730,9 @@ export default function DayByDay({
         <ViewToggle />
       </div>
       <DayRail days={railDays} stacked={stacked}>{panes}</DayRail>
+      {/* what is still owed, after the list in both views - where the old
+          panel's day chips sat */}
+      <DaysLeftStrip days={railDays} />
     </>
   );
 

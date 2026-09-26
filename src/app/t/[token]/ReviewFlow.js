@@ -19,6 +19,9 @@ const selectDay = (date) => {
   else window.location.hash = want;
 };
 export const useReviewFlow = () => useContext(ReviewContext);
+// what the page says while questions are still open: the reports step's hold
+// line, and the strip of days under the day list. one sentence, said once.
+export const REMAINING_QUESTIONS = "Answer the remaining questions to generate your document.";
 const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40";
 
 // THE STATE, LIFTED OUT OF THE VISUALS - 2026-09-17.
@@ -83,7 +86,7 @@ export function ReviewProvider({
   const hold = editorTarget ? "Add this report or cancel it before continuing."
     : leaveEditing ? "Save your answer or cancel before continuing."
     : draftsUnsent && stage !== "days" ? "Review and send your reports before generating your timesheet."
-    : (stage === "leave" || (!leave && stage === "reports")) && !ready ? "Answer the remaining questions to generate your document."
+    : (stage === "leave" || (!leave && stage === "reports")) && !ready ? REMAINING_QUESTIONS
     : null;
   // the strip: four steps with the leave stage, three without; the step after
   // the reports stage is the leave stage when there is one, else the document
