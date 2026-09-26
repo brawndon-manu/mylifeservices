@@ -7,6 +7,7 @@ import { resolveCorrection } from "@/app/portal/admin/timesheets/actions";
 import { reportQueue, reportDate, reportTimestamp, reportSlotCheck, validReportSlots } from "@/lib/timesheet/reported-issues";
 import { clockLabel } from "@/lib/timesheet/work-slots";
 import RecomputeButton from "./RecomputeButton";
+import SendNewTimesheet from "@/app/portal/admin/timesheets/SendNewTimesheet";
 import styles from "./ReportedIssues.module.css";
 
 const hours = (n) => Number.isFinite(n) ? n.toFixed(2) : "0.00";
@@ -17,6 +18,10 @@ export default function ReportedIssues({ batch, sheets, views = null }) {
   const [filter, setFilter] = useState(() => Object.keys(queues).find((key) => sheets.some((sheet) => reportQueue(sheet) === key)) || "review");
   const [selected, setSelected] = useState(null);
   const [mobileDetail, setMobileDetail] = useState(false);
+  // "Send them their new timesheet?" after the decision that settles a sheet.
+  // held here, not in the detail: the refresh after a decision can move the
+  // report to another queue and unmount the detail that made it
+  const [sendPrompt, setSendPrompt] = useState(null);
   const detailRef = useRef(null);
   const visible = sheets.filter((sheet) => reportQueue(sheet) === filter);
   const entries = visible.flatMap((sheet) => sheet.corrections.map((correction) => ({ sheet, correction })));
@@ -69,15 +74,16 @@ export default function ReportedIssues({ batch, sheets, views = null }) {
           </aside>
           <div ref={detailRef} tabIndex={-1} className={styles.detail}>
             <button type="button" className={`${styles.link} ${styles.mobileBack}`} onClick={() => setMobileDetail(false)}>Back to reports</button>
-            {current ? <IssueDetail key={current.correction.id} {...current} batchId={batch.id} /> : <p className={styles.empty}>No reports in this view.</p>}
+            {current ? <IssueDetail key={current.correction.id} {...current} batchId={batch.id} onDecided={(send) => send && setSendPrompt(send)} /> : <p className={styles.empty}>No reports in this view.</p>}
           </div>
         </div>
       )}
+      {sendPrompt && <SendNewTimesheet send={sendPrompt} onClose={() => setSendPrompt(null)} />}
     </section>
   );
 }
 
-function IssueDetail({ sheet, correction: c, batchId }) {
+function IssueDetail({ sheet, correction: c, batchId, onDecided }) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(null);
@@ -95,7 +101,9 @@ function IssueDetail({ sheet, correction: c, batchId }) {
     const data = new FormData();
     data.set("resolutionNote", note.trim());
     try {
-      await resolveCorrection(c.id, decision, data);
+      const res = await resolveCorrection(c.id, decision, data);
+      // the decision that settles the sheet hands back its email to send
+      onDecided?.(res?.send || null);
       router.refresh();
     } catch {
       setError("Could not finish this decision. Refresh the page to check its status before trying again.");

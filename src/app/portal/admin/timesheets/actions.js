@@ -98,6 +98,7 @@ import {
   openReports,
 } from "@/lib/timesheet/corrections";
 import { sendDecisionEmail } from "@/lib/timesheet-decision-email";
+import { signDecisionSend, verifyDecisionSend } from "@/lib/timesheet/decision-send";
 import { meaningfulText } from "@/lib/timesheet/meaningful-text";
 
 async function requireTimesheetAccess() {
@@ -2672,6 +2673,9 @@ export async function resolveCorrection(correctionId, decision, formData) {
   const stillOpen = await prisma.timesheetCorrection.count({
     where: { timesheetId: c.timesheet.id, status: "open" },
   });
+  // the decision email, when this is the decision that settles the sheet -
+  // handed back for the office to send, see the return below
+  let message = null;
   if (stillOpen === 0) {
     const sheet = await prisma.timesheet.findUnique({
       where: { id: c.timesheet.id },
@@ -2703,10 +2707,10 @@ export async function resolveCorrection(correctionId, decision, formData) {
       });
       const signature = r?.signature || null;
       if (allClaimsDecided(claims, timeOff) || (c.timesheet.signedAt && signature && !signature.keep)) {
-        await ringDecision(c.timesheet, signature, claims);
+        message = await ringDecision(c.timesheet, signature, claims, { email: false });
       }
     } else {
-      await settleDecidedSheet(c.timesheet.id);
+      message = (await settleDecidedSheet(c.timesheet.id, { email: false }))?.message || null;
     }
   }
 
@@ -2719,6 +2723,22 @@ export async function resolveCorrection(correctionId, decision, formData) {
   revalidatePath(`/t/${signTimesheetToken(c.timesheet.id)}`);
   await bumpSheetVersion(c.timesheet.id);
   await bumpBatchVersion(c.timesheet.batchId);
+
+  // THE OFFICE SENDS IT (2026-09-26): the last decision no longer emails the
+  // person on its own. the desk and Live put "Send them their new timesheet?"
+  // up with this, and the send is sendDecidedTimesheet - signed, so what goes
+  // out is exactly what this decision produced
+  const u = c.timesheet.user;
+  if (!message || !u?.email) return { ok: true, send: null };
+  return {
+    ok: true,
+    send: {
+      token: signDecisionSend({ id: c.timesheet.id, title: message.title, plain: message.plain }),
+      name: preferredName(u) || u.name || "them",
+      title: message.title,
+      plain: message.plain,
+    },
+  };
 }
 
 // ACCEPT WHAT WAS JUST SENT, FROM LIVE (Mánu 2026-09-25): office staff who
@@ -2747,8 +2767,42 @@ export async function acceptReportsNow({ token, ids }) {
     orderBy: { createdAt: "asc" },
   });
   if (rows.length !== wanted.length) return { ok: false, error: "changed" };
-  for (const r of rows) await resolveCorrection(r.id, "accepted", null);
-  return { ok: true, accepted: rows.length };
+  // the last decision is the one that can put the send prompt up
+  let last = null;
+  for (const r of rows) last = await resolveCorrection(r.id, "accepted", null);
+  return { ok: true, accepted: rows.length, send: last?.send || null };
+}
+
+// SEND THEM THEIR NEW TIMESHEET (2026-09-26): what the prompt's Send does,
+// on the desk and in Live. the email is the decision email - payroll's
+// sentence and the link to their timesheet - exactly as resolveCorrection
+// produced it (the handle is signed, so nothing else can ride on it), and the
+// sheet counts as sent, the way the batch page's send marks it
+export async function sendDecidedTimesheet(sendToken) {
+  await requireTimesheetAccess();
+  const msg = verifyDecisionSend(sendToken);
+  if (!msg) return { ok: false, error: "expired" };
+  {
+    const newer = await supersededByForTimesheet(msg.id);
+    if (newer) return refusal(newer);
+  }
+  const sheet = await prisma.timesheet.findUnique({
+    where: { id: msg.id },
+    select: {
+      id: true, batchId: true,
+      user: { select: { email: true, name: true, preferredFirstName: true, preferredLastName: true } },
+      batch: { select: { testOnly: true, testEmail: true } },
+    },
+  });
+  if (!sheet?.user?.email) return { ok: false, error: "norecipient" };
+  const sent = await emailDecision(sheet, msg);
+  if (!sent?.ok) return { ok: false, error: sent?.error || "send" };
+  await prisma.timesheet.update({
+    where: { id: sheet.id },
+    data: { sentAt: new Date(), sentToEmail: sent.sentTo || null, intendedEmail: sheet.user.email },
+  });
+  revalidatePath(`/portal/admin/timesheets/${sheet.batchId}`);
+  return { ok: true, sentTo: sent.sentTo || sheet.user.email };
 }
 
 // THE LAST DECISION WITHOUT A REBUILD. Nothing accepted since the last rebuild
@@ -2757,7 +2811,9 @@ export async function acceptReportsNow({ token, ids }) {
 // path for a time-off claim, which is decided on the calendar (see setPto in
 // the day program's actions) and never rebuilds anything. Rings the bell once
 // every claim is decided; while one still waits, does nothing at all.
-export async function settleDecidedSheet(timesheetId) {
+// `email`: false from the desk and Live, which ask the office first - see
+// resolveCorrection. returns { signature, message } once it rang, else null
+export async function settleDecidedSheet(timesheetId, { email = true } = {}) {
   const sheet = await prisma.timesheet.findUnique({
     where: { id: timesheetId },
     select: {
@@ -2787,8 +2843,8 @@ export async function settleDecidedSheet(timesheetId) {
       } : {}),
     },
   });
-  await ringDecision(sheet, signature, claims);
-  return signature;
+  const message = await ringDecision(sheet, signature, claims, { email });
+  return { signature, message };
 }
 
 // THE BELL ON THE DECISION (Mánu 2026-09-09; the email rides with the future
@@ -2797,8 +2853,8 @@ export async function settleDecidedSheet(timesheetId) {
 // is needed and why; or, if they had not signed yet, that it is ready. A
 // declined claim carries the office's note, which is the reason they are owed.
 // Best effort: a bell that fails to ring never undoes the decision.
-async function ringDecision(sheet, signature, claims) {
-  if (!sheet?.userId) return;
+async function ringDecision(sheet, signature, claims, { email = true } = {}) {
+  if (!sheet?.userId) return null;
   const period = `${sheet.batch?.periodFrom || ""} to ${sheet.batch?.periodTo || ""}`;
   const declined = claimsOf(claims)
     .filter((c) => c.status === "declined")
@@ -2836,21 +2892,33 @@ async function ringDecision(sheet, signature, claims) {
   // the people this is for are the ones whose sheet is held until they hear.
   // Same title, same sentence, same link. Best effort like the bell: a mail
   // that fails to send never undoes the decision.
-  if (sheet.user?.email) {
-    try {
-      const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
-      const sent = await sendDecisionEmail({
-        intendedEmail: sheet.user.email,
-        employeeName: preferredName(sheet.user) || sheet.user.name || "there",
-        title,
-        body: plain,
-        signUrl: `${base}/t/${signTimesheetToken(sheet.id)}`,
-        forceTo: batchForceTo(sheet.batch),
-      });
-      if (!sent?.ok) console.error(`decision email not sent for timesheet ${sheet.id}: ${sent?.error}`);
-    } catch (e) {
-      console.error(`decision email failed for timesheet ${sheet.id}:`, e);
-    }
+  // SINCE 2026-09-26 THE DESK AND LIVE ASK FIRST: they pass `email: false`
+  // and put "Send them their new timesheet?" up with what this returns - see
+  // sendDecidedTimesheet. the day program's calendar still sends it here.
+  const message = { title, plain };
+  if (email) await emailDecision(sheet, message);
+  return message;
+}
+
+// THE DECISION EMAIL, from one place: the ring above and the prompt's send.
+// best effort - a mail that fails to send never undoes the decision
+async function emailDecision(sheet, { title, plain }) {
+  if (!sheet?.user?.email) return { ok: false, error: "norecipient" };
+  try {
+    const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+    const sent = await sendDecisionEmail({
+      intendedEmail: sheet.user.email,
+      employeeName: preferredName(sheet.user) || sheet.user.name || "there",
+      title,
+      body: plain,
+      signUrl: `${base}/t/${signTimesheetToken(sheet.id)}`,
+      forceTo: batchForceTo(sheet.batch),
+    });
+    if (!sent?.ok) console.error(`decision email not sent for timesheet ${sheet.id}: ${sent?.error}`);
+    return sent || { ok: false, error: "send" };
+  } catch (e) {
+    console.error(`decision email failed for timesheet ${sheet.id}:`, e);
+    return { ok: false, error: "send" };
   }
 }
 
@@ -3279,7 +3347,7 @@ export async function timesheetResetImpact(timesheetId) {
       batch: { select: { periodFrom: true, periodTo: true, program: true } },
     },
   });
-  if (!ts) return { answers: 0, reasons: 0, signed: false, approved: false };
+  if (!ts) return { answers: 0, reasons: 0, signed: false, approved: false, reports: { total: 0, open: 0, accepted: 0, declined: 0 } };
 
   const answers = await prisma.timesheetCorrection.count({
     where: {
@@ -3301,15 +3369,37 @@ export async function timesheetResetImpact(timesheetId) {
     });
     reasons = rows.filter((r) => resetAction(r, ts.userId)).length;
   }
-  return { answers, reasons, signed: !!ts.signedAt, approved: !!ts.approvedAt };
+  // AND WHAT THEY REPORTED, for the choice the dialog offers since 2026-09-26:
+  // a reset can take the reports too, every one of them, decided or not
+  const reportRows = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: ts.id, ...REPORT_ROWS_WHERE },
+    select: { status: true },
+  });
+  const reports = {
+    total: reportRows.length,
+    open: reportRows.filter((r) => r.status === "open").length,
+    accepted: reportRows.filter((r) => r.status === "accepted").length,
+    declined: reportRows.filter((r) => r.status === "declined").length,
+  };
+  return { answers, reasons, signed: !!ts.signedAt, approved: !!ts.approvedAt, reports };
 }
+
+// THE ROWS A PERSON REPORTED, as a where: everything that isn't an answer to a
+// question (q_), an acknowledgement of a backwards entry (fix_) or the day
+// program's time-off answer. isReportRow counts fix_ in; this can't
+const REPORT_ROWS_WHERE = {
+  NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }, { kind: TIME_OFF_KIND }] },
+};
 
 // `confirmUnsign` / `confirmUnapprove`: the caller saying it has told somebody
 // what this will take with it. THE SERVER HOLDS THE RULE, not the dialog -
 // hiding a control is a suggestion, and a signature coming off a payroll
 // document has to be something that cannot happen by accident. A reset on an
 // unsigned sheet needs neither.
-export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false, confirmUnapprove = false } = {}) {
+// `withReports` (2026-09-26): the dialog's second choice - their reports go
+// too, every one, so the sheet goes back to the upload with nothing payroll
+// accepted left on it. without it the reports stay, as they always have.
+export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false, confirmUnapprove = false, withReports = false } = {}) {
   const user = await requireTimesheetAccess();
   if (!isSuper(user?.role)) return { ok: false, error: "auth" };
   // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
@@ -3340,6 +3430,14 @@ export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false
     // answer like any other, so a reset takes them off with the rest
     where: { timesheetId: ts.id, OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
   });
+  // AND WHAT THEY REPORTED, when asked to take it: open, accepted and
+  // declined alike, so no accepted report is left for the rebuild below to lay
+  let reportCount = 0;
+  if (withReports) {
+    ({ count: reportCount } = await prisma.timesheetCorrection.deleteMany({
+      where: { timesheetId: ts.id, ...REPORT_ROWS_WHERE },
+    }));
+  }
 
   // AND WHAT THEY SAID ABOUT A BREAK, which is not a correction and lives in
   // another table - see `resetAction`, which decides per row whether it is
@@ -3404,7 +3502,7 @@ export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false
   // without anybody reloading it - see the note on `bumpBatchVersion`.
   await bumpBatchVersion(ts.batchId);
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}/person/${ts.id}`);
-  return { ok: true, answers: count, reasons };
+  return { ok: true, answers: count, reasons, reports: reportCount };
 }
 
 // WHAT A RECALCULATION IS ABOUT TO DO, read when the confirm opens.

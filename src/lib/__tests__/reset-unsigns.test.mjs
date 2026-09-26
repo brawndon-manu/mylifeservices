@@ -42,7 +42,7 @@ test("the server refuses to un-sign unless it was told it had been said", () => 
   // the rule lives in the action, not the dialog - hiding a control is a
   // suggestion, and a signature coming off a payroll document cannot be an
   // accident
-  assert.match(actions, /export async function resetTimesheetAnswers\(timesheetId, \{ confirmUnsign = false, confirmUnapprove = false \} = \{\}\) \{/);
+  assert.match(actions, /export async function resetTimesheetAnswers\(timesheetId, \{ confirmUnsign = false, confirmUnapprove = false, withReports = false \} = \{\}\) \{/);
   assert.match(actions, /if \(ts\.signedAt && !confirmUnsign\) return \{ ok: false, error: "needsunsign" \};/);
   assert.match(actions, /if \(ts\.approvedAt && !confirmUnapprove\) return \{ ok: false, error: "needsunapprove" \};/);
   // and an ordinary unsigned reset is the rebuild it has always been
@@ -51,8 +51,8 @@ test("the server refuses to un-sign unless it was told it had been said", () => 
 
 test("the prompt knows whether it was approved, not just signed", () => {
   // it only ever reported `signed`, so the dialog could not tell the two apart
-  assert.match(actions, /return \{ answers, reasons, signed: !!ts\.signedAt, approved: !!ts\.approvedAt \};/);
-  assert.match(actions, /return \{ answers: 0, reasons: 0, signed: false, approved: false \};/);
+  assert.match(actions, /return \{ answers, reasons, signed: !!ts\.signedAt, approved: !!ts\.approvedAt, reports \};/);
+  assert.match(actions, /return \{ answers: 0, reasons: 0, signed: false, approved: false, reports: \{ total: 0, open: 0, accepted: 0, declined: 0 \} \};/);
   // and it has to be selected, or it reads undefined and the second step never appears
   assert.match(actions, /approvedAt: true,/);
 });

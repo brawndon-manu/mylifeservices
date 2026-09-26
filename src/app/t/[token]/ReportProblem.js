@@ -13,6 +13,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useReviewFlow, REPORTS_PENDING, reportSlots, ChangeLines } from "./ReviewFlow";
+import SendNewTimesheet from "@/app/portal/admin/timesheets/SendNewTimesheet";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON, REMOVED_HOURS_REASON, CHANGE_REASON } from "@/lib/timesheet/corrections";
 import { standInText, NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
 import { kindsForDay } from "@/lib/timesheet/report-kinds";
@@ -82,6 +83,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
   const [done, setDone] = useState(false);
   // Live's offer to accept what was just sent: { ids, items } while it stands
   const [offer, setOffer] = useState(null);
+  // after Accept now settles the sheet: "Send them their new timesheet?"
+  const [sendPrompt, setSendPrompt] = useState(null);
 
   const NEW_DAY = "__new__";
   const NO_DAY = "__sheet__";
@@ -274,7 +277,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
     setBusy(true);
     try {
       const res = await acceptAction({ token, ids: offer.ids });
-      if (res?.ok) { setOffer(null); setDone(false); }
+      if (res?.ok) { setOffer(null); setDone(false); if (res.send) setSendPrompt(res.send); }
       else setError(res?.error === "changed"
         ? "These reports have already been decided. Reload the page to see where they stand."
         : "Something went wrong accepting that. Please try again.");
@@ -284,6 +287,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
       setBusy(false);
     }
   }
+
+  if (sendPrompt) return <SendNewTimesheet send={sendPrompt} onClose={() => setSendPrompt(null)} />;
 
   if (offer) {
     return (

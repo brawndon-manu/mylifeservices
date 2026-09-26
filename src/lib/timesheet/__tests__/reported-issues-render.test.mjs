@@ -30,7 +30,7 @@ test("the corrections page resolves its components and renders actual slot evide
     "@/lib/current-user": "export const getCurrentUser = async () => ({ role: 'SUPER' });",
     "@/app/portal/admin/timesheets/actions": `
       const forbidden = () => { throw new Error('A render must not write'); };
-      export const resolveCorrection = forbidden, recomputeTimesheet = forbidden, timesheetRecomputeImpact = forbidden;`,
+      export const resolveCorrection = forbidden, recomputeTimesheet = forbidden, timesheetRecomputeImpact = forbidden, sendDecidedTimesheet = forbidden;`,
     "next/navigation": `export const useRouter = () => ({refresh() {}});
       export const redirect = () => {throw new Error('unexpected redirect')};
       export const notFound = () => {throw new Error('unexpected notFound')};`,

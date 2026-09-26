@@ -34,6 +34,8 @@ export default function ReviewerBar({
   const [stage, setStage] = useState("first");
   const [checking, setChecking] = useState(false);
   const [err, setErr] = useState(null);
+  // the reset's second choice: their reports go too
+  const [withReports, setWithReports] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
   const menuRef = useRef(null);
@@ -56,6 +58,7 @@ export default function ReviewerBar({
     setMenuOpen(false);
     setChecking(true);
     setErr(null);
+    setWithReports(false);
     try {
       setImpact(await timesheetResetImpact(timesheetId));
     } catch {
@@ -238,14 +241,63 @@ export default function ReviewerBar({
           ) : (
             <>
               <p id="reset-title" className="text-lg font-semibold text-foreground">
-                {impact.answers + impact.reasons > 0
-                  ? `Delete ${name}'s ${impact.answers + impact.reasons} answer${
-                      impact.answers + impact.reasons === 1 ? "" : "s"
-                    }?`
-                  : `Rebuild ${name}'s sheet from the upload?`}
+                {(impact.reports?.total || 0) > 0
+                  ? `Reset ${name}'s timesheet?`
+                  : impact.answers + impact.reasons > 0
+                    ? `Delete ${name}'s ${impact.answers + impact.reasons} answer${
+                        impact.answers + impact.reasons === 1 ? "" : "s"
+                      }?`
+                    : `Rebuild ${name}'s sheet from the upload?`}
               </p>
+              {/* JUST THE ANSWERS, OR WHAT THEY REPORTED TOO (2026-09-26). only
+                  asked where there are reports. the second choice takes every
+                  report, decided or not, so nothing payroll accepted stays on
+                  the sheet - its line says how many */}
+              {(impact.reports?.total || 0) > 0 && (
+                <div role="radiogroup" aria-label="What to reset" className="mt-3 grid gap-2">
+                  {[
+                    { on: false, label: "Just their answers", why: "Their reports stay as they are." },
+                    {
+                      on: true,
+                      label: "Answers and reports",
+                      why: `Their ${impact.reports.total} report${impact.reports.total === 1 ? "" : "s"} go too${
+                        impact.reports.accepted ? `, including ${impact.reports.accepted} payroll accepted` : ""
+                      }, so the sheet goes back to the upload.`,
+                    },
+                  ].map((o) => (
+                    <button
+                      key={o.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={withReports === o.on}
+                      disabled={pending}
+                      onClick={() => setWithReports(o.on)}
+                      className={`rounded-[10px] p-3 text-left transition-colors disabled:opacity-60 ${
+                        withReports === o.on ? "choice-on border" : "border border-border bg-surface hover:border-border-strong"
+                      }`}
+                    >
+                      <span className={`flex items-center gap-2 text-sm font-semibold ${withReports === o.on ? "text-accent" : "text-foreground"}`}>
+                        <span
+                          aria-hidden="true"
+                          className={`flex h-[15px] w-[15px] flex-none items-center justify-center rounded-full border-[1.5px] ${
+                            withReports === o.on ? "border-accent" : "border-faint"
+                          }`}
+                        >
+                          {withReports === o.on && <span className="h-[7px] w-[7px] rounded-full bg-accent" />}
+                        </span>
+                        {o.label}
+                      </span>
+                      <span className="mt-1.5 block pl-5.5 text-xs text-muted">{o.why}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
-                <li>Their sheet goes back to the figures the upload produced.</li>
+                <li>
+                  {!withReports && (impact.reports?.accepted || 0) > 0
+                    ? "Their sheet goes back to the upload, keeping the changes payroll accepted."
+                    : "Their sheet goes back to the figures the upload produced."}
+                </li>
                 {impact.reasons > 0 && (
                   /* WHOSE WORDS GO AND WHOSE STAY. A reason a reviewer took off a
                      phone call is not the employee's to delete and not this
@@ -294,6 +346,7 @@ export default function ReviewerBar({
                   const res = await resetTimesheetAnswers(timesheetId, {
                     confirmUnsign: !!impact.signed,
                     confirmUnapprove: !!impact.approved,
+                    withReports,
                   });
                   if (res?.ok) {
                     setImpact(null);

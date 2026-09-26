@@ -149,7 +149,9 @@ test("the send hands back the rows it wrote, and Live's accept is office-only, o
   assert.match(accept, /^export async function acceptReportsNow\(\{ token, ids \}\) \{\n\s*await requireTimesheetAccess\(\);/);
   assert.match(accept, /where: \{ id: \{ in: wanted \}, timesheetId: id, status: "open" \}/);
   assert.match(accept, /if \(rows\.length !== wanted\.length\) return \{ ok: false, error: "changed" \};/);
-  assert.match(accept, /for \(const r of rows\) await resolveCorrection\(r\.id, "accepted", null\);/);
+  // the last decision hands back the send prompt's email - see resolveCorrection
+  assert.match(accept, /for \(const r of rows\) last = await resolveCorrection\(r\.id, "accepted", null\);/);
+  assert.match(accept, /return \{ ok: true, accepted: rows\.length, send: last\?\.send \|\| null \};/);
 });
 
 test("the Live offer, in his words, only in Live, with a line per report", () => {
