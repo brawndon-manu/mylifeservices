@@ -175,7 +175,11 @@ export function ReviewStage({ name, children }) {
   return <div hidden={!!flow && flow.stage !== name}>{children}</div>;
 }
 
-export function DayReport({ date, navigation }) {
+// `note`: the day's own line about what it still needs, kept in the card rather
+// than on the bar. `floats`: false in All questions, where every day is on the
+// page at once - fixed there, all their bars stacked on one spot and the one on
+// top was the last day's, so Next and Report a problem acted on the wrong day.
+export function DayReport({ date, navigation, note = null, floats = true }) {
   const flow = useReviewFlow();
   if (!flow) return navigation;
   const reports = flow.items.map((item, index) => ({ item, index })).filter(({ item }) => item.date === date);
@@ -196,10 +200,14 @@ export function DayReport({ date, navigation }) {
         </div>
       ))}
       <div ref={(node) => { if (node) flow.targets.current.set(date, node); else flow.targets.current.delete(date); }} />
-      {/* the whole row rides the bottom of a phone screen, not just Back and
-          Next: it is the arrangement he settled on 2026-09-08 and Report a
-          problem is the one thing on it somebody reaches for mid-calendar. */}
-      <div data-day-bar className={`flex items-center justify-between gap-3 ${styles.dayBar}`}>
+      {/* the line saying what the day still needs stays down here in the card,
+          in the page - only the controls float */}
+      {note}
+      {/* the whole row rides the bottom of the screen, not just Back and Next:
+          it is the arrangement he settled on 2026-09-08 and Report a problem is
+          the one thing on it somebody reaches for mid-calendar. every width now,
+          lined up with the day column on a wider screen. */}
+      <div data-day-bar className={`flex items-center justify-between gap-3 ${floats ? styles.dayBar : "mt-3"}`}>
         <button type="button" disabled={!!flow.editorTarget || flow.reported}
           onClick={() => flow.report(date)} className="min-h-[44px] shrink-0 text-[13px] font-medium text-accent disabled:opacity-40">Report a problem</button>
         {navigation}

@@ -197,31 +197,66 @@
      `.dayBarHost` keeps the space the row used to take, so nothing is trapped
      under the bar once it leaves the flow.
 
-     Phones only. On a desktop the row is already on screen. */
+     every width now, not phones only: the bar floats on a desktop too, lined
+     up with its day column - see `.dayBar` below. */
   .dayBarHost {
     min-height: 72px;
   }
+}
 
+.dayBar {
+  position: fixed;
+  left: 16px;
+  /* FULL WIDTH. This stopped 68px short of the edge to dodge the accessibility
+     button, which used to be fixed at bottom 16 right 16 with z-index 50 and
+     landed on top of Next - a DOM click moved the day and a real tap opened
+     the accessibility panel. On this page that button now sits at the top
+     instead (see `[data-timesheet-review]` in globals.css), so nothing down
+     here has to make room for it. */
+  right: 16px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 30;
+  padding: 8px 10px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+  background: var(--glass);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+
+/* WIDER THAN A PHONE, IT LINES UP WITH ITS DAY COLUMN - where the row sat in the
+   page before it floated. worked out from the page's own layout: a 72rem column
+   (max-w-6xl) with 1.5rem padding (sm:px-6), the day list beside the day at 13rem
+   (sm:w-52) or 16rem from lg (lg:w-64), and the day's padding of 1.25rem (sm:p-5).
+   css rather than a measure in the browser, so it is in place on the first paint
+   with nothing to jump. if one of those classes changes this has to follow -
+   day-bar-float.test.mjs holds the two together. */
+@media (min-width: 640px) {
   .dayBar {
-    position: fixed;
-    left: 16px;
-    /* FULL WIDTH. This stopped 68px short of the edge to dodge the accessibility
-       button, which used to be fixed at bottom 16 right 16 with z-index 50 and
-       landed on top of Next - a DOM click moved the day and a real tap opened
-       the accessibility panel. On this page that button now sits at the top
-       instead (see `[data-timesheet-review]` in globals.css), so nothing down
-       here has to make room for it. */
-    right: 16px;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    z-index: 30;
-    margin-top: 12px;
-    padding: 8px 10px;
-    border: 1px solid var(--glass-edge);
-    border-radius: 16px;
-    background: var(--glass);
-    backdrop-filter: blur(22px) saturate(160%);
-    -webkit-backdrop-filter: blur(22px) saturate(160%);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+    left: calc(max(0px, (100% - 72rem) / 2) + 1.5rem + 13rem + 1.25rem);
+    right: calc(max(0px, (100% - 72rem) / 2) + 1.5rem + 1.25rem);
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 1024px) {
+  .dayBar {
+    left: calc(max(0px, (100% - 72rem) / 2) + 1.5rem + 16rem + 1.25rem);
+  }
+}
+
+/* AND ROOM AT THE END OF THE PAGE, so the last thing on it can scroll clear of
+   the bar instead of ending up under it: the bar (62px), the gap below it and a
+   little air. only while a floating bar is on the page - the day cards leave the
+   DOM on the later steps, and All questions keeps every bar inside its own day. */
+:global([data-timesheet-review]):has(.dayBar) {
+  padding-bottom: calc(90px + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  :global([data-timesheet-review]):has(.dayBar) {
+    padding-bottom: calc(94px + env(safe-area-inset-bottom));
   }
 }
 

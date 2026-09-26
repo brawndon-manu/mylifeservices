@@ -276,6 +276,26 @@ export function DayDoneProvider({ children, token = null, finishers = null, walk
 // to be clear: the plain cards on the day are counted on the server, because
 // they save on their own and the page knows what is on record; the batched rows
 // are staged in the browser, so only the batch provider knows.
+const dayBlocked = (batch, date, plainBlocked) =>
+  plainBlocked || (!!batch?.byDay?.some?.((d) => d.date === date) && batch.blockedOn(date));
+
+// THE DAY'S "ANSWER EVERYTHING" LINE, AT THE BOTTOM OF ITS CARD. it rode inside
+// the day bar above Back and Next, and once the bar floated it was a sentence
+// hovering over the page. it stays in the card now and only the controls float.
+// shown exactly when the button below shows its blocked row, from the same rule.
+export function DayBlockedNote({ date, plainBlocked = false }) {
+  const done = useContext(DayDoneCtx);
+  const batch = useContext(BatchCtx);
+  const nav = useContext(DayNavCtx);
+  if (!done || (!nav && done.readyOn(date))) return null;
+  if (!dayBlocked(batch, date, plainBlocked)) return null;
+  return (
+    <p className="mt-1 text-right text-xs text-muted">
+      Answer everything on this day to finish with it.
+    </p>
+  );
+}
+
 export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true }) {
   const done = useContext(DayDoneCtx);
   const batch = useContext(BatchCtx);
@@ -286,8 +306,7 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
   const [saving, setSaving] = useState(false);
   if (!done) return null;
   if (!nav && done.readyOn(date)) return null;
-  const hasBatchRow = !!batch?.byDay?.some?.((d) => d.date === date);
-  const blocked = plainBlocked || (hasBatchRow && batch.blockedOn(date));
+  const blocked = dayBlocked(batch, date, plainBlocked);
   const hasBack = (nav?.index ?? 0) > 0;
   // SAVE AND NEXT. An answer started on this day and not saved yet is saved by
   // the press that leaves the day, so typing a time and pressing Next does what
@@ -325,10 +344,14 @@ export function DayDoneButton({ date, plainBlocked = false, hasQuestions = true 
     return (
       <div className={`${flow ? "" : "mt-3"} flex flex-col gap-2`}>
         {/* the sentence on its own line, Back and Next together under it -
-            Mánu 2026-09-15, the day program's arrangement for both */}
-        <p className="text-xs text-muted">
-          Answer everything on this day to finish with it.
-        </p>
+            Mánu 2026-09-15, the day program's arrangement for both. inside the
+            review the sentence is DayBlockedNote, in the card, and the bar
+            carries Back and Next alone. */}
+        {!flow && (
+          <p className="text-xs text-muted">
+            Answer everything on this day to finish with it.
+          </p>
+        )}
         <div className="flex items-center justify-end gap-3">
         {hasBack && <BackButton nav={nav} disabled={!!flow?.editorTarget} />}
         {/* MOVING ON AND FINISHING ARE TWO DIFFERENT THINGS, and one button was

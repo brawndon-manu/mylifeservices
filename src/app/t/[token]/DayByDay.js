@@ -20,6 +20,7 @@ import TimesheetQuestion, {
   DayShell,
   DayDoneProvider,
   DayDoneButton,
+  DayBlockedNote,
 } from "./TimesheetQuestion";
 
 // THE PAY PERIOD, ONE DAY AT A TIME, with each day drawn on a time axis and its
@@ -700,9 +701,16 @@ export default function DayByDay({
               </DayShell>
               </div>
             </div>
-            <DayReport date={day.date} navigation={
-              <DayDoneButton date={day.date} hasQuestions={asks} plainBlocked={plainBlockedOn(day.date)} />
-            } />
+            {/* the bar floats in Day by day; in All questions every day is on
+                the page at once, so each keeps its bar inside its own day */}
+            <DayReport
+              date={day.date}
+              floats={!stacked}
+              note={<DayBlockedNote date={day.date} plainBlocked={plainBlockedOn(day.date)} />}
+              navigation={
+                <DayDoneButton date={day.date} hasQuestions={asks} plainBlocked={plainBlockedOn(day.date)} />
+              }
+            />
           </div>
         );
       });

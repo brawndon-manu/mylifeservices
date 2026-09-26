@@ -41,5 +41,8 @@ test("ILS still cannot answer the time-off question, and only a day-program batc
 
 test("a day still owing an answer keeps Back and Next together under the sentence", () => {
   const q = read("../../../app/t/[token]/TimesheetQuestion.js");
-  assert.match(q, /<p className="text-xs text-muted">\n\s+Answer everything on this day to finish with it\.\n\s+<\/p>\n\s+<div className="flex items-center justify-end gap-3">\n\s+\{hasBack && <BackButton/);
+  // outside the review the sentence still sits over the pair; inside it, the
+  // sentence stays in the day's card (DayBlockedNote) and the floating bar
+  // carries Back and Next alone
+  assert.match(q, /\{!flow && \(\n\s+<p className="text-xs text-muted">\n\s+Answer everything on this day to finish with it\.\n\s+<\/p>\n\s+\)\}\n\s+<div className="flex items-center justify-end gap-3">\n\s+\{hasBack && <BackButton/);
 });
