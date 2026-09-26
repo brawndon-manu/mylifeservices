@@ -48,7 +48,9 @@ test("the document swaps when the figures are rebuilt, not only when an answer l
 test("a sent report is payroll's: no Edit, Remove or Send, and it says it is waiting", () => {
   assert.match(report, /\{!flow\.reported && \(\n\s*<div className="flex gap-4">\n\s*<button[^\n]*>Edit<\/button>/);
   assert.match(report, /\{flow\.reported \? "Awaiting payroll" : "Not sent"\}/);
-  assert.match(report, /\{items\.length > 0 && !flow\.reported && <>/);
+  // the send is the footer's now, and only while reports are unsent
+  assert.match(flow, /const sendHere = stage === "reports" && draftsUnsent;/);
+  assert.match(flow, /const draftsUnsent = items\.length > 0 && !reported;/);
 });
 
 test("Report a problem brings the form into view and no longer jumps to the day's top", () => {

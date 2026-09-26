@@ -161,6 +161,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
     },
     // the floating bar's Cancel, while the form is open
     cancel,
+    // the reports step's footer, where Send reports stands in Next's place
+    send,
   }));
 
   function cancel() {
@@ -251,6 +253,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
       return;
     }
     setBusy(true);
+    flow?.setSending?.(true);
     try {
       const res = await submitAction({ token, items: payload });
       if (res?.ok) {
@@ -266,6 +269,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
       setError("Something went wrong sending that. Please try again.");
     } finally {
       setBusy(false);
+      flow?.setSending?.(false);
     }
   }
 
@@ -385,9 +389,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
             );
           })}
         </ul>
-        {items.length > 0 && !flow.reported && <>
-          <button type="button" onClick={send} disabled={busy} className="mt-4 min-h-[44px] rounded-[9px] bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? "Sending..." : "Send reports"}</button>
-        </>}
+        {/* no Send button here: it stands in Next's place in the footer, the
+            one thing left to press on this step - see ReviewFlow */}
         {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
       </section>
     );

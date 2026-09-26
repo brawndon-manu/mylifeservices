@@ -54,7 +54,9 @@ test("the day's own button saves what is on the day before it moves", () => {
 test("the hold on the later steps names the days it is waiting on", () => {
   assert.match(flow, /openDays = \[\]/);
   assert.match(flow, /const askingDays = \(stage === "leave" \|\| \(!leave && stage === "reports"\)\) && !ready;/);
-  assert.match(flow, /\{askingDays && openDays\.map\(\(d\) => \(/);
+  // the chips ride the questions' own line, never the reports' - an
+  // unanswered day beside "send your reports" read as the thing holding it
+  assert.match(flow, /\{hold === REMAINING_QUESTIONS && askingDays && openDays\.map\(\(d\) => \(/);
   // the page hands over every day with a question off the record or a reason owed
   assert.match(page, /const openDays = \[\.\.\.new Set\(\[\s*\.\.\.questions\.filter\(\(q\) => !isOnRecord\(q\)\)/);
   assert.match(page, /openDays=\{openDays\}/);

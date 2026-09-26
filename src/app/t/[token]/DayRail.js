@@ -38,6 +38,13 @@ export default function DayRail({ days, children, stacked = false }) {
   // a day finished in this tab counts as done on the ring, not only a saved
   // one - see useDayDone
   const readyOn = useDayDone();
+  // EVERY DAY WALKED, told to the review flow: the told-us panel sits outside
+  // the walk's own provider and keeps its way to the reports step until then
+  const allWalked = days.length > 0 && days.every((d) => readyOn(d.date));
+  const setAllWalked = flow?.setAllWalked;
+  useEffect(() => {
+    setAllWalked?.(allWalked);
+  }, [allWalked, setAllWalked]);
 
   useEffect(() => {
     const onHash = () => {

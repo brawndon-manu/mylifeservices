@@ -74,6 +74,13 @@ export function ReviewProvider({
   const [activeDate, setActiveDate] = useState(null);
   const [leaveEditing, setLeaveEditing] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
+  // EVERY DAY WALKED, as the day list reports it (the walk lives in the day
+  // list's own provider, which the told-us panel sits outside of - see DayRail).
+  // The panel's way to the reports step waits for it: somebody who jumped there
+  // from the first day read the reports page as the end of the review.
+  const [allWalked, setAllWalked] = useState(false);
+  // a send in flight, so the footer's Send reports can say so - see ReportProblem
+  const [sending, setSending] = useState(false);
   const reportRef = useRef(null);
   const targets = useRef(new Map());
   const headingRef = useRef(null);
@@ -133,6 +140,7 @@ export function ReviewProvider({
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly, leave,
     generated, setGenerated, editorTarget, setEditorTarget, activeDate,
     reportRef, targets, report, leaveEditing, setLeaveEditing, leaveBusy, setLeaveBusy,
+    allWalked, setAllWalked, sending, setSending,
     // what the strip and the footer draw from, so the visuals hold no rules
     enabled, ready, openDays, draftsUnsent, canGenerate, hold, askingDays, openDay,
     steps, stripClass, afterReports, generateStep, current, headingRef } : null;
@@ -150,7 +158,15 @@ export default function ReviewFlow({ children, reports }) {
     stage, go, items, readOnly, editorTarget, leaveEditing, leaveBusy, generated,
     enabled, openDays, draftsUnsent, canGenerate, hold, askingDays, openDay,
     steps, stripClass, afterReports, generateStep, current, headingRef, leave,
+    reported, sending, reportRef,
   } = flow;
+  // THE REPORTS STEP'S ONE WAY ON. With reports not sent, sending them is the
+  // only thing left to do, so Send reports stands where Next was - a greyed
+  // Next beside a sentence about sending read as the page being stuck. Once
+  // sent there is nothing further here until payroll decides (the day
+  // program still goes on to its PTO step), so no dead Next either.
+  const sendHere = stage === "reports" && draftsUnsent;
+  const noNext = stage === "document" || sendHere || (stage === "reports" && reported && !leave);
 
   return (
     <>
@@ -174,7 +190,9 @@ export default function ReviewFlow({ children, reports }) {
         <div className="mt-6 border-t border-sep pt-5">
           {hold && <p className="mb-3 text-xs text-muted">
             {hold}
-            {askingDays && openDays.map((d) => (
+            {/* the chips go with the questions' line alone: beside the reports
+                line an unanswered day read as the thing holding the send */}
+            {hold === REMAINING_QUESTIONS && askingDays && openDays.map((d) => (
               <button
                 key={d}
                 type="button"
@@ -191,11 +209,14 @@ export default function ReviewFlow({ children, reports }) {
           {stage !== "days" && <div className="flex items-center justify-between gap-3">
             <button type="button" className={button} disabled={!!editorTarget || leaveEditing || leaveBusy}
               onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : leave ? "leave" : "reports")}>Back</button>
-            {stage !== "document" && <button type="button" className={`${button} ${styles.primary}`}
+            {sendHere && <button type="button" className={`${button} ${styles.primary}`}
+              disabled={!!editorTarget || sending}
+              onClick={() => reportRef.current?.send()}>{sending ? "Sending..." : "Send reports"}</button>}
+            {!noNext && <button type="button" className={`${button} ${styles.primary}`}
               disabled={!!editorTarget || leaveEditing || leaveBusy || (stage === "reports" && (draftsUnsent || (!leave && !canGenerate))) || (stage === "leave" && !canGenerate)}
               onClick={() => go(stage === "reports" ? afterReports : "document")}>Next</button>}
           </div>}
-          {stage !== "days" && stage !== "document" && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" && leave ? "PTO & sick pay" : "Generate"}</p>}
+          {stage !== "days" && !noNext && <p className="mt-2 text-right text-xs text-muted">Next: {stage === "reports" && leave ? "PTO & sick pay" : "Generate"}</p>}
         </div>
       )}
     </>
@@ -243,14 +264,21 @@ export function ToldUsPanel({ hasRows, children }) {
           ))}
         </ul>
       )}
-      {drafts.length > 0 && (
+      {/* THE WAY TO THE REPORTS STEP WAITS FOR THE LAST DAY. Opened from the
+          first day, the reports page read as the end of the review and the
+          days after it went unlooked at; once every day has been walked the
+          link is back, so somebody returning to report one more thing is not
+          sent through every day again */}
+      {drafts.length > 0 && (flow.allWalked ? (
         <div className="mt-1">
           <button type="button" onClick={() => flow.go("reports")} disabled={!!flow.editorTarget}
             className="min-h-[44px] text-[13px] font-medium text-accent disabled:opacity-40">
             View reports
           </button>
         </div>
-      )}
+      ) : (
+        <p className="mt-1.5 text-[12.5px] text-faint">You&apos;ll send these after you review the last day.</p>
+      ))}
     </div>
   );
 }

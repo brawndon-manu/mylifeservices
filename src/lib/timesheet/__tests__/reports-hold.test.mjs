@@ -189,7 +189,7 @@ test("the form reads its hours off the slots and has no box for them", () => {
 
 test("the bar offers Cancel beside Report a problem while the form is open, and it is the form's own cancel", () => {
   assert.match(flow, /\{flow\.editorTarget && <button type="button" onClick=\{\(\) => flow\.reportRef\.current\?\.cancel\(\)\}\n\s*className="[^"]*">Cancel<\/button>\}/);
-  assert.match(report, /useImperativeHandle\(flow\?\.reportRef, \(\) => \(\{[\s\S]*?cancel,\n\s*\}\)\);/);
+  assert.match(report, /useImperativeHandle\(flow\?\.reportRef, \(\) => \(\{[\s\S]*?cancel,\n[\s\S]*?send,\n\s*\}\)\);/);
 });
 
 test("the form's intro says the report goes to payroll and the timesheet waits, not page 2", () => {
