@@ -22,7 +22,7 @@ import { useReviewFlow } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 import { parseLooseTime, formatTimeDisplay, spokenTime } from "@/lib/loose-time";
-import { meaningfulText, NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
+import { meaningfulText, standInText, NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
 
 // "1:48p", the row's compact clock, said in full - "1:48 PM" - the way the
 // meal-period card reads
@@ -2121,7 +2121,7 @@ function OneQuestion({
           />
           {!meaningfulText(reasonText) ? (
             <p className="mt-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
-              {reasonText.trim() ? NEEDS_REAL_WORDS : "Needed before this can be saved. It goes at the bottom of your timesheet."}
+              {standInText(reasonText) ? NEEDS_REAL_WORDS : "Needed before this can be saved. It goes at the bottom of your timesheet."}
             </p>
           ) : saidAlready ? (
             <p className="mt-1.5 text-xs text-muted">
@@ -2955,12 +2955,13 @@ export function BatchProvider({
             <CircleAlert size={15} strokeWidth={1.8} aria-hidden="true" className="mt-0.5 flex-none" />
             {reasonStillNeeded(q)}
           </p>
-        ) : !said && !(reasons[q.id] ?? "").trim() ? (
+        ) : !said || (!meaningfulText(said) && !standInText(said)) ? (
+          // empty, or a reason still being typed: asked the same way
           <p className="mt-1.5 text-[12.5px] text-muted">
             Add a reason to complete this answer. It goes at the bottom of your timesheet.
           </p>
-        ) : !said && !meaningfulText(reasons[q.id]) ? (
-          // something is typed, but not words - see meaningfulText
+        ) : standInText(said) ? (
+          // a stand-in, not a reason - see standInText
           <p className="mt-1.5 text-[12.5px] font-semibold text-amber-800 dark:text-amber-300">
             {NEEDS_REAL_WORDS}
           </p>

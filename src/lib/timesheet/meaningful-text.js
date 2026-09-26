@@ -22,6 +22,17 @@ export function meaningfulText(text) {
   return /\p{L}{3,}/u.test(s);
 }
 
-// what the box says when something is typed that is not words - the same
-// line on every reason box
-export const NEEDS_REAL_WORDS = "Write a few words. A dot, a dash or n/a tells payroll nothing.";
+// TYPED, BUT A STAND-IN: one of the words above, or not a letter in it at
+// all (".", "-", "12"). only this gets the short line below. a reason still
+// being typed ("I w") isn't refused, it's just not done yet, so the box keeps
+// asking the way it does when it's empty
+export function standInText(text) {
+  const s = String(text ?? "").trim().toLowerCase();
+  if (!s) return false;
+  if (STAND_INS.has(s.replace(/[.\s!-]+$/g, ""))) return true;
+  return !/\p{L}/u.test(s);
+}
+
+// what a box says to a stand-in, the same line on every reason box. it
+// doesn't name what was refused, so it doesn't teach anyone what gets past
+export const NEEDS_REAL_WORDS = "Write a few words.";

@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useReviewFlow, REPORTS_PENDING, reportSlots, ChangeLines } from "./ReviewFlow";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON, REMOVED_HOURS_REASON, CHANGE_REASON } from "@/lib/timesheet/corrections";
-import { NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
+import { standInText, NEEDS_REAL_WORDS } from "@/lib/timesheet/meaningful-text";
 import { kindsForDay } from "@/lib/timesheet/report-kinds";
 // the attestation covers the tens now - see rest-attestation.js
 // the same loose reading the question cards use, so "331" means 3:31 here too
@@ -204,7 +204,9 @@ export default function ReportProblem({ token, days, submitAction, period = null
     }
     const noteProblem = correctionNoteProblem(activeKind, day, hours, note);
     if (noteProblem) {
-      setError(noteProblem === "junk" ? NEEDS_REAL_WORDS
+      // a stand-in gets the short line; a note still short of words is asked
+      // what the empty box asks
+      setError(noteProblem === "junk" ? (standInText(note) ? NEEDS_REAL_WORDS : reasonLine || "Tell us briefly what's wrong.")
         : noteProblem === "addedHoursReason" ? ADDED_HOURS_REASON
           : noteProblem === "changeReason" ? (reasonLine || CHANGE_REASON)
             : "Tell us briefly what's wrong.");
