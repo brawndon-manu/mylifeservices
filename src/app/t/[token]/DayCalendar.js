@@ -6,6 +6,7 @@ import { blockFor } from "@/lib/timesheet/block-label";
 import { shiftsOf } from "@/lib/timesheet/questions";
 // the holes between punch pairs, and which of them the roster calls a meal
 import { gapsOf } from "@/lib/timesheet/day-gaps";
+import { placeTimeOff } from "@/lib/timesheet/time-off";
 import { useStagedOn } from "./StagedTimes";
 import { formatTimeDisplay } from "@/lib/loose-time";
 import reviewStyles from "./ReviewFlow.module.css";
@@ -155,6 +156,26 @@ const washFor = (service, day = null) =>
 // right-hand part of the column, in lanes: one lane while nothing collides, and
 // split evenly for as long as something does. That is how every calendar draws
 // concurrent events, and it is the only arrangement where both labels survive.
+// TIME OFF ON A KNOWN DAY, in the colours leave already wears: the sick stone
+// and the PTO purple. a lighter wash than a Misc sick block's, so the words on
+// it clear 5:1 in every theme, and PTO's words take the darker cut light needs
+const TIME_OFF_LABEL = { sick: "Sick pay", pto: "PTO" };
+const TIME_OFF_TONES = {
+  sick: { edge: "var(--leave-sick)", wash: "color-mix(in srgb, var(--leave-sick) 24%, transparent)", ink: "var(--leave-sick-ink)" },
+  pto: { edge: "var(--leave-pto)", wash: "color-mix(in srgb, var(--leave-pto) 24%, transparent)", ink: "var(--leave-pto-ink)" },
+};
+
+// A GAP THE TIME-OFF CARD SITS IN keeps only what the card leaves: the hatch,
+// its label and the spoken line all say the rest, so the stripes don't show
+// through the card and the label doesn't name time the card covers. null
+// when the card fills it. placement always starts the card at a gap's start
+const gapLeftBy = (g, off) => {
+  if (!off || off.to <= g.from || off.from >= g.to) return { from: g.from, to: g.to };
+  if (off.from <= g.from && off.to >= g.to) return null;
+  if (off.from <= g.from) return { from: off.to, to: g.to };
+  return { from: g.from, to: Math.min(g.to, off.from) };
+};
+
 const BREAK_LEFT_PCT = 44;
 // FLUSH WITH THE RIGHT EDGE OF THE COLUMN. It stopped at 97, on the stated
 // grounds that it matched where the blocks underneath stop - which was not true,
@@ -324,8 +345,10 @@ function awayWords(min) {
 // The scheduled blocks go in too. Nothing in this batch rosters outside the
 // punches, but the rule is the same: if it is drawn, the axis holds it.
 function dayWindow(day, shifts, extras = [], scheduled = []) {
-  let lo = shifts[0].from;
-  let hi = shifts[shifts.length - 1].to;
+  // a day with only time off on it has no shifts, and the time off (an extra)
+  // sets the window on its own
+  let lo = shifts.length ? shifts[0].from : Infinity;
+  let hi = shifts.length ? shifts[shifts.length - 1].to : -Infinity;
   for (const b of day.breaks || []) {
     if (Number.isFinite(b.start?.min)) lo = Math.min(lo, b.start.min);
     if (Number.isFinite(b.end?.min)) hi = Math.max(hi, b.end.min);
@@ -342,6 +365,7 @@ function dayWindow(day, shifts, extras = [], scheduled = []) {
     if (Number.isFinite(b?.from)) lo = Math.min(lo, b.from);
     if (Number.isFinite(b?.to)) hi = Math.max(hi, b.to);
   }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { from: 9 * 60, to: 17 * 60 };
   // out to whole hours so the gridline labels are hours, not 7:23
   return { from: Math.floor(lo / 60) * 60, to: Math.ceil(hi / 60) * 60 };
 }
@@ -357,7 +381,7 @@ const serviceFor = (scheduled, shift) => blockFor(scheduled, shift)?.service || 
 // what the day says out loud. The blocks are aria-hidden - absolutely positioned
 // colour is nothing at all to a screen reader, and this page is read by people
 // who use one.
-function spoken(day, shifts, rests, staged, scheduled) {
+function spoken(day, shifts, rests, staged, scheduled, timeOff = null, off = null) {
   const bits = shifts.map((s) => {
     const booked = serviceFor(scheduled, s);
     // the same label the block carries. A screen reader hearing "Misc" on a day
@@ -365,7 +389,13 @@ function spoken(day, shifts, rests, staged, scheduled) {
     // be noticed.
     return `worked ${hhmm(s.from)} to ${hhmm(s.to)}${booked ? `, ${serviceLabel(booked, day)}` : ""}`;
   });
-  for (const g of gapsOf(day, shifts, scheduled)) {
+  // the card's own words, and no times: they were placed, not recorded
+  if (timeOff) bits.push(`${timeOff.kind === "sick" ? "sick pay" : "PTO"}, ${Number(timeOff.hours).toFixed(2)} hours`);
+  for (const whole of gapsOf(day, shifts, scheduled)) {
+    // the part the time-off card leaves - see gapLeftBy
+    const left = gapLeftBy(whole, off);
+    if (!left) continue;
+    const g = { ...whole, ...left };
     // `.meal`, NOT `.kind`. `gapsOf` returns the first and only the tiles below
     // carry the second, so this read undefined on every gap and called every
     // rostered lunch "not scheduled" - while the picture beside it drew the
@@ -415,11 +445,19 @@ export default function DayCalendar({
   // and a calendar re-deriving it would be a second opinion that can disagree
   // with the question printed beside it.
   bookedMeal = false,
+  // SICK PAY OR PTO ON THIS DAY, { kind, hours }, from the office's calendar or
+  // the person's own time-off answer - see timeOffByDate. the day is known and
+  // the hours aren't, so it's placed beside the day's work (placeTimeOff) and
+  // drawn fading out at both ends
+  timeOff = null,
 }) {
   // before the early return: a hook cannot be called conditionally
   const staged = useStagedOn(day.date);
   const shifts = shiftsOf(day);
-  if (!shifts.length) return null;
+  // a day program day already marked PTO draws its nominal punches for it, so
+  // a PTO entry on the same day isn't drawn a second time
+  const off = timeOff && !(day.isPto && timeOff.kind === "pto") ? placeTimeOff(shifts, timeOff.hours) : null;
+  if (!shifts.length && !off) return null;
 
   // the rostered meal blocks that fall inside worked time, which is exactly the
   // set the gap logic above cannot reach - see the note where they are drawn
@@ -448,7 +486,7 @@ export default function DayCalendar({
   //
   // Work blocks still widen it as they always did. Only the meals are narrowed
   // to what is actually on the page.
-  const axis = dayWindow(day, shifts, [...staged, ...rests, ...proposed], [
+  const axis = dayWindow(day, shifts, [...staged, ...rests, ...proposed, ...(off ? [{ min: off.from, minutes: off.to - off.from }] : [])], [
     ...(scheduled || []).filter((b) => !b.meal),
     ...rosteredUnpunched,
   ]);
@@ -527,10 +565,12 @@ export default function DayCalendar({
   // only ever geometry.
   const tiles = [
     ...shifts.map((x) => ({ from: x.from, to: x.to, kind: "work" })),
-    ...gapsOf(day, shifts, scheduled).map((g) => ({
+    // a gap the time-off card sits in draws only what the card leaves
+    ...gapsOf(day, shifts, scheduled).flatMap((g) => {
+      const left = gapLeftBy(g, off);
       // `gapsOf` returns `.meal`; the tile it becomes carries `.kind`
-      from: g.from, to: g.to, kind: g.meal ? "meal" : "gap",
-    })),
+      return left ? [{ from: left.from, to: left.to, kind: g.meal ? "meal" : "gap" }] : [];
+    }),
   ].sort((a, b) => a.from - b.from);
   for (const t of tiles) { t.drawFrom = t.from; t.drawTo = t.to; }
   for (let i = 0; i < tiles.length; i++) {
@@ -752,7 +792,7 @@ export default function DayCalendar({
 
   return (
     <figure className="m-0">
-      <figcaption className="sr-only">{spoken(day, shifts, rests, staged, scheduled)}</figcaption>
+      <figcaption className="sr-only">{spoken(day, shifts, rests, staged, scheduled, off && timeOff, off)}</figcaption>
 
       {/* WHAT THE DOCUMENT SAYS, WHERE IT CANNOT BE DRAWN AT ALL.
           Two shapes end up here and they are both honest failures of the axis
@@ -932,6 +972,33 @@ export default function DayCalendar({
             </div>
           );
         })}
+
+        {/* TIME OFF ON A KNOWN DAY: sick pay or PTO, placed next to the day's
+            work and faded at both ends, because the times are placed, not a
+            record. the card's words are the kind and the hours, nothing else */}
+        {off && (() => {
+          const tone = TIME_OFF_TONES[timeOff.kind] || TIME_OFF_TONES.pto;
+          const tall = (off.to - off.from) * (PX_PER_HOUR / 60) >= 100;
+          return (
+            <div
+              className={`absolute left-0 flex overflow-hidden rounded-lg border-l-[3px] ${reviewStyles.shiftText} ${reviewStyles.timeOffCard} ${
+                tall ? "flex-col items-start gap-1 px-3 pb-3 pt-10 text-[13px] leading-normal" : "items-center gap-x-1.5 px-1.5 text-[12px] leading-[15px]"
+              }`}
+              style={{
+                top: `${top(off.from)}%`,
+                height: `${exact(off.from, off.to)}%`,
+                width: "99%",
+                borderLeftColor: tone.edge,
+                background: tone.wash,
+                color: tone.ink,
+                "--shift-label-fill": tone.wash,
+              }}
+            >
+              <span className="font-medium">{TIME_OFF_LABEL[timeOff.kind] || TIME_OFF_LABEL.pto}</span>
+              <span className="tabular-nums">{Number(timeOff.hours).toFixed(2)} hrs</span>
+            </div>
+          );
+        })()}
 
         {/* THE GAPS BETWEEN SHIFTS. Unscheduled time unless it is meal length,
             in which case the punch-out IS the meal. Never a rest period - see

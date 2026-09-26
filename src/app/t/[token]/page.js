@@ -29,7 +29,7 @@ import TimeOffCard from "./TimeOffCard";
 import ReviewFlow, { ReviewStage, ReviewTotals, ReviewProvider, ToldUsPanel } from "./ReviewFlow";
 import reviewStyles from "./ReviewFlow.module.css";
 import { reviewDays } from "@/lib/timesheet/review-days";
-import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
+import { periodDates, timeOffAnswerOf, timeOffByDate } from "@/lib/timesheet/time-off";
 // the day program's Comments Details, shown back on the review. Their own
 // typed words - the second tens live in there, and if the reader ever misses
 // a spelling again, the record is still on the page they sign from.
@@ -407,8 +407,12 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // adding it would count those hours twice and "Hours worked" above would
   // stop being the number it has always been. So this line is the two he
   // named: the export's own figure, or the calendar where it exists.
-  const timeOff = payoutTimeOff(ts, timeOffTotals(await loadTimeOffFor(ts)));
+  const timeOffRows = await loadTimeOffFor(ts);
+  const timeOff = payoutTimeOff(ts, timeOffTotals(timeOffRows));
   const timeOffHours = timeOff.added;
+  // and the days they fall on, for the day calendar: the office's entries and
+  // the person's own time-off answer - see timeOffByDate
+  const timeOffDays = timeOffByDate(timeOffRows, ts.corrections);
 
   const breakAnswers = ts.userId
     ? (await prisma.timesheetBreakAnswer.findMany({
@@ -927,6 +931,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
             simple={
               <DayByDay
                 dpNotes={dpNotes}
+                timeOffByDate={timeOffDays}
                 days={displayedDays}
                 periodFrom={ts.batch.periodFrom}
                 groups={byKind}
@@ -973,6 +978,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
               <DayByDay
                 stacked
                 dpNotes={dpNotes}
+                timeOffByDate={timeOffDays}
                 days={displayedDays}
                 periodFrom={ts.batch.periodFrom}
                 groups={byKind}

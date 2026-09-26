@@ -34,6 +34,9 @@
   /* the same colour is only 3.2:1 as text on its own wash, so text takes a
      darker cut of it in light. the dark value is already light enough to read. */
   --leave-sick-ink: #5c554f;
+  /* and PTO's: the purple is 3.8:1 as text on its own wash, so text takes a
+     darker cut of it in light too */
+  --leave-pto-ink: #5b3f86;
   --status-caution: #946a14;
   --status-danger: #bd2838;
   /* the two premium series, and they mean what the signed timesheet's colour
@@ -86,6 +89,7 @@
      and Night both. 9:1 on Dim, 10.6:1 on Night, so text takes it as it is. */
   --leave-sick: #c5bdb4;
   --leave-sick-ink: #c5bdb4;
+  --leave-pto-ink: #c7b1ed;
   --status-caution: #dabc6d;
   --status-danger: #ff8089;
   /* the same two hues, stepped for a dark surface rather than flipped */
@@ -135,6 +139,7 @@
   --color-leave-pto: var(--leave-pto);
   --color-leave-sick: var(--leave-sick);
   --color-leave-sick-ink: var(--leave-sick-ink);
+  --color-leave-pto-ink: var(--leave-pto-ink);
   --color-portal-canvas: var(--portal-canvas);
   --color-navigation-glass: var(--navigation-glass);
   --color-navigation-selected: var(--navigation-selected);

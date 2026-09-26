@@ -168,6 +168,14 @@
   border-radius: 8px;
 }
 
+/* TIME OFF ON THE CALENDAR fades out at both ends: the day is known, the
+   hours were placed, not recorded - see placeTimeOff. the fade is at most
+   44px, and never more than 28% of a short card */
+.timeOffCard {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 min(44px, 28%), #000 calc(100% - min(44px, 28%)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 min(44px, 28%), #000 calc(100% - min(44px, 28%)), transparent 100%);
+}
+
 .review .workShift,
 .review .workShift > span {
   color: var(--review-work-ink);

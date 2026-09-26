@@ -137,7 +137,10 @@ test("two reports on one day do not collide as React keys", () => {
 test("the header's time off reads every source, not just the calendar", () => {
   // it read loadTimeOffFor alone, so sick pay off the QuickSolve export showed
   // nowhere on the employee's own timesheet
-  assert.match(page, /const timeOff = payoutTimeOff\(ts, timeOffTotals\(await loadTimeOffFor\(ts\)\)\);/);
+  // the rows are fetched once and read twice: the totals here, and the days
+  // they fall on for the calendar (timeOffByDate)
+  assert.match(page, /const timeOffRows = await loadTimeOffFor\(ts\);\n\s*const timeOff = payoutTimeOff\(ts, timeOffTotals\(timeOffRows\)\);/);
+  assert.match(page, /const timeOffDays = timeOffByDate\(timeOffRows, ts\.corrections\);/);
   assert.match(page, /const timeOffHours = timeOff\.added;/);
   // `added` and not `total`: the third source inside payoutTimeOff is Misc time
   // that `paidHours` already holds, and adding it would count those hours twice

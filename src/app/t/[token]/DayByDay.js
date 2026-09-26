@@ -148,6 +148,9 @@ export default function DayByDay({
   // THE DAYS THEY HAVE ALREADY BEEN THROUGH, off the sheet rather than out of
   // this browser, and the action that records the next one. See DayDoneProvider.
   walkedDays = null, walkAction = null,
+  // THE TIME OFF EACH DAY HOLDS, by date - see timeOffByDate. the calendar
+  // places it; a day with nothing else on it draws the calendar for it
+  timeOffByDate = {},
 }) {
   // there is exactly one batch value in the engine - `nothingDocumented` - so
   // one provider covers it and the contexts never nest
@@ -469,7 +472,7 @@ export default function DayByDay({
         const elsewhere = alsoAsked.get(day.date) || [];
         const asks = asksOn(day);
         const span = spanOf(displayDay);
-        const emptyDay = day.reviewOnly && !span;
+        const emptyDay = day.reviewOnly && !span && !timeOffByDate[day.date];
         return (
           <div
             key={day.date}
@@ -593,6 +596,7 @@ export default function DayByDay({
                       scheduled={scheduled[day.date] || []}
                       proposed={proposalsByDate.get(day.date) || []}
                       bookedMeal={bookedMealDates.has(day.date)}
+                      timeOff={timeOffByDate[day.date] || null}
                     />
                   </div>
                 </details>
@@ -606,6 +610,7 @@ export default function DayByDay({
                   /* the rostered meal is only drawn as a finding where one is
                      actually being raised - see `bookedMeal` */
                   bookedMeal={bookedMealDates.has(day.date)}
+                  timeOff={timeOffByDate[day.date] || null}
                 />
               </div>
               )}

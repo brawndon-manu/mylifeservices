@@ -275,3 +275,57 @@ export function timeOffReviewItems(corrections) {
       correctionId: row.id,
     }));
 }
+
+// THE TIME OFF EACH DAY HOLDS, for the day calendar. two places know the day:
+// the office's calendar entries (PtoEntry rows, `entries`) and what the person
+// said on the time-off step (the one time_off row, a "yes" with its days). one
+// per date, and the office's entry wins a date both name - it's the record,
+// the answer is a claim until someone accepts it. dates in the sheet's own
+// "09/10/26" form, the key day.date already uses.
+export function timeOffByDate(entries, corrections) {
+  const out = {};
+  const keep = (e, source) => {
+    if (!e?.date || !isTimeOffType(e.kind) || !(Number(e.hours) > 0)) return;
+    out[e.date] = { kind: e.kind, hours: r2(Number(e.hours)), source };
+  };
+  const row = timeOffAnswerOf(corrections);
+  if (row?.choice === "yes" && Array.isArray(row.timeOff)) for (const e of row.timeOff) keep(e, "said");
+  for (const e of entries || []) keep(e, "entry");
+  return out;
+}
+
+// WHERE A DAY'S TIME OFF SITS ON THE CALENDAR. the day is known and the hours
+// aren't, so the card is placed rather than recorded (it fades at both ends to
+// say so). the first unscheduled gap between shifts long enough to hold it
+// takes it, from the gap's start - that's most likely where the time went.
+// otherwise it ends where the day's first shift starts, a day with no shift
+// starts it at 9:00 AM, and when ending at the first shift would start it
+// before 6:00 AM it follows the last shift instead. minutes past midnight in
+// and out; null for no hours.
+export const TIME_OFF_DEFAULT_START = 9 * 60;
+export const TIME_OFF_EARLIEST = 6 * 60;
+export function placeTimeOff(shifts, hours) {
+  const minutes = Math.round(Number(hours) * 60);
+  if (!(minutes > 0)) return null;
+  const spans = (shifts || []).filter((s) => Number.isFinite(s?.from) && Number.isFinite(s?.to) && s.to > s.from);
+  if (!spans.length) return { from: TIME_OFF_DEFAULT_START, to: TIME_OFF_DEFAULT_START + minutes };
+  // the union of the shifts, so two bookings over each other aren't a gap
+  const merged = [];
+  for (const s of [...spans].sort((a, b) => a.from - b.from || a.to - b.to)) {
+    const prev = merged[merged.length - 1];
+    if (prev && s.from <= prev.to) prev.to = Math.max(prev.to, s.to);
+    else merged.push({ from: s.from, to: s.to });
+  }
+  for (let i = 1; i < merged.length; i += 1) {
+    const from = merged[i - 1].to;
+    if (merged[i].from - from >= minutes) return { from, to: from + minutes };
+  }
+  const first = merged[0].from;
+  const last = merged[merged.length - 1].to;
+  if (first - minutes >= TIME_OFF_EARLIEST) return { from: first - minutes, to: first };
+  if (last + minutes <= 24 * 60) return { from: last, to: last + minutes };
+  // neither fits the day (a very early start and a very late finish): before
+  // the first shift anyway, from midnight at the earliest
+  const from = Math.max(0, first - minutes);
+  return { from, to: from + minutes };
+}
