@@ -3218,9 +3218,12 @@ export async function resetBatchAnswers(batchId) {
   let rebuilt = 0;
   let failed = 0;
   for (const ts of sheets) {
-    // `{}` and not `ts.overrides` - that is the whole difference between this
-    // and Recompute, which keeps them
-    const res = await rebuildSheetFor({ ...ts, overrides: {} }, {});
+    // not `ts.overrides` - that is the whole difference between this and
+    // Recompute, which keeps them. Only the office's accepted reports come
+    // back, rebuilt from their rows - see layAcceptedReports
+    const kept = {};
+    await layAcceptedReports(prisma, ts, kept);
+    const res = await rebuildSheetFor({ ...ts, overrides: kept }, kept);
     if (res?.ok) rebuilt++;
     else failed++;
   }
@@ -3372,7 +3375,14 @@ export async function resetTimesheetAnswers(timesheetId, { confirmUnsign = false
   // a full reset ONLY when there is something to undo. On an ordinary unsigned
   // sheet this is the rebuild it has always been, with both guards standing.
   const full = !!(ts.signedAt || ts.approvedAt);
-  const res = await rebuildSheetFor({ ...ts, overrides: {} }, {}, { fullReset: full });
+  // KEEPING WHAT PAYROLL ACCEPTED (Mánu 2026-09-25): a reset takes the
+  // answers back, not the office's decisions. The report rows stay accepted
+  // on the desk, so the figures keep them too - rebuilt from the rows, the
+  // way every answer's rebuild does it. Nothing else survives: the answers'
+  // patches and the misc classifications go, as they always have.
+  const kept = {};
+  await layAcceptedReports(prisma, ts, kept);
+  const res = await rebuildSheetFor({ ...ts, overrides: kept }, kept, { fullReset: full });
   if (!res?.ok) return res;
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
@@ -4002,6 +4012,51 @@ export async function answerTimeOff({ token, choice, entries }) {
 // EVERY ID IS STILL RE-DERIVED FROM THE CLASSIFIER, one at a time, exactly as
 // before. A batch is a batch of writes, not a relaxation of the check: a client
 // cannot answer a question nobody asked, whichever shape it arrives in.
+// EVERY ACCEPTED REPORT, RE-DERIVED FROM ITS OWN ROW, laid into `overrides`.
+//
+// The one place the office's decisions are rebuilt from, for the answer path
+// and both resets (Mánu 2026-09-25, seen on the rehearsal: a reset rebuilt
+// with nothing and the accepted reports fell out of the figures while the
+// desk still read Accepted). Re-derived from the rows rather than carried over
+// from the old blob: the accepted rows are the current record, so a report
+// somebody has since re-resolved cannot leave a stale patch behind. Patches
+// the PRISTINE day, never the already-patched one - see the answer path.
+//
+// Returns what payroll settled per date - the override keys each accepted
+// report wrote - so an answer about the same day can leave those alone.
+async function layAcceptedReports(client, ts, overrides) {
+  const untouched = ts.data?.daysOriginal || ts.data?.days || [];
+  const settled = {};
+  const acceptedReports = await client.timesheetCorrection.findMany({
+    where: {
+      timesheetId: ts.id,
+      status: "accepted",
+      NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
+    },
+    // statedSlots is HERE because patchFor needs it: a select that omitted it
+    // handed patchFor undefined and the rebuild dropped the corrected clock
+    // without a word - the same silent-whitelist trap applyOverrides warns
+    // about twice.
+    select: { kind: true, date: true, claimedHours: true, statedBreaks: true, statedSlots: true },
+  });
+  for (const c of acceptedReports) {
+    // the dateless legacy rows patch nothing, exactly as their accept did
+    if (!c.date) continue;
+    const day = untouched.find((d) => d.date === c.date) || null;
+    const patch = patchFor(c.kind, day, c.claimedHours, c.statedSlots);
+    const stamped = { ...patch, _answeredBy: "admin" };
+    if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
+    if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
+    Object.assign(stamped, claimedTimesPatch(overrides, c.date, c.statedBreaks) || {});
+    if (Object.keys(patch).length || stamped.statedBreaks) {
+      overrides[c.date] = { ...(overrides[c.date] || {}), ...stamped };
+      settled[c.date] = settled[c.date] || new Set();
+      for (const k of Object.keys(patch)) settled[c.date].add(k);
+    }
+  }
+  return settled;
+}
+
 export async function answerTimesheetQuestion({ token, id, choice, at, times, batch, reason, actor }) {
   const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
   const tsId = verifyTimesheetToken(token);
@@ -4699,31 +4754,15 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
       // stale patch behind. Runs BEFORE the answers so an answer about the same
       // date merges on top, which is exactly the 08/28 shape - the accepted day
       // brings the hours, the answer brings its breaks.
-      const acceptedReports = await tx.timesheetCorrection.findMany({
-        where: {
-          timesheetId: ts.id,
-          status: "accepted",
-          NOT: { OR: [{ kind: { startsWith: "q_" } }, { kind: { startsWith: "fix_" } }] },
-        },
-        // statedSlots is HERE because patchFor needs it: a select that omitted it
-        // handed patchFor undefined and the rebuild dropped the corrected clock
-        // without a word - the same silent-whitelist trap applyOverrides warns
-        // about twice.
-        select: { kind: true, date: true, claimedHours: true, statedBreaks: true, statedSlots: true },
-      });
-      for (const c of acceptedReports) {
-        // the dateless legacy rows patch nothing, exactly as their accept did
-        if (!c.date) continue;
-        const day = pristine.find((d) => d.date === c.date) || null;
-        const patch = patchFor(c.kind, day, c.claimedHours, c.statedSlots);
-        const stamped = { ...patch, _answeredBy: "admin" };
-        if (patch.mealViolation != null) stamped._mealAnsweredBy = "admin";
-        if (patch.restViolation != null) stamped._restAnsweredBy = "admin";
-        Object.assign(stamped, claimedTimesPatch(overrides, c.date, c.statedBreaks) || {});
-        if (Object.keys(patch).length || stamped.statedBreaks) {
-          overrides[c.date] = { ...(overrides[c.date] || {}), ...stamped };
-        }
-      }
+      // AND WHAT THE OFFICE SETTLED STAYS SETTLED (Mánu 2026-09-25): an
+      // answer on the same day used to merge straight over an accepted
+      // report's own fields - "Took it" after payroll accepted "I worked
+      // through it" took the premium back off in silence, with the desk still
+      // reading Accepted. The keys an accepted report wrote are left alone by
+      // the answers below; everything else about the day still merges on top,
+      // which is the 08/28 shape - the accepted day brings the hours, the
+      // answer brings its breaks.
+      const settled = await layAcceptedReports(tx, ts, overrides);
       // EVERY ANSWER ON RECORD, NOT EVERY QUESTION STILL BEING ASKED.
       //
       // This walked the live question set, and several kinds DELETE their own
@@ -4772,7 +4811,9 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
               : q2.kind === "restOutsideScheduled" && !hasTimes ? "notaken" : "no");
           const patch = patchesFor(q2, back, day);
           const clean = Object.fromEntries(
-            Object.entries(patch).filter(([, v]) => v != null),
+            // a field payroll settled on this day by accepting a report is
+            // theirs - see layAcceptedReports
+            Object.entries(patch).filter(([k, v]) => v != null && !settled[date]?.has(k)),
           );
           if (Object.keys(clean).length) {
             overrides[date] = { ...(overrides[date] || {}), ...clean };

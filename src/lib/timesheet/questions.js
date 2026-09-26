@@ -706,12 +706,52 @@ export function singleCountHours(day) {
   return r2(min / 60);
 }
 
-// `answers` is the sheet's q_ correction rows ({ kind, date, status }). Only the
-// lunch-move question reads them: its "no" is what opens the booked-meal card
-// after it, and a day whose booked-meal card was answered before the move
-// question existed keeps that card as it was. A caller without them gets the
-// move question on every such day, which is right for a sheet nobody has
-// answered yet.
+// WHAT PAYROLL SETTLED BY ACCEPTING A REPORT (Mánu 2026-09-25, seen on the
+// rehearsal): accepting "I worked through my lunch" rebuilt the day with the
+// violation on, and the engine then asked "Did you take your meal break?" on
+// that very day - a question whose answer would undo the decision. An
+// accepted meal report settles the day's meal, an accepted rest report its
+// rests, and no question about that subject is asked on that day again. A
+// question a changed day raises for the first time - the rest owed on a day
+// an hours report made longer - is still asked. Declined and open reports
+// settle nothing.
+const MEAL_QUESTIONS = new Set([
+  "mealCouldMove", "mealLate", "mealShort", "mealMovable", "mealInShift", "nothingDocumentedMeal",
+]);
+const REST_QUESTIONS = new Set([
+  "restIsMealLength", "restNoTimes", "restOutsideScheduled", "restTooLongOffClock",
+  "shortMealRest", "nothingDocumentedRest",
+]);
+const MEAL_REPORTS = new Set(["meal_missed", "meal_taken", "meal_ontime"]);
+const REST_REPORTS = new Set(["rest_missed", "rest_taken"]);
+const questionSubject = (kind) => MEAL_QUESTIONS.has(kind) ? "meal" : REST_QUESTIONS.has(kind) ? "rest" : null;
+// date -> the subjects payroll settled there
+export function settledByReports(rows) {
+  const out = {};
+  for (const c of rows || []) {
+    if (!c?.date || c.status !== "accepted") continue;
+    const subject = MEAL_REPORTS.has(c.kind) ? "meal" : REST_REPORTS.has(c.kind) ? "rest" : null;
+    if (!subject) continue;
+    (out[c.date] ||= new Set()).add(subject);
+  }
+  return out;
+}
+// whether every day a question is about was settled for its subject
+export function settledQuestion(q, settled) {
+  const subject = questionSubject(q?.kind);
+  if (!subject) return false;
+  const dates = q.dates || [q.date];
+  return dates.length > 0 && dates.every((date) => settled[date]?.has(subject));
+}
+
+// `answers` is the sheet's correction rows ({ kind, date, status }): the q_
+// answers, which the lunch-move question reads (its "no" is what opens the
+// booked-meal card after it, and a day whose booked-meal card was answered
+// before the move question existed keeps that card as it was), and the report
+// rows, whose accepted ones settle a day's meal or rests - see
+// settledByReports. A caller without them gets the move question on every
+// such day and every question on a decided day, which is right for a sheet
+// nobody has answered yet.
 export function buildQuestions(data, { restRows, sourceName, reviewerSettled, answers } = {}) {
   if (!data) return [];
   const days = data.days || [];
@@ -1536,13 +1576,17 @@ export function buildQuestions(data, { restRows, sourceName, reviewerSettled, an
     }
   }
 
+  // WHAT PAYROLL SETTLED IS NOT ASKED AGAIN - see settledByReports above
+  const settled = settledByReports(answers);
+  const asked = out.filter((q) => !settledQuestion(q, settled));
+
   // HOURS FIRST. The order questions are built in is the order the engine
   // happens to check them; the order they are ASKED in has to be the one that
   // does not waste somebody's time. A question whose answer re-derives the day
   // goes above the ones derived from it.
   const ordered = [
-    ...out.filter((q) => movesHours(q.kind)),
-    ...out.filter((q) => !movesHours(q.kind)),
+    ...asked.filter((q) => movesHours(q.kind)),
+    ...asked.filter((q) => !movesHours(q.kind)),
   ];
   return ordered.map((q) => ({
     ...q, id: questionId(q), mandatory: isMandatory(q.kind), movesHours: movesHours(q.kind),
