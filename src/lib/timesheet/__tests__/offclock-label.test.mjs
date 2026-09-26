@@ -154,14 +154,15 @@ test("and only on the answer that owes it", () => {
 // fighting the button beside it is worse than no note.
 const MISC = CARD.slice(CARD.indexOf('case "miscTime"'), CARD.indexOf('case "nothingDocumented"'));
 
-test("the working answer says what counts as working", () => {
-  assert.match(MISC, /note: "Any Misc service you worked\."/);
+test("the working answer says it in a sentence, so it needs no note", () => {
+  assert.match(MISC, /label: "I worked these hours"/);
+  assert.doesNotMatch(MISC, /note: "/);
   assert.doesNotMatch(MISC, /time held for a client who cancelled/);
 });
 
 test("the client cancellation answer is on the card and sends its own value", () => {
   assert.match(MISC, /value: "cancelled"/);
-  assert.match(MISC, /label: "Client cancellation"/);
+  assert.match(MISC, /label: "Given for client cancellation"/);
 });
 
 test("and the note survives the day-by-day view, unlike `why`", () => {

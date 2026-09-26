@@ -2932,7 +2932,9 @@ export async function classifyMiscTime(timesheetId, date, kind) {
   const user = await requireTimesheetAccess();
   // "cancelled" is CLIENT CANCELLATION, added 2026-08-17: paid, unworked time
   // whose block counts as unscheduled - see workGroupsFor.
-  if (!["pto", "sick", "worked", "cancelled"].includes(kind)) return { ok: false, error: "badkind" };
+  // worked or a client cancellation, the two the employee's card asks since
+  // 2026-09-26; PTO and sick pay go on the calendar instead
+  if (!["worked", "cancelled"].includes(kind)) return { ok: false, error: "badkind" };
   // A REPLACED UPLOAD IS READ ONLY - see superseded.js. Refused on the SERVER,
   // because hiding a control is a suggestion and this has to be a rule.
   {
@@ -4231,6 +4233,13 @@ export async function answerTimesheetQuestion({ token, id, choice, at, times, ba
     // validated against what it asks NOW rather than what it asked then
     const q = questions.find((x) => x.id === a.id) || restoredQuestions.get(a.id);
     if (!q) return { ok: false, error: "unknown", at: { id: a.id } };
+    // MISC IS WORKED OR GIVEN FOR A CLIENT CANCELLATION: its "yes" (PTO) and
+    // "no" (sick pay) aren't answers any more, so they're refused here as
+    // well as never drawn. answers given before keep what they said - the
+    // rebuild replays them without coming through here
+    if (q.kind === "miscTime" && a.choice != null && !["worked", "cancelled"].includes(a.choice)) {
+      return { ok: false, error: "badchoice", at: { id: q.id, date: q.date } };
+    }
 
     // a typed time is only meaningful where the question asks for one
     let stated = null;

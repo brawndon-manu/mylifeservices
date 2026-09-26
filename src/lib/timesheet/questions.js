@@ -1742,8 +1742,11 @@ export function patchesFor(question, choice, day) {
       // ten minutes is by definition not a ten, and the option could only ever
       // have appeared beside something it does not describe.
       //
-      // `yes` and `no` are the card's own two, and `third.value` is "worked".
-      // The reviewer path writes "pto" / "sick" / "worked" straight through
+      // `yes` and `no` WERE the card's own two (PTO, sick pay), and
+      // `third.value` is "worked". Since 2026-09-26 the card asks worked or
+      // cancelled only, and the server refuses a new yes/no for Misc, so these
+      // two stay for the answers given before - a rebuild replays them here.
+      // The reviewer path wrote "pto" / "sick" / "worked" straight through
       // without a card, which is why both spellings are accepted here.
       const kind =
         choice === "yes" ? "pto"

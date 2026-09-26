@@ -156,7 +156,9 @@ export default function MiscClassify({
       </p>
       <p className="mt-2 text-xs font-semibold text-foreground">What was it?</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        {["pto", "sick", "cancelled", "worked"].map((k) => (
+        {/* the same two the employee's card asks since 2026-09-26. LABELS
+            keeps PTO and sick pay so an older classification still reads */}
+        {["cancelled", "worked"].map((k) => (
           <button
             key={k}
             type="button"

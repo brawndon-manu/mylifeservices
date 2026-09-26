@@ -869,39 +869,39 @@ function copyFor(q, standing) {
     // the engine stops counting it toward the hours that decide whether a break
     // is owed. This is the only route by which it counts again.
     //
-    // FOUR ANSWERS SINCE 2026-08-17, when Client cancellation joined. The
-    // draft's own fourth - "a ten I could not fit into my service hours" - was
-    // cut and stays cut: a block of ten minutes or less already counts as
-    // worked without being asked about.
+    // TWO ANSWERS SINCE 2026-09-26: worked, or given for a client
+    // cancellation. PTO and sick pay aren't asked on Misc any more - the
+    // office records those days on its calendar, and they draw on the day's
+    // calendar from there. an answer given before that said PTO or sick pay
+    // keeps what it said: it still pays that way and still reads that way
+    // (`legacy`), the card just doesn't offer it. the draft's own "a ten I
+    // could not fit into my service hours" stays cut: a block of ten minutes
+    // or less already counts as worked without being asked about.
     //
     // NOTHING ON THIS CARD PROMISES PAY. It says what the answer does to the
     // record and to the hours the entitlement is measured over, and stops. The
     // premium is admin's business and appears on admin's screens.
-    case "miscTime":
+    //
+    // THE MEAL CARD'S SHAPE: the hours and when on one line, in full clocks,
+    // on the day card as well as the long one; the question in bold; the two
+    // answers as sentences. no yes and no `no` - a stored "yes"/"no" on this
+    // card means PTO/sick pay (see patchesFor), so the new answers keep their
+    // own values, "worked" and "cancelled"
+    case "miscTime": {
+      const spans = (q.row?.blocks || []).map((b) => `${longClock(b.from)} to ${longClock(b.to)}`);
+      const when = spans.length === 1 ? `, from ${spans[0]}`
+        : spans.length > 1 ? `: ${spans.slice(0, -1).join(", ")} and ${spans[spans.length - 1]}` : "";
       return {
-        title: "Time on your schedule marked as Misc",
-        body: (
-          <>
-            Your schedule has {q.row?.hours} hours down as Misc
-            {q.row?.blocks?.length === 1
-              ? <> on this day, {q.row.blocks[0].from} to {q.row.blocks[0].to}</>
-              : null}
-            . Time marked as Misc is paid on your timesheet, but it does not
-            count toward the hours that decide whether a rest break or meal
-            period is required. Tell us what it was.
-          </>
-        ),
-        yes: {
-          label: "Paid time off",
-          why: "You were not working. Nothing on your timesheet changes.",
-        },
-        no: {
-          label: "Sick pay",
-          why: "You were not working. Nothing on your timesheet changes.",
-        },
+        title: "Confirm your Misc time",
+        short: "Confirm your Misc time",
+        ask: "Did you work these hours, or did your client cancel?",
+        prose: true,
+        body: <>Your schedule has {Number(q.row?.hours || 0).toFixed(2)} hours marked as Misc{when}.</>,
+        // what an older answer said, for the collapsed card - never offered
+        legacy: { yes: "Paid time off", no: "Sick pay" },
         third: {
           value: "worked",
-          label: "Working hours",
+          label: "I worked these hours",
           why: "You worked those hours, they just were not booked to a client.",
           // WHAT COUNTS AS WORKING, because the other two options name themselves
           // and this one does not.
@@ -914,11 +914,7 @@ function copyFor(q, standing) {
           // that cannot explain itself from its label is this one. They are
           // drawn while editing now; see the Choice props below.
           //
-          // The cancelled-visit clause was cut from this note on 2026-08-17,
-          // when Client cancellation became its own answer below - a note
-          // steering cancellations into "working" would fight the button that
-          // now exists for them, and a test pins the absence.
-          note: "Any Misc service you worked.",
+          // no note since 2026-09-26: the label says it in a sentence now
         },
         // CLIENT CANCELLATION, the fourth answer, Mánu 2026-08-17: paid,
         // unworked time, counted as unscheduled - the stretches either side of
@@ -926,11 +922,9 @@ function copyFor(q, standing) {
         // reviewer's control carries the same four.
         fourth: {
           value: "cancelled",
-          label: "Client cancellation",
+          label: "Given for client cancellation",
           why: "Your client cancelled. The time is paid, and it is not time worked.",
         },
-        yesEffect: <>Your record says that time was paid time off.</>,
-        noEffect: <>Your record says that time was sick pay.</>,
         thirdEffect: (
           <>
             Your record says you worked those hours, so they count toward
@@ -945,6 +939,7 @@ function copyFor(q, standing) {
           </>
         ),
       };
+    }
 
     // THE MEAL HALF LANDED ON THE MISC CARD FOR WEEKS.
     //
@@ -1726,8 +1721,8 @@ function OneQuestion({
   // slot but not a date, so the dates come from `q.needs` - the same list the
   // boxes were built from, which is what keeps them in step.
   const chosenLabel =
-    shown === "yes" ? c.yes?.label
-      : shown === "no" ? c.no.label
+    shown === "yes" ? (c.yes?.label ?? c.legacy?.yes)
+      : shown === "no" ? (c.no?.label ?? c.legacy?.no)
         : shown === c.third?.value ? c.third.label
           : shown === c.fourth?.value ? c.fourth.label
             : "Answered";
@@ -1911,6 +1906,9 @@ function OneQuestion({
           onClick={() => pick("yes")}
         />
         )}
+        {/* AND A KIND CAN HAVE NO "no": the Misc card offers its own two
+            values, because its stored "no" means sick pay */}
+        {c.no && (
         <Choice
           on={shown === "no"}
           tone="no"
@@ -1920,6 +1918,7 @@ function OneQuestion({
           note={!answered || editing ? c.no.note : null}
           onClick={() => pick("no")}
         />
+        )}
         {c.third && (
           <Choice
             on={shown === c.third.value}
