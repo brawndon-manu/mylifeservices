@@ -2809,3 +2809,82 @@ model AccessLog {
   @@index([userId, at])
   @@index([target])
 }
+
+// THE SCHEDULE LOCK, 2026-09-26. Staff get the last days of each month to
+// build the next month's schedule, and QSP can only open that by unlocking the
+// schedules - which opens the past as well, where a booking already moved to
+// its clocked times can be put back and paid in full. The first upload of a
+// month locks the days picked with it; every later upload of that month is
+// checked against the lock plus whatever has been approved since.
+//
+// Only uploads made on the Schedule lock page land here: the audit's and
+// payroll's copies are never read. Who uploaded is kept as scalars, like the
+// batch's lockedBy, so a line keeps saying who it was after a rename.
+model ScheduleLockUpload {
+  id             String               @id @default(cuid())
+  // the month the Employee Schedules export is for, "2026-09"
+  monthKey       String
+  // null on the lock itself; the lock's id on every upload checked against it
+  lockId         String?
+  lock           ScheduleLockUpload?  @relation("ScheduleLockChecks", fields: [lockId], references: [id], onDelete: Cascade)
+  checks         ScheduleLockUpload[] @relation("ScheduleLockChecks")
+  // the locked days, "09/01/26" to "09/24/26" - picked on the lock, copied
+  // onto every check so each one says what it compared
+  fromDate       String
+  toDate         String
+  // the stored exports (private Blob) by slot: { url, name, size, from, to },
+  // the range being the days that export covers
+  files          Json
+  // what the list prints, worked out once at upload: the lock's counts, or a
+  // check's totals and the days each export was compared on
+  summary        Json?
+  // the changes this upload shows, and the ones an earlier upload showed that
+  // this one no longer does, by ScheduleLockChange id
+  presentIds     Json?
+  goneIds        Json?
+  uploadedById   String?
+  uploadedByName String?
+  createdAt      DateTime             @default(now())
+  changes        ScheduleLockChange[]
+
+  @@index([monthKey, createdAt])
+}
+
+// ONE THING THAT MOVED ON A LOCKED DAY, and the decision on it. The same
+// difference on a later upload finds this row again by `key` (what changed,
+// from what, to what) rather than asking twice; approving one lays its `after`
+// over the lock, so the next upload is compared against what was accepted.
+model ScheduleLockChange {
+  id            String             @id @default(cuid())
+  lockId        String
+  lock          ScheduleLockUpload @relation(fields: [lockId], references: [id], onDelete: Cascade)
+  key           String
+  // which export it came off: roster, scheduleNotes, serviceNotes, dsn, clock, miles
+  source        String
+  kind          String
+  employee      String?
+  date          String?
+  // the last day of a change that spans days (a calendar that left)
+  lastDate      String?
+  // the item as locked (or as approved) and as this upload has it
+  before        Json?
+  after         Json?
+  // what else the upload said about it: the clock's punches, staff's note
+  evidence      Json?
+  matchesClock  Boolean            @default(false)
+  awayFromClock Boolean            @default(false)
+  firstUploadId String
+  lastUploadId  String
+  // false once a later upload stops showing it: put back, or changed again
+  present       Boolean            @default(true)
+  // null until decided, then "approved" or "unauthorized"
+  decision      String?
+  decidedById   String?
+  decidedByName String?
+  decidedAt     DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([lockId, key])
+  @@index([lockId, decision])
+}

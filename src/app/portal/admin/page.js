@@ -70,6 +70,17 @@ export default async function AdminPage() {
           title: "Audit",
           body: "Compare billed time, punches, and notes.",
         },
+        {
+          // WHAT MOVED ON DAYS ALREADY WORKED. The month's schedules are
+          // unlocked at its end so the next one can be built, which opens the
+          // past too; the first upload of a month locks its worked days and
+          // every later one is checked against it.
+          show: isAdminUp(role),
+          href: "/portal/admin/schedule-lock",
+          icon: "calendarCheck",
+          title: "Schedule lock",
+          body: "Every change to a locked schedule.",
+        },
       ],
     },
     {

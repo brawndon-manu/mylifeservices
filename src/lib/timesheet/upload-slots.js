@@ -71,3 +71,24 @@ export function placeDroppedFiles(root, files, slots = UPLOAD_SLOTS) {
   }
   return unplaced;
 }
+
+// THE SCHEDULE LOCK'S SIX. The audit's exports, which the lock reads for what
+// moved on a locked day, less the Simple Timesheet - QSP builds it off the
+// schedule, so it only ever moves when the schedule does - plus the Mileage
+// Detail Report, the one export that says which trip on which day carried
+// which miles. The day program's Mileage Tracking totals are not it.
+export const SCHEDULE_LOCK_SLOTS = [
+  { id: "schedule", match: /employee schedules/i, ext: /\.pdf$/i },
+  { id: "notes", match: /detailed daily service notes/i, ext: /\.pdf$/i },
+  { id: "serviceNotes", match: /employee service notes/i, ext: /\.xls$/i },
+  { id: "scheduleNotes", match: /employee schedule notes/i, ext: /\.xls$/i },
+  { id: "mileage", match: /mileage (detail )?report/i, ext: /\.xls$/i },
+  { id: "clock", match: /qsclock|time and attendance/i, ext: /\.xls$/i },
+];
+
+// a file the lock does not read but knows: one of the other QSP exports, so a
+// whole folder dropped on the page is told what was left out rather than that
+// it was not an export at all
+export function knownExport(name) {
+  return !!slotForFilename(name) || !!slotForFilename(name, DP_UPLOAD_SLOTS) || /mileage tracking/i.test(String(name || ""));
+}
