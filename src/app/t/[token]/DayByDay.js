@@ -111,6 +111,9 @@ function NeedsFixing({ items, token, ackOn, ackAction }) {
 export default function DayByDay({
   days, groups, token, answers, partials, answerTimes, choices,
   waiting, disturbs, standing, submitAction, scheduled = {}, restsOnRecord = {},
+  // WHAT PAYROLL DECIDED PER DAY, date -> "approved" | "denied", read from
+  // the report rows on the page. The rail draws it - see railStatus.
+  decided = {},
   // WHY A BREAK WAS NOT TAKEN - one per violation, on the day it happened.
   //
   // These rendered as a single lump above the signer, attached to nothing: a
@@ -458,6 +461,7 @@ export default function DayByDay({
     hrs: (Math.round(onFile(d) * 100) / 100).toFixed(2),
     needs: asksOn(d),
     done: asksOn(d) && dayAnswered(d.date),
+    decided: decided[d.date] || null,
   }));
   const panes = shown.map((day) => {
         const displayDay = displayDays.get(day.date) || day;

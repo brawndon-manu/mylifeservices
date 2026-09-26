@@ -19,6 +19,7 @@ import DayByDay from "./DayByDay";
 import {
   submitSignedTimesheet,
   submitTimesheetCorrections,
+  acceptReportsNow,
   answerTimesheetQuestion,
   answerTimeOff,
   acknowledgeSpan,
@@ -35,6 +36,7 @@ import { periodDates, timeOffAnswerOf } from "@/lib/timesheet/time-off";
 import { parseComments } from "@/lib/timesheet/comments";
 import {
   correctionLabel, employeeResolution, resolutionTakesReason, reviewerSettledDates,
+  openReports, decidedReportsByDate,
 } from "@/lib/timesheet/corrections";
 // the reported half of "what you have told us" - see claim-signing.js
 import { claimsOf } from "@/lib/timesheet/claim-signing";
@@ -228,7 +230,14 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   const refuses = preview && !rehearsal;
   const act = (real) => (refuses ? refuse : real);
 
-  const openCorrections = ts.corrections.filter((c) => c.status === "open");
+  // THE REPORTS STILL WAITING ON PAYROLL hold everything (Mánu 2026-09-25):
+  // the flow's sent list, the Generate band, the signer, and the server
+  // behind the signer read the one filter. Status alone, never the claim
+  // stage - day-program time off must never block.
+  const openCorrections = openReports(ts.corrections);
+  const reportsPending = openCorrections.length > 0;
+  // what payroll decided per day, for the rail's badge and word
+  const decidedByDate = decidedReportsByDate(ts.corrections);
 
   // WHERE THIS PERSON'S PREMIUM ACTUALLY STANDS. The same function the email
   // and the PDF read, so the three cannot tell three different stories - which
@@ -692,7 +701,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
   // say which stage this person is at.
   const isDayProgram = ts.batch.program === "DP";
   const displayedDays = isDayProgram ? reviewDays(ts.data.days, ts.batch.periodFrom, ts.batch.periodTo) : ts.data.days;
-  const readyToGenerate = progress.settled && gate.canSign && breakAsks.length === 0;
+  const readyToGenerate = progress.settled && gate.canSign && breakAsks.length === 0 && !reportsPending;
 
   // WHAT THE REVIEWER CARD CALLS THEM: the export's "Uribe, Brandon" flipped
   // to First Last per the staff-name rule, and the first name alone for the
@@ -902,7 +911,11 @@ export default async function SignTimesheetPage({ params, searchParams }) {
           <ReviewFlow reports={
             <ReportProblem token={token} days={ts.data?.days || []}
               period={{ from: ts.batch.periodFrom, to: ts.batch.periodTo }}
-              submitAction={act(submitTimesheetCorrections)} />
+              submitAction={act(submitTimesheetCorrections)}
+              /* in Live the office can accept what it just sent right here -
+                 the action is office-only either way, see acceptReportsNow */
+              live={live} employeeName={reviewerName}
+              acceptAction={act(acceptReportsNow)} />
           }>
           <ReviewStage name="days">
           {/* TWO ARRANGEMENTS OF THE SAME QUESTIONS. "Day by day" walks the
@@ -927,6 +940,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
+                decided={decidedByDate}
                 submitAction={act(live ? answerAsThem : answerTimesheetQuestion)}
                 /* ONE PER VIOLATION, ON ITS OWN DAY. These rendered as a single
                    lump below everything, attached to nothing - a reason about
@@ -972,6 +986,7 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                 waiting={deps.waiting}
                 disturbs={deps.disturbs}
                 standing={standing}
+                decided={decidedByDate}
                 submitAction={act(live ? answerAsThem : answerTimesheetQuestion)}
                 breakAsks={breakAsks}
                 breakAction={act(answerBreakReason)}
@@ -1149,7 +1164,10 @@ export default async function SignTimesheetPage({ params, searchParams }) {
                count is this person's own. */
             unansweredOptional={gate.optionalOpen}
             premiumOnSheet={standing.charged}
-            canSign={progress.settled && gate.canSign && breakAsks.length === 0}
+            canSign={progress.settled && gate.canSign && breakAsks.length === 0 && !reportsPending}
+            // a report still waiting on payroll holds the band with its own
+            // line, whatever the question count says
+            reportsPending={reportsPending}
             // a COUNT, not a list - see TimesheetSigner. `signingGate` returns 0
             // by design since the sheet became signable at any time, so this is
             // the only thing that can put a number in it.

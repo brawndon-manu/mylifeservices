@@ -72,7 +72,9 @@ test("only an unresolved report is ever in hand", () => {
   // the flow is seeded from the page's OPEN corrections, so an accepted claim -
   // which has already become the day's own hours - cannot strike anything
   assert.match(page, /initialReports=\{openCorrections\}/);
-  assert.match(page, /const openCorrections = ts\.corrections\.filter\(\(c\) => c\.status === "open"\);/);
+  // open REPORTS - status alone, and never an answer row or the time-off
+  // answer, which is what holds the document now (2026-09-25)
+  assert.match(page, /const openCorrections = openReports\(ts\.corrections\);/);
 });
 
 test("an accepted report becomes the day's hours, which is why open-only is right", () => {

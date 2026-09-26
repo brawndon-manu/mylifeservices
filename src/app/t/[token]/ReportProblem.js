@@ -11,7 +11,7 @@
 // happens to pay more without noticing it doesn't describe their day.
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useReviewFlow } from "./ReviewFlow";
+import { useReviewFlow, REPORTS_PENDING } from "./ReviewFlow";
 import { CORRECTION_KINDS, addsWorkHours, correctionNoteProblem, ADDED_HOURS_REASON } from "@/lib/timesheet/corrections";
 import { kindsForDay } from "@/lib/timesheet/report-kinds";
 // the attestation covers the tens now - see rest-attestation.js
@@ -31,13 +31,24 @@ import {
   clockLabel,
   kindTakesSlots,
   readSlot,
+  slotHours,
   MAX_SLOTS,
 } from "@/lib/timesheet/work-slots";
 
 
 const fmt = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
+// "Thu, Jul 16" from the sheet's own "07/16/26", for the Live offer's lines
+const shortDay = (date) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(date || "");
+  if (!m) return date;
+  return new Date(2000 + Number(m[3]), Number(m[1]) - 1, Number(m[2]))
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+};
 
-export default function ReportProblem({ token, days, submitAction, period = null }) {
+// `live`, `employeeName`, `acceptAction`: Live only. Office staff who send a
+// report from somebody's page get the offer to accept it on the spot, so the
+// sheet can be generated straight away - see acceptReportsNow.
+export default function ReportProblem({ token, days, submitAction, period = null, live = false, employeeName = null, acceptAction = null }) {
   const flow = useReviewFlow();
   const [open, setOpen] = useState(false);
   const [localItems, setLocalItems] = useState([]);
@@ -51,7 +62,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
   // 2026-09-02: accepted, "Adds a 8.00 hr day", and 88 stayed 88.
   const [newDayDate, setNewDayDate] = useState("");
   const [kind, setKind] = useState("hours");
-  const [hours, setHours] = useState("");
   const [times, setTimes] = useState([]);
   // THE WHOLE DAY, NOT THE DIFFERENCE. An hours claim carries every work slot
   // for the day, unchanged ones included, so payroll gets a day it can rebuild
@@ -61,6 +71,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
+  // Live's offer to accept what was just sent: { ids, items } while it stands
+  const [offer, setOffer] = useState(null);
 
   const NEW_DAY = "__new__";
   const NO_DAY = "__sheet__";
@@ -91,6 +103,12 @@ export default function ReportProblem({ token, days, submitAction, period = null
   }
 
   const takesSlots = kindTakesSlots(activeKind);
+  // THE DAY'S HOURS ARE THE SLOTS ADDED UP, never typed (Mánu 2026-09-25).
+  // Every kind that asks for hours takes slots, so the figure is read off
+  // them: the box that used to hold it is gone, and the total cannot
+  // disagree with the slots under it.
+  const slotTotal = takesSlots ? slotHours(slots) : null;
+  const hours = slotTotal == null ? "" : String(slotTotal);
   const slotCheck = takesSlots ? checkWorkSlots(slots, hours) : null;
   const addingHours = activeKind === "day_missing"
     || addsWorkHours(activeKind, day, hours)
@@ -112,7 +130,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
       setDate(item && !item.date ? NO_DAY : recorded ? chosen : NEW_DAY);
       setNewDayDate(recorded ? "" : chosen || "");
       setKind(nextKind);
-      setHours(item?.claimedHours != null ? String(item.claimedHours) : recorded ? fmt(recorded.paidHours) : "");
       setSlots(item?.slots ? item.slots.map((slot) => ({ ...slot })) : slotsForDay(nextKind, recorded));
       setTimes(item?.times || []);
       setNote(item?.note || "");
@@ -120,6 +137,8 @@ export default function ReportProblem({ token, days, submitAction, period = null
       setError(null);
       setOpen(true);
     },
+    // the floating bar's Cancel, while the form is open
+    cancel,
   }));
 
   function cancel() {
@@ -153,7 +172,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
       }
     }
     if (meta?.asksHours && !hours) {
-      setError("Let us know how many hours, so payroll knows what to check.");
+      setError("Add the day's work slots, so payroll knows what to check.");
       return;
     }
     if (timeSlots > 0) {
@@ -192,7 +211,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
     }
     setItems((prev) => editingIndex == null ? [...prev, item] : prev.map((old, i) => i === editingIndex ? item : old));
     if (flow) cancel();
-    setHours("");
     setTimes([]);
     setSlots([]);
     setNote("");
@@ -208,7 +226,12 @@ export default function ReportProblem({ token, days, submitAction, period = null
     setBusy(true);
     try {
       const res = await submitAction({ token, items: payload });
-      if (res?.ok) { setDone(true); flow?.setReported(true); }
+      if (res?.ok) {
+        setDone(true);
+        flow?.setReported(true);
+        // Live: the office can accept what it just sent, right here
+        if (live && acceptAction && Array.isArray(res.ids) && res.ids.length) setOffer({ ids: res.ids, items: payload });
+      }
       else setError(messageFor(res));
     } catch {
       setError("Something went wrong sending that. Please try again.");
@@ -217,19 +240,67 @@ export default function ReportProblem({ token, days, submitAction, period = null
     }
   }
 
+  // ACCEPT NOW, from Live (Mánu 2026-09-25, the mock's fourth frame). The same
+  // decision the desk would make, made from the page the report was sent
+  // from; the sheet rebuilds and this tab follows it like any decision.
+  async function acceptNow() {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await acceptAction({ token, ids: offer.ids });
+      if (res?.ok) { setOffer(null); setDone(false); }
+      else setError(res?.error === "changed"
+        ? "These reports have already been decided. Reload the page to see where they stand."
+        : "Something went wrong accepting that. Please try again.");
+    } catch {
+      setError("Something went wrong accepting that. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (offer) {
+    return (
+      <div className="mt-6 rounded-xl bg-surface px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+        <p className="text-sm font-semibold text-foreground">Accept these changes now?</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-muted">
+          You are in Live on {employeeName || "this person"}&apos;s timesheet. Accepting applies the changes now, so their timesheet can be generated.
+        </p>
+        <ul className="mt-3 divide-y divide-sep">
+          {offer.items.map((item, i) => {
+            const before = days.find((d) => d.date === item.date) || null;
+            return (
+              <li key={i} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 text-[13px]">
+                <span className="font-semibold text-foreground">{item.date ? shortDay(item.date) : "This timesheet"}</span>
+                <span className="text-muted">
+                  {CORRECTION_KINDS[item.kind]?.label}
+                  {item.claimedHours != null && <> · <span className={`tabular-nums text-foreground ${reviewStyles.hours}`}>{fmt(before?.paidHours)} → {fmt(item.claimedHours)}</span> hrs</>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <button type="button" onClick={acceptNow} disabled={busy} className="min-h-[44px] rounded-[9px] bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? "Accepting..." : "Accept now"}</button>
+          <button type="button" onClick={() => setOffer(null)} disabled={busy} className="min-h-[44px] text-sm text-muted disabled:opacity-50">Leave it for review</button>
+        </div>
+        {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+      </div>
+    );
+  }
+
   if (done) {
     return (
       <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
         <p className="text-sm font-semibold text-foreground">
           Thanks - payroll has been told.
         </p>
-        {/* A REPORTED SHEET IS SIGNABLE (Mánu 2026-09-09): what they reported
-            goes on page 2 of the pending document, and they sign that. The old
-            sentence told them not to sign, which is now the opposite of the
-            flow. */}
+        {/* A REPORTED SHEET WAITS FOR PAYROLL (Mánu 2026-09-25, his words),
+            going back on the 09-09 pending document this line used to
+            describe: nothing signs until the reports are decided, and the
+            email says when. The same sentence holds the Generate band. */}
         <p className="mt-1 text-[13px] leading-relaxed text-muted">
-          What you reported goes on page 2 of your timesheet. Sign it there,
-          and payroll decides after.
+          {REPORTS_PENDING}
         </p>
       </div>
     );
@@ -298,7 +369,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
             // was "When did you work?" over nothing at all.
             const first = days.find((d) => d.date === date) || null;
             setSlots(slotsForDay(kind, first));
-            if (kindTakesSlots(kind)) setHours(first ? fmt(first.paidHours) : "");
             setOpen(true);
           }}
           className="inline-flex min-h-[44px] items-center gap-2 rounded text-sm font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
@@ -388,7 +458,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
               const nextDay = days.find((d) => d.date === next) || null;
               const nextKind = available.includes(kind) ? kind : "hours";
               setSlots(slotsForDay(nextKind, nextDay));
-              if (kindTakesSlots(nextKind)) setHours(nextDay ? fmt(nextDay.paidHours) : "");
             }}
             className="rounded-[9px] border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-faint focus:outline-2 focus:-outline-offset-1 focus:outline-brand"
           >
@@ -446,7 +515,6 @@ export default function ReportProblem({ token, days, submitAction, period = null
                   setKind(k);
                   setError(null);
                   setSlots(slotsForDay(k, day));
-                  if (kindTakesSlots(k) && !hours) setHours(day ? fmt(day.paidHours) : "");
                 }}
                 className="mt-1"
               />
@@ -516,7 +584,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
             {/* THE DAY'S TOTAL, on its own fill row. The figure is the anchor
                 and the slots underneath have to agree with it. */}
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-[10px] bg-fill px-4 py-4">
-              <label htmlFor="rp-hours" className="grid gap-1">
+              <div className="grid gap-1">
                 <span className="text-sm font-semibold text-foreground">
                   {takesSlots ? "The day's work hours" : meta.hint}
                 </span>
@@ -527,20 +595,14 @@ export default function ReportProblem({ token, days, submitAction, period = null
                       ? `${fmt(day.paidHours)} hours recorded now.`
                       : meta.hoursHelp}
                 </span>
-              </label>
-              <div className="flex shrink-0 items-center gap-2 text-[12.5px] text-muted">
-                {/* spinner arrows are killed site-wide in globals.css */}
-                <input
-                  id="rp-hours"
-                  type="number"
-                  inputMode="decimal"
-                  step="any"
-                  min="0"
-                  max="24"
-                  value={hours}
-                  onChange={(e) => setHours(e.target.value)}
-                  className={`w-24 rounded-[9px] border border-border bg-surface px-3 py-2 text-right text-lg tabular-nums text-foreground focus:outline-2 focus:-outline-offset-1 focus:outline-brand ${reviewStyles.hours}`}
-                />
+              </div>
+              {/* THE TOTAL OF THE SLOTS BELOW, not a box (Mánu 2026-09-25):
+                  it follows the times as they are typed, and a dash until
+                  one slot reads */}
+              <div className="flex shrink-0 items-baseline gap-2 text-[12.5px] text-muted">
+                <span data-slot-total className={`text-2xl font-medium tabular-nums text-foreground ${reviewStyles.hours}`}>
+                  {slotTotal == null ? "—" : fmt(slotTotal)}
+                </span>
                 <span>hrs</span>
               </div>
             </div>

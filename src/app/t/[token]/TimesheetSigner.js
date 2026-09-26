@@ -6,7 +6,7 @@
 // in the browser. only the submit target differs (a timesheet row, not a
 // FormSubmission), so we adapt the payload here rather than fork the filler.
 import { useEffect, useRef, useState } from "react";
-import { useReviewFlow } from "./ReviewFlow";
+import { useReviewFlow, REPORTS_PENDING } from "./ReviewFlow";
 import FormFiller from "@/app/portal/forms/[id]/fill/FormFiller";
 
 const f2 = (n) => (Math.round((n || 0) * 100) / 100).toFixed(2);
@@ -17,6 +17,10 @@ export default function TimesheetSigner({
   // on their sheet. Both are theirs, not the batch's.
   unansweredOptional = 0,
   premiumOnSheet = 0,
+  // A REPORT STILL WAITING ON PAYROLL (Mánu 2026-09-25): the band holds with
+  // his line instead of a question count. The server's reports come in here;
+  // one this tab just sent is on the flow.
+  reportsPending = false,
   // WHETHER THE SIGN CONTROLS SHOW. The document itself always does now - the
   // people who cannot sign yet are exactly the people being asked to check
   // something on it, so hiding it from them was backwards.
@@ -75,7 +79,9 @@ export default function TimesheetSigner({
   // render it here and mobile browsers routinely refuse inline PDFs, which is
   // most of the staff. FormFiller's pdf.js viewer already works everywhere, so
   // the document is drawn by the same code either way.
-  const gated = !canSign;
+  const flow = useReviewFlow();
+  const pending = reportsPending || !!flow?.reported;
+  const gated = !canSign || pending;
 
   // THE DOCUMENT IS NOT DRAWN UNTIL THEY ASK FOR IT, 2026-08-14.
   //
@@ -97,7 +103,6 @@ export default function TimesheetSigner({
   // thing this person did in this tab, and it resets when they reload. Nothing
   // is stored by pressing it.
   const [generated, setGenerated] = useState(false);
-  const flow = useReviewFlow();
   const reportGenerated = flow?.setGenerated;
   useEffect(() => { reportGenerated?.(generated); }, [generated, reportGenerated]);
 
@@ -110,11 +115,13 @@ export default function TimesheetSigner({
         <div className="min-w-0">
           <p className="text-[15px] font-semibold text-foreground">Next: your timesheet</p>
           <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
-            {gated
-              ? blocking === 1
-                ? "Answer the last question to generate your document."
-                : `Answer the remaining ${blocking} questions to generate your document.`
-              : "Everything is answered - your timesheet is ready. Check it over, then sign at the bottom."}
+            {pending
+              ? REPORTS_PENDING
+              : gated
+                ? blocking === 1
+                  ? "Answer the last question to generate your document."
+                  : `Answer the remaining ${blocking} questions to generate your document.`
+                : "Everything is answered - your timesheet is ready. Check it over, then sign at the bottom."}
           </p>
         </div>
         <button

@@ -22,6 +22,9 @@ export const useReviewFlow = () => useContext(ReviewContext);
 // what the page says while questions are still open: the reports step's hold
 // line, and the strip of days under the day list. one sentence, said once.
 export const REMAINING_QUESTIONS = "Answer the remaining questions to generate your document.";
+// and while a report waits on payroll (Mánu 2026-09-25, his words): on the
+// Generate band, on the panel after Send reports, and on the footer's hold
+export const REPORTS_PENDING = "Your reported issues are pending. You'll get an email once payroll has decided.";
 const button = "min-h-[44px] rounded-[9px] bg-fill px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40";
 
 // THE STATE, LIFTED OUT OF THE VISUALS - 2026-09-17.
@@ -86,9 +89,12 @@ export function ReviewProvider({
     setEditorTarget(target);
     reportRef.current?.start(date, index);
   }
-  // drafts must be sent before the document generates; sent ones do not hold it
+  // drafts must be sent before the document generates, and sent ones hold it
+  // until payroll decides (Mánu 2026-09-25, going back on the 09-09 pending
+  // document) - `ready` already knows about the reports the server holds,
+  // `reported` covers the ones this tab just sent
   const draftsUnsent = items.length > 0 && !reported;
-  const canGenerate = ready && !editorTarget && !draftsUnsent;
+  const canGenerate = ready && !editorTarget && !draftsUnsent && !reported;
   // WHY THE FOOTER IS HELD, said above the buttons. Mánu 2026-09-09: he added a
   // report on the 3rd, pressed Next without sending it, and found Next dead on
   // the PTO step with the reason printed under the fold. The reports step holds
@@ -103,6 +109,7 @@ export function ReviewProvider({
   const hold = editorTarget ? "Add this report or cancel it before continuing."
     : leaveEditing ? "Save your answer or cancel before continuing."
     : draftsUnsent && stage !== "days" ? "Review and send your reports before generating your timesheet."
+    : reported && stage !== "days" ? REPORTS_PENDING
     : (stage === "leave" || (!leave && stage === "reports")) && !ready ? REMAINING_QUESTIONS
     : null;
   // the strip: four steps with the leave stage, three without; the step after
@@ -228,8 +235,15 @@ export function DayReport({ date, navigation, note = null, floats = true }) {
           the one thing on it somebody reaches for mid-calendar. every width now,
           lined up with the day column on a wider screen. */}
       <div data-day-bar className={`flex items-center justify-between gap-3 ${floats ? styles.dayBar : "mt-3"}`}>
-        <button type="button" disabled={!!flow.editorTarget || flow.reported}
-          onClick={() => flow.report(date)} className="min-h-[44px] shrink-0 text-[13px] font-medium text-accent disabled:opacity-40">Report a problem</button>
+        <span className="flex shrink-0 items-center gap-4">
+          <button type="button" disabled={!!flow.editorTarget || flow.reported}
+            onClick={() => flow.report(date)} className="min-h-[44px] shrink-0 text-[13px] font-medium text-accent disabled:opacity-40">Report a problem</button>
+          {/* the way out of the form, on the bar too (Mánu 2026-09-25): the
+              form's own Cancel sits at its foot, under the screen when the
+              form is tall */}
+          {flow.editorTarget && <button type="button" onClick={() => flow.reportRef.current?.cancel()}
+            className="min-h-[44px] shrink-0 text-[13px] font-medium text-muted">Cancel</button>}
+        </span>
         {navigation}
       </div>
     </div>

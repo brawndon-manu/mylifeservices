@@ -135,6 +135,24 @@ export function checkWorkSlots(rawSlots, claimedHours) {
 // does this kind of correction carry a full day of slots?
 export const kindTakesSlots = (kind) => kind === "hours" || kind === "day_missing";
 
+// THE DAY'S HOURS ARE THE SLOTS ADDED UP (Mánu 2026-09-25): the figure on the
+// report form is read off the slots, never typed, so it cannot disagree with
+// them. Readable slots only, each ending after it starts; null while nothing
+// readable is there yet.
+export function slotHours(rawSlots) {
+  let minutes = 0;
+  let any = false;
+  for (const raw of rawSlots || []) {
+    const { from, to } = readSlot(raw);
+    const a = from == null ? null : toMin(from);
+    const b = to == null ? null : toMin(to);
+    if (a == null || b == null || b <= a) continue;
+    minutes += b - a;
+    any = true;
+  }
+  return any ? r2(minutes / 60) : null;
+}
+
 // A BREAK RECORD AGAINST A CORRECTED CLOCK.
 //
 // A stored day's `breaks` are the GAPS BETWEEN ITS PUNCHES - analyzeDay walks

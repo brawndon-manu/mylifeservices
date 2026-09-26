@@ -58,6 +58,12 @@
   color: var(--status-caution);
 }
 
+/* a day payroll changed on an accepted report: the badge where the check was,
+   and the word under the hours */
+.approved {
+  color: var(--status-positive);
+}
+
 /* THE STRIP OF DAYS UNDER THE DAY LIST, one pill a day with the rail's own mark.
    a day still owing an answer is amber: the caution wash with its ink leaning a
    fifth toward the text colour, the same pairing as the Reported problems count,

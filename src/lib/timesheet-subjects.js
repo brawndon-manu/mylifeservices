@@ -57,3 +57,11 @@ export function correctionAlertSubject({ employeeName, redirectedFrom = null }) 
     ? `[TEST -> ${redirectedFrom}] ${employeeName} reported a timesheet problem`
     : `${employeeName} reported a problem with their timesheet`;
 }
+
+// THE FIFTH ONE TO AN EMPLOYEE: payroll has decided on what they reported
+// (Mánu 2026-09-25: "you will receive a new email based on the decisions
+// made"). The subject is the bell's own title, so the inbox and the portal say
+// the same thing; a rehearsal or test send keeps the prefix like every other.
+export function decisionSubject({ title, redirectedFrom = null }) {
+  return redirectedFrom ? `[TEST -> ${redirectedFrom}] ${title}` : title;
+}

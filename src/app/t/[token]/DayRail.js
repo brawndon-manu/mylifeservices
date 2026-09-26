@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CircleAlert, Flag } from "lucide-react";
+import { Check, CircleAlert, CircleCheck, Flag } from "lucide-react";
 import { reportedReviewDay } from "@/lib/timesheet/review-days";
 import styles from "./ReviewFlow.module.css";
 import { useReviewFlow, REMAINING_QUESTIONS } from "./ReviewFlow";
@@ -161,6 +161,7 @@ export default function DayRail({ days, children, stacked = false }) {
                 <span className={`block text-[11.5px] ${styles.hours} ${on ? "" : "text-faint"}`}>
                   {display.paidHours.toFixed(2)} hrs{display.reviewReported ? " reported" : ""}
                 </span>
+                <DecisionWord {...status} />
               </span>
               <StatusMark {...status} />
               <StatusWords {...status} flow={flow} />
@@ -246,7 +247,13 @@ function railStatus(d, readyOn, flow) {
   const needsAnswer = !!d.needs && !d.done;
   const reviewed = !needsAnswer && (d.done || walked);
   const hasReport = !!flow?.items.some((item) => item.date === d.date);
-  return { needsAnswer, hasReport, reviewed };
+  // WHAT PAYROLL DECIDED ON THIS DAY (Mánu 2026-09-25, his pick "C"): an
+  // accepted report changed the day, so it gets the badge and "Approved"
+  // instead of a walk check; a declined one changed nothing, so the day keeps
+  // its walk check with "Not approved" under the hours
+  const approved = d.decided === "approved";
+  const denied = d.decided === "denied";
+  return { needsAnswer, hasReport, reviewed, approved, denied };
 }
 
 // STATUS FIRST: green is a day with nothing on it, yellow is a day with
@@ -255,12 +262,15 @@ function railStatus(d, readyOn, flow) {
 // beside a check. a quiet day's check stays light until they have been through
 // it, because "nothing flagged" only means our checks found nothing - the hours
 // are theirs to look at
-function StatusMark({ needsAnswer, hasReport, reviewed }) {
+function StatusMark({ needsAnswer, hasReport, reviewed, approved = false }) {
   return (
     <span aria-hidden="true" className="flex flex-none items-center gap-1.5">
       {needsAnswer && <CircleAlert size={16} className={styles.issue} />}
       {hasReport && <Flag size={15} className={styles.issue} />}
-      {!needsAnswer && !hasReport && (
+      {/* the approved badge where the check was - no walk check on a day
+          payroll changed */}
+      {!needsAnswer && !hasReport && approved && <CircleCheck size={17} className={styles.approved} />}
+      {!needsAnswer && !hasReport && !approved && (
         <span className={`flex h-4 w-4 items-center justify-center rounded-full ${reviewed ? styles.reviewed : styles.quiet}`}>
           <Check size={reviewed ? 11 : 10} strokeWidth={3} />
         </span>
@@ -269,14 +279,23 @@ function StatusMark({ needsAnswer, hasReport, reviewed }) {
   );
 }
 
-// and the same status in words, for a screen reader
-function StatusWords({ needsAnswer, hasReport, reviewed, flow }) {
+// and the same status in words, for a screen reader. an approved day says
+// its word in plain sight under the hours, so nothing is added here
+function StatusWords({ needsAnswer, hasReport, reviewed, approved = false, flow }) {
   return (
     <span className="sr-only">
-      {needsAnswer ? "Needs answers" : hasReport ? "" : reviewed ? "Reviewed" : "Nothing to check"}
+      {needsAnswer ? "Needs answers" : hasReport || approved ? "" : reviewed ? "Reviewed" : "Nothing to check"}
       {hasReport ? `${needsAnswer ? " · " : ""}${flow.reported ? "Awaiting payroll" : "Report added"}` : ""}
     </span>
   );
+}
+
+// the word under the hours on a day payroll decided on: the told-us panel's
+// own two words, the approved one in the badge's colour
+function DecisionWord({ approved, denied }) {
+  if (approved) return <span className={`block text-[11.5px] font-semibold ${styles.approved}`}>Approved</span>;
+  if (denied) return <span className="block text-[11.5px] text-muted">Not approved</span>;
+  return null;
 }
 
 // THE DAYS STILL TO ANSWER, UNDER THE DAY LIST. it went away with the Save my

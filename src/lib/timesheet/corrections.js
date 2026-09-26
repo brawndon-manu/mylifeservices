@@ -560,6 +560,41 @@ export function hasOpenCorrections(corrections) {
   return (corrections || []).some((c) => c.status === "open");
 }
 
+// A REPORT ROW, as against an answer to one of the page's own questions
+// (`q_...`) or the day program's time-off answer. The same filter the
+// office's Reported problems tab runs in the database (REPORT_ROWS).
+export function isReportRow(c) {
+  const kind = String(c?.kind || "");
+  return !kind.startsWith("q_") && kind !== "time_off";
+}
+
+// THE REPORTS PAYROLL HAS NOT DECIDED YET - the only rows that hold the
+// document now (Mánu 2026-09-25, going back on the 09-09 pending document:
+// "a reported issue stops Generate until payroll decides"). Status alone,
+// never the claim stage: a day-program time-off claim waiting on the calendar
+// must never hold anything.
+export function openReports(corrections) {
+  return (corrections || []).filter((c) => c.status === "open" && isReportRow(c));
+}
+
+// WHAT PAYROLL DECIDED PER DAY, for the day rail: "approved" once any report
+// on that day was accepted, "denied" when its only decisions were declines,
+// nothing while a report on it is still open or the day was never reported.
+// Read from the report rows, not the day's `corrected` flag - an answer sets
+// that too.
+export function decidedReportsByDate(corrections) {
+  const out = {};
+  const open = new Set();
+  for (const c of corrections || []) {
+    if (!c?.date || !isReportRow(c)) continue;
+    if (c.status === "open") open.add(c.date);
+    else if (c.status === "accepted") out[c.date] = "approved";
+    else if (c.status === "declined" && out[c.date] !== "approved") out[c.date] = "denied";
+  }
+  for (const date of open) delete out[date];
+  return out;
+}
+
 // WHAT THEY TOLD US, IN WORDS THEY CAN READ BACK.
 //
 // `resolutionNote` on the correction row is payroll's audit note. It is written

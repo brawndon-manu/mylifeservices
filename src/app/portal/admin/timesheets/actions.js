@@ -95,7 +95,9 @@ import {
   reviewerSettledDates,
   MISC_PATCH_FIELDS,
   recomputeSheet,
+  openReports,
 } from "@/lib/timesheet/corrections";
+import { sendDecisionEmail } from "@/lib/timesheet-decision-email";
 
 async function requireTimesheetAccess() {
   const user = await getCurrentUser();
@@ -2584,7 +2586,15 @@ export async function submitTimesheetCorrections({ token, items }) {
   });
 
   revalidatePath(`/portal/admin/timesheets/${ts.batchId}`);
-  return { ok: true };
+  // THE ROWS JUST WRITTEN, by id, for Live's offer to accept them on the spot
+  // (acceptReportsNow). createMany hands no ids back, and the sheet had none
+  // open a moment ago (refused above), so the open rows now are these.
+  const written = await prisma.timesheetCorrection.findMany({
+    where: { timesheetId: ts.id, status: "open" },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return { ok: true, ids: written.map((r) => r.id) };
 }
 
 // accept or decline one reported problem. accepting stores a per-day override;
@@ -2604,9 +2614,12 @@ export async function resolveCorrection(correctionId, decision, formData) {
       timesheet: {
         select: {
           id: true, batchId: true, data: true, overrides: true,
-          // for the decision on their signature and the bell that tells them
+          // for the decision on their signature, the bell that tells them and
+          // the email that rides with it (the address, the name, and where a
+          // rehearsal batch's mail may go)
           userId: true, signedAt: true, signedClaim: true,
-          batch: { select: { periodFrom: true, periodTo: true, program: true } },
+          user: { select: { email: true, name: true, preferredFirstName: true, preferredLastName: true } },
+          batch: { select: { periodFrom: true, periodTo: true, program: true, testOnly: true, testEmail: true } },
         },
       },
     },
@@ -2707,6 +2720,36 @@ export async function resolveCorrection(correctionId, decision, formData) {
   await bumpBatchVersion(c.timesheet.batchId);
 }
 
+// ACCEPT WHAT WAS JUST SENT, FROM LIVE (Mánu 2026-09-25): office staff who
+// report something on somebody's sheet in Live are the people who would
+// decide it, so the page offers to accept it right there and the sheet can
+// be generated without a trip to the Reported problems page. Every report
+// goes through the same resolveCorrection a desk decision does - same
+// override, same rebuild, same bell and email once the last one lands - and
+// none of this is open to the employee's own page: requireTimesheetAccess
+// refuses anybody outside the office before a row is read. The ids have to
+// be the ones the send handed back, all still open on the sheet the token
+// names; anything else means the desk got there first.
+export async function acceptReportsNow({ token, ids }) {
+  await requireTimesheetAccess();
+  const { verifyTimesheetToken } = await import("@/lib/timesheet-token");
+  const id = verifyTimesheetToken(token);
+  if (!id) return { ok: false, error: "auth" };
+  // the office is never held to a link's life, so this only keeps the rule
+  // that every token opened here is asked whether it is still open
+  if (!(await timesheetLinkOpen(id))) return { ok: false, error: "expired" };
+  const wanted = Array.isArray(ids) ? ids.map(String).slice(0, 40) : [];
+  if (!wanted.length) return { ok: false, error: "empty" };
+  const rows = await prisma.timesheetCorrection.findMany({
+    where: { id: { in: wanted }, timesheetId: id, status: "open" },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (rows.length !== wanted.length) return { ok: false, error: "changed" };
+  for (const r of rows) await resolveCorrection(r.id, "accepted", null);
+  return { ok: true, accepted: rows.length };
+}
+
 // THE LAST DECISION WITHOUT A REBUILD. Nothing accepted since the last rebuild
 // means the figures are what they are - the decisions alone settle the
 // signature: a claim declined or changed clears it, granted keeps it. Also the
@@ -2718,7 +2761,8 @@ export async function settleDecidedSheet(timesheetId) {
     where: { id: timesheetId },
     select: {
       id: true, userId: true, signedAt: true, signedClaim: true, data: true,
-      batch: { select: { periodFrom: true, periodTo: true, program: true } },
+      user: { select: { email: true, name: true, preferredFirstName: true, preferredLastName: true } },
+      batch: { select: { periodFrom: true, periodTo: true, program: true, testOnly: true, testEmail: true } },
     },
   });
   if (!sheet) return null;
@@ -2759,21 +2803,26 @@ async function ringDecision(sheet, signature, claims) {
     .filter((c) => c.status === "declined")
     .map((c) => `${c.date || "This timesheet"}: not approved${c.resolutionNote ? ` - ${c.resolutionNote}` : ""}.`);
   const notes = declined.length ? ` ${declined.join(" ")}` : "";
+  // the sentence twice: the bell's copy carries the office's notes on a
+  // declined report, the email's does not - see sendDecisionEmail
   let title;
   let body;
+  let plain;
   if (signature?.keep) {
     title = "Timesheet approved as reported";
-    body = `Payroll approved the changes you reported on your ${period} timesheet. Your signature stands.`;
+    body = plain = `Payroll approved the changes you reported on your ${period} timesheet. Your signature stands.`;
   } else if (!signature || signature.why === "unsigned") {
     title = "Your timesheet is ready to sign";
     body = `Payroll decided on the changes you reported on your ${period} timesheet.${notes} Open it to review and sign.`;
+    plain = `Payroll decided on the changes you reported on your ${period} timesheet. Open it to review and sign.`;
   } else if (signature.why === "otherDaysMoved") {
     const dates = (signature.moved || []).map((m) => m.date).join(", ");
     title = "Your timesheet needs a new signature";
-    body = `Payroll approved the changes you reported on your ${period} timesheet, and rebuilding it also changed ${dates}. Open it to review and sign the updated copy.`;
+    body = plain = `Payroll approved the changes you reported on your ${period} timesheet, and rebuilding it also changed ${dates}. Open it to review and sign the updated copy.`;
   } else {
     title = "Your timesheet needs a new signature";
     body = `Payroll decided on the changes you reported on your ${period} timesheet, and not everything was approved as reported.${notes} Open it to review and sign the updated copy.`;
+    plain = `Payroll decided on the changes you reported on your ${period} timesheet, and not everything was approved as reported. Open it to review and sign the updated copy.`;
   }
   try {
     await prisma.notification.create({
@@ -2781,6 +2830,26 @@ async function ringDecision(sheet, signature, claims) {
     });
   } catch (e) {
     console.error(`decision bell failed for timesheet ${sheet.id}:`, e);
+  }
+  // AND THE EMAIL, Mánu 2026-09-25: the bell only rang inside the portal, and
+  // the people this is for are the ones whose sheet is held until they hear.
+  // Same title, same sentence, same link. Best effort like the bell: a mail
+  // that fails to send never undoes the decision.
+  if (sheet.user?.email) {
+    try {
+      const base = process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
+      const sent = await sendDecisionEmail({
+        intendedEmail: sheet.user.email,
+        employeeName: preferredName(sheet.user) || sheet.user.name || "there",
+        title,
+        body: plain,
+        signUrl: `${base}/t/${signTimesheetToken(sheet.id)}`,
+        forceTo: batchForceTo(sheet.batch),
+      });
+      if (!sent?.ok) console.error(`decision email not sent for timesheet ${sheet.id}: ${sent?.error}`);
+    } catch (e) {
+      console.error(`decision email failed for timesheet ${sheet.id}:`, e);
+    }
   }
 }
 
@@ -5094,6 +5163,12 @@ export async function submitSignedTimesheet({ token, pdfBase64, signedName }) {
   // the office hold stays - same shape: the page states it and drops the
   // signer, and this is the rule behind the suggestion. See holdTimesheetSigning.
   if (ts.heldAt) return { ok: false, error: "held" };
+  // AND A REPORTED SHEET IS HELD AGAIN (Mánu 2026-09-25): a reported issue
+  // stops the document until payroll decides, so nothing signs over an open
+  // report. The page states it and never draws the signer; this is the rule
+  // behind that. Open REPORTS only - status, never the claim stage - so a
+  // day-program time-off claim waiting on the calendar holds nothing.
+  if (openReports(ts.corrections).length) return { ok: false, error: "reported" };
   const decided = ts.corrections.filter((c) => c.status !== "open");
   if (typeof pdfBase64 !== "string" || pdfBase64.length < 100) return { ok: false, error: "nofile" };
   if (pdfBase64.length > 8_000_000) return { ok: false, error: "toobig" };

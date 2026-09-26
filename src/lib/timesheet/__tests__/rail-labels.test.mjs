@@ -45,9 +45,10 @@ test("an owed answer shows the warning, and only an owed answer", () => {
 
 test("a reported day shows the flag alone, never a check beside it", () => {
   assert.match(src, /\{hasReport && <Flag size=\{15\} className=\{styles\.issue\} \/>\}/);
-  assert.match(src, /\{!needsAnswer && !hasReport && \(/);
+  // and never beside the approved badge either (2026-09-25)
+  assert.match(src, /\{!needsAnswer && !hasReport && !approved && \(/);
   // read aloud as the report, not as "Reviewed" and the report
-  assert.match(src, /\{needsAnswer \? "Needs answers" : hasReport \? "" : reviewed \? "Reviewed" : "Nothing to check"\}/);
+  assert.match(src, /\{needsAnswer \? "Needs answers" : hasReport \|\| approved \? "" : reviewed \? "Reviewed" : "Nothing to check"\}/);
   assert.match(src, /\$\{needsAnswer \? " · " : ""\}\$\{flow\.reported \? "Awaiting payroll" : "Report added"\}/);
 });
 
