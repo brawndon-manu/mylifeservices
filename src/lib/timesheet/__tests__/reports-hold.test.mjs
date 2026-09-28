@@ -74,7 +74,8 @@ test("the page reads the one filter, and both gates and the strip's readiness ca
 test("the flow holds Generate on a sent report and says why in the footer", () => {
   assert.match(flow, /export const REPORTS_PENDING = "Your reported issues are pending\. You'll get an email once payroll has decided\.";/);
   assert.match(flow, /const canGenerate = ready && !editorTarget && !draftsUnsent && !reported;/);
-  assert.match(flow, /: reported && stage !== "days" \? REPORTS_PENDING\n/);
+  // said once: right after a send the reports step's thanks card carries it
+  assert.match(flow, /: reported && stage !== "days" && !\(stage === "reports" && justSent\) \? REPORTS_PENDING\n/);
 });
 
 test("the Generate band holds with his line, for the server's reports and for one this tab just sent", () => {

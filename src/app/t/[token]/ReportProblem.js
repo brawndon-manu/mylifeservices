@@ -177,6 +177,12 @@ export default function ReportProblem({ token, days, submitAction, period = null
   // page its top is brought up under the header - and only when it is not
   // already sitting in the top part of the screen.
   const editorRef = useRef(null);
+  // the reports step's error, centred rather than at the edge the send bar covers
+  const errorRef = useRef(null);
+  const onReports = flow?.stage === "reports";
+  useEffect(() => {
+    if (onReports && error) errorRef.current?.scrollIntoView({ block: "center" });
+  }, [onReports, error]);
   const editorTarget = flow?.editorTarget || null;
   useEffect(() => {
     if (!open || !editorTarget) return;
@@ -259,6 +265,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
       if (res?.ok) {
         setDone(true);
         flow?.setReported(true);
+        flow?.setJustSent?.(true);
         // Live: the office can accept what it just sent, right here
         if (live && acceptAction && Array.isArray(res.ids) && res.ids.length) setOffer({ ids: res.ids, items: payload });
         // the page's own rows take over from the drafts - see ToldUsPanel
@@ -324,40 +331,58 @@ export default function ReportProblem({ token, days, submitAction, period = null
     );
   }
 
-  if (done) {
-    return (
-      <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
-        <p className="text-sm font-semibold text-foreground">
-          Thanks - payroll has been told.
-        </p>
-        {/* A REPORTED SHEET WAITS FOR PAYROLL (Mánu 2026-09-25, his words),
-            going back on the 09-09 pending document this line used to
-            describe: nothing signs until the reports are decided, and the
-            email says when. The same sentence holds the Generate band. */}
-        <p className="mt-1 text-[13px] leading-relaxed text-muted">
-          {REPORTS_PENDING}
-        </p>
-      </div>
-    );
-  }
+  const thanks = (
+    <div className="amber-tint-card mt-6 rounded-xl px-5 py-4 shadow-sm night:ring-1 night:ring-border">
+      <p className="text-sm font-semibold text-foreground">
+        Thanks - payroll has been told.
+      </p>
+      {/* A REPORTED SHEET WAITS FOR PAYROLL (Mánu 2026-09-25, his words),
+          going back on the 09-09 pending document this line used to
+          describe: nothing signs until the reports are decided, and the
+          email says when. The same sentence holds the Generate band. */}
+      <p className="mt-1 text-[13px] leading-relaxed text-muted">
+        {REPORTS_PENDING}
+      </p>
+    </div>
+  );
+  // on the reports step the thanks sits over the list of what was sent - see
+  // below; anywhere else it is the whole of what this shows after a send
+  if (done && flow?.stage !== "reports") return thanks;
 
   if (flow?.stage === "reports") {
+    // NOT SENT IS SAID OUT LOUD (Mánu 2026-09-27, the mock's D, his words): a
+    // list that read "Review these" with a small grey "Not sent" under each
+    // report looked finished. the heading names the one thing left, a box says
+    // they are not sent and what waits on them, and each report carries its
+    // state beside its date. the send rides the bottom of the screen and
+    // the way back moves up here - see ReviewFlow
+    const unsent = items.length > 0 && !flow.reported;
     return (
       <section className="mt-7">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Your reports</h2>
+        {unsent && <button type="button" onClick={() => flow.go("days")} className="mb-1 min-h-[44px] text-[13px] font-medium text-accent">‹ Back</button>}
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">{unsent ? "Send your reports" : "Your reports"}</h2>
         {/* THE LINE HAS TO SAY THE TRUE THING IN BOTH CASES - Mánu 2026-09-16,
             on an ILS sheet of his own: it named a step ILS does not have (the
             PTO stage is the day program's alone since 7581540), and under an
             empty list "review these" sat above "No problems reported", which he
             read as off. Empty says so and stops; a list says what comes next,
             and what comes next depends on the program. Wording his. */}
-        <p className="mt-2 text-sm text-muted">
-          {items.length === 0
-            ? "Nothing reported on this timesheet."
-            : flow?.leave
-              ? "Review these before moving to PTO & sick pay."
-              : "Review these before you generate your document."}
-        </p>
+        {items.length === 0
+          ? <p className="mt-2 text-sm text-muted">Nothing reported on this timesheet.</p>
+          : unsent && <p className="mt-2 text-sm text-muted">Check them, then send them to payroll.</p>}
+        {unsent && (
+          <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+            <p className="text-[14px] font-semibold text-amber-800 dark:text-amber-200">
+              {items.length === 1 ? "This report is not sent yet" : `These ${items.length} reports are not sent yet`}
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
+              {items.length === 1 ? "Payroll won't see it until you send it." : "Payroll won't see them until you send them."} Your timesheet waits until payroll has decided.
+            </p>
+          </div>
+        )}
+        {/* the thanks once, over what was sent: the footer's pending line
+            stays quiet while it shows */}
+        {done && thanks}
         <ul className="mt-5 divide-y divide-sep">
           {items.map((item, index) => {
             const before = days.find((day) => day.date === item.date);
@@ -367,7 +392,16 @@ export default function ReportProblem({ token, days, submitAction, period = null
             return (
               <li key={index} className="py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div><h3 className="font-medium text-foreground">{item.date || "This timesheet"}</h3><p className="mt-1 text-sm text-muted">{CORRECTION_KINDS[item.kind]?.label}</p></div>
+                  <div>
+                    <h3 className="font-medium text-foreground">
+                      {item.date || "This timesheet"}
+                      {/* the day card's own two words for the same state, by the date */}
+                      <span className={`ml-2 inline-flex rounded-full px-2 py-0.5 align-middle text-[11px] ${flow.reported ? "bg-fill font-medium text-muted" : "bg-amber-500/15 font-semibold text-amber-700 dark:text-amber-300"}`}>
+                        {flow.reported ? "Awaiting payroll" : "Not sent"}
+                      </span>
+                    </h3>
+                    <p className="mt-1 text-sm text-muted">{CORRECTION_KINDS[item.kind]?.label}</p>
+                  </div>
                   {/* a report already sent is payroll's now - nothing here can
                       edit or take it back, so the list stops offering to */}
                   {!flow.reported && (
@@ -383,15 +417,15 @@ export default function ReportProblem({ token, days, submitAction, period = null
                   : !changes && minuteSlots.length > 0 && <p className="mt-2 text-sm text-muted">{minuteSlots.map((slot) => `${clockLabel(slot.from)} to ${clockLabel(slot.to)}`).join(", ")}</p>}
                 {!!item.times?.length && <p className="mt-2 text-sm text-muted">{item.times.map((time) => formatTimeDisplay(parseLooseTime(time, { assumeWorkday: true }))).join(", ")}</p>}
                 {item.note && <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{item.note}</p>}
-                {/* the day card's own two words for the same state */}
-                <p className="mt-2 text-xs text-muted">{flow.reported ? "Awaiting payroll" : "Not sent"}</p>
               </li>
             );
           })}
         </ul>
-        {/* no Send button here: it stands in Next's place in the footer, the
-            one thing left to press on this step - see ReviewFlow */}
-        {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+        {/* no Send button here: it rides the bar at the bottom of the screen,
+            the one thing left to press on this step - see ReviewFlow. a send
+            that fails says so here, brought into view from wherever the list
+            was scrolled when the bar was pressed */}
+        {error && <p ref={errorRef} role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
       </section>
     );
   }

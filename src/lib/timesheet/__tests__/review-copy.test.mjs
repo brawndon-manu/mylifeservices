@@ -16,14 +16,15 @@ const src = fs.readFileSync(new URL("../../../app/t/[token]/ReportProblem.js", i
 const flow = fs.readFileSync(new URL("../../../app/t/[token]/ReviewFlow.js", import.meta.url), "utf8");
 
 test("an empty list says so and says nothing else", () => {
-  assert.match(src, /items\.length === 0\s*\n?\s*\? "Nothing reported on this timesheet\."/);
+  assert.match(src, /items\.length === 0\s*\n?\s*\? <p className="mt-2 text-sm text-muted">Nothing reported on this timesheet\.<\/p>/);
   // the old second line is gone, or the panel says it twice
   assert.doesNotMatch(src, /No problems reported\./);
 });
 
-test("a list points at the step that actually comes next, per program", () => {
-  assert.match(src, /flow\?\.leave\s*\n?\s*\? "Review these before moving to PTO & sick pay\."/);
-  assert.match(src, /: "Review these before you generate your document\."/);
+test("a list not sent says what is left, the same in both programs: check them and send them", () => {
+  // Mánu 2026-09-27: the step that comes next is the send, whichever program
+  assert.match(src, /: unsent && <p className="mt-2 text-sm text-muted">Check them, then send them to payroll\.<\/p>\}/);
+  assert.doesNotMatch(src, /Review these before moving to PTO & sick pay\.|Review these before you generate your document\./);
 });
 
 test("the panel can tell the two programs apart, or it would guess", () => {

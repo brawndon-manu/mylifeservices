@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { CORRECTION_KINDS } from "@/lib/timesheet/corrections";
 import { reportedReviewDay, dayChipLabel } from "@/lib/timesheet/review-days";
 // the engine's own overtime split, in a file a browser can import - see overtime.js
@@ -81,6 +81,9 @@ export function ReviewProvider({
   const [allWalked, setAllWalked] = useState(false);
   // a send in flight, so the footer's Send reports can say so - see ReportProblem
   const [sending, setSending] = useState(false);
+  // a send that went through in this tab: the reports step shows its thanks
+  // card then, which already says what the footer's pending line would
+  const [justSent, setJustSent] = useState(false);
   const reportRef = useRef(null);
   const targets = useRef(new Map());
   const headingRef = useRef(null);
@@ -104,6 +107,15 @@ export function ReviewProvider({
   // `reported` covers the ones this tab just sent
   const draftsUnsent = items.length > 0 && !reported;
   const canGenerate = ready && !editorTarget && !draftsUnsent && !reported;
+  // DRAFTS LIVE IN THIS TAB ALONE until they are sent, so closing or leaving
+  // the page with one unsent loses it. the browser asks first (its own words),
+  // and only while there is something to lose
+  useEffect(() => {
+    if (readOnly || !draftsUnsent) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [readOnly, draftsUnsent]);
   // WHY THE FOOTER IS HELD, said above the buttons. Mánu 2026-09-09: he added a
   // report on the 3rd, pressed Next without sending it, and found Next dead on
   // the PTO step with the reason printed under the fold. The reports step holds
@@ -118,7 +130,7 @@ export function ReviewProvider({
   const hold = editorTarget ? "Add this report or cancel it before continuing."
     : leaveEditing ? "Save your answer or cancel before continuing."
     : draftsUnsent && stage !== "days" ? "Review and send your reports before generating your timesheet."
-    : reported && stage !== "days" ? REPORTS_PENDING
+    : reported && stage !== "days" && !(stage === "reports" && justSent) ? REPORTS_PENDING
     : (stage === "leave" || (!leave && stage === "reports")) && !ready ? REMAINING_QUESTIONS
     : null;
   // the strip: four steps with the leave stage, three without; the step after
@@ -140,7 +152,7 @@ export function ReviewProvider({
   const value = enabled ? { stage, go, items, setItems, reported, setReported, readOnly, leave,
     generated, setGenerated, editorTarget, setEditorTarget, activeDate,
     reportRef, targets, report, leaveEditing, setLeaveEditing, leaveBusy, setLeaveBusy,
-    allWalked, setAllWalked, sending, setSending,
+    allWalked, setAllWalked, sending, setSending, justSent, setJustSent,
     // what the strip and the footer draw from, so the visuals hold no rules
     enabled, ready, openDays, draftsUnsent, canGenerate, hold, askingDays, openDay,
     steps, stripClass, afterReports, generateStep, current, headingRef } : null;
@@ -186,7 +198,22 @@ export default function ReviewFlow({ children, reports }) {
       )}
       {children}
       <div hidden={enabled && stage !== "reports"}>{reports}</div>
-      {enabled && !readOnly && (stage !== "days" || hold) && (
+      {/* THE REPORTS STEP'S SEND RIDES THE BOTTOM OF THE SCREEN (Mánu
+          2026-09-27, the mock's D): where Next sat on every day, so however
+          long the list runs the one thing left to press is in reach. the way
+          back is at the top of the list while this holds the bottom */}
+      {enabled && !readOnly && sendHere && (
+        <div data-send-bar className={`flex items-center justify-between gap-3 ${styles.dayBar} ${styles.sendBar}`}>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-semibold text-amber-700 dark:text-amber-300">{items.length} not sent</span>
+            <span className="block text-[11.5px] text-muted">{items.length === 1 ? "Send it to payroll to finish." : "Send them to payroll to finish."}</span>
+          </span>
+          <button type="button" className={`${button} ${styles.primary} shrink-0`}
+            disabled={!!editorTarget || sending}
+            onClick={() => reportRef.current?.send()}>{sending ? "Sending..." : "Send reports"}</button>
+        </div>
+      )}
+      {enabled && !readOnly && !sendHere && (stage !== "days" || hold) && (
         <div className="mt-6 border-t border-sep pt-5">
           {hold && <p className="mb-3 text-xs text-muted">
             {hold}
@@ -209,9 +236,6 @@ export default function ReviewFlow({ children, reports }) {
           {stage !== "days" && <div className="flex items-center justify-between gap-3">
             <button type="button" className={button} disabled={!!editorTarget || leaveEditing || leaveBusy}
               onClick={() => go(stage === "reports" ? "days" : stage === "leave" ? "reports" : leave ? "leave" : "reports")}>Back</button>
-            {sendHere && <button type="button" className={`${button} ${styles.primary}`}
-              disabled={!!editorTarget || sending}
-              onClick={() => reportRef.current?.send()}>{sending ? "Sending..." : "Send reports"}</button>}
             {!noNext && <button type="button" className={`${button} ${styles.primary}`}
               disabled={!!editorTarget || leaveEditing || leaveBusy || (stage === "reports" && (draftsUnsent || (!leave && !canGenerate))) || (stage === "leave" && !canGenerate)}
               onClick={() => go(stage === "reports" ? afterReports : "document")}>Next</button>}

@@ -38,7 +38,9 @@ test("the one send stays the reports page's, and it refreshes the page so the se
   assert.match(report, /\n\s*send,\n\s*\}\)\);/);
   const callers = (flow.match(/reportRef\.current\?\.send\(\)/g) || []).length;
   assert.equal(callers, 1, "one place presses send");
-  assert.match(flow, /\{sendHere && <button type="button" className=\{`\$\{button\} \$\{styles\.primary\}`\}\n\s*disabled=\{!!editorTarget \|\| sending\}\n\s*onClick=\{\(\) => reportRef\.current\?\.send\(\)\}>\{sending \? "Sending\.\.\." : "Send reports"\}<\/button>\}/);
+  // the one press is on the send bar at the bottom of the screen (the mock's D)
+  assert.match(flow, /\{enabled && !readOnly && sendHere && \(\n\s*<div data-send-bar className=\{`flex items-center justify-between gap-3 \$\{styles\.dayBar\} \$\{styles\.sendBar\}`\}>/);
+  assert.match(flow, /<button type="button" className=\{`\$\{button\} \$\{styles\.primary\} shrink-0`\}\n\s*disabled=\{!!editorTarget \|\| sending\}\n\s*onClick=\{\(\) => reportRef\.current\?\.send\(\)\}>\{sending \? "Sending\.\.\." : "Send reports"\}<\/button>/);
   assert.match(flow, /const sendHere = stage === "reports" && draftsUnsent;/);
   // the list itself keeps no Send of its own
   const list = report.slice(report.indexOf('if (flow?.stage === "reports") {'), report.indexOf("if (flow && !open) return null;"));

@@ -310,6 +310,16 @@
   }
 }
 
+/* THE REPORTS STEP'S SEND BAR is the day bar, lined up with the page's own
+   column instead: that step has no day rail beside it. after the rules above,
+   so it wins at every width they set */
+@media (min-width: 768px) {
+  .sendBar {
+    left: calc(max(0px, (100% - 72rem) / 2) + 1.5rem);
+    right: calc(max(0px, (100% - 72rem) / 2) + 1.5rem);
+  }
+}
+
 /* AND ROOM AT THE END OF THE PAGE, so the last thing on it can scroll clear of
    the bar instead of ending up under it: the bar (62px), the gap below it and a
    little air. only while a floating bar is on the page - the day cards leave the
