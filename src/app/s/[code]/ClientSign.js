@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import SignaturePad from "@/app/portal/forms/[id]/fill/SignaturePad";
 import { SIGNER_KINDS, signerIsPresent } from "@/lib/clock-amendment/rules";
 
@@ -40,7 +39,6 @@ function deviceId() {
 }
 
 export default function ClientSign({ code, view, clientSignByCode }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
   const [kind, setKind] = useState("client");
@@ -56,7 +54,9 @@ export default function ClientSign({ code, view, clientSignByCode }) {
       let res = null;
       try { res = await clientSignByCode(code, { signerKind: kind, signerName: name, signaturePng: png, deviceId: deviceId() }); }
       catch { res = null; }
-      if (res?.ok) { setErr(null); setSigned(true); router.refresh(); }
+      // no refresh: the page re-read now is the "already been confirmed" note,
+      // which swapped this thank-you out before anyone could read it
+      if (res?.ok) { setErr(null); setSigned(true); }
       else setErr(ERRORS[res?.error] || ERRORS.failed);
     });
   };

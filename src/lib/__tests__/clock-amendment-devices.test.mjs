@@ -65,6 +65,16 @@ test("the client-only route is its own door: the code is the credential, the day
   assert.match(read("src/proxy.js"), /pathname\.startsWith\("\/s\/"\)/);
 });
 
+test("once the person served signs, their thank-you stays on the screen: the page is not re-read under it", () => {
+  const sign = read("src/app/s/[code]/ClientSign.js");
+  // a re-read page is the "already been confirmed" note, which swapped the
+  // thank-you out before it could be read
+  assert.match(sign, /if \(res\?\.ok\) \{ setErr\(null\); setSigned\(true\); \}/);
+  assert.doesNotMatch(sign, /router\.refresh\(\)/);
+  assert.match(sign, /Thank you\. The visit is confirmed\./);
+  assert.match(read("src/app/s/[code]/page.js"), /This visit has already been confirmed\. Thank you\./);
+});
+
 test("the staff half mints the code when it signs, and the hand-off says it was the staff member's phone", () => {
   const actions = read("src/app/ca/[token]/actions.js");
   assert.match(actions, /await mintClientCode\(a\.id\);\s*return \{ ok: true \};/);
