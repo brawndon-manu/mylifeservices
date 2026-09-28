@@ -8,10 +8,10 @@ import { clientSignByCode } from "./actions";
 // THE CLIENT HALF OF A CLOCK AMENDMENT, ON THE PERSON SERVED'S OWN PHONE.
 //
 // opened by scanning the code on the staff member's screen, or by typing the
-// short link under it, or from the link emailed to a representative. it holds
-// one question: did this visit happen. no login, no portal, nothing of the
-// staff member's half to edit. the code is the credential and it dies with
-// the California day it was minted in.
+// short link under it, or from the emailed link. it holds one question: did
+// this visit happen. no login, no portal, nothing of the staff member's half
+// to edit. the code is the credential: the screen's dies with the California
+// day it was minted in, the emailed one after 7 days.
 //
 // outside /portal so the proxy does not bounce it, and listed with the other
 // share links so a maintenance window does not either.
@@ -31,8 +31,8 @@ export default async function ClientSignPage({ params }) {
   const { code: raw } = await params;
   const code = normalizeCode(raw);
   const a = code
-    ? await prisma.clockAmendment.findUnique({
-      where: { clientCode: code },
+    ? await prisma.clockAmendment.findFirst({
+      where: { OR: [{ clientCode: code }, { clientEmailCode: code }] },
       include: { staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } } },
     })
     : null;
@@ -41,7 +41,12 @@ export default async function ClientSignPage({ params }) {
   if (!a.filledAt) return <Note>This form is not ready yet: the staff member signs first.</Note>;
   if (clientStage(a) !== "waiting") return <Note>This visit has already been confirmed. Thank you.</Note>;
   const staffName = preferredName(a.staff) || a.staff?.name || "the staff member";
-  if (codeExpired(a.clientCodeExpiresAt)) {
+  // whoever came by the emailed link is not in the room to be shown a new code
+  const byEmail = a.clientEmailCode === code;
+  if (byEmail && codeExpired(a.clientEmailCodeExpiresAt)) {
+    return <Note>This link has expired. Ask {staffName} to email you a new one.</Note>;
+  }
+  if (!byEmail && codeExpired(a.clientCodeExpiresAt)) {
     return <Note>This code has expired. Ask {staffName} to show a new one on their screen.</Note>;
   }
 

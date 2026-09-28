@@ -50,15 +50,17 @@ async function storeSignature(id, dataUrl) {
 export async function clientSignByCode(rawCode, payload) {
   const code = normalizeCode(rawCode);
   if (!code) return { ok: false, error: "notfound" };
-  const a = await prisma.clockAmendment.findUnique({
-    where: { clientCode: code },
-    select: { id: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true, clientCodeExpiresAt: true, clientLinkEmailedAt: true },
+  // the code on the staff member's screen, or the emailed link's own code
+  const a = await prisma.clockAmendment.findFirst({
+    where: { OR: [{ clientCode: code }, { clientEmailCode: code }] },
+    select: { id: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true, clientCode: true, clientCodeExpiresAt: true, clientEmailCode: true, clientEmailCodeExpiresAt: true },
   });
   if (!a) return { ok: false, error: "notfound" };
+  const byEmail = a.clientEmailCode === code;
   if (a.approvedAt) return { ok: false, error: "approved" };
   if (!a.filledAt) return { ok: false, error: "unsigned" };
   if (a.clientSignedAt || a.clientUnavailableReason) return { ok: false, error: "done" };
-  if (codeExpired(a.clientCodeExpiresAt)) return { ok: false, error: "expired" };
+  if (codeExpired(byEmail ? a.clientEmailCodeExpiresAt : a.clientCodeExpiresAt)) return { ok: false, error: "expired" };
 
   // only somebody present signs here; "nobody was available" is the staff
   // member's to record, on their own screen
@@ -78,9 +80,9 @@ export async function clientSignByCode(rawCode, payload) {
       clientSignedIp: await callerIp(),
       clientSignedUa: await callerUa(),
       clientSignedDevice: deviceOf(payload),
-      // from the emailed link when one was sent, otherwise the code scanned
-      // or typed in the room: either way their own device
-      clientSignedVia: a.clientLinkEmailedAt ? "email" : "own",
+      // from the emailed link when that is the code they came by, otherwise
+      // the code scanned or typed in the room: either way their own device
+      clientSignedVia: byEmail ? "email" : "own",
       clientSignatureUrl: signatureUrl,
     },
   });

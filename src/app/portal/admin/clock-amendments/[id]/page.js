@@ -13,6 +13,7 @@ import {
 import ApproveForm from "./ApproveForm";
 import { approveAmendment, chaseAmendment, deleteRehearsal, sendRehearsalTo, resetRehearsal } from "./actions";
 import { fileHref } from "@/lib/blob-paths";
+import { codeExpired } from "@/lib/clock-amendment/client-code";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock addendum", robots: { index: false, follow: false } };
@@ -24,6 +25,8 @@ const when = (d) => {
     timeZone: COMPANY_TZ, month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit",
   }).format(new Date(d));
 };
+// the day alone, for the last day an emailed link works
+const day = (d) => (d ? new Intl.DateTimeFormat("en-US", { timeZone: COMPANY_TZ, month: "2-digit", day: "2-digit", year: "2-digit" }).format(new Date(d)) : "");
 
 // one answer, with what the office had on the call beside it when they changed it
 function Row({ label, value, correction }) {
@@ -126,6 +129,13 @@ export default async function ClockAmendmentPage({ params }) {
         ) : cs === "unavailable" ? (
           <p className="mt-2 text-[13px] leading-relaxed text-muted">
             <b className="font-semibold text-rose-700 dark:text-rose-300">Nobody was available to sign.</b> {a.clientUnavailableReason}
+          </p>
+        ) : a.clientEmailCode && a.clientLinkEmailedAt ? (
+          // the link went by email: where, when, and until when it works
+          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+            {codeExpired(a.clientEmailCodeExpiresAt)
+              ? <>Not collected yet. The link emailed to {a.clientLinkEmail} on {when(a.clientLinkEmailedAt)} has expired.</>
+              : <>Not collected yet. The link was emailed to {a.clientLinkEmail} on {when(a.clientLinkEmailedAt)}. It works until {day(a.clientEmailCodeExpiresAt)}.</>}
           </p>
         ) : (
           <p className="mt-2 text-[13px] leading-relaxed text-muted">Not collected yet. They sign on their own phone from the code on the staff member&apos;s screen, right after the staff signature.</p>

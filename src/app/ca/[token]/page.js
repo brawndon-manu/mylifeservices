@@ -8,7 +8,7 @@ import { missingPunchText, intakeOf, confirmedOf, startingTimes, clientStage, fo
 import AmendmentCard from "@/components/clock-amendment/AmendmentCard";
 import AmendmentSign from "./AmendmentSign";
 import { confirmAndSign, clientSign, clientHalfStatus, refreshClientCode, emailClientLink } from "./actions";
-import { formatCode, codeExpired } from "@/lib/clock-amendment/client-code";
+import { formatCode, codeExpired, untilLabel } from "@/lib/clock-amendment/client-code";
 
 // THE FORM, OPENED FROM THE EMAIL, WITH OR WITHOUT A LOGIN. the signed token
 // is the credential and it opens exactly this one amendment for exactly the
@@ -73,7 +73,10 @@ export default async function AmendmentFromLinkPage({ params }) {
     clientCode: a.clientCode ? formatCode(a.clientCode) : null,
     clientLink: a.clientCode ? `${process.env.AUTH_URL || "https://www.mylifeservicesinc.com"}/s/${a.clientCode}` : null,
     codeExpired: codeExpired(a.clientCodeExpiresAt),
+    // the emailed link: where it last went, and the day it works until
     clientLinkEmail: a.clientLinkEmail || null,
+    clientLinkUntil: a.clientEmailCode ? untilLabel(a.clientEmailCodeExpiresAt) : null,
+    clientLinkExpired: a.clientEmailCode ? codeExpired(a.clientEmailCodeExpiresAt) : false,
   };
 
   return (

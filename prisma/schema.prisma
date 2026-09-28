@@ -2677,9 +2677,9 @@ model ClockAmendment {
   // the person served signs on their own phone by scanning a code (or typing
   // the short link) that opens a client-only page. `clientSignedVia` says which
   // way the signature came: "own" from their own device, "staff" handed the
-  // staff member's phone, "email" from a link sent to a representative. the
-  // browser and a device id kept in that phone's storage sit beside each
-  // signature's IP, because two phones on one Wi-Fi share an address.
+  // staff member's phone, "email" from the emailed link. the browser and a
+  // device id kept in that phone's storage sit beside each signature's IP,
+  // because two phones on one Wi-Fi share an address.
   clientCode          String?   @unique
   clientCodeExpiresAt DateTime?
   clientSignedVia     String?
@@ -2689,6 +2689,10 @@ model ClockAmendment {
   filledDevice        String?
   clientLinkEmail     String?
   clientLinkEmailedAt DateTime?
+  // the emailed link's own code, apart from the one on the screen: a fresh
+  // code there never kills it, and it lives 7 days, restarted by every send
+  clientEmailCode          String?   @unique
+  clientEmailCodeExpiresAt DateTime?
 
   approvedAt     DateTime?
   approvedById   String?

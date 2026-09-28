@@ -241,6 +241,7 @@ export async function resetRehearsal(id) {
       clientSigner: null, clientSignerKind: null, clientSignedAt: null, clientSignedIp: null, clientSignedUa: null,
       clientSignedDevice: null, clientSignedVia: null, clientSignatureUrl: null, clientUnavailableReason: null,
       clientCode: null, clientCodeExpiresAt: null, clientLinkEmail: null, clientLinkEmailedAt: null,
+      clientEmailCode: null, clientEmailCodeExpiresAt: null,
       approvedAt: null, approvedById: null, approvalNote: null, qspFixedAt: null, qspFixedIn: null, qspFixedTo: null, qspFixedBy: null,
       pdfUrl: null, pdfHash: null, mailedAt: null, chasedAt: null, chaseCount: 0,
     },

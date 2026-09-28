@@ -183,11 +183,13 @@ export async function sendAmendmentDocument({
   return { ok: true, sentTo: [...sentTo].join(", "), redirected };
 }
 
-// THE CLIENT LINK, to a parent or representative who is not in the room: the
-// same client-only page the code on the staff member's screen opens, sent by
-// mail instead. through the same lock as the form, so off the real deployment
-// it is redirected like the rest, and a rehearsal forces it to one inbox.
-export function buildClientSignEmailHtml({ staffName, clientName, date, link, redirectedFrom = null }) {
+// THE CLIENT LINK, to the person served or someone who speaks for them when
+// they are not in the room: the same client-only page the code on the staff
+// member's screen opens, sent by mail instead, and good for 7 days (`until`
+// is the last day, "Sunday, October 4"). through the same lock as the form, so
+// off the real deployment it is redirected like the rest, and a rehearsal
+// forces it to one inbox.
+export function buildClientSignEmailHtml({ staffName, clientName, date, link, until, redirectedFrom = null }) {
   const bodyHtml = `
     ${testBanner(redirectedFrom)}
     <p style="margin:0 0 14px;color:#0f172a;font-size:15px;">Hello,</p>
@@ -197,7 +199,7 @@ export function buildClientSignEmailHtml({ staffName, clientName, date, link, re
       served, or someone who can speak for them, to confirm the visit happened by signing.
     </p>
     <p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6;">
-      The link opens a short page: say who you are, type your name and sign with your finger. It works today only.
+      The link opens a short page: say who you are, type your name and sign with your finger. It works until ${esc(until)}.
     </p>
     <div style="margin:22px 0 8px;"><a href="${esc(link)}" style="${BTN}">Confirm the visit</a></div>
     <p style="margin:14px 0 0;color:#8a93a0;font-size:12px;line-height:1.6;">
@@ -206,7 +208,7 @@ export function buildClientSignEmailHtml({ staffName, clientName, date, link, re
   return buildTimesheetShell({ title: "Please confirm a visit", bodyHtml, eyebrow: "Timekeeping" });
 }
 
-export async function sendClientSignLink({ intendedEmail, forceTo = null, staffName, clientName, date, link }) {
+export async function sendClientSignLink({ intendedEmail, forceTo = null, staffName, clientName, date, link, until }) {
   if (!intendedEmail) return { ok: false, error: "norecipient" };
   const from = fromAddress();
   if (!from || !process.env.RESEND_API_KEY) return { ok: false, error: "config" };
@@ -214,11 +216,11 @@ export async function sendClientSignLink({ intendedEmail, forceTo = null, staffN
   if (!to.length) return { ok: false, error: "norecipient" };
   const redirectedFrom = redirected ? intendedEmail : null;
   const subject = clientSignSubject({ staffName, clientName: initialsOf(clientName), date, redirectedFrom });
-  const html = buildClientSignEmailHtml({ staffName, clientName, date, link, redirectedFrom });
+  const html = buildClientSignEmailHtml({ staffName, clientName, date, link, until, redirectedFrom });
   const text = [
     redirected ? `*** TEST SEND - this was meant for ${intendedEmail} ***\n` : "",
     `${staffName} has recorded a visit with ${initialsOf(clientName)} on ${date} that the clock did not capture properly.`,
-    `Please confirm the visit happened by signing at the link below. It works today only.`,
+    `Please confirm the visit happened by signing at the link below. It works until ${until}.`,
     ``,
     `Confirm the visit: ${link}`,
   ].join("\n");

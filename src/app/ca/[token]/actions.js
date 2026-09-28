@@ -8,7 +8,7 @@ import { hasBlobStorage, putBlob } from "@/lib/blob";
 import { verifyAmendmentToken } from "@/lib/clock-amendment/token";
 import { isSignerKind, signerIsPresent, asksStart, asksEnd, asksPlace, firstLast, confirmedOf } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf, isTime } from "@/lib/clock-amendment/typed-time";
-import { codeFromBytes, codeExpiry, codeExpired, formatCode, CODE_LENGTH } from "@/lib/clock-amendment/client-code";
+import { codeFromBytes, codeExpiry, codeExpired, formatCode, CODE_LENGTH, emailLinkExpiry, untilLabel } from "@/lib/clock-amendment/client-code";
 import { sendClientSignLink } from "@/lib/clock-amendment/email";
 import { preferredName } from "@/lib/contacts";
 
@@ -43,20 +43,26 @@ const deviceOf = (payload) => {
 const BASE = () => process.env.AUTH_URL || "https://www.mylifeservicesinc.com";
 
 // a fresh code for the client half, unique across the table, good until the
-// end of the California day
-async function mintClientCode(id) {
+// end of the California day. the screen's code and the emailed one open the
+// same page, so a draw is checked against both columns (each column's own
+// unique index only guards itself)
+async function mintCode(id, column, expiresAt) {
   for (let i = 0; i < 6; i++) {
     const code = codeFromBytes(randomBytes(CODE_LENGTH));
+    const taken = await prisma.clockAmendment.findFirst({ where: { OR: [{ clientCode: code }, { clientEmailCode: code }] }, select: { id: true } });
+    if (taken) continue;
     try {
-      await prisma.clockAmendment.update({ where: { id }, data: { clientCode: code, clientCodeExpiresAt: codeExpiry() } });
+      await prisma.clockAmendment.update({ where: { id }, data: { [column]: code, [`${column}ExpiresAt`]: expiresAt } });
       return code;
     } catch (e) {
-      // another row holds this code: draw again
+      // another row took this code in between: draw again
       if (e?.code !== "P2002") throw e;
     }
   }
   return null;
 }
+
+const mintClientCode = (id) => mintCode(id, "clientCode", codeExpiry());
 
 // a drawn signature arrives as a png data url from the pad. stored as a file
 // where there is a store, and inline where there is not, so a laptop with no
@@ -87,7 +93,8 @@ async function open(token) {
     select: {
       id: true, filledAt: true, approvedAt: true, clientSignedAt: true, clientUnavailableReason: true,
       clockedIn: true, clockedOut: true, scheduledIn: true, scheduledOut: true, clockRow: true,
-      clientCode: true, clientCodeExpiresAt: true, clientName: true, shiftDate: true, testOnly: true, demo: true,
+      clientCode: true, clientCodeExpiresAt: true, clientEmailCode: true, clientEmailCodeExpiresAt: true,
+      clientName: true, shiftDate: true, testOnly: true, demo: true,
       actualIn: true, actualOut: true, intakeActualIn: true, intakeActualOut: true,
       recipient: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
       staff: { select: { name: true, preferredFirstName: true, preferredLastName: true } },
@@ -174,8 +181,11 @@ export async function refreshClientCode(token) {
   return { ok: true, code: formatCode(code), link: `${BASE()}/s/${code}` };
 }
 
-// THE LINK BY EMAIL, to a parent or representative who is not in the room.
-// the same code and the same page; a code past its day is replaced first.
+// THE LINK BY EMAIL, to the person served or someone who speaks for them,
+// when they are not in the room. the same page as the code on the screen, but
+// its own code: a fresh code on the screen never kills it, and it lives 7
+// days. sending again sends the same link and starts its 7 days over, so the
+// date every email gave stays true; one past its life is replaced.
 export async function emailClientLink(token, email) {
   const a = await open(token);
   if (!a) return { ok: false, error: "notfound" };
@@ -184,10 +194,16 @@ export async function emailClientLink(token, email) {
   if (a.clientSignedAt || a.clientUnavailableReason) return { ok: false, error: "done" };
   const to = str(email, 200);
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { ok: false, error: "email" };
-  let code = a.clientCode;
-  if (!code || codeExpired(a.clientCodeExpiresAt)) code = await mintClientCode(a.id);
+  const expiresAt = emailLinkExpiry();
+  let code = a.clientEmailCode;
+  if (code && !codeExpired(a.clientEmailCodeExpiresAt)) {
+    await prisma.clockAmendment.update({ where: { id: a.id }, data: { clientEmailCodeExpiresAt: expiresAt } });
+  } else {
+    code = await mintCode(a.id, "clientEmailCode", expiresAt);
+  }
   if (!code) return { ok: false, error: "failed" };
   const c = confirmedOf(a);
+  const until = untilLabel(expiresAt);
   const sent = await sendClientSignLink({
     intendedEmail: to,
     // a rehearsal's mail goes to whoever raised it and nowhere else; a demo's
@@ -197,10 +213,11 @@ export async function emailClientLink(token, email) {
     clientName: firstLast(a.clientName) || "the person served",
     date: a.shiftDate,
     link: `${BASE()}/s/${code}`,
+    until,
   });
   if (!sent.ok) return { ok: false, error: "send" };
   await prisma.clockAmendment.update({ where: { id: a.id }, data: { clientLinkEmail: to, clientLinkEmailedAt: new Date() } });
-  return { ok: true, sentTo: sent.sentTo, redirected: !!sent.redirected, unusedTimes: !!c };
+  return { ok: true, sentTo: sent.sentTo, redirected: !!sent.redirected, unusedTimes: !!c, until };
 }
 
 // STEP TWO ON THE STAFF MEMBER'S PHONE: the hand-off, kept as the fallback

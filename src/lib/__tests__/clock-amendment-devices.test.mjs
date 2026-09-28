@@ -51,14 +51,15 @@ test("the device line reads the browser and the kind of device, and says how the
 
 test("the client-only route is its own door: the code is the credential, the day is the limit, nobody absent signs there", () => {
   const actions = read("src/app/s/[code]/actions.js");
-  assert.match(actions, /where: \{ clientCode: code \}/);
-  assert.match(actions, /if \(codeExpired\(a\.clientCodeExpiresAt\)\) return \{ ok: false, error: "expired" \}/);
+  // the screen's code or the emailed one (clock-amendment-email-link.test.mjs)
+  assert.match(actions, /where: \{ OR: \[\{ clientCode: code \}, \{ clientEmailCode: code \}\] \}/);
+  assert.match(actions, /if \(codeExpired\(byEmail \? a\.clientEmailCodeExpiresAt : a\.clientCodeExpiresAt\)\) return \{ ok: false, error: "expired" \}/);
   assert.match(actions, /if \(!isSignerKind\(kind\) \|\| !signerIsPresent\(kind\)\) return \{ ok: false, error: "kind" \}/);
-  assert.match(actions, /clientSignedVia: a\.clientLinkEmailedAt \? "email" : "own"/);
+  assert.match(actions, /clientSignedVia: byEmail \? "email" : "own"/);
   assert.match(actions, /clientSignedUa: await callerUa\(\)/);
   assert.match(actions, /clientSignedDevice: deviceOf\(payload\)/);
   const page = read("src/app/s/[code]/page.js");
-  assert.match(page, /if \(codeExpired\(a\.clientCodeExpiresAt\)\)/);
+  assert.match(page, /if \(!byEmail && codeExpired\(a\.clientCodeExpiresAt\)\)/);
   assert.match(page, /if \(!a\.filledAt\) return <Note>/);
   // the gate lets the code through the same way it lets the form through
   assert.match(read("src/proxy.js"), /pathname\.startsWith\("\/s\/"\)/);
@@ -107,7 +108,7 @@ test("a rehearsal can be sent to a chosen person for real and reset for the next
   // a roster person becomes the recipient, so they sign as themselves
   assert.match(actions, /\.\.\.\(recipient \? \{ recipientId: recipient\.id \} : \{\}\)/);
   // the reset clears the code and every signed field, and keeps the intake
-  for (const f of ["clientCode: null", "clientCodeExpiresAt: null", "filledAt: null", "clientSignedAt: null", "clientSignedVia: null", "approvedAt: null", "pdfUrl: null", "chaseCount: 0"]) assert.match(actions, new RegExp(f), f);
+  for (const f of ["clientCode: null", "clientCodeExpiresAt: null", "clientEmailCode: null", "clientEmailCodeExpiresAt: null", "filledAt: null", "clientSignedAt: null", "clientSignedVia: null", "approvedAt: null", "pdfUrl: null", "chaseCount: 0"]) assert.match(actions, new RegExp(f), f);
   assert.doesNotMatch(actions.slice(actions.indexOf("export async function resetRehearsal")), /intakeReasonText: null|dsnPdfUrl: null|note: null/);
   const form = read("src/app/portal/admin/clock-amendments/[id]/ApproveForm.js");
   assert.match(form, /sendTo\(id, \{ recipientId: pick\?\.id \|\| "", email: pick \? "" : email\.trim\(\) \}\)/);
