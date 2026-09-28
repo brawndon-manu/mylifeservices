@@ -9,12 +9,14 @@
 //
 // the row IS the clock row the rules read: it carries the punches, the
 // location marks and how late the clock-in was, so the same rules decide
-// what to ask here as on the page and on the form itself.
+// what to ask here as on the page and on the form itself. a shift the clock
+// export has no row for is read as its booking with neither punch, so both
+// ends are asked.
 import { useId, useState } from "react";
 import { raiseAmendmentFromCard } from "../actions";
 import { searchPeople } from "../../clock-amendments/actions";
 import PersonPicker from "../../clock-amendments/new/PersonPicker";
-import { asksStart, asksEnd, asksPlace, startingTimes, missingPunchText } from "@/lib/clock-amendment/rules";
+import { asksStart, asksEnd, asksPlace, startingTimes, missingPunchText, noClockRow, bookingClockRow } from "@/lib/clock-amendment/rules";
 import { tidyTime, anchorOf } from "@/lib/clock-amendment/typed-time";
 import { ampmLabel } from "@/lib/timesheet/hours-label";
 import styles from "../audit.module.css";
@@ -36,10 +38,11 @@ const ERRORS = {
 
 export default function RaiseAmendment({ r, batchId, onDone, onCancel }) {
   // the row read as the amendment rules read a record
+  const row = noClockRow(r) ? { ...r, ...bookingClockRow(r) } : r;
   const record = {
-    clockRow: r,
-    clockedIn: r.noIn || r.actualFrom == null ? null : ampmLabel(r.actualFrom),
-    clockedOut: r.noOut || r.actualTo == null ? null : ampmLabel(r.actualTo),
+    clockRow: row,
+    clockedIn: row.noIn || row.actualFrom == null ? null : ampmLabel(row.actualFrom),
+    clockedOut: row.noOut || row.actualTo == null ? null : ampmLabel(row.actualTo),
     scheduledIn: (r.originalFrom ?? r.schedFrom) != null ? ampmLabel(r.originalFrom ?? r.schedFrom) : null,
     scheduledOut: (r.originalTo ?? r.schedTo) != null ? ampmLabel(r.originalTo ?? r.schedTo) : null,
     dsnStart: r.note?.start || null,

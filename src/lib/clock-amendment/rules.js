@@ -115,16 +115,53 @@ export function punchIssue(shift) {
 
 export const issueOf = (a) => (a ? punchIssue(a.clockRow || { noIn: !a.clockedIn, noOut: !a.clockedOut }) : null);
 
-// WHETHER AN AUDIT CARD OFFERS "Raise an addendum": the export has a row for
-// the shift, the clock has something wrong with it, and nothing is out or
-// approved for it yet. the card's button and the tab that lists them both ask
-// this, so every card in the list has the button
-export const raisable = (row) => !!row && !row.amendment && !row.pending && row.inClockExport === true && hasIssue(row);
+// A SHIFT THE CLOCK EXPORT HAS NO ROW FOR, in a period that has an export: a
+// booking the clock never recorded at all, which is neither punch as far as
+// an addendum goes
+export const noClockRow = (row) => !!row && row.clockAvailable === true && row.inClockExport === false;
 
-// THE CASES that list is cut by, heaviest first. one per shift off punchIssue,
+// the booking read the way a clock row is, with neither punch: the raise panel
+// asks both ends off it, and the addendum keeps it as its clock row, so an
+// approved one joins back to the booking by person, day, client and start
+// (amended.js) like any other
+export function bookingClockRow(row) {
+  const from = row?.schedFrom ?? null;
+  const to = row?.schedTo ?? null;
+  return {
+    key: row?.employeeKey || "",
+    date: row?.date || null,
+    name: row?.whoLegal || row?.who || "",
+    client: row?.client || "",
+    service: row?.service || null,
+    schedFrom: from, schedTo: to,
+    scheduledMin: from != null && to != null ? (to < from ? to - from + 1440 : to - from) : null,
+    noIn: true, noOut: true,
+    actualFrom: null, actualTo: null, workedMin: null,
+    gpsIn: null, gpsOut: null, startDelta: null, endDelta: null,
+    reason: null,
+    // not the export's: there was no row to copy
+    noClockRow: true,
+  };
+}
+
+// WHETHER AN AUDIT CARD OFFERS "Raise an addendum": the export has a row for
+// the shift and the clock has something wrong with it, or the export has no
+// row for it at all; and nothing is out or approved for it yet. the card's
+// button and the tab that lists them both ask this, so every card in the list
+// has the button
+export const raisable = (row) =>
+  !!row && !row.amendment && !row.pending && ((row.inClockExport === true && hasIssue(row)) || noClockRow(row));
+
+// which case of that list a card sits under: no clock row at all first, then
+// the heaviest thing wrong with the row
+export const raiseCase = (row) => (noClockRow(row) ? "notInClock" : punchIssue(row));
+
+// THE CASES that list is cut by, heaviest first. one per shift off raiseCase,
 // so they add up to the whole list: a late clock-in with no clock-out counts
-// as no clock out. the words are the ones the auto flag and the intake use
+// as no clock out. the words are the ones the audit finding, the auto flag and
+// the intake use
 export const RAISE_CASES = [
+  { key: "notInClock", label: "Not in the clock export" },
   { key: "none", label: "No clock in or out" },
   { key: "noIn", label: "No clock in" },
   { key: "noOut", label: "No clock out" },

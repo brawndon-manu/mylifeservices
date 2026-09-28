@@ -12,10 +12,11 @@ import { clockShifts } from "@/lib/timesheet/clock";
 import { buildWhoKey } from "@/lib/timesheet/people";
 import { clientKey } from "@/lib/timesheet/note-audit";
 import { clockShiftFor } from "@/lib/timesheet/amended";
-import { hasIssue, punchIssue } from "@/lib/clock-amendment/rules";
+import { hasIssue, punchIssue, noClockRow, bookingClockRow } from "@/lib/clock-amendment/rules";
 import { shiftFacts, accountsByKey, notePageSpan } from "@/lib/clock-amendment/files";
 import { raiseOne, ROSTER_SELECT, str } from "@/lib/clock-amendment/raise";
 import { fetchBlob } from "@/lib/blob";
+import { buildAudit } from "./[id]/build";
 
 // THE STANDALONE SERVICE NOTES UPLOAD IS GONE, 2026-08-27.
 //
@@ -464,9 +465,24 @@ export async function raiseAmendmentFromCard(formData) {
     console.error("clock amendment from the card: clock export not read:", e);
     return { ok: false, error: "clockfile" };
   }
-  const shift = clockShiftFor(clockShifts(xls), identity, { whoKey: who, clientKey });
-  if (!shift) return { ok: false, error: "norow" };
-  if (!hasIssue(shift)) return { ok: false, error: "clean" };
+  let shift = clockShiftFor(clockShifts(xls), identity, { whoKey: who, clientKey });
+  if (shift && !hasIssue(shift)) return { ok: false, error: "clean" };
+  // NO CLOCK ROW AT ALL: the booking as this copy's own audit reads it, with
+  // neither punch. only a shift the audit itself shows as missing from the
+  // export, so an identity that matches nothing cannot make one up
+  if (!shift) {
+    let rows = [];
+    try { rows = (await buildAudit(batchId, { planned: false }))?.rows || []; }
+    catch (e) { console.error("clock amendment from the card: the copy's bookings not read:", e); }
+    const booking = rows.find((x) =>
+      noClockRow(x)
+      && x.employeeKey === identity.employeeKey
+      && x.date === identity.date
+      && clientKey(x.client || "") === clientKey(identity.client || "")
+      && (identity.startMin == null || x.startMin === identity.startMin));
+    if (!booking) return { ok: false, error: "norow" };
+    shift = bookingClockRow(booking);
+  }
   const account = accountsByKey(users, who).get(who(shift.name)) || null;
   if (!account) return { ok: false, error: "noaccount" };
 

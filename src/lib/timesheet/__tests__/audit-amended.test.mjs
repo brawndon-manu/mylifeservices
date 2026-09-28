@@ -84,7 +84,9 @@ test("the card's raise re-reads the shift from the copy's stored export, refuses
   assert.match(card, /fetchBlob\(batch\.clockUrl\)/);
   assert.match(read("src/lib/blob.js"), /useCache: false/);
   assert.match(card, /clockShiftFor\(clockShifts\(xls\), identity, \{ whoKey: who, clientKey \}\)/);
-  assert.match(card, /if \(!hasIssue\(shift\)\) return \{ ok: false, error: "clean" \}/);
+  // a row the export has must have something wrong; no row at all falls back
+  // to the copy's own booking (clock-amendment-no-record.test.mjs)
+  assert.match(card, /if \(shift && !hasIssue\(shift\)\) return \{ ok: false, error: "clean" \}/);
   assert.match(card, /where: \{ testOnly: false, approvedAt: null, staffId: account\.id, shiftDate: shift\.date \}/);
   assert.match(card, /if \(open\.some\(sameShift\)\) return \{ ok: false, error: "open" \}/);
   // the note is the card's own, by page, and its pages come off the stored file
@@ -95,7 +97,7 @@ test("the card's raise re-reads the shift from the copy's stored export, refuses
 test("the button is offered only where the clock has something wrong and nothing is out, and the card carries what the rules need", () => {
   const cards = read("src/app/portal/admin/audit/[id]/AuditCards.js");
   assert.match(cards, /const showRaise = canRaise && raisable\(r\);/);
-  assert.match(read("src/lib/clock-amendment/rules.js"), /export const raisable = \(row\) => !!row && !row\.amendment && !row\.pending && row\.inClockExport === true && hasIssue\(row\);/);
+  assert.match(read("src/lib/clock-amendment/rules.js"), /export const raisable = \(row\) =>\s*!!row && !row\.amendment && !row\.pending && \(\(row\.inClockExport === true && hasIssue\(row\)\) \|\| noClockRow\(row\)\);/);
   assert.match(cards, /const canRaise = canUpload && !frozenMode;/);
   assert.match(cards, /styles\.pendingPill/);
   const build = read("src/app/portal/admin/audit/[id]/build.js");

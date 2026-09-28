@@ -41,7 +41,7 @@ import styles from "../audit.module.css";
 import { ALL_KINDS, BILLING_KIND, hasKind, kindsOf, labelOfKind, countKinds, offerableKinds } from "@/lib/timesheet/review-kinds";
 import { billableOf } from "@/lib/timesheet/billable-of";
 import { flipReturnOf } from "@/lib/timesheet/audit-changes";
-import { raisable, punchIssue, RAISE_CASES } from "@/lib/clock-amendment/rules";
+import { raisable, raiseCase as raiseCaseOf, RAISE_CASES } from "@/lib/clock-amendment/rules";
 import RaiseAmendment from "./RaiseAmendment";
 import WhatWasSaid from "./WhatWasSaid";
 import ClientHours from "./ClientHours";
@@ -271,7 +271,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
     const c = {};
     for (const r of inPeriod) {
       if (!raisable(r)) continue;
-      const k = punchIssue(r);
+      const k = raiseCaseOf(r);
       c[k] = (c[k] || 0) + 1;
     }
     return c;
@@ -302,7 +302,7 @@ export default function AuditCards({ rows: rowsProp, totals, orphans = [], lost 
       // filter with no control on screen - switch to Not decided with a kind
       // held and every card vanishes for no visible reason.
       if (decision === "flagged" && kindFilter !== "all" && !hasKind(r.review, kindFilter)) return false;
-      if (decision === "raise" && raiseCase !== "all" && punchIssue(r) !== raiseCase) return false;
+      if (decision === "raise" && raiseCase !== "all" && raiseCaseOf(r) !== raiseCase) return false;
       if (onlyKinds.length && !onlyKinds.every((k) => kindOn(r, k))) return false;
       if (needle && !`${r.who} ${r.client || ""} ${r.service || ""}`.toLowerCase().includes(needle)) return false;
       return true;
