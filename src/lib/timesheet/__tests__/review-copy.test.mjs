@@ -22,7 +22,7 @@ test("an empty list says so and says nothing else", () => {
 });
 
 test("a list not sent says what is left, the same in both programs: check them and send them", () => {
-  // Mánu 2026-09-27: the step that comes next is the send, whichever program
+  // the step that comes next is the send, whichever program
   assert.match(src, /: unsent && <p className="mt-2 text-sm text-muted">Check them, then send them to payroll\.<\/p>\}/);
   assert.doesNotMatch(src, /Review these before moving to PTO & sick pay\.|Review these before you generate your document\./);
 });

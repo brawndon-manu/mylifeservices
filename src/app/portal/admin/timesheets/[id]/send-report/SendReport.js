@@ -23,6 +23,9 @@ export default function SendReport({ batchId, preview, action }) {
   const [error, setError] = useState("");
   const [parts, setParts] = useState([]);
   const [asking, setAsking] = useState(false);
+  // sent without meal and rest premiums: the penalty file stays home and the
+  // other three drop their premium columns and totals
+  const [noPremiums, setNoPremiums] = useState(false);
 
   async function go(anyway) {
     if (busy) return;
@@ -30,7 +33,7 @@ export default function SendReport({ batchId, preview, action }) {
     setBusy(true);
     let res;
     try {
-      res = await action(batchId, { anyway });
+      res = await action(batchId, { anyway, noPremiums });
     } catch {
       res = { ok: false, error: "send" };
     }
@@ -82,12 +85,29 @@ export default function SendReport({ batchId, preview, action }) {
         <li>Payout report, as a PDF</li>
         <li>Payroll workbook, as an Excel file</li>
         <li>Payout figures, as a CSV</li>
-        <li>Break penalty hours, as a PDF</li>
+        {!noPremiums && <li>Break penalty hours, as a PDF</li>}
         <li>
           {preview.signed} of {preview.sheets} signed timesheets, as a link. They are
           too large to attach.
         </li>
       </ul>
+
+      <label className="mt-4 flex cursor-pointer items-start gap-2.5">
+        <input
+          type="checkbox"
+          checked={noPremiums}
+          onChange={(e) => setNoPremiums(e.target.checked)}
+          disabled={busy}
+          className="mt-0.5 h-4 w-4 flex-none accent-brand"
+        />
+        <span className="text-sm text-foreground">
+          <span className="font-semibold">Leave out premium hours.</span>{" "}
+          <span className="text-muted">
+            The break penalty file stays out, and the payout report, workbook and
+            CSV go without premium columns or totals.
+          </span>
+        </span>
+      </label>
 
       {!preview.locked && (
         <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-800 dark:bg-amber-950/25 dark:text-amber-200">

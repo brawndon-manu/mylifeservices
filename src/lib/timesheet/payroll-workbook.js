@@ -32,7 +32,10 @@ const OKINK = "FF166534";
 const WAITBG = "FFFDF2DE";
 const WAITINK = "FF92400E";
 
-export async function buildPayrollWorkbook(id) {
+// `noPremiums`: the workbook without meal and rest premiums, for the payroll
+// email when it is sent that way: no
+// penalty row, column or sheet, and none of it in Total payable
+export async function buildPayrollWorkbook(id, { noPremiums = false } = {}) {
   const batch = await prisma.timesheetBatch.findUnique({
     where: { id },
     include: {
@@ -70,7 +73,7 @@ export async function buildPayrollWorkbook(id) {
   // the same column arithmetic as the CSV: misc-classified time off moves
   // columns, payable untouched by construction
   const rows = batch.timesheets.map((t) => {
-    const charged = standing.byId[t.id]?.charged ?? 0;
+    const charged = noPremiums ? 0 : standing.byId[t.id]?.charged ?? 0;
     // every record of this person's time off at once - see payoutTimeOff
     const off = payoutTimeOff(t, (t.userId && timeOffBy.get(t.userId)) || null);
     return {
@@ -141,7 +144,7 @@ export async function buildPayrollWorkbook(id) {
   } catch {
     // decorative
   }
-  s.getCell("B8").value = "Payroll hours and penalties";
+  s.getCell("B8").value = noPremiums ? "Payroll hours" : "Payroll hours and penalties";
   s.getCell("B8").font = { bold: true, size: 16, color: { argb: INK } };
   s.getCell("B9").value = `Pay period ${period} · ${batch.program === "DP" ? "Day Program" : "ILS office"}`;
   s.getCell("B9").font = { size: 11, color: { argb: "FF6B7280" } };
@@ -159,22 +162,30 @@ export async function buildPayrollWorkbook(id) {
   put(12, "Employees", rows.length);
   put(13, "Hours worked", sum("worked"));
   put(14, "Overtime (in worked)", sum("ot"));
-  put(15, "Penalty hours", sum("premium"));
-  put(16, "PTO hours", sum("pto"));
-  put(17, "Sick hours", sum("sick"));
-  put(18, "Total hours payable", sum("payable"));
-  s.getCell("B18").font = { bold: true, size: 11 };
-  put(19, "Miles driven (reimbursed, not hours)", sum("miles"));
+  // without premiums the rows below close up over the penalty line
+  const gap = noPremiums ? 1 : 0;
+  if (!noPremiums) put(15, "Penalty hours", sum("premium"));
+  put(16 - gap, "PTO hours", sum("pto"));
+  put(17 - gap, "Sick hours", sum("sick"));
+  put(18 - gap, "Total hours payable", sum("payable"));
+  s.getCell(`B${18 - gap}`).font = { bold: true, size: 11 };
+  put(19 - gap, "Miles driven (reimbursed, not hours)", sum("miles"));
 
-  // the provisional/final standing, in its colour
+  // the provisional/final standing, in its colour - or, without premiums, the
+  // one line saying they were left out
   const good = standing.settled;
   s.mergeCells("B21:F22");
   const note = s.getCell("B21");
-  note.value = good
-    ? `FINAL. All ${standing.people} have answered what they were asked about their breaks. Nothing further can move the penalty column.`
-    : `PROVISIONAL. ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumptions).toFixed(2)} penalty hours come off if they all confirm they took their breaks. This total can fall and cannot rise.`;
-  note.fill = { type: "pattern", pattern: "solid", fgColor: { argb: good ? OKBG : WAITBG } };
-  note.font = { size: 10, color: { argb: good ? OKINK : WAITINK } };
+  if (noPremiums) {
+    note.value = "Meal and rest premium hours are left out of this workbook.";
+    note.font = { size: 10, color: { argb: "FF6B7280" } };
+  } else {
+    note.value = good
+      ? `FINAL. All ${standing.people} have answered what they were asked about their breaks. Nothing further can move the penalty column.`
+      : `PROVISIONAL. ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumptions).toFixed(2)} penalty hours come off if they all confirm they took their breaks. This total can fall and cannot rise.`;
+    note.fill = { type: "pattern", pattern: "solid", fgColor: { argb: good ? OKBG : WAITBG } };
+    note.font = { size: 10, color: { argb: good ? OKINK : WAITINK } };
+  }
   note.alignment = { vertical: "middle", wrapText: true, indent: 1 };
 
   if (rec) {
@@ -204,7 +215,7 @@ export async function buildPayrollWorkbook(id) {
     { header: "OT", key: "ot", width: 8 },
     { header: "Double", key: "dbl", width: 8 },
     { header: "Hours worked", key: "worked", width: 13 },
-    { header: "Penalty", key: "premium", width: 9 },
+    ...(noPremiums ? [] : [{ header: "Penalty", key: "premium", width: 9 }]),
     { header: "PTO", key: "pto", width: 8 },
     { header: "Sick", key: "sick", width: 8 },
     { header: "Total payable", key: "payable", width: 13 },
@@ -213,6 +224,8 @@ export async function buildPayrollWorkbook(id) {
     { header: "Corrected", key: "corrected", width: 10 },
   ];
   styleHeader(pay.getRow(1));
+  // the number columns, the penalty one only when it is on the sheet
+  const NUMS = ["reg", "ot", "dbl", "worked", ...(noPremiums ? [] : ["premium"]), "pto", "sick", "payable", "miles"];
   for (const r of rows) {
     const row = pay.addRow({ ...r, matched: r.matched ? "yes" : "no" });
     if (row.number % 2 === 0) {
@@ -220,14 +233,14 @@ export async function buildPayrollWorkbook(id) {
         c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
       });
     }
-    for (const k of ["reg", "ot", "dbl", "worked", "premium", "pto", "sick", "payable", "miles"]) {
+    for (const k of NUMS) {
       num(row.getCell(k));
     }
     // the two word columns sit at the right edge and read with the numbers
     row.getCell("status").alignment = { horizontal: "right" };
     row.getCell("corrected").alignment = { horizontal: "right" };
     row.getCell("payable").font = { bold: true };
-    if (r.premium > 0) row.getCell("premium").font = { color: { argb: "FFBE185D" }, bold: true };
+    if (!noPremiums && r.premium > 0) row.getCell("premium").font = { color: { argb: "FFBE185D" }, bold: true };
   }
   const totalRow = pay.addRow({
     who: `TOTAL (${rows.length})`,
@@ -240,11 +253,12 @@ export async function buildPayrollWorkbook(id) {
     c.font = { bold: true, color: { argb: INK } };
     c.border = { top: { style: "medium", color: { argb: BRAND } } };
   });
-  for (const k of ["reg", "ot", "dbl", "worked", "premium", "pto", "sick", "payable", "miles"]) {
+  for (const k of NUMS) {
     num(totalRow.getCell(k));
   }
 
   // ---------- Penalty hours ----------
+  if (!noPremiums) {
   const pen = wb.addWorksheet("Penalty hours", { views: [{ state: "frozen", ySplit: 1 }] });
   pen.columns = [
     { header: "Employee", key: "who", width: 26 },
@@ -269,6 +283,7 @@ export async function buildPayrollWorkbook(id) {
     c.border = { top: { style: "medium", color: { argb: BRAND } } };
   });
   num(penTotal.getCell("premium"));
+  }
 
   const bytes = await wb.xlsx.writeBuffer();
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");

@@ -17,9 +17,12 @@ export async function GET(req, { params }) {
     await logFileDenied({ user, pathname: `timesheets/${id}/report.xlsx`, req, label: "Payroll workbook" });
     return new NextResponse("Forbidden", { status: 403 });
   }
+  // ?premiums=0: the workbook without meal and rest premiums, for the payroll
+  // email when it is sent that way - see payroll-bundle.js
+  const noPremiums = new URL(req.url).searchParams.get("premiums") === "0";
   let out;
   try {
-    out = await buildPayrollWorkbook(id);
+    out = await buildPayrollWorkbook(id, { noPremiums });
   } catch (e) {
     console.error("payroll workbook failed:", e);
     return new NextResponse("Could not build the workbook", { status: 500 });

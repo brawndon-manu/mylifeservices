@@ -55,7 +55,9 @@ export async function payrollBundlePreview(batchId) {
   };
 }
 
-export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
+// `noPremiums`: the reports go without meal and rest premiums - no break
+// penalty file, and none in the other three's columns or totals
+export async function sendPayrollBundle(batchId, { anyway = false, noPremiums = false } = {}) {
   const me = await requireAccess();
   if (!process.env.RESEND_API_KEY) return { ok: false, error: "nomail" };
 
@@ -73,7 +75,7 @@ export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
   // His call 2026-09-14: warn, do not refuse.
   if (!batch.lockedAt && !anyway) return { ok: false, error: "notfinal" };
 
-  const { files, missing, bytes } = await buildPayrollBundle(batch.id, batch);
+  const { files, missing, bytes } = await buildPayrollBundle(batch.id, batch, { noPremiums: noPremiums === true });
   // A FILE THAT DID NOT BUILD STOPS THE SEND. An email that silently arrives
   // with three of the four is worse than one that did not arrive: payroll would
   // key in what is there.
@@ -104,6 +106,7 @@ export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
     sheets: batch.timesheets.length,
     zipUrl,
     locked: !!batch.lockedAt,
+    premiumsLeftOut: noPremiums === true,
   });
 
   // the plain-text half, for a client that will not render the HTML
@@ -112,6 +115,7 @@ export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
     "",
     "Attached:",
     ...files.map((f) => `  ${f.label} - ${f.filename}`),
+    ...(noPremiums === true ? ["Meal and rest premium hours are left out of these reports."] : []),
     "",
     `Signed timesheets: ${signed} of ${batch.timesheets.length}. They are too large to attach, so they are here:`,
     zipUrl,
@@ -146,7 +150,7 @@ export async function sendPayrollBundle(batchId, { anyway = false } = {}) {
 
   console.log(
     `payroll bundle sent by ${me.id}: ${program} ${span}, ${files.length} files, ` +
-    `${Math.round(bytes / 1024)}KB, redirected=${route.redirected}, locked=${!!batch.lockedAt}`,
+    `${Math.round(bytes / 1024)}KB, redirected=${route.redirected}, locked=${!!batch.lockedAt}, noPremiums=${noPremiums === true}`,
   );
   return {
     ok: true,

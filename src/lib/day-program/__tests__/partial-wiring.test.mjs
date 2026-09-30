@@ -14,7 +14,7 @@ test("the day program trims mid-period uploads with the shared partial pair", ()
   const analyze = read("src/lib/day-program/analyze.js");
   assert.match(
     analyze,
-    /import \{ futureDates, trimDays \} from "\.\.\/timesheet\/partial\.js"/,
+    /import \{ futureDates, trimDays, lastSheetDay \} from "\.\.\/timesheet\/partial\.js"/,
     "analyze.js must import the shared pair, not define its own",
   );
   assert.match(analyze, /futureDates\(sheets\)/);

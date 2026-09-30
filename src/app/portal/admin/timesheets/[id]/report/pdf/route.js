@@ -16,6 +16,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req, { params }) {
   const { id } = await params;
+  // ?premiums=0: the report without meal and rest premiums, for the payroll
+  // email when it is sent that way - see payroll-bundle.js
+  const noPremiums = new URL(req.url).searchParams.get("premiums") === "0";
 
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
@@ -114,6 +117,7 @@ export async function GET(req, { params }) {
         generatedOn: new Date().toLocaleDateString("en-US", {
           timeZone: "America/Los_Angeles",
         }),
+        noPremiums,
       },
     );
     bytes = out.bytes;
@@ -126,13 +130,13 @@ export async function GET(req, { params }) {
     user,
     pathname: `timesheets/${id}/report.pdf`,
     req,
-    label: accessLabel("Payroll hours and penalties", periodRange(batch.periodFrom, batch.periodTo)),
+    label: accessLabel(noPremiums ? "Payroll hours" : "Payroll hours and penalties", periodRange(batch.periodFrom, batch.periodTo)),
   });
   const slug = `${batch.periodFrom}-${batch.periodTo}`.replace(/[^\w]+/g, "-");
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="payroll-hours-and-penalties-${slug}.pdf"`,
+      "Content-Disposition": `inline; filename="${noPremiums ? "payroll-hours" : "payroll-hours-and-penalties"}-${slug}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });

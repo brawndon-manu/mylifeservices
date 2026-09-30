@@ -9,6 +9,7 @@ import DatePicker from "@/components/DatePicker";
 export default function PartialPick() {
   const [partial, setPartial] = useState(false);
   return (
+    <>
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
       <label className="flex cursor-pointer items-start gap-2.5">
         <input
@@ -57,5 +58,21 @@ export default function PartialPick() {
         </div>
       )}
     </div>
+
+    {/* A FINAL PAYOUT, the MLS upload's box:
+        the one way to keep days nobody has worked yet, at the schedule's
+        hours, so everyone is paid out before the last day ends */}
+    <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/25">
+      <label className="flex cursor-pointer items-start gap-2.5">
+        <input type="checkbox" name="finalPayout" className="mt-0.5 h-4 w-4 flex-none accent-amber-600" />
+        <span className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+          <span className="font-semibold">Final payout.</span>{" "}
+          Keep the days that have not happened yet, at the hours QSP prints for
+          them (the schedule&apos;s), so everyone can be paid out before the last
+          day is worked.
+        </span>
+      </label>
+    </div>
+    </>
   );
 }

@@ -60,12 +60,13 @@ const COLS = [
   ["Miles", 42, true],
   ["Signed", 36, false],
 ];
-// which index is which, so the row loop and the totals row cannot drift apart
-const I_PREMIUM = 5;
-const I_TIMEOFF = 6;
-const I_PAYABLE = 7;
-const I_MILES = 8;
-const I_SIGNED = 9;
+// WITHOUT PREMIUMS, for a payroll sent without them: the Penalty column
+// goes and its width joins Employee, so the row still spans 532
+const COLS_NO_PREMIUM = COLS
+  .filter(([label]) => label !== "Penalty")
+  .map((c) => (c[0] === "Employee" ? ["Employee", c[1] + 46, false] : c));
+// the columns a report prints, with or without the penalty column
+export const columnsFor = (noPremiums) => (noPremiums ? COLS_NO_PREMIUM : COLS);
 
 // greedy wrap: the notice is a sentence, and a sentence running through the
 // right rule on a payroll document reads as a broken form.
@@ -82,6 +83,17 @@ function wrapAt(str, maxW, font, size) {
 }
 
 export async function renderPayoutReport({ periodFrom, periodTo, rows, standing }, opts = {}) {
+  // left out of the payroll email when asked: no penalty column, no penalty in
+  // Total payable, no box about the penalty column settling
+  const noPremiums = opts.noPremiums === true;
+  const cols = columnsFor(noPremiums);
+  // which index is which, so the row loop and the totals row cannot drift apart
+  const at = (label) => cols.findIndex(([l]) => l === label);
+  const I_PREMIUM = at("Penalty");
+  const I_PAYABLE = at("Total payable");
+  const I_SIGNED = at("Signed");
+  const premOf = (r) => (noPremiums ? 0 : r.premiumHours || 0);
+  const title = noPremiums ? "Payroll Hours Due" : "Payroll Hours and Penalties Due";
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -103,7 +115,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     premiumHours: sum("premiumHours"),
     timeOffHours: sum("timeOffHours"),
     payable: rows.reduce(
-      (n, r) => n + (r.paidHours || 0) + (r.premiumHours || 0) + (r.timeOffHours || 0),
+      (n, r) => n + (r.paidHours || 0) + premOf(r) + (r.timeOffHours || 0),
       0,
     ),
     // reimbursed, not payable - deliberately absent from `payable` above
@@ -124,7 +136,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     const hH = 18;
     page.drawRectangle({ x: L, y: y - hH + 4, width: R - L, height: hH, color: HEADBG });
     let x = L;
-    for (const [label, w, numeric] of COLS) {
+    for (const [label, w, numeric] of cols) {
       const lx = numeric ? x + w - 5 - bold.widthOfTextAtSize(label, 7.5) : x + 5;
       text(label, lx, y - 8, { size: 7.5, f: bold, color: WHITE });
       x += w;
@@ -146,7 +158,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
         tx = L + lw + 14;
       }
       text("My Life Services, Inc.", tx, y - 12, { size: 8.5, f: bold, color: MUTED });
-      text("Payroll Hours and Penalties Due", tx, y - 35, { size: 17, f: bold, color: BRAND });
+      text(title, tx, y - 35, { size: 17, f: bold, color: BRAND });
       y -= logoH + 15;
       text(`Pay period ${period}`, L, y, { size: 11, f: bold });
       y -= 13;
@@ -160,7 +172,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       // so the total can only come DOWN. A report that looks final while most of
       // the batch has an open question now over-states payroll rather than
       // shortchanging an employee.
-      if (standing?.people) {
+      if (standing?.people && !noPremiums) {
         const good = standing.settled;
         const title = good
           ? "FINAL. Everyone has answered."
@@ -184,7 +196,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       page.drawLine({ start: { x: L, y }, end: { x: R, y }, thickness: 0.8, color: GRID });
       y -= 18;
     } else {
-      text(`Payroll Hours and Penalties Due · ${period} (continued)`, L, y, {
+      text(`${title} · ${period} (continued)`, L, y, {
         size: 9, f: bold, color: MUTED,
       });
       y -= 20;
@@ -207,8 +219,8 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     }
     alt = !alt;
 
-    const payable = (r.paidHours || 0) + (r.premiumHours || 0) + (r.timeOffHours || 0);
-    const cells = [
+    const payable = (r.paidHours || 0) + premOf(r) + (r.timeOffHours || 0);
+    const allCells = [
       r.who,
       f2(r.regularHours),
       f2(r.otHours),
@@ -225,10 +237,12 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
       // outstanding job against three people who have nothing to do.
       r.salariedExempt ? "Exempt" : r.approvedAt ? "Approved" : r.signedAt ? "Yes" : "No",
     ];
+    // the penalty cell sits at index 5 of the full row
+    const cells = noPremiums ? allCells.filter((_, i) => i !== 5) : allCells;
 
     let x = L;
     cells.forEach((c, i) => {
-      const [, w, numeric] = COLS[i];
+      const [, w, numeric] = cols[i];
       const isPrem = i === I_PREMIUM && (r.premiumHours || 0) > 0;
       const isTotal = i === I_PAYABLE;
       // muted in both cases, for opposite reasons: an unsigned row is one
@@ -259,7 +273,7 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
   // column reading "Exempt" while the total counts those rows as still owing a
   // signature. It is how many signatures are actually outstanding.
   const owingSignature = rows.filter((r) => !r.salariedExempt).length;
-  const totalCells = [
+  const allTotals = [
     `TOTAL (${rows.length})`,
     f2(totals.regularHours),
     f2(totals.otHours),
@@ -273,8 +287,9 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
     // answer at a glance
     `${signedCount}/${owingSignature}`,
   ];
+  const totalCells = noPremiums ? allTotals.filter((_, i) => i !== 5) : allTotals;
   totalCells.forEach((c, i) => {
-    const [, w, numeric] = COLS[i];
+    const [, w, numeric] = cols[i];
     const size = i === I_PAYABLE ? 11 : 9;
     const cx = numeric ? x + w - 5 - bold.widthOfTextAtSize(c, size) : x + 5;
     text(c, cx, y - 2, {
@@ -287,8 +302,9 @@ export async function renderPayoutReport({ periodFrom, periodTo, rows, standing 
 
   // ---------- notes ----------
   const notes = [];
-  notes.push(
-    "Total payable = hours worked (with paid rest break time added back) plus penalty hours plus recorded time off. Penalty hours are paid at the employee's regular rate of pay under Labor Code 226.7. Time off is PTO and sick hours recorded on the pay period calendar; they are pay, not worked time, and never enter overtime.",
+  notes.push(noPremiums
+    ? "Total payable = hours worked (with paid rest break time added back) plus recorded time off. Time off is PTO and sick hours recorded on the pay period calendar; they are pay, not worked time, and never enter overtime. Meal and rest premium hours are left out of this report."
+    : "Total payable = hours worked (with paid rest break time added back) plus penalty hours plus recorded time off. Penalty hours are paid at the employee's regular rate of pay under Labor Code 226.7. Time off is PTO and sick hours recorded on the pay period calendar; they are pay, not worked time, and never enter overtime.",
   );
   if (disputed) {
     notes.push(

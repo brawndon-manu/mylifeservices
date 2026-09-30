@@ -56,6 +56,20 @@ export function endOfDay(now = businessNow()) {
   return d;
 }
 
+// THE LAST DAY THE SHEETS HOLD, for a final payout: "today" moves to it, so
+// the days still to come stay in at the hours QSP printed for them (the
+// schedule's) instead of being refused or trimmed. null when no day parses.
+export function lastSheetDay(sheets) {
+  let last = null;
+  for (const s of sheets || []) {
+    for (const d of s.days || []) {
+      const at = sheetDate(d.date);
+      if (at && (!last || at > last)) last = at;
+    }
+  }
+  return last;
+}
+
 // Every date in these sheets that has not happened yet. Unparseable dates are
 // left alone rather than guessed at - they are somebody else's bug and dropping
 // a day over one would be worse than keeping it.

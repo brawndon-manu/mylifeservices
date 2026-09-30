@@ -392,6 +392,8 @@ export function buildPayrollEmailHtml({
   sheets = 0,
   zipUrl,
   locked = true,
+  // sent without meal and rest premiums: one line under the attachments says so
+  premiumsLeftOut = false,
 }) {
   const subtitle = `
     <div style="margin-top:12px;color:#334155;font-size:14px;">${esc(program)}</div>
@@ -410,6 +412,7 @@ export function buildPayrollEmailHtml({
     <div style="margin:0 0 20px;padding:14px 16px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:10px;">
       <div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Attached to this email</div>
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%">${rows}</table>
+      ${premiumsLeftOut ? '<div style="margin-top:8px;color:#6b7280;font-size:13px;">Meal and rest premium hours are left out of these reports.</div>' : ""}
     </div>`;
 
   // THE TIMESHEETS ARE A LINK AND THE EMAIL SAYS WHY. Measured: 61 of them are

@@ -24,6 +24,9 @@ function cell(v) {
 
 export async function GET(req, { params }) {
   const { id } = await params;
+  // ?premiums=0: the figures without meal and rest premiums, for the payroll
+  // email when it is sent that way - see payroll-bundle.js
+  const noPremiums = new URL(req.url).searchParams.get("premiums") === "0";
   const user = await getCurrentUser();
   if (!canManageTimesheets(user?.role)) {
     await logFileDenied({ user, pathname: `timesheets/${id}/report.csv`, req, label: "Payout CSV" });
@@ -85,8 +88,7 @@ export async function GET(req, { params }) {
     "Overtime hours",
     "Double time hours",
     "Hours worked",
-    "Premium hours",
-    "Premium hours that come off if assumptions confirmed",
+    ...(noPremiums ? [] : ["Premium hours", "Premium hours that come off if assumptions confirmed"]),
     "PTO hours",
     "Sick hours",
     "Total hours payable",
@@ -100,8 +102,9 @@ export async function GET(req, { params }) {
   const t = { reg: 0, ot: 0, dbl: 0, paid: 0, prem: 0, assumptions: 0, pto: 0, sick: 0, payable: 0, miles: 0 };
 
   for (const ts of batch.timesheets) {
-    const charged = standing.byId[ts.id]?.charged ?? 0;
-    const assumptions = standing.byId[ts.id]?.assumptions ?? 0;
+    // left out of payable too when the report goes without premiums
+    const charged = noPremiums ? 0 : standing.byId[ts.id]?.charged ?? 0;
+    const assumptions = noPremiums ? 0 : standing.byId[ts.id]?.assumptions ?? 0;
     // every record of this person's time off at once - see payoutTimeOff
     const off = payoutTimeOff(ts, (ts.userId && timeOffBy.get(ts.userId)) || null);
     const workedReg = Math.max(0, (ts.regularHours || 0) - off.moved);
@@ -131,8 +134,7 @@ export async function GET(req, { params }) {
         r2(ts.otHours),
         r2(ts.doubleHours),
         r2(worked),
-        r2(charged),
-        r2(assumptions),
+        ...(noPremiums ? [] : [r2(charged), r2(assumptions)]),
         r2(pto),
         r2(sick),
         r2(payable),
@@ -165,8 +167,7 @@ export async function GET(req, { params }) {
       r2(t.ot),
       r2(t.dbl),
       r2(t.paid),
-      r2(t.prem),
-      r2(t.assumptions),
+      ...(noPremiums ? [] : [r2(t.prem), r2(t.assumptions)]),
       r2(t.pto),
       r2(t.sick),
       r2(t.payable),
@@ -183,9 +184,11 @@ export async function GET(req, { params }) {
   // a comment - a CSV has nowhere else to put it, and payroll keys off this.
   lines.push("");
   lines.push([
-    standing.settled
-      ? `FINAL: all ${standing.people} have answered. Nothing further can move the premium column.`
-      : `PROVISIONAL: ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumptions)} premium hours come OFF if they all confirm they took their breaks. This total can fall and cannot rise.`,
+    noPremiums
+      ? "Meal and rest premium hours are left out of this report."
+      : standing.settled
+        ? `FINAL: all ${standing.people} have answered. Nothing further can move the premium column.`
+        : `PROVISIONAL: ${standing.waiting} of ${standing.people} have not answered yet. Up to ${r2(standing.assumptions)} premium hours come OFF if they all confirm they took their breaks. This total can fall and cannot rise.`,
   ].map(cell).join(","));
 
   await logFileOpen({

@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { PDFDocument } from "pdf-lib";
 import { putBlob, hasBlobStorage, fetchBlob } from "@/lib/blob";
 import { prisma } from "@/lib/prisma";
-import { futureDates, trimDays, isoDate } from "@/lib/timesheet/partial";
+import { futureDates, trimDays, isoDate, lastSheetDay } from "@/lib/timesheet/partial";
 import { splitByPeriod } from "@/lib/timesheet/split-periods";
 import { getCurrentUser } from "@/lib/current-user";
 import { canManageTimesheets, isSuper } from "@/lib/roles";
@@ -245,6 +245,11 @@ export async function uploadBatch(formData) {
   // whole month, and the copy carried 79 rows for the 14th with no clock row
   // and no note on any of them.
   const wantPartial = formData.get("partial") === "on";
+  // A FINAL PAYOUT: the days still to come stay
+  // in at the hours QSP prints for them - the schedule's - so everyone can be
+  // paid out before the last day is worked. payroll lane only; an audit copy
+  // reads what happened and keeps trimming on its own
+  const finalPayout = !auditOnly && formData.get("finalPayout") === "on";
   const partialFromInput = isoDate((formData.get("partialFrom") || "").toString());
   const partialToInput = isoDate((formData.get("partialTo") || "").toString());
   if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {
@@ -353,7 +358,7 @@ export async function uploadBatch(formData) {
     }
   }
   const future = futureDates(withHours);
-  if (future.size && !wantPartial) {
+  if (future.size && !wantPartial && !finalPayout) {
     const sample = [...future].sort().slice(0, 3).join(", ");
     redirect(
       `${NEW}error=future&why=${encodeURIComponent(
@@ -368,7 +373,13 @@ export async function uploadBatch(formData) {
   // gating this on `future.size` would silently ignore the start date on any
   // export pulled after the period ended.
   if (wantPartial) {
-    const trimmed = trimDays(withHours, { from: partialFromInput, to: partialToInput });
+    // a final payout moves "today" to the last day in the file, so the range
+    // can reach the days still to come
+    const trimmed = trimDays(withHours, {
+      from: partialFromInput,
+      to: partialToInput,
+      now: finalPayout ? lastSheetDay(withHours) || undefined : undefined,
+    });
     partialDropped = trimmed.dropped;
     partialFrom = trimmed.from;
     partialThrough = trimmed.through;

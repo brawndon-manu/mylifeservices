@@ -117,6 +117,10 @@ export async function uploadDayProgramBatch(formData) {
   // THE RANGE IS TYPED BECAUSE THE EXPORT DOES NOT CARRY IT - QSP returns the
   // whole pay period whatever range it was asked for.
   const wantPartial = formData.get("partial") === "on";
+  // A FINAL PAYOUT, same box as the MLS upload:
+  // the days still to come stay in at the schedule's hours so everyone can be
+  // paid out before the last day is worked
+  const finalPayout = formData.get("finalPayout") === "on";
   const partialFromInput = isoDate((formData.get("partialFrom") || "").toString());
   const partialToInput = isoDate((formData.get("partialTo") || "").toString());
   if (wantPartial && partialFromInput && partialToInput && partialFromInput > partialToInput) {
@@ -142,6 +146,7 @@ export async function uploadDayProgramBatch(formData) {
         select: { name: true, preferredFirstName: true, preferredLastName: true, salariedExempt: true },
       }),
       partial: wantPartial ? { from: partialFromInput, to: partialToInput } : null,
+      finalPayout,
     });
   } catch (e) {
     // a mid-period export refused whole is its own message, not a parse failure

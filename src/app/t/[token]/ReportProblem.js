@@ -350,7 +350,7 @@ export default function ReportProblem({ token, days, submitAction, period = null
   if (done && flow?.stage !== "reports") return thanks;
 
   if (flow?.stage === "reports") {
-    // NOT SENT IS SAID OUT LOUD (Mánu 2026-09-27, the mock's D, his words): a
+    // NOT SENT IS SAID OUT LOUD: a
     // list that read "Review these" with a small grey "Not sent" under each
     // report looked finished. the heading names the one thing left, a box says
     // they are not sent and what waits on them, and each report carries its

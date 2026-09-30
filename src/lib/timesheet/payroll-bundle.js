@@ -54,10 +54,10 @@ export function bundleName(batch, part, ext) {
 // one handler's response as bytes, or an explanation of why it is missing.
 // A route that refuses is not an exception here: it is a file the email must
 // not silently go without.
-async function partOf(handler, id, label) {
+async function partOf(handler, id, label, url = "http://internal/") {
   let res;
   try {
-    res = await handler(new Request("http://internal/"), { params: Promise.resolve({ id }) });
+    res = await handler(new Request(url), { params: Promise.resolve({ id }) });
   } catch (e) {
     console.error(`payroll bundle: ${label} threw:`, e);
     return { ok: false, label, why: "could not be built" };
@@ -70,7 +70,10 @@ async function partOf(handler, id, label) {
   return { ok: true, label, body };
 }
 
-export async function buildPayrollBundle(id, batch) {
+// WITHOUT PREMIUMS, when the payroll email is sent that way: the break penalty file
+// stays home, and the other three are asked for without their premium columns
+// - the same routes with ?premiums=0, so a download taken that way matches
+export async function buildPayrollBundle(id, batch, { noPremiums = false } = {}) {
   const { GET: pdf } = await import("@/app/portal/admin/timesheets/[id]/report/pdf/route");
   const { GET: xlsx } = await import("@/app/portal/admin/timesheets/[id]/report/xlsx/route");
   const { GET: csv } = await import("@/app/portal/admin/timesheets/[id]/report/csv/route");
@@ -80,7 +83,8 @@ export async function buildPayrollBundle(id, batch) {
   const files = [];
   const missing = [];
   for (const spec of BUNDLE_FILES) {
-    const got = await partOf(handlers[spec.key], id, spec.label);
+    if (noPremiums && spec.key === "penalties") continue;
+    const got = await partOf(handlers[spec.key], id, spec.label, noPremiums ? "http://internal/?premiums=0" : undefined);
     if (!got.ok) { missing.push(got); continue; }
     files.push({
       filename: bundleName(batch, spec.label, spec.ext),

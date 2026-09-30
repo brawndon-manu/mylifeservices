@@ -198,8 +198,8 @@ export default function ReviewFlow({ children, reports }) {
       )}
       {children}
       <div hidden={enabled && stage !== "reports"}>{reports}</div>
-      {/* THE REPORTS STEP'S SEND RIDES THE BOTTOM OF THE SCREEN (Mánu
-          2026-09-27, the mock's D): where Next sat on every day, so however
+      {/* THE REPORTS STEP'S SEND RIDES THE BOTTOM OF THE SCREEN: where
+          Next sat on every day, so however
           long the list runs the one thing left to press is in reach. the way
           back is at the top of the list while this holds the bottom */}
       {enabled && !readOnly && sendHere && (

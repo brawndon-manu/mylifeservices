@@ -22,7 +22,7 @@
 // see the block in parse.js. Rest rules run exactly as they do for MLS.
 
 import { parseTimesheetPdf, analyzeTimesheet, analyzeDay } from "../timesheet/parse.js";
-import { futureDates, trimDays } from "../timesheet/partial.js";
+import { futureDates, trimDays, lastSheetDay } from "../timesheet/partial.js";
 import { reviewSheet } from "../timesheet/anomalies.js";
 import { restKey, restRowTimes, clockMin, serviceFit } from "../timesheet/rests.js";
 import { dayProgramRestRows } from "./rest-xls.js";
@@ -170,6 +170,10 @@ export async function analyzeDayProgram({
   // times a day every day until the end of the pay period so we can address
   // people with issues as they come up."
   partial = null,
+  // A FINAL PAYOUT keeps the days still to come at the hours QSP printed for
+  // them (the schedule's): nothing is refused for being after today, and a
+  // partial range may reach past it - see lastSheetDay
+  finalPayout = false,
 }) {
   let sheets = (await parseTimesheetPdf(timesheetBytes)).filter((s) => !s.empty);
 
@@ -215,7 +219,7 @@ export async function analyzeDayProgram({
   // that ask people to sign for shifts they have not worked.
   const future = futureDates(sheets);
   let partialResult = null;
-  if (future.size && !partial) {
+  if (future.size && !partial && !finalPayout) {
     const sample = [...future].sort().slice(0, 3).join(", ");
     const e = new Error(
       `${future.size} dated after today (${sample}). Wait until the pay period has ended, ` +
@@ -225,7 +229,11 @@ export async function analyzeDayProgram({
     throw e;
   }
   if (partial) {
-    const trimmed = trimDays(sheets, { from: partial.from, to: partial.to });
+    const trimmed = trimDays(sheets, {
+      from: partial.from,
+      to: partial.to,
+      now: finalPayout ? lastSheetDay(sheets) || undefined : undefined,
+    });
     sheets = trimmed.sheets;
     partialResult = {
       dropped: trimmed.dropped,
